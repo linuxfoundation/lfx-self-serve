@@ -46,12 +46,6 @@
         <p class="text-sm text-gray-500">Use the project selector in the sidebar to choose a foundation</p>
       </div>
     </div>
-  } @else if (emptyState(); as state) {
-    <lfx-org-lens-empty-state
-      [state]="state"
-      testId="foundation-health-empty"
-      [values]="{ orgName: selectedFoundation()?.name }"
-      (retry)="retry()"></lfx-org-lens-empty-state>
   } @else {
     <!-- Carousel Container -->
     <div class="relative overflow-hidden">
@@ -61,108 +55,135 @@
         class="flex gap-4 items-start overflow-x-auto hide-scrollbar scroll-smooth"
         data-testid="foundation-health-carousel">
         @for (card of metricCards(); track card.testId) {
-          @switch (card.customContentType) {
-            <!-- Bar Chart - Use shared metric card -->
-            @case ('bar-chart') {
-              <lfx-metric-card
-                [title]="card.title"
-                [icon]="card.icon"
-                [testId]="card.testId"
-                [chartType]="card.chartType"
-                [chartData]="card.chartData"
-                [chartOptions]="card.chartOptions || barChartOptions"
-                [chartHeightClass]="'h-24'"
-                [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
-                [value]="card.value"
-                [subtitle]="card.subtitle"
-                [trend]="card.trend"
-                [changePercentage]="card.changePercentage"
-                [loading]="card.loading"
-                [clickable]="!!card.drawerType"
-                (cardClick)="handleCardClick(card.drawerType!)"></lfx-metric-card>
-            }
-
-            <!-- Top Projects List - Custom content -->
-            @case ('top-projects') {
-              <lfx-metric-card
-                [title]="card.title"
-                [icon]="card.icon"
-                [testId]="card.testId"
-                [chartType]="card.chartType"
-                [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
-                [value]="card.value"
-                [subtitle]="card.subtitle"
-                [loading]="card.loading"
-                [clickable]="!!card.drawerType"
-                (cardClick)="handleCardClick(card.drawerType!)">
-                <ng-template #customContent>
-                  @if (card.topProjects) {
-                    <div class="flex flex-col gap-0.5 p-0 pl-[60px] m-0 mb-[5px]">
-                      <div class="text-xs font-medium text-gray-500">Top 3 Projects by Value</div>
-                      @for (project of card.topProjects; track project.name) {
-                        <div class="flex items-center justify-between text-sm">
-                          <span class="text-gray-500">{{ project.name }}</span>
-                          <span class="font-medium">{{ project.formattedValue }}</span>
-                        </div>
-                      }
-                    </div>
+          @if (!card.loading && card.unavailable; as state) {
+            <lfx-metric-card
+              [title]="card.title"
+              [icon]="card.icon"
+              [testId]="card.testId"
+              [chartType]="card.chartType"
+              [styleClass]="'w-[calc(100vw-3rem)] md:w-80'">
+              <ng-template #customContent>
+                <ng-container [ngTemplateOutlet]="metricUnavailable" [ngTemplateOutletContext]="{ card, state }"></ng-container>
+              </ng-template>
+            </lfx-metric-card>
+          } @else {
+            @switch (card.customContentType) {
+              <!-- Bar Chart - Use shared metric card -->
+              @case ('bar-chart') {
+                <lfx-metric-card
+                  [title]="card.title"
+                  [icon]="card.icon"
+                  [testId]="card.testId"
+                  [chartType]="card.chartType"
+                  [chartData]="card.chartData"
+                  [chartOptions]="card.chartOptions || barChartOptions"
+                  [chartHeightClass]="'h-24'"
+                  [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
+                  [value]="card.value"
+                  [subtitle]="card.subtitle"
+                  [trend]="card.trend"
+                  [changePercentage]="card.changePercentage"
+                  [loading]="card.loading"
+                  [clickable]="!!card.drawerType"
+                  (cardClick)="handleCardClick(card.drawerType!)">
+                  @if (card.detailsUnavailable; as state) {
+                    <ng-template #customContent>
+                      <p class="text-xs font-medium text-gray-600">Additional details are unavailable</p>
+                      <ng-container [ngTemplateOutlet]="metricUnavailable" [ngTemplateOutletContext]="{ card, state }"></ng-container>
+                    </ng-template>
                   }
-                </ng-template>
-              </lfx-metric-card>
-            }
+                </lfx-metric-card>
+              }
 
-            <!-- Organization Dependency - Custom content -->
-            @case ('bus-factor') {
-              <lfx-metric-card
-                [title]="card.title"
-                [icon]="card.icon"
-                [testId]="card.testId"
-                [chartType]="card.chartType"
-                [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
-                [value]="card.value"
-                [subtitle]="card.subtitle"
-                [loading]="card.loading"
-                [clickable]="!!card.drawerType"
-                (cardClick)="handleCardClick(card.drawerType!)">
-                <ng-template #customContent>
-                  @if (card.busFactor) {
-                    <div class="h-24 flex flex-col justify-end mt-3">
-                      <div class="flex gap-0">
-                        <div [style.width.%]="card.busFactor.topCompaniesPercentage" class="flex flex-col gap-1">
-                          <div class="text-xs font-medium text-gray-700">
-                            {{ card.busFactor.topCompaniesCount }} Orgs ({{ card.busFactor.topCompaniesPercentage }}%)
+              <!-- Top Projects List - Custom content -->
+              @case ('top-projects') {
+                <lfx-metric-card
+                  [title]="card.title"
+                  [icon]="card.icon"
+                  [testId]="card.testId"
+                  [chartType]="card.chartType"
+                  [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
+                  [value]="card.value"
+                  [subtitle]="card.subtitle"
+                  [loading]="card.loading"
+                  [clickable]="!!card.drawerType"
+                  (cardClick)="handleCardClick(card.drawerType!)">
+                  <ng-template #customContent>
+                    @if (card.topProjects) {
+                      <div class="flex flex-col gap-0.5 p-0 pl-[60px] m-0 mb-[5px]">
+                        <div class="text-xs font-medium text-gray-500">Top 3 Projects by Value</div>
+                        @for (project of card.topProjects; track project.name) {
+                          <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-500">{{ project.name }}</span>
+                            <span class="font-medium">{{ project.formattedValue }}</span>
                           </div>
-                          <div class="h-4 rounded-l-sm bg-blue-500"></div>
-                        </div>
-                        <div [style.width.%]="card.busFactor.otherCompaniesPercentage" class="flex flex-col gap-1">
-                          <div class="text-xs text-gray-600 text-right">{{ card.busFactor.otherCompaniesCount }} Other Orgs</div>
-                          <div class="h-4 bg-blue-200 rounded-r-sm"></div>
+                        }
+                      </div>
+                    }
+                  </ng-template>
+                </lfx-metric-card>
+              }
+
+              <!-- Organization Dependency - Custom content -->
+              @case ('bus-factor') {
+                <lfx-metric-card
+                  [title]="card.title"
+                  [icon]="card.icon"
+                  [testId]="card.testId"
+                  [chartType]="card.chartType"
+                  [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
+                  [value]="card.value"
+                  [subtitle]="card.subtitle"
+                  [loading]="card.loading"
+                  [clickable]="!!card.drawerType"
+                  (cardClick)="handleCardClick(card.drawerType!)">
+                  <ng-template #customContent>
+                    @if (card.busFactor) {
+                      <div class="h-24 flex flex-col justify-end mt-3">
+                        <div class="flex gap-0">
+                          <div [style.width.%]="card.busFactor.topCompaniesPercentage" class="flex flex-col gap-1">
+                            <div class="text-xs font-medium text-gray-700">
+                              {{ card.busFactor.topCompaniesCount }} Orgs ({{ card.busFactor.topCompaniesPercentage }}%)
+                            </div>
+                            <div class="h-4 rounded-l-sm bg-blue-500"></div>
+                          </div>
+                          <div [style.width.%]="card.busFactor.otherCompaniesPercentage" class="flex flex-col gap-1">
+                            <div class="text-xs text-gray-600 text-right">{{ card.busFactor.otherCompaniesCount }} Other Orgs</div>
+                            <div class="h-4 bg-blue-200 rounded-r-sm"></div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  }
-                </ng-template>
-              </lfx-metric-card>
-            }
+                    }
+                  </ng-template>
+                </lfx-metric-card>
+              }
 
-            <!-- Default fallback -->
-            @default {
-              <lfx-metric-card
-                [title]="card.title"
-                [icon]="card.icon"
-                [testId]="card.testId"
-                [chartType]="card.chartType"
-                [chartData]="card.chartData"
-                [chartOptions]="card.chartOptions"
-                [chartHeightClass]="'h-24'"
-                [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
-                [value]="card.value"
-                [subtitle]="card.subtitle"
-                [trend]="card.trend"
-                [changePercentage]="card.changePercentage"
-                [loading]="card.loading"
-                [clickable]="!!card.drawerType"
-                (cardClick)="handleCardClick(card.drawerType!)"></lfx-metric-card>
+              <!-- Default fallback -->
+              @default {
+                <lfx-metric-card
+                  [title]="card.title"
+                  [icon]="card.icon"
+                  [testId]="card.testId"
+                  [chartType]="card.chartType"
+                  [chartData]="card.chartData"
+                  [chartOptions]="card.chartOptions"
+                  [chartHeightClass]="'h-24'"
+                  [styleClass]="'w-[calc(100vw-3rem)] md:w-80'"
+                  [value]="card.value"
+                  [subtitle]="card.subtitle"
+                  [trend]="card.trend"
+                  [changePercentage]="card.changePercentage"
+                  [loading]="card.loading"
+                  [clickable]="!!card.drawerType"
+                  (cardClick)="handleCardClick(card.drawerType!)">
+                  @if (card.detailsUnavailable; as state) {
+                    <ng-template #customContent>
+                      <p class="text-xs font-medium text-gray-600">Additional details are unavailable</p>
+                      <ng-container [ngTemplateOutlet]="metricUnavailable" [ngTemplateOutletContext]="{ card, state }"></ng-container>
+                    </ng-template>
+                  }
+                </lfx-metric-card>
+              }
             }
           }
         }
@@ -184,6 +205,22 @@
     </div>
   }
 </section>
+
+<ng-template #metricUnavailable let-card="card" let-state="state">
+  <div class="flex flex-col items-center gap-2" role="status" [attr.data-testid]="card.testId + '-unavailable'">
+    <lfx-empty-state variant="compact" [withCard]="false" [icon]="state.icon" [title]="state.title" [subtitle]="state.description"></lfx-empty-state>
+    @if (state.retryable) {
+      <lfx-button
+        label="Retry"
+        icon="fa-light fa-rotate-right"
+        size="small"
+        [text]="true"
+        [ariaLabel]="'Retry ' + card.title"
+        [attr.data-testid]="card.testId + '-retry'"
+        (onClick)="$event.stopPropagation(); retry(card.retryType!)"></lfx-button>
+    }
+  </div>
+</ng-template>
 
 <!-- Drill-Down Drawers -->
 <lfx-total-value-drawer

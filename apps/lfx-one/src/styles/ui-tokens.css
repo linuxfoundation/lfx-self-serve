@@ -112,6 +112,11 @@
   --ui-breakpoint-md: 960px;
   --ui-breakpoint-lg: 1200px;
   --ui-opacity-disabled: 0.5;
+  --ui-duration-fast: 120ms;
+  --ui-duration-base: 150ms;
+  --ui-duration-slow: 250ms;
+  --ui-ease: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+  --ui-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 :root,

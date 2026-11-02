@@ -80,6 +80,18 @@
         [ariaLabel]="employmentLabel"
         dataTest="org-people-contributors-employment-filter" />
     </div>
+    <div class="w-full md:w-52">
+      <lfx-select
+        [form]="filterForm"
+        control="teamMembers"
+        size="small"
+        [options]="teamMembersOptions"
+        styleClass="w-full"
+        [ariaLabel]="teamMembersLabel"
+        [tooltip]="teamMembersTooltip"
+        tooltipPosition="top"
+        dataTest="org-people-contributors-team-members-filter" />
+    </div>
     @if (canClearFilters()) {
       <button
         type="button"
@@ -90,6 +102,10 @@
       </button>
     }
   </div>
+
+  @if (response().teamMembersUnavailable) {
+    <p class="text-xs text-gray-500" role="status" data-testid="org-people-contributors-team-members-unavailable">{{ teamMembersUnavailableNote }}</p>
+  }
 
   @if (fetchError()) {
     <div role="alert" data-testid="org-people-contributors-error">
@@ -179,8 +195,11 @@
             <p class="text-sm text-gray-700">No contributors match the current filters.</p>
             <p class="text-xs text-gray-500">Try clearing the search or changing the dropdown selections.</p>
           } @else {
-            <p class="text-sm text-gray-700">No contributors found for this organization in LF projects.</p>
-            <p class="text-xs text-gray-500">Choose LF and non-LF projects to include contributions outside LF projects.</p>
+            <p class="text-sm text-gray-700">No contributors found for this organization in the {{ timeRangeLabel() }}.</p>
+            <p class="text-xs text-gray-500">Choose All time to include older contributions.</p>
+            @if (!response().teamMembersUnavailable) {
+              <p class="text-xs text-gray-500" data-testid="org-people-contributors-empty-team-members">{{ teamMembersEmptyHint }}</p>
+            }
           }
         </div>
       } @else {

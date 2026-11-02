@@ -3065,6 +3065,19 @@ export class CampaignServiceClient {
   }
 
   /**
+   * The Google Ads account monitor (`monitor-google-ads-account`). Read through the project's OWN
+   * connection only, as the Meta monitor below is, so a project without one gets a 404. Unlike Meta,
+   * upstream returns only the campaigns campaign-service recorded for the project, and refuses with a
+   * 409 when one of them was created under a different customer than `accountId`.
+   *
+   * `days` is sent as given: upstream REJECTS a value outside 7–90 rather than clamping, so the
+   * caller clamps (the controller does).
+   */
+  public async getGoogleAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'google-ads', projectSlug, accountId, days);
+  }
+
+  /**
    * The Meta Ads account monitor (`monitor-meta-ads-account`).
    *
    * ACCOUNT-scoped, unlike every other read here: `projectSlug` selects whose stored connection

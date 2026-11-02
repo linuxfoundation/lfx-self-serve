@@ -318,7 +318,7 @@ In changed `.html` files, look for raw form elements that must use LFX wrappers:
 | `<textarea`                       | `lfx-textarea`                                    |
 | `<div` with `animate-pulse` class | `<p-skeleton>` from PrimeNG                       |
 
-Exceptions: anything under `shared/uikit/**` (the PrimeNG-free uikit builds on raw `<input>` and `<button>` by design), elements inside comments, `<input type="hidden">`, or a signal-driven `<input type="checkbox">` that needs `[indeterminate]` and is not part of a form (`lfx-checkbox` binds a `FormGroup` control and has no indeterminate state or change output) — such a checkbox may stay raw with an in-template comment giving the rationale and pointing here. Note: LFX wrappers require `FormGroup` + `FormControl` — `ngModel` is not supported.
+Exceptions: anything under `shared/uikit/**` (the PrimeNG-free uikit builds on raw `<input>` and `<button>` by design), elements inside comments, `<input type="hidden">`, or a signal-driven `<input type="checkbox">` that needs `[indeterminate]` and is not part of a form (`lfx-checkbox` binds a `FormGroup` control and has no indeterminate state or change output; `lfx-ui-checkbox` supports `indeterminate`, a `[(checked)]` model and reactive forms) — such a checkbox may stay raw with an in-template comment giving the rationale and pointing here. Note: LFX wrappers require `FormGroup` + `FormControl` — `ngModel` is not supported.
 
 ### 14.2 Dead code (CRITICAL for unused providers/imports/unbound outputs; DISCUSS for unused methods)
 

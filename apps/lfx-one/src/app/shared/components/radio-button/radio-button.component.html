@@ -4,7 +4,7 @@
 <!-- touchTarget uses an exact min-h-[44px] (the 14px html root makes min-h-11 render ~38px); the label's ::after stretches over the whole row so a tap anywhere on it selects, not just on the 18px circle. -->
 @if (form() && control()) {
   <ng-container [formGroup]="form()!">
-    <div class="flex items-center gap-2" [class]="touchTarget() ? 'relative min-h-[44px]' : ''">
+    <div class="flex items-center gap-2" [class]="rowClass()" [attr.data-selected]="card() ? selected() : null">
       <!-- [name] is required: PrimeNG's RadioControlRegistry groups radios by (root FormGroup, name) —
            without it every radio in the form shares name===undefined and selecting one deselects all others. -->
       <p-radioButton [formControlName]="control()!" [name]="name()" [value]="value()" [inputId]="inputId() || control()!" (onChange)="onRadioChange($event)">
@@ -20,7 +20,7 @@
     </div>
   </ng-container>
 } @else {
-  <div class="flex items-center gap-2" [class]="touchTarget() ? 'relative min-h-[44px]' : ''">
+  <div class="flex items-center gap-2" [class]="rowClass()" [attr.data-selected]="card() ? selected() : null">
     <p-radioButton [name]="name()" [value]="value()" [inputId]="inputId()" (onChange)="onRadioChange($event)"> </p-radioButton>
     @if (label()) {
       <label

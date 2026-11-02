@@ -1,0 +1,16 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<span [class]="ruleClasses()" aria-hidden="true" data-testid="ui-show-more-rule"></span>
+<lfx-ui-button
+  size="small"
+  trailingIcon="fa-light fa-chevron-down"
+  [variant]="variant()"
+  [class]="buttonClasses()"
+  [ariaExpanded]="expanded()"
+  [ariaControls]="controls()"
+  (click)="toggle()"
+  data-testid="ui-show-more-button">
+  <span data-testid="ui-show-more-label">{{ label() }}</span>
+</lfx-ui-button>
+<span [class]="ruleClasses()" aria-hidden="true" data-testid="ui-show-more-rule"></span>

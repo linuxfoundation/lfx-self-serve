@@ -235,8 +235,8 @@ export class SnowflakeService {
               expectedObject !== undefined &&
               expectedObject !== false &&
               SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined);
-            const expectedIdentifier = options?.expectInvalidIdentifier;
-            const expectedInvalidIdentifier = typeof expectedIdentifier === 'string' && isInvalidIdentifierError(error, expectedIdentifier);
+            const expectedIdentifier = [options?.expectInvalidIdentifier ?? []].flat().find((identifier) => isInvalidIdentifierError(error, identifier));
+            const expectedInvalidIdentifier = expectedIdentifier !== undefined;
             const poolQueueFull = isPoolQueueFullError(error);
             const invalidRowCount = isInvalidRowCountError(error);
             const valueConversion = isValueConversionError(error);

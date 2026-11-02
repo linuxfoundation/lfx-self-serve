@@ -156,6 +156,28 @@ describe('MeetingService registrant payload mapping', () => {
       expect(body.meeting_id).toBe(MEETING_UID);
       expect(body).not.toHaveProperty('committee_uid');
     });
+
+    // Upstream treats `user_id` as immutable: leaving it out of an update reads as a change and fails with
+    // "user_id cannot be changed". The index record carries it, so it goes back as stored.
+    it('sends back the user_id a listed guest is linked to, and omits it when there is none', () => {
+      expect(service.getChangedFields(registrant({ state: 'modified', user_id: 'user-123' })).user_id).toBe('user-123');
+      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('user_id');
+    });
+
+    // ITX rejects an update whose `username` differs from the stored one, and a blank counts as different when a
+    // username is stored. It is checked after `user_id`, so it matters once that is sent.
+    it('sends back the username a listed guest has, and omits it when there is none', () => {
+      expect(service.getChangedFields(registrant({ state: 'modified', username: 'guest-a' })).username).toBe('guest-a');
+      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('username');
+      expect(service.getChangedFields(registrant({ state: 'modified', username: null }))).not.toHaveProperty('username');
+    });
+
+    // The avatar is derived from the linked user and ITX does not compare it.
+    it('never sends the avatar a listed guest carries', () => {
+      const body = service.getChangedFields(registrant({ state: 'modified', avatar_url: 'https://avatars.example/guest-a.png' }));
+
+      expect(body).not.toHaveProperty('avatar_url');
+    });
   });
 });
 

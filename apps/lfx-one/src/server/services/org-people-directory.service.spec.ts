@@ -19,31 +19,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Mirrors access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so runtime collaborators are mocked. The four source services are constructed in
 // OrgPeopleDirectoryService's constructor, so they must be mocked at module level.
-const { getAllEmployeesInternal, getFormerUsernames, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrincipals, getEffectiveUsername, cache } = vi.hoisted(
-  () => ({
-    getAllEmployeesInternal: vi.fn(),
-    getFormerUsernames: vi.fn(),
-    fetchAllOrgSeats: vi.fn(),
-    getKeyContactEmployees: vi.fn(),
-    getAccessPrincipals: vi.fn(),
-    getEffectiveUsername: vi.fn(() => 'tester' as string | null),
-    cache: {
-      serveHits: false,
-      entry: null as string | null,
-      accept: null as ((value: unknown) => boolean) | null,
-      readThroughs: 0,
-      /** Namespace of every read-through, in call order. */
-      namespaces: [] as string[],
-      /** JSON of the rows handed to the encoder — the uncached stored rows, every code count included. */
-      encodedRows: null as string | null,
-    },
-  })
-);
+const {
+  getAllEmployeesInternal,
+  getFormerUsernames,
+  getTeamMemberPersonKeys,
+  fetchAllOrgSeats,
+  getKeyContactEmployees,
+  getAccessPrincipals,
+  getEffectiveUsername,
+  cache,
+} = vi.hoisted(() => ({
+  getAllEmployeesInternal: vi.fn(),
+  getFormerUsernames: vi.fn(),
+  getTeamMemberPersonKeys: vi.fn(),
+  fetchAllOrgSeats: vi.fn(),
+  getKeyContactEmployees: vi.fn(),
+  getAccessPrincipals: vi.fn(),
+  getEffectiveUsername: vi.fn(() => 'tester' as string | null),
+  cache: {
+    serveHits: false,
+    entry: null as string | null,
+    accept: null as ((value: unknown) => boolean) | null,
+    readThroughs: 0,
+    /** Namespace of every read-through, in call order. */
+    namespaces: [] as string[],
+    /** JSON of the rows handed to the encoder — the uncached stored rows, every code count included. */
+    encodedRows: null as string | null,
+  },
+}));
 
 vi.mock('./org-lens-people.service', () => ({
   OrgLensPeopleService: class {
     public getAllEmployeesInternal = getAllEmployeesInternal;
     public getFormerUsernames = getFormerUsernames;
+    public getTeamMemberPersonKeys = getTeamMemberPersonKeys;
   },
 }));
 vi.mock('./org-lens-board-committee.service', () => ({
@@ -109,6 +118,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
     ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v6',
     ORG_LENS_PERUSER_TTL_SECONDS: 30,
   },
+  DEFAULT_ORG_TEAM_MEMBERS: 'exclude',
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
 }));
 // The compact-cache helpers and the filter-safety predicates are re-exported from their REAL
@@ -230,6 +240,7 @@ beforeEach(() => {
   getEffectiveUsername.mockReturnValue('tester');
   getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
   getFormerUsernames.mockResolvedValue([]);
+  getTeamMemberPersonKeys.mockResolvedValue({ excluded: null, unavailable: false });
   fetchAllOrgSeats.mockResolvedValue([]);
   getKeyContactEmployees.mockResolvedValue([] as KeyContactEmployee[]);
   getAccessPrincipals.mockResolvedValue([]);
@@ -1082,9 +1093,9 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
     expect(nonLf).toStrictEqual(picker);
   });
 
-  // lfx-self-serve#4160: the page default is LF projects, and a picker request (no range, no filters) parses to it. The
-  // unranged roster must not follow it: the pickers keep every seat, key contact, access principal and stored employee.
-  it('serves the pickers the full unranged roster under the LF projects default', async () => {
+  // lfx-self-serve#4160: the unranged roster never follows the project scope a caller sends: the pickers keep every
+  // seat, key contact, access principal and stored employee.
+  it('serves the pickers the full unranged roster even when the caller sends LF projects', async () => {
     getAllEmployeesInternal.mockResolvedValue(
       baseResponse([
         storedRow(),
@@ -1103,9 +1114,8 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
       ])
     );
 
-    const picker = await run(null, DEFAULT_ORG_COMMIT_FILTERS);
+    const picker = await run(null, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'lf' });
 
-    expect(DEFAULT_ORG_COMMIT_FILTERS.projectScope).toBe('lf');
     expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, null, 'all');
     expect(cache.namespaces).toEqual(['org-people-dir:v6:roster']);
     expect(fetchAllOrgSeats).toHaveBeenCalledTimes(1);
@@ -1162,6 +1172,82 @@ describe('OrgPeopleDirectoryService.getLive — the tiles do not follow the code
       [2, 2],
       [2, 2],
     ]);
+  });
+});
+
+// lfx-self-serve#4685
+describe('OrgPeopleDirectoryService.getLive — team members filter', () => {
+  const teamMember = (personKey: string, over: Partial<OrgAllEmployeeRowInternal> = {}): OrgAllEmployeeRowInternal =>
+    storedRow({
+      personKey,
+      lfid: personKey,
+      lfUsername: personKey,
+      name: personKey,
+      email: `${personKey}@lfx-partner.example`,
+      emails: [`${personKey}@lfx-partner.example`],
+      ...over,
+    });
+  const keysFor = async (_account: string, teamMembers: string) =>
+    teamMembers === 'exclude' ? { excluded: new Set(['coder', 'speaker']), unavailable: false } : { excluded: null, unavailable: false };
+  // `coder` only has code; `speaker` has code and an event.
+  const coder = teamMember('coder', { seatsCount: 0, boardSeatsCount: 0, committeeSeatsCount: 0, eventsCount: 0, commitsCount: 5, codeActivitiesCount: 9 });
+  const speaker = teamMember('speaker', { seatsCount: 0, boardSeatsCount: 0, committeeSeatsCount: 0, eventsCount: 2, commitsCount: 3, codeActivitiesCount: 4 });
+
+  it("removes team members' code under exclude, keeping who has other engagement, from the same cached directory entry", async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), coder, speaker]));
+    getTeamMemberPersonKeys.mockImplementation(keysFor);
+    cache.serveHits = true;
+
+    const included = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'include');
+    const excluded = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude');
+
+    expect(included.rows.map((row) => row.personKey).sort()).toEqual(['coder', 'lfnEMOUiFenugGty80', 'speaker']);
+    expect(excluded.rows.map((row) => [row.personKey, row.commitsCount, row.codeActivitiesCount, row.eventsCount])).toEqual(
+      expect.arrayContaining([['speaker', 0, 0, 2]])
+    );
+    expect(excluded.rows.map((row) => row.personKey).sort()).toEqual(['lfnEMOUiFenugGty80', 'speaker']);
+    expect([included.stats.codeContributors, excluded.stats.codeContributors]).toEqual([2, 0]);
+    expect(excluded.teamMembersUnavailable).toBeUndefined();
+    expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a team member with only code listed, without it, when a live source engages them (seat, key contact, access)', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), coder]));
+    getTeamMemberPersonKeys.mockImplementation(keysFor);
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'coder@lfx-partner.example', username: 'coder', name: 'coder' })]);
+
+    const roster = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude');
+
+    expect(roster.rows.find((row) => row.personKey === 'coder')).toMatchObject({ commitsCount: 0, codeActivitiesCount: 0 });
+  });
+
+  it('serves the live roster with everyone, and says so, when the team-member read fails', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), coder]));
+    getTeamMemberPersonKeys.mockRejectedValue(new Error('Warehouse timeout'));
+
+    const roster = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude');
+
+    expect(roster.rows).toHaveLength(2);
+    expect(roster.teamMembersUnavailable).toBe(true);
+  });
+
+  it('serves everyone and says so while the team-member flag is unavailable', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), coder]));
+    getTeamMemberPersonKeys.mockResolvedValue({ excluded: null, unavailable: true });
+
+    const roster = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude');
+
+    expect(roster.rows).toHaveLength(2);
+    expect(roster.teamMembersUnavailable).toBe(true);
+  });
+
+  it('lists everyone on the unranged roster (the assignment pickers), whatever the pick', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), coder]));
+    getTeamMemberPersonKeys.mockImplementation(keysFor);
+
+    const roster = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, null, FILTERS, 'exclude');
+
+    expect(roster.rows).toHaveLength(2);
   });
 });
 

@@ -21,7 +21,7 @@ import { isOrgLensTimeRange, normalizeLegacyOrgLensTimeRange } from '@lfx-one/sh
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { parseOrgCommitFilters } from '../helpers/org-commit-filters.helper';
+import { parseOrgCommitFilters, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { clampInteger, getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -41,7 +41,7 @@ export class OrgLensContributionsController {
     this.service = new OrgContributionsService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/contributions — KPI strip + repositories table + filter options, server-paginated. */
+  /** GET /api/orgs/:orgUid/lens/contributions[?...&teamMembers=include|exclude] — KPI strip + repositories table + filter options, server-paginated. */
   public async getContributions(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_contributions';
@@ -59,6 +59,7 @@ export class OrgLensContributionsController {
         foundation_id: query.foundation || null,
         project_count: query.projects.length,
         employee_count: query.employees.length,
+        team_members: query.teamMembers,
         page: query.page,
         size: query.size,
       });
@@ -102,6 +103,7 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
     foundation: parseFoundation(getStringQueryParam(req, 'foundation'), operation),
     projects: parseCsvParam(getStringQueryParam(req, 'projects'), 'projects', operation),
     employees: parseCsvParam(getStringQueryParam(req, 'employees'), 'employees', operation),
+    teamMembers: parseOrgTeamMembers(req, operation),
     sort,
     dir,
     commitSort,

@@ -15,6 +15,7 @@ const { getContributions, logger } = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-team-members.utils')),
 }));
 vi.mock('../services/org-contributions.service', () => ({
   OrgContributionsService: class {
@@ -134,16 +135,16 @@ describe('OrgLensContributionsController commit filters', () => {
     getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
   });
 
-  it('passes the defaults to the service when the params are missing: LF projects, all code contributions (lfx-self-serve#4160, #4559)', async () => {
+  it('passes the defaults to the service when the params are missing: LF and non-LF projects, all code contributions (lfx-self-serve#4694, #4559)', async () => {
     const next = vi.fn();
 
     await controller.getContributions(buildReq({}), buildRes(), next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(getContributions.mock.calls[0][1]).toMatchObject({ projectScope: 'lf', commitScope: 'all', metric: 'code' });
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ projectScope: 'all', commitScope: 'all', metric: 'code' });
   });
 
-  it.each([[{ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' }], [{ projectScope: 'all', commitScope: 'all', metric: 'commits' }]])(
+  it.each([[{ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' }], [{ projectScope: 'lf', commitScope: 'all', metric: 'commits' }]])(
     'passes valid values through: %o',
     async (query) => {
       const next = vi.fn();
@@ -179,10 +180,10 @@ describe('OrgLensContributionsController range', () => {
     getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
   });
 
-  it('defaults a missing range to Past 365 days', async () => {
+  it('defaults a missing range to Past 2 years', async () => {
     await controller.getContributions(buildReq({}), buildRes(), vi.fn());
 
-    expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: '365d' });
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: '730d' });
   });
 
   it.each(['30d', '90d', '365d', '730d', 'all'])('passes range=%s through', async (range) => {
@@ -203,6 +204,43 @@ describe('OrgLensContributionsController range', () => {
     await controller.getContributions(buildReq({ range }), buildRes(), next);
 
     expect(getContributions).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('OrgLensContributionsController team members', () => {
+  const controller = new OrgLensContributionsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
+  });
+
+  it('defaults a missing teamMembers to exclude', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({}), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ teamMembers: 'exclude' });
+  });
+
+  it('passes teamMembers=include through to the service', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ teamMembers: 'include' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ teamMembers: 'include' });
+  });
+
+  it('rejects an unknown teamMembers with a 400 before the service', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ teamMembers: 'only' }), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
   });
 });

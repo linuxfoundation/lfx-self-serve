@@ -14,7 +14,6 @@
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the detail read is made by the
  * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
- * The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -26,7 +25,7 @@ import { MentorshipMentorProgramDetail } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -135,7 +134,6 @@ async function stubDetail(page: Page, body: MentorshipMentorProgramDetail, statu
 
 test.describe('Mentor program detail — loaded', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubDetail(page, POPULATED);
     await openMentorPage(page, DETAIL_URL);
   });
@@ -194,7 +192,6 @@ test.describe('Mentor program detail — loaded', () => {
 
 test.describe('Mentor program detail — empty program', () => {
   test('shows each tab empty with a zero count', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubDetail(page, EMPTY);
     await openMentorPage(page, DETAIL_URL);
 
@@ -211,7 +208,6 @@ test.describe('Mentor program detail — empty program', () => {
 
 test.describe('Mentor program detail — not found', () => {
   test('shows the not-found state when the program is not one the caller mentors', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route(DETAIL_ROUTE, (route) => route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Not found' }) }));
     await openMentorPage(page, DETAIL_URL);
 
@@ -224,7 +220,6 @@ test.describe('Mentor program detail — not found', () => {
 
 test.describe('Mentor program detail — error state', () => {
   test('shows the error state and loads the program on Retry', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubDetail(page, POPULATED, 503);
     await openMentorPage(page, DETAIL_URL);
 

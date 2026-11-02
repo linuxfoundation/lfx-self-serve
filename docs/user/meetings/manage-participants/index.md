@@ -52,7 +52,7 @@ For a public meeting, **Registration on group removal** controls what happens to
 
 ## Choose who runs the meeting
 
-To let a guest run the meeting, mark them as a **Meeting Host** in the **Add guest** form. They show a **Host** label in the list. A Meeting Host can see the host key on the meeting's join page, but can't edit the meeting. See [Host Controls and the Host Key](../host-controls/).
+To let a guest run the meeting, mark them as a **Meeting Host** in the **Add guest** form, or select **Make host** on their row later. Select **Remove host** to take it away. They show a **Host** label in the list. A Meeting Host can see the host key on the meeting's join page, but can't edit the meeting. See [Host Controls and the Host Key](../host-controls/).
 
 Marking a guest as a host is separate from being an organizer. Only organizers can edit, cancel, or delete a meeting, and change who is invited.
 
@@ -60,7 +60,7 @@ Marking a guest as a host is separate from being an organizer. Only organizers c
 
 The **Invited** card shows how many people are invited. When the meeting collects RSVPs, it also shows how many have accepted, for example "6 of 10 accepted". Hover over that line (or focus it with the keyboard) to see the full breakdown of accepted, declined, and awaiting a reply.
 
-Use **Search people...** to filter a long list by name or email.
+Use **Search people...** to filter a long list by name or email. In the guest list on the meeting card, the role filter shows only **Organizers**, or only **Hosts**, meaning guests marked as a Meeting Host who aren't organizers. Organizers are hosts already, so they appear under **Organizers** and not under **Hosts**.
 
 ## Resend an invitation
 

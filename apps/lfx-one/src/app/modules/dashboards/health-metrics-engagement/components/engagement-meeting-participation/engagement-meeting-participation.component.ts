@@ -38,6 +38,7 @@ import type {
   FilterPillOption,
   HealthMetricsEngagementMeetingParticipation,
   HealthMetricsEngagementParticipationMode,
+  HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationQuery,
   HealthMetricsEngagementParticipationRowView,
   HealthMetricsEngagementSectionKey,
@@ -93,8 +94,8 @@ export class EngagementMeetingParticipationComponent {
     const total = this.response().total;
     return total ? selectHealthMetricsEngagementParticipationPeriod(total, this.chrome.selectedRange()) : null;
   });
-  /** No meetings were recorded for the period; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.totalPeriod());
+  /** No meetings were held in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyPeriod(this.totalPeriod()));
   /** `null` when the roll-up row itself carries no group total — kept distinct from a measured 0. */
   protected readonly totalGroups = computed(() => this.response().total?.totalGroups ?? null);
   /** Shared "12 / 27" ratio cell — "—" when the roll-up hasn't measured either side. */
@@ -238,7 +239,9 @@ export class EngagementMeetingParticipationComponent {
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
               if (foundationSeen) {
-                this.settled.emit(!this.loadFailed() && !(response.total && selectHealthMetricsEngagementParticipationPeriod(response.total, query.range)));
+                this.settled.emit(
+                  !this.loadFailed() && isEmptyPeriod(response.total && selectHealthMetricsEngagementParticipationPeriod(response.total, query.range))
+                );
               }
             })
           )
@@ -266,4 +269,9 @@ export class EngagementMeetingParticipationComponent {
     const match = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES.find((mode) => mode.key === key);
     return match ? match.key : 'attendance';
   }
+}
+
+/** No roll-up for the period, or one that held no meetings; an unmeasured count is not a zero. */
+function isEmptyPeriod(period: HealthMetricsEngagementParticipationPeriod | null): boolean {
+  return !period || period.meetingsHeld === 0;
 }

@@ -1992,7 +1992,7 @@ export class AnalyticsController {
 
   /**
    * GET /api/analytics/org-involvement-maintainers-monthly
-   * The organization's maintainer roles in LF projects: past-12-month headline and monthly trend
+   * The organization's maintainer roles in all projects: headline over the Org Lens default range and monthly trend
    * Query params: accountId (required)
    */
   public async orgMaintainersMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -3442,6 +3442,75 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/engagement-newsletter-performance` — every period's newsletter summary and every newsletter
+   * sent, one read. The period pill resolves client-side.
+   */
+  public async getEngagementNewsletterPerformance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_newsletter_performance');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_newsletter_performance',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_newsletter_performance',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getNewsletterPerformance(req, { foundationSlug });
+
+      logger.success(req, 'get_engagement_newsletter_performance', startTime, {
+        foundation_slug: foundationSlug,
+        measured: response.measured,
+        newsletter_count: response.newsletters.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/engagement-newsletter-recipients` — every recipient of the foundation's latest newsletter.
+   * Search and the segment cut resolve client-side.
+   */
+  public async getEngagementNewsletterRecipients(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_newsletter_recipients');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_newsletter_recipients',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_newsletter_recipients',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getNewsletterRecipients(req, { foundationSlug });
+
+      // Counts only: recipient names never reach the logs.
+      logger.success(req, 'get_engagement_newsletter_recipients', startTime, {
+        foundation_slug: foundationSlug,
+        has_newsletter: response.newsletter !== null,
+        recipient_count: response.recipients.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * `GET /api/analytics/engagement-representatives` — every representative, every period. Search,
    * the filter cut and the period all resolve client-side, so none of them reaches the wire.
    */
@@ -4406,6 +4475,21 @@ export class AnalyticsController {
       (query) => this.healthMetricsOverviewService.getCode(req, query),
       (response) => ({
         measured: response.measured,
+      })
+    );
+  }
+
+  /** `GET /api/analytics/overview-newsletters` — the newsletter summary in every period and each newsletter sent. */
+  public async getOverviewNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_newsletters',
+      (query) => this.healthMetricsOverviewService.getNewsletters(req, query),
+      (response) => ({
+        measured: response.measured,
+        newsletter_count: response.newsletters.length,
       })
     );
   }

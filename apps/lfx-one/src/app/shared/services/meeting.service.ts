@@ -827,9 +827,18 @@ export class MeetingService {
       host: registrant.host || false,
       job_title: registrant.job_title || null,
       org_name: registrant.org_name || null,
-      occurrence_id: registrant.occurrence_id || null,
-      avatar_url: registrant.avatar_url || null,
-      username: registrant.username || null,
+      // A listed guest comes from the query-service index, which spells the scope `occurrence` and never
+      // `occurrence_id`. Falling back to it sends the stored scope back as it is, so an update that only
+      // means to change something else (the host flag) can't leave an occurrence-scoped guest unscoped.
+      occurrence_id: registrant.occurrence_id || (registrant as MeetingRegistrantWithState & { occurrence?: string }).occurrence || null,
+      // `user_id` and `username` have to go back exactly as stored: ITX compares an update's values with the
+      // stored ones and rejects any difference, and a blank counts as one for a guest linked to an LF user. It
+      // checks `user_id` first, so a missing `username` only surfaces once `user_id` is right. The index record
+      // carries both; a guest with no link has neither, and sends neither. The meeting service maps ITX's
+      // `NONE` placeholder for a blank `user_id` to empty.
+      ...(registrant.user_id ? { user_id: registrant.user_id } : {}),
+      ...(registrant.username ? { username: registrant.username } : {}),
+      // `avatar_url` is not sent: it is derived from the linked user and ITX does not compare it.
       linkedin_profile: registrant.linkedin_profile || null,
     };
   }

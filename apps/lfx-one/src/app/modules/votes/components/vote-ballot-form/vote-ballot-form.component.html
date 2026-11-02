@@ -1,18 +1,22 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Touch targets use an exact [44px]: the 14px html root makes Tailwind's rem scale (min-h-11) render ~38px. -->
-<div class="flex flex-col gap-6" data-testid="vote-link-ballot-form">
+<!-- Touch targets use an exact [44px] and question prompts an exact [18px]: the 14px html root makes Tailwind's rem scale (min-h-11, text-lg) render ~38px and ~16px. -->
+<div class="flex flex-1 flex-col gap-6" data-testid="vote-link-ballot-form">
   <form [formGroup]="form" class="flex flex-col gap-6">
-    <h2 class="text-lg font-semibold text-slate-900">Questions</h2>
     @for (question of questions(); track question.question_id) {
       <div
-        class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3"
+        class="flex flex-col gap-3"
         role="group"
         [attr.aria-labelledby]="'vote-link-question-prompt-' + question.question_id"
         [attr.data-testid]="'vote-link-question-' + question.question_id">
         <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-slate-900 break-words" [id]="'vote-link-question-prompt-' + question.question_id">{{ question.prompt }}</h3>
+          <h2
+            class="text-[18px] leading-snug font-semibold text-slate-900 break-words"
+            data-testid="vote-link-question-prompt"
+            [id]="'vote-link-question-prompt-' + question.question_id">
+            {{ question.prompt }}
+          </h2>
           @if (isRankedPoll()) {
             <p class="text-xs text-slate-500">Drag to reorder, or use the arrow buttons. Top of the list is your first choice.</p>
           } @else if (question.type === 'multiple_choice') {
@@ -32,13 +36,13 @@
                 <div
                   cdkDrag
                   [cdkDragDisabled]="abstain()"
-                  class="flex items-center gap-2 p-2 sm:p-3 bg-white border border-slate-200 rounded-lg"
+                  class="flex items-center gap-2 min-h-[44px] p-2 bg-white border border-slate-200 rounded-lg"
                   [attr.data-testid]="'vote-link-rank-' + choice.choice_id">
                   <i cdkDragHandle class="fa-light fa-grip-vertical text-slate-400" aria-hidden="true"></i>
                   <span class="flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold flex-shrink-0">
                     {{ i + 1 }}
                   </span>
-                  <span class="flex-1 min-w-0 text-sm text-slate-800 break-words">{{ choice.choice_text }}</span>
+                  <span class="flex-1 min-w-0 text-base text-slate-800 break-words">{{ choice.choice_text }}</span>
                   <button
                     type="button"
                     (click)="moveRank(question.question_id, i, i - 1)"
@@ -62,7 +66,13 @@
             </div>
           } @else if (question.type === 'multiple_choice') {
             @for (choice of question.choices; track choice.choice_id) {
-              <div class="relative flex items-center gap-2 min-h-[44px]" [attr.data-testid]="'vote-link-choice-' + choice.choice_id">
+              <div
+                class="relative flex items-center gap-3 min-h-[44px] rounded-lg border px-3 py-1"
+                [class]="
+                  (selectedByQuestion().get(question.question_id)?.has(choice.choice_id) ?? false) ? 'border-blue-600 bg-blue-50' : 'border-slate-200 bg-white'
+                "
+                [attr.data-selected]="selectedByQuestion().get(question.question_id)?.has(choice.choice_id) ?? false"
+                [attr.data-testid]="'vote-link-choice-' + choice.choice_id">
                 <p-checkbox
                   [formControlName]="question.question_id"
                   [value]="choice.choice_id"
@@ -70,7 +80,7 @@
                   [inputId]="'vote-link-choice-' + choice.choice_id" />
                 <label
                   [for]="'vote-link-choice-' + choice.choice_id"
-                  class="flex flex-1 items-center min-w-0 min-h-[44px] after:absolute after:inset-0 text-sm font-medium text-gray-700 cursor-pointer break-words">
+                  class="flex flex-1 items-center min-w-0 min-h-[44px] after:absolute after:inset-0 text-base font-medium text-slate-800 cursor-pointer break-words">
                   {{ choice.choice_text }}
                 </label>
               </div>
@@ -85,6 +95,8 @@
                 [inputId]="'vote-link-choice-' + choice.choice_id"
                 [label]="choice.choice_text"
                 [touchTarget]="true"
+                [card]="true"
+                [selected]="selectedByQuestion().get(question.question_id)?.has(choice.choice_id) ?? false"
                 [attr.data-testid]="'vote-link-choice-' + choice.choice_id"></lfx-radio-button>
             }
           }
@@ -94,31 +106,43 @@
   </form>
 
   @if (commentPromptsData().length > 0) {
-    <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" [formGroup]="commentForm" data-testid="vote-link-comments">
-      <h2 class="text-lg font-semibold text-slate-900">Additional Comments (Optional)</h2>
+    <div class="flex flex-col gap-2 pt-2 border-t border-slate-200" [formGroup]="commentForm" data-testid="vote-link-comments">
       @for (commentData of commentPromptsData(); track commentData.prompt.prompt_id) {
-        <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2" [attr.data-testid]="'vote-link-comment-' + commentData.prompt.prompt_id">
-          <label [for]="'vote-link-comment-text-' + commentData.prompt.prompt_id" class="text-sm font-medium text-slate-700">
-            {{ commentData.prompt.prompt }}
-          </label>
-          <lfx-textarea
-            [form]="commentForm"
-            [control]="commentData.prompt.prompt_id"
-            [id]="'vote-link-comment-text-' + commentData.prompt.prompt_id"
-            placeholder="Share your thoughts"
-            [rows]="3"
-            styleClass="w-full"
-            [dataTest]="'vote-link-comment-textarea-' + commentData.prompt.prompt_id">
-          </lfx-textarea>
-          <div class="flex justify-between">
-            @if (commentData.control.touched && commentData.control.errors?.['maxCodePoints']) {
-              <p class="text-red-500 text-xs">Comment must be {{ commentResponseMaxLength }} characters or fewer.</p>
-            } @else {
-              <span></span>
-            }
-            <span class="text-xs text-slate-400">{{ commentData.control.value | codePointLength }}/{{ commentResponseMaxLength }}</span>
+        @if (openedComments().has(commentData.prompt.prompt_id)) {
+          <div class="flex flex-col gap-2" [attr.data-testid]="'vote-link-comment-' + commentData.prompt.prompt_id">
+            <label [for]="'vote-link-comment-text-' + commentData.prompt.prompt_id" class="text-base font-medium text-slate-800">
+              {{ commentData.prompt.prompt }}
+            </label>
+            <lfx-textarea
+              [form]="commentForm"
+              [control]="commentData.prompt.prompt_id"
+              [id]="'vote-link-comment-text-' + commentData.prompt.prompt_id"
+              placeholder="Share your thoughts"
+              [rows]="3"
+              styleClass="w-full"
+              [dataTest]="'vote-link-comment-textarea-' + commentData.prompt.prompt_id">
+            </lfx-textarea>
+            <div class="flex justify-between">
+              @if (commentData.control.touched && commentData.control.errors?.['maxCodePoints']) {
+                <p class="text-red-500 text-xs">Comment must be {{ commentResponseMaxLength }} characters or fewer.</p>
+              } @else {
+                <span></span>
+              }
+              <span class="text-xs text-slate-400">{{ commentData.control.value | codePointLength }}/{{ commentResponseMaxLength }}</span>
+            </div>
           </div>
-        </div>
+        } @else {
+          <button
+            type="button"
+            (click)="openComment(commentData.prompt.prompt_id)"
+            class="flex items-center justify-between gap-3 min-h-[44px] w-full text-left text-base font-medium text-blue-700"
+            [attr.data-testid]="'vote-link-add-comment-' + commentData.prompt.prompt_id">
+            <span class="min-w-0 break-words"
+              >Add a comment <span class="font-normal text-slate-600">· {{ commentData.prompt.prompt }}</span></span
+            >
+            <i class="fa-light fa-plus flex-shrink-0" aria-hidden="true"></i>
+          </button>
+        }
       }
     </div>
   }
@@ -129,7 +153,7 @@
         <p-checkbox [binary]="true" [formControl]="abstainControl" inputId="vote-link-abstain" />
         <label
           for="vote-link-abstain"
-          class="flex flex-1 items-center min-w-0 min-h-[44px] after:absolute after:inset-0 text-sm font-medium text-gray-700 cursor-pointer"
+          class="flex flex-1 items-center min-w-0 min-h-[44px] after:absolute after:inset-0 text-base font-medium text-slate-800 cursor-pointer"
           >Abstain from this vote</label
         >
       </div>
@@ -139,8 +163,11 @@
 
   <!-- Pinned to the bottom of the page's scroll area, above the safe area. -->
   <div
-    class="sticky bottom-0 -mx-4 sm:mx-0 px-4 sm:px-0 py-3 bg-white border-t border-slate-200 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+    class="sticky bottom-0 mt-auto -mx-4 sm:mx-0 px-4 sm:px-0 py-3 bg-white border-t border-slate-200 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
     data-testid="vote-link-footer">
+    @if (selectionHelper(); as helper) {
+      <p class="pb-2 text-center text-sm text-slate-600" data-testid="vote-link-submit-helper">{{ helper }}</p>
+    }
     <lfx-button
       [label]="submitLabel()"
       icon="fa-light fa-check"

@@ -120,7 +120,7 @@ Application Code → LFX Wrapper → PrimeNG Component → DOM
 
 - Selector prefix `lfx-ui-` (enforced by an ESLint override for `shared/uikit/**`) and class names `Ui*Component`, so they never collide with the wrapper classes
 - Standalone, signal inputs, `model()` for two-way values, `OnPush`
-- Styled with Tailwind only; new and realigned components use the LFX UI Library `ui-*` roles (see [Styling System](./styling-system.md#lfx-ui-library-tokens)), while the four first components still use `lfxColors` until they are realigned
+- Styled with Tailwind only; components use the LFX UI Library `ui-*` roles (see [Styling System](./styling-system.md#lfx-ui-library-tokens))
 - Overlays, when needed, build on `@angular/cdk`
 - Every component has a Storybook story and a unit spec; run Storybook with `yarn storybook` from the repo root
 
@@ -506,7 +506,7 @@ AppComponent
         ├── /groups              → CommitteeDashboardComponent (lazy loaded)
         ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
         ├── /votes               → VotesDashboardComponent (lazy loaded)
-        ├── /votes/:id           → VotePermalinkComponent (shareable permalink, Me lens, in-place 404)
+        ├── /votes/:id           → VoteDetailComponent (vote detail page, keeps the current lens, in-place 404)
         ├── /surveys             → SurveysDashboardComponent (lazy loaded)
         ├── /settings            → redirects by lens (settingsLensRedirectGuard): Me → /profile/settings; foundation/project → lens-prefixed settings; other lenses (e.g. org) fall through to SettingsDashboardComponent
         └── /profile             → ProfileLayoutComponent (lazy loaded; tabs incl. settings → AccountSettingsComponent, transactions)

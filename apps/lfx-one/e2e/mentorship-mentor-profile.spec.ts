@@ -12,7 +12,6 @@
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the profile read is made by the
  * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
- * The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -24,7 +23,7 @@ import { MentorshipMentorProfileResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -65,7 +64,6 @@ async function stubProfile(page: Page, body: MentorshipMentorProfileResponse, st
 
 test.describe('Mentor Profile — loaded', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubProfile(page, POPULATED);
     await openMentorPage(page, MENTOR_PROFILE_URL);
   });
@@ -95,7 +93,6 @@ test.describe('Mentor Profile — loaded', () => {
 
 test.describe('Mentor Profile — empty states', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     // An empty profile with no history sends every section through its empty-state branch.
     await stubProfile(page, EMPTY);
     await openMentorPage(page, MENTOR_PROFILE_URL);
@@ -117,7 +114,6 @@ test.describe('Mentor Profile — empty states', () => {
 
 test.describe('Mentor Profile — error state', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubProfile(page, EMPTY, 503);
     await openMentorPage(page, MENTOR_PROFILE_URL);
   });

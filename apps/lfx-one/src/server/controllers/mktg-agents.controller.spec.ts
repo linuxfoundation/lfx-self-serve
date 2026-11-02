@@ -81,6 +81,8 @@ const faqMocks = vi.hoisted(() => ({
 const guildMocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   sendFollowUp: vi.fn(),
+  getHistory: vi.fn(),
+  getRawEventPayloads: vi.fn(),
   resolveRunOutcome: vi.fn(async (_req: unknown, _id: string, result: unknown) => result),
 }));
 const sourceTextMocks = vi.hoisted(() => ({
@@ -123,6 +125,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     ...boilerplates,
     ...faq,
     ...documents,
+    ...(await vi.importActual('../../../../../packages/shared/src/constants/member-360.constants')),
     // Exercise form-only denial while the independently mergeable catalog layer is coming soon.
     MKTG_AGENTS: agents.MKTG_AGENTS.map((agent) => (agent.id === 'member-360' ? { ...agent, status: 'active', guildAgentHandle: 'member-360' } : agent)),
   };
@@ -146,6 +149,8 @@ vi.mock('../services/guild.service', () => ({
     public resolveRunOutcome = guildMocks.resolveRunOutcome;
     public createSession = guildMocks.createSession;
     public sendFollowUp = guildMocks.sendFollowUp;
+    public getHistory = guildMocks.getHistory;
+    public getRawEventPayloads = guildMocks.getRawEventPayloads;
   },
 }));
 vi.mock('../services/brand-kit.service', () => ({
@@ -308,6 +313,50 @@ describe('MktgAgentsController', () => {
     tokenMocks.verifySessionOwnerToken.mockReturnValue(true);
     controller = new MktgAgentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+  });
+
+  it('keeps display names but excludes known contacts, emails, caller subjects and raw record extras from history', async () => {
+    guildMocks.getHistory.mockResolvedValue([
+      {
+        id: 'event-1',
+        sender: 'agent',
+        text: 'Synthetic Staff: ask synthetic-contact via synthetic@example.test (auth0|user-1, oidc|other-subject)',
+        timestamp: '10:00',
+        rawContacts: [{ email: 'private-record@example.test', sub: 'auth0|private-record' }],
+        subject: 'auth0|user-1',
+      },
+    ]);
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      JSON.stringify({ contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: 'synthetic-contact' }] } }),
+    ]);
+    const json = vi.fn();
+    const next = vi.fn();
+    await controller.history({ body: { sessionId: 'session-1', ownerToken: 'synthetic-token' } } as Request, { json } as unknown as Response, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(json).toHaveBeenCalledWith({
+      messages: [
+        {
+          id: 'event-1',
+          sender: 'agent',
+          text: 'Synthetic Staff: ask [contact redacted] via [contact redacted] ([contact redacted], [contact redacted])',
+          timestamp: '10:00',
+        },
+      ],
+    });
+    expect(JSON.stringify(json.mock.calls)).not.toContain('private-record');
+    expect(JSON.stringify(json.mock.calls)).not.toContain('auth0|');
+    expect(JSON.stringify(json.mock.calls)).not.toContain('other-subject');
+  });
+
+  it('redacts a whole known contact containing a provider subject before rewriting identities', async () => {
+    const contact = 'Synthetic Contact (oidc|contact-1)';
+    guildMocks.getHistory.mockResolvedValue([{ id: 'event-1', sender: 'agent', text: `Ask ${contact}.`, timestamp: '10:00' }]);
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      JSON.stringify({ contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: contact }] } }),
+    ]);
+    const json = vi.fn();
+    await controller.history({ body: { sessionId: 'session-1', ownerToken: 'synthetic-token' } } as Request, { json } as unknown as Response, vi.fn());
+    expect(json).toHaveBeenCalledWith({ messages: [{ id: 'event-1', sender: 'agent', text: 'Ask [contact redacted].', timestamp: '10:00' }] });
   });
 
   describe('public run answers POST', () => {

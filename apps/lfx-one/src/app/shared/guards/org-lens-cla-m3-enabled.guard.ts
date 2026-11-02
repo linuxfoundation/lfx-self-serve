@@ -25,7 +25,7 @@ export const orgLensClaM3EnabledGuard: CanMatchFn = async () => {
   // Spec 050: the fallback keeps the organization the address names. This CanMatch runs during
   // recognition, before `orgPathParamGuard` has adopted `/org/{segment}/easycla`'s organization, so
   // the selection may still be the cookie's — the URL being recognized is the authority
-  // (`orgLensPagePath`, as `orgLensRoiEnabledGuard` does). Only the legacy `/org/easycla` names no
+  // (`orgLensPagePath`, as `orgLensLfStaffOnlyGuard` does). Only the legacy `/org/easycla` names no
   // organization; there the selected one is the best available (`/org/overview` while none is).
   const fallback = (): UrlTree => {
     const target = router.getCurrentNavigation()?.extractedUrl;

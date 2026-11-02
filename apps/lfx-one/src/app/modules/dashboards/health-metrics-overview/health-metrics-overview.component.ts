@@ -13,6 +13,7 @@ import { OverviewBoardCardComponent } from './components/overview-board-card/ove
 import { OverviewChurnCardComponent } from './components/overview-churn-card/overview-churn-card.component';
 import { OverviewCodeCardComponent } from './components/overview-code-card/overview-code-card.component';
 import { OverviewEventsCardComponent } from './components/overview-events-card/overview-events-card.component';
+import { OverviewNewsletterCardComponent } from './components/overview-newsletter-card/overview-newsletter-card.component';
 import { OverviewNpsCardComponent } from './components/overview-nps-card/overview-nps-card.component';
 import { OverviewOrgsCardComponent } from './components/overview-orgs-card/overview-orgs-card.component';
 import { OverviewTrainingCardComponent } from './components/overview-training-card/overview-training-card.component';
@@ -33,6 +34,7 @@ import type { HealthMetricsBlankCopy } from '@lfx-one/shared/interfaces';
     OverviewChurnCardComponent,
     OverviewCodeCardComponent,
     OverviewEventsCardComponent,
+    OverviewNewsletterCardComponent,
     OverviewNpsCardComponent,
     OverviewOrgsCardComponent,
     OverviewTrainingCardComponent,

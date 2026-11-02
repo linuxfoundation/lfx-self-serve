@@ -5,6 +5,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { format, resolveConfig } from 'prettier';
+import postcss from 'postcss';
+import tailwindcss from 'tailwindcss';
+import loadConfig from 'tailwindcss/loadConfig.js';
 import { describe, expect, it } from 'vitest';
 
 import { buildUiTokensCss, resolveValue, varName } from './lib/build-ui-tokens.mjs';
@@ -44,5 +47,33 @@ describe('ui-tokens.css', () => {
     expect(varName('ui-neutral-900')).toBe('--ui-neutral-900');
     expect(varName('font-display')).toBe('--ui-font-display');
     expect(varName('odd\\name')).toBe('--ui-odd\\\\name');
+  });
+});
+
+describe('motion utilities', () => {
+  const classes = ['duration-ui-fast', 'duration-ui-base', 'duration-ui-slow', 'ease-ui', 'ease-ui-standard'];
+
+  it('resolves every motion utility to its --ui- variable, and matches the library values', async () => {
+    // Tailwind's own loader (jiti), as the build uses, so the config's TypeScript source imports resolve.
+    const config = loadConfig(resolve(import.meta.dirname, '../tailwind.config.js'));
+    const { css } = await postcss([tailwindcss({ ...config, content: [{ raw: classes.join(' ') }], corePlugins: { preflight: false } })]).process(
+      '@tailwind utilities;',
+      { from: undefined }
+    );
+    const rule = (cls) => new RegExp(`\\.${cls}\\s*\\{\\s*([^}]*)\\}`).exec(css)?.[1].trim().replace(/;$/, '');
+    expect(rule('duration-ui-fast')).toBe('transition-duration: var(--ui-duration-fast)');
+    expect(rule('duration-ui-base')).toBe('transition-duration: var(--ui-duration-base)');
+    expect(rule('duration-ui-slow')).toBe('transition-duration: var(--ui-duration-slow)');
+    expect(rule('ease-ui')).toBe('transition-timing-function: var(--ui-ease)');
+    expect(rule('ease-ui-standard')).toBe('transition-timing-function: var(--ui-ease-standard)');
+
+    const motion = Object.fromEntries(tokens.motion.tokens.map((t) => [t.name, t.value]));
+    expect(motion).toEqual({
+      'duration-fast': '120ms',
+      'duration-base': '150ms',
+      'duration-slow': '250ms',
+      ease: 'cubic-bezier(.175, .885, .32, 1.1)',
+      'ease-standard': 'cubic-bezier(.4, 0, .2, 1)',
+    });
   });
 });

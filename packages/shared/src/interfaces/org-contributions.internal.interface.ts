@@ -74,4 +74,11 @@ export interface ContributionsRaw {
   foundationOptionRows: ContributionsFoundationOptionRow[];
   projectOptionRows: ContributionsProjectOptionRow[];
   employeeOptionRows: ContributionsEmployeeOptionRow[];
+  /** Exclude team members was asked but the flag column is missing: the rows include team members, and the payload is never cached. */
+  teamMembersUnavailable?: true;
+  /**
+   * Exclude team members was asked but lf-dbt's non-team First Commit column is missing: First Commit includes team
+   * members while every count still excludes them, so no counts note is shown, and the payload is never cached.
+   */
+  firstCommitUnavailable?: true;
 }

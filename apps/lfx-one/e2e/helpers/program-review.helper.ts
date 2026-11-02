@@ -11,8 +11,6 @@
 
 import { expect, Page, Response } from '@playwright/test';
 
-export { enableMentorshipFlag } from './mentee-profile.helper';
-
 export const PROGRAM_ID = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
 export const PROGRAM_REVIEW_LOAD_TIMEOUT = 30_000;
 

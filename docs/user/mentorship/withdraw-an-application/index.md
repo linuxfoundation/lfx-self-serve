@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, withdraw, application, slots]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
@@ -18,10 +18,21 @@ Withdrawing pulls an application you no longer want to pursue and frees one of y
 
 ## Steps
 
+You can withdraw from the **Overview** tab or from **Application History**. Both ask you to confirm in the same dialog.
+
+### From the Overview tab
+
 1. Open [app.lfx.dev/mentorship/mentee/overview](https://app.lfx.dev/mentorship/mentee/overview).
 2. Find the application card you want to pull.
 3. Select **Withdraw**.
-4. Confirm in the dialog.
+4. In the **Withdraw Application** dialog, select **Withdraw**.
+
+### From Application History
+
+1. Open [app.lfx.dev/mentorship/mentee/profile](https://app.lfx.dev/mentorship/mentee/profile).
+2. Scroll to **Application History** and find the application. Its status is **In Review**.
+3. Select **Withdraw application** (the bin icon) on its row.
+4. In the **Withdraw Application** dialog, select **Withdraw**.
 
 ## After completing
 
@@ -37,4 +48,5 @@ The application's status becomes **Withdrawn** and the list refreshes. One of yo
 ## Related
 
 - [Track Your Applications](../mentee-overview/)
+- [Edit Your Mentee Profile](../mentee-profile/) — where **Application History** lives
 - [Apply to a Program](../apply-to-a-program/)

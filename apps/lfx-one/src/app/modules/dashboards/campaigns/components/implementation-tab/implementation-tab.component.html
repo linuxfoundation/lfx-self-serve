@@ -153,15 +153,15 @@
   @case ('saved') {
     <div class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800" data-testid="implementation-brief-saved">
       <!--
-        Names the ACTION a recovery needs, rather than promising a reload just works. It does
-        not: the read is keyed on the event slug, and after a reload the page holds no URL to
-        derive one from, so the brief comes back only once the user pastes the event URL again.
-        "It will still be here if you reload" would be the same false assurance the 'error' arm
-        below exists to prevent, pointed the other way.
+        Names the ACTION a recovery needs, rather than promising a reload just works. The read is
+        keyed on the event slug: a reload keeps the event URL in `?event=` (#4756), so Planning
+        prefills it and OFFERS the saved brief, but restoring it is still the user's click.
+        "It will still be here if you reload" would skip that step — the same false assurance the
+        'error' arm below exists to prevent, pointed the other way.
       -->
       <!--
         Rendered from `briefPersistenceAnnouncement`, not repeated here. The two used to be
-        separate strings and drifted: the banner gained the re-entry instruction while the live
+        separate strings and drifted: the banner gained the reload instruction while the live
         region still announced only "Brief saved.", so screen-reader users got the reassurance
         without the part they cannot recover on their own. One source cannot drift.
       -->
@@ -174,6 +174,20 @@
       class="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
       data-testid="implementation-brief-save-error">
       <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ briefPersistence().message }}
+      @if (canReplaceSavedBrief()) {
+        <div class="mt-2 flex flex-col gap-2" data-testid="implementation-brief-replace">
+          <p>Opening the saved brief discards this one. To keep this one instead, replace the saved brief with it — the saved brief is overwritten.</p>
+          <div>
+            <lfx-button
+              label="Replace saved brief"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="replaceSavedBriefRequested.emit()"
+              data-testid="implementation-brief-replace-btn" />
+          </div>
+        </div>
+      }
     </div>
   }
 }
@@ -226,15 +240,36 @@
       <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-budget-section">
         <h3 class="mb-4 text-sm font-semibold text-gray-900">Budget &amp; Schedule</h3>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-gray-700">Total Budget (USD)</label>
-            <input
-              type="number"
-              formControlName="budgetUsd"
-              min="1"
-              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              data-testid="implementation-budget" />
-          </div>
+          @if (showGoogleSection()) {
+            <!-- DAILY, not a total (#4847): campaign-service creates the Google budget with no period,
+                 which Google treats as an average daily budget. The flight total it implies sits
+                 underneath, with the brief's planned total when there is one, so the operator sees both
+                 numbers. Google-only, like every reader of the field: the dates beside it are shared. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="implementation-budget">Google Ads Daily Budget</label>
+              <input
+                id="implementation-budget"
+                type="number"
+                formControlName="budgetUsd"
+                min="1"
+                step="0.01"
+                aria-describedby="implementation-budget-hint"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-budget" />
+              <span id="implementation-budget-hint" class="text-xs text-gray-400" data-testid="implementation-budget-hint">
+                An average daily amount, in the ad account's currency.
+                @if (googleBudgetFlight(); as flight) {
+                  About {{ flight.total | number: '1.0-2' }} over {{ flight.days }} {{ flight.days === 1 ? 'day' : 'days' }}, start and end days included.
+                }
+                @if (googleBriefTotalBudget(); as planned) {
+                  The brief plans {{ planned | number: '1.0-2' }} in total.
+                }
+              </span>
+              @if (googleBudgetInvalid()) {
+                <span class="text-xs text-red-600" data-testid="implementation-budget-error">Enter a daily budget of at least 1.</span>
+              }
+            </div>
+          }
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-gray-700">Start Date</label>
             <input
@@ -279,7 +314,12 @@
                line at tablet width and below. -->
           <div class="mt-4 flex flex-wrap items-center gap-4">
             <label class="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" formControlName="includeSearch" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <input
+                type="checkbox"
+                formControlName="includeSearch"
+                (change)="onGoogleChannelPicked('search', $event)"
+                [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               Search Campaign
             </label>
             <!-- Hidden, not disabled, when the deployment cannot create Demand Gen: a disabled
@@ -287,7 +327,12 @@
                  create is refused either way. Search stays available, so the section is not empty. -->
             @if (demandGenAvailable()) {
               <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                <input
+                  type="checkbox"
+                  formControlName="includeDemandGen"
+                  (change)="onGoogleChannelPicked('demand-gen', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Demand Gen Campaign
               </label>
             }
@@ -301,6 +346,8 @@
                 <input
                   type="checkbox"
                   formControlName="includePerformanceMax"
+                  (change)="onGoogleChannelPicked('performance-max', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   data-testid="implementation-include-performance-max"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Performance Max Campaign
@@ -335,12 +382,26 @@
                 <input
                   type="checkbox"
                   formControlName="includeDisplay"
+                  (change)="onGoogleChannelPicked('display', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   data-testid="implementation-include-display"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Display Campaign
               </label>
             }
           </div>
+          <!-- #4755. The campaign-service road creates one Google type per create, so the row above is
+               an exclusive choice there; say so, since checkboxes alone read as "tick several". -->
+          <!-- Only where there is a choice to make: with Search the sole box offered, "choose one" says nothing.
+               The id is each type checkbox's `aria-describedby`, gated on the same signal. -->
+          @if (googleChannelNoteShown()) {
+            <p id="implementation-google-channel-single-note" class="mt-2 text-xs text-gray-500" data-testid="implementation-google-channel-single-note">
+              Each Google campaign type is created on its own, so choose one.
+            </p>
+          }
+          @if (googleChannelConflict(); as conflict) {
+            <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-channel-conflict">{{ conflict }}</p>
+          }
         }
       </div>
 
@@ -2111,6 +2172,9 @@
             about whichever section the operator happened to be looking at.
           -->
           <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
+          @if (section.channel === 'performance-max' && performanceMaxPrefillShown()) {
+            <p class="mt-1 text-xs text-gray-500" data-testid="implementation-creative-prefill-notice-performance-max">{{ performanceMaxPrefillNotice }}</p>
+          }
           <div class="mt-4 flex flex-col gap-4" [formGroupName]="section.groupName">
             @for (field of section.fields; track field.control) {
               <div class="flex flex-col gap-1">
@@ -3656,6 +3720,11 @@
                     Only LF administrators can see the X account details. The campaign is created under the ad account bound on this project's X connection.
                   </p>
                 }
+                @case ('forbidden') {
+                  <p class="text-gray-500" data-testid="implementation-twitter-account-forbidden">
+                    campaign-service refused to read this project's X connection. Your account needs the campaign manager role on this project.
+                  </p>
+                }
                 @case ('error') {
                   <div class="flex flex-col items-start gap-1" data-testid="implementation-twitter-account-error">
                     <p class="text-amber-800">
@@ -3893,7 +3962,12 @@
             [projectSlug]="activeFoundationSlug()"
             [briefId]="briefPersistence().briefId ?? ''"
             [platforms]="selectedPlatforms()"
-            [reloadToken]="creativeLibraryRevision()" />
+            [reloadToken]="creativeLibraryRevision()"
+            [suggestionTargets]="googleSuggestionTargets()"
+            [applyResult]="googleSuggestedApplyResult()"
+            [applySeq]="googleSuggestedApplySeq()"
+            [formFilled]="googleFormFilledSlots()"
+            (applySuggested)="onApplySuggestedGoogleImages($event)" />
         </div>
       }
 

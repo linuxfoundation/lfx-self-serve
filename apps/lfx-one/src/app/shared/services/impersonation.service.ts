@@ -10,7 +10,6 @@ import {
   ImpersonationStartResponse,
   ImpersonationStatusResponse,
   ImpersonationTransition,
-  PersonaType,
   RecentImpersonation,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, tap } from 'rxjs';
@@ -28,8 +27,8 @@ export class ImpersonationService {
    */
   public readonly transition = signal<ImpersonationTransition | null>(null);
 
-  public startImpersonation(targetUser: string, personaContext?: PersonaType | null, switching = false): Observable<ImpersonationStartResponse> {
-    const body: ImpersonationStartRequest = personaContext ? { targetUser, personaContext } : { targetUser };
+  public startImpersonation(targetUser: string, switching = false): Observable<ImpersonationStartResponse> {
+    const body: ImpersonationStartRequest = { targetUser };
     this.transition.set(switching ? 'switching' : 'starting');
     return this.http.post<ImpersonationStartResponse>('/api/impersonate', body).pipe(tap({ error: () => this.transition.set(null) }));
   }

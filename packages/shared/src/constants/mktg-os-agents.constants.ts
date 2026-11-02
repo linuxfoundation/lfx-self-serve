@@ -194,3 +194,6 @@ export const MKTG_AGENTS: MktgAgent[] = [
  * away from Guild and from the session-history parser that reads them back.
  */
 export const MKTG_CHAT_MESSAGE_MAX_CHARS = 200_000;
+
+/** History never renders provider-qualified subjects as staff display names. */
+export const MKTG_HISTORY_SUBJECT_PATTERN = /\b(?:auth0|oidc|google-oauth2|github|samlp|waad|email|sms)\|[A-Za-z0-9._:@+/-]+/g;

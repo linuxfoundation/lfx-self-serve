@@ -206,3 +206,51 @@ export function describeCampaignDispatchFailure(error: string): CampaignDispatch
     nothingCreated,
   };
 }
+
+const CALENDAR_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A `YYYY-MM-DD` date as a UTC day number, or `null` when the string is not a real calendar date. */
+function calendarDayNumber(date: string): number | null {
+  const match = CALENDAR_DATE_PATTERN.exec(date);
+  if (!match) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  // A round trip refuses a date the constructor silently rolls over, such as 2026-02-30.
+  if (utc.getUTCFullYear() !== year || utc.getUTCMonth() !== month - 1 || utc.getUTCDate() !== day) return null;
+  return utc.getTime() / 86_400_000;
+}
+
+/**
+ * How many days a campaign flight runs, counting the start and end days both (#4847).
+ *
+ * Both days count because Google runs a campaign from 00:00 on its start date to 23:59:59 on its
+ * end date (campaign-service `validateFlightWindow`), so a same-day flight is one day of spend.
+ * Counted on UTC day numbers so a daylight-saving change between the two dates cannot make the
+ * count fractional.
+ *
+ * @param startDate - The flight's first day, `YYYY-MM-DD`
+ * @param endDate - The flight's last day, `YYYY-MM-DD`
+ * @returns The day count, or `null` when either date is not a real calendar date or the end is
+ *   before the start
+ */
+export function campaignFlightDays(startDate: string, endDate: string): number | null {
+  const start = calendarDayNumber(startDate);
+  const end = calendarDayNumber(endDate);
+  if (start === null || end === null || end < start) return null;
+  return end - start + 1;
+}
+
+/**
+ * The daily budget that spends a total over a flight, rounded DOWN to the cent (#4847).
+ *
+ * Rounded down so the daily figure times the flight never exceeds the total it came from.
+ *
+ * @param total - The flight's total budget; positive and finite
+ * @param days - The flight's length in days, from {@link campaignFlightDays}; a positive integer
+ * @returns The daily amount, or `null` when either input is unusable
+ */
+export function dailyBudgetFromTotal(total: number, days: number): number | null {
+  if (!Number.isFinite(total) || total <= 0 || !Number.isInteger(days) || days < 1) return null;
+  // Divides a whole number of cents, so the floor works on cents rather than on a float of dollars.
+  return Math.floor(Math.round(total * 100) / days) / 100;
+}

@@ -18,7 +18,7 @@ import { MentorshipProgramsResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -66,7 +66,6 @@ async function stubPrograms(page: Page, body: MentorshipProgramsResponse): Promi
 
 test.describe('Admin programs list — structure', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, POPULATED);
     await openMentorPage(page, ADMIN_URL);
   });
@@ -96,7 +95,6 @@ test.describe('Admin programs list — structure', () => {
 
 test.describe('Admin programs list — empty', () => {
   test('renders the empty state and no cards or load error', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, { data: [], total: 0 });
     await openMentorPage(page, ADMIN_URL);
 
@@ -108,7 +106,6 @@ test.describe('Admin programs list — empty', () => {
 
 test.describe('Admin programs list — failed load', () => {
   test('renders the load error with a Retry in place of the empty state', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route(PROGRAMS_ROUTE, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'down' }) }));
     await openMentorPage(page, ADMIN_URL);
 
@@ -124,7 +121,6 @@ test.describe('Admin programs list — logo missing structure', () => {
   const card = (page: Page, id: string) => page.getByTestId(`mentorship-program-card-${id}`);
 
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     // The first row lacks its logo (as the BFF flags it); the second does not.
     await stubPrograms(page, {
       ...POPULATED,

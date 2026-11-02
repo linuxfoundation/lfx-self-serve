@@ -41,6 +41,8 @@ import {
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS,
+  GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
@@ -1310,5 +1312,26 @@ describe('isGoogleAdsServableUrl', () => {
     // `googleAdsTrimSpace`: `.trim()` would leave it in and this would still refuse.
     expect(`\u0085${url}`.trim()).toBe(`\u0085${url}`);
     expect(isGoogleAdsServableUrl(googleAdsTrimSpace(`\u0085${url}`))).toBe(true);
+  });
+});
+
+describe('GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS', () => {
+  // #4833: the grid matches each rule's members against the form counts, which are keyed the way
+  // `googlePlanSlotKeysFor` builds them. A member that drifts from the slot table would read as never
+  // filled, and the "still need an image" count would quietly regress for that channel.
+  const planSlotKeys = GOOGLE_CHANNELS_WITH_CREATIVE.flatMap((channel) =>
+    Object.keys(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel]).map((slot) => `google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${slot}`)
+  );
+
+  it.each(Object.entries(GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS))('every member of the %s rule is a mapped plan slot of that channel', (rule, members) => {
+    expect(members.length).toBeGreaterThan(1);
+    for (const member of members) {
+      expect(member.startsWith(`${rule}/`)).toBe(true);
+      expect(planSlotKeys).toContain(member);
+    }
+  });
+
+  it('has a rule for Demand Gen and Display, and none for Performance Max', () => {
+    expect(Object.keys(GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS).sort()).toEqual(['google-ads/DEMAND_GEN', 'google-ads/DISPLAY']);
   });
 });

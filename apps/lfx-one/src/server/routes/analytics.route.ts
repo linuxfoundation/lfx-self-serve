@@ -237,6 +237,16 @@ router.get('/engagement-non-member-participation', requireDashboardAccess, (req,
   analyticsController.getEngagementNonMemberParticipation(req, res, next)
 );
 
+// Health Metrics Engagement "Newsletter performance" section (#4714)
+router.get('/engagement-newsletter-performance', requireDashboardAccess, (req, res, next) =>
+  analyticsController.getEngagementNewsletterPerformance(req, res, next)
+);
+
+// Health Metrics Engagement "Newsletter recipient engagement" section (#4715)
+router.get('/engagement-newsletter-recipients', requireDashboardAccess, (req, res, next) =>
+  analyticsController.getEngagementNewsletterRecipients(req, res, next)
+);
+
 // Health Metrics Engagement "Representatives" section (#2802)
 router.get('/engagement-representatives', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementRepresentatives(req, res, next));
 
@@ -301,6 +311,7 @@ router.get('/overview-outstanding-balance', requireDashboardAccess, (req, res, n
 router.get('/overview-events', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewEvents(req, res, next));
 router.get('/overview-board', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewBoard(req, res, next));
 router.get('/overview-code', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewCode(req, res, next));
+router.get('/overview-newsletters', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewNewsletters(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.

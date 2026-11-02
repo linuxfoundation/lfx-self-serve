@@ -3,16 +3,17 @@
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, OnDestroy, PLATFORM_ID, signal, type Signal } from '@angular/core';
-import { ORG_CODE_METRIC_UNIT, ORG_COMMITS_DEFINITION, PERSON_DRAWER_COPIED_RESET_MS } from '@lfx-one/shared/constants';
+import { PERSON_DRAWER_COPIED_RESET_MS } from '@lfx-one/shared/constants';
 import type {
   OrgAllEmployeeCommitteeMembership,
+  OrgPersonCodeCount,
   PersonDrawerContext,
   PersonDrawerCopiedAddress,
   PersonDrawerEmail,
   PersonDrawerKeyContactRow,
   PersonDrawerTab,
 } from '@lfx-one/shared/interfaces';
-import { isMailtoSafeEmail, orgKeyContactRolePillClass } from '@lfx-one/shared/utils';
+import { isMailtoSafeEmail, orgKeyContactRolePillClass, orgPersonCodeCount } from '@lfx-one/shared/utils';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
@@ -37,10 +38,10 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     { id: 'key-contacts', label: 'Key Contacts' },
   ];
 
-  protected readonly commitsDefinition = ORG_COMMITS_DEFINITION;
-  protected readonly commitUnit = ORG_CODE_METRIC_UNIT.commits;
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
+  // Named after the view the detail was counted in (the opener's row, lfx-self-serve#4404), else commits of the trailing 12 months.
+  protected readonly codeCount: Signal<OrgPersonCodeCount> = computed(() => orgPersonCodeCount(this.drawer.detail()?.codeView));
   protected readonly keyContactRoles: Signal<PersonDrawerKeyContactRow[]> = computed(() => this.initKeyContactRoles());
   protected readonly companyEmails: Signal<PersonDrawerEmail[]> = computed(() => this.initCompanyEmails());
   private readonly copied = signal<PersonDrawerCopiedAddress | null>(null);

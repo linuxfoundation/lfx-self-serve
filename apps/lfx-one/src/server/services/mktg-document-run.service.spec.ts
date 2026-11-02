@@ -12,7 +12,7 @@ import {
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_STARTED_RUN_FAILURE_BYTES,
-  MKTG_RUN_FAILURE_REASON,
+  MEMBER_360_FAILURE_MESSAGES,
   MKTG_ONE_OFF_STOPPED_MESSAGE,
   MKTG_STARTED_RUN_READ_CONCURRENCY,
 } from '@lfx-one/shared/constants';
@@ -1358,7 +1358,7 @@ describe('MktgDocumentRunService core', () => {
       expect(flows.result).toHaveBeenCalled();
       expect(flows.events).toHaveBeenCalled();
       expect(stored().metadata['state']).toBe('failed');
-      expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_RUN_FAILURE_REASON });
+      expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_ONE_OFF_STOPPED_MESSAGE });
       expect(JSON.stringify(progress)).not.toContain('PRIVATE PROVIDER DETAILS');
       expect(progress.runs[0]).not.toHaveProperty('persistenceFailed');
       expect(visitor.originalUrl).toBe('/api/mktg-agents/documents/icp/living');
@@ -1427,6 +1427,7 @@ describe('MktgDocumentRunService core', () => {
   });
 
   it.each(['writing', 'questions'])('fails Member %s only when its adapter reports a session end, even after two hours', async (state) => {
+    const req = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
     await service.startForOneOff(req, 'member-360', project, session);
     if (state === 'questions') {
       flows.member.mockResolvedValue({ status: 'needs_input', activity: [] });
@@ -1457,7 +1458,8 @@ describe('MktgDocumentRunService core', () => {
     expect(paused.runs[0]).toMatchObject({ state: 'questions' });
   });
 
-  it('retains Member failure classification with the redacted details across process-local cache loss', async () => {
+  it('retains Member failure classification but exposes details only to its creator across cache loss', async () => {
+    const req = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
     await service.startForOneOff(req, 'member-360', project, session);
     flows.member.mockResolvedValue({ status: 'failed', reason: 'no_edit_access', message: 'Synthetic entitled-project refusal.' });
     const progress = await service.readProgress(req, project);
@@ -1465,6 +1467,10 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['failure-reason']).toBe('no_edit_access');
     const reread = await new MktgDocumentRunService().readProgress(req, project);
     expect(reread.runs[0]).toMatchObject({ failureReason: 'no_edit_access' });
+    const visitor = { oidc: { user: { sub: 'synthetic-visitor' } } } as unknown as Request;
+    const expected = { failureReason: 'no_edit_access', failureText: MEMBER_360_FAILURE_MESSAGES.no_edit_access };
+    expect((await new MktgDocumentRunService().readProgress(visitor, project)).runs[0]).toMatchObject(expected);
+    expect(await service.refreshFailure(visitor, project, 'member-360', `run-${hash(session).slice(0, 24)}`, hash(session))).toMatchObject(expected);
   });
 
   it('ignores failure reason codes outside the dedicated allow-list on writes and legacy metadata reads', async () => {
@@ -1859,6 +1865,7 @@ describe('MktgDocumentRunService core', () => {
   });
 
   it.each(['failed', 'refused'])('bounds %s snapshots, refreshes a full scoped reply and retries only the exact recorded run', async (status) => {
+    const req = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
     await service.start(req, project, types[0].agentKey, session);
     const reply = 'Synthetic plain reply. '.repeat(300);
     flows.result.mockResolvedValue({ status, failureText: reply, reply });

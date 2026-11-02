@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, tasks, status, file-upload, prerequisites]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
@@ -30,7 +30,7 @@ You set a task's status yourself from the status menu on its row, but only certa
 
 **Submitted** is greyed out on a task still in **To Do** — start it first. You cannot move a task back to **To Do** once it is under way.
 
-A mentor or Program Admin may also move a task on their side; your view refreshes to match. Once your mentor marks a task complete, the status menu locks: "Completed tasks can only be changed by your mentor."
+A mentor or Program Admin may also move a task on their side; your view refreshes to match. Once your mentor marks a task complete, it still shows as **Submitted** to you, and the status menu locks: "Completed tasks can only be changed by your mentor."
 
 ## Steps
 
@@ -46,6 +46,8 @@ A mentor or Program Admin may also move a task on their side; your view refreshe
 ## Tasks that require a file
 
 **Uploading the file submits the task.** There is no draft state: once the upload succeeds the task moves to **Submitted** and your mentor can review it. Upload only when the work is ready to hand in.
+
+You can upload one PDF, DOC, DOCX or plain-text file, up to 20 MB. A larger file is refused with "The file is larger than 20 MB."
 
 Until you upload, **Submitted** stays disabled and the row shows:
 

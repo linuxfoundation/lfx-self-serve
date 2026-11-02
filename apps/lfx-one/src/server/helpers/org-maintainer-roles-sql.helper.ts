@@ -1,12 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_OVERVIEW_MAINTAINER_ROLES_RANGE } from '@lfx-one/shared/constants';
-import type { OrgLensTimeRange, OrgMaintainerRoleOverlap, OrgMaintainerRolesTable, OrgProjectMaintainerRolesCountRow } from '@lfx-one/shared/interfaces';
+import { DEFAULT_ORG_TEAM_MEMBERS, ORG_OVERVIEW_MAINTAINER_ROLES_RANGE } from '@lfx-one/shared/constants';
+import type {
+  OrgLensTimeRange,
+  OrgMaintainerRoleOverlap,
+  OrgMaintainerRolesTable,
+  OrgProjectMaintainerRolesCountRow,
+  SnowflakeQueryOptions,
+} from '@lfx-one/shared/interfaces';
 import { orgLensTimeRangeDays } from '@lfx-one/shared/utils';
 
 import type { SnowflakeService } from '../services/snowflake.service';
 import { isMissingObjectError } from './snowflake-error.helper';
+import { orgTeamMembersPredicate, orgTeamMembersQueryOptions, readWithOrgTeamMembersFallback } from './org-team-members.helper';
 
 /**
  * The one rule for whether a maintainer role counts in a range (lfx-self-serve#4482, LFX Insights' rule): it has
@@ -28,16 +35,18 @@ export function orgMaintainerRoleOverlap(range: OrgLensTimeRange, alias?: string
 /**
  * Runs a read of a maintainer roles table, answering `null` when that table does not exist (yet): the tables ship
  * from lf-dbt ahead of this app, and a view must keep loading without its maintainer counts rather than fail. Any
- * other error — including a different missing object in the same statement — still rejects.
+ * other error — including a different missing object in the same statement — still rejects. `options` adds the
+ * caller's own expected rollout errors (e.g. a not-yet-built column).
  */
 export async function readMaintainerRoles<T>(
   snowflakeService: SnowflakeService,
   table: OrgMaintainerRolesTable,
   sql: string,
-  binds: (string | number)[]
+  binds: (string | number)[],
+  options?: SnowflakeQueryOptions
 ): Promise<T[] | null> {
   try {
-    return (await snowflakeService.execute<T>(sql, binds, { expectMissingObject: table })).rows;
+    return (await snowflakeService.execute<T>(sql, binds, { ...options, expectMissingObject: table })).rows;
   } catch (error) {
     if (isMissingObjectError(error, table)) return null;
     throw error;
@@ -45,22 +54,34 @@ export async function readMaintainerRoles<T>(
 }
 
 /**
- * The account's LF maintainer roles per project overlapping the Overview window (past 365 days), keyed by project id —
- * the per-project count of the Overview's Foundations & Projects and the Memberships projects drawer. `null` when the
- * roles table is missing. Its own read, so a missing table never takes the project list down with it.
+ * The account's LF maintainer roles per project overlapping the Overview window (last 2 years), keyed by project id —
+ * the per-project count of the Overview's Foundations & Projects and the Memberships projects drawer. CDP team
+ * members' roles are left out, the Overview default and LFX Insights' rule (lfx-self-serve#4685). `roles` is `null`
+ * when the roles table is missing; `teamMembersUnavailable` when its team-member flag is (team members then counted).
+ * Either way the caller must not cache the answer. Its own read, so a missing table never takes the project list down.
  */
-export async function fetchLfProjectMaintainerRoles(snowflakeService: SnowflakeService, accountId: string): Promise<Map<string, number> | null> {
+export async function fetchLfProjectMaintainerRoles(
+  snowflakeService: SnowflakeService,
+  accountId: string
+): Promise<{ roles: Map<string, number> | null; teamMembersUnavailable: boolean }> {
   const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
-  const rows = await readMaintainerRoles<OrgProjectMaintainerRolesCountRow>(
-    snowflakeService,
-    'ORG_MAINTAINER_ROLES',
-    `
+  const { value: rows, teamMembersUnavailable } = await readWithOrgTeamMembersFallback(
+    DEFAULT_ORG_TEAM_MEMBERS,
+    'read_org_project_maintainer_roles',
+    (teamMembers) =>
+      readMaintainerRoles<OrgProjectMaintainerRolesCountRow>(
+        snowflakeService,
+        'ORG_MAINTAINER_ROLES',
+        `
       SELECT PROJECT_ID, COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
       WHERE ACCOUNT_ID = ? AND IS_LF_PROJECT = TRUE AND ${overlap.sql}
+        ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
       GROUP BY PROJECT_ID
     `,
-    [accountId, ...overlap.binds]
+        [accountId, ...overlap.binds],
+        orgTeamMembersQueryOptions(teamMembers)
+      )
   );
-  return rows === null ? null : new Map(rows.map((row) => [row.PROJECT_ID, row.MAINTAINER_ROLES ?? 0]));
+  return { roles: rows === null ? null : new Map(rows.map((row) => [row.PROJECT_ID, row.MAINTAINER_ROLES ?? 0])), teamMembersUnavailable };
 }

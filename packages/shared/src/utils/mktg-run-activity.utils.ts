@@ -456,19 +456,32 @@ function collapseRepeatedReads(steps: Step[]): Step[] {
   return rows.map(({ step, pages }) => (pages > 1 ? { ...step, detail: `${pages} pages` } : step));
 }
 
-/** The feed header's phases: under way, done, passed over, or not reached yet. */
-export function mktgRunActivityPhases(activity: MktgRunActivity[]): MktgRunActivityPhase[] {
+/**
+ * The feed header's phases: under way, done, passed over, or not reached yet.
+ *
+ * The furthest phase the run has reached is under way until a later phase
+ * starts, whether or not one of its steps is running at this instant: an
+ * agent reads its sources in waves (a few pages, a model turn, a few more),
+ * and a phase that went done between waves and active again on the next one
+ * flickered through the whole read (Joan's hand test, 29 Oct 2026). Earlier
+ * phases are done, or passed over when nothing of theirs happened; later
+ * ones pending. A failed step is not the end of a run (a page that returned
+ * 404 is one, and the agent reads on), so only the caller's `ended` closes
+ * the furthest phase: the feed a failed redraft leaves on screen passes it.
+ */
+export function mktgRunActivityPhases(activity: MktgRunActivity[], ended = false): MktgRunActivityPhase[] {
   const phaseOf = (kind: MktgRunActivityKind): number => MKTG_RUN_ACTIVITY_PHASES.findIndex((phase) => phase.kinds.includes(kind));
   const lastReached = Math.max(-1, ...activity.map((step) => phaseOf(step.kind)));
   return MKTG_RUN_ACTIVITY_PHASES.map((phase, position) => {
     const steps = activity.filter((step) => phase.kinds.includes(step.kind));
     let state: MktgRunActivityPhase['state'];
-    if (steps.some((step) => step.status === 'running')) {
-      state = 'active';
-    } else if (steps.length > 0) {
-      state = 'done';
+    if (position === lastReached) {
+      // Only the caller knows the run is over (a failed page read is a step, not the end): `ended` closes the last phase.
+      state = ended ? 'done' : 'active';
+    } else if (position < lastReached) {
+      state = steps.length > 0 ? 'done' : 'skipped';
     } else {
-      state = position < lastReached ? 'skipped' : 'pending';
+      state = 'pending';
     }
     return { id: phase.id, label: phase.label, state };
   });

@@ -17,11 +17,13 @@ import type {
   EdEvolutionData,
   EventsSummaryResponse,
   FilterPillOption,
+  FoundationHealthMetricStateCopy,
   HealthMetricsRange,
   HealthMetricsSummaryCard,
   HealthMetricsYearOption,
   MembershipChurnPerTierSummaryResponse,
   NpsSummaryResponse,
+  OrgLensSectionOutcome,
   OutstandingBalanceSummaryResponse,
   ParticipatingOrgsSummaryResponse,
   RevenueImpactResponse,
@@ -187,6 +189,34 @@ export const MARKETING_SOCIAL_PLATFORM_MAP: Record<BrandReachPlatformType, { ico
 // ============================================
 // Foundation Health Metrics
 // ============================================
+
+/** Card-local copy: missing measurements are neither measured zeros nor access decisions. */
+export const FOUNDATION_HEALTH_METRIC_STATE_COPY: Record<Exclude<OrgLensSectionOutcome, 'records'>, FoundationHealthMetricStateCopy> = {
+  empty: {
+    title: 'Data not available yet',
+    description: 'Analytics data for this metric is not available for the selected foundation.',
+    icon: 'fa-light fa-chart-column',
+    retryable: false,
+  },
+  failed: {
+    title: 'This metric could not be loaded',
+    description: 'Other available metrics are unaffected. Try loading this metric again.',
+    icon: 'fa-light fa-triangle-exclamation',
+    retryable: true,
+  },
+  denied: {
+    title: 'You do not have access to this metric',
+    description: 'Contact your administrator if you need access.',
+    icon: 'fa-light fa-lock',
+    retryable: false,
+  },
+  unverifiable: {
+    title: 'Access could not be verified',
+    description: 'We could not confirm access to this metric right now. Your permissions have not changed.',
+    icon: 'fa-light fa-rotate-right',
+    retryable: true,
+  },
+};
 
 /**
  * Primary foundation health metrics configuration

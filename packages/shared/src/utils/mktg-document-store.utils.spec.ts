@@ -252,7 +252,7 @@ describe('mktg-document-store utils', () => {
     expect(mktgRunProgress({ ...run, state: 'completed' }, undefined, undefined, undefined, false, true)).toBeNull();
   });
 
-  it('projects LinkedIn failure prose only to its known creator, while Member redacted text stays public', () => {
+  it('projects agent failure prose only to its known creator', () => {
     const run = startedRun({
       agentKey: 'linkedin-post',
       documentId: 'run-' + 'a'.repeat(24),
@@ -264,9 +264,12 @@ describe('mktg-document-store utils', () => {
     for (const reader of [undefined, '', 'synthetic-visitor'])
       expect(mktgRunProgress(run, undefined, undefined, reader)?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
     expect(mktgRunProgress({ ...run, creatorSubject: null }, undefined, undefined, 'synthetic-creator')?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
-    expect(mktgRunProgress({ ...run, agentKey: 'member-360', failureText: 'SYNTHETIC redacted Member reply' })?.failureText).toBe(
-      'SYNTHETIC redacted Member reply'
-    );
+    for (const agentKey of ['member-360', 'brand-kit', 'faq'] as const) {
+      const privateRun = { ...run, agentKey, failureText: 'SYNTHETIC private agent reply' };
+      expect(mktgRunProgress(privateRun, undefined, undefined, 'synthetic-creator')?.failureText).toBe(privateRun.failureText);
+      for (const reader of [undefined, '', 'synthetic-visitor'])
+        expect(mktgRunProgress(privateRun, undefined, undefined, reader)?.failureText).not.toContain('SYNTHETIC');
+    }
   });
 
   it('projects same-session recovery only for exhausted persistence failures, never from failure prose', () => {

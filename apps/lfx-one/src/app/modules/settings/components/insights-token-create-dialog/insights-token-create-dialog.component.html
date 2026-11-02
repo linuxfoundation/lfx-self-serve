@@ -34,6 +34,25 @@
     }
   </div>
 
+  <div class="flex flex-col gap-2 px-6 pb-6">
+    <label id="insights-token-expiration-label" for="insights-token-expiration" class="text-sm font-medium text-slate-700">Expiration</label>
+    <lfx-select
+      [form]="form"
+      control="expiration"
+      inputId="insights-token-expiration"
+      [options]="expirationOptions"
+      ariaLabelledBy="insights-token-expiration-label"
+      styleClass="w-full"
+      data-testid="insights-token-create-expiration-select" />
+    <p id="insights-token-expiration-help" class="text-xs text-slate-500" data-testid="insights-token-create-expiration-help">
+      @if (expiresOn(); as expiresOn) {
+        Expires on {{ expiresOn | date: 'd MMMM y' }}.
+      } @else {
+        This token stays valid until you revoke it.
+      }
+    </p>
+  </div>
+
   <div class="flex justify-end gap-2 px-6 py-4 bg-slate-50 border-t border-slate-200">
     <lfx-button
       type="button"

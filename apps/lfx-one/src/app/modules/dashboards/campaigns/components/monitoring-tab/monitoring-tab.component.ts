@@ -111,6 +111,13 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly loading = signal(false);
   protected readonly monitorData = signal<CampaignMonitorResponse | null>(null);
   protected readonly error = signal<string | null>(null);
+  /**
+   * The panels whose last failed read was refused for the caller's role (a 403, #4837), keyed by panel
+   * (`google`, `google-accounts`, `linkedin`, `reddit`, `meta`, `report-backed`, `hubspot`). Retrying
+   * repeats the same refusal, so such an error offers no Retry. Written beside every error a panel
+   * shows, so a stale entry is never read: the error block it gates is hidden until the next error.
+   */
+  protected readonly refusedReads = signal<ReadonlySet<string>>(new Set());
 
   // Platform switcher
   protected readonly selectedPlatform = signal<MonitorTabPlatform>('google');
@@ -254,6 +261,24 @@ export class MonitoringTabComponent implements OnInit {
 
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
   protected readonly accountTotals = computed(() => this.monitorData()?.accountTotals ?? null);
+  /**
+   * How a Google amount prints. On the campaign-service path the amounts are the connected account's,
+   * in a currency campaign-service does not name, so they print without a symbol, as a connection's
+   * Meta amounts do; the legacy read keeps its `$`.
+   */
+  private readonly googleAmount = computed(() =>
+    this.monitorData()?.amountsInAccountCurrency === true ? (n: number): string => this.formatAccountAmount(n) : (n: number): string => this.formatCurrency(n)
+  );
+  /** How a Google keyword amount prints: the connected account's own, unnamed currency without a symbol (#4807), else `$`. */
+  private readonly keywordAmount = computed(() =>
+    this.keywordsData()?.amountsInAccountCurrency === true ? (n: number): string => this.formatAccountAmount(n) : (n: number): string => this.formatCurrency(n)
+  );
+  /** True when the keyword amounts on screen are in the connected account's own, unnamed currency. */
+  protected readonly keywordCurrencyNote = computed(() => this.keywordsData()?.amountsInAccountCurrency === true);
+  /** True when the Google amounts on screen are in the connected account's own, unnamed currency. */
+  protected readonly googleCurrencyNote = computed(() => this.monitorData()?.amountsInAccountCurrency === true);
+  /** What the Google totals leave out on the campaign-service path (#4526); null on the legacy read, which sets no flags. */
+  protected readonly googleTotalsNote = computed(() => this.totalsCoverageNote(this.campaigns()));
   protected readonly pulledAt = computed(() => this.monitorData()?.pulledAt ?? '');
   protected readonly hasCampaigns = computed(() => this.campaigns().length > 0);
 
@@ -447,6 +472,7 @@ export class MonitoringTabComponent implements OnInit {
           if (this.isSharedAccountRestricted(err)) {
             this.googleAccountsRefused = true;
           } else {
+            this.noteRefusal('google-accounts', err);
             this.googleAccountsError.set(extractErrorMessage(err, 'Failed to load Google Ads accounts'));
           }
         },
@@ -482,6 +508,7 @@ export class MonitoringTabComponent implements OnInit {
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.noteRefusal('google', err);
           this.error.set(withHttpStatus(extractErrorMessage(err, 'Failed to load campaign data'), err));
         },
       });
@@ -625,6 +652,7 @@ export class MonitoringTabComponent implements OnInit {
           this.setMetricsDisabled(platform, true);
           return;
         }
+        this.noteRefusal('report-backed', err);
         this.reportBackedError.set(this.reportBackedErrorMessage(err, label));
       },
     });
@@ -654,6 +682,7 @@ export class MonitoringTabComponent implements OnInit {
             // 404 — a gateway or routing miss — falls through to a retryable error below.
             this.hubSpotNoticeState.set('no_connection');
           } else {
+            this.noteRefusal('hubspot', err);
             this.hubSpotError.set(extractErrorMessage(err, 'Failed to load HubSpot email data'));
           }
         },
@@ -703,6 +732,7 @@ export class MonitoringTabComponent implements OnInit {
             return;
           }
           const httpErr = err as { error?: { message?: string }; message?: string };
+          this.noteRefusal('linkedin', err);
           this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn data'));
           this.linkedInLoading.set(false);
         },
@@ -750,6 +780,7 @@ export class MonitoringTabComponent implements OnInit {
             return;
           }
           const httpErr = err as { error?: { message?: string }; message?: string };
+          this.noteRefusal('reddit', err);
           this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit data'));
           this.redditLoading.set(false);
         },
@@ -799,6 +830,7 @@ export class MonitoringTabComponent implements OnInit {
             return;
           }
           const httpErr = err as { error?: { message?: string }; message?: string };
+          this.noteRefusal('meta', err);
           this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta data'));
           this.metaLoading.set(false);
         },
@@ -985,33 +1017,57 @@ export class MonitoringTabComponent implements OnInit {
         impressions: this.formatNumber(totals.impressions),
         clicks: this.formatNumber(totals.clicks),
         ctr: ctr === null ? '—' : this.formatPct(ctr),
-        spend: this.formatCurrency(totals.spend),
-        conversions: this.formatNumber(totals.conversions),
+        spend: this.googleAmount()(totals.spend),
+        // Only the campaign-service path sets the flag; the legacy read always measured conversions.
+        conversions: totals.conversionsMeasured === false ? 'Not measured' : this.formatNumber(totals.conversions),
       };
     });
   }
 
+  /**
+   * The Google Ads rows. On the campaign-service path (#4526) a row can arrive unread or unpaced; its
+   * zeros are placeholders, so they render as the other panels render them — every figure a dash for
+   * an unread row, "Unknown" pacing with an empty bar, "Not measured" conversions — never as a
+   * measured 0 or a red 0% bar. The legacy path sets none of the flags, so its rows are unchanged.
+   */
   private initGoogleCampaignRows(): Signal<GoogleMonitorCampaignRowView[]> {
-    return computed(() =>
-      this.campaigns().map((campaign) => ({
-        campaignId: campaign.campaignId,
-        title: campaign.eventName || campaign.name,
-        name: campaign.name,
-        shortName: campaign.shortName,
-        startDate: this.formatDate(campaign.startDate),
-        endDate: this.formatDate(campaign.endDate),
-        totalBudget: this.formatCurrency(campaign.totalBudget),
-        spend: this.formatCurrency(campaign.spend),
-        impressions: this.formatNumber(campaign.impressions),
-        clicks: this.formatNumber(campaign.clicks),
-        ctr: this.formatPct(campaign.ctr),
-        avgCpc: this.formatCurrency(campaign.avgCpc),
-        conversions: this.formatNumber(campaign.conversions),
-        pacingBarClass: this.pacingClass(campaign),
-        pacingBarWidth: Math.min(campaign.pacingPct, 100),
-        pacingText: `${campaign.pacingPct}%`,
-      }))
-    );
+    return computed(() => {
+      const amount = this.googleAmount();
+      return this.campaigns().map((campaign) => {
+        const unread = campaign.fetchFailed === true;
+        const pacingKnown = !unread && campaign.pacingUnknown !== true;
+        let pacingText = 'Unknown';
+        if (unread) {
+          pacingText = '—';
+        } else if (pacingKnown) {
+          pacingText = `${campaign.pacingPct}%`;
+        }
+        let conversions = this.formatNumber(campaign.conversions);
+        if (unread) {
+          conversions = '—';
+        } else if (campaign.conversionsMeasured === false) {
+          conversions = 'Not measured';
+        }
+        return {
+          campaignId: campaign.campaignId,
+          title: campaign.eventName || campaign.name,
+          name: campaign.name,
+          shortName: campaign.shortName,
+          startDate: this.formatDate(campaign.startDate),
+          endDate: this.formatDate(campaign.endDate),
+          totalBudget: unread ? '—' : amount(campaign.totalBudget),
+          spend: unread ? '—' : amount(campaign.spend),
+          impressions: unread ? '—' : this.formatNumber(campaign.impressions),
+          clicks: unread ? '—' : this.formatNumber(campaign.clicks),
+          ctr: unread ? '—' : this.formatPct(campaign.ctr),
+          avgCpc: unread ? '—' : amount(campaign.avgCpc),
+          conversions,
+          pacingBarClass: pacingKnown ? this.pacingClass(campaign) : 'bg-gray-300',
+          pacingBarWidth: pacingKnown ? Math.min(campaign.pacingPct, 100) : 0,
+          pacingText,
+        };
+      });
+    });
   }
 
   private initKeywordTotalsView(): Signal<KeywordTotalsView | null> {
@@ -1022,15 +1078,16 @@ export class MonitoringTabComponent implements OnInit {
         impressions: this.formatNumber(totals.impressions),
         clicks: this.formatNumber(totals.clicks),
         avgCtr: this.formatPct(totals.avgCtr),
-        spend: this.formatCurrency(totals.spend),
+        spend: this.keywordAmount()(totals.spend),
         conversions: this.formatNumber(totals.conversions),
       };
     });
   }
 
   private initVisibleKeywordRows(): Signal<KeywordRowView[]> {
-    return computed(() =>
-      this.visibleKeywords().map((kw) => ({
+    return computed(() => {
+      const amount = this.keywordAmount();
+      return this.visibleKeywords().map((kw) => ({
         trackKey: `${kw.keyword}-${kw.campaignId}`,
         keyword: kw.keyword,
         campaign: kw.campaign,
@@ -1042,11 +1099,11 @@ export class MonitoringTabComponent implements OnInit {
         impressions: this.formatNumber(kw.impressions),
         clicks: this.formatNumber(kw.clicks),
         ctr: this.formatPct(kw.ctr),
-        avgCpc: this.formatCurrency(kw.avgCpc),
-        spend: this.formatCurrency(kw.spend),
+        avgCpc: amount(kw.avgCpc),
+        spend: amount(kw.spend),
         conversions: this.formatNumber(kw.conversions),
-      }))
-    );
+      }));
+    });
   }
 
   /** Each platform button's classes and background for the current selection; see `MONITOR_PLATFORM_BUTTON_COLORS`. */
@@ -1336,6 +1393,19 @@ export class MonitoringTabComponent implements OnInit {
     this.restrictedPlatforms.set(next);
   }
 
+  /** Records whether a panel's failed read was a role refusal, for `refusedReads`. */
+  private noteRefusal(panel: string, err: unknown): void {
+    const refused = err instanceof HttpErrorResponse && err.status === 403;
+    if (refused === this.refusedReads().has(panel)) return;
+    const next = new Set(this.refusedReads());
+    if (refused) {
+      next.add(panel);
+    } else {
+      next.delete(panel);
+    }
+    this.refusedReads.set(next);
+  }
+
   /** The BFF's 403 for a monitor read whose ad account is shared by every foundation (lfx-self-serve-ops#54). */
   private isSharedAccountRestricted(err: unknown): boolean {
     return this.errorCode(err) === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE;
@@ -1404,6 +1474,14 @@ export class MonitoringTabComponent implements OnInit {
           title: `${label} monitoring is limited to LF administrators`,
           message: `This ${label} ad account is shared by every foundation, so its campaigns and spend can't be shown for a single project.`,
         };
+      case 'forbidden':
+        // campaign-service authorizes the read with the project's `campaign_manager` relation, which a
+        // ROOT writer this app admits need not hold (#4837): a standing refusal, so no "refresh" advice.
+        return {
+          state,
+          title: `${label} monitoring needs the campaign manager role`,
+          message: `campaign-service refused to read this project's ${label} connection. Your account needs the campaign manager role on this project; ask an LFX administrator for it.`,
+        };
       case 'metrics_disabled':
         return {
           state,
@@ -1420,27 +1498,31 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   /**
-   * What the LinkedIn/Reddit/Meta totals strip leaves out, or null when it covers every campaign.
+   * What a campaign-service panel's totals strip cannot vouch for, or null when every campaign was
+   * fully read and measured conversions.
    *
    * Only the campaign-service monitor path sets `fetchFailed` / `conversionsMeasured`; on the
    * legacy path both are undefined, so this returns null and the strip renders exactly as before.
-   * A row whose metrics could not be read contributes zeros to the totals, and a row whose
-   * conversions were not measured contributes a 0 to the conversions total, so the strip says so
-   * rather than presenting a partial sum as the account's.
+   * campaign-service sums an unread row into the totals at whatever it carries (`unmeasured_campaigns`
+   * in its design): zeros where its metrics could not be read, real figures where only its budget or
+   * flight could not. So the strip says the totals MAY understate, never that it left rows out — an
+   * exact "covers N of M" would be false for a budget-only failure whose delivery is in the sum.
    */
-  private totalsCoverageNote(rows: readonly (LinkedInCampaignMetrics | RedditCampaignMetrics | MetaCampaignMetrics)[]): string | null {
+  private totalsCoverageNote(rows: readonly (LinkedInCampaignMetrics | RedditCampaignMetrics | MetaCampaignMetrics | CampaignMetrics)[]): string | null {
     const total = rows.length;
-    const read = rows.filter((r) => !r.fetchFailed);
-    const measured = read.filter((r) => r.conversionsMeasured !== false).length;
+    const unread = rows.filter((r) => r.fetchFailed === true).length;
+    const measured = rows.filter((r) => r.conversionsMeasured !== false).length;
     const parts: string[] = [];
-    if (read.length < total) {
-      parts.push(`Totals cover ${read.length} of ${total} campaigns`);
+    if (unread > 0) {
+      parts.push(`Totals may understate: ${unread} of ${total} campaigns could not be fully read`);
     }
     // All-unmeasured is already stated by the "Not measured" conversions tile; only a PARTIAL sum needs saying.
-    if (measured > 0 && measured < read.length) {
-      parts.push(`conversions cover ${measured} of ${total} campaigns`);
+    if (measured > 0 && measured < total) {
+      parts.push(`conversions are measured for ${measured} of ${total} campaigns`);
     }
-    return parts.length > 0 ? `${parts.join('; ')}.` : null;
+    if (parts.length === 0) return null;
+    const sentence = parts.join('; ');
+    return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
   }
 
   private loadForActiveFoundation(): void {
@@ -1685,6 +1767,7 @@ export class MonitoringTabComponent implements OnInit {
           error: (err: unknown) => {
             if (linkedInSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
             const httpErr = err as { error?: { message?: string }; message?: string };
+            this.noteRefusal('linkedin', err);
             this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn accounts'));
           },
         })
@@ -1709,6 +1792,7 @@ export class MonitoringTabComponent implements OnInit {
           error: (err: unknown) => {
             if (redditSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
             const httpErr = err as { error?: { message?: string }; message?: string };
+            this.noteRefusal('reddit', err);
             this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit accounts'));
           },
         })
@@ -1733,6 +1817,7 @@ export class MonitoringTabComponent implements OnInit {
           error: (err: unknown) => {
             if (metaSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
             const httpErr = err as { error?: { message?: string }; message?: string };
+            this.noteRefusal('meta', err);
             this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
           },
         })

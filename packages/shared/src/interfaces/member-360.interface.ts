@@ -27,7 +27,22 @@ export interface Member360GenerateRequest {
   discard?: string;
   window?: '12' | '6' | 'year';
   compare?: boolean;
-  trackers?: Member360Tracker[];
+  trackerIds?: string[];
+}
+/** The only parsed-tracker data sent to the browser. No cell values or headers. */
+export interface Member360TrackerReceipt {
+  trackerId: string;
+  rowCount: number;
+  columnCount: number;
+  byteCount: number;
+  kind?: Member360Tracker['kind'];
+}
+/** Private object-store record, never a response. */
+export interface Member360StoredTracker {
+  project: string;
+  creatorHash: string;
+  expiresAt: number;
+  tracker: Member360Tracker;
 }
 export interface Member360GenerationStart {
   sessionId: string;
@@ -35,7 +50,8 @@ export interface Member360GenerationStart {
 }
 export interface Member360TrackerUpload {
   id: number;
-  tracker: Member360Tracker;
+  tracker: Member360TrackerReceipt;
+  filename: string;
   format: string;
   summary: string;
 }

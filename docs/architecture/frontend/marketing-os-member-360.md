@@ -47,7 +47,7 @@ summary below the minimum length, a neutral summary replaces it and is revalidat
 This is a bounded deterministic policy, not name detection: model-authored prose may
 still repeat names that require the upstream contract to forbid identity or use opaque IDs.
 The Markdown bundle has its own summary hash. Revision reads validate the sidecar schema and sanitized tabs hash
-again before returning the optional `member360` typed field. Navigation and persistence
+again before returning the optional `member360` typed field. Revision responses return that report once, omit `sidecar.member360`, and strip `inputs.research` provenance from the typed projection; immutable storage remains unchanged. Navigation and persistence
 share `buildMktgRunDocumentId`; repeated result polls address that same document ID,
 including after a storage failure. The sanitized envelope is stored once as the typed
 sidecar, independently of the summary's Markdown hash.
@@ -88,7 +88,7 @@ Member's `needs_input` maps to `questions` with validated `member-360-questions/
 
 All Member state marks use that same conditional fence, with a private body write-version because metadata-only writes do not necessarily change an S3 ETag. Claim subjects, version tokens and answer text are never added to public progress. Legacy agents' state-write paths are unchanged. A provably undelivered post-claim Guild send releases only its exact private claim nonce and current ETag back to `questions`, clearing answer attribution/digest so a fresh creator retry can claim again. Definite evidence is DNS (`ENOTFOUND`/`EAI_AGAIN`), connection refusal, a connect-phase or zero-bytes-written reset, or a confirmed pre-accept HTTP rejection (400/401/403/404/405/413/415/422/429). Read resets, timeouts, 408/409, all 5xx and unparseable 2xx acknowledgements remain ambiguous and claimed; there is no outbox/retry for an ambiguous send. An obsolete nonce, a lost release CAS or unavailable storage also stays fail-closed. Generic agents' claims and state transitions are untouched. A classified
 failure keeps the short reason, collapsed Details and host-scoped Run again; the
-server-projected `failureReason` preserves that classification independently of prose on failed runs only.
+server-projected `failureReason` preserves that classification independently of prose on failed runs only. Agent failure prose is creator-only for every agent; other project writers receive the existing fixed Member failure message or shared stopped message.
 The `MktgRunFailureReason` union currently contains `Member360FailureReason`; the dedicated
 `isMktgRunFailureReason` guard accepts only the codes in the Member failure-message allow-list,
 not arbitrary metadata/attempt IDs. A new one-off's classified failures extend that union and
@@ -114,7 +114,7 @@ After that ceiling, reload or Retry makes one result check without restarting th
 polling window; a nonterminal response keeps the capability and shows the notice again.
 Only a ready or failed result (or a permanent transport error) forgets it.
 
-The intake and ranking filters use LFX wrappers with reactive FormGroups. The file-upload wrapper exposes custom upload events rather than a ControlValueAccessor: its handler writes parsed files into the tracker FormControl, with synthetic stable IDs independent of filenames. The chooser stays mounted; its wrapper clears the custom-upload queue and restores focus after parsing. Classified tracker validation reasons reach the form unchanged; only unclassified library errors use the generic fallback. The shared, browser-safe ranking policy supplies the same ordering to the view and workbook; schema constructors remain outside browser barrels.
+The intake and ranking filters use LFX wrappers with reactive FormGroups. The file-upload wrapper exposes custom upload events rather than a ControlValueAccessor: its handler writes opaque tracker receipts into the tracker FormControl, with local stable IDs independent of filenames. The browser retains its locally selected filename for display, never parsed rows or headers. The chooser stays mounted; its wrapper clears the custom-upload queue and restores focus after parsing. Classified tracker validation reasons reach the form unchanged; only unclassified library errors use the generic fallback. The shared, browser-safe ranking policy supplies the same ordering to the view and workbook; schema constructors remain outside browser barrels.
 
 ## Trackers, export and verification
 
@@ -123,7 +123,11 @@ The intake and ranking filters use LFX wrappers with reactive FormGroups. The fi
 project's writer grant before parsing. XLSX expansion is streamed and bounded before
 ExcelJS reads XML; trackers have one sheet, unique non-empty headers, at most 2,000
 rows and 100 columns. The form accepts up to ten files with a 5 MB combined parsed
-payload cap. Generate re-validates the shared form contract, including the tracker
+payload cap. Parsing stores rows privately in the same object-store purpose as run records, under `member-360-trackers/{project}/{opaqueId}.json`, bound to a hash of the creator subject. The response contains only an opaque id, row/column counts, parsed byte count and optional kind. Generate accepts `trackerIds`, not rows, resolves writer entitlement first, then reloads and validates the project/creator-bound records and aggregate size before rendering the unchanged upstream intake. Records expire for reads after six hours, allowing an interrupted intake to resume; expired or unavailable ids require re-upload. Only after `startForOneOff` durably registers the acknowledged Guild run does the controller request best-effort consumed-row deletion. A registration failure retains the receipts for retry. An expired owned read also deletes before rejection; a failed erase is retried once, then logged using an opaque receipt id/reason only. Explicit Remove reports failure after both attempts; background cleanup remains best-effort without row/provider-error data.
+
+`DELETE /api/mktg-agents/member-360/tracker/:id?project=` re-resolves writer entitlement and verifies the uploading creator hash. It returns an empty 204 for removal/already-gone, an empty 404 for another creator's receipt, and an empty 403 while impersonating. Remove waits for confirmation before dropping the row. Scope reset and component destruction issue best-effort keepalive erasures for unconsumed receipts, including partial/late upload acknowledgements. In-flight Generate receipts are reserved until its outcome: durable success transfers deletion to the server; a late failure after departure triggers erasure, so cleanup cannot race an accepted start.
+
+Each authorized upload and Generate runs an oldest-first metadata sweep capped at 25 objects (at most 50 application delete calls, including one retry per failed erase) for project objects older than the six-hour TTL. The underlying object-store listing enumerates the project prefix; this is activity-driven cleanup, not a background timer. Idle projects, hard termination/cancelled network requests before cleanup, identity changes that deny old-scope deletion, and failed deletes still need the lifecycle safety net. Bucket lifecycle expiry of `member-360-trackers/` after one day (including non-current versions where relevant) remains an unconfigured infrastructure follow-up under #4613; neither guaranteed physical deletion by six hours nor historical-version erasure is claimed. Generate re-validates the private tracker
 filename's single-line CSV/XLSX allowlist (no CR, LF, slash or backslash); the renderer
 also flattens CR/LF defensively before placing a filename in a tracker delimiter.
 The mirrored upstream schema retains its literal limits, while the browser/parser

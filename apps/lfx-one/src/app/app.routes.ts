@@ -34,9 +34,8 @@ import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
-import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
+import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
-import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard';
 import { crowdfundingAttributionEnabledGuard } from './shared/guards/crowdfunding-attribution-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
@@ -152,11 +151,10 @@ function orgLensPageRoutes(): Routes {
       loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
     },
     {
-      // Componentless parent, so the dark-launch guard is declared once and the project
-      // detail child is matched by it rather than by a second guard of its own. A looser
-      // copy would be a way into the unfinished feature while the flag is off.
+      // Componentless parent, so the LF-staff-only guard is declared once and the project detail child is matched by it
+      // rather than by a second guard of its own. A looser copy would be a way into the page for callers who are not staff.
       path: 'roi',
-      canMatch: [orgLensRoiEnabledGuard],
+      canMatch: [orgLensLfStaffOnlyGuard],
       data: {
         lens: 'org',
         title: 'ROI Metrics',
@@ -714,20 +712,20 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
-        // Canonical shareable vote permalink (#3659), also the target of vote reminder emails.
-        // Mounted ahead of the lens-redirected `votes` mount below so the URL never rewrites to
-        // /foundation/... or /project/..., where the cast drawer never opens. `data.lens: 'me'`
-        // switches every way in to the Me lens. Access is decided in the component: a vote the
-        // user can't view renders the shared not-found page in place (HTTP 404 under SSR).
-        // `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard does
-        // the same for `votes/create`.
+        // Vote detail page (#3913), the canonical shareable vote permalink (#3659) and the target of
+        // vote reminder emails. Mounted ahead of the lens-redirected `votes` mount below so the URL never
+        // rewrites to /foundation/... or /project/.... No `data.lens` and no `lensRedirectGuard`: opening
+        // a vote keeps the lens the user came from while the URL stays /votes/:id. Access is decided in
+        // the component: a vote the user can't view renders the shared not-found page in place (HTTP 404
+        // under SSR). `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard
+        // does the same for `votes/create`.
         path: 'votes/:id',
         pathMatch: 'full',
         title: VOTE_LABEL.singular,
-        data: { lens: 'me', preload: false },
+        data: { preload: false },
         canMatch: [votePermalinkMatchGuard],
         canActivate: [authGuard],
-        loadComponent: () => import('./modules/votes/vote-permalink/vote-permalink.component').then((m) => m.VotePermalinkComponent),
+        loadComponent: () => import('./modules/votes/vote-detail/vote-detail.component').then((m) => m.VoteDetailComponent),
       },
       {
         path: 'votes',
@@ -836,7 +834,6 @@ export const routes: Routes = [
         path: 'mentorship',
         title: 'Mentorship',
         data: { lens: 'me' },
-        canMatch: [mentorshipEnabledGuard],
         loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_ROUTES),
       },
       {

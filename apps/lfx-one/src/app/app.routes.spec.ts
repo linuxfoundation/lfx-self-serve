@@ -14,6 +14,7 @@ import { HealthMetricsTrainingComponent } from './modules/dashboards/health-metr
 import { MyNewsletterFoundationsComponent } from './modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component';
 import { MyNewslettersComponent } from './modules/newsletters/my-newsletters/my-newsletters.component';
 import { NEWSLETTER_ROUTES } from './modules/newsletters/newsletters.routes';
+import { VoteDetailComponent } from './modules/votes/vote-detail/vote-detail.component';
 import { authGuard } from './shared/guards/auth.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
@@ -86,24 +87,31 @@ describe('Personal newsletter route isolation', () => {
 
 describe('Vote permalink route isolation', () => {
   const children = shellRoute.children!;
-  const permalink = children.find((route) => route.path === 'votes/:id')!;
+  const voteIdEntries = children.filter((route) => route.path === 'votes/:id');
+  const flat = children.find((route) => route.path === 'votes')!;
 
-  it('mounts the auth-only Me permalink ahead of the lens-redirected votes mount', () => {
-    const flat = children.find((route) => route.path === 'votes')!;
-    expect(permalink).toMatchObject({
-      pathMatch: 'full',
-      data: { lens: 'me', preload: false },
-      canMatch: [votePermalinkMatchGuard],
-      canActivate: [authGuard],
-    });
-    expect(children.indexOf(permalink)).toBeLessThan(children.indexOf(flat));
+  it('mounts the vote detail page as the only auth-only /votes/:id entry, ahead of the lens-redirected votes mount', async () => {
+    expect(voteIdEntries).toHaveLength(1);
+    const [page] = voteIdEntries;
+
+    expect(await page.loadComponent!()).toBe(VoteDetailComponent);
+    expect(children.indexOf(page)).toBeLessThan(children.indexOf(flat));
+    expect(page).toMatchObject({ pathMatch: 'full', canMatch: [votePermalinkMatchGuard], canActivate: [authGuard] });
     expect(flat.canActivate).toEqual([lensRedirectGuard, projectQueryParamGuard]);
+  });
+
+  it('keeps the lens the user came from on the detail page — no lens data, no lens redirect', () => {
+    const [page] = voteIdEntries;
+
+    expect(page.data).toEqual({ preload: false });
+    expect(page.canActivate).not.toContain(lensRedirectGuard);
   });
 
   it('leaves /votes/create to the votes module and matches a vote uid', () => {
     const segments = (id: string) => [new UrlSegment('votes', {}), new UrlSegment(id, {})];
-    expect(votePermalinkMatchGuard(permalink, segments('create'))).toBe(false);
-    expect(votePermalinkMatchGuard(permalink, segments('3f2b6c1e-0000-4000-8000-000000000001'))).toBe(true);
+    const [page] = voteIdEntries;
+    expect(votePermalinkMatchGuard(page, segments('create'))).toBe(false);
+    expect(votePermalinkMatchGuard(page, segments('3f2b6c1e-0000-4000-8000-000000000001'))).toBe(true);
   });
 });
 

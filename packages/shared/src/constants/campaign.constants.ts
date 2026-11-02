@@ -167,6 +167,14 @@ export const DEFAULT_META_BUDGET_USD = 500;
 export const DEFAULT_LINKEDIN_BUDGET_USD = 500;
 export const DEFAULT_MICROSOFT_BUDGET_USD = 500;
 
+/**
+ * The Google daily budget the Implementation tab starts from when the brief carries no total to
+ * divide over the flight (#4847). A DAILY figure, like the Microsoft budget and the Meta and LinkedIn
+ * budgets in their default mode, and unlike Reddit's lifetime cap: campaign-service creates the
+ * Google budget with no period, which Google treats as an average daily budget.
+ */
+export const DEFAULT_GOOGLE_DAILY_BUDGET_USD = 500;
+
 /** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
 export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
 
@@ -257,6 +265,18 @@ export const CAMPAIGN_CHAR_LIMITS = {
   sitelinkHeadline: 25,
   sitelinkDescription: 35,
 } as const;
+
+/**
+ * The query parameter the paid campaigns page keeps the event URL in (#4756), so a reload, a second
+ * tab or a shared link can prefill Planning and offer the saved brief again instead of opening blank.
+ */
+export const CAMPAIGN_EVENT_URL_QUERY_PARAM = 'event';
+
+/**
+ * The longest `?event=` value Planning will take from the address. The parameter is caller-supplied
+ * input, so it is bounded before it is parsed or put in the form; real event URLs are far shorter.
+ */
+export const CAMPAIGN_EVENT_URL_MAX_LENGTH = 2048;
 
 export const CAMPAIGN_BUDGET_DEFAULTS = {
   searchBudgetPct: 70,
@@ -4171,6 +4191,51 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
 export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
 
 /**
+ * campaign-service's asset-plan `slot` for each Google image field, per channel, mapped to the
+ * Implement tab's creative control it fills (#4825). An explicit table, not an identity, because the
+ * plan's slot is the PLATFORM layer's name: Performance Max uses Google's asset field types
+ * (`MARKETING_IMAGE`, `LOGO`, …; `internal/platform/googleads/pmax_creative.go`), and Demand Gen
+ * names its portrait shapes `portraitMarketingImages` / `tallPortraitMarketingImages`
+ * (`demandgen_creative.go`) where the request carries `portraitImages` / `tallPortraitImages`.
+ * Display's names already match. A slot absent here is not applied.
+ */
+export const GOOGLE_ASSET_PLAN_SLOT_CONTROLS: Readonly<Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], Readonly<Record<string, string>>>> = {
+  'performance-max': {
+    MARKETING_IMAGE: 'marketingImages',
+    SQUARE_MARKETING_IMAGE: 'squareMarketingImages',
+    PORTRAIT_MARKETING_IMAGE: 'portraitImages',
+    LOGO: 'logoImages',
+    LANDSCAPE_LOGO: 'landscapeLogoImages',
+  },
+  'demand-gen': {
+    marketingImages: 'marketingImages',
+    squareMarketingImages: 'squareMarketingImages',
+    portraitMarketingImages: 'portraitImages',
+    tallPortraitMarketingImages: 'tallPortraitImages',
+    logoImages: 'logoImages',
+  },
+  display: {
+    marketingImages: 'marketingImages',
+    squareMarketingImages: 'squareMarketingImages',
+    logoImages: 'logoImages',
+    squareLogoImages: 'squareLogoImages',
+  },
+};
+
+/**
+ * The member `slot_key`s of each Google channel's cross-slot "any of" rule, keyed `platform/CHANNEL`
+ * (#4833). campaign-service reports a shortfall on such a rule with no `slot_key` (it spans several
+ * slots), so the slot grid needs the members to tell whether the form already satisfies it. Mirrors
+ * the `AnyOf` rules in `internal/platform/googleads/slot_catalog.go`: Demand Gen and Display each need
+ * a landscape OR a square marketing image; Performance Max has no such rule. A channel absent here has
+ * no rule the form can be matched against.
+ */
+export const GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS: Readonly<Record<string, readonly string[]>> = {
+  'google-ads/DEMAND_GEN': ['google-ads/DEMAND_GEN/marketingImages', 'google-ads/DEMAND_GEN/squareMarketingImages'],
+  'google-ads/DISPLAY': ['google-ads/DISPLAY/marketingImages', 'google-ads/DISPLAY/squareMarketingImages'],
+};
+
+/**
  * The Google channels that accept campaign ad extensions — the six this application collects
  * (sitelinks, callouts, structured snippets, calls, promotions and prices), and the lead form it
  * does not collect yet.
@@ -4490,6 +4555,21 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
   'performance-max': 'Performance Max',
   display: 'Display',
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
+
+/**
+ * The short-description width Performance Max needs at least one description to fit: Google renders
+ * it in a short slot the other channels do not have (see the `descriptions` hint in
+ * {@link GOOGLE_CREATIVE_FIELD_SPECS}). The prefill picks one that fits when the brief has one (#4784).
+ */
+export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
+
+/**
+ * Shown on the Performance Max creative while some of its copy is still what the brief prefilled
+ * (#4784). That copy makes the creative a started one, which Google refuses without its required
+ * images, so the note says both ways forward.
+ */
+export const GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE =
+  'Headlines, long headlines, descriptions and the business name are filled in from the brief where it has them. Add the required images below to create this asset group, or clear the copy to create the campaign without one.';
 
 /**
  * Why a Google channel's creative is worth filling in, stated per channel.

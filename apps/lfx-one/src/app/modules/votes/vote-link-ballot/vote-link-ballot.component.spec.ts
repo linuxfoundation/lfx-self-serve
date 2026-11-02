@@ -4,9 +4,9 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { VoteBallotSubmission, VoteLinkBallot } from '@lfx-one/shared/interfaces';
+import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { Observable, of, throwError } from 'rxjs';
+import { NEVER, Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteLinkBallotComponent } from './vote-link-ballot.component';
@@ -45,6 +45,7 @@ describe('VoteLinkBallotComponent (#4363)', () => {
   let fixture: ComponentFixture<VoteLinkBallotComponent>;
   let getLinkBallot: ReturnType<typeof vi.fn>;
   let submitLinkResponse: ReturnType<typeof vi.fn>;
+  let getPublicProjectSummary: ReturnType<typeof vi.fn>;
 
   const state = () => (fixture.componentInstance as unknown as { state: () => string }).state();
   const submit = (submission = SUBMISSION) => (fixture.componentInstance as unknown as { onSubmit: (s: VoteBallotSubmission) => void }).onSubmit(submission);
@@ -61,9 +62,10 @@ describe('VoteLinkBallotComponent (#4363)', () => {
   beforeEach(() => {
     getLinkBallot = vi.fn();
     submitLinkResponse = vi.fn(() => of(undefined));
+    getPublicProjectSummary = vi.fn(() => of(null));
     TestBed.configureTestingModule({
       imports: [VoteLinkBallotComponent],
-      providers: [provideNoopAnimations(), { provide: VoteService, useValue: { getLinkBallot, submitLinkResponse } }],
+      providers: [provideNoopAnimations(), { provide: VoteService, useValue: { getLinkBallot, submitLinkResponse, getPublicProjectSummary } }],
     });
   });
 
@@ -102,6 +104,21 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(testId('vote-link-invalid')?.textContent).toContain('This link is invalid or has expired');
   });
 
+  it('shows the LFX mark linking to a plain / on the invalid-link state (#4753)', async () => {
+    await open(of(BALLOT), '');
+
+    expect(testId('vote-link-lfx-mark')).not.toBeNull();
+    expect(testId('vote-link-lfx-mark-link')?.getAttribute('href')).toBe('/');
+  });
+
+  it('shows the LFX mark linking to a plain / while the ballot is loading, with nothing token-derived in the page (#4753)', async () => {
+    await open(NEVER);
+
+    expect(state()).toBe('loading');
+    expect(testId('vote-link-lfx-mark-link')?.getAttribute('href')).toBe('/');
+    expect(fixture.nativeElement.innerHTML).not.toContain(TOKEN);
+  });
+
   it('renders the vote and form for an active vote with title and description only, no identity chrome', async () => {
     await open(of(BALLOT));
 
@@ -109,6 +126,56 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(testId('vote-link-description')).not.toBeNull();
     expect(testId('vote-link-ballot-form')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('lfx-header, lfx-navbar, [data-testid="user-menu"]')).toBeNull();
+  });
+
+  it('styles description links so emailed ballot voters can recognize them (#4655)', async () => {
+    await open(of({ ...BALLOT, description: '<p>Read the <a href="https://example.com/charter">charter</a>.</p>' }));
+
+    const description = testId('vote-link-description')!;
+    expect(description.querySelector('a')?.textContent).toBe('charter');
+    expect(description.classList.contains('[&_a]:text-blue-600')).toBe(true);
+    expect(description.classList.contains('[&_a]:underline')).toBe(true);
+  });
+
+  it.each([
+    { href: 'https://example.com/charter', plain: false },
+    { href: '//example.com/charter', plain: false },
+    { href: '/docs/charter', plain: false },
+    { href: 'https://example.com/charter', plain: true },
+  ])('opens description link $href (plain: $plain) without replacing or resetting the ballot (#4655)', async ({ href, plain }) => {
+    const html = plain ? `Read ${href}.` : `<p>Read the <a href="${href}"><strong>charter</strong></a>.</p>`;
+    await open(of({ ...BALLOT, description: html }));
+    const description = testId('vote-link-description')!;
+    const link = description.querySelector('a')!;
+    const base = document.createElement('base');
+    base.href = 'https://vote.example/votes/v-1';
+    document.head.prepend(base);
+    const form = testId('vote-link-ballot-form')!;
+    const choice = form.querySelector<HTMLInputElement>('input[type="radio"]')!;
+    choice.click();
+    fixture.detectChanges();
+    expect(choice.checked).toBe(true);
+    const locationBefore = window.location.href;
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+
+    try {
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+      (link.querySelector('strong') ?? link).dispatchEvent(event);
+      fixture.detectChanges();
+
+      expect(opened).toHaveBeenCalledExactlyOnceWith(new URL(href, base.href).href, '_blank', 'noopener,noreferrer');
+      expect(event.defaultPrevented).toBe(true);
+      expect(window.location.href).toBe(locationBefore);
+      expect(state()).toBe('ready');
+      expect(testId('vote-link-ballot-form')).toBe(form);
+      expect(testId('vote-link-description')).toBe(description);
+      expect(choice.checked).toBe(true);
+      expect(submitLinkResponse).not.toHaveBeenCalled();
+      expect(getLinkBallot).toHaveBeenCalledTimes(1);
+    } finally {
+      opened.mockRestore();
+      base.remove();
+    }
   });
 
   it('renders the loading state before the ballot arrives', async () => {
@@ -281,5 +348,159 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(document.head.querySelector('meta[name="referrer"]')?.getAttribute('content')).toBe('no-referrer');
     fixture.destroy();
     expect(document.head.querySelector('meta[name="referrer"]')).toBeNull();
+  });
+});
+
+describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
+  let fixture: ComponentFixture<VoteLinkBallotComponent>;
+  let getPublicProjectSummary: ReturnType<typeof vi.fn>;
+  let submitLinkResponse: ReturnType<typeof vi.fn>;
+
+  const testId = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+  const text = (id: string) => testId(id)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+  const PROJECT: PublicProjectSummary = { name: 'Synthetic Project', slug: 'synthetic', logo_url: 'https://cdn.example/logo.svg', is_foundation: false };
+
+  async function open(): Promise<void> {
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
+    fixture = TestBed.createComponent(VoteLinkBallotComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  const submit = (submission: VoteBallotSubmission = SUBMISSION) => {
+    (fixture.componentInstance as unknown as { onSubmit: (s: VoteBallotSubmission) => void }).onSubmit(submission);
+    fixture.detectChanges();
+  };
+
+  beforeEach(() => {
+    getPublicProjectSummary = vi.fn(() => of(PROJECT));
+    submitLinkResponse = vi.fn(() => of(undefined));
+    TestBed.configureTestingModule({
+      imports: [VoteLinkBallotComponent],
+      providers: [provideNoopAnimations(), { provide: VoteService, useValue: { getLinkBallot: vi.fn(), submitLinkResponse, getPublicProjectSummary } }],
+    });
+  });
+
+  afterEach(() => window.history.replaceState(null, '', '/'));
+
+  async function openWith(ballot: VoteLinkBallot): Promise<void> {
+    (TestBed.inject(VoteService) as unknown as { getLinkBallot: ReturnType<typeof vi.fn> }).getLinkBallot.mockReturnValue(of(ballot));
+    await open();
+  }
+
+  it('treats a 503 on the ballot call (project mapper unavailable) as a try-again error, not an unbranded ballot', async () => {
+    (TestBed.inject(VoteService) as unknown as { getLinkBallot: ReturnType<typeof vi.fn> }).getLinkBallot.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'service unavailable' } }))
+    );
+    await open();
+
+    expect(testId('vote-link-error')?.textContent).toContain('try again');
+    expect(testId('vote-link-ballot-form')).toBeNull();
+    expect(getPublicProjectSummary).not.toHaveBeenCalled();
+  });
+
+  it('shows the project logo, name and vote title when the ballot names a project', async () => {
+    await openWith({ ...BALLOT, project_uid: 'p-1' });
+
+    expect(getPublicProjectSummary).toHaveBeenCalledExactlyOnceWith('p-1');
+    expect(text('vote-link-project-name')).toBe('Synthetic Project');
+    expect(testId('vote-link-project-logo')?.getAttribute('src')).toBe(PROJECT.logo_url);
+    expect(text('vote-link-title')).toBe('Synthetic board vote');
+    expect(testId('vote-link-lfx-mark')).not.toBeNull();
+  });
+
+  it('looks the project up by slug when only the slug is present', async () => {
+    await openWith({ ...BALLOT, project_slug: 'synthetic' });
+
+    expect(getPublicProjectSummary).toHaveBeenCalledExactlyOnceWith('synthetic');
+  });
+
+  it('renders unbranded with the LFX mark when the summary 404s, never an error state', async () => {
+    getPublicProjectSummary.mockReturnValue(of(null));
+    await openWith({ ...BALLOT, project_uid: 'p-hidden' });
+
+    expect(testId('vote-link-project-name')).toBeNull();
+    expect(testId('vote-link-lfx-mark')).not.toBeNull();
+    expect(text('vote-link-title')).toBe('Synthetic board vote');
+    expect(testId('vote-link-ballot-form')).not.toBeNull();
+    expect(testId('vote-link-error')).toBeNull();
+  });
+
+  it('renders unbranded without any lookup when the ballot has no project key', async () => {
+    await openWith(BALLOT);
+
+    expect(getPublicProjectSummary).not.toHaveBeenCalled();
+    expect(testId('vote-link-lfx-mark')).not.toBeNull();
+    expect(testId('vote-link-project-name')).toBeNull();
+  });
+
+  it('shows only the LFX mark, once, when the project has no logo', async () => {
+    getPublicProjectSummary.mockReturnValue(of({ ...PROJECT, logo_url: null }));
+    await openWith({ ...BALLOT, project_uid: 'p-1' });
+
+    expect(testId('vote-link-project-logo')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="vote-link-lfx-mark"]').length).toBe(1);
+    expect(text('vote-link-project-name')).toBe('Synthetic Project');
+  });
+
+  it('shows the status chip and a localised deadline in the compact header', async () => {
+    // Midday UTC, mid-year: the same calendar day and year in every timezone, so the text does not depend on the runner's TZ.
+    await openWith({ ...BALLOT, end_time: '2099-06-15T12:00:00Z' });
+
+    expect(text('vote-link-status')).toBe('Open');
+    expect(text('vote-link-deadline')).toContain('Closes');
+    expect(text('vote-link-deadline')).toContain('Jun 15, 2099');
+  });
+
+  it('shows a full thank-you screen with the chosen answers after a regular submit', async () => {
+    await openWith({ ...BALLOT, project_uid: 'p-1', pseudo_anonymity: false });
+    submit();
+
+    expect(text('vote-link-thank-you-heading')).toBe('Your vote is in');
+    expect(text('vote-link-thank-you-project')).toBe('Synthetic Project');
+    expect(text('vote-link-thank-you-title')).toBe('Synthetic board vote');
+    expect(text('vote-link-thank-you-answer-q1')).toContain('Who?');
+    expect(text('vote-link-thank-you-answer-q1')).toContain('Alice');
+    expect(testId('vote-link-thank-you-secret')).toBeNull();
+    expect(text('vote-link-thank-you-deadline')).toContain('You can change your vote until then from the same link.');
+    expect(testId('vote-link-ballot-form')).toBeNull();
+  });
+
+  it('says the ballot is secret, and echoes no answers, on a pseudo-anonymous vote', async () => {
+    await openWith({ ...BALLOT, pseudo_anonymity: true });
+    submit();
+
+    expect(text('vote-link-thank-you-secret')).toBe('Your ballot is secret');
+    expect(testId('vote-link-thank-you-answer-q1')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Alice');
+  });
+
+  it('treats a missing pseudo_anonymity as secret', async () => {
+    const withoutFlag: Partial<VoteLinkBallot> = { ...BALLOT };
+    delete withoutFlag.pseudo_anonymity;
+    await openWith(withoutFlag as VoteLinkBallot);
+    submit();
+
+    expect(text('vote-link-thank-you-secret')).toBe('Your ballot is secret');
+  });
+
+  it('says "Your vote is updated" after an update, with only the two Self Serve links and no sign-in prompt or identity', async () => {
+    await openWith({ ...BALLOT, pseudo_anonymity: false, ballot: { ...BALLOT.ballot, already_voted: true, vote_status: 'responded' } });
+    (fixture.componentInstance as unknown as { onStartUpdate: () => void }).onStartUpdate();
+    submit();
+
+    expect(text('vote-link-thank-you-heading')).toBe('Your vote is updated');
+    expect(fixture.nativeElement.querySelector('nav, lfx-button')).toBeNull();
+    const hrefs = Array.from<HTMLAnchorElement>(fixture.nativeElement.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(['/', '/votes']);
+    expect(fixture.nativeElement.textContent).not.toMatch(/sign in|log in/i);
+  });
+
+  it('recaps an abstention instead of answers', async () => {
+    await openWith({ ...BALLOT, pseudo_anonymity: false });
+    submit({ abstain: true });
+
+    expect(text('vote-link-thank-you-abstained')).toBe('You abstained');
   });
 });

@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HashAwareSpyLocation } from '@shared/testing/hash-aware-spy-location';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
@@ -19,7 +21,7 @@ import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { PlanningTabComponent } from './planning-tab.component';
 
@@ -3848,5 +3850,157 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
 
     expect(instance()['hsUtm']()).toBe('kubecon-na-2026');
     expect(instance()['hsNotFound']()).toBe(false);
+  });
+});
+
+/**
+ * #4756. The paid planner keeps the event URL in `?event=` so a reload, a second tab or a shared
+ * link prefills it and offers the saved brief again, instead of opening blank.
+ *
+ * `HashAwareSpyLocation` stands in for the address bar: it is what both `replaceState` and the planner's
+ * reader go through, so these tests see exactly what the browser would.
+ */
+describe('PlanningTabComponent event URL in the page address', () => {
+  const EVENT_URL = 'https://events.example.com/kubecon-eu-2026';
+  const programTypeConfig = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  } as CampaignProgramTypeOption;
+
+  let loadBrief: Mock;
+  let location: HashAwareSpyLocation;
+
+  async function mount(address: string, deliveryType: 'paid-marketing' | 'email' = 'paid-marketing'): Promise<ComponentFixture<PlanningTabComponent>> {
+    location.replaceState(address);
+    const fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.componentRef.setInput('deliveryType', deliveryType);
+    fixture.detectChanges();
+    // Past the lookup's 500ms debounce on fake time: no real wait, and no race with the debounce.
+    // `whenStable()` is not used here: the zoneless scheduler runs on the faked `setTimeout`, so
+    // advancing time is what lets it run.
+    await settle(500);
+    return fixture;
+  }
+
+  /** Advance fake time (running the debounce and the change-detection scheduler), then render. */
+  async function settle(ms = 0): Promise<void> {
+    await vi.advanceTimersByTimeAsync(ms);
+    TestBed.tick();
+  }
+
+  function urlField(fixture: ComponentFixture<PlanningTabComponent>): string {
+    return (fixture.componentInstance as unknown as { briefForm: FormGroup }).briefForm.controls['url'].value;
+  }
+
+  function type(fixture: ComponentFixture<PlanningTabComponent>, url: string): void {
+    const component = fixture.componentInstance as unknown as { briefForm: FormGroup; onUrlInput(): void };
+    component.briefForm.controls['url'].setValue(url);
+    component.onUrlInput();
+  }
+
+  function eventParam(): string | null {
+    return new URL(location.path(), 'https://app.example').searchParams.get('event');
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: Location, useClass: HashAwareSpyLocation },
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    loadBrief = vi.fn().mockReturnValue(of({ status: 'none', brief: null, briefId: null, etag: null, approved: false } as CampaignBriefLoadResult));
+    vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+    const context = TestBed.inject(ProjectContextService);
+    context.setRouteLensKind('foundation');
+    context.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    location = TestBed.inject(Location) as HashAwareSpyLocation;
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('prefills the event URL from the address and looks up its saved brief', async () => {
+    const fixture = await mount(`/campaigns?project=foundation-a&event=${encodeURIComponent(EVENT_URL)}`);
+
+    expect(urlField(fixture)).toBe(EVENT_URL);
+    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+  });
+
+  it.each([
+    ['a non-http URL', 'javascript:alert(1)'],
+    ['an unparseable value', 'not a url'],
+    ['an over-long value', `https://events.example.com/${'a'.repeat(2100)}`],
+  ])('ignores %s in the address', async (_label, value) => {
+    const fixture = await mount(`/campaigns?event=${encodeURIComponent(value)}`);
+
+    expect(urlField(fixture)).toBe('');
+    expect(loadBrief).not.toHaveBeenCalled();
+  });
+
+  it('writes a typed event URL to the address, keeping the other parameters', async () => {
+    const fixture = await mount('/campaigns?project=foundation-a');
+
+    type(fixture, EVENT_URL);
+
+    expect(eventParam()).toBe(EVENT_URL);
+    expect(new URL(location.path(), 'https://app.example').searchParams.get('project')).toBe('foundation-a');
+  });
+
+  it('keeps the #fragment of the address when it writes or removes the parameter', async () => {
+    const fixture = await mount('/campaigns?project=foundation-a#plan');
+
+    type(fixture, EVENT_URL);
+    expect(location.path(true)).toMatch(/#plan$/);
+
+    type(fixture, '');
+    expect(location.path(true)).toBe('/campaigns?project=foundation-a#plan');
+  });
+
+  it('removes the parameter when the field is cleared or holds no usable URL', async () => {
+    const fixture = await mount(`/campaigns?event=${encodeURIComponent(EVENT_URL)}`);
+
+    type(fixture, '');
+    expect(eventParam()).toBeNull();
+
+    type(fixture, 'events.example.com/kubecon');
+    expect(eventParam()).toBeNull();
+  });
+
+  it('leaves the parameter to the paid planner: the email planner neither reads nor writes it', async () => {
+    const fixture = await mount(`/campaigns?event=${encodeURIComponent(EVENT_URL)}`, 'email');
+
+    expect(urlField(fixture)).toBe('');
+
+    type(fixture, 'https://events.example.com/open-source-summit');
+    expect(eventParam()).toBe(EVENT_URL);
+  });
+
+  it('keeps the parameter through a foundation switch that rewrites the address', async () => {
+    const fixture = await mount('/campaigns?project=foundation-a');
+    type(fixture, EVENT_URL);
+    // `setFoundation` with its URL sync ON, as the sidebar switch calls it: it rewrites the address,
+    // and must keep the `?event=` the replaceState above wrote.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' });
+    await settle();
+
+    expect(eventParam()).toBe(EVENT_URL);
+    expect(new URL(location.path(), 'https://app.example').searchParams.get('project')).toBe('foundation-b');
   });
 });

@@ -322,7 +322,7 @@ describe('AppComponent — meetings v2 flag', () => {
       expect(plausibleInitialize).not.toHaveBeenCalled();
       expect(segmentIdentifyUser).not.toHaveBeenCalled();
       expect(intercomBoot).not.toHaveBeenCalled();
-      // Mentorship routes are gated by a flag, so the invite page needs them.
+      // Only URL-capturing integrations are skipped on a credential URL; feature flags still load.
       expect(featureFlagInitialize).toHaveBeenCalledWith(authedUser);
     } finally {
       window.history.pushState({}, '', '/');

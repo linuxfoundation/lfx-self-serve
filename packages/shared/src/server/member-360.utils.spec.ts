@@ -174,9 +174,16 @@ describe('Member 360 form-only contract', () => {
     expect(text).toContain('| constructor | toString |\n|---|---|\n| cell | text |\n|  |  |');
   });
   it('uses the shared tracker count limit for Generate', () => {
-    const tracker = { filename: 'tracker.csv', rows: [{ company: 'Acme Motors' }] };
-    expect(member360GenerateSchema.safeParse({ project: 'sample-project', trackers: Array(MEMBER_360_MAX_TRACKERS).fill(tracker) }).success).toBe(true);
-    expect(member360GenerateSchema.safeParse({ project: 'sample-project', trackers: Array(MEMBER_360_MAX_TRACKERS + 1).fill(tracker) }).success).toBe(false);
+    const trackerId = 'a'.repeat(64);
+    expect(member360GenerateSchema.safeParse({ project: 'sample-project', trackerIds: Array(MEMBER_360_MAX_TRACKERS).fill(trackerId) }).success).toBe(true);
+    expect(member360GenerateSchema.safeParse({ project: 'sample-project', trackerIds: Array(MEMBER_360_MAX_TRACKERS + 1).fill(trackerId) }).success).toBe(
+      false
+    );
+    expect(member360GenerateSchema.safeParse({ project: 'sample-project', trackerIds: ['../other'] }).success).toBe(false);
+    expect(
+      member360GenerateSchema.safeParse({ project: 'sample-project', trackers: [{ filename: 'tracker.csv', rows: [{ email: 'synthetic@example.test' }] }] })
+        .success
+    ).toBe(false);
   });
   it('rejects impossible, reversed and incomplete date windows', () => {
     const base = { type: 'member_360_intake_form', project_name: 'Sample Foundation' };

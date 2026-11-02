@@ -8,7 +8,6 @@ import {
   PERSONA_PRIORITY,
   PERSONAS_CACHE_TTL_MS,
   ROOT_PROJECT_SLUG,
-  VALID_PERSONAS,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
@@ -158,13 +157,6 @@ export class PersonaDetectionService {
     let personas = detections.personas;
     if (isRootWriter) {
       personas = this.applyForcedPersona(personas, 'executive-director');
-    }
-
-    // Only honor the impersonation override when the target user actually has the forced persona.
-    // Root-writer promotion above is the only path that may inject a persona the user doesn't natively hold.
-    const forcedPersona = req.appSession?.['impersonationPersonaContext'];
-    if (typeof forcedPersona === 'string' && VALID_PERSONAS.has(forcedPersona) && personas.includes(forcedPersona as PersonaType)) {
-      personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
     }
 
     // A `true` grant is verified by the check that granted it; only a `false` alongside a failed check is unverified.

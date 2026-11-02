@@ -2179,7 +2179,6 @@ export class ProfileController {
 
         if (isIdentityAlreadyLinkedError(response.error, response.message)) {
           this.logLinkedEmailConflict(req, 'send_email_verification');
-          logger.success(req, 'send_email_verification', startTime);
           res.json({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
         } else if (response.error === 'Service temporarily unavailable') {
           res.status(503).json({ success: false, error: response.error, message: response.message });

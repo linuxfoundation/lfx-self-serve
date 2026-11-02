@@ -1,0 +1,27 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The ring starts at 12 o'clock. Plain transforms only: mixing Tailwind transform utilities with a keyframe transform stops the spin.
+.gauge-ring {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gauge-arc {
+    transition: stroke-dashoffset var(--ui-duration-slow) var(--ui-ease-standard);
+  }
+
+  .gauge-spin {
+    animation: gauge-rotate 1s linear infinite;
+  }
+}
+
+@keyframes gauge-rotate {
+  from {
+    transform: rotate(-90deg);
+  }
+
+  to {
+    transform: rotate(270deg);
+  }
+}

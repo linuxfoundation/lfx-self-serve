@@ -19,8 +19,12 @@ import {
 import {
   HealthMetricsEngagementAttendanceMonth,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementNewsletter,
+  HealthMetricsEngagementNewsletterPerformance,
+  HealthMetricsEngagementNewsletterPeriod,
   HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgRow,
+  HealthMetricsEngagementRecipient,
   HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementRepRow,
@@ -37,6 +41,11 @@ import {
   filterHealthMetricsEngagementRepRows,
   formatHealthMetricsEngagementAttendance,
   formatHealthMetricsEngagementAvgReps,
+  buildHealthMetricsEngagementNewsletterView,
+  buildHealthMetricsEngagementRecipientRow,
+  countHealthMetricsEngagementRecipients,
+  filterHealthMetricsEngagementRecipients,
+  formatHealthMetricsRelativeTime,
   formatHealthMetricsEngagementCount,
   formatHealthMetricsEngagementPpDelta,
   formatHealthMetricsEngagementRatio,
@@ -62,6 +71,8 @@ function counts(overrides: Partial<HealthMetricsEngagementSubNavCounts> = {}): H
     reps: 88,
     neverAttendedReps: 0,
     nonMemberOrgs: 6,
+    newsletters: 11,
+    recipients: 1490,
     ...overrides,
   };
 }
@@ -187,6 +198,15 @@ describe('buildHealthMetricsEngagementSubNavItems', () => {
 
     expect(nonmem?.count).toBe(6);
     expect(nonmem?.note).toBe('');
+  });
+
+  it('badges recipient engagement with the latest newsletter’s recipients', () => {
+    expect(buildHealthMetricsEngagementSubNavItems(counts()).find((item) => item.key === 'recipients')?.count).toBe(1490);
+  });
+
+  it('badges newsletter performance with the newsletters sent, and none while unread', () => {
+    expect(buildHealthMetricsEngagementSubNavItems(counts()).find((item) => item.key === 'newsletters')?.count).toBe(11);
+    expect(buildHealthMetricsEngagementSubNavItems(counts({ newsletters: null })).find((item) => item.key === 'newsletters')?.count).toBeNull();
   });
 });
 
@@ -790,5 +810,214 @@ describe('attendance trend rules', () => {
     const summary = buildHealthMetricsEngagementAttendanceTrendSummary(months, today);
 
     expect(summary).toMatchObject({ state: 'insufficient', latestLabel: '—', latestCaption: 'No full month with attendance yet', rangeChangeLabel: '—' });
+  });
+});
+
+describe('buildHealthMetricsEngagementNewsletterView', () => {
+  const year = new Date().getFullYear();
+  const period: HealthMetricsEngagementNewsletterPeriod = {
+    subscribers: 1490,
+    subscribersGrowth: 0.207,
+    growthBaselineDate: `${year}-08-10`,
+    newslettersSent: 3,
+    avgOpenRate: 0.4465,
+    avgClickRate: 0.0567,
+    avgClickToOpenRate: 0.128,
+    avgDeliveryRate: 0.9643,
+  };
+  const newsletter: HealthMetricsEngagementNewsletter = {
+    key: 'n3',
+    name: 'Monthly: Latest',
+    sentDate: `${year}-10-26`,
+    hasEngagementData: true,
+    recipients: 1490,
+    failed: 61,
+    uniqueOpens: 647,
+    totalOpens: 997,
+    uniqueClicks: 76,
+    totalClicks: 1462,
+    openRate: 0.4342,
+    clickRate: 0.051,
+    clickToOpenRate: 0.1175,
+  };
+  const unengaged: HealthMetricsEngagementNewsletter = {
+    ...newsletter,
+    key: 'n2',
+    name: 'Monthly: No data',
+    sentDate: `${year}-09-14`,
+    hasEngagementData: false,
+    failed: null,
+    uniqueOpens: null,
+    totalOpens: null,
+    uniqueClicks: null,
+    totalClicks: null,
+    openRate: null,
+    clickRate: null,
+    clickToOpenRate: null,
+  };
+  const performance: HealthMetricsEngagementNewsletterPerformance = {
+    measured: true,
+    periods: { YTD: period, COMPLETED_YEAR: { ...period, newslettersSent: 0 }, COMPLETED_YEAR_2: null, COMPLETED_YEAR_3: null },
+    // Latest first, as the server returns them; the last one falls in last year.
+    newsletters: [newsletter, unengaged, { ...newsletter, key: 'n1', sentDate: `${year - 1}-12-01` }],
+  };
+
+  it('labels the KPIs, with subscriber growth since its baseline month', () => {
+    const view = buildHealthMetricsEngagementNewsletterView(performance, 'YTD');
+
+    expect(view.isEmpty).toBe(false);
+    expect(view.newslettersSent).toBe(3);
+    expect(view.headline).toMatchObject({ value: '1,490', delta: '+21% since Aug', deltaDirection: 'up' });
+    expect(view.side.map((kpi) => [kpi.label, kpi.value])).toEqual([
+      ['Newsletters sent', '3'],
+      ['Avg. open rate', '45%'],
+      ['Avg. click rate', '5.7%'],
+      ['Click-to-open rate', '13%'],
+      ['Delivery rate', '96%'],
+    ]);
+  });
+
+  it('keeps the period’s newsletters latest first in the table, with dashes where there is no engagement data', () => {
+    const rows = buildHealthMetricsEngagementNewsletterView(performance, 'YTD').rows;
+
+    expect(rows.map((row) => row.key)).toEqual(['n3', 'n2']);
+    expect(rows[0]).toMatchObject({
+      sentLabel: `Sent Oct 26, ${year}`,
+      recipientsLabel: '1,490',
+      failedLabel: '61 failed',
+      uniqueOpensLabel: '647',
+      totalOpensLabel: '997 total',
+      openRateLabel: '43%',
+      clickRateLabel: '5%',
+      clickToOpenLabel: '12%',
+    });
+    expect(rows[1]).toMatchObject({
+      recipientsLabel: '1,490',
+      failedLabel: '',
+      uniqueOpensLabel: '—',
+      totalOpensLabel: '',
+      openRateLabel: '—',
+      openRateWidthPct: 0,
+      clickToOpenLabel: '—',
+    });
+  });
+
+  it('charts oldest first, with rates only for newsletters that have engagement data', () => {
+    const view = buildHealthMetricsEngagementNewsletterView(performance, 'YTD');
+
+    expect(view.audiencePoints.map((point) => [point.key, point.tick, point.uniqueOpens])).toEqual([
+      ['n2', 'Sep', null],
+      ['n3', 'Oct', 647],
+    ]);
+    expect(view.ratePoints.map((point) => point.key)).toEqual(['n3']);
+    expect(view.ratePoints[0].title).toBe(`Monthly: Latest · Oct 26, ${year}`);
+    expect(view.ratePoints[0].openPct).toBeCloseTo(43.42);
+  });
+
+  it('is empty for a period with no newsletter sent, or a foundation the view has never measured', () => {
+    expect(buildHealthMetricsEngagementNewsletterView(performance, 'COMPLETED_YEAR')).toMatchObject({ isEmpty: true, newslettersSent: 0 });
+    expect(buildHealthMetricsEngagementNewsletterView({ ...performance, measured: false }, 'YTD')).toMatchObject({ isEmpty: true, newslettersSent: null });
+    expect(buildHealthMetricsEngagementNewsletterView(performance, 'COMPLETED_YEAR_4')).toMatchObject({ isEmpty: true, newslettersSent: null, rows: [] });
+  });
+
+  it('names the baseline year when it is not the period’s, and draws no delta without growth', () => {
+    const view = buildHealthMetricsEngagementNewsletterView(
+      { ...performance, periods: { ...performance.periods, YTD: { ...period, growthBaselineDate: `${year - 1}-03-02` } } },
+      'YTD'
+    );
+    expect(view.headline.delta).toBe(`+21% since Mar ${year - 1}`);
+
+    const flat = buildHealthMetricsEngagementNewsletterView(
+      { ...performance, periods: { ...performance.periods, YTD: { ...period, subscribersGrowth: 0.001 } } },
+      'YTD'
+    );
+    expect(flat.headline).toMatchObject({ delta: null, deltaDirection: 'neutral' });
+  });
+});
+
+describe('newsletter recipient rules', () => {
+  const now = new Date('2026-10-28T12:00:00Z');
+  // Synthetic recipients: the names are placeholders and the organizations come from the synthetic-org fixtures.
+  const recipient = (overrides: Partial<HealthMetricsEngagementRecipient>): HealthMetricsEngagementRecipient => ({
+    rank: 1,
+    name: 'Recipient Alpha',
+    organization: 'Acme Motors',
+    deliveryStatus: 'Delivered',
+    segment: 'opened',
+    clicked: true,
+    opens: 2,
+    lastOpenedAt: '2026-10-28T00:00:00Z',
+    clicks: 5,
+    lastClickedAt: '2026-10-27T11:00:00Z',
+    ...overrides,
+  });
+  const recipients = [
+    recipient({ rank: 1 }),
+    // Clicked without a recorded open: not opened, yet still in the Clicked cut.
+    recipient({ rank: 2, name: 'Recipient Bravo', organization: 'Vendor Corp', segment: 'not-opened', opens: 0, lastOpenedAt: null }),
+    recipient({ rank: 3, name: null, organization: null, segment: 'not-opened', clicked: false, opens: 0, clicks: 0, lastOpenedAt: null, lastClickedAt: null }),
+    // The view can carry an open time on a failed delivery; the row still reads "—".
+    recipient({
+      rank: 4,
+      name: 'Recipient Charlie',
+      deliveryStatus: 'Failed',
+      segment: 'failed',
+      clicked: false,
+      opens: null,
+      clicks: null,
+      lastClickedAt: null,
+    }),
+  ];
+
+  it('counts each cut, with a click outside any open counted under both Clicked and Not opened', () => {
+    expect(countHealthMetricsEngagementRecipients(recipients)).toEqual({ all: 4, opened: 1, clicked: 2, 'not-opened': 2, failed: 1 });
+  });
+
+  it('counts a failed delivery only as Failed, even where the view still segments it as not opened', () => {
+    const bounced = recipient({ rank: 5, deliveryStatus: 'Failed', segment: 'not-opened', clicked: false });
+    expect(countHealthMetricsEngagementRecipients([bounced])).toEqual({ all: 1, opened: 0, clicked: 0, 'not-opened': 0, failed: 1 });
+    // A stray click on a failed delivery does not put it under Clicked either.
+    const clickedBounce = recipient({ rank: 6, deliveryStatus: 'Failed', segment: 'failed', clicked: true });
+    expect(countHealthMetricsEngagementRecipients([clickedBounce])).toEqual({ all: 1, opened: 0, clicked: 0, 'not-opened': 0, failed: 1 });
+    expect(buildHealthMetricsEngagementRecipientRow(bounced, now).deliveryLabel).toBe('Failed');
+  });
+
+  it('cuts by segment or click and searches name and organization, keeping the engagement order', () => {
+    expect(filterHealthMetricsEngagementRecipients(recipients, 'clicked', '').map((row) => row.rank)).toEqual([1, 2]);
+    expect(filterHealthMetricsEngagementRecipients(recipients, 'all', '  vendor ').map((row) => row.rank)).toEqual([2]);
+    expect(filterHealthMetricsEngagementRecipients(recipients, 'not-opened', 'bravo').map((row) => row.rank)).toEqual([2]);
+  });
+
+  it('labels a row, with dashes for a failed delivery and for a missing name or organization', () => {
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[0], now)).toMatchObject({
+      nameLabel: 'Recipient Alpha',
+      deliveryLabel: 'Delivered',
+      engagementLabel: 'Opened',
+      opensLabel: '2',
+      lastOpenedLabel: '12 hr ago',
+      clicksLabel: '5',
+      lastClickedLabel: '1 day ago',
+    });
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[2], now)).toMatchObject({
+      nameLabel: '—',
+      organizationLabel: '—',
+      engagementLabel: 'Not opened',
+    });
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[3], now)).toMatchObject({
+      deliveryLabel: 'Failed',
+      engagementLabel: '',
+      opensLabel: '—',
+      clicksLabel: '—',
+      lastOpenedLabel: '—',
+      lastClickedLabel: '—',
+    });
+  });
+
+  it('words a time relative to now, falling back to the date past 30 days', () => {
+    expect(formatHealthMetricsRelativeTime(null, now)).toBe('—');
+    expect(formatHealthMetricsRelativeTime('2026-10-28T11:59:40Z', now)).toBe('Just now');
+    expect(formatHealthMetricsRelativeTime('2026-10-28T11:15:00Z', now)).toBe('45 min ago');
+    expect(formatHealthMetricsRelativeTime('2026-10-24T12:00:00Z', now)).toBe('4 days ago');
+    expect(formatHealthMetricsRelativeTime('2026-08-01T12:00:00Z', now)).toBe('Aug 1, 2026');
   });
 });

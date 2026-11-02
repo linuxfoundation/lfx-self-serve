@@ -67,6 +67,11 @@
             <lfx-chart [type]="chartType()" [data]="chartData()!" [options]="chartOptions()" height="100%"></lfx-chart>
           }
         </div>
+        @if (chartCaption()) {
+          <p class="text-[11px] text-gray-500 leading-snug mb-0" [attr.data-testid]="testId() ? testId() + '-chart-caption' : 'metric-card-chart-caption'">
+            {{ chartCaption() }}
+          </p>
+        }
       }
 
       <!-- Footer: Value + Subtitle -->

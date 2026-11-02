@@ -281,7 +281,28 @@ describe('MktgDocumentStoreService', () => {
     expect(view?.current?.revisionId).toBe(saved.id);
     expect(view?.revision.approval).toBeNull();
     expect(view?.member360).toEqual(mode === 'valid' ? member360 : undefined);
-    expect(view?.sidecar?.['member360']).toEqual(mode === 'valid' ? member360 : undefined);
+    expect(view?.sidecar).not.toHaveProperty('member360');
+  });
+
+  it('keeps research provenance in storage, never in the revision payload', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'member-360');
+    if (!type) throw new Error('Missing fixture type');
+    const member360 = member360Fixture();
+    const research = {
+      searches: ['synthetic-contact@example.test'],
+      fetches: [{ url: 'https://profile.example/synthetic-contact', ok: true, status: 200, final_url: 'https://profile.example/synthetic-contact' }],
+      lfx_reads: [],
+      questions: [],
+      answers: [],
+    };
+    const generated = { ...envelope('# Report'), member360: { ...member360, inputs: { ...member360.inputs, research } } };
+    const saved = await service.recordGeneration(req, type, PROJECT, generated, 'private-research');
+    const view = await service.getRevision(req, PROJECT, type, saved.record.documentId, saved.id);
+    expect(view?.member360?.inputs).not.toHaveProperty('research');
+    expect(view?.member360?.tabs).toEqual(member360.tabs);
+    expect(view?.sidecar).not.toHaveProperty('member360');
+    expect(JSON.stringify(view)).not.toContain('synthetic-contact');
+    expect(storedRecord(revisionKeys()[0]).bundle.sidecar?.['member360']).toMatchObject({ inputs: { research } });
   });
 
   it.each([false, true])('fails strict Member 360 listing on an unreadable newest run (older readable=%s)', async (older) => {
