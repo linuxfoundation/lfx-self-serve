@@ -7,8 +7,10 @@ import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
 import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
+import { UserService } from '@services/user.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
@@ -89,8 +91,10 @@ describe('MeetingHomeRowComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
+        { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
+        { provide: UserService, useValue: { authenticated: signal(true) } },
       ],
     });
   });
@@ -165,6 +169,15 @@ describe('MeetingHomeRowComponent', () => {
 
       expect(navigateByUrl).toHaveBeenCalledWith('/project/overview?project=kubernetes');
       expect(open).not.toHaveBeenCalled();
+    });
+
+    it('opens the row menu without opening the row', async () => {
+      const fixture = await render(buildRow(buildMeeting()));
+
+      query(fixture, 'meetings-home-row-actions-trigger')?.querySelector('button')?.click();
+
+      expect(open).not.toHaveBeenCalled();
+      expect(navigateByUrl).not.toHaveBeenCalled();
     });
 
     it('jumps to a foundation overview for foundation meetings', async () => {
