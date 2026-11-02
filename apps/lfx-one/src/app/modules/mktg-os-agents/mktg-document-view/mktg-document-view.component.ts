@@ -1465,6 +1465,7 @@ export class MktgDocumentViewComponent {
     let identity = '';
     let firstApprovedId = '';
     let firstHighestNumber = 0;
+    let approvalMoved = false;
     return computed(() => {
       const view = this.view();
       if (!view) {
@@ -1477,10 +1478,14 @@ export class MktgDocumentViewComponent {
         identity = key;
         firstApprovedId = view.approvedCurrent?.revisionId ?? '';
         firstHighestNumber = Math.max(0, ...view.revisions.map((row) => row.number));
+        approvalMoved = false;
         return null;
       }
-      if (view.approvedCurrent?.revisionId === view.revision.id) return null;
-      const approved = view.revisions.find((row) => row.id === view.approvedCurrent?.revisionId && row.id !== firstApprovedId);
+      if ((view.approvedCurrent?.revisionId ?? '') !== firstApprovedId) approvalMoved = true;
+      if (view.approvedCurrent?.revisionId === view.revision.id && firstApprovedId !== view.revision.id) return null;
+      const approved = view.revisions.find(
+        (row) => row.id === view.approvedCurrent?.revisionId && row.id !== view.revision.id && (approvalMoved || row.id !== firstApprovedId)
+      );
       const candidate = approved ?? view.revisions.find((row) => row.number > firstHighestNumber && row.id !== view.revision.id);
       if (!candidate) return null;
       const author = candidate.approval ? candidate.approval.approvedBy : candidate.author;
