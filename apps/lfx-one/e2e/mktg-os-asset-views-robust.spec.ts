@@ -50,6 +50,12 @@ test('a real-shaped framework fits an iPhone 15 viewport (393px) without sideway
   await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse());
   const content = page.getByTestId('mktg-document-view-page').getByRole('region', { name: 'Document content' });
   await expect(content.getByTestId('mktg-framework-view-table')).toBeVisible();
+  // The overflow of #4885 came from the field comments' sr-only live regions in the last goal column, which render only once
+  // the comments read has answered (stubbed by openAssetDocument): measure nothing before they are in the goal table.
+  const goals = content.getByTestId('mktg-framework-view-goals');
+  const goalLiveRegions = goals.locator('[data-mktg-comment-field] span[role="status"]');
+  await expect(goalLiveRegions.last()).toBeAttached();
+  expect(await goalLiveRegions.count()).toBeGreaterThanOrEqual(1);
   const tabs = content.getByRole('tab');
   for (const tab of await tabs.all()) {
     await tab.click();
@@ -72,18 +78,19 @@ test('a real-shaped framework fits an iPhone 15 viewport (393px) without sideway
     expect(widths.body, diagnostic).toBeLessThanOrEqual(widths.inner);
   }
   await tabs.first().click();
+  await expect(goalLiveRegions.last()).toBeAttached();
   // The goal table keeps its reading width per goal: four goals are wider than the column, and that scroll stays inside the
   // table's own container, never on the page.
-  const goals = content.getByTestId('mktg-framework-view-goals');
   const scroller = await goals.locator('xpath=..').evaluate((element) => ({
     overflowX: getComputedStyle(element).overflowX,
     scrollWidth: element.scrollWidth,
     clientWidth: element.clientWidth,
     right: element.getBoundingClientRect().right,
+    inner: window.innerWidth,
   }));
   expect(scroller.overflowX).toBe('auto');
   expect(scroller.scrollWidth).toBeGreaterThan(scroller.clientWidth);
-  expect(scroller.right).toBeLessThanOrEqual(393);
+  expect(scroller.right).toBeLessThanOrEqual(scroller.inner);
   await page.screenshot({ path: info.outputPath('foundation-message-iphone-15-393.png'), fullPage: true });
 });
 
