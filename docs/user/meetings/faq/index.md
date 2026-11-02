@@ -3,8 +3,8 @@ title: Meetings FAQ
 description: Frequently asked questions about meetings in LFX Self Serve.
 audience: [all]
 product_area: Meetings
-tags: [meetings, faq, schedule, join, host key, attendance]
-last_updated: 2026-10-28
+tags: [meetings, faq, schedule, join, host key, host id, attendance]
+last_updated: 2026-11-02
 intercom_collection: Meetings
 ---
 
@@ -78,9 +78,9 @@ The organizer may have turned on **Requires host approval before sharing with gu
 
 On the meeting's join page, in the **Meeting Materials** panel, and on the meeting's card in the Meetings list. You need to be **signed in** and have access to the meeting. For a public meeting with no join restriction, any signed-in user can see them. For a private or restricted meeting, only invited guests and organizers can. After the meeting runs, people who attended can see them too. Organizers can add materials to a single occurrence of a recurring meeting, or to all of them. See [Meeting Materials](../meeting-materials/).
 
-## Where do I find the Zoom host key?
+## Where do I find the Zoom host key or host ID?
 
-Organizers see the key on the meeting's card (**Host Key** button) and on its join page (**Host controls**). Meeting Hosts who aren't organizers see it on the join page. It's available from 70 minutes before the meeting starts until 40 minutes after it ends. In Zoom, open **Participants → Claim Host** and enter the key. See [Host Controls and the Host Key](../host-controls/).
+Some people call the host key the host ID. It's the 6-digit code you enter in Zoom to claim host, and LFX Self Serve shows it to organizers and Meeting Hosts. Organizers see the key on the meeting's card (**Host Key** button) and on its join page (**Host controls**). Meeting Hosts who aren't organizers see it on the join page. It's available from 70 minutes before the meeting starts until 40 minutes after it ends. In Zoom, open **Participants → Claim Host** and enter the key. See [Host Controls and the Host Key](../host-controls/).
 
 ## Where can I see who attended a past meeting?
 

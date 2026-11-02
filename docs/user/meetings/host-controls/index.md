@@ -3,12 +3,12 @@ title: Host Controls and the Host Key
 description: What the Zoom host key is, who can see it, when it is available, and how to use it to claim host in a meeting.
 audience: [all]
 product_area: Meetings
-tags: [meetings, host, host key, zoom, recording, host controls]
-last_updated: 2026-10-28
+tags: [meetings, host, host key, host id, claim host, zoom, recording, host controls]
+last_updated: 2026-11-02
 intercom_collection: Meetings
 ---
 
-The **host key** is a 6-digit code that lets a person claim host in a Zoom meeting. Use it when you need host controls in the meeting, for example to stop the recording or the AI Companion. LFX Self Serve meetings run on Zoom, so the host key applies to every meeting. The key is shown to meeting hosts on the meeting's join page, and to organizers on the meeting card, so you don't have to look it up in Zoom.
+The **host key** (sometimes called the host ID) is a 6-digit code that lets a person claim host in a Zoom meeting. Use it when you need host controls in the meeting, for example to stop the recording or the AI Companion. LFX Self Serve meetings run on Zoom, so the host key applies to every meeting. The key is shown to meeting hosts on the meeting's join page, and to organizers on the meeting card, so you don't have to look it up in Zoom.
 
 ## Who can see the host key
 
