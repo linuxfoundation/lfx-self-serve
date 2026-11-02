@@ -227,11 +227,23 @@ describe('MeetingsHomeStore', () => {
       const [first, second] = [inDays(2), inDays(9)];
       const indexed = rsvp({ id: 'r-later', scope: 'single', occurrence_id: seconds(second), response_type: 'accepted' });
       const store = create();
-      upcoming$.next([weeklyMeeting([first, second], { my_rsvp: rsvp({ response_type: 'maybe' }), my_rsvps: [indexed] })]);
+      upcoming$.next([
+        weeklyMeeting([first, second], { my_rsvp: rsvp({ response_type: 'maybe', created_at: inDays(-3).toISOString() }), my_rsvps: [indexed] }),
+      ]);
 
       confirmed.set([{ ...indexed, response_type: 'declined' }]);
 
       expect(store.upcomingRows()[1].myRsvp?.response_type).toBe('declined');
+    });
+
+    it.each([true, false])('lets a same-time confirmation replace the overlay (indexed history: %s)', (withHistory) => {
+      const indexed = rsvp({ id: 'r-x' });
+      const store = create();
+      confirmed.set([{ ...indexed, response_type: 'declined' }]);
+
+      upcoming$.next([buildMeeting({ my_rsvp: indexed, my_rsvps: withHistory ? [indexed] : undefined })]);
+
+      expect(store.upcomingRows()[0].myRsvp?.response_type).toBe('declined');
     });
 
     it('applies answers saved this session per date when indexed history is unavailable', () => {

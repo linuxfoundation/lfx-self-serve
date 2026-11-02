@@ -192,7 +192,10 @@ export class MeetingsHomeStore {
       const kept = byId.get(rsvp.id);
       if (!kept || getRsvpTimestampMs(rsvp) >= getRsvpTimestampMs(kept)) byId.set(rsvp.id, rsvp);
     }
-    return { ...meeting, my_rsvp: myRsvp, my_rsvps: [...byId.values()] };
+    // The overlay takes a confirmed copy of itself unless the overlay is newer.
+    const copy = myRsvp && byId.get(myRsvp.id);
+    const overlay = copy && myRsvp && getRsvpTimestampMs(copy) >= getRsvpTimestampMs(myRsvp) ? copy : myRsvp;
+    return { ...meeting, my_rsvp: overlay, my_rsvps: [...byId.values()] };
   }
 
   /** Without indexed history, applies answers saved this session per date; dates none of them cover keep their status. */
@@ -200,7 +203,8 @@ export class MeetingsHomeStore {
     if (row.meeting.my_rsvps) return row;
     const confirmed = this.currentRsvps(row.meeting, this.userService.confirmedMeetingRsvps(row.meeting.id));
     if (confirmed.length === 0) return row;
-    const rsvp = selectApplicableRsvp(row.occurrenceId, row.myRsvp ? [row.myRsvp, ...confirmed] : confirmed);
+    // Confirmations go first so they win timestamp ties.
+    const rsvp = selectApplicableRsvp(row.occurrenceId, row.myRsvp ? [...confirmed, row.myRsvp] : confirmed);
     return rsvp ? { ...row, myRsvp: rsvp } : row;
   }
 
