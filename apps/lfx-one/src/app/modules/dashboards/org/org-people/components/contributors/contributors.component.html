@@ -2,105 +2,122 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-6" data-testid="org-people-contributors">
-  <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4" data-testid="org-people-contributors-filter-bar">
-    <div class="flex-1 md:min-w-56">
-      <lfx-input-text
-        [form]="filterForm"
-        control="search"
-        placeholder="Search contributors..."
-        ariaLabel="Search contributors"
-        icon="fa-light fa-magnifying-glass"
-        styleClass="w-full"
-        size="small"
-        dataTest="org-people-contributors-search-input" />
+  <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4" data-testid="org-people-contributors-filter-bar">
+      <div class="flex-1 md:min-w-56">
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          placeholder="Search contributors..."
+          ariaLabel="Search contributors"
+          icon="fa-light fa-magnifying-glass"
+          styleClass="w-full"
+          size="small"
+          dataTest="org-people-contributors-search-input" />
+      </div>
+      <div class="w-full md:w-56">
+        <lfx-select
+          [form]="filterForm"
+          control="foundation"
+          size="small"
+          [filter]="true"
+          filterPlaceholder="Search foundations"
+          emptyFilterMessage="No foundations match."
+          [options]="foundationOptions()"
+          styleClass="w-full"
+          ariaLabel="Filter by foundation"
+          dataTest="org-people-contributors-foundation-filter" />
+      </div>
+      <div class="w-full md:w-56">
+        <lfx-select
+          [form]="filterForm"
+          control="project"
+          size="small"
+          [filter]="true"
+          filterPlaceholder="Search projects"
+          emptyFilterMessage="No projects match."
+          [options]="projectOptions()"
+          styleClass="w-full"
+          ariaLabel="Filter by project"
+          dataTest="org-people-contributors-project-filter" />
+      </div>
+      <div class="w-full md:w-44">
+        <lfx-select
+          [form]="filterForm"
+          control="timeRange"
+          size="small"
+          [options]="timeRangeOptions"
+          styleClass="w-full"
+          ariaLabel="Filter by time range"
+          dataTest="org-people-contributors-time-range-filter" />
+      </div>
+      <div class="w-full md:w-44">
+        <lfx-select
+          [form]="filterForm"
+          control="projectScope"
+          size="small"
+          [options]="projectScopeOptions"
+          styleClass="w-full"
+          [ariaLabel]="projectScopeLabel"
+          dataTest="org-people-contributors-project-scope-filter" />
+      </div>
+      <lfx-more-filters-toggle
+        [(expanded)]="moreFiltersExpanded"
+        [count]="hiddenFilterCount()"
+        controls="org-people-contributors-more-filters"
+        dataTest="org-people-contributors-more-filters-toggle" />
+      @if (canClearFilters()) {
+        <button
+          type="button"
+          class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 md:self-auto"
+          data-testid="org-people-contributors-clear-filters"
+          (click)="clearFilters()">
+          Clear filters
+        </button>
+      }
     </div>
-    <div class="w-full md:w-56">
-      <lfx-select
-        [form]="filterForm"
-        control="foundation"
-        size="small"
-        [filter]="true"
-        filterPlaceholder="Search foundations"
-        emptyFilterMessage="No foundations match."
-        [options]="foundationOptions()"
-        styleClass="w-full"
-        ariaLabel="Filter by foundation"
-        dataTest="org-people-contributors-foundation-filter" />
+    <!-- Secondary filters, behind "More filters" (lfx-self-serve#4735) -->
+    <div
+      id="org-people-contributors-more-filters"
+      class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4"
+      [class.hidden]="!moreFiltersExpanded()"
+      data-testid="org-people-contributors-more-filters">
+      <div class="w-full md:w-52">
+        <lfx-select
+          [form]="filterForm"
+          control="metric"
+          size="small"
+          [options]="metricOptions"
+          styleClass="w-full"
+          ariaLabel="Count all commits, only main branch commits or all code contributions"
+          dataTest="org-people-contributors-metric-filter" />
+      </div>
+      <div class="w-full md:w-48">
+        <lfx-select
+          [form]="filterForm"
+          control="employment"
+          size="small"
+          [options]="employmentOptions"
+          styleClass="w-full"
+          [ariaLabel]="employmentLabel"
+          dataTest="org-people-contributors-employment-filter" />
+      </div>
+      <div class="w-full md:w-52">
+        <lfx-select
+          [form]="filterForm"
+          control="teamMembers"
+          size="small"
+          [options]="teamMembersOptions"
+          styleClass="w-full"
+          [ariaLabel]="teamMembersLabel"
+          [tooltip]="teamMembersTooltip"
+          tooltipPosition="top"
+          dataTest="org-people-contributors-team-members-filter" />
+      </div>
+      <div class="w-full sm:w-60">
+        <lfx-org-scope-select [form]="filterForm" dataTest="org-people-contributors-org-scope-filter" />
+      </div>
     </div>
-    <div class="w-full md:w-56">
-      <lfx-select
-        [form]="filterForm"
-        control="project"
-        size="small"
-        [filter]="true"
-        filterPlaceholder="Search projects"
-        emptyFilterMessage="No projects match."
-        [options]="projectOptions()"
-        styleClass="w-full"
-        ariaLabel="Filter by project"
-        dataTest="org-people-contributors-project-filter" />
-    </div>
-    <div class="w-full md:w-44">
-      <lfx-select
-        [form]="filterForm"
-        control="timeRange"
-        size="small"
-        [options]="timeRangeOptions"
-        styleClass="w-full"
-        ariaLabel="Filter by time range"
-        dataTest="org-people-contributors-time-range-filter" />
-    </div>
-    <div class="w-full md:w-44">
-      <lfx-select
-        [form]="filterForm"
-        control="projectScope"
-        size="small"
-        [options]="projectScopeOptions"
-        styleClass="w-full"
-        [ariaLabel]="projectScopeLabel"
-        dataTest="org-people-contributors-project-scope-filter" />
-    </div>
-    <div class="w-full md:w-52">
-      <lfx-select
-        [form]="filterForm"
-        control="metric"
-        size="small"
-        [options]="metricOptions"
-        styleClass="w-full"
-        ariaLabel="Count all commits, only main branch commits or all code contributions"
-        dataTest="org-people-contributors-metric-filter" />
-    </div>
-    <div class="w-full md:w-48">
-      <lfx-select
-        [form]="filterForm"
-        control="employment"
-        size="small"
-        [options]="employmentOptions"
-        styleClass="w-full"
-        [ariaLabel]="employmentLabel"
-        dataTest="org-people-contributors-employment-filter" />
-    </div>
-    <div class="w-full md:w-52">
-      <lfx-select
-        [form]="filterForm"
-        control="teamMembers"
-        size="small"
-        [options]="teamMembersOptions"
-        styleClass="w-full"
-        [ariaLabel]="teamMembersLabel"
-        [tooltip]="teamMembersTooltip"
-        tooltipPosition="top"
-        dataTest="org-people-contributors-team-members-filter" />
-    </div>
-    @if (canClearFilters()) {
-      <button
-        type="button"
-        class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 md:self-auto"
-        data-testid="org-people-contributors-clear-filters"
-        (click)="clearFilters()">
-        Clear filters
-      </button>
-    }
   </div>
 
   @if (response().teamMembersUnavailable) {

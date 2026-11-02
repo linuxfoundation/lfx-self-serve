@@ -371,11 +371,29 @@ test.describe('My Newsletters — foundation drill-down', () => {
 
     await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
 
-    // Click the copy-link button
-    await page.getByTestId('newsletter-preview-drawer-copy-link').click();
+    // Share opens the dialog over the drawer
+    await page.getByTestId('newsletter-preview-drawer-share').click();
+    const shareDialog = page.getByTestId('share-dialog');
+    await expect(shareDialog).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
-    // Success toast appears
-    await expect(page.getByText('Link Copied')).toBeVisible();
+    // Social destinations carry the permalink
+    const permalink = encodeURIComponent(`/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`);
+    await expect(page.getByTestId('share-dialog-linkedin')).toHaveAttribute(
+      'href',
+      new RegExp(`^https://www\\.linkedin\\.com/sharing/share-offsite/\\?url=.*${permalink}$`)
+    );
+    await expect(page.getByTestId('share-dialog-x')).toHaveAttribute('target', '_blank');
+    await expect(page.getByTestId('share-dialog-email')).toHaveAttribute('href', /^mailto:\?subject=/);
+
+    // Copy link still copies, with a success toast
+    await page.getByTestId('share-dialog-copy-link').click();
+    await expect(page.getByText('Link Copied', { exact: true })).toBeVisible();
+
+    // Escape dismisses only the share dialog; the drawer underneath stays open
+    await expect(page.getByTestId('newsletter-preview-drawer-header')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(shareDialog).toBeHidden({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-preview-drawer-header')).toBeVisible();
   });
 
   test('subject renders as a real link to the canonical permalink', async ({ page }) => {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, contentChildren, ElementRef, inject, input } from '@angular/core';
+import { UiFocusable } from '@lfx-one/shared/interfaces';
 
 import { UiChipHost } from './chip-host';
 import { UiChipComponent } from './chip.component';
@@ -34,7 +35,7 @@ export class UiChipGroupComponent extends UiChipHost {
   /** Accessible name of the list, such as "Applied filters". */
   public readonly ariaLabel = input<string>('');
   /** Where focus goes when the last chip is removed: an element or an `lfx-ui-button`, anything with `focus()`. Without it the row itself takes focus, which is lost if the parent then hides the row. */
-  public readonly fallbackFocus = input<{ focus(): void } | null>(null);
+  public readonly fallbackFocus = input<UiFocusable | null>(null);
 
   public successorsOf(chip: UiChipComponent): UiChipComponent[] {
     const live = this.chips().filter((other) => other === chip || (other.dismissible() && !other.dismissing()));

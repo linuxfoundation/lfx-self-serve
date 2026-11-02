@@ -38,7 +38,7 @@ const meta: Meta<UiMenuComponent> = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
+      <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
       <ng-template #menu>
         <lfx-ui-menu [ariaLabel]="cfg.ariaLabel">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square">Edit</lfx-ui-menu-item>
@@ -61,7 +61,7 @@ export const ItemVariants: Story = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
+      <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions" class="!w-[240px]">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square" shortcut="⌘E">Edit</lfx-ui-menu-item>
@@ -85,7 +85,7 @@ export const IconTrigger: Story = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <lfx-ui-button variant="secondary" size="medium" iconOnly icon="fa-light fa-ellipsis" ariaLabel="More actions" [menu]="menu" />
+      <lfx-ui-button variant="secondary" size="large" iconOnly icon="fa-light fa-ellipsis" ariaLabel="More actions" [menu]="menu" />
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="More actions">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square">Edit</lfx-ui-menu-item>
@@ -103,7 +103,7 @@ export const FlipsAtTheEdge: Story = {
     props: { cfg: args },
     template: `
       <div class="flex h-[360px] items-end">
-        <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-up" [menu]="menu">Actions</lfx-ui-button>
+        <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-up" [menu]="menu">Actions</lfx-ui-button>
       </div>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions">
@@ -111,6 +111,28 @@ export const FlipsAtTheEdge: Story = {
           <lfx-ui-menu-item icon="fa-light fa-copy">Duplicate</lfx-ui-menu-item>
           <lfx-ui-menu-item icon="fa-light fa-link">Copy Link</lfx-ui-menu-item>
           <lfx-ui-menu-item icon="fa-light fa-user-plus">Invite Members</lfx-ui-menu-item>
+        </lfx-ui-menu>
+      </ng-template>`,
+  }),
+};
+
+/** Shortcut keycaps: `+` splits keys, a `+` with no key on one side is the `+` key itself, and a leading ⌘ ⇧ ⌥ ⌃ is its own key. */
+export const Shortcuts: Story = {
+  render: (args) => ({
+    props: { cfg: args },
+    template: `
+      <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
+      <ng-template #menu>
+        <lfx-ui-menu ariaLabel="Shortcut forms" class="!w-[280px]">
+          <lfx-ui-menu-item shortcut="⌘K">Search</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="⌘ K">Search, spaced</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="Ctrl+Shift+K">Delete Line</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="+K">Add Keyword</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="Ctrl++K">Zoom to Fit</lfx-ui-menu-item>
+          <lfx-ui-menu-separator />
+          <lfx-ui-menu-item shortcut="+">Expand</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="Ctrl+">Zoom In</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="⌘+">Larger Text</lfx-ui-menu-item>
         </lfx-ui-menu>
       </ng-template>`,
   }),

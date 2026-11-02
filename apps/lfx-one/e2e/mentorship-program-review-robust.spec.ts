@@ -16,14 +16,7 @@
 import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import {
-  enableMentorshipFlag,
-  gotoProgramReview,
-  openProgramReview,
-  PROGRAM_REVIEW_LOAD_TIMEOUT,
-  stubProgramDecision,
-  stubProgramReview,
-} from './helpers/program-review.helper';
+import { gotoProgramReview, openProgramReview, PROGRAM_REVIEW_LOAD_TIMEOUT, stubProgramDecision, stubProgramReview } from './helpers/program-review.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -32,10 +25,6 @@ const ELEMENT_TIMEOUT = 10_000;
 test.setTimeout(60_000);
 
 test.describe('Program review — Robust Tests', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test.describe('Data-testid presence', () => {
     test('nests the confirm card and its actions inside the page root', async ({ page }) => {
       await stubProgramReview(page, 200, { status: 'pending' });

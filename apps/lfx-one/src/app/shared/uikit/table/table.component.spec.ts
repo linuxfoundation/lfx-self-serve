@@ -122,11 +122,11 @@ describe('UiTableComponent', () => {
   });
 
   it('adds the ring and radius only when bordered', async () => {
-    expect(host.className).not.toContain('shadow-border');
+    expect(host.className).not.toContain('edge');
 
     await setInputs({ bordered: true });
 
-    expect(host.className).toContain('shadow-border');
+    expect(host.className).toContain('edge');
     expect(host.className).toContain('rounded-ui-sm');
   });
 

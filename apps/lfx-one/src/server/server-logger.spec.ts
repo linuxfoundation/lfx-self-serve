@@ -1,7 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import express from 'express';
 import { ReplyError } from 'ioredis';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ACCESS_TOKEN = 'eyJ-access-token-secret';
@@ -10,6 +14,7 @@ const RAW_KEY = 'lfx:session:v1:alice-session-id';
 
 let serverLogger: typeof import('./server-logger').serverLogger;
 let reqSerializer: typeof import('./server-logger').reqSerializer;
+let createBrowserAssetsMiddleware: typeof import('./middleware/browser-assets.middleware').createBrowserAssetsMiddleware;
 
 // All cases use the same production configuration. Load the real logger and its OpenTelemetry
 // graph once; only the cold import needs extra time, not each synchronous logging assertion.
@@ -18,6 +23,7 @@ beforeAll(async () => {
   vi.stubEnv('LOG_LEVEL', 'info');
   try {
     ({ serverLogger, reqSerializer } = await import('./server-logger'));
+    ({ createBrowserAssetsMiddleware } = await import('./middleware/browser-assets.middleware'));
   } finally {
     vi.unstubAllEnvs();
   }
@@ -42,6 +48,57 @@ describe('serverLogger credential scrubbing', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+  });
+
+  it('serializes a browser asset miss through the infrastructure logger with explicit version data and no request context', async () => {
+    vi.stubEnv('APP_VERSION', 'synthetic-release-1169');
+    const folder = await mkdtemp(join(tmpdir(), 'lfx-asset-telemetry-'));
+    const app = express();
+    app.use((req, _res, next) => {
+      Object.defineProperty(req, 'log', {
+        get: () => {
+          throw new Error('No request logger before pino-http');
+        },
+      });
+      next();
+    });
+    app.use(createBrowserAssetsMiddleware(folder));
+    const server = app.listen(0, '127.0.0.1');
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('listening', resolve);
+        server.once('error', reject);
+      });
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Expected an ephemeral HTTP port');
+
+      const response = await fetch(`http://127.0.0.1:${address.port}/%63hunk-IJKLMNOP.js?private-query-marker`, {
+        headers: { Cookie: 'private-cookie-marker', 'User-Agent': 'private-agent-marker', 'X-Forwarded-For': '192.0.2.77' },
+      });
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe('Not found');
+
+      const records = lines
+        .join('')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      const samples = records.filter((record) => record.operation === 'browser_asset_miss');
+      expect(samples).toHaveLength(1);
+      expect(samples[0]).toMatchObject({ level: 'INFO', operation: 'browser_asset_miss', status: 'info' });
+      expect(samples[0]).not.toHaveProperty('warning_message');
+      expect(samples[0].data).toEqual({ asset_path: '/chunk-IJKLMNOP.js', version: 'synthetic-release-1169', status_code: 404, method: 'GET' });
+      expect(samples[0]).not.toHaveProperty('req');
+      expect(samples[0]).not.toHaveProperty('request_id');
+      expect(JSON.stringify(samples)).not.toContain('private');
+      expect(JSON.stringify(samples)).not.toContain('192.0.2.77');
+    } finally {
+      try {
+        await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+      } finally {
+        await rm(folder, { recursive: true, force: true });
+      }
+    }
   });
 
   it('never emits a Valkey ReplyError command args or a nested session token', () => {

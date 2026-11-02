@@ -10,8 +10,6 @@
 
 import { expect, Page } from '@playwright/test';
 
-export { enableMentorshipFlag } from './mentee-profile.helper';
-
 export const MENTOR_REGISTER_URL = '/mentorship/mentor';
 export const MENTOR_PROGRAMS_URL = '/mentorship/mentor/programs';
 export const MENTOR_PAGE_LOAD_TIMEOUT = 30_000;

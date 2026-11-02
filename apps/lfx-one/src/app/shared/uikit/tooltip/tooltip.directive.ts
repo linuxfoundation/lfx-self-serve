@@ -230,6 +230,8 @@ export class UiTooltipDirective {
   // keyboard dispatcher is not used: subscribing to it would make this overlay the only one to receive every other key.
   private readonly onKeydown = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || hasModifierKey(event)) return;
+    // An Escape that cancels an IME composition is the input method's.
+    if (event.isComposing || event.keyCode === 229) return;
     if (this.overlayRef) {
       event.preventDefault();
       event.stopPropagation();

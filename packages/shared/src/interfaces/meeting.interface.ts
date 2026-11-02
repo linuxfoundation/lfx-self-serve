@@ -414,6 +414,8 @@ export interface Meeting {
   /** Effective viewer's active registration UIDs, enriched by /api/user/meetings only.
    * An empty array confirms no active registration; undefined means enrichment was unavailable. */
   my_registrant_ids?: string[];
+  /** Viewer's RSVPs from active registrations (/api/user/meetings only); [] confirms none, undefined means unavailable. */
+  my_rsvps?: MeetingRsvp[];
   /** Project name — populated on query-service list payloads; on the authenticated detail
    * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment and is
    * absent when that enrichment fails (and from the raw ITX detail payload). */
@@ -426,6 +428,8 @@ export interface Meeting {
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation) */
   parent_project_uid?: string;
+  /** Project logo URL from BFF project enrichment; else the payload's own value, else empty */
+  project_logo_url?: string;
 }
 
 /**
@@ -447,6 +451,10 @@ export interface MeetingOccurrence {
   status?: string;
   /** Total registrant count for this occurrence */
   registrant_count?: number;
+  /** "Yes" responses for this occurrence; set by the v1_meeting index only */
+  response_count_yes?: number;
+  /** "No" responses for this occurrence; set by the v1_meeting index only */
+  response_count_no?: number;
   /**
    * Per-occurrence recurrence override. When a recurring meeting's cadence changes from a
    * specific occurrence onwards, Zoom records it as an `all_following` update and the
@@ -1065,6 +1073,10 @@ export interface PastMeeting extends Meeting {
   sessions: MeetingSession[];
   /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings and /api/past-meetings when a signed-in user is present */
   user_attended?: boolean;
+  /** Whether a recording with a share URL is viewable by the user — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
+  has_recording?: boolean;
+  /** Whether an AI summary with content is visible to the viewer (organizers include awaiting approval) — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
+  has_ai_summary?: boolean;
 }
 
 /** Angular router target for navigating to a specific meeting occurrence. */
@@ -1816,6 +1828,17 @@ export interface CreateMeetingRsvpRequest {
   response: RsvpResponse;
 }
 
+/**
+ * Failed RSVP submission
+ * @description Error emitted by the frontend RSVP submit flow; `message` is ready to show to the user
+ */
+export interface MeetingRsvpSubmitError {
+  /** User-facing reason the RSVP was not saved */
+  message: string;
+  /** HTTP status of the failed request, absent when the request was never sent */
+  status?: number;
+}
+
 // ============================================================================
 // ITX Meeting Response Interfaces (Goa endpoint shape)
 // ============================================================================
@@ -2349,11 +2372,3 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
-
-/** A placeholder block in the meetings redesign's right column. */
-export interface MeetingsRailBlock {
-  /** Stable key, also used in the block's test ids. */
-  key: string;
-  /** Uppercase kicker shown above the block. */
-  label: string;
-}

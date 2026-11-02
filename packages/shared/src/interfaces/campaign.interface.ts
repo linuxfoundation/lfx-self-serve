@@ -1042,6 +1042,27 @@ export interface CampaignBriefPersistenceState {
   conflict?: CampaignBriefPersistResult['conflict'];
 }
 
+/** The Implementation tab's Google budget and flight controls, read together (#4847). */
+export interface GoogleBudgetInputs {
+  /** The daily budget control's value; `null` once the number input is emptied, whatever the control's declared type. */
+  daily: number | null;
+  /** The flight's first day, `YYYY-MM-DD`. */
+  start: string;
+  /** The flight's last day, `YYYY-MM-DD`. */
+  end: string;
+}
+
+/**
+ * The Google daily budget's flight on the Implementation tab: how many days it runs and what the
+ * daily figure spends over them, shown beside the field so the operator sees both numbers (#4847).
+ */
+export interface GoogleBudgetFlight {
+  /** Flight length in days, start and end days both counted (`campaignFlightDays`). */
+  days: number;
+  /** The daily budget times {@link GoogleBudgetFlight.days}. */
+  total: number;
+}
+
 /**
  * The Implementation tab's in-progress edits, held by the PARENT so they survive a tab switch.
  *
@@ -1112,7 +1133,10 @@ export interface CampaignImplementationDraft {
   /** Search ad copy as edited. Empty arrays are meaningful — the user removed every entry. */
   headlines: string[];
   descriptions: string[];
-  /** Budget and flight, which the brief seeds but the user routinely overrides. */
+  /**
+   * Budget and flight, which the brief seeds but the user routinely overrides. `budgetUsd` is the
+   * Google DAILY budget (#4847), the same figure {@link CampaignCreateRequest.budgetUsd} sends.
+   */
   budgetUsd: number;
   searchBudgetPct: number;
   startDate: string;
@@ -2609,6 +2633,19 @@ export interface GoogleCreativeImageOption {
 }
 
 /**
+ * What the browser learned about one pasted Google image URL, by loading it as an image: still
+ * loading, its natural size, or that it could not be loaded here. Advisory only — campaign-service
+ * downloads and checks every pasted URL itself before anything is created.
+ */
+export interface GoogleTypedImageProbe {
+  state: 'checking' | 'loaded' | 'failed';
+  width?: number;
+  height?: number;
+  /** A settled answer being probed again. It stays the answer shown until the new probe settles. */
+  rechecking?: boolean;
+}
+
+/**
  * One Google image slot's library controls, assembled by the Implement tab for
  * `lfx-google-creative-image-library`. `key` is `<request key>.<control>`, the key the held images
  * and the draft are stored under.
@@ -2640,15 +2677,31 @@ export interface CreativeAssetLibraryState {
  *
  * Not expressible as a per-field {@link GoogleCreativeFieldSpec.min}: the requirement is on the
  * PAIR, and putting `min: 1` on either member would refuse a creative that supplied only the other
- * one — which upstream accepts. Demand Gen and Display both state it over the two marketing-image
- * arrays (`demandgen_creative.go`, `display_creative.go`); Performance Max has no such rule because
- * it requires both arrays independently, which its two `min: 1` entries already carry.
+ * one — which upstream accepts. Demand Gen states it over the two marketing-image arrays
+ * (`demandgen_creative.go`). Performance Max and Display have no such rule because they require
+ * both arrays independently, which their two `min: 1` entries already carry (#4848).
  */
 export interface GoogleCreativeEitherOrRule {
   /** The `control` names of the list fields, at least one of which must be non-empty. */
   controls: readonly string[];
   /** What is missing, as a clause that follows the channel's label in the submit-time message. */
   message: string;
+}
+
+/**
+ * One ceiling Google states across SEVERAL of a channel's image fields (#4848).
+ *
+ * Not expressible as a per-field {@link GoogleCreativeFieldSpec.max}: each field can sit under its
+ * own cap while the group is over the shared one, which campaign-service refuses before anything
+ * is created (`demandgen_creative.go`, `pmax_creative.go`, `display_creative.go`).
+ */
+export interface GoogleCreativeSharedCap {
+  /** The `control` names of the image fields the ceiling spans. */
+  controls: readonly string[];
+  /** The most entries, pasted URLs and stored images together, across all of them. */
+  max: number;
+  /** The group's name in the submit-time message, e.g. `marketing images`. */
+  label: string;
 }
 
 /**
@@ -2791,8 +2844,9 @@ export interface GooglePerformanceMaxCreative {
  */
 export interface GoogleDisplayCreative {
   /**
-   * The two marketing arrays are reciprocally required — Google requires each when the other is
-   * absent — and share a combined cap. Both logo arrays are optional and capped separately. Their
+   * Both marketing arrays are required — Google's `ResponsiveDisplayAdInfo` needs a landscape AND a
+   * square marketing image (#4848) — and share a combined cap of 15. Both logo arrays are optional
+   * and share a combined cap of 5. Their
    * ratios and minimums are this channel's own, not the same-named Demand Gen or Performance Max
    * slots'. Each list carries URLs and asset refs alike, as on the siblings.
    */
@@ -3136,6 +3190,11 @@ export interface CampaignCreateRequest {
   registrationUrl: string;
   hsToken?: string;
   campaignTypes: CampaignType[];
+  /**
+   * The Google DAILY budget. campaign-service creates the Google budget with no period, which
+   * Google treats as daily, so this is never a flight total (#4847). Spent in the ad account's
+   * currency despite the name (LFXV2-3251).
+   */
   budgetUsd: number;
   searchBudgetPct: number;
   startDate: string;

@@ -4,7 +4,7 @@ description: Frequently asked questions about your personal profile and public p
 audience: [all]
 product_area: Profile
 tags: [profile, faq, about-me, photo, public-profile, visibility]
-last_updated: 2026-10-27
+last_updated: 2026-11-02
 intercom_collection: Profile
 ---
 
@@ -24,9 +24,15 @@ Yes — **About Me** can hold up to **2,000 characters**. A live counter under t
 
 Your profile is private by default. Open [**Profile & Account**](/profile), select **Public profile settings** in the profile panel, and switch **Profile visibility** to **Public**. From there you can toggle which sections appear (contributions, badges, certifications, About Me, and more). Changes save automatically. See [Public profile settings](../public-profile-settings/) and [Your public profile](../public-profile/).
 
+## Do I need a public profile to see my own contributions?
+
+No. Your contributions appear under **Project Involvement** on the **Work history & Affiliations** tab (`/profile/attributions`) whether your profile is public or private. **Profile visibility** and the section toggles in **Public profile settings** only control what visitors see at `app.lfx.dev/u/<username>`. If your contributions are missing there too, see [Why don't my GitHub contributions show up?](../../account/faq/#why-don-t-my-github-contributions-show-up).
+
 ## My name is displaying incorrectly. How do I fix it?
 
 Open [**Profile & Account**](/profile), select **Edit profile**, update your **First Name** and **Last Name** fields, and select **Save Changes**.
+
+This changes your name in LFX Self Serve only. It does not change the name on a training certificate that has already been issued. To correct a certificate, see [The name on my certificate is wrong](../../trainings/faq/#the-name-on-my-certificate-is-wrong-how-do-i-change-it).
 
 ## Where do I manage my email, password, affiliations, or CLAs?
 

@@ -279,10 +279,11 @@ export interface EnrollmentRow {
   IS_ACTIVE_ENROLLMENT: boolean;
   ENROLLMENT_TS: string | null;
   TOTAL_TIME: number | null;
+  PRODUCT_TYPE: ProductType;
 }
 
 /**
- * A training course the user is currently enrolled in
+ * A training course or certification exam the user is enrolled in
  */
 export interface TrainingEnrollment {
   /** ENROLLMENT_ID */
@@ -307,6 +308,8 @@ export interface TrainingEnrollment {
   status: EnrollmentStatus | null;
   /** Whether the enrollment is currently active */
   isActiveEnrollment: boolean;
+  /** Product type: Training or Certification (exam) */
+  productType: ProductType;
 }
 
 /**

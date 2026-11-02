@@ -5,18 +5,29 @@ import { formatDate, isPlatformBrowser, isPlatformServer } from '@angular/common
 import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { IMPERSONATION_READ_ONLY_ERROR_CODE, NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
-import { NewsletterJoinState, NewsletterReaderState, ServerRequestContext } from '@lfx-one/shared/interfaces';
+import { ButtonComponent } from '@components/button/button.component';
+import { IMPERSONATION_READ_ONLY_ERROR_CODE, NEWSLETTER_INVITE_RELOOKUP_DELAY_MS, NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
+import {
+  MyNewsletterFoundation,
+  MyNewsletterFoundationsResponse,
+  NewsletterInviteDialogData,
+  NewsletterInviteLookup,
+  NewsletterJoinState,
+  NewsletterReaderState,
+  ServerRequestContext,
+} from '@lfx-one/shared/interfaces';
 import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
-import { ClipboardShareService } from '@services/clipboard-share.service';
+import { ShareDialogService } from '@services/share-dialog.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, defer, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap, timer } from 'rxjs';
 
 import { NewsletterMemberBenefitBannerComponent } from './newsletter-member-benefit-banner/newsletter-member-benefit-banner.component';
 import { NewsletterNotFoundComponent } from './newsletter-not-found/newsletter-not-found.component';
+import { NewsletterInviteDialogComponent } from '../components/newsletter-invite-dialog/newsletter-invite-dialog.component';
 import { NewsletterPreviewComponent } from '../components/newsletter-preview/newsletter-preview.component';
 
 /**
@@ -28,11 +39,14 @@ import { NewsletterPreviewComponent } from '../components/newsletter-preview/new
  * Foundation member companies read the issue; everyone else gets a members-only screen. A member
  * employee who is not yet in the group is added automatically — the join call fires once, in the
  * browser only, so SSR never writes.
+ * Readers allowed to invite coworkers to the issue's foundation newsletter (the same `can_invite`
+ * the My Newsletters cards use) get an "Invite a colleague" button; the lookup is browser-only too.
  * URL: slug-based (human-readable, not UID-based).
  */
 @Component({
   selector: 'lfx-newsletter-reader',
-  imports: [NewsletterMemberBenefitBannerComponent, NewsletterNotFoundComponent, NewsletterPreviewComponent, SkeletonModule],
+  imports: [ButtonComponent, NewsletterMemberBenefitBannerComponent, NewsletterNotFoundComponent, NewsletterPreviewComponent, SkeletonModule],
+  providers: [DialogService],
   templateUrl: './newsletter-reader.component.html',
 })
 export class NewsletterReaderComponent {
@@ -42,7 +56,8 @@ export class NewsletterReaderComponent {
   private readonly lensService = inject(LensService);
   private readonly projectService = inject(ProjectService);
   private readonly newsletterService = inject(NewsletterService);
-  private readonly clipboardShare = inject(ClipboardShareService);
+  private readonly shareDialog = inject(ShareDialogService);
+  private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
 
@@ -65,6 +80,9 @@ export class NewsletterReaderComponent {
   protected readonly state: Signal<NewsletterReaderState> = this.initState();
   /** Automatic member-benefit group add, driven by an `eligible` access decision. */
   protected readonly joinState: Signal<NewsletterJoinState> = this.initJoinState();
+  /** The issue's foundation card from My Newsletters, used for the invite CTA (null until resolved, on SSR, or on failure). */
+  protected readonly inviteFoundation: Signal<MyNewsletterFoundation | null> = this.initInviteFoundation();
+  protected readonly canInvite = computed(() => !!this.inviteFoundation()?.can_invite);
 
   // === Computed: state projections ===
   protected readonly loading = computed(() => this.state().loading);
@@ -99,11 +117,24 @@ export class NewsletterReaderComponent {
   });
 
   // === Protected Methods ===
-  protected copyLink(): void {
+  protected openShare(): void {
     const url = this.shareUrl();
     if (!url) return;
 
-    this.clipboardShare.copyLink(url, 'Newsletter link copied to clipboard.');
+    this.shareDialog.open({ url, title: this.newsletter()?.subject || this.pageTitle(), copiedMessage: 'Newsletter link copied to clipboard.' });
+  }
+
+  protected onInvite(): void {
+    const foundation = this.inviteFoundation();
+    if (!foundation?.can_invite) return;
+    this.dialogService.open(NewsletterInviteDialogComponent, {
+      header: 'Invite a colleague',
+      width: '480px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { foundation } satisfies NewsletterInviteDialogData,
+    });
   }
 
   protected retryJoin(): void {
@@ -225,5 +256,52 @@ export class NewsletterReaderComponent {
       ),
       { initialValue: idle }
     );
+  }
+
+  /**
+   * Looks up the issue's foundation in GET /api/newsletters/my-foundations once a readable issue has
+   * loaded, and again after the member-benefit join adds the reader to the group (they may now be
+   * able to invite). That second lookup waits {@link NEWSLETTER_INVITE_RELOOKUP_DELAY_MS}: the
+   * endpoint reads memberships from the query-service index, which picks up the join asynchronously.
+   * Browser-only; a failure just hides the CTA — the invite POST re-checks everything.
+   */
+  private initInviteFoundation(): Signal<MyNewsletterFoundation | null> {
+    const lookup = computed<NewsletterInviteLookup | null>(
+      () => {
+        const { loading, error, project, newsletter, access } = this.state();
+        if (loading || error || !project || !newsletter || !access || access.access === 'denied') return null;
+        const joinStatus = this.joinState().status;
+        return { projectUid: project.uid, newsletterId: newsletter.id, joined: joinStatus === 'added' || joinStatus === 'already_member' };
+      },
+      { equal: (a, b) => a?.projectUid === b?.projectUid && a?.newsletterId === b?.newsletterId && a?.joined === b?.joined }
+    );
+    return toSignal(
+      toObservable(lookup).pipe(
+        filter(() => isPlatformBrowser(this.platformId)),
+        switchMap((target) => {
+          if (!target) return of(null);
+          const fetch$ = defer(() => this.newsletterService.getMyNewsletterFoundations()).pipe(
+            map((response) => this.findInviteFoundation(response, target)),
+            // NewsletterService already logs the failure; here it only hides an optional button.
+            catchError(() => of(null))
+          );
+          return target.joined ? timer(NEWSLETTER_INVITE_RELOOKUP_DELAY_MS).pipe(switchMap(() => fetch$)) : fetch$;
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /**
+   * The issue's foundation card, keyed the way the server grouped the feed: the issue's own row, else
+   * any row from the same project (both carry the server-resolved `foundation_uid`), else the project's
+   * own card. Never guesses a parent — the server only maps a project to its parent when that parent
+   * is a foundation, and a wrong guess would invite to another newsletter group.
+   */
+  private findInviteFoundation(response: MyNewsletterFoundationsResponse, target: NewsletterInviteLookup): MyNewsletterFoundation | null {
+    const row =
+      response.newsletters.find((entry) => entry.id === target.newsletterId) ?? response.newsletters.find((entry) => entry.project_uid === target.projectUid);
+    const foundationUid = row ? (row.foundation_uid ?? row.project_uid) : target.projectUid;
+    return response.foundations.find((entry) => entry.uid === foundationUid) ?? null;
   }
 }

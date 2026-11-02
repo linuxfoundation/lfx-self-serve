@@ -76,6 +76,7 @@ import { isSafeUploadFileName } from './file.utils';
 import {
   buildMentorshipMenteeApplicationView,
   hasMentorshipTaskFileExtension,
+  mentorshipTaskFileViewType,
   sanitizeMentorshipTaskFileName,
   buildMentorshipMenteeDemographicsUpdate,
   buildMentorshipMenteeProfileUpdate,
@@ -113,6 +114,7 @@ import {
   buildMentorshipTaskUpdate,
   mentorshipTaskSubmittedCount,
   mentorshipApplicantTaskRows,
+  mentorshipContactMenteeUrl,
   getMentorshipEnrollLogoError,
   getMentorshipEnrollStepErrors,
   getMentorshipEnrollTermDateErrors,
@@ -1256,7 +1258,7 @@ describe('program detail helpers', () => {
     expect(matchesMentorshipPersonSearch(person, 'winter')).toBe(false);
   });
 
-  it('offers Current Mentees row actions by status, and none once the application ends', () => {
+  it('offers Current Mentees row actions by status, and only contact and a walk-back once the application ends', () => {
     const labelsFor = (status: MentorshipProgramMentee['status']): string[] =>
       mentorshipRowActions(
         MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[status],
@@ -1265,12 +1267,21 @@ describe('program detail helpers', () => {
       ).map((action) => action.label);
 
     // An application under review is decided.
-    expect(labelsFor('pending')).toEqual(['Accept', 'Decline', 'Withdraw']);
+    expect(labelsFor('pending')).toEqual(['Contact Mentee', 'Accept', 'Decline', 'Withdraw']);
     // Only an accepted mentee is given tasks or graduated.
-    expect(labelsFor('accepted')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
-    expect(labelsFor('declined')).toEqual([]);
-    expect(labelsFor('withdrawn')).toEqual([]);
-    expect(labelsFor('graduated')).toEqual([]);
+    expect(labelsFor('accepted')).toEqual(['Create task', 'Contact Mentee', 'Graduate', 'Decline', 'Withdraw']);
+    // A declined or withdrawn application can be re-opened, back to review.
+    expect(labelsFor('declined')).toEqual(['Contact Mentee', 'Re-open']);
+    expect(labelsFor('withdrawn')).toEqual(['Contact Mentee', 'Re-open']);
+    // A graduation can be undone, back to accepted.
+    expect(labelsFor('graduated')).toEqual(['Contact Mentee', 'Undo graduation']);
+  });
+
+  it('builds the Contact Mentee mailto: link, and none for an address not safe to put in one', () => {
+    expect(mentorshipContactMenteeUrl('ifeoma.adeyemi@example.com')).toBe('mailto:ifeoma.adeyemi@example.com');
+    expect(mentorshipContactMenteeUrl('ifeoma@example.com%0D%0ABcc:other@example.com')).toBeNull();
+    expect(mentorshipContactMenteeUrl('')).toBeNull();
+    expect(mentorshipContactMenteeUrl(undefined)).toBeNull();
   });
 
   it('reads an application as Applied until every prerequisite is submitted', () => {
@@ -2157,6 +2168,34 @@ describe('hasMentorshipTaskFileExtension', () => {
     for (const name of ['a.png', 'a.pdf.exe', 'a.pdfx', 'pdf', 'a.', '']) {
       expect(hasMentorshipTaskFileExtension(name)).toBe(false);
     }
+  });
+});
+
+describe('mentorshipTaskFileViewType', () => {
+  it('opens a PDF or plain-text response as itself, whatever the name says', () => {
+    expect(mentorshipTaskFileViewType('application/pdf', 'essay.docx')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('Text/Plain; charset=iso-8859-1', null)).toBe('text/plain;charset=utf-8');
+  });
+
+  it('refuses any other specific type, even under a viewable name', () => {
+    expect(mentorshipTaskFileViewType('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'a.pdf')).toBeNull();
+    expect(mentorshipTaskFileViewType('application/msword', 'a.doc')).toBeNull();
+    expect(mentorshipTaskFileViewType('text/html', 'a.txt')).toBeNull();
+  });
+
+  it('never matches an inherited key', () => {
+    for (const type of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(mentorshipTaskFileViewType(type, 'a.pdf')).toBeNull();
+    }
+  });
+
+  it('reads the extension when the type is missing or generic', () => {
+    expect(mentorshipTaskFileViewType(null, 'Report.PDF')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('', 'notes.v2.txt')).toBe('text/plain;charset=utf-8');
+    expect(mentorshipTaskFileViewType('application/octet-stream', 'essay.pdf')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('application/octet-stream', 'essay.docx')).toBeNull();
+    expect(mentorshipTaskFileViewType(undefined, 'submission')).toBeNull();
+    expect(mentorshipTaskFileViewType(undefined, null)).toBeNull();
   });
 });
 

@@ -30,7 +30,7 @@ export type UiTabsSize = UiDensitySize;
 /** Look of uikit tabs: `default` is an underline on a rule, `secondary` is 32px pills. */
 export type UiTabsVariant = 'default' | 'secondary';
 
-/** Height of a uikit form control: `tiny` 24px, `small` 32px, `medium` 40px. Shared by the button, switch and text input. */
+/** Height of a uikit form control: `tiny` 24px, `small` 32px, `medium` 40px. Shared by the switch and text input. */
 export type UiControlSize = 'tiny' | 'small' | 'medium';
 
 /** The six colour roles of the LFX UI Library. */
@@ -38,6 +38,9 @@ export type UiTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | '
 
 /** Colour role of a uikit badge and its status dot. `neutral` is the default. */
 export type UiBadgeTone = UiTone;
+
+/** Look of a uikit badge: the role's `subtle` fill, its `solid` fill, or the neutral `outline` ring. */
+export type UiBadgeVariant = 'subtle' | 'solid' | 'outline';
 
 /** Height of a uikit badge and chip: `sm` is 20px with 11px text, `md` is 24px with 12px text. */
 export type UiBadgeSize = 'sm' | 'md';
@@ -134,7 +137,7 @@ export type UiToggleTone = 'accent' | 'warning' | 'danger';
 /** Size of the uikit loading dots: 4, 5 or 7px dots. */
 export type UiLoadingDotsSize = 'sm' | 'md' | 'lg';
 
-/** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Matches the button sizes. */
+/** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `small`, `default` or `large` button. */
 export type UiInputSize = UiControlSize;
 
 /** Native `type` of a uikit text input. There is no `number`: it would hand forms a string. Use `text` with the input's `inputmode` instead. */
@@ -209,10 +212,10 @@ export type UiCollapseSize = UiDensitySize;
 /** Visual style of a uikit button. `primary` is the accent fill; `secondary` and `tertiary` are neutral; `danger` is for destructive actions; `recording` is the green recording action. */
 export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'tertiary' | 'tertiary-accent' | 'danger' | 'danger-tertiary' | 'recording';
 
-/** Size of a uikit button: `tiny` 24px, `small` 32px or `medium` 40px tall. */
-export type UiButtonSize = UiControlSize;
+/** Size of a uikit button: `small` 24px, `default` 32px or `large` 40px tall. */
+export type UiButtonSize = 'small' | 'default' | 'large';
 
-/** Size of a uikit switch (segmented control), matching the button sizes: `tiny` 24px, `small` 32px or `medium` 40px tall. */
+/** Size of a uikit switch (segmented control): `tiny` 24px, `small` 32px or `medium` 40px tall. */
 export type UiSwitchSize = UiControlSize;
 
 /** Whether a uikit choicebox group picks one tile (`radio`) or any number of tiles (`checkbox`). A group never mixes the two. */
@@ -224,8 +227,11 @@ export type UiChoiceboxColumns = 1 | 2 | 3;
 /** Heading level (`aria-level`) of a uikit component's title, such as the collapse triggers and the empty state title. */
 export type UiHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
-/** Colour and urgency of a uikit toast. `error` announces assertively and stays until dismissed. */
-export type UiToastVariant = 'default' | 'success' | 'warning' | 'error';
+/** Colour and urgency of a uikit toast. `error` announces assertively and stays until dismissed; `dark` is a short confirmation with a check. */
+export type UiToastVariant = 'default' | 'success' | 'warning' | 'error' | 'dark';
+
+/** Where `UiToastService` stacks a toast: the bottom-right corner or the bottom centre of the window. */
+export type UiToastPosition = 'bottom-right' | 'bottom-center';
 
 /** An action button on a uikit toast, such as Undo. Running it dismisses the toast. */
 export interface UiToastAction {
@@ -239,13 +245,17 @@ export interface UiToastAction {
 
 /** What `UiToastService.show` needs to put a toast on screen. */
 export interface UiToastConfig {
-  /** The message: a short sentence about something that just happened. */
+  /** The message: a short sentence about something that just happened, or the title when there is a `description`. */
   message: string;
+  /** A second, quieter line under the message. */
+  description?: string;
   /** Defaults to `default`. */
   variant?: UiToastVariant;
+  /** Defaults to `bottom-center` for `dark` and `bottom-right` for every other variant. */
+  position?: UiToastPosition;
   /** Up to two action buttons; any more are ignored. */
   actions?: UiToastAction[];
-  /** Milliseconds before the toast dismisses itself, `0` for never. Defaults to 5000, 8000 with actions, and never for `error`. */
+  /** Milliseconds before the toast dismisses itself, `0` for never. Defaults to 5000, 3000 for `dark`, 8000 with actions, and never for `error`. */
   duration?: number;
   /** Shows the dismiss button. Defaults to `true`. */
   dismissible?: boolean;
@@ -350,6 +360,12 @@ export interface UiCommandGroupView {
   label: string;
   /** The commands that match the search. */
   items: UiCommandItemView[];
+}
+
+/** Anything that can take focus, such as an element or an `lfx-ui-button`. */
+export interface UiFocusable {
+  /** Moves focus to it. */
+  focus(): void;
 }
 
 /** Padding of a uikit popover panel: the default 16px, or none for content that runs edge to edge. */

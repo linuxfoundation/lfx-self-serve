@@ -57,14 +57,14 @@ const meta: Meta<UiDrawerComponent> = {
   parameters: { layout: 'padded' },
   render: () => ({
     template: `
-      <lfx-ui-button variant="primary" [lfxStoryOpensDrawer]="drawer">Open drawer</lfx-ui-button>
+      <lfx-ui-button size="large" variant="primary" [lfxStoryOpensDrawer]="drawer">Open drawer</lfx-ui-button>
       <ng-template #drawer let-ref="dialogRef">
         <lfx-ui-drawer heading="Project Settings" subtitle="Cloud Native Computing Foundation">
           <p>Everything here is a plain projected body. It scrolls on its own while the header stays in place.</p>
           ${FILLER}
           <ng-container drawerFooter>
-            <lfx-ui-button variant="secondary" (click)="ref.close()">Cancel</lfx-ui-button>
-            <lfx-ui-button variant="primary" (click)="ref.close()">Save</lfx-ui-button>
+            <lfx-ui-button size="large" variant="secondary" (click)="ref.close()">Cancel</lfx-ui-button>
+            <lfx-ui-button size="large" variant="primary" (click)="ref.close()">Save</lfx-ui-button>
           </ng-container>
         </lfx-ui-drawer>
       </ng-template>`,
@@ -80,14 +80,14 @@ export const Default: Story = {};
 export const MeetingDetails: Story = {
   render: () => ({
     template: `
-      <lfx-ui-button variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ width: 960 }">Open meeting</lfx-ui-button>
+      <lfx-ui-button size="large" variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ width: 960 }">Open meeting</lfx-ui-button>
       <ng-template #drawer>
         <lfx-ui-drawer heading="Technical Steering Committee" subtitle="The Linux Foundation">
           <lfx-ui-avatar drawerLeading shape="rounded" [size]="40" name="Technical Steering Committee" [decorative]="true" />
           <ng-container drawerActions>
-            <lfx-ui-button variant="secondary" size="small" icon="fa-light fa-pen">Edit meeting</lfx-ui-button>
-            <lfx-ui-button variant="secondary" size="small" [iconOnly]="true" icon="fa-light fa-link" ariaLabel="Copy link" lfxUiTooltip="Copy link" />
-            <lfx-ui-button variant="secondary-accent" size="small" icon="fa-light fa-wand-magic-sparkles">Magic link</lfx-ui-button>
+            <lfx-ui-button variant="secondary" icon="fa-light fa-pen">Edit meeting</lfx-ui-button>
+            <lfx-ui-button variant="secondary" [iconOnly]="true" icon="fa-light fa-link" ariaLabel="Copy link" lfxUiTooltip="Copy link" />
+            <lfx-ui-button variant="secondary-accent" icon="fa-light fa-wand-magic-sparkles">Magic link</lfx-ui-button>
           </ng-container>
           <div class="@container">
             <div class="grid grid-cols-1 gap-[24px] @[720px]:grid-cols-[1fr_280px]">
@@ -100,9 +100,9 @@ export const MeetingDetails: Story = {
                   <lfx-ui-badge variant="outline">Recording</lfx-ui-badge>
                 </div>
                 <div class="flex items-center gap-[12px]">
-                  <lfx-ui-button variant="secondary" size="small" icon="fa-light fa-chevron-left">Previous</lfx-ui-button>
+                  <lfx-ui-button variant="secondary" icon="fa-light fa-chevron-left">Previous</lfx-ui-button>
                   <span class="label-14 text-ui-neutral-900">29 of 52</span>
-                  <lfx-ui-button variant="secondary" size="small" trailingIcon="fa-light fa-chevron-right">Next</lfx-ui-button>
+                  <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-right">Next</lfx-ui-button>
                 </div>
                 <h4 class="heading-16 text-ui-neutral-900">Agenda</h4>
                 ${FILLER}
@@ -111,11 +111,11 @@ export const MeetingDetails: Story = {
                 <p class="label-14 text-ui-neutral-900">Thursday, November 5, 2026</p>
                 <p class="copy-14 text-ui-neutral-600">3:00 PM to 4:00 PM, Europe/Lisbon</p>
                 <p class="copy-14 text-ui-neutral-600">Starts in 4 days.</p>
-                <lfx-ui-button variant="primary" [fullWidth]="true">Join meeting</lfx-ui-button>
+                <lfx-ui-button size="large" variant="primary" [fullWidth]="true">Join meeting</lfx-ui-button>
                 <p class="label-14 text-ui-neutral-900">Will you attend?</p>
-                <lfx-ui-button variant="secondary" [fullWidth]="true">Yes, I'll attend</lfx-ui-button>
-                <lfx-ui-button variant="secondary" [fullWidth]="true">Maybe</lfx-ui-button>
-                <lfx-ui-button variant="secondary" [fullWidth]="true">Can't attend</lfx-ui-button>
+                <lfx-ui-button size="large" variant="secondary" [fullWidth]="true">Yes, I'll attend</lfx-ui-button>
+                <lfx-ui-button size="large" variant="secondary" [fullWidth]="true">Maybe</lfx-ui-button>
+                <lfx-ui-button size="large" variant="secondary" [fullWidth]="true">Can't attend</lfx-ui-button>
               </div>
             </div>
           </div>
@@ -137,7 +137,7 @@ export const CanCloseGuard: Story = {
         },
       },
       template: `
-        <lfx-ui-button variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ canClose: guard }" (click)="state.dirty.set(false); state.blocked.set(false)">Edit agenda</lfx-ui-button>
+        <lfx-ui-button size="large" variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ canClose: guard }" (click)="state.dirty.set(false); state.blocked.set(false)">Edit agenda</lfx-ui-button>
         <ng-template #drawer let-ref="dialogRef">
           <lfx-ui-drawer heading="Edit Agenda" subtitle="Weekly Sync">
             @if (state.blocked()) {
@@ -148,8 +148,8 @@ export const CanCloseGuard: Story = {
               aria-label="Agenda"
               (input)="state.dirty.set(true)"></textarea>
             <ng-container drawerFooter>
-              <lfx-ui-button variant="secondary" (click)="ref.close()">Discard</lfx-ui-button>
-              <lfx-ui-button variant="primary" (click)="state.dirty.set(false); ref.close('saved')">Save</lfx-ui-button>
+              <lfx-ui-button size="large" variant="secondary" (click)="ref.close()">Discard</lfx-ui-button>
+              <lfx-ui-button size="large" variant="primary" (click)="state.dirty.set(false); ref.close('saved')">Save</lfx-ui-button>
             </ng-container>
           </lfx-ui-drawer>
         </ng-template>`,
@@ -161,14 +161,14 @@ export const CanCloseGuard: Story = {
 export const LeftSide: Story = {
   render: () => ({
     template: `
-      <lfx-ui-button variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ side: 'left', width: 420 }">Open from the left</lfx-ui-button>
+      <lfx-ui-button size="large" variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ side: 'left', width: 420 }">Open from the left</lfx-ui-button>
       <ng-template #drawer let-ref="dialogRef">
         <lfx-ui-drawer heading="Filters" subtitle="Narrow the meeting list">
           <p>Filter controls go here.</p>
           ${FILLER}
           <ng-container drawerFooter>
-            <lfx-ui-button variant="tertiary" (click)="ref.close()">Reset filters</lfx-ui-button>
-            <lfx-ui-button variant="primary" (click)="ref.close()">Done</lfx-ui-button>
+            <lfx-ui-button size="large" variant="tertiary" (click)="ref.close()">Reset filters</lfx-ui-button>
+            <lfx-ui-button size="large" variant="primary" (click)="ref.close()">Done</lfx-ui-button>
           </ng-container>
         </lfx-ui-drawer>
       </ng-template>`,
@@ -179,7 +179,7 @@ export const LeftSide: Story = {
 export const OverlaysInside: Story = {
   render: () => ({
     template: `
-      <lfx-ui-button variant="primary" [lfxStoryOpensDrawer]="drawer">Open drawer</lfx-ui-button>
+      <lfx-ui-button size="large" variant="primary" [lfxStoryOpensDrawer]="drawer">Open drawer</lfx-ui-button>
       <ng-template #drawer let-ref="dialogRef">
         <lfx-ui-drawer heading="Meeting Settings" subtitle="Weekly Sync">
           <lfx-ui-select label="Visibility" placeholder="Pick who can see it">
@@ -188,12 +188,12 @@ export const OverlaysInside: Story = {
             <lfx-ui-option value="committee" label="Committee only" />
           </lfx-ui-select>
           <div>
-            <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="actions">More actions</lfx-ui-button>
+            <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="actions">More actions</lfx-ui-button>
           </div>
           ${FILLER}
           <ng-container drawerFooter>
-            <lfx-ui-button variant="secondary" (click)="ref.close()">Cancel</lfx-ui-button>
-            <lfx-ui-button variant="primary" (click)="ref.close()">Save</lfx-ui-button>
+            <lfx-ui-button size="large" variant="secondary" (click)="ref.close()">Cancel</lfx-ui-button>
+            <lfx-ui-button size="large" variant="primary" (click)="ref.close()">Save</lfx-ui-button>
           </ng-container>
         </lfx-ui-drawer>
         <ng-template #actions>
@@ -215,8 +215,8 @@ export const Layout: Story = {
         <lfx-ui-drawer heading="Project Settings" subtitle="Cloud Native Computing Foundation" class="!w-[420px]">
           <p>Body content goes here.</p>
           <ng-container drawerFooter>
-            <lfx-ui-button variant="secondary">Cancel</lfx-ui-button>
-            <lfx-ui-button variant="primary">Save</lfx-ui-button>
+            <lfx-ui-button size="large" variant="secondary">Cancel</lfx-ui-button>
+            <lfx-ui-button size="large" variant="primary">Save</lfx-ui-button>
           </ng-container>
         </lfx-ui-drawer>
       </div>`,

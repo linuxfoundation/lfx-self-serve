@@ -1393,7 +1393,6 @@ export class MonitoringTabComponent implements OnInit {
     this.restrictedPlatforms.set(next);
   }
 
-  /** The BFF's 403 for a monitor read whose ad account is shared by every foundation (lfx-self-serve-ops#54). */
   /** Records whether a panel's failed read was a role refusal, for `refusedReads`. */
   private noteRefusal(panel: string, err: unknown): void {
     const refused = err instanceof HttpErrorResponse && err.status === 403;
@@ -1407,6 +1406,7 @@ export class MonitoringTabComponent implements OnInit {
     this.refusedReads.set(next);
   }
 
+  /** The BFF's 403 for a monitor read whose ad account is shared by every foundation (lfx-self-serve-ops#54). */
   private isSharedAccountRestricted(err: unknown): boolean {
     return this.errorCode(err) === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE;
   }

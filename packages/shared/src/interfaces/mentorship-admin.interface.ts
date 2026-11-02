@@ -185,7 +185,11 @@ export type MentorshipAttendanceType = (typeof MENTORSHIP_ATTENDANCE_TYPES)[numb
 /** A status an admin decision sets on an application. */
 export type MentorshipAdminDecisionStatus = (typeof MENTORSHIP_ADMIN_DECISION_STATUSES)[number];
 
-/** Body of `PATCH /api/mentorship/admin/applications/:applicationId/status`. `attendanceType` is required for `accepted`. */
+/**
+ * Body of `PATCH /api/mentorship/admin/applications/:applicationId/status`. `attendanceType` is optional and sent only
+ * with `accepted`; an accept without it undoes a graduation, and upstream keeps the stored one. `pending` re-opens a
+ * declined or withdrawn application.
+ */
 export interface MentorshipAdminApplicationStatusUpdate {
   status: MentorshipAdminDecisionStatus;
   attendanceType?: MentorshipAttendanceType;

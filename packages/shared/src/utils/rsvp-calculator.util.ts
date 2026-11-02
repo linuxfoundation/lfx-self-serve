@@ -87,7 +87,7 @@ function getRsvpOccurrenceId(rsvp: Pick<MeetingRsvp, 'occurrence_id' | 'meeting_
 }
 
 /** Effective write time of an RSVP: API sends `modified_at`; older payloads fall back through `updated_at` then `created_at`. */
-function getRsvpTimestampMs(rsvp: Pick<MeetingRsvp, 'modified_at' | 'updated_at' | 'created_at'>): number {
+export function getRsvpTimestampMs(rsvp: Pick<MeetingRsvp, 'modified_at' | 'updated_at' | 'created_at'>): number {
   return new Date(rsvp.modified_at || rsvp.updated_at || rsvp.created_at).getTime();
 }
 

@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, withdraw, application, slots]
 last_generated: 2026-10-26
-last_updated: 2026-10-30
+last_updated: 2026-11-02
 intercom_collection: Mentorship
 ---
 
@@ -14,7 +14,7 @@ Withdrawing pulls an application you no longer want to pursue and frees one of y
 ## Before you begin
 
 - The application must still be pending. An accepted application is not withdrawn this way — talk to the program first.
-- Withdrawing cannot be undone. You would have to apply again, and the term may have closed by then.
+- You cannot undo a withdrawal yourself. A Program Admin of the program can re-open the application; otherwise you would have to apply again, and the term may have closed by then.
 
 ## Steps
 

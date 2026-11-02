@@ -298,13 +298,13 @@ describe('UiMultiSelectComponent', () => {
     expect(panel()).toBeNull();
   });
 
-  it('closes on Tab and Shift+Tab with focus back on the trigger, so the browser moves on from there', async () => {
+  it('closes on Tab and Shift+Tab with focus back on the trigger; Tab moves on from there, Shift+Tab stops there', async () => {
     for (const shiftKey of [false, true]) {
       await open();
       const group = panel();
       const event = await press('Tab', { shiftKey });
 
-      expect(event.defaultPrevented).toBe(false);
+      expect(event.defaultPrevented).toBe(shiftKey);
       // The pane is still in the page when the browser moves focus, so its controls must already be out of the tab order.
       expect(group?.inert).toBe(true);
       expect(panel()).toBeNull();

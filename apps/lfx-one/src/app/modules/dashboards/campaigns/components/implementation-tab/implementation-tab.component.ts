@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LowerCasePipe, SlicePipe } from '@angular/common';
+import { DecimalPipe, isPlatformBrowser, LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, PLATFORM_ID, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -130,10 +130,13 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_CREATIVE_SHARED_CAPS,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+  GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  DEFAULT_GOOGLE_DAILY_BUDGET_USD,
   DEFAULT_LINKEDIN_BUDGET_USD,
   DEFAULT_LINKEDIN_TARGETING_PROFILE,
   DEFAULT_META_BUDGET_USD,
@@ -214,6 +217,8 @@ import type {
   GoogleAdsRadiusUnit,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
+  GoogleBudgetFlight,
+  GoogleBudgetInputs,
   GoogleCampaignChannel,
   GoogleCreativeChannel,
   GoogleCreativeEitherOrRule,
@@ -223,6 +228,8 @@ import type {
   GoogleCreativeImageShape,
   GoogleCreativeImageSlotView,
   GoogleCreativeSection,
+  GoogleCreativeSharedCap,
+  GoogleTypedImageProbe,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
@@ -241,7 +248,9 @@ import type {
 import {
   campaignBiddingError,
   campaignBiddingPayload,
+  campaignFlightDays,
   codePointLength,
+  dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
   describeCampaignDispatchFailure,
   googleAdsToUpperCode,
@@ -250,7 +259,9 @@ import {
   googleCreativeImageFit,
   googleCreativeImageRequirement,
   googlePriceExtensionRefusal,
+  isHttpUrl,
   googlePromotionRefusal,
+  isReversedCampaignFlight,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -306,6 +317,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     InputTextComponent,
     SelectComponent,
     TextareaComponent,
+    DecimalPipe,
     LowerCasePipe,
     SlicePipe,
     CampaignBiddingControlComponent,
@@ -322,6 +334,7 @@ export class ImplementationTabComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly briefData = input<CampaignBriefOutput | null>(null);
@@ -804,7 +817,9 @@ export class ImplementationTabComponent implements OnInit {
     eventSlug: [''],
     countryCode: ['US'],
     registrationUrl: ['', [Validators.required]],
-    budgetUsd: [500, [Validators.required, Validators.min(1)]],
+    // The Google DAILY budget (#4847): campaign-service creates it with no period, which Google
+    // treats as daily. Seeded from the brief's total divided over the flight, never the total itself.
+    budgetUsd: [DEFAULT_GOOGLE_DAILY_BUDGET_USD as number, [Validators.required, Validators.min(1)]],
     // Typed `number`, not inferred. `CAMPAIGN_BUDGET_DEFAULTS` is `as const`, so the inferred
     // control type was the literal `70` — which is wrong for a slider the user drags, and made
     // any other value a type error to patch in (LFXV2-3229).
@@ -1042,6 +1057,16 @@ export class ImplementationTabComponent implements OnInit {
 
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
+  /**
+   * The brief's keywords a Google create sends (#4848): a blank term is dropped, as a blank headline
+   * line is, because campaign-service refuses it and the operator saw only the generic failure.
+   */
+  protected readonly googleSearchKeywords = computed(() => this.briefKeywords().filter((k) => typeof k.term === 'string' && k.term.trim() !== ''));
+  /**
+   * Why a Search create would make a campaign that can never serve, or `null` (#4848). With no
+   * keyword the create succeeds and LFX activation then refuses the campaign, so Create waits.
+   */
+  protected readonly googleSearchKeywordsError: Signal<string | null> = this.initGoogleSearchKeywordsError();
   protected readonly briefHsToken = signal<string | null>(null);
   protected readonly briefDriveFolderUrl = signal('');
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
@@ -1480,6 +1505,12 @@ export class ImplementationTabComponent implements OnInit {
    * `resetGoogleFields`.
    */
   private readonly performanceMaxSeed = signal<Record<string, string> | null>(null);
+  /**
+   * The brief's planning total the Google daily budget was divided from (#4847), shown beside the
+   * field so the operator can compare it with the flight total. Null when the brief has no positive
+   * total. Set by every brief seed, so a brief switch never shows the previous brief's figure.
+   */
+  protected readonly googleBriefTotalBudget = signal<number | null>(null);
   protected readonly googleMaxCallouts = GOOGLE_ADS_MAX_CALLOUTS;
   protected readonly googleMaxCalloutRunes = GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES;
   /**
@@ -1601,6 +1632,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPlacements = signal<MetaPlacement>({ ...META_DEFAULT_PLACEMENTS });
   /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
   protected readonly metaPixelId = signal('');
+  /**
+   * What the browser last learned about each pasted Google image URL, keyed by the URL itself, so a
+   * result follows the URL into any slot it is pasted into. Probed again on every blur (see
+   * `onGoogleImageFieldBlur`), best effort where the browser answers from its cache.
+   */
+  private readonly googleTypedImageProbes = signal<Readonly<Record<string, GoogleTypedImageProbe>>>({});
   /** What the last "Use suggested images" did, and for which brief, so the line never outlives a brief switch (#4825). */
   private readonly googleSuggestedApply = signal<{ briefId: string; message: string; seq: number } | null>(null);
 
@@ -2758,6 +2795,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCreativeLibrary: Signal<CreativeAssetLibraryState> = this.initGoogleCreativeLibrary();
   /** Each rendered Google image slot's library controls, keyed `<request key>.<control>`. */
   protected readonly googleImageSlots: Signal<Record<string, GoogleCreativeImageSlotView>> = this.initGoogleImageSlots();
+  /** The advisory line under a Google image slot about its pasted URLs, keyed `<request key>.<control>`; absent when there is nothing to say. */
+  protected readonly googleTypedImageWarnings: Signal<Record<string, string>> = this.initGoogleTypedImageWarnings();
+  /**
+   * Every current pasted-URL line, each named by its section and field, for the always-mounted live
+   * region. The lines arrive after focus has left the field, so the visible span alone would never be
+   * announced; the region is mounted empty and only its text changes, as the template's other
+   * announcements are. `''` when there is nothing to say.
+   */
+  protected readonly googleTypedImageAnnouncement: Signal<string> = this.initGoogleTypedImageAnnouncement();
   /**
    * The asset-plan slots "Use suggested images" can fill, as `platform/CHANNEL/slot` in the plan's own
    * vocabulary: one per plan slot name that maps onto a Google image field on screen. The grid offers
@@ -3006,6 +3052,10 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
     // Countries and postal ids together over upstream's 60 — see `googleGeoTargetsOverCap`.
     if (googleSelected && this.googleGeoTargetsOverCap()) return false;
+    // An end date before the start, which Google refuses (#4848); the message is under End Date.
+    if (googleSelected && this.googleFlightError() !== null) return false;
+    // Search with no keyword, which creates a campaign that can never serve (#4848).
+    if (googleSelected && this.googleSearchKeywordsError() !== null) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -3193,6 +3243,22 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();
+  /** The Google budget and flight controls as a signal, so the two readings below recompute on any edit (#4847). */
+  private readonly googleBudgetInputs: Signal<GoogleBudgetInputs> = this.initGoogleBudgetInputs();
+  protected readonly googleBudgetFlight: Signal<GoogleBudgetFlight | null> = this.initGoogleBudgetFlight();
+  /**
+   * Whether the Google daily budget is missing or below the control's minimum of 1. Shown under the
+   * field, because on a Google create the same validator holds Create disabled and nothing else on
+   * screen says why. The field renders only for a Google selection, so the message never shows
+   * under a budget nothing else reads.
+   */
+  protected readonly googleBudgetInvalid: Signal<boolean> = this.initGoogleBudgetInvalid();
+  /**
+   * Why Google will refuse the flight on screen, or `null` (#4848). campaign-service refuses an end
+   * date BEFORE the start, before anything is created, but the operator saw only "platform campaign
+   * creation failed". A same-day flight is legal on Google, so it is not refused here.
+   */
+  protected readonly googleFlightError: Signal<string | null> = this.initGoogleFlightError();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
   protected readonly performanceMaxPrefillShown: Signal<boolean> = this.initPerformanceMaxPrefillShown();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
@@ -4884,7 +4950,7 @@ export class ImplementationTabComponent implements OnInit {
       searchBudgetPct: form.searchBudgetPct,
       startDate: form.startDate,
       endDate: form.endDate,
-      keywords: this.briefKeywords(),
+      keywords: this.googleSearchKeywords(),
       headlines: (form.headlines as string[]).filter((h) => h.trim()),
       descriptions: (form.descriptions as string[]).filter((d) => d.trim()),
       // The SAME derivation the Google section previews, for the reason `metaEffectiveGeoTargets`
@@ -5110,6 +5176,32 @@ export class ImplementationTabComponent implements OnInit {
         this.step.set('form');
       },
     });
+  }
+
+  /**
+   * Check the pasted URLs of a Google image field in the browser once the operator leaves it.
+   *
+   * Advisory only: it never blocks Create. campaign-service downloads every pasted URL and checks its
+   * format, size and shape before anything is created (`fetchSlotImages`), so a bad image already costs
+   * nothing; this only tells the operator while they are still on the field rather than at Create.
+   * A URL is probed again on every blur unless a probe for it is still running, so a host that was
+   * slow or down gets another chance. Re-checking a URL whose image was replaced in place is best
+   * effort only: the browser may answer from its cache with the old image, and busting the cache
+   * would break signed URLs. A replaced image is reliably re-checked under a new URL. A URL on this
+   * application's own host is never loaded ({@link isOwnHostUrl}).
+   */
+  protected onGoogleImageFieldBlur(groupName: string, field: GoogleCreativeFieldSpec): void {
+    if (!field.image || !isPlatformBrowser(this.platformId)) return;
+    const raw = this.campaignForm.get([groupName, field.control])?.value as string | null | undefined;
+    for (const url of this.splitCreativeLines(raw)) {
+      // Read live, not from a snapshot taken before the loop: a URL pasted on two lines is marked
+      // in flight (`checking`, or `rechecking` once it has an answer) by its first probe, so the
+      // second line starts none.
+      const probe = this.googleTypedImageProbes()[url];
+      if (probe?.state !== 'checking' && !probe?.rechecking && isHttpUrl(url, true) && !this.isOwnHostUrl(url)) {
+        this.probeGoogleTypedImage(url);
+      }
+    }
   }
 
   // === Private Methods ===
@@ -6855,12 +6947,19 @@ export class ImplementationTabComponent implements OnInit {
     this.resetTwitterFields();
     this.biddingDrafts.set({});
     const details = brief.eventDetails;
+    // The brief's budget is a TOTAL for the flight and Google's is DAILY (#4847), so the total is
+    // divided over the flight this seed opens with. Sending the total unchanged made every LFX
+    // Google budget the whole plan per day.
+    const briefTotal = brief.totalBudget ?? null;
+    const flightDays = campaignFlightDays(this.todayDate, this.defaultEndDate);
+    const seededDailyBudget = briefTotal !== null && flightDays !== null ? dailyBudgetFromTotal(briefTotal, flightDays) : null;
+    this.googleBriefTotalBudget.set(seededDailyBudget === null ? null : briefTotal);
     this.campaignForm.patchValue({
       eventName: details.name,
       eventSlug: details.slug,
       countryCode: details.countryCode || 'US',
       registrationUrl: details.registrationUrl,
-      budgetUsd: brief.totalBudget ?? 500,
+      budgetUsd: seededDailyBudget ?? DEFAULT_GOOGLE_DAILY_BUDGET_USD,
       startDate: this.todayDate,
       endDate: this.defaultEndDate,
       // The X fields are typed, never generated, so a new brief starts them blank. A same-event
@@ -7004,7 +7103,8 @@ export class ImplementationTabComponent implements OnInit {
       this.metaGeoTargets.set(this.acceptedMetaGeos(brief.metaCopy.recommendedGeos));
     }
 
-    this.briefKeywords.set(brief.keywords);
+    // A stored brief can lack the list; every reader maps or filters it (#4848).
+    this.briefKeywords.set(Array.isArray(brief.keywords) ? brief.keywords : []);
 
     // Microsoft's seed (LFXV2-3312). The brief's own keywords feed it DIRECTLY, with no
     // translation: `CampaignKeyword.matchType` is already the PascalCase vocabulary
@@ -7228,6 +7328,50 @@ export class ImplementationTabComponent implements OnInit {
       ),
       { initialValue: 100 - CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct }
     );
+  }
+
+  private initGoogleBudgetInputs(): Signal<GoogleBudgetInputs> {
+    const { budgetUsd, startDate, endDate } = this.campaignForm.controls;
+    const read = (): GoogleBudgetInputs => ({ daily: budgetUsd.value, start: startDate.value, end: endDate.value });
+    return toSignal(merge(budgetUsd.valueChanges, startDate.valueChanges, endDate.valueChanges).pipe(startWith(null), map(read)), { initialValue: read() });
+  }
+
+  private initGoogleFlightError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.selectedPlatforms().includes('google-ads')) return null;
+      const { start, end } = this.googleBudgetInputs();
+      if (!isReversedCampaignFlight(start, end)) return null;
+      return `Google needs the end date (${end}) on or after the start date (${start}).`;
+    });
+  }
+
+  private initGoogleSearchKeywordsError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.selectedGoogleChannels().includes('search') || this.googleSearchKeywords().length > 0) return null;
+      return 'Search needs at least one keyword to serve, and this brief has none filled in. Choose another campaign type, or give the brief keywords first.';
+    });
+  }
+
+  private initGoogleBudgetInvalid(): Signal<boolean> {
+    return computed(() => {
+      const { daily } = this.googleBudgetInputs();
+      return typeof daily !== 'number' || !Number.isFinite(daily) || daily < 1;
+    });
+  }
+
+  /**
+   * What the Google daily budget spends over the flight on screen (#4847), or `null` while the
+   * budget or either date cannot be counted. Recomputed from the controls on every change, so the
+   * figure beside the field always matches what Create would send.
+   */
+  private initGoogleBudgetFlight(): Signal<GoogleBudgetFlight | null> {
+    return computed(() => {
+      const { daily, start, end } = this.googleBudgetInputs();
+      const days = campaignFlightDays(start, end);
+      if (days === null || typeof daily !== 'number' || !Number.isFinite(daily) || daily <= 0) return null;
+      return { days, total: Math.round(daily * days * 100) / 100 };
+    });
   }
 
   private initCampaignName(): Signal<string> {
@@ -7517,6 +7661,69 @@ export class ImplementationTabComponent implements OnInit {
         }
       }
       return filled;
+    });
+  }
+
+  /**
+   * The advisory line under each rendered Google image slot about its pasted URLs (see
+   * `onGoogleImageFieldBlur`). Built from the slot's CURRENT lines, so a URL the operator removes takes
+   * its warning with it. A URL on its first probe says nothing yet, one probed again keeps its last
+   * answer until the new one settles, and no line is not a promise: a browser follows redirects and
+   * loads formats (WebP, SVG) that campaign-service refuses.
+   */
+  private initGoogleTypedImageWarnings(): Signal<Record<string, string>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const probes = this.googleTypedImageProbes();
+      const warnings: Record<string, string> = {};
+      for (const section of this.googleCreativeSections()) {
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
+        for (const field of section.fields) {
+          const shape = field.image;
+          if (!shape) continue;
+          const misfits: string[] = [];
+          const unchecked: string[] = [];
+          for (const url of this.splitCreativeLines(raw[field.control])) {
+            const probe = probes[url];
+            if (probe?.state === 'failed') {
+              unchecked.push(url);
+            } else if (probe?.state === 'loaded' && googleCreativeImageFit({ width: probe.width, height: probe.height }, shape) === 'misfit') {
+              misfits.push(`${url} (${probe.width}x${probe.height})`);
+            }
+          }
+          const lines: string[] = [];
+          if (misfits.length > 0) {
+            // "Likely", not "will": the browser applies a JPEG's EXIF rotation and campaign-service measures
+            // the raw pixels, so a rotated photo can measure differently there.
+            lines.push(
+              `Measured here as not ${googleCreativeImageRequirement(shape)}: ${misfits.join(', ')}. Create will likely be refused for ${misfits.length === 1 ? 'it' : 'them'}; campaign-service checks again before anything is created.`
+            );
+          }
+          if (unchecked.length > 0) {
+            lines.push(
+              `Could not be loaded here, so not checked: ${unchecked.join(', ')}. campaign-service checks ${unchecked.length === 1 ? 'it' : 'them'} again at Create.`
+            );
+          }
+          if (lines.length > 0) {
+            warnings[`${section.groupName}.${field.control}`] = lines.join(' ');
+          }
+        }
+      }
+      return warnings;
+    });
+  }
+
+  private initGoogleTypedImageAnnouncement(): Signal<string> {
+    return computed(() => {
+      const warnings = this.googleTypedImageWarnings();
+      const lines: string[] = [];
+      for (const section of this.googleCreativeSections()) {
+        for (const field of section.fields) {
+          const warning = warnings[`${section.groupName}.${field.control}`];
+          if (warning) lines.push(`${section.label} ${field.label}: ${warning}`);
+        }
+      }
+      return lines.join(' ');
     });
   }
 
@@ -8373,9 +8580,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The first minimum a non-empty creative fails, as a clause, or null when it meets them all.
    *
-   * Three rule kinds, every one of them campaign-service's own and none of them tighter: the
-   * catalogued `min` on a list, the `requiredOnce` scalars Google marks required, and the
-   * either-or pairs no per-field bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}).
+   * Four rule kinds, every one of them Google's and none of them tighter: the catalogued `min` on
+   * a list, the `requiredOnce` scalars Google marks required, the either-or pairs no per-field
+   * bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}), and the ceilings Google shares
+   * across several image fields ({@link GOOGLE_CREATIVE_SHARED_CAPS}, #4848). campaign-service
+   * refuses each in preflight; Display's two marketing floors and its shared logo cap only from
+   * the release carrying lfx-v2-campaign-service#437, and before it Google refuses the ad itself.
    * Catalogue order is report order, so the message names the field highest in the section the
    * operator is looking at.
    */
@@ -8412,6 +8622,16 @@ export class ImplementationTabComponent implements OnInit {
         return Array.isArray(value) && value.length > 0;
       });
       if (!satisfied) return rule.message;
+    }
+    const caps: readonly GoogleCreativeSharedCap[] = GOOGLE_CREATIVE_SHARED_CAPS[channel];
+    for (const cap of caps) {
+      const count = cap.controls.reduce((sum, control) => {
+        const value = creative[control];
+        return sum + (Array.isArray(value) ? value.length : 0);
+      }, 0);
+      if (count > cap.max) {
+        return `has ${count} ${cap.label} across its fields (pasted URLs and stored images together) — ${count - cap.max} over the shared cap of ${cap.max}.`;
+      }
     }
     return null;
   }
@@ -9220,6 +9440,59 @@ export class ImplementationTabComponent implements OnInit {
       if (typeof value !== 'string') continue;
       this.campaignForm.controls[field].setValue(value, { emitEvent: false });
     }
+  }
+
+  /**
+   * Load one pasted URL as an image and record its natural size, or that it could not be loaded within
+   * `GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS`. Only ever called in the browser (`onGoogleImageFieldBlur`).
+   * A load that fails here may still succeed from campaign-service — a host can refuse hotlinking or
+   * need a referrer — so a failure is reported as "could not check", never as a wrong image.
+   */
+  private probeGoogleTypedImage(url: string): void {
+    // A settled answer stays on screen while it is checked again, so tabbing back through the field
+    // does not blank its line (or the live region) until the new probe settles.
+    this.googleTypedImageProbes.update((probes) => {
+      const previous = probes[url];
+      const next: GoogleTypedImageProbe = previous && previous.state !== 'checking' ? { ...previous, rechecking: true } : { state: 'checking' };
+      return { ...probes, [url]: next };
+    });
+    const image = new Image();
+    // The host learns nothing of where the URL was pasted; one that insists on a referrer reads as "not checked".
+    image.referrerPolicy = 'no-referrer';
+    let settled = false;
+    // Stops the probe without recording anything: the tab is gone, or the answer is in.
+    const stop = (): void => {
+      settled = true;
+      clearTimeout(timer);
+      image.onload = null;
+      image.onerror = null;
+    };
+    const unregister = this.destroyRef.onDestroy(stop);
+    const settle = (probe: GoogleTypedImageProbe): void => {
+      if (settled) return;
+      stop();
+      unregister();
+      this.googleTypedImageProbes.update((probes) => ({ ...probes, [url]: probe }));
+    };
+    const timer = setTimeout(() => settle({ state: 'failed' }), GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS);
+    image.onload = () => settle({ state: 'loaded', width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => settle({ state: 'failed' });
+    image.src = url;
+  }
+
+  /**
+   * Whether a pasted URL is on this application's own host. Such a URL is never probed: the browser
+   * would load it with the operator's session cookie, so pasting a route such as `/logout` would act on
+   * the session (Copilot, #4810). Compared by host name, not origin, because a browser upgrades an
+   * `http://` image on an HTTPS page and a cookie is not scoped by port, so neither the scheme nor the
+   * port makes such a URL safe. A trailing dot (`app.example.org.`) survives URL parsing but names the
+   * same host, so it is dropped from both sides before comparing. No image an ad uses is served from
+   * here, and campaign-service still checks every pasted URL at Create. Only called in the browser
+   * (`onGoogleImageFieldBlur`).
+   */
+  private isOwnHostUrl(url: string): boolean {
+    const bareHost = (hostname: string): string => hostname.replace(/\.+$/, '');
+    return bareHost(new URL(url).hostname) === bareHost(window.location.hostname);
   }
 
   /**

@@ -336,6 +336,25 @@ export interface NewsletterInviteResult {
   foundation_name: string;
 }
 
+/** Response of GET /public/api/newsletters/:projectSlug/:newsletterUid/preview — what a link preview may show of a sent issue. */
+export interface NewsletterSharePreview {
+  subject: string;
+}
+
+/** Load state of the signed-out share-preview page; `preview` is null while loading or when nothing may be shown. */
+export interface NewsletterSharePreviewState {
+  loading: boolean;
+  preview: NewsletterSharePreview | null;
+}
+
+/** What the newsletter reader page looks up to decide whether to show the invite CTA. */
+export interface NewsletterInviteLookup {
+  projectUid: string;
+  newsletterId: string;
+  /** The member benefit just added the reader to the group (or found them already on it). */
+  joined: boolean;
+}
+
 /** DynamicDialog data of the My Newsletters invite dialog. */
 export interface NewsletterInviteDialogData {
   foundation: MyNewsletterFoundation;

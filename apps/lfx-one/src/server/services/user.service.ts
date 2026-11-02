@@ -5,6 +5,7 @@ import {
   LATEST_PAST_MEETINGS_FETCH_SIZE,
   LATEST_PAST_MEETINGS_RETURN_LIMIT,
   NATS_CONFIG,
+  PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY,
   PENDING_ACTION_BUTTON_ICON,
   PENDING_ACTION_SEVERITY,
   PROFILE_BIO_MAX_LENGTH,
@@ -29,6 +30,8 @@ import {
   MyFormationItemRow,
   PastMeeting,
   PastMeetingParticipant,
+  PastMeetingRecording,
+  PastMeetingSummary,
   PendingActionItem,
   PendingInvitation,
   ProfileVisibility,
@@ -53,18 +56,22 @@ import {
   buildInvitationActions,
   codePointLength,
   getCurrentOrNextOccurrence,
+  getLargestSessionShareUrl,
   getSurveyDisplayStatus,
   hasMeetingEnded,
   isMeetingInviteResponsesEnabled,
+  isPastMeetingSummaryVisible,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   parseToInt,
   resolveRsvpOccurrenceId,
   selectApplicableRsvp,
+  selectPrimaryPastMeetingSummary,
   votePermalinkPath,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
@@ -568,6 +575,7 @@ export class UserService {
             if (!meeting.id) continue;
             meeting.my_registrant_ids = activeRegistrants.uidsByMeeting.get(meeting.id) ?? [];
             const meetingRsvps = rsvpsByMeeting.get(meeting.id);
+            meeting.my_rsvps = meetingRsvps ?? [];
             if (!meetingRsvps || meetingRsvps.length === 0) {
               meeting.my_rsvp = null;
               continue;
@@ -651,9 +659,16 @@ export class UserService {
    * @param email - User's email address for participant lookup (attendance enrichment)
    * @param projectUid - Optional project UID to filter meetings by
    * @param foundationUid - Optional foundation UID to filter meetings by (OR across child projects)
+   * @param options - `includeArtifacts` adds `has_recording` / `has_ai_summary` (batched recording and summary index lookups)
    * @returns Array of PastMeeting objects the user has some direct FGA grant on
    */
-  public async getUserPastMeetings(req: Request, email: string, projectUid?: string, foundationUid?: string): Promise<PastMeeting[]> {
+  public async getUserPastMeetings(
+    req: Request,
+    email: string,
+    projectUid?: string,
+    foundationUid?: string,
+    options?: { includeArtifacts?: boolean }
+  ): Promise<PastMeeting[]> {
     logger.debug(req, 'get_user_past_meetings', 'Fetching user past meetings via filter_grants=direct', {
       has_project_filter: !!projectUid,
       has_foundation_filter: !!foundationUid,
@@ -754,13 +769,32 @@ export class UserService {
       this.applyUserAttendance(pastOnly, participants);
     }
 
-    const enriched = await this.meetingService.getMeetingProjectName(req, pastOnly);
+    // No ids means the artifact lookups issue no requests.
+    const pastMeetingIds = options?.includeArtifacts ? pastOnly.map((meeting) => meeting.id) : [];
+    const [enriched, recordingFlags, primarySummaries] = await Promise.all([
+      this.meetingService.getMeetingProjectName(req, pastOnly),
+      this.fetchPastMeetingArtifacts<PastMeetingRecording, boolean>(req, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
+        Boolean(getLargestSessionShareUrl(recording ?? null))
+      ),
+      // selectPrimaryPastMeetingSummary reads only `data` from each item.
+      this.fetchPastMeetingArtifacts<PastMeetingSummary, PastMeetingSummary | null>(req, 'v1_past_meeting_summary', pastMeetingIds, (summaries) =>
+        selectPrimaryPastMeetingSummary(summaries.map((data) => ({ type: 'v1_past_meeting_summary', id: '', data })))
+      ),
+    ]);
 
     // Webhook-created past meetings carry a service-account created_by — join back to the live
     // v1_meeting index so the organizer chip resolves on Me-lens past cards.
     const withCreatedBy = await enrichMeetingsWithCreatedBy(req, enriched, (m) => m.meeting_id);
 
-    return this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
+    const withAccess = await this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
+    if (!options?.includeArtifacts) return withAccess;
+    for (const meeting of withAccess) {
+      meeting.has_recording = recordingFlags.get(meeting.id);
+      meeting.has_ai_summary = primarySummaries.has(meeting.id)
+        ? this.isPastMeetingSummaryAvailable(primarySummaries.get(meeting.id) ?? null, meeting)
+        : undefined;
+    }
+    return withAccess;
   }
 
   /**
@@ -1224,6 +1258,64 @@ export class UserService {
         });
         return { participants: [] as PastMeetingParticipant[], loaded: false };
       });
+  }
+
+  // Organizers also count a summary awaiting approval (the card's review banner); other viewers need a visible one.
+  private isPastMeetingSummaryAvailable(summary: PastMeetingSummary | null, meeting: PastMeeting): boolean {
+    const hasContent = Boolean(summary?.summary_data?.edited_content || summary?.summary_data?.content);
+    return hasContent && (isPastMeetingSummaryVisible(summary) || meeting.organizer === true);
+  }
+
+  /** Maps past meeting ids to a value derived from their artifact rows via OR-tag batches; a failed batch's ids are omitted. */
+  private async fetchPastMeetingArtifacts<T, R>(req: Request, type: string, pastMeetingIds: string[], derive: (rows: T[]) => R): Promise<Map<string, R>> {
+    const values = new Map<string, R>();
+    const batches: string[][] = [];
+    for (let i = 0; i < pastMeetingIds.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(pastMeetingIds.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const fetchBatch = async (batch: string[]): Promise<void> => {
+      try {
+        const rows = await fetchAllQueryResources<T & { meeting_and_occurrence_id?: string }>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<T & { meeting_and_occurrence_id?: string }>>(
+              req,
+              'LFX_V2_SERVICE',
+              '/query/resources',
+              'GET',
+              {
+                type,
+                tags: batch.map((id) => `meeting_and_occurrence_id:${id}`),
+                page_size: QUERY_SERVICE_PAGE_SIZE,
+                ...(pageToken && { page_token: pageToken }),
+              }
+            ),
+          { failOnPartial: true }
+        );
+        const rowsById = new Map<string, T[]>();
+        for (const row of rows) {
+          if (!row.meeting_and_occurrence_id) continue;
+          const list = rowsById.get(row.meeting_and_occurrence_id);
+          if (list) list.push(row);
+          else rowsById.set(row.meeting_and_occurrence_id, [row]);
+        }
+        for (const id of batch) {
+          values.set(id, derive(rowsById.get(id) ?? []));
+        }
+      } catch (error) {
+        logger.warning(req, 'get_user_past_meetings', 'Past meeting artifact lookup failed, leaving its fields unset', {
+          type,
+          batch_size: batch.length,
+          err: error,
+        });
+      }
+    };
+
+    for (let i = 0; i < batches.length; i += PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY) {
+      await Promise.all(batches.slice(i, i + PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY).map(fetchBatch));
+    }
+    return values;
   }
 
   /**

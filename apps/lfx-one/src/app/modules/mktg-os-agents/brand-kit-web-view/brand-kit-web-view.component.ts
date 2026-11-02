@@ -173,7 +173,7 @@ export class BrandKitWebViewComponent {
   public constructor() {
     // The print mark never outlives the view (a print dialog still up when
     // the page goes), and a print still waiting for its font is cancelled.
-    this.destroyRef.onDestroy(() => this.printService.clear(BRAND_KIT_PRINT_BODY_CLASS));
+    this.destroyRef.onDestroy(() => this.printService.clear());
     toObservable(this.printFont)
       .pipe(takeUntilDestroyed())
       .subscribe((font) => {

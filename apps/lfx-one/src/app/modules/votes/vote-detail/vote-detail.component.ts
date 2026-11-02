@@ -3,6 +3,7 @@
 
 import { DOCUMENT, isPlatformBrowser, isPlatformServer, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, ElementRef, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal, viewChild } from '@angular/core';
+import { VoteDescriptionPipe } from '../pipes/vote-description.pipe';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Params, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -117,6 +118,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     CardComponent,
     ExternalLinksDirective,
     LinkifyHtmlPipe,
+    VoteDescriptionPipe,
     NotFoundComponent,
     SkeletonModule,
     StatCardGridComponent,

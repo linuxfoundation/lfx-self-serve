@@ -28,6 +28,6 @@ export const WithAction: Story = {
   args: { variant: 'warning', fill: true },
   render: (args) => ({
     props: args,
-    template: `<lfx-ui-note ${argsToTemplate(args)}>Membership renews in 14 days.<lfx-ui-button note-action variant="secondary" size="small" class="shrink-0">Review</lfx-ui-button></lfx-ui-note>`,
+    template: `<lfx-ui-note ${argsToTemplate(args)}>Membership renews in 14 days.<lfx-ui-button note-action variant="secondary" class="shrink-0">Review</lfx-ui-button></lfx-ui-note>`,
   }),
 };
