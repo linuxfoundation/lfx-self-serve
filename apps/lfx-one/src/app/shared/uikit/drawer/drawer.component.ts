@@ -58,7 +58,7 @@ export class UiDrawerComponent {
     return computed(() => {
       // Modal material with the radius on the inner edge only; the sheet fills the window at 640px and narrower, so it loses its radius there.
       const base =
-        '@container flex h-full max-w-[100vw] flex-col overflow-hidden bg-ui-background-100 shadow-modal max-[640px]:!w-screen max-[640px]:rounded-none';
+        '@container flex h-full max-w-[100vw] flex-col overflow-hidden bg-ui-background-100 shadow-modal max-[640px]:!w-screen max-[640px]:rounded-none forced-colors:border forced-colors:border-[color:CanvasText]';
       const edge = this.context.side === 'left' ? 'rounded-r-ui-lg is-left' : 'rounded-l-ui-lg is-right';
       return `${base} ${edge}`;
     });

@@ -1,18 +1,41 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, ChangeDetectionStrategy, Component, DestroyRef, ElementRef, inject, signal, viewChild, WritableSignal } from '@angular/core';
-import { IMPERSONATION_BANNER_HEIGHT_PX } from '@lfx-one/shared/constants';
-import { MeetingsRailBlock, UiTabItem } from '@lfx-one/shared/interfaces';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+  WritableSignal,
+} from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
+import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { MeetingDashboardView, MeetingsRailBlock, UiTabItem } from '@lfx-one/shared/interfaces';
+import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
+import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
+import { EMPTY, Observable, switchMap } from 'rxjs';
+
+import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
+import { MeetingsHomeStore } from './services/meetings-home.store';
 
 /**
- * Redesigned Home / Me lens meetings page — layout shell only, no data yet (epic #4468).
- * @description Header, tabs bar and a scrolling list area in the centre; Next meeting, Last meeting and
- * Pending RSVPs in a fixed 360px right column. At 1024px and below the right column folds into the centre,
+ * Redesigned Home / Me lens meetings page (epic #4468).
+ * @description Header, tabs bar and the day-grouped meetings list in the centre; Next meeting and Last meeting
+ * in a fixed 360px right column. At 1024px and below the right column folds into the centre,
  * above the tabs, and the window scrolls instead of the columns. Rendered by `MeetingsEntryComponent`
  * behind `MEETINGS_REDESIGN_FLAG`.
  *
@@ -23,8 +46,17 @@ import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
  */
 @Component({
   selector: 'lfx-meetings-redesign',
-  imports: [NgTemplateOutlet, UiTabsComponent, UiSearchInputComponent],
+  imports: [
+    NgTemplateOutlet,
+    UiTabsComponent,
+    UiSearchInputComponent,
+    UiSkeletonComponent,
+    UiEmptyStateComponent,
+    UiButtonComponent,
+    MeetingsDayGroupComponent,
+  ],
   templateUrl: './meetings-redesign.component.html',
+  providers: [MeetingsHomeStore],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'block -mx-5 -mt-6 md:-mx-8',
@@ -34,25 +66,26 @@ import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 })
 export class MeetingsRedesignComponent {
   private readonly userService = inject(UserService);
+  private readonly personaService = inject(PersonaService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  protected readonly store = inject(MeetingsHomeStore);
 
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
   private readonly tabsBar = viewChild<ElementRef<HTMLElement>>('tabsBar');
+  private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
 
   protected readonly idPrefix = 'meetings-redesign';
-  protected readonly tabs: UiTabItem[] = [
-    { value: 'upcoming', label: 'Upcoming' },
-    { value: 'past', label: 'Past' },
-  ];
   protected readonly railBlocks: MeetingsRailBlock[] = [
     { key: 'next-meeting', label: 'Next meeting' },
     { key: 'last-meeting', label: 'Last meeting' },
-    { key: 'pending-rsvps', label: 'Pending RSVPs' },
   ];
-  protected readonly activeTab = signal<string>('upcoming');
-  protected readonly search = signal<string>('');
+  protected readonly skeletonRows = [0, 1, 2, 3, 4];
+  protected readonly personaLoaded = this.personaService.personaLoaded;
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
   /** Page height on desktop, where the columns scroll on their own; `null` when the window scrolls (1024px and below). */
@@ -63,8 +96,20 @@ export class MeetingsRedesignComponent {
   protected readonly scrolled: WritableSignal<boolean> = signal(false);
   /** True once the tabs bar has reached its sticky position; the fade then sits under it instead of the header. */
   protected readonly tabsStuck: WritableSignal<boolean> = signal(false);
+  protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
+  /** The active tab has no meetings at all. */
+  protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
+  /** The active tab has meetings, but none match the search and filters. */
+  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
+  /** "All N meetings loaded" once every row of a list longer than one page is shown. */
+  protected readonly allLoaded: Signal<boolean> = computed(
+    () => !this.store.loading() && !this.store.hasMore() && this.store.filteredRows().length > MEETINGS_HOME_PAGE_SIZE
+  );
 
   public constructor() {
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.store.setTab(params.get('time') === 'past' ? 'past' : 'upcoming'));
+    this.initLoadMore();
+
     afterNextRender(() => {
       const observer = new ResizeObserver(() => this.measure());
       const header = this.header()?.nativeElement;
@@ -73,6 +118,18 @@ export class MeetingsRedesignComponent {
       if (footer) observer.observe(footer);
       this.destroyRef.onDestroy(() => observer.disconnect());
       this.measure();
+    });
+  }
+
+  protected onTabChange(value: string): void {
+    const tab: MeetingDashboardView = value === 'past' ? 'past' : 'upcoming';
+    if (tab === this.store.tab()) return;
+    this.store.setTab(tab);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { time: tab === 'past' ? 'past' : null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
     });
   }
 
@@ -105,6 +162,38 @@ export class MeetingsRedesignComponent {
     const stickyEdge = desktop ? centre.getBoundingClientRect().top : this.stickyTop();
     this.scrolled.set(scrolled);
     this.tabsStuck.set(scrolled && tabsBar.getBoundingClientRect().top - stickyEdge <= this.headerHeight() + 1);
+  }
+
+  private initTabs(): Signal<UiTabItem[]> {
+    return computed(() => [
+      this.tabItem('upcoming', 'Upcoming', this.store.upcomingLoading() || this.store.upcomingFailed(), this.store.upcomingRows().length),
+      this.tabItem('past', 'Past', this.store.pastLoading() || this.store.pastFailed(), this.store.pastRows().length),
+    ]);
+  }
+
+  /** Shows the next page once the trigger, the list's last 280px, scrolls into view; a new page re-creates it. */
+  private initLoadMore(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    toObservable(this.loadMoreTrigger)
+      .pipe(
+        switchMap((trigger) =>
+          trigger
+            ? new Observable<void>((subscriber) => {
+                const observer = new IntersectionObserver((entries) => {
+                  if (entries.some((entry) => entry.isIntersecting)) subscriber.next();
+                });
+                observer.observe(trigger.nativeElement);
+                return () => observer.disconnect();
+              })
+            : EMPTY
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.store.loadMore());
+  }
+
+  private tabItem(value: MeetingDashboardView, label: string, unknown: boolean, count: number): UiTabItem {
+    return unknown ? { value, label } : { value, label, count, countLabel: `${count} ${count === 1 ? 'meeting' : 'meetings'}` };
   }
 
   /** Bottom padding of every ancestor up to `main` — the layout's content wrapper sits above the route-entry host, not directly over this one. */

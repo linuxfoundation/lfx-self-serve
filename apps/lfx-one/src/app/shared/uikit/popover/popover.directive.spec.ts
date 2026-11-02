@@ -127,6 +127,18 @@ const MENU_IN_PANEL_TEMPLATE = `
   </ng-template>
 `;
 
+const MENU_MIDDLE_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
+  <ng-template #panel>
+    <input id="first" aria-label="Search" />
+    <lfx-ui-button [menu]="actions" ariaLabel="Actions">Actions</lfx-ui-button>
+    <button id="done" type="button">Done</button>
+    <ng-template #actions>
+      <lfx-ui-menu ariaLabel="Actions"><lfx-ui-menu-item>Edit</lfx-ui-menu-item></lfx-ui-menu>
+    </ng-template>
+  </ng-template>
+`;
+
 const DISABLED_FIRST_TEMPLATE = `
   <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
   <ng-template #panel><button id="off" type="button" disabled>Off</button><input id="first" aria-label="Search" /><button id="done" type="button">Done</button></ng-template>
@@ -506,6 +518,23 @@ describe('UiPopoverDirective', () => {
       expect(event.defaultPrevented).toBe(false);
     });
 
+    it('Shift+Tab from an open menu, with its button as the first field, stops on the button and keeps the popover open', async () => {
+      await open();
+      const button = container.querySelector('lfx-ui-button button') as HTMLElement;
+      button.click();
+      await settle();
+      const item = container.querySelector('[data-testid="ui-menu"] [role="menuitem"]') as HTMLElement;
+      item.focus();
+
+      const event = key(item, 'Tab', { keyCode: 9, shiftKey: true });
+      await settle();
+
+      expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+      expect(panel()).not.toBeNull();
+      expect(document.activeElement).toBe(button);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
     it('ignores an Escape that something inside already handled', async () => {
       await open();
       const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
@@ -513,6 +542,43 @@ describe('UiPopoverDirective', () => {
       (container.querySelector('lfx-ui-button button') as HTMLElement).dispatchEvent(event);
       await settle();
       expect(panel()).not.toBeNull();
+    });
+  });
+
+  describe('with a menu between other fields', () => {
+    beforeEach(async () => mount(MENU_MIDDLE_TEMPLATE, [UiButtonComponent, UiMenuComponent, UiMenuItemComponent]));
+
+    const focusItem = async () => {
+      await open();
+      (container.querySelector('lfx-ui-button button') as HTMLElement).click();
+      await settle();
+      const item = container.querySelector('[data-testid="ui-menu"] [role="menuitem"]') as HTMLElement;
+      item.focus();
+      return item;
+    };
+
+    it('Shift+Tab from an open menu stops on its button and keeps the popover open', async () => {
+      const item = await focusItem();
+
+      const event = key(item, 'Tab', { keyCode: 9, shiftKey: true });
+      await settle();
+
+      expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+      expect(panel()).not.toBeNull();
+      expect(document.activeElement).toBe(container.querySelector('lfx-ui-button button'));
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('Tab from an open menu closes only the menu and lets the browser move on from its button', async () => {
+      const item = await focusItem();
+
+      const event = key(item, 'Tab', { keyCode: 9 });
+      await settle();
+
+      expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+      expect(panel()).not.toBeNull();
+      expect(document.activeElement).toBe(container.querySelector('lfx-ui-button button'));
+      expect(event.defaultPrevented).toBe(false);
     });
   });
 

@@ -14,7 +14,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { NewsletterReaderComponent } from './newsletter-reader.component';
 import { ProjectService } from '@services/project.service';
 import { NewsletterService } from '@services/newsletter.service';
-import { ClipboardShareService } from '@services/clipboard-share.service';
+import { ShareDialogService } from '@services/share-dialog.service';
 import { LensService } from '@services/lens.service';
 
 function makeProject(overrides: Partial<Project> = {}): Project {
@@ -79,8 +79,8 @@ describe('NewsletterReaderComponent', () => {
       getReaderAccess: vi.fn(),
       joinNewsletterGroup: vi.fn(),
     };
-    const mockClipboardShareService = {
-      copyLink: vi.fn(),
+    const mockShareDialogService = {
+      open: vi.fn(),
     };
 
     paramMap$ = new BehaviorSubject(
@@ -99,7 +99,7 @@ describe('NewsletterReaderComponent', () => {
         { provide: ProjectService, useValue: mockProjectService },
         { provide: NewsletterService, useValue: mockNewsletterService },
         { provide: ActivatedRoute, useValue: activatedRoute },
-        { provide: ClipboardShareService, useValue: mockClipboardShareService },
+        { provide: ShareDialogService, useValue: mockShareDialogService },
         { provide: LensService, useValue: { setLens: vi.fn().mockReturnValue(true) } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         provideNoopAnimations(),
@@ -277,14 +277,21 @@ describe('NewsletterReaderComponent', () => {
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
-  it('should have copyLink method bound to clipboard service', () => {
+  it('opens the share dialog with the permalink and the issue subject', () => {
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
-    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter({ subject: 'K8s Weekly #42' }) }));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
-    expect(component['copyLink']).toBeDefined();
-    expect(typeof component['copyLink']).toBe('function');
+    fixture.detectChanges();
+
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="newsletter-reader-share"]')!.click();
+
+    expect(TestBed.inject(ShareDialogService).open).toHaveBeenCalledWith({
+      url: expect.stringContaining('/newsletters/kubernetes/news-123'),
+      title: 'K8s Weekly #42',
+      copiedMessage: 'Newsletter link copied to clipboard.',
+    });
   });
 
   describe('member benefit (#3469)', () => {
@@ -404,7 +411,7 @@ describe('NewsletterReaderComponent', () => {
         { provide: ProjectService, useValue: projectService },
         { provide: NewsletterService, useValue: newsletterService },
         { provide: ActivatedRoute, useValue: { paramMap: paramMap$ } },
-        { provide: ClipboardShareService, useValue: { copyLink: vi.fn() } },
+        { provide: ShareDialogService, useValue: { open: vi.fn() } },
         { provide: LensService, useValue: { setLens: vi.fn().mockReturnValue(true) } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         { provide: PLATFORM_ID, useValue: 'server' },

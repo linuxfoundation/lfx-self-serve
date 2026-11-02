@@ -36,6 +36,8 @@ Enrollment is handled on the Linux Foundation training platform ([training.linux
 
 There may be a delay of up to 24 hours between enrolling on the training platform and the enrollment appearing in LFX Self Serve. If a course is still missing after 24 hours, contact LFX support.
 
+A certification exam you are enrolled in appears on the **Enrolled Trainings** tab until you pass it, then on the **Certifications** tab.
+
 ## How do I see my training completion certificates?
 
 Certificates earned through Linux Foundation training appear on the **Certifications** tab in LFX Self Serve. You can also access them directly from the LF Training Portal.
