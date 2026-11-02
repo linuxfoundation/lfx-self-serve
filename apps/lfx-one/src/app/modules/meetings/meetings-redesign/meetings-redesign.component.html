@@ -117,12 +117,20 @@
 </div>
 
 <ng-template #railTemplate let-scope>
-  @for (block of railBlocks; track block.key) {
-    <section class="flex min-w-0 flex-col gap-[8px]" [attr.data-testid]="'meetings-redesign-' + scope + '-' + block.key">
-      <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">{{ block.label }}</h2>
+  <section class="flex min-w-0 flex-col gap-[8px]" [attr.data-testid]="'meetings-redesign-' + scope + '-next-meeting'">
+    <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">Next meeting</h2>
+    <!-- The placeholder also stands in after a failed feed; the list shows that error with a retry. -->
+    @if (store.upcomingLoading() || store.upcomingFailed()) {
       <div class="h-[112px] rounded-[12px] border border-gray-200 bg-gray-50"></div>
-    </section>
-  }
+    } @else {
+      <lfx-next-meeting-card
+        [row]="store.nextRow()"
+        [now]="store.now()"
+        [rsvps]="store.nextRowRsvps()"
+        [joinable]="store.nextRowJoinable()"
+        [joinUrl]="store.nextRowJoinUrl()" />
+    }
+  </section>
   <!-- A failed feed hides the card rather than claiming the viewer has no past meetings. -->
   @if (!store.lastMeetingFailed()) {
     <section class="flex min-w-0 flex-col gap-[8px]" [attr.data-testid]="'meetings-redesign-' + scope + '-last-meeting'">
