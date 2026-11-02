@@ -9931,6 +9931,56 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
+     * Both pinned rows past the cap at once: a hand-picked row AND a different suggested row. The
+     * cap must hold, both must be drawn, and the selection keeps the last slot it always had.
+     */
+    it('draws both the selected and the suggested row when ranking cuts both past the render limit', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
+      picker().searchEmailTemplates('');
+      const noise = Array.from({ length: 150 }, (_, i) => ({
+        id: `noise-${i}`,
+        name: `Community training webinar newsletter #${i}`,
+      })) as HubSpotMarketingEmail[];
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
+      });
+      // The noise rows tie, so the server order decides and the last one ranks 150th -- past the cap.
+      picker().onSelectEmailTemplate('noise-149');
+
+      const rendered = picker().emailTemplatesRendered();
+      expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+      expect(rendered.slice(-2).map((t) => t.id)).toEqual(['kc', 'noise-149']);
+      expect(new Set(rendered.map((t) => t.id)).size, 'a pinned row was drawn twice').toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    });
+
+    /** One pinned row already drawn, the other cut: the drawn one keeps its place, the cap holds. */
+    it('keeps an already-drawn selection in place while pinning a cut suggestion', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
+      picker().searchEmailTemplates('');
+      const noise = Array.from({ length: 150 }, (_, i) => ({
+        id: `noise-${i}`,
+        name: `Community training webinar newsletter #${i}`,
+      })) as HubSpotMarketingEmail[];
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
+      });
+      picker().onSelectEmailTemplate('noise-0');
+
+      const rendered = picker().emailTemplatesRendered();
+      expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+      expect(rendered[0].id).toBe('noise-0');
+      expect(rendered[rendered.length - 1].id).toBe('kc');
+    });
+
+    /**
      * The event decides WHETHER to suggest; the selected type decides WHICH of that event's
      * templates. A portal that runs an event well has several of its emails, and they score
      * identically on the event — so a strict `>` over the server's newest-first order picked
@@ -10363,8 +10413,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /**
      * A template matched on its SUBJECT may carry no name, and announcing an empty string reads as
-     * "Template selected for this event: . Choose another" — which tells a screen-reader user
-     * nothing about what was chosen for them.
+     * "Suggested template for this event: . Nothing is selected" — which tells a screen-reader user
+     * nothing about what is recommended.
      */
     it('announces a subject-matched template by its subject rather than an empty name', () => {
       showPicker();

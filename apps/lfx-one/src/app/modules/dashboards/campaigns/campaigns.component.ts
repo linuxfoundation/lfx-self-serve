@@ -1257,7 +1257,8 @@ export class CampaignsComponent {
     //     longer see or change.
     //   - The SUGGESTED row. Ranking and the suggestion agree on the event half but not the type
     //     half, and a tie falls to the server's original order, so the suggestion can rank past the
-    //     cap (reproduced with a 7-keyword type against 150 rows matching six of them). The banner
+    //     cap (reproduced with 150 rows matching three GENERIC event words, which rank but never
+    //     justify a suggestion, against the one row carrying the decisive term). The banner
     //     points the operator at a "Suggested" badge; a badge on a row nobody can see is a
     //     recommendation that cannot be accepted.
     //
@@ -5174,7 +5175,7 @@ export class CampaignsComponent {
     // counts generic words, because among templates the event has already identified a generic
     // word usefully separates them. It cannot be what justifies offering a suggestion: two
     // generic terms sum to exactly EVENT_TEMPLATE_SUGGESTION_MIN_SCORE, so "Community Training
-    // Workshop" would auto-select "Community training newsletter" on vocabulary that describes
+    // Workshop" would suggest "Community training newsletter" on vocabulary that describes
     // neither event.
     if (best === null) {
       return;
@@ -5196,9 +5197,9 @@ export class CampaignsComponent {
     // "Developer Conference" chose an unrelated "Developer newsletter", and that branded draft would
     // have been cloned with nobody having picked it. Real events yield exactly ONE decisive term
     // ("KubeCon Europe 2026" -> kubecon, "PyTorch Conference 2026" -> pytorch), identical in shape to
-    // `developer`, so no threshold separates a conference brand from a job title. The row still
-    // ranks first and explains its match; accepting it is one click, and that click is what turns a
-    // guess into the operator's decision.
+    // `developer`, so no threshold separates a conference brand from a job title. The row is always
+    // drawn (pinned past the render cap if it has to be), badged, and explains its match; accepting
+    // it is one click, and that click is what turns a guess into the operator's decision.
   }
 
   /**
@@ -5318,7 +5319,7 @@ export class CampaignsComponent {
    *
    * Matched on WORD BOUNDARIES, not `includes`. A bare substring test lets a distinctive term match
    * inside a longer word — "KubeConference recap" would score as a KubeCon template and, because a
-   * distinctive term suggests on its own, would be pre-selected outright. The boundary is any
+   * distinctive term suggests on its own, would be suggested outright. The boundary is any
    * non-alphanumeric, which keeps every real naming pattern working: `KubeCon + CloudNativeCon`,
    * `KubeCon+CloudNativeCon` with no spaces, `KubeCon: registration`, and `Nairobi, Kenya` all
    * still match. Verified byte-identical against the live portal's templates.
