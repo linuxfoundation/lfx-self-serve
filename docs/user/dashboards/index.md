@@ -27,12 +27,12 @@ Not all users see all lenses.
 
 Which lenses you see depends on your roles on Linux Foundation projects, such as committee seats, maintainer roles, and admin access.
 
-| Lens             | Who sees it                                                                                                                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Me**           | Everyone.                                                                                                                                                                                  |
-| **Projects**     | Almost everyone who is signed in. The only users who do not see it are those whose only role is a board seat and who are not a project admin.                                              |
-| **Foundation**   | Board members and executive directors of a foundation, foundation admins, and Linux Foundation staff.                                                                                      |
-| **Organization** | Everyone sees the lens. The pages for a specific company show only if you have access to that organization. See [Who can access this](#who-can-access-this) under Your company's activity. |
+| Lens             | Who sees it                                                                                                                                                                                                                                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Me**           | Everyone.                                                                                                                                                                                                                                                                                                              |
+| **Projects**     | Almost everyone who is signed in: anyone with a project role, such as committee member or maintainer, and project admins. Users whose only roles are foundation-level, such as a board seat, executive director or Linux Foundation staff, do not see it unless they also have a project role or project admin access. |
+| **Foundation**   | Board members and executive directors of a foundation, foundation admins, Linux Foundation staff, and a few other Linux Foundation admin, auditor and marketing roles.                                                                                                                                                 |
+| **Organization** | Everyone sees the lens. The pages for a specific company show only if you have access to that organization. See [Who can access this](#who-can-access-this) under Your company's activity.                                                                                                                             |
 
 Some pages inside a lens have their own access rules. For example, **Health Metrics** in the Foundation lens is available only to the foundation's executive director and to Linux Foundation staff.
 
@@ -83,7 +83,7 @@ Everyone can open the **Organization** lens, but a company's pages show only to 
 
 If you do not have access, the Organization lens shows one of these messages instead of your company's pages:
 
-- **No organization linked to your account**: your profile is not linked to an organization. Adding your employer as an affiliation does not by itself give you access. You still need a grant from your organization's Organization Lens administrators.
+- **No organization linked to your account**: LFX did not find an organization you have access to, and could not confirm that your employer is a Linux Foundation member. You can see this even if you have already added an affiliation. The message offers **Add an affiliation**, which links your profile to your employer, but an affiliation does not by itself give you access. You still need a grant from your organization's Organization Lens administrators.
 - **You do not have access to the Organization Lens**: your employer is a Linux Foundation member, but you have not been granted access to it.
 - **You do not have access to this organization**: the link you opened is for an organization you do not have access to.
 

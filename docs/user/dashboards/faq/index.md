@@ -10,7 +10,7 @@ intercom_collection: Dashboards
 
 ## Why don't I see all four lenses?
 
-The lenses you see depend on your roles on Linux Foundation projects. Everyone sees **Me** and **Organization**, and almost everyone sees **Projects**. **Foundation** is for board members, executive directors, foundation admins and Linux Foundation staff. See [Who can see each lens](../#who-can-see-each-lens) for the full list. If you believe you should have access to a lens that is not visible, contact your foundation or project administrator.
+The lenses you see depend on your roles on Linux Foundation projects. Everyone sees **Me** and **Organization**, and almost everyone sees **Projects**. **Foundation** is for board members, executive directors, foundation admins, Linux Foundation staff and a few other Linux Foundation admin, auditor and marketing roles. See [Who can see each lens](../#who-can-see-each-lens) for the full list. If you believe you should have access to a lens that is not visible, contact your foundation or project administrator.
 
 ## Why can't I see my organization's dashboard?
 
@@ -42,7 +42,7 @@ Drawers are sliding side panels that show additional detail — such as metrics 
 
 ## How do I get access to the Foundation lens?
 
-The Foundation lens is available to board members and executive directors of a foundation, foundation admins, and Linux Foundation staff. Contact your project administrator if you need elevated access.
+The Foundation lens is available to board members and executive directors of a foundation, foundation admins, Linux Foundation staff, and a few other Linux Foundation admin, auditor and marketing roles. Contact your project administrator if you need elevated access.
 
 ## Why is the Health Metrics page not accessible to me?
 
