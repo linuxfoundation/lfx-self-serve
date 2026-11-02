@@ -22,6 +22,7 @@ import {
   TemplateRef,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { UI_TOAST_PANE_CLASS } from '@lfx-one/shared/constants';
 import { UiPopoverContext, UiPopoverPadding } from '@lfx-one/shared/interfaces';
 import { fromEvent, take, takeUntil } from 'rxjs';
 
@@ -141,19 +142,19 @@ export class UiPopoverDirective {
     this.panel.setInput('panelId', this.panelId);
     this.panel.setInput('labelledBy', this.host.id);
     this.apply(this.config());
-    // The host toggles itself, a modal or drawer opened from the panel has no outside-click listener, and a toast is not an outside click: none of them counts here.
+    // The host, later overlays and toasts are not outside clicks.
     overlayRef
       .outsidePointerEvents()
       .pipe(takeUntil(overlayRef.detachments()))
       .subscribe((event) => {
         const target = event.target as Node;
-        if (!this.host.contains(target) && !this.inLaterOverlay(overlayRef, target) && !(target as Element).closest?.('.lfx-ui-toast-pane')) this.close();
+        if (!this.host.contains(target) && !this.inLaterOverlay(overlayRef, target) && !(target as Element).closest?.(`.${UI_TOAST_PANE_CLASS}`)) this.close();
       });
     overlayRef
       .keydownEvents()
       .pipe(takeUntil(overlayRef.detachments()))
       .subscribe((event) => this.onKeydown(event));
-    // Tab is read on the panel itself: an open select or combobox list is the top overlay and takes every key the body-level dispatcher sees.
+    // Read Tab on the panel: an open list is the top overlay and takes every dispatcher key.
     fromEvent<KeyboardEvent>(this.panelElement() as HTMLElement, 'keydown')
       .pipe(takeUntil(overlayRef.detachments()))
       .subscribe((event) => {

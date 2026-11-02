@@ -72,9 +72,7 @@ export class UiSwitchOptionComponent {
       let ink = 'cursor-pointer text-ui-neutral-600 hover:text-ui-neutral-900';
       if (this.isDisabled()) ink = 'cursor-not-allowed text-ui-neutral-400';
       else if (this.isChecked()) ink = 'cursor-pointer text-ui-neutral-900';
-      // forced-colors: fills and shadows vanish and a Highlight fill gets a Canvas text backplate (white text on white), so no fill is used.
-      // Every segment keeps a 2px border (Canvas, so layout does not move); the chosen one shows it in Highlight, GrayText if disabled. Ink is CanvasText, GrayText if disabled.
-      // forced-color-adjust stays auto: only system colours are set here, and the browser keeps them.
+      // forced-colors: no fill (it gets a Canvas backplate); a 2px border marks the choice.
       let forcedBorder = 'forced-colors:border-[color:Canvas]';
       if (this.isChecked()) forcedBorder = this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:Highlight]';
       const forcedInk = this.isDisabled() ? 'forced-colors:text-[color:GrayText]' : 'forced-colors:text-[color:CanvasText]';
