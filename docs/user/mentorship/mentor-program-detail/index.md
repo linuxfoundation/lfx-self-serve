@@ -54,7 +54,7 @@ To change a task, expand the mentee's row with **View Tasks** and use **Edit Tas
 4. If the mentee uploaded a file, select **View Submission** to open it in a new tab, or **Download Submission** to save it.
 5. On a submitted task, select **Approve** or **Request Changes**.
 
-PDF and plain-text files open in the browser. A DOC or DOCX file cannot be shown there, so **View** downloads it instead and says so.
+PDF and plain-text files open in the browser. A DOC or DOCX file cannot be shown there, so **View Submission** (or the eye icon on Applicants and Mentees) downloads it instead and says so.
 
 This tab is for reviewing only — you cannot create or edit a task here.
 

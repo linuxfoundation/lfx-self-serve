@@ -2175,6 +2175,12 @@ describe('mentorshipTaskFileViewType', () => {
     expect(mentorshipTaskFileViewType('text/html', 'a.txt')).toBeNull();
   });
 
+  it('never matches an inherited key', () => {
+    for (const type of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(mentorshipTaskFileViewType(type, 'a.pdf')).toBeNull();
+    }
+  });
+
   it('reads the extension when the type is missing or generic', () => {
     expect(mentorshipTaskFileViewType(null, 'Report.PDF')).toBe('application/pdf');
     expect(mentorshipTaskFileViewType('', 'notes.v2.txt')).toBe('text/plain;charset=utf-8');

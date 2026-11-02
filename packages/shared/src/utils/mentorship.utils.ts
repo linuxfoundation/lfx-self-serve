@@ -1538,13 +1538,15 @@ export function hasMentorshipTaskFileExtension(fileName: string): boolean {
 /**
  * The type a downloaded task file is opened as in a browser tab, or null when browsers cannot show it (DOC, DOCX, or
  * anything unknown). A specific response type decides; a missing or generic one leaves it to the file name's extension.
+ * Only the map's own keys match, so a type such as `constructor` cannot pick up an inherited value.
  */
 export function mentorshipTaskFileViewType(contentType: string | null | undefined, fileName: string | null | undefined): string | null {
+  const viewTypeOf = (key: string): string | null => (Object.hasOwn(MENTORSHIP_TASK_FILE_VIEW_TYPES, key) ? MENTORSHIP_TASK_FILE_VIEW_TYPES[key] : null);
   const type = (contentType ?? '').split(';')[0].trim().toLowerCase();
-  if (type && type !== MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE) return MENTORSHIP_TASK_FILE_VIEW_TYPES[type] ?? null;
+  if (type && type !== MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE) return viewTypeOf(type);
   const dot = fileName?.lastIndexOf('.') ?? -1;
   if (!fileName || dot === -1) return null;
-  return MENTORSHIP_TASK_FILE_VIEW_TYPES[fileName.slice(dot).toLowerCase()] ?? null;
+  return viewTypeOf(fileName.slice(dot).toLowerCase());
 }
 
 /**
