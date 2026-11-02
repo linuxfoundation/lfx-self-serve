@@ -51,9 +51,11 @@ describe('ApplicantTasksPanelComponent', () => {
   /** The service's in-flight ids, as a signal like the real one, so a save from a collapsed panel can settle mid-test. */
   let updatingIds: WritableSignal<ReadonlySet<string>>;
   let download: ReturnType<typeof vi.fn>;
+  let view: ReturnType<typeof vi.fn>;
 
   const build = (): void => {
     download = vi.fn();
+    view = vi.fn();
     openEdit = vi.fn().mockReturnValue(of(undefined));
     update = vi.fn(() => of(null));
     taskSaved = vi.fn();
@@ -67,7 +69,7 @@ describe('ApplicantTasksPanelComponent', () => {
         MessageService,
         { provide: MentorshipTaskDialogService, useValue: { openCreate: vi.fn(), openEdit } },
         { provide: MentorshipTaskUpdateService, useValue: { update, isUpdating: (taskId: string) => updatingIds().has(taskId) } },
-        { provide: MentorshipTaskFileService, useValue: { download } },
+        { provide: MentorshipTaskFileService, useValue: { download, view } },
       ],
     });
 
@@ -91,12 +93,15 @@ describe('ApplicantTasksPanelComponent', () => {
     element().querySelector<HTMLElement>(`[data-testid="mentorship-applicant-task-edit-${taskId}"]`)?.querySelector<HTMLButtonElement>('button')?.click();
   };
 
-  it('offers Download, and no View, only on a task with a submitted file, and downloads it by task id', () => {
+  it('offers View and Download only on a task with a submitted file, and acts on it by task id', () => {
     expect(element().querySelector('[data-testid="mentorship-applicant-task-download-tsk_editable"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-applicant-task-view-tsk_prereq"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-applicant-task-view-tsk_editable"]')).toBeNull();
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-applicant-task-view-tsk_prereq"]')?.click();
+    expect(view).toHaveBeenCalledWith('tsk_prereq');
+    expect(download).not.toHaveBeenCalled();
 
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-applicant-task-download-tsk_prereq"]')?.click();
-
     expect(download).toHaveBeenCalledWith('tsk_prereq');
   });
 

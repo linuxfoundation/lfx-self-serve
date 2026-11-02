@@ -22,6 +22,7 @@ describe('MenteeTaskRowComponent', () => {
   let upload: ReturnType<typeof vi.fn>;
   let remove: ReturnType<typeof vi.fn>;
   let download: ReturnType<typeof vi.fn>;
+  let view: ReturnType<typeof vi.fn>;
   let fileInFlight: Subject<boolean>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
@@ -31,7 +32,7 @@ describe('MenteeTaskRowComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeTaskRowComponent],
       providers: [
-        { provide: MentorshipTaskFileService, useValue: { upload, remove, download } },
+        { provide: MentorshipTaskFileService, useValue: { upload, remove, download, view } },
         { provide: MenteeTaskStatusService, useValue: { changeStatus } },
       ],
     });
@@ -118,6 +119,7 @@ describe('MenteeTaskRowComponent', () => {
     upload = vi.fn().mockReturnValue(fileInFlight.asObservable());
     remove = vi.fn().mockReturnValue(fileInFlight.asObservable());
     download = vi.fn();
+    view = vi.fn();
   });
 
   afterEach(() => {
@@ -530,9 +532,10 @@ describe('MenteeTaskRowComponent', () => {
       expect(upload).toHaveBeenCalledTimes(1);
     });
 
-    it('offers Download, Replace and Remove for a stored file before the task is submitted', async () => {
+    it('offers View, Download, Replace and Remove for a stored file before the task is submitted', async () => {
       await buildRow(inProgressTask('required', true));
 
+      expect(byTestId('mentee-tasks-view-file-row_progress')?.getAttribute('aria-label')).toBe('View submission for Progress task');
       expect(byTestId('mentee-tasks-download-file-row_progress')?.getAttribute('aria-label')).toBe('Download submission for Progress task');
       expect(byTestId('mentee-tasks-replace-file-row_progress')).toBeTruthy();
       expect(byTestId('mentee-tasks-remove-file-row_progress')).toBeTruthy();
@@ -547,20 +550,23 @@ describe('MenteeTaskRowComponent', () => {
       expect(byTestId('mentee-tasks-remove-file-row_uploaded')).toBeNull();
     });
 
-    it('offers only Download once the reviewer completes the task', async () => {
+    it('offers only View and Download once the reviewer completes the task', async () => {
       await buildRow(uploadedTask('complete'));
 
+      expect(byTestId('mentee-tasks-view-file-row_uploaded')).toBeTruthy();
       expect(byTestId('mentee-tasks-download-file-row_uploaded')).toBeTruthy();
       expect(byTestId('mentee-tasks-replace-file-row_uploaded')).toBeNull();
       expect(byTestId('mentee-tasks-remove-file-row_uploaded')).toBeNull();
     });
 
-    it('downloads and removes through the file service', async () => {
+    it('views, downloads and removes through the file service', async () => {
       await buildRow(inProgressTask('required', true));
 
+      byTestId('mentee-tasks-view-file-row_progress')?.click();
       byTestId('mentee-tasks-download-file-row_progress')?.click();
       byTestId('mentee-tasks-remove-file-row_progress')?.click();
 
+      expect(view).toHaveBeenCalledWith('row_progress');
       expect(download).toHaveBeenCalledWith('row_progress');
       expect(remove).toHaveBeenCalledWith('row_progress');
     });
@@ -625,9 +631,10 @@ describe('MenteeTaskRowComponent', () => {
       expect(uploadBtn?.getAttribute('aria-describedby')).toBe('mentee-task-status-hint-row_upload');
     });
 
-    it('keeps Download but closes Replace and Remove on a stored file', async () => {
+    it('keeps View and Download but closes Replace and Remove on a stored file', async () => {
       await buildRow({ ...inProgressTask('required', true), dueDate: '2026-09-30T00:00:00Z' });
 
+      expect(byTestId('mentee-tasks-view-file-row_progress')).toBeTruthy();
       expect(byTestId('mentee-tasks-download-file-row_progress')).toBeTruthy();
       expect(byTestId('mentee-tasks-replace-file-row_progress')).toBeNull();
       expect(byTestId('mentee-tasks-remove-file-row_progress')).toBeNull();
@@ -697,6 +704,7 @@ describe('MenteeTaskRowComponent', () => {
     await buildRow(uploadNeededTask());
     expect(element().querySelector('[data-testid="mentee-tasks-upload-row_upload"]')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentee-tasks-download-file-row_upload"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentee-tasks-view-file-row_upload"]')).toBeNull();
   });
 
   it('pins submitted and due dates to UTC even under a non-UTC timezone', async () => {
