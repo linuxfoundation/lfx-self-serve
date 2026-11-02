@@ -14,7 +14,7 @@ describe('VoteReviewComponent — description formatting (#4727)', () => {
 
   const description = () => fixture.nativeElement.querySelector('[data-testid="vote-review-description"]') as HTMLElement | null;
 
-  async function render(value: string): Promise<void> {
+  async function render(value: string | null | undefined): Promise<void> {
     form = new FormGroup({
       title: new FormControl('Charter ratification'),
       description: new FormControl(value),
@@ -122,9 +122,30 @@ describe('VoteReviewComponent — description formatting (#4727)', () => {
     expect(description()?.querySelector('a')?.getAttribute('href')).toMatch(/^unsafe:/);
   });
 
-  it('adds no description row when empty', async () => {
-    await render('');
+  it.each(['', ' ', '\t', '\n\n', ' \n\t \r\n', '\u00a0', null, undefined])('adds no description row for blank input %j', async (value) => {
+    await render(value);
 
+    expect(fixture.componentInstance.description()).toBe('');
     expect(description()).toBeNull();
+    expect(form.get('description')?.value).toBe(value ?? null);
+  });
+
+  it('hides blank-only edits and restores nonblank text without trimming the form', async () => {
+    await render('Before');
+    const blank = ' \n\t ';
+    form.get('description')?.setValue(blank);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.description()).toBe('');
+    expect(description()).toBeNull();
+    expect(form.get('description')?.value).toBe(blank);
+
+    const raw = '  After\n\n    More  ';
+    form.get('description')?.setValue(raw);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.description()).toBe(raw);
+    expect(description()?.textContent).toBe(raw);
+    expect(form.get('description')?.value).toBe(raw);
   });
 });

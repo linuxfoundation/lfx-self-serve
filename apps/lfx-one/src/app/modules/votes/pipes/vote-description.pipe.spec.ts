@@ -173,6 +173,31 @@ describe('VoteDescriptionPipe', () => {
     }
   });
 
+  it.each([
+    { html: 'First<br><strong></strong>\nSecond', text: 'FirstSecond', breaks: 1 },
+    { html: 'First\n<strong></strong><br>Second', text: 'FirstSecond', breaks: 1 },
+    { html: 'First<br><span><em></em><a href="https://example.com"></a></span>\n  Second', text: 'First  Second', breaks: 1 },
+    { html: 'First\n<span><em></em></span><br><strong></strong>\n\tSecond', text: 'First\tSecond', breaks: 1 },
+    { html: 'First<br><strong></strong><br>\nSecond', text: 'FirstSecond', breaks: 2 },
+    { html: 'First<br><strong></strong>\n\nSecond', text: 'First\nSecond', breaks: 1 },
+  ])('looks through empty inline wrappers beside explicit breaks: $html', ({ html, text, breaks }) => {
+    for (const linkify of [false, true]) {
+      const result = render(html, linkify);
+      expect(result.querySelectorAll('br')).toHaveLength(breaks);
+      expect(result.textContent).toBe(text);
+      expect(result.querySelectorAll('strong, span:not(.whitespace-pre-wrap), em, a')).toHaveLength((html.match(/<(strong|span|em|a)(?:\s|>)/g) || []).length);
+    }
+  });
+
+  it.each(['<img src="https://example.com/image.png">', '<wbr>', '<q></q>'])('retains visible inline boundaries during break cleanup: %s', (boundary) => {
+    for (const linkify of [false, true]) {
+      const result = render(`First\n${boundary}<br>${boundary}\nSecond`, linkify);
+      expect(result.textContent).toBe('First\n\nSecond');
+      expect(result.querySelectorAll('br')).toHaveLength(1);
+      expect(result.querySelectorAll('img, wbr, q')).toHaveLength(2);
+    }
+  });
+
   it('retains rich structure and explicit breaks without a pre-wrap wrapper', () => {
     const result = render('<p>One<br>Two</p>\n<ul> <li>A</li> <li>B</li> </ul><pre>  code\n    next</pre>');
     expect(result.querySelector('p br')).toBeTruthy();

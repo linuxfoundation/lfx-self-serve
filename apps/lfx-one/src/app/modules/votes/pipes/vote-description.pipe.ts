@@ -149,10 +149,14 @@ export class VoteDescriptionPipe implements PipeTransform {
   private normalizeExplicitBreakWhitespace(container: HTMLElement): void {
     // Flatten inline descendants so a formatting element between a break and its source
     // newline cannot add a second visual line. Block/pre content never enters this helper.
+    // Empty formatting/link wrappers do not render a boundary. Keep other leaves (such as
+    // images, breaks, and quotes) so their visible content still separates adjacent text.
+    const emptyInlineSelector =
+      'a, abbr, acronym, b, bdi, bdo, big, cite, code, del, dfn, em, font, i, ins, kbd, label, mark, s, samp, small, span, strike, strong, sub, sup, time, tt, u, var';
     const leaves: Node[] = [];
     const collect = (node: Node): void => {
       if (!node.childNodes.length) {
-        leaves.push(node);
+        if (node.nodeType !== 1 || !(node as Element).matches(emptyInlineSelector)) leaves.push(node);
       } else {
         for (const child of Array.from(node.childNodes)) collect(child);
       }

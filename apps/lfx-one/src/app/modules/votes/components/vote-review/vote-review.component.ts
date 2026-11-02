@@ -81,7 +81,8 @@ export class VoteReviewComponent {
   private initDescription(): Signal<string> {
     return computed(() => {
       this.formValue();
-      return this.form().get('description')?.value || '';
+      const description = this.form().get('description')?.value as string | null | undefined;
+      return description?.trim() ? description : '';
     });
   }
 
