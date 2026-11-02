@@ -455,9 +455,16 @@ export class CampaignController {
       } catch {
         surveyUrl = null;
       }
-      if (surveyUrl === null || (surveyUrl.protocol !== 'http:' && surveyUrl.protocol !== 'https:') || surveyUrl.hostname === '') {
+      // And the ONE policy the button is built under (`canonicalHttpUrl`: no private host, no
+      // non-default port), so a link the email would silently drop is refused here instead.
+      if (
+        surveyUrl === null ||
+        (surveyUrl.protocol !== 'http:' && surveyUrl.protocol !== 'https:') ||
+        surveyUrl.hostname === '' ||
+        canonicalHttpUrl(surveyUrl.href) === ''
+      ) {
         _next(
-          ServiceValidationError.forField('url', 'url must be a valid http(s) link', {
+          ServiceValidationError.forField('url', 'url must be a valid public http(s) link on the standard port', {
             operation: 'campaign_generate_brief',
             service: 'campaign_controller',
             path: req.path,

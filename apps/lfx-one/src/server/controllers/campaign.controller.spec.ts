@@ -9769,7 +9769,15 @@ describe('CampaignController survey surface', () => {
 
   // Protocol-less and relative values included: a check that prefixed them with a base URL would
   // accept them as links on that host, and the brief's slug and button would point nowhere real.
-  it.each(['not a link', 'surveys.example.com/r/cloud-2026', '/r/cloud-2026', 'ftp://surveys.example.com/r/x'])(
+  // A non-default port or private host too: `canonicalHttpUrl` drops those from the email's button.
+  it.each([
+    'not a link',
+    'surveys.example.com/r/cloud-2026',
+    '/r/cloud-2026',
+    'ftp://surveys.example.com/r/x',
+    'https://surveys.example.com:8443/r/cloud',
+    'http://localhost/r/cloud',
+  ])(
     'refuses %s as a survey link before generating anything',
     async (url) => {
       const req = { body: { deliveryType: 'survey', url, sourceText: 'Survey' }, query: {}, path: '/api/campaigns/brief/generate' } as unknown as Request;
