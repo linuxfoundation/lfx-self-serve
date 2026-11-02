@@ -39,6 +39,7 @@ import {
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
+import { MeetingHomeActionsComponent } from '../meeting-home-actions/meeting-home-actions.component';
 import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
 
 /**
@@ -47,7 +48,7 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
  */
 @Component({
   selector: 'lfx-meeting-home-row',
-  imports: [DatePipe, MeetingRsvpControlsComponent, UiAvatarComponent, UiTooltipDirective],
+  imports: [DatePipe, MeetingHomeActionsComponent, MeetingRsvpControlsComponent, UiAvatarComponent, UiTooltipDirective],
   templateUrl: './meeting-home-row.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },

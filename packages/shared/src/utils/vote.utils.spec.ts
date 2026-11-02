@@ -45,6 +45,7 @@ import {
   buildVoteVoterChoiceSummaries,
   buildVoteVoterRowView,
   canVoterFetchVoteResults,
+  buildVoteSummarySendNotice,
   compareVotesByRecency,
   computeParticipationSegments,
   computeVoteParticipationStats,
@@ -1970,6 +1971,73 @@ describe('buildVoteAnswerSummary', () => {
 
   it('returns no lines for an abstention', () => {
     expect(buildVoteAnswerSummary(questions, { abstain: true })).toEqual([]);
+  });
+});
+
+describe('buildVoteSummarySendNotice', () => {
+  const counts = { recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0 };
+
+  it('reports a plain success only when every invited voter was sent', () => {
+    expect(buildVoteSummarySendNotice({ ...counts, recipient_count: 3 })).toEqual({
+      severity: 'success',
+      summary: 'Summary sent',
+      detail: 'Summary sent to 3 voter(s).',
+    });
+  });
+
+  it('warns about a partial send and names the skipped voters', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, recipient_count: 2, skipped_count: 1 });
+    expect(notice.severity).toBe('warn');
+    expect(notice.summary).toBe('Summary partially sent');
+    expect(notice.detail).toContain('Sent to 2 voter(s)');
+    expect(notice.detail).toContain('1 skipped (no email address)');
+    expect(notice.life).toBe(8000);
+  });
+
+  it('warns about a partial send and names the failed voters', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, recipient_count: 2, failed_count: 1 });
+    expect(notice.severity).toBe('warn');
+    expect(notice.summary).toBe('Summary partially sent');
+    expect(notice.detail).toContain('1 failed');
+    expect(notice.detail).not.toContain('skipped');
+  });
+
+  it('lists sent, skipped and failed together', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, recipient_count: 4, skipped_count: 2, failed_count: 1 });
+    expect(notice.detail).toContain('Sent to 4 voter(s)');
+    expect(notice.detail).toContain('2 skipped');
+    expect(notice.detail).toContain('1 failed');
+  });
+
+  it('warns that retrying may duplicate when any outcome is uncertain, alone or mixed with others', () => {
+    const alone = buildVoteSummarySendNotice({ ...counts, uncertain_count: 3 });
+    expect(alone.severity).toBe('warn');
+    expect(alone.summary).toBe('Summary delivery unconfirmed');
+    expect(alone.detail).toContain('3 unconfirmed');
+    expect(alone.detail).toContain('retrying may send duplicate summaries');
+    expect(alone.life).toBe(8000);
+
+    const mixed = buildVoteSummarySendNotice({ recipient_count: 2, failed_count: 1, skipped_count: 1, uncertain_count: 2 });
+    expect(mixed.summary).toBe('Summary delivery unconfirmed');
+    expect(mixed.detail).toContain('Sent to 2 voter(s)');
+    expect(mixed.detail).toContain('1 skipped');
+    expect(mixed.detail).toContain('1 failed');
+    expect(mixed.detail).toContain('2 unconfirmed');
+    expect(mixed.detail).toContain('retrying may send duplicate summaries');
+  });
+
+  it('reports that nothing was sent when nobody has an email address', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, skipped_count: 4 });
+    expect(notice.severity).toBe('info');
+    expect(notice.summary).toBe('No summaries sent');
+    expect(notice.detail).toContain('4 invited voter(s) have no email address');
+  });
+
+  it('reports that nothing was sent when there are no invited voters', () => {
+    const notice = buildVoteSummarySendNotice(counts);
+    expect(notice.severity).toBe('info');
+    expect(notice.summary).toBe('No summaries sent');
+    expect(notice.detail).toContain('no invited voters have an email address');
   });
 });
 

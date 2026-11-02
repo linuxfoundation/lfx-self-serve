@@ -143,6 +143,7 @@ describe('MeetingsHomeStore', () => {
       getUserLatestPastMeetings: vi.fn(() => latestPast$),
       confirmedMeetingRsvps: vi.fn(() => confirmed()),
       isMeetingRsvpCurrent: vi.fn(() => true),
+      isMeetingRegistrationEnded: vi.fn(() => false),
       authenticated: signal(true),
       meetingJoinIdentity: signal({ name: 'Real Viewer', email: 'real@example.test' }),
     };
@@ -203,6 +204,9 @@ describe('MeetingsHomeStore', () => {
       removed.set(new Set(['attendee', 'organized']));
 
       expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['organized']);
+      const [organized] = store.upcomingRows();
+      expect(organized.meeting).toMatchObject({ invited: false, my_registrant_ids: [], my_rsvp: null });
+      expect(organized.myRsvp ?? null).toBeNull();
     });
 
     it('shows an answer confirmed this session on the date it applies to', () => {
@@ -474,6 +478,40 @@ describe('MeetingsHomeStore', () => {
       upcoming$.next([buildMeeting({ id: 'm-2' })]);
       TestBed.tick();
       expect(store.nextRowRsvps()).toEqual([]);
+    });
+
+    it("drops the viewer's answers from registrations they removed", () => {
+      const others = [rsvp({ id: 'r-other', registrant_id: 'reg-other', email: 'other@example.test' })];
+      const mine = rsvp({ id: 'r-mine', registrant_id: 'reg-removed' });
+      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([mine, ...others]));
+      const ended = signal(new Set<string>());
+      (userService['isMeetingRegistrationEnded'] as ReturnType<typeof vi.fn>).mockImplementation((_id: string, registrantId: string) =>
+        ended().has(registrantId)
+      );
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+      expect(store.nextRowRsvps()).toEqual([mine, ...others]);
+
+      ended.set(new Set(['reg-removed']));
+
+      expect(store.nextRowRsvps()).toEqual(others);
+    });
+
+    it('keeps answers saved this session when every loaded answer came from a removed registration', () => {
+      const removed = rsvp({ id: 'r-removed', registrant_id: 'reg-removed' });
+      const survivor = rsvp({ id: 'r-survivor', registrant_id: 'reg-survivor', response_type: 'maybe' });
+      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([removed]));
+      (userService['isMeetingRegistrationEnded'] as ReturnType<typeof vi.fn>).mockImplementation(
+        (_id: string, registrantId: string) => registrantId === 'reg-removed'
+      );
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+
+      confirmed.set([survivor]);
+
+      expect(store.nextRowRsvps()).toEqual([survivor]);
     });
 
     it('counts a confirmed change over the loaded answer it replaces, even at the same time', () => {

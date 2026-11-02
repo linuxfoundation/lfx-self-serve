@@ -28,8 +28,8 @@ The vote's description keeps its paragraphs, line breaks, and lists, the same as
 
 The page opens on the **Overview** tab and has these tabs:
 
-- **Overview** shows the vote's description, a short results summary with a **View full results** link, and recent comments.
-- **Results** shows each question's tallies. The **Overview** tab's status tag reads **Voting in progress** while the vote is active and **Final results** once it has ended. For each question, every option shows its count and share of the votes. A vote with several questions lists each question separately as **Q1**, **Q2**, and so on. **Abstain**, when the vote allowed abstaining or anyone abstained, shows how many people abstained. Abstentions count as ballots cast but not in any option's tally.
+- **Overview** shows the vote's description, a results card with recent comments. For a vote with one question (not ranked), the card shows a bar for each option with its vote count and percentage. For a ranked vote or a vote with several questions, it shows a short summary line per question instead. All these layouts include an **Abstain** row when abstaining is allowed or anyone abstained. While a manager views an active vote in a visible browser tab, results refresh about every five seconds after each request finishes; returning to the tab refreshes them immediately. Once the vote closes and its results are successfully refreshed, the winning option is marked **Winner**, or tied options are marked **Tied**. Select **View full results** to open the Results tab.
+- **Results** shows each question's tallies. The **Overview** tab's status tag reads **Voting in progress** while the vote is active and **Final results** after a successful results refresh following closure. While that final read is pending, the tag reads **Totals pending**. For each question, every option shows its count and share of the votes. A vote with several questions lists each question separately as **Q1**, **Q2**, and so on. **Abstain**, when the vote allowed abstaining or anyone abstained, shows how many people abstained. Abstentions count as ballots cast but not in any option's tally.
 - **Comments** appears when the vote has comment questions. It lists each comment question with its responses and the date, paged when the list is long. On a named vote, managers also see who wrote each comment. The tab shows a count of the comments once results load. On a pseudo-anonymous vote the count stays hidden until comments are released after the vote closes.
 - **Voters** appears for active and ended votes, and lists each invited voter with their status. On a named vote it also shows their choices, and you can open a voter's ballot. On a pseudo-anonymous vote it shows only who has responded, never how anyone voted. The tab shows a count of the invited voters.
 
@@ -40,6 +40,10 @@ Summary cards below the tab strip show participation:
 - **Responded** shows how many invited people have responded, with a progress bar that shows abstentions as a separate segment. While results are held, the bar shows overall participation without an abstention breakdown. Select the card to open the **Voters** tab.
 - **Comments** shows how many written comments voters have left. This is a different count from **Responded**, because not every voter writes a comment. Select the card to open the **Comments** tab.
 - **Not voted yet** shows how many people haven't voted. On an active vote with people left to vote it has a **Send reminder** button, which opens the reminder dialog, and a **View voters** button, which opens the **Voters** tab. Once everyone has voted it says **Everyone has voted** and the reminder button is gone. If there are no eligible voters, it says **No eligible voters** and keeps **View voters** without a reminder button. On an ended vote, the card is called **Did not vote** and only has **View voters**.
+
+Active-vote refreshes also check the vote's current status, so a vote ended elsewhere is marked closed without reloading the page. Final-result labels wait for a successful, non-held results refresh after closure. After closure, managers' visible tabs continue reading results while totals are held or a temporary connection or server failure prevents the final read. These reads stop once final results arrive or after 12 completed attempts; temporary failures use a longer retry delay. Returning to the tab does not reset that limit. If results are still unavailable, reload the page to try again.
+
+During background recovery, a temporary connection or server failure keeps the last successful figures visible with **Results may be out of date. Reconnecting automatically.** The notice clears after a successful refresh. After closure, retained figures stay provisional: they have no **Winner** or **Tied** labels, and the status reads **Totals pending** until final results are successfully refreshed. A held response hides totals, abstentions and comments, including any previous figures. If access is denied, results have never loaded successfully, or the final-read retry limit is reached with an error, no old figures are shown.
 
 The buttons at the top right depend on the vote's status:
 
@@ -56,7 +60,7 @@ Some votes rank their options instead of counting one choice. For those, each op
 
 ### Pseudo-anonymous votes
 
-Totals, abstentions and comments stay hidden until the vote closes, and the page says **Totals appear when voting closes**. Once it closes, it may say **Totals are being finalized** until the results are ready. You can still follow who has responded on the **Voters** tab. Comments appear without names for everyone.
+Totals, abstentions and comments stay hidden until the vote closes, and the page says **Totals appear when voting closes**. Once it closes, it may say **Totals are being finalized** until the results are ready. Managers' visible tabs retry within the limit described above; reload the page if totals do not appear. You can still follow who has responded on the **Voters** tab. Comments appear without names for everyone.
 
 ## If you are invited to vote
 
