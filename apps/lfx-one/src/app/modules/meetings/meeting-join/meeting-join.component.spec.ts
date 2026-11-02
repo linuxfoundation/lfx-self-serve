@@ -389,6 +389,19 @@ describe('MeetingJoinComponent', () => {
 
       expect(overlayState.anyOpen()).toBe(false);
     });
+
+    it('gives the guests drawer a full-height class on mobile only, leaving the desktop width chain untouched (#4857)', async () => {
+      const fixture = await renderWithRoster();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+
+      const panel = document.querySelector('.p-drawer') as HTMLElement | null;
+      expect(panel).not.toBeNull();
+      expect(panel?.classList.contains('max-sm:!h-[100dvh]')).toBe(true);
+      expect(panel?.classList.contains('xl:w-[45%]')).toBe(true);
+      expect(panel?.classList.contains('h-[100dvh]')).toBe(false);
+    });
   });
 
   it('establishes a fresh baseline instead of treating growth as absorption when a guest is added before the roster has ever loaded', async () => {
