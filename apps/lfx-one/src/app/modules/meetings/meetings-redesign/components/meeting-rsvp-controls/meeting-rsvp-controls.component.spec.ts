@@ -211,7 +211,21 @@ describe('MeetingRsvpControlsComponent', () => {
       expect(query(fixture, 'meetings-home-rsvp-scope')).toBeNull();
     });
 
-    it('changes the answer from the menu and ignores the current one', async () => {
+    it('lets a recurring answer be picked again to change the dates it covers', async () => {
+      const rsvp = buildRsvp({ response_type: 'accepted', scope: 'single', occurrence_id: OCCURRENCE_ID });
+      const fixture = await render(buildRow(buildMeeting(RECURRING), { myRsvp: rsvp }));
+
+      (query(fixture, 'meetings-home-rsvp-status') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      (document.querySelector('[data-testid="meetings-home-rsvp-menu-accepted"]') as HTMLElement).click();
+      await fixture.whenStable();
+      expect(openModal).toHaveBeenCalledWith(MeetingRsvpScopeModalComponent, { data: expect.objectContaining({ response: 'accepted' }) });
+
+      closed.next('all');
+      expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: 'synthetic-meeting' }), OCCURRENCE_ID, 'accepted', 'all');
+    });
+
+    it('changes a one-time answer from the menu and ignores the current one', async () => {
       const fixture = await render(buildRow(buildMeeting(), { myRsvp: buildRsvp() }));
       const menuItem = (response: string): HTMLElement => document.querySelector(`[data-testid="meetings-home-rsvp-menu-${response}"]`) as HTMLElement;
 

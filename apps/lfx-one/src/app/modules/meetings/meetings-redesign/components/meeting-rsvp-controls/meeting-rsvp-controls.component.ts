@@ -23,6 +23,7 @@ import { UiMenuComponent } from '@shared/uikit/menu/menu.component';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
+import { take } from 'rxjs';
 
 import { MeetingRsvpScopeModalComponent } from '../meeting-rsvp-scope-modal/meeting-rsvp-scope-modal.component';
 
@@ -61,8 +62,9 @@ export class MeetingRsvpControlsComponent {
   });
 
   protected choose(response: RsvpResponse): void {
-    if (this.saving() || response === this.current()?.response) return;
     const row = this.row();
+    // A recurring answer can be re-picked to change the dates it covers.
+    if (this.saving() || (!row.meeting.recurrence && response === this.current()?.response)) return;
     if (!row.meeting.recurrence) {
       this.submit(row, response, 'all');
       return;
@@ -72,26 +74,9 @@ export class MeetingRsvpControlsComponent {
     const ref = this.modal.open<RsvpScope, MeetingRsvpScopeDialogData>(MeetingRsvpScopeModalComponent, { data });
     // A row that leaves the list takes its open dialog with it, saving nothing.
     const stopClosingOnDestroy = this.destroyRef.onDestroy(() => ref.close());
-    ref.closed.subscribe((scope) => {
+    ref.closed.pipe(take(1)).subscribe((scope) => {
       stopClosingOnDestroy();
       if (scope) this.submit(row, response, scope);
-    });
-  }
-
-  private submit(row: MeetingHomeRow, response: RsvpResponse, scope: RsvpScope): void {
-    if (this.saving()) return;
-    this.saving.set(response);
-    this.rsvpService.submit$(row.meeting, row.occurrenceId ?? undefined, response, scope).subscribe({
-      next: (rsvp: MeetingRsvp) => {
-        const label = this.choices.find((choice) => choice.response === rsvp.response_type)?.label ?? '';
-        const scopeLabel = row.meeting.recurrence ? getMeetingRsvpScopeLabel(rsvp) : 'This meeting';
-        this.toast.show({ variant: 'dark', message: `Response saved: ${label}`, description: `${row.title} — ${scopeLabel}` });
-      },
-      error: (error: MeetingRsvpSubmitError) => {
-        this.saving.set(null);
-        this.toast.show({ variant: 'dark', message: 'RSVP Failed', description: error.message, duration: 5000 });
-      },
-      complete: () => this.saving.set(null),
     });
   }
 
@@ -101,5 +86,25 @@ export class MeetingRsvpControlsComponent {
       // Organizers keep their rows after removing their own registration, but can no longer answer.
       return meeting.invited && isMeetingInviteResponsesEnabled(meeting) && !this.meetingService.removedRegistrationMeetingIds().has(meeting.id);
     });
+  }
+
+  private submit(row: MeetingHomeRow, response: RsvpResponse, scope: RsvpScope): void {
+    if (this.saving()) return;
+    this.saving.set(response);
+    this.rsvpService
+      .submit$(row.meeting, row.occurrenceId ?? undefined, response, scope)
+      .pipe(take(1))
+      .subscribe({
+        next: (rsvp: MeetingRsvp) => {
+          const label = this.choices.find((choice) => choice.response === rsvp.response_type)?.label ?? '';
+          const scopeLabel = row.meeting.recurrence ? getMeetingRsvpScopeLabel(rsvp) : 'This meeting';
+          this.toast.show({ variant: 'dark', message: `Response saved: ${label}`, description: `${row.title} — ${scopeLabel}` });
+        },
+        error: (error: MeetingRsvpSubmitError) => {
+          this.saving.set(null);
+          this.toast.show({ variant: 'dark', message: 'RSVP Failed', description: error.message, duration: 5000 });
+        },
+        complete: () => this.saving.set(null),
+      });
   }
 }
