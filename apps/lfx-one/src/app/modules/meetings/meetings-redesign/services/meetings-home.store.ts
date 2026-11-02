@@ -5,14 +5,16 @@ import { isPlatformBrowser } from '@angular/common';
 import { computed, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { Meeting, MeetingDashboardView, MeetingDayGroup, MeetingHomeRow, MeetingsHomeFilters, PastMeeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDashboardView, MeetingDayGroup, MeetingHomeRow, MeetingRsvp, MeetingsHomeFilters, PastMeeting } from '@lfx-one/shared/interfaces';
 import {
   countAppliedMeetingFilters,
   expandMeetingOccurrences,
   filterMeetingsHome,
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
+  getRsvpTimestampMs,
   groupMeetingsByDayBucket,
+  selectApplicableRsvp,
   sortPastMeetingsDescending,
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -155,15 +157,8 @@ export class MeetingsHomeStore {
       const meetings = this.upcomingMeetings()
         .filter((meeting) => meeting.organizer || !removed.has(meeting.id))
         .map((meeting) => this.withCurrentRsvps(meeting));
-      return expandMeetingOccurrences(meetings, this.now());
+      return expandMeetingOccurrences(meetings, this.now()).map((row) => this.withConfirmedRowRsvp(row));
     });
-  }
-
-  /** Adds answers saved this session to `my_rsvps` and drops answers from registrations that have ended. */
-  private withCurrentRsvps(meeting: Meeting): Meeting {
-    if (!meeting.my_rsvps) return meeting;
-    const rsvps = [...meeting.my_rsvps, ...this.userService.confirmedMeetingRsvps(meeting.id)];
-    return { ...meeting, my_rsvps: rsvps.filter((rsvp) => this.userService.isMeetingRsvpCurrent(rsvp, meeting)) };
   }
 
   private initPastRows(): Signal<MeetingHomeRow[]> {
@@ -184,5 +179,32 @@ export class MeetingsHomeStore {
         ];
       })
     );
+  }
+
+  /** Merges answers saved this session into `my_rsvps` (one copy per id, the confirmation on ties) and drops ended registrations. */
+  private withCurrentRsvps(meeting: Meeting): Meeting {
+    const current = this.currentRsvps(meeting, meeting.my_rsvp ? [meeting.my_rsvp] : []);
+    const myRsvp = meeting.my_rsvp && current.length === 0 ? null : meeting.my_rsvp;
+    if (!meeting.my_rsvps) return { ...meeting, my_rsvp: myRsvp };
+
+    const byId = new Map<string, MeetingRsvp>();
+    for (const rsvp of this.currentRsvps(meeting, [...meeting.my_rsvps, ...this.userService.confirmedMeetingRsvps(meeting.id)])) {
+      const kept = byId.get(rsvp.id);
+      if (!kept || getRsvpTimestampMs(rsvp) >= getRsvpTimestampMs(kept)) byId.set(rsvp.id, rsvp);
+    }
+    return { ...meeting, my_rsvp: myRsvp, my_rsvps: [...byId.values()] };
+  }
+
+  /** Without indexed history, applies answers saved this session per date; dates none of them cover keep their status. */
+  private withConfirmedRowRsvp(row: MeetingHomeRow): MeetingHomeRow {
+    if (row.meeting.my_rsvps) return row;
+    const confirmed = this.currentRsvps(row.meeting, this.userService.confirmedMeetingRsvps(row.meeting.id));
+    if (confirmed.length === 0) return row;
+    const rsvp = selectApplicableRsvp(row.occurrenceId, row.myRsvp ? [row.myRsvp, ...confirmed] : confirmed);
+    return rsvp ? { ...row, myRsvp: rsvp } : row;
+  }
+
+  private currentRsvps(meeting: Meeting, rsvps: MeetingRsvp[]): MeetingRsvp[] {
+    return rsvps.filter((rsvp) => this.userService.isMeetingRsvpCurrent(rsvp, meeting));
   }
 }

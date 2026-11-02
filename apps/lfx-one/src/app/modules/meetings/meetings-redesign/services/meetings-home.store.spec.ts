@@ -61,6 +61,14 @@ function buildPastMeeting(id: string, start: Date): PastMeeting {
   };
 }
 
+function weeklyMeeting(dates: Date[], overrides: Partial<Meeting> = {}): Meeting {
+  return buildMeeting({
+    recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '1' },
+    occurrences: dates.map((date) => ({ occurrence_id: seconds(date), start_time: date.toISOString(), duration: 60 })),
+    ...overrides,
+  });
+}
+
 function rsvp(overrides: Partial<MeetingRsvp> = {}): MeetingRsvp {
   return {
     id: 'r-1',
@@ -195,7 +203,7 @@ describe('MeetingsHomeStore', () => {
       const ended = rsvp({ id: 'r-ended', registrant_id: 'reg-ended', response_type: 'declined' });
       (userService['isMeetingRsvpCurrent'] as ReturnType<typeof vi.fn>).mockImplementation((answer: MeetingRsvp) => answer.registrant_id !== 'reg-ended');
 
-      upcoming$.next([buildMeeting({ my_rsvp: null, my_rsvps: [ended] })]);
+      upcoming$.next([buildMeeting({ my_rsvp: ended, my_rsvps: [ended] })]);
 
       expect(store.upcomingRows()[0].myRsvp).toBeNull();
     });
@@ -213,6 +221,29 @@ describe('MeetingsHomeStore', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it('prefers the confirmation over an indexed copy of the same answer', () => {
+      const [first, second] = [inDays(2), inDays(9)];
+      const indexed = rsvp({ id: 'r-later', scope: 'single', occurrence_id: seconds(second), response_type: 'accepted' });
+      const store = create();
+      upcoming$.next([weeklyMeeting([first, second], { my_rsvp: rsvp({ response_type: 'maybe' }), my_rsvps: [indexed] })]);
+
+      confirmed.set([{ ...indexed, response_type: 'declined' }]);
+
+      expect(store.upcomingRows()[1].myRsvp?.response_type).toBe('declined');
+    });
+
+    it('applies answers saved this session per date when indexed history is unavailable', () => {
+      const [first, second] = [inDays(2), inDays(9)];
+      const all = rsvp({ created_at: inDays(-2).toISOString() });
+      const later = rsvp({ id: 'r-2', scope: 'single', occurrence_id: seconds(second), response_type: 'declined' });
+      const store = create();
+      confirmed.set([all, later]);
+
+      upcoming$.next([weeklyMeeting([first, second], { my_rsvp: all, my_rsvps: undefined })]);
+
+      expect(store.upcomingRows().map((row) => row.myRsvp?.response_type)).toEqual(['accepted', 'declined']);
     });
 
     it('maps past meetings to rows, most recent first, keyed by their resource id', () => {
