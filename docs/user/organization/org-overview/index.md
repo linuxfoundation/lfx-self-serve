@@ -8,11 +8,11 @@ last_updated: 2026-11-02
 intercom_collection: Organization
 ---
 
-These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
+These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. A CLA Manager with no other role on an organization sees only its **EasyCLA** page, not the Org Overview. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
 
 ## What is the Org Overview?
 
-The Org Overview is the **Dashboard** of the Organization lens: a one-page summary of how the selected organization takes part in Linux Foundation (LF) foundations and projects. It opens when you select **Organization** in the lens switcher, and from **Dashboard** at the top of the sidebar. Its address is `/org/<organization>/overview`.
+The Org Overview is the **Dashboard** of the Organization lens: a one-page summary of how the selected organization takes part in Linux Foundation (LF) foundations and projects. It opens when you select **Organization** in the lens switcher, and from **Dashboard** at the top of the sidebar. If your only role on that organization is CLA Manager, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla). Its address is `/org/<organization>/overview`.
 
 The page has three parts, from top to bottom:
 
@@ -91,16 +91,17 @@ Return on investment (ROI) figures are not on the Org Overview. They are on the 
 
 The Org Overview shows a message in place of the page or a section when there is nothing to show or the section did not load.
 
-| Message                                     | What it means and what to do                                                                                                                                                                                                                                                                          |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **No organization selected**                | You have no organization to show. Linux Foundation staff see **Search for an organization in the switcher above to view its Org Lens.** — search for one in the organization switcher. Everyone else is asked to double-check their invite status with their admin, or to select **contact support**. |
-| **No foundations or projects yet.**         | The organization is not involved in any foundation or project yet, so the table is empty                                                                                                                                                                                                              |
-| **Couldn't load Foundations and Projects.** | The Foundations and Projects section did not load. Select **Retry**. The Involvement cards above it are not affected                                                                                                                                                                                  |
+| Message                                     | What it means and what to do                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No organization selected**                | You have no organization to show. Linux Foundation staff with no organizations assigned to them get no automatic selection and see **Search for an organization in the switcher above to view its Org Lens.** — search for one in the organization switcher and select it. Everyone else is asked to double-check their invite status with their admin, or to select **contact support**. |
+| **No foundations or projects yet.**         | The organization is not involved in any foundation or project yet, so the table is empty                                                                                                                                                                                                                                                                                                  |
+| **Couldn't load Foundations and Projects.** | The Foundations and Projects section did not load. Select **Retry**. The Involvement cards above it are not affected                                                                                                                                                                                                                                                                      |
 
-If the page says **You do not have access to this organization** or another access message instead of the dashboard, see [What happens when a link does not open an organization?](../choose-an-organization/#what-happens-when-a-link-does-not-open-an-organization).
+If a link shows a message such as **You do not have access to this organization** or **This link does not open an organization** in place of the dashboard, the link did not open an organization. The organization may not exist, you may not have access to it, or the lookup may have failed for a moment. See [What happens when a link does not open an organization?](../choose-an-organization/#what-happens-when-a-link-does-not-open-an-organization).
 
 ## Related sections
 
 - [Choose and switch an organization](../choose-an-organization/) — pick the organization the Org Overview shows
+- [Manage Org Lens Access](../manage-org-lens-access/) — who can open the organization, and how an Admin adds or removes them
 - [Organization FAQ](../faq/) — short answers about the Organization lens
 - [ROI metrics](../../dashboards/roi/) — return on investment estimates, for Linux Foundation staff
