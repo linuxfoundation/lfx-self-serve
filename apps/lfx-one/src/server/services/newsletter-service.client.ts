@@ -3,6 +3,7 @@
 
 import { NEWSLETTER_SEND_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import {
+  ApiRequestOptions,
   CommitteeNewsletterListResponse,
   CreateNewsletterRequest,
   Newsletter,
@@ -40,8 +41,17 @@ export class NewsletterServiceClient {
     return this.microserviceProxy.proxyRequest<Newsletter>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters`, 'POST', undefined, payload);
   }
 
-  public async getNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<Newsletter> {
-    return this.microserviceProxy.proxyRequest<Newsletter>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/${newsletterUid}`, 'GET');
+  public async getNewsletter(req: Request, projectUid: string, newsletterUid: string, options?: ApiRequestOptions): Promise<Newsletter> {
+    return this.microserviceProxy.proxyRequest<Newsletter>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}`,
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      options
+    );
   }
 
   public async listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {

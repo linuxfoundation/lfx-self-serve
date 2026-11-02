@@ -15,6 +15,7 @@ import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
+import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
@@ -256,6 +257,16 @@ export const routes: Routes = [
     pathMatch: 'full',
     canMatch: [voteAnonymousSsrMatchGuard],
     loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
+  },
+  // Anonymous SSR of the newsletter permalink (#4940): a chrome-less share preview whose Open Graph tags
+  // carry the issue subject, so a link-preview crawler (LinkedIn, X) never unfurls the login page. The
+  // guard matches only on the server for a signed-out request; browsers fall through to the shell below.
+  {
+    path: 'newsletters/:projectSlug/:id',
+    pathMatch: 'full',
+    canMatch: [newsletterAnonymousSsrMatchGuard],
+    loadComponent: () =>
+      import('./modules/newsletters/newsletter-share-preview/newsletter-share-preview.component').then((m) => m.NewsletterSharePreviewComponent),
   },
   {
     path: '',

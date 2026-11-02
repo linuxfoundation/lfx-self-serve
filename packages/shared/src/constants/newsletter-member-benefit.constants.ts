@@ -121,6 +121,17 @@ export const NEWSLETTER_INVITE_QUERY_PARAM = 'invite';
  */
 export const NEWSLETTER_INVITE_RELOOKUP_DELAY_MS = 3000;
 
+/** Link-preview title for a newsletter permalink that has nothing it may show (unknown, unsent, or the lookup failed). */
+export const NEWSLETTER_SHARE_PREVIEW_FALLBACK_TITLE = 'LFX Newsletter';
+
+/**
+ * Accepted `:projectSlug` of the public newsletter share-preview endpoint. Deliberately looser than
+ * `PROJECT_SLUG_REGEX` (project-service's create-time rule), which slugs created before that rule may
+ * not meet; it only bounds the value to one safe NATS lookup key. The lookup needs no token, and a
+ * rejected slug merely gets the neutral preview card.
+ */
+export const NEWSLETTER_SHARE_PREVIEW_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
 /** 404 code of an invite whose group is not a Newsletter-category group (or no longer exists). */
 export const NEWSLETTER_INVITE_INVALID_ERROR_CODE = 'NEWSLETTER_INVITE_INVALID';
 

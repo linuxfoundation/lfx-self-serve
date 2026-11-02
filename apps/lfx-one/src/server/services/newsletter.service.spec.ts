@@ -2,17 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { ProjectFunding } from '@lfx-one/shared/enums';
-import type { CommitteeNewsletter, CommitteeNewsletterListResponse, Project } from '@lfx-one/shared/interfaces';
+import type { CommitteeNewsletter, CommitteeNewsletterListResponse, Newsletter, Project } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirror meeting.service.spec.ts: isolate constructed collaborators at the module boundary.
 // The pure project classifier is real, resolved by the server Vitest alias.
-const { listCommitteeNewsletters, listNewsletters, listOptOuts, getMyCommitteeUids, getProjectsByIds } = vi.hoisted(() => ({
+const { listCommitteeNewsletters, listNewsletters, listOptOuts, getNewsletter, getMyCommitteeUids, getProjectsByIds, getProjectIdBySlug } = vi.hoisted(() => ({
   listCommitteeNewsletters: vi.fn(),
   listNewsletters: vi.fn(),
   listOptOuts: vi.fn(),
+  getNewsletter: vi.fn(),
   getMyCommitteeUids: vi.fn(),
   getProjectsByIds: vi.fn(),
+  getProjectIdBySlug: vi.fn(),
 }));
 
 vi.mock('./newsletter-service.client', () => ({
@@ -20,6 +22,7 @@ vi.mock('./newsletter-service.client', () => ({
     public listCommitteeNewsletters = listCommitteeNewsletters;
     public listNewsletters = listNewsletters;
     public listOptOuts = listOptOuts;
+    public getNewsletter = getNewsletter;
   },
 }));
 vi.mock('./committee.service', () => ({
@@ -30,8 +33,10 @@ vi.mock('./committee.service', () => ({
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectsByIds = getProjectsByIds;
+    public getProjectIdBySlug = getProjectIdBySlug;
   },
 }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn().mockResolvedValue('m2m-token') }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -319,5 +324,74 @@ describe('NewsletterService.getNewsletterStatusCounts', () => {
     listOptOuts.mockRejectedValue(new MicroserviceError('expired', 401, 'UNAUTHORIZED'));
 
     await expect(service.getNewsletterStatusCounts(req, 'p1')).rejects.toMatchObject({ statusCode: 401 });
+  });
+});
+
+describe('NewsletterService.getSharePreview', () => {
+  let service: NewsletterService;
+
+  function sentIssue(overrides: Partial<Newsletter> = {}): Newsletter {
+    return {
+      id: 'news-1',
+      project_uid: 'proj-1',
+      subject: 'Weekly Update #42',
+      body_html: '<p>members-only body</p>',
+      ed_reply_email: 'ed@acme-motors.example',
+      committee_uids: ['group-1'],
+      status: 'sent',
+      sent_at: '2026-10-30T10:00:00Z',
+      total_recipients: 10,
+      created_by: 'sender',
+      version: 1,
+      created_at: '2026-10-30T10:00:00Z',
+      updated_at: '2026-10-30T10:00:00Z',
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    getNewsletter.mockReset().mockResolvedValue(sentIssue());
+    getProjectIdBySlug.mockReset().mockResolvedValue({ uid: 'proj-1', slug: 'acme', exists: true });
+    service = new NewsletterService();
+  });
+
+  it('returns only the subject of a sent issue, read with an M2M token scoped to that call', async () => {
+    const preview = await service.getSharePreview(req, 'acme', 'news-1');
+
+    expect(preview).toEqual({ subject: 'Weekly Update #42' });
+    expect(getProjectIdBySlug).toHaveBeenCalledWith(req, 'acme', { unavailableAsMissing: false });
+    expect(getNewsletter).toHaveBeenCalledWith(req, 'proj-1', 'news-1', { bearerToken: 'm2m-token' });
+  });
+
+  it.each(['draft', 'scheduled', 'sending'] as const)('shows nothing for a %s issue', async (status) => {
+    getNewsletter.mockResolvedValue(sentIssue({ status }));
+
+    expect(await service.getSharePreview(req, 'acme', 'news-1')).toBeNull();
+  });
+
+  it('shows nothing for an issue of another project', async () => {
+    getNewsletter.mockResolvedValue(sentIssue({ project_uid: 'other-proj' }));
+
+    expect(await service.getSharePreview(req, 'acme', 'news-1')).toBeNull();
+  });
+
+  it('shows nothing for an unknown slug, without reading any issue', async () => {
+    getProjectIdBySlug.mockResolvedValue({ uid: '', slug: 'nope', exists: false });
+
+    expect(await service.getSharePreview(req, 'nope', 'news-1')).toBeNull();
+    expect(getNewsletter).not.toHaveBeenCalled();
+  });
+
+  it.each([400, 403, 404])('folds an upstream %i into "nothing to show" so no upstream detail leaks', async (status) => {
+    getNewsletter.mockRejectedValue(new MicroserviceError('upstream says no', status, 'UPSTREAM_ERROR'));
+
+    expect(await service.getSharePreview(req, 'acme', 'news-1')).toBeNull();
+  });
+
+  it('propagates an upstream 5xx as a failure, not a missing issue', async () => {
+    const failure = new MicroserviceError('upstream down', 502, 'BAD_GATEWAY');
+    getNewsletter.mockRejectedValue(failure);
+
+    await expect(service.getSharePreview(req, 'acme', 'news-1')).rejects.toBe(failure);
   });
 });

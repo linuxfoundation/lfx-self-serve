@@ -50,6 +50,14 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // protected shell. (Meetings has no such canMatch, which is why its matcher must exclude `create`.)
   { pattern: /^\/groups\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
+  // Newsletter permalink (`/newsletters/:projectSlug/:id`, #4940) — optional so a signed-out link-preview
+  // crawler gets the server-rendered share preview (subject-only Open Graph tags) instead of the login
+  // page; a signed-out browser is still sent to login by the client `authGuard`. Anchored to exactly two
+  // segments, and the `my` lookahead (with `[/;]` for matrix suffixes, as `/votes/create` above) keeps
+  // the authenticated `/newsletters/my/:foundationSlug` on `required`; every 1- and 3-segment
+  // newsletters route (list, create, edit, analytics) falls through to `required` too.
+  { pattern: /^\/newsletters\/(?!my(?:[/;]|$))[^/]+\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
+
   // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an
   // impersonation session never leaks here; anchored regex prevents `startsWith` fail-open onto `/u/...`.
   { pattern: /^\/u\/[^/]+\/?$/, type: 'ssr', auth: 'public' },
