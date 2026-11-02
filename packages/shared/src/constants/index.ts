@@ -173,3 +173,4 @@ export * from './mktg-last-intake.constants';
 export * from './mktg-intake-link-advice.constants';
 export * from './mktg-project-roles.constants';
 export * from './uikit.constants';
+export * from './social-share.constants';

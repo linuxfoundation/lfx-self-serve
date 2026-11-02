@@ -11,7 +11,7 @@ import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
-import { ClipboardShareService } from '@services/clipboard-share.service';
+import { ShareDialogService } from '@services/share-dialog.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
 
@@ -42,7 +42,7 @@ export class NewsletterReaderComponent {
   private readonly lensService = inject(LensService);
   private readonly projectService = inject(ProjectService);
   private readonly newsletterService = inject(NewsletterService);
-  private readonly clipboardShare = inject(ClipboardShareService);
+  private readonly shareDialog = inject(ShareDialogService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
 
@@ -99,11 +99,11 @@ export class NewsletterReaderComponent {
   });
 
   // === Protected Methods ===
-  protected copyLink(): void {
+  protected openShare(): void {
     const url = this.shareUrl();
     if (!url) return;
 
-    this.clipboardShare.copyLink(url, 'Newsletter link copied to clipboard.');
+    this.shareDialog.open({ url, title: this.newsletter()?.subject || this.pageTitle(), copiedMessage: 'Newsletter link copied to clipboard.' });
   }
 
   protected retryJoin(): void {

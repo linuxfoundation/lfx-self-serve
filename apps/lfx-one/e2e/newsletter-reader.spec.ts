@@ -107,7 +107,7 @@ function skipWhenAuthMissing(): void {
 }
 
 test.describe('Newsletter Reader Page', () => {
-  test('renders sent newsletter with breadcrumb and copy-link button', async ({ page }) => {
+  test('renders sent newsletter with breadcrumb and share button', async ({ page }) => {
     skipWhenAuthMissing();
     await stubProjectApi(page, MOCK_PROJECT_SENT);
     await stubNewsletterApi(page, PROJECT_UID, 'news-456', 'sent', true);
@@ -120,8 +120,8 @@ test.describe('Newsletter Reader Page', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('K8s Weekly #42', { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('newsletter-reader-received')).toContainText('Received Aug 13, 2026');
 
-    // Copy-link button present
-    await expect(page.getByTestId('newsletter-reader-copy-link')).toBeVisible();
+    // Share button present
+    await expect(page.getByTestId('newsletter-reader-share')).toBeVisible();
 
     // Newsletter preview renders
     await expect(page.getByTestId('newsletter-reader-preview').getByText('K8s Weekly #42 update.')).toBeVisible({ timeout: ELEMENT_TIMEOUT });

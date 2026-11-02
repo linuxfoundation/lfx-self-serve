@@ -159,3 +159,4 @@ export * from './mktg-run-navigation.utils';
 export * from './org-employment.utils';
 export * from './org-team-members.utils';
 export * from './org-scope.utils';
+export * from './social-share.utils';
