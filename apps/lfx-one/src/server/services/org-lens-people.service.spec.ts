@@ -112,6 +112,9 @@ const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], primary
 const FAILED: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 /** SQLite reading of the Snowflake enrollment window, so the detail read's real SQL runs here too. */
 const SQLITE_ENROLLED_WINDOW = `date(LAST_ENROLLED_TS) >= date('now', '-12 months') AND date(LAST_ENROLLED_TS) < date('now')`;
+/** Rows on the people list (ON_PEOPLE_LIST keeps its default, 1). */
+const STATUS_INSERT =
+  'INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS (ACCOUNT_ID, PERSON_KEY, COURSE_ID, STATUS, COURSE_NAME, LAST_ENROLLED_TS, LAST_CERTIFIED_TS) VALUES (?, ?, ?, ?, ?, ?, ?)';
 // SQLite form of the bound range start in the maintainer roles overlap predicate.
 const SQLITE_DAYS_BEFORE_TODAY = "date('now', '-' || ? || ' days')";
 let database: SqlDatabase;
@@ -627,7 +630,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, COURSE_ID TEXT, COURSE_NAME TEXT, ACTIVITY_TS TEXT
       );
       CREATE TABLE ORG_PEOPLE_TRAINING_COURSE_STATUS (
-        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_ID TEXT, STATUS TEXT, COURSE_NAME TEXT, LAST_ENROLLED_TS TEXT, LAST_CERTIFIED_TS TEXT
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_ID TEXT, STATUS TEXT, COURSE_NAME TEXT, LAST_ENROLLED_TS TEXT, LAST_CERTIFIED_TS TEXT,
+        ON_PEOPLE_LIST INTEGER NOT NULL DEFAULT 1
       );
     `);
     database
@@ -646,9 +650,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     database
       .prepare('INSERT INTO ORG_PEOPLE_EVENTS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'event-one', 'Community Summit', '2026-04-10', 1, 'foundation-one', 'Foundation One');
-    database
-      .prepare('INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(ACCOUNT, personKey, 'course-one', 'Certified', 'Project Fundamentals', null, '2026-04-01');
+    database.prepare(STATUS_INSERT).run(ACCOUNT, personKey, 'course-one', 'Certified', 'Project Fundamentals', null, '2026-04-01');
   });
 
   it('answers unavailable for cdp: person keys without resolving addresses', async () => {
@@ -666,7 +668,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
   });
 
   it('lists certificates of any age but enrollments from the last 12 months only, today excluded', async () => {
-    const insert = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const insert = database.prepare(STATUS_INSERT);
     insert.run(ACCOUNT, personKey, 'course-old-cert', 'Certified', 'Old Certificate', null, daysAgo(1500));
     insert.run(ACCOUNT, personKey, 'course-recent', 'Enrolled', 'Recent Enrollment', daysAgo(30), null);
     insert.run(ACCOUNT, personKey, 'course-old', 'Enrolled', 'Old Enrollment', daysAgo(500), null);
@@ -674,6 +676,10 @@ describe('OrgLensPeopleService person-key company emails', () => {
     // Another person's and another account's courses never reach this drawer.
     insert.run(ACCOUNT, 'person-two', 'course-other-person', 'Enrolled', 'Other Person', daysAgo(30), null);
     insert.run('other-account', personKey, 'course-other-account', 'Certified', 'Other Account', null, daysAgo(30));
+    // A row linked only by the learner's own enrollment (lfx-self-serve#4287) can share this key; it is not this employee's.
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'course-outside-link', 'Certified', 'Outside Link', null, daysAgo(30), 0);
 
     const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
 
@@ -689,7 +695,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
   // lf-dbt resolves one status per course, Certified winning over a re-enrollment; the drawer shows it as is, so a
   // certified course keeps its certificate whatever the age of the re-enrollment beside it.
   it('shows the resolved status per course, Certified with an enrollment beside it, and counts the rows shown', async () => {
-    const insert = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const insert = database.prepare(STATUS_INSERT);
     insert.run(ACCOUNT, personKey, 'course-two', 'Certified', 'Course Two', daysAgo(30), daysAgo(400));
     insert.run(ACCOUNT, personKey, 'course-three', 'Certified', 'Course Three', daysAgo(900), daysAgo(800));
     insert.run(ACCOUNT, personKey, 'course-four', 'Enrolled', 'Course Four', daysAgo(10), null);

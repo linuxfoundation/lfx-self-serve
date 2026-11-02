@@ -1096,7 +1096,9 @@ export class OrgLensPeopleService {
 
   /**
    * One row per course with its status resolved in lf-dbt (Certified wins over a re-enrollment): certificates of any
-   * age, in progress only when enrolled in the last 12 months (the window the drawer has always shown).
+   * age, in progress only when enrolled in the last 12 months (the window the drawer has always shown). People-list rows
+   * only: a learner linked to the account by their own enrollment (lfx-self-serve#4287) can share a former employee's
+   * key, and the drawer shows that person's activity as an employee.
    */
   private async fetchTrainingRows(accountId: string, personKey: string): Promise<TrainingRow[]> {
     const query = `
@@ -1105,7 +1107,7 @@ export class OrgLensPeopleService {
         STATUS,
         COURSE_NAME
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS
-      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
+      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ? AND ON_PEOPLE_LIST
         AND (STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate('LAST_ENROLLED_TS')}))
       ORDER BY STATUS ASC NULLS LAST, COURSE_NAME ASC NULLS LAST
     `;
