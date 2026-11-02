@@ -2188,7 +2188,7 @@ export class CampaignsComponent {
    * being staged (or has a send held), and a replacement mid-way would leave drafts built against
    * different audiences -- which the series' workflow then refuses.
    */
-  protected readonly audienceLockedByStaging = computed(() => this.emailStagingHeld() || this.surveySeriesStarted());
+  protected readonly audienceLockedByStaging = computed(() => (!this.surveySeriesRestarted() && this.emailStagingHeld()) || this.surveySeriesStarted());
 
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');

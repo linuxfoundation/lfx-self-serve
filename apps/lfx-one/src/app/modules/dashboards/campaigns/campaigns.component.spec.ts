@@ -9247,6 +9247,36 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySeriesRestarted(), 'a restart must wait for the create').toBe(false);
     });
 
+    it('says to wait, not start over, while a single stage is in flight', () => {
+      stageable(1);
+      seq().selectedEmailTab.set('implementation');
+      seq().emailStaging.set('staging');
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('[data-testid="campaigns-survey-sequence-hint"]')?.textContent).toContain('Wait for this email to finish staging');
+      expect(host.querySelector('[data-testid="campaigns-sequence-start-over"]')).toBeNull();
+    });
+
+    it('releases the audience after a restart leaves a single-send hold on the original brief', () => {
+      stageable(1);
+      seq().emailBriefId.set('brief-primary');
+      const unresolved = fixture.componentInstance as unknown as {
+        activeFoundationSlug: Signal<string>;
+        emailStagingUnresolved: Signal<boolean>;
+        markStageUnresolved(project: string, brief: string): void;
+      };
+      unresolved.markStageUnresolved(unresolved.activeFoundationSlug(), 'brief-primary');
+      expect(unresolved.emailStagingUnresolved(), 'fixture precondition').toBe(true);
+      expect(seq().audienceLockedByStaging()).toBe(true);
+
+      seq().onStartSeriesOver();
+
+      expect(unresolved.emailStagingUnresolved(), 'the hold on the original brief remains').toBe(true);
+      expect(seq().surveySeriesRestarted()).toBe(true);
+      expect(seq().audienceLockedByStaging()).toBe(false);
+    });
+
     it('offers one copy path at a time for a one-email survey', () => {
       stageable(1);
       seq().selectedEmailTab.set('implementation');
