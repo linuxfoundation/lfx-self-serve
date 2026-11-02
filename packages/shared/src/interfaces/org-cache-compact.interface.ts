@@ -133,6 +133,8 @@ export interface CompactOrgTraineesRawCache {
   detailCourses: number[];
   foundationRows: ColumnarTable;
   courseRows: ColumnarTable;
+  /** ISO build time of the training table, or null (`OrgTraineesResponse.asOf`). */
+  asOf: string | null;
 }
 
 /** Cached form of the Contributors per-(person, project) aggregate rows. */
