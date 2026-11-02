@@ -4528,8 +4528,8 @@ export const GOOGLE_CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
  * SEPARATELY, which their two `min: 1` catalogue entries already express (#4848). The authority
  * for Display is Google's `ResponsiveDisplayAdInfo`, which refuses an ad missing either shape;
  * campaign-service mirrors it in `display_creative.go` from the release carrying
- * lfx-v2-campaign-service#437, and `pmax_creative.go` already does for Performance Max. An empty list is the honest statement of that, and it keeps every creative-bearing
- * channel indexable here.
+ * lfx-v2-campaign-service#437, and `pmax_creative.go` already does for Performance Max. An empty
+ * list is the honest statement of that, and it keeps every creative-bearing channel indexable here.
  *
  * The messages are clauses, completed by the channel's section title at the point of use, so one
  * sentence names both the channel and what it is missing.

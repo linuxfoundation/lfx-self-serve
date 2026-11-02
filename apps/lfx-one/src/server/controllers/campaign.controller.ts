@@ -1784,6 +1784,24 @@ export class CampaignController {
         return;
       }
 
+      // Google Search with no keyword left (#4848). The builder drops blank terms, so a list of
+      // only blanks arrives here empty. campaign-service accepts an empty list but creates an ad
+      // group with no criteria, which never serves, and its activation gate refuses it later
+      // ("at least one keyword criterion is required"). The Implement tab refuses this case with
+      // `googleSearchKeywordsError`, and this keeps an older bundle or a direct call from creating
+      // the shell. Judged on the built config, so it covers exactly what would be dispatched.
+      const googleSearchConfig = configEnvelope['googleAdsConfig'] as { channel?: unknown; keywords?: unknown } | undefined;
+      if (cutoverOn && googleSearchConfig?.channel === 'search' && Array.isArray(googleSearchConfig.keywords) && googleSearchConfig.keywords.length === 0) {
+        next(
+          ServiceValidationError.forField(
+            'keywords',
+            'Google Search needs at least one keyword to serve, and this create has none. Add a keyword to the brief, or choose another campaign type, and create again.',
+            { operation: 'campaign_create', service: 'campaign_controller' }
+          )
+        );
+        return;
+      }
+
       // EVERY enabled platform refuses a create whose STORED BRIEF has no usable registration
       // URL, and each refuses BEFORE its first mutate — so nothing is created on the ad account
       // and the operator sees only the orchestrator's opaque "platform campaign creation failed".
@@ -5408,9 +5426,8 @@ export class CampaignController {
    *
    * Answers only the question those platforms ask — Meta's and Reddit's `!endDate.After(startDate)`,
    * Google's `end.Before(start)` (#4848) — and answers `false` for anything it cannot judge with
-   * certainty. That asymmetry
-   * is the point: a `true` here refuses an operator's create, so it is returned ONLY for a window
-   * whose two ends are both unambiguous and genuinely reversed.
+   * certainty. That asymmetry is the point: a `true` here refuses an operator's create, so it is
+   * returned ONLY for a window whose two ends are both unambiguous and genuinely reversed.
    *
    * Hence the deliberately narrow accept: both values must be strings matching `YYYY-MM-DD` with
    * real calendar components (the round-trip check rejects `2026-02-31`, which `new Date` would

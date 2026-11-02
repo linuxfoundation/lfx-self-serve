@@ -1062,11 +1062,7 @@ export class ImplementationTabComponent implements OnInit {
    * Why a Search create would make a campaign that can never serve, or `null` (#4848). With no
    * keyword the create succeeds and LFX activation then refuses the campaign, so Create waits.
    */
-  protected readonly googleSearchKeywordsError = computed<string | null>(() => {
-    void this.campaignFormRevision();
-    if (!this.selectedGoogleChannels().includes('search') || this.googleSearchKeywords().length > 0) return null;
-    return 'Search needs at least one keyword to serve, and this brief has none filled in. Choose another campaign type, or give the brief keywords first.';
-  });
+  protected readonly googleSearchKeywordsError: Signal<string | null> = this.initGoogleSearchKeywordsError();
   protected readonly briefHsToken = signal<string | null>(null);
   protected readonly briefDriveFolderUrl = signal('');
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
@@ -7301,6 +7297,14 @@ export class ImplementationTabComponent implements OnInit {
       const { start, end } = this.googleBudgetInputs();
       if (!isReversedCampaignFlight(start, end)) return null;
       return `Google needs the end date (${end}) on or after the start date (${start}).`;
+    });
+  }
+
+  private initGoogleSearchKeywordsError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.selectedGoogleChannels().includes('search') || this.googleSearchKeywords().length > 0) return null;
+      return 'Search needs at least one keyword to serve, and this brief has none filled in. Choose another campaign type, or give the brief keywords first.';
     });
   }
 

@@ -827,7 +827,15 @@ describe('CampaignController.createCampaign cutover', () => {
   it('allows a create when the same platform IS configured', async () => {
     // The contrast: identical platform, but Search selected, so `buildGoogleAdsConfig` builds a
     // config. Without this, the test above would pass on a controller that refused everything.
-    const withSearch = { platforms: ['google-ads'], campaignTypes: ['search'], budgetUsd: 5000, headlines: ['a'], descriptions: ['b'] };
+    const withSearch = {
+      platforms: ['google-ads'],
+      campaignTypes: ['search'],
+      budgetUsd: 5000,
+      headlines: ['a'],
+      descriptions: ['b'],
+      // A keyword, because Search with none is refused before dispatch (#4848).
+      keywords: [{ term: 'kubernetes', matchType: 'Exact', intentLevel: 'high', notes: 'n' }],
+    };
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000002', error: null });
 
     await controller.createCampaign(buildReq(withSearch, { project: 'tlf', brief_id: 'b-1' }), res, next);
@@ -993,6 +1001,27 @@ describe('CampaignController.createCampaign cutover', () => {
     );
 
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['keywords']).toEqual([{ text: 'kubernetes', matchType: 'EXACT' }]);
+  });
+
+  /**
+   * #4848: once the blanks are dropped, a list of only blanks is an empty one. campaign-service
+   * accepts an empty Search list and creates an ad group that never serves, so this is refused here,
+   * as the Implement tab refuses it, rather than leaving an older bundle or a direct call to make
+   * the shell.
+   */
+  it.each([
+    { label: 'only blank terms', keywords: [{ term: '  ', matchType: 'Exact', intentLevel: 'high', notes: 'n' }] },
+    { label: 'no keywords at all', keywords: [] },
+  ])('refuses a Search create with $label, which could never serve', async ({ keywords }) => {
+    await controller.createCampaign(buildReq(googleBody({ keywords }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    const [reason] = error.validationErrors;
+    expect(reason.field).toBe('keywords');
+    expect(reason.message).toContain('Google Search needs at least one keyword');
   });
 
   it('funds Google with the SEARCH share when demand-gen is also selected', async () => {
