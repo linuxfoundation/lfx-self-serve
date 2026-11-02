@@ -69,10 +69,7 @@ export class MeetingHomeRowComponent {
   protected readonly when: Signal<string> = this.initWhen();
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = this.initMeetingType();
   protected readonly recurrenceTooltip: Signal<string | null> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence));
-  protected readonly attended: Signal<boolean> = computed(() => {
-    const meeting: Meeting | PastMeeting = this.row().meeting;
-    return this.past() && 'user_attended' in meeting && meeting.user_attended === true;
-  });
+  protected readonly attended: Signal<boolean> = this.initAttended();
   protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
     [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
     [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
@@ -111,6 +108,13 @@ export class MeetingHomeRowComponent {
     if (newTab || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     void this.router.navigateByUrl(url);
+  }
+
+  private initAttended(): Signal<boolean> {
+    return computed(() => {
+      const meeting: Meeting | PastMeeting = this.row().meeting;
+      return this.past() && 'user_attended' in meeting && meeting.user_attended === true;
+    });
   }
 
   private initProject(): Signal<MeetingHomeRowProject | null> {

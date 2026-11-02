@@ -75,8 +75,10 @@
     }
 
     <span class="flex min-w-0 items-center gap-[8px]">
+      <!-- Masked in Session Replay: upcoming hrefs carry the meeting password. -->
       <a
         #titleElement
+        data-dd-privacy="mask"
         class="min-w-0 truncate text-[14px] font-medium text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
         [href]="link().url"
         [attr.target]="link().newTab ? '_blank' : null"

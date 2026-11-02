@@ -350,7 +350,7 @@ function getWeekdayIndex(start: string, timeZone: string | null | undefined): nu
 /** Joins router-style segments (with or without slashes) into one app URL. */
 function toAppUrl(segments: readonly string[], queryParams?: Record<string, string>): string {
   const path = segments
-    .map((segment) => segment.replace(/^\/+|\/+$/g, ''))
+    .flatMap((segment) => segment.split('/'))
     .filter(Boolean)
     .map(encodeURIComponent)
     .join('/');
