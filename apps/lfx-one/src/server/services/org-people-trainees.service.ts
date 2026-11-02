@@ -20,6 +20,7 @@ import type {
   OrgTraineeFoundationOption,
   OrgTraineeRow,
   OrgTraineesResponse,
+  TraineeAsOfRow,
   TraineeCourseOptionRow,
   TraineeFoundationOptionRow,
 } from '@lfx-one/shared/interfaces';
@@ -55,12 +56,12 @@ export class OrgPeopleTraineesService {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange: range };
     }
 
-    // `people-trainees:v4:{range}` (lfx-self-serve#4159): ORG_PEOPLE_TRAINING now holds enrollments of any age, so the
-    // read is windowed per range here instead of shipping every row for the client to filter; a `v2` entry (the whole,
-    // 12-month-capped history) must miss. `v4` reads identity from current-employee rows only; a `v3` entry may not have.
-    const { traineeRows, detailRows, foundationRows, courseRows } = await withOrgCompactCache(
+    // `people-trainees:v5:{range}` (lfx-self-serve#4159, #4916): ORG_PEOPLE_TRAINING holds enrollments of any age, so the
+    // read is windowed per range here instead of shipping every row for the client to filter. `v5` adds the table's
+    // build time; a `v4` entry has none and must miss.
+    const { traineeRows, detailRows, foundationRows, courseRows, asOf } = await withOrgCompactCache(
       accountId,
-      `people-trainees:v4:${range}`,
+      `people-trainees:v5:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTraineesRaw(accountId, range),
       { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
@@ -113,6 +114,7 @@ export class OrgPeopleTraineesService {
       details,
       foundationOptions,
       courseOptions,
+      asOf,
     };
   }
 
@@ -124,15 +126,17 @@ export class OrgPeopleTraineesService {
     detailRows: OrgPeopleTrainingRow[];
     foundationRows: TraineeFoundationOptionRow[];
     courseRows: TraineeCourseOptionRow[];
+    asOf: string | null;
   }> {
     const inRange = trainingRangePredicate(range);
-    const [traineeRows, detailRows, foundationRows, courseRows] = await Promise.all([
+    const [traineeRows, detailRows, foundationRows, courseRows, asOf] = await Promise.all([
       this.fetchTraineeRows(accountId, inRange),
       this.fetchDetailRows(accountId, inRange),
       this.fetchFoundationOptions(accountId, inRange),
       this.fetchCourseOptions(accountId, inRange),
+      this.fetchAsOf(accountId),
     ]);
-    return { traineeRows, detailRows, foundationRows, courseRows };
+    return { traineeRows, detailRows, foundationRows, courseRows, asOf };
   }
 
   /**
@@ -214,6 +218,17 @@ export class OrgPeopleTraineesService {
     const result = await this.snowflakeService.execute<TraineeCourseOptionRow>(query, [accountId]);
     return result.rows;
   }
+
+  /** When the training table was built: every range of the account reads the same build, so this is not windowed. */
+  private async fetchAsOf(accountId: string): Promise<string | null> {
+    const query = `
+      SELECT MAX(DBT_RUN_AT) AS AS_OF
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+      WHERE ACCOUNT_ID = ?
+    `;
+    const result = await this.snowflakeService.execute<TraineeAsOfRow>(query, [accountId]);
+    return toIsoTimestamp(result.rows[0]?.AS_OF);
+  }
 }
 
 /**
@@ -238,6 +253,7 @@ function encodeTraineesRaw(raw: {
   detailRows: OrgPeopleTrainingRow[];
   foundationRows: TraineeFoundationOptionRow[];
   courseRows: TraineeCourseOptionRow[];
+  asOf: string | null;
 }): CompactOrgTraineesRawCache {
   // Keyed on the whole tuple, not on COURSE_ID: two rows sharing a course id but disagreeing on a
   // name or foundation must not collapse onto the first one seen, or the rebuilt rows would differ
@@ -257,6 +273,7 @@ function encodeTraineesRaw(raw: {
     detailCourses: raw.detailRows.map((row) => courses.indexOf.get(keys.get(row)!)!),
     foundationRows: toColumnar(raw.foundationRows, ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS),
     courseRows: toColumnar(raw.courseRows, ORG_TRAINEE_COURSE_OPTION_COLUMNS),
+    asOf: raw.asOf,
   };
 }
 
@@ -266,6 +283,7 @@ function decodeTraineesRaw(value: CompactOrgTraineesRawCache): {
   detailRows: OrgPeopleTrainingRow[];
   foundationRows: TraineeFoundationOptionRow[];
   courseRows: TraineeCourseOptionRow[];
+  asOf: string | null;
 } {
   const courses = fromColumnar<OrgPeopleTrainingRow>(value.courses);
   const detailRows = fromColumnar<OrgPeopleTrainingRow>(value.details);
@@ -275,6 +293,7 @@ function decodeTraineesRaw(value: CompactOrgTraineesRawCache): {
     detailRows,
     foundationRows: fromColumnar<TraineeFoundationOptionRow>(value.foundationRows),
     courseRows: fromColumnar<TraineeCourseOptionRow>(value.courseRows),
+    asOf: value.asOf,
   };
 }
 
@@ -283,6 +302,8 @@ function isCompactTraineesRaw(value: unknown): boolean {
   if (
     !cache ||
     typeof cache !== 'object' ||
+    // Required, not optional: a `v4`-shaped entry under this key would otherwise serve no as-of date for the whole TTL.
+    !(cache.asOf === null || typeof cache.asOf === 'string') ||
     !isColumnarTable(cache.traineeRows) ||
     !isColumnarTable(cache.courses) ||
     !isColumnarTable(cache.details) ||

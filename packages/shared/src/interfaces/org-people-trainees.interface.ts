@@ -65,6 +65,8 @@ export interface OrgTraineesResponse {
   details: OrgTraineeDetailRow[];
   foundationOptions: OrgTraineeFoundationOption[];
   courseOptions: OrgTraineeCourseOption[];
+  /** ISO build time of `ORG_PEOPLE_TRAINING` (`MAX(DBT_RUN_AT)` over the account's rows, every range): the date the training data reflects. Null when the account has no rows. */
+  asOf: string | null;
 }
 
 // Client-only view types (NOT on the wire).
@@ -132,4 +134,9 @@ export interface TraineeFoundationOptionRow {
 export interface TraineeCourseOptionRow {
   COURSE_ID: string;
   COURSE_NAME: string;
+}
+
+/** `MAX(DBT_RUN_AT)` of the account's `ORG_PEOPLE_TRAINING` rows. */
+export interface TraineeAsOfRow {
+  AS_OF: Date | string | null;
 }

@@ -203,6 +203,7 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   details: [],
   foundationOptions: [],
   courseOptions: [],
+  asOf: null,
 };
 
 // Event Attendees tab (LFXV2-1875) — same bundle-then-client-filter pattern as Trainees.
