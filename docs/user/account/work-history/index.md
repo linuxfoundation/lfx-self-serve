@@ -66,7 +66,7 @@ When the system attributes contributions from your employment timeline, you may 
 
 If the system detects you may be a maintainer, it asks you to verify: in the **Verify your role** dialog, choose **Yes, I'm a maintainer** or **No, I'm a contributor**. A role that comes from a project's repository configuration file is marked with a lock icon and the tooltip _Role defined in repository configuration file_; you can still open the role menu and change it to **Contributor** if it's wrong.
 
-If you haven't verified any identities or added work experience yet, the section shows _No project affiliations yet_. If you have, but LFX hasn't found contributions to a tracked project for your verified identities, it shows _No project contributions found_. Both show buttons to **Verify identities** and **Add work experience**.
+If you haven't connected any identities or added work experience yet, the section shows _No project affiliations yet_. Once you have connected an identity, even one you haven't verified yet, or added work experience, it shows _No project contributions found_ until LFX finds contributions to a tracked project. Only verified identities are used to find your contributions, so if you see this message, check that the accounts you contribute with are verified on the [Identities](../identities/) tab. Both messages show buttons to **Verify identities** and **Add work experience**.
 
 ## Related
 
