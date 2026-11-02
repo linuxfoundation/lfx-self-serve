@@ -9,7 +9,7 @@ import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { VOTE_DETAIL_RESULTS_POLL_OPTIONS } from '@lfx-one/shared/constants';
+import { VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS, VOTE_DETAIL_RESULTS_POLL_OPTIONS } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
   CommentResponseView,
@@ -2341,6 +2341,183 @@ describe('VoteDetailComponent', () => {
       await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs * 3);
       expect(voteService.getVoteResults).toHaveBeenCalledTimes(resultCalls);
       expect(voteService.fetchVote).toHaveBeenCalledTimes(metadataCalls);
+    });
+
+    it('retries held results after remote closure and stops after final results are released', async () => {
+      const held = { ...makeResults(), results_held: true };
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValueOnce(of(held)).mockReturnValueOnce(of(held)).mockReturnValue(of(makeMethodResults()));
+      const fixture = await setup('browser', [VoteOptionResultsComponent]);
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('Totals are being finalized');
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-held')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).toContain('Winner');
+      const calls = voteService.getVoteResults.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs * 3);
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(calls);
+      expect(voteService.fetchVote).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([0, 503])('retains figures and retries HTTP %s during remote closure', async (status) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValueOnce(of(makeMethodResults())).mockReturnValueOnce(httpError(status)).mockReturnValue(of(makeMethodResults()));
+      const fixture = await setup('browser', [VoteOptionResultsComponent]);
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).toContain('2 votes');
+      expect(testId(fixture, 'vote-detail-results-stale')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-results-error')).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.backoffBaseMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-stale')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).toContain('Winner');
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(3);
+      expect(voteService.fetchVote).toHaveBeenCalledTimes(2);
+    });
+
+    it('replaces retained figures with a held payload while finalization retries continue', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const held = { ...makeResults(), results_held: true };
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValueOnce(of(makeMethodResults())).mockReturnValueOnce(httpError(503)).mockReturnValue(of(held));
+      const fixture = await setup('browser', [VoteOptionResultsComponent, VoteAbstainResultComponent]);
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.backoffBaseMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-held')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-abstain')).toBeNull();
+      expect(testId(fixture, 'vote-detail-results-stale')).toBeNull();
+    });
+
+    it('bounds held finalization reads across focus and visibility events', async () => {
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), results_held: true }));
+      const fixture = await setup();
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      for (let attempt = 1; attempt < VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS; attempt++) {
+        document.dispatchEvent(new Event('visibilitychange'));
+      }
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(1 + VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS);
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs * 20);
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      fixture.detectChanges();
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(1 + VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS);
+      expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('reload this page');
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
+    });
+
+    it('ends a failed finalization window with a reload error, not a reconnecting notice', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValueOnce(of(makeMethodResults())).mockReturnValue(httpError(503));
+      const fixture = await setup('browser', [VoteOptionResultsComponent]);
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.backoffMaxMs * VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(1 + VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS);
+      expect(testId(fixture, 'vote-detail-results-error')?.textContent).toContain('Try reloading this page');
+      expect(testId(fixture, 'vote-detail-results-stale')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
+    });
+
+    it.each([401, 403, 404])('clears retained figures and stops finalization recovery on HTTP %s', async (status) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValueOnce(of(makeMethodResults())).mockReturnValue(httpError(status));
+      const fixture = await setup('browser', [VoteOptionResultsComponent]);
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-results-stale')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.backoffMaxMs * 2);
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(['hidden', 'destroyed', 'route changed'] as const)('cancels a pending finalization read when %s', async (reason) => {
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+      const pending = new Subject<VoteResultsResponse>();
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getVoteResults
+        .mockReturnValueOnce(of(makeMethodResults()))
+        .mockReturnValueOnce(of({ ...makeResults(), results_held: true }))
+        .mockReturnValue(pending);
+      const fixture = await setup();
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      expect(pending.observers).toHaveLength(1);
+
+      if (reason === 'hidden') {
+        visibility.mockReturnValue('hidden');
+        document.dispatchEvent(new Event('visibilitychange'));
+        expect(pending.observers).toHaveLength(0);
+        const calls = voteService.getVoteResults.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs * 3);
+        expect(voteService.getVoteResults).toHaveBeenCalledTimes(calls);
+        visibility.mockReturnValue('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+        expect(pending.observers).toHaveLength(1);
+      } else if (reason === 'destroyed') {
+        fixture.destroy();
+        expect(pending.observers).toHaveLength(0);
+      } else {
+        voteService.fetchVote.mockReturnValue(of(makeVote({ uid: 'vote-2' })));
+        voteService.getVoteResults.mockReturnValue(of(makeMethodResults()));
+        paramMap.next(convertToParamMap({ id: 'vote-2' }));
+        TestBed.tick();
+        fixture.detectChanges();
+        expect(pending.observers).toHaveLength(0);
+        expect(read<Vote>(fixture, 'vote').uid).toBe('vote-2');
+      }
+    });
+
+    it('retries held results when a manager opens an already ended vote', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getVoteResults.mockReturnValueOnce(of({ ...makeResults(), results_held: true })).mockReturnValue(of(makeMethodResults()));
+      const fixture = await setup('browser', [VoteOptionResultsComponent]);
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-held')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).toContain('Winner');
+    });
+
+    it.each([
+      { error: new HttpErrorResponse({ status: 503, error: 'private payload' }), status: 503 },
+      { error: new Error('private payload'), status: undefined },
+    ])('logs only safe HTTP status metadata ($status)', async ({ error, status }) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      voteService.getVoteResults.mockReturnValue(throwError(() => error));
+      await setup();
+      expect(log).toHaveBeenCalledWith('Failed to load vote results for detail page', { status });
     });
 
     it('does not infer an ended vote from an expired results deadline while server status is active', async () => {

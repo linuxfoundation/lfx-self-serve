@@ -13,6 +13,7 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 import { TagComponent } from '@components/tag/tag.component';
 import {
   VOTE_DETAIL_DEFAULT_TAB,
+  VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS,
   VOTE_DETAIL_RESULTS_POLL_OPTIONS,
   VOTE_DETAIL_SUMMARY_CARD_ACTIONS,
   VOTE_DETAIL_TABS,
@@ -87,6 +88,7 @@ import {
   Subject,
   switchMap,
   tap,
+  takeWhile,
   throwError,
 } from 'rxjs';
 
@@ -609,14 +611,17 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Active managers refresh visible-tab results; voters read once after close with verified, matching access. */
+  /** Managers refresh active results and bounded ended finalization; voters read once after close with verified access. */
   private initVoteResults(): Signal<VoteResultsResponse | null> {
     const key = computed(() => {
       const id = this.voteId();
       const canManage = this.canManage();
       const tick = this.refreshTick();
       if (!id || canManage === null) return null;
-      if (canManage) return { id, tick, poll: isPlatformBrowser(this.platformId) && normalizePollStatus(this.vote()?.status) === PollStatus.ACTIVE };
+      if (canManage) {
+        const status = normalizePollStatus(this.vote()?.status);
+        return { id, tick, poll: isPlatformBrowser(this.platformId) && (status === PollStatus.ACTIVE || status === PollStatus.ENDED) };
+      }
       const canFetch = canVoterFetchVoteResults(id, this.vote(), this.myResponse(), this.myResponseLoading(), this.myResponseError());
       return canFetch ? { id, tick, poll: false } : null;
     });
@@ -624,6 +629,8 @@ export class VoteDetailComponent {
     // Retain only the current eligible vote's last results while a same-vote refresh is in flight.
     let loadedFor: string | null = null;
     let lastResults: VoteResultsResponse | null = null;
+    const isTransientError = (error: unknown): boolean =>
+      error instanceof HttpErrorResponse && (error.status === 0 || (error.status >= 500 && error.status < 600));
 
     const results = toSignal(
       toObservable(key).pipe(
@@ -645,15 +652,24 @@ export class VoteDetailComponent {
           }));
           let attempted = false;
           let backgroundRefresh = false;
+          // Keep the same subscription across remote closure, including its retained results and cancellation.
+          let ended = normalizePollStatus(this.vote()?.status) === PollStatus.ENDED;
+          let finalizationAttempts = 0;
           const load = (poll = false) => {
             backgroundRefresh = resultsKey.poll && (poll || attempted);
             attempted = true;
             this.voteResultsStatus.update((status) => (backgroundRefresh && status.error ? status : { ...status, loading: !lastResults, error: false }));
-            // A scheduled or returning-tab refresh reads status first: deadlines alone never prove a vote formally ended.
-            // Both requests share the poll subscription, so hidden tabs, route changes and destruction cancel either read.
-            const metadata$: Observable<Vote | null> = backgroundRefresh
-              ? this.voteService.fetchVote(resultsKey.id, { uncached: true }).pipe(tap((vote) => this.polledVote$.next(vote)))
-              : of(null);
+            // Until closure is confirmed, scheduled and returning-tab refreshes read authoritative status first.
+            // Finalization only needs results; both requests retain hidden-tab, route and destruction cancellation.
+            const metadata$: Observable<Vote | null> =
+              backgroundRefresh && !ended
+                ? this.voteService.fetchVote(resultsKey.id, { uncached: true }).pipe(
+                    tap((vote) => {
+                      ended = normalizePollStatus(vote.status) === PollStatus.ENDED;
+                      this.polledVote$.next(vote);
+                    })
+                  )
+                : of(null);
             return metadata$.pipe(
               switchMap(() => this.voteService.getVoteResults(resultsKey.id)),
               finalize(() => {
@@ -668,12 +684,21 @@ export class VoteDetailComponent {
                 catchError((error: unknown) => of({ kind: 'error' as const, error }))
               );
           return requests.pipe(
+            // Inclusive termination emits the last outcome and also removes visibility/focus listeners.
+            // Count settled attempts outside the visibility loop so returning to the tab cannot reset the budget.
+            takeWhile((event) => {
+              if (!ended) return true;
+              finalizationAttempts++;
+              if (finalizationAttempts >= VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS) return false;
+              return event.kind === 'ok' ? event.value.results_held === true : isTransientError(event.error);
+            }, true),
             map((event) => {
               if (event.kind === 'error') {
-                console.error('Failed to load vote results for detail page');
-                const transient =
-                  event.error instanceof HttpErrorResponse && (event.error.status === 0 || (event.error.status >= 500 && event.error.status < 600));
-                const stale = backgroundRefresh && !!lastResults && transient;
+                console.error('Failed to load vote results for detail page', {
+                  status: event.error instanceof HttpErrorResponse ? event.error.status : undefined,
+                });
+                const exhausted = ended && finalizationAttempts >= VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS;
+                const stale = backgroundRefresh && !!lastResults && isTransientError(event.error) && !exhausted;
                 if (!stale) lastResults = null;
                 this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: !stale, stale });
               } else {

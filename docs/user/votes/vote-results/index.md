@@ -35,7 +35,9 @@ A tab shows no count when there is nothing to count.
 
 Summary cards below the tab strip show how many people have responded and how many comments there are. Select a card to jump to the matching tab, or select the not-voted card to send a reminder.
 
-Active-vote refreshes also check the vote's current status, so a vote ended elsewhere switches to final results without reloading the page. A temporary connection or server failure keeps the last successful figures visible with **Results may be out of date. Reconnecting automatically.** The notice clears after a successful refresh. If access is denied or results have never loaded successfully, no old figures are shown.
+Active-vote refreshes also check the vote's current status, so a vote ended elsewhere switches to final results without reloading the page. After closure, managers' visible tabs continue reading results while totals are held or a temporary connection or server failure prevents the final read. These reads stop once final results arrive or after 12 completed attempts; temporary failures use a longer retry delay. Returning to the tab does not reset that limit. If results are still unavailable, reload the page to try again.
+
+During background recovery, a temporary connection or server failure keeps the last successful figures visible with **Results may be out of date. Reconnecting automatically.** The notice clears after a successful refresh. A held response hides totals, abstentions and comments, including any previous figures. If access is denied, results have never loaded successfully, or the final-read retry limit is reached with an error, no old figures are shown.
 
 The buttons at the top right depend on the vote's status:
 
@@ -52,7 +54,7 @@ Some votes rank their options instead of counting one choice. For those, each op
 
 ### Pseudo-anonymous votes
 
-Totals, abstentions and comments stay hidden until the vote closes, and the page says **Totals appear when voting closes**. Once it closes, it may say **Totals are being finalized** until the results are ready. You can still follow who has responded on the **Voters** tab. Comments appear without names for everyone.
+Totals, abstentions and comments stay hidden until the vote closes, and the page says **Totals appear when voting closes**. Once it closes, it may say **Totals are being finalized** until the results are ready. Managers' visible tabs retry within the limit described above; reload the page if totals do not appear. You can still follow who has responded on the **Voters** tab. Comments appear without names for everyone.
 
 ## If you are invited to vote
 

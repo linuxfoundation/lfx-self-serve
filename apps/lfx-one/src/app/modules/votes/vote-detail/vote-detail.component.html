@@ -332,7 +332,9 @@
         <div class="flex flex-col gap-1">
           <p class="text-sm font-semibold text-gray-900">{{ isEnded() ? 'Totals are being finalized' : 'Totals appear when voting closes' }}</p>
           @if (isEnded()) {
-            <p class="text-sm text-gray-700">Voting has closed. Totals, abstentions and comments will appear here once they are finalized.</p>
+            <p class="text-sm text-gray-700">
+              Voting has closed. Totals, abstentions and comments will appear here once they are finalized. If totals do not appear, reload this page.
+            </p>
           } @else {
             <p class="text-sm text-gray-700">Totals, abstentions and comments stay hidden until voting closes.</p>
           }
