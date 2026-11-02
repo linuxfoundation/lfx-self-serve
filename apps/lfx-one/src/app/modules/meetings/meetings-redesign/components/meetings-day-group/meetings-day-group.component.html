@@ -3,7 +3,7 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <div class="flex items-center gap-[8px] pb-[6px]" data-testid="meetings-home-day-group-separator">
-  <h3 class="whitespace-nowrap text-[12px] font-semibold text-gray-500" data-testid="meetings-home-day-group-label">{{ group().label }}</h3>
+  <h2 class="whitespace-nowrap text-[12px] font-semibold text-gray-500" data-testid="meetings-home-day-group-label">{{ group().label }}</h2>
   <span class="text-[11px] text-gray-400" data-testid="meetings-home-day-group-count"
     >{{ group().count }}<span class="sr-only"> {{ group().count === 1 ? 'meeting' : 'meetings' }}</span></span
   >

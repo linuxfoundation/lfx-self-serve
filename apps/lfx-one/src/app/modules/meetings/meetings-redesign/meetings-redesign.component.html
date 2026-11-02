@@ -80,7 +80,8 @@
       @for (tab of tabs(); track tab.value) {
         <div
           role="tabpanel"
-          class="flex flex-col"
+          class="flex-col"
+          [class.flex]="store.tab() === tab.value"
           [attr.id]="idPrefix + '-panel-' + tab.value"
           [attr.aria-labelledby]="idPrefix + '-tab-' + tab.value"
           [hidden]="store.tab() !== tab.value"

@@ -3,14 +3,14 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
-import { Subject } from 'rxjs';
+import { BehaviorSubject, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsRedesignComponent } from './meetings-redesign.component';
@@ -53,7 +53,7 @@ describe('MeetingsRedesignComponent', () => {
   let desktop: boolean;
   let upcoming$: Subject<Meeting[]>;
   let past$: Subject<PastMeeting[]>;
-  let queryParams: Record<string, string>;
+  let queryParamMap$: BehaviorSubject<ParamMap>;
   let navigate: ReturnType<typeof vi.fn>;
   let observerCallback: IntersectionObserverCallback | null;
 
@@ -81,7 +81,7 @@ describe('MeetingsRedesignComponent', () => {
     personaLoaded = signal(true);
     upcoming$ = new Subject();
     past$ = new Subject();
-    queryParams = {};
+    queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
     navigate = vi.fn().mockResolvedValue(true);
     observerCallback = null;
     vi.stubGlobal(
@@ -121,7 +121,7 @@ describe('MeetingsRedesignComponent', () => {
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: Router, useValue: { navigate } },
-        { provide: ActivatedRoute, useFactory: () => ({ snapshot: { queryParamMap: convertToParamMap(queryParams) } }) },
+        { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
       ],
     });
   });
@@ -350,12 +350,18 @@ describe('MeetingsRedesignComponent', () => {
 
   describe('tabs and URL', async () => {
     it('opens on the Past tab from ?time=past', async () => {
-      queryParams = { time: 'past' };
+      queryParamMap$.next(convertToParamMap({ time: 'past' }));
       const fixture = render();
       await fixture.whenStable();
 
       expect(query(fixture, 'meetings-redesign-list-past')?.hidden).toBe(false);
       expect(query(fixture, 'meetings-redesign-list-upcoming')?.hidden).toBe(true);
+      expect(query(fixture, 'meetings-redesign-list-upcoming')?.classList.contains('flex')).toBe(false);
+
+      queryParamMap$.next(convertToParamMap({}));
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-list-upcoming')?.hidden).toBe(false);
     });
 
     it('writes the tab to the URL on a switch', async () => {

@@ -107,7 +107,7 @@ export class MeetingsRedesignComponent {
   );
 
   public constructor() {
-    this.store.setTab(this.route.snapshot.queryParamMap.get('time') === 'past' ? 'past' : 'upcoming');
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.store.setTab(params.get('time') === 'past' ? 'past' : 'upcoming'));
     this.initLoadMore();
 
     afterNextRender(() => {
