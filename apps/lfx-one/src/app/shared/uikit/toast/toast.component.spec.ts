@@ -355,6 +355,7 @@ describe('UiToastComponent', () => {
 describe('UiToastService', () => {
   let service: UiToastService;
   let container: HTMLElement;
+  let resize: () => void = () => undefined;
 
   const region = () => container.querySelector('[data-testid="ui-toast-region"]') as HTMLElement | null;
   const toasts = () => Array.from(container.querySelectorAll<HTMLElement>('[data-testid="ui-toast"]'));
@@ -367,6 +368,21 @@ describe('UiToastService', () => {
 
   beforeEach(async () => {
     fakeTimers();
+    // jsdom has no ResizeObserver; the stub lets a spec report the bottom-right stack's new height.
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        public constructor(callback: () => void) {
+          resize = callback;
+        }
+        public observe(): void {
+          return undefined;
+        }
+        public disconnect(): void {
+          return undefined;
+        }
+      }
+    );
     service = TestBed.inject(UiToastService);
     container = TestBed.inject(OverlayContainer).getContainerElement();
     await flush();
@@ -375,6 +391,7 @@ describe('UiToastService', () => {
   afterEach(() => {
     TestBed.inject(OverlayContainer).ngOnDestroy();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('keeps a polite live region in the overlay before any toast is shown', () => {
@@ -413,6 +430,26 @@ describe('UiToastService', () => {
         .find((toast) => toast.textContent?.includes('Link copied.'))
         ?.querySelector('[data-testid="ui-toast-description"]')?.textContent
     ).toBe('Anyone with the link can join.');
+  });
+
+  it('lifts the bottom-centre stack 12px above a non-empty bottom-right stack, and drops it back when that empties', async () => {
+    service.show({ message: 'Saved.' });
+    service.show({ message: 'Link copied.', variant: 'dark' });
+    await flush();
+    const pane = (message: string) =>
+      toasts()
+        .find((toast) => toast.textContent?.includes(message))
+        ?.closest('.cdk-overlay-pane') as HTMLElement;
+    const right = pane('Saved.');
+    const centre = pane('Link copied.');
+
+    Object.defineProperty(right, 'offsetHeight', { configurable: true, value: 56 });
+    resize();
+    expect(centre.style.marginBottom).toBe('84px');
+
+    Object.defineProperty(right, 'offsetHeight', { configurable: true, value: 0 });
+    resize();
+    expect(centre.style.marginBottom).toBe('16px');
   });
 
   it('marks the pane with the toast pane class so a popover does not treat a click on it as outside', () => {

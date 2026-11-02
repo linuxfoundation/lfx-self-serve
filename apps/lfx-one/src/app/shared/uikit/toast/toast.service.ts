@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator } from '@angular/cdk/a11y';
-import { Overlay, OverlayRef } from '@angular/cdk/overlay';
+import { GlobalPositionStrategy, Overlay, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
 import { afterNextRender, computed, DestroyRef, inject, Injectable, Injector, signal, Signal } from '@angular/core';
 import { outputToObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -15,8 +15,10 @@ import { UiToastRegionComponent } from './toast-region.component';
  * Puts short messages on screen in a stack at the bottom-right, newest on top; `dark` toasts, and any with `position: 'bottom-center'`,
  * stack at the bottom centre instead. Each toast dismisses itself (5s, 3s for `dark`, 8s with actions, never for errors) and waits while
  * the pointer or focus is on it. Each stack lives in its own CDK overlay that the service creates after its first render, a polite live
- * region that stays in place, so inject the service ahead of the first `show` for the first message to be announced reliably. On the server nothing is rendered. A toast shown over an open modal sits outside the modal's focus trap,
- * so its buttons are out of keyboard reach until the modal closes: keep every toast action available elsewhere too.
+ * region that stays in place, so inject the service ahead of the first `show` for the first message to be announced reliably.
+ * While the bottom-right stack holds toasts, the bottom-centre stack sits above it, so the two never overlap on a narrow window.
+ * On the server nothing is rendered. A toast shown over an open modal sits outside the modal's focus trap, so its buttons are out
+ * of keyboard reach until the modal closes: keep every toast action available elsewhere too.
  *
  * ```ts
  * this.toast.show({ message: 'Committee created.', actions: [{ label: 'Undo', run: () => this.undo() }] });
@@ -59,15 +61,24 @@ export class UiToastService {
   }
 
   private attachRegions(): void {
-    this.attachRegion('bottom-right');
-    this.attachRegion('bottom-center');
+    // 16px from the window edge, matching the toast's `100vw - 32px` maximum width.
+    const right = this.attachRegion('bottom-right', this.overlay.position().global().bottom('16px').right('16px'));
+    const centre = this.overlay.position().global().bottom('16px').centerHorizontally();
+    const centreRef = this.attachRegion('bottom-center', centre);
+    if (typeof ResizeObserver === 'undefined') return;
+    // Exact px: the centre stack clears a non-empty bottom-right stack by the 12px gap between toasts.
+    const observer = new ResizeObserver(() => {
+      const height = right.overlayElement.offsetHeight;
+      centre.bottom(height ? `${16 + height + 12}px` : '16px');
+      centreRef.updatePosition();
+    });
+    observer.observe(right.overlayElement);
+    this.destroyRef.onDestroy(() => observer.disconnect());
   }
 
-  private attachRegion(position: UiToastPosition): void {
-    // 16px from the window edge, matching the toast's `100vw - 32px` maximum width.
-    const place = this.overlay.position().global().bottom('16px');
+  private attachRegion(position: UiToastPosition, positionStrategy: GlobalPositionStrategy): OverlayRef {
     const overlayRef = this.overlay.create({
-      positionStrategy: position === 'bottom-right' ? place.right('16px') : place.centerHorizontally(),
+      positionStrategy,
       // Marks the stack for code that must not treat a click on it as an outside click, such as the popover.
       panelClass: UI_TOAST_PANE_CLASS,
       disposeOnNavigation: false,
@@ -83,5 +94,6 @@ export class UiToastService {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((id) => this.dismiss(id));
     this.overlayRefs.push(overlayRef);
+    return overlayRef;
   }
 }
