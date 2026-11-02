@@ -150,7 +150,10 @@ export class OrgOverviewInvolvementComponent {
           }
           this.trainingStatsLoading.set(true);
           return this.trainingService.getTrainingStats(uid).pipe(
-            catchError(() => of(null)),
+            catchError((error: unknown) => {
+              console.error('Failed to load org training stats for the Overview training tile:', error);
+              return of(null);
+            }),
             finalize(() => this.trainingStatsLoading.set(false))
           );
         })

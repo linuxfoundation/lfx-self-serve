@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgTrainingStats } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
@@ -96,11 +97,16 @@ async function stubOrgTrainingRoutes(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
+        rosterMembers: 40,
+        rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
+        peopleWithTrainingActivity: 25,
+        trainingActivityAsOf: '2026-10-30T09:48:21.094Z',
         certifiedEmployees: 12,
         certificationsEarned: 18,
         employeesInTraining: 7,
         trainingCoursesEnrolled: 9,
-      }),
+        inProgressAsOf: '2026-10-30T10:15:00.000Z',
+      } satisfies OrgTrainingStats),
     })
   );
 

@@ -62,7 +62,7 @@ export class TraineesComponent {
   protected readonly statDefinitions = ORG_TRAINEES_STAT_DEFINITIONS;
   protected readonly statSkeletonLabels: readonly string[] = Object.values(ORG_TRAINEES_STAT_DEFINITIONS).map((stat) => stat.label);
 
-  protected readonly filterForm = new FormGroup({
+  public readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
     foundation: new FormControl<string>('', { nonNullable: true }),
     project: new FormControl<string>('', { nonNullable: true }),
@@ -113,19 +113,13 @@ export class TraineesComponent {
     { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
     ...this.response().filterOptions.foundations,
   ]);
-  protected readonly projectOptions: Signal<OrgDropdownOption[]> = computed(() => [
+  public readonly projectOptions: Signal<OrgDropdownOption[]> = computed(() => [
     { label: 'All Projects', value: '' },
     ...this.response().filterOptions.projects,
   ]);
-  protected readonly courseOptions: Signal<OrgDropdownOption[]> = computed(() => [
-    { label: 'All Courses', value: '' },
-    ...this.response().filterOptions.courses,
-  ]);
-  protected readonly levelOptions: Signal<OrgDropdownOption[]> = computed(() => [{ label: 'All Levels', value: '' }, ...this.response().filterOptions.levels]);
-  protected readonly formatOptions: Signal<OrgDropdownOption[]> = computed(() => [
-    { label: 'All Formats', value: '' },
-    ...this.response().filterOptions.formats,
-  ]);
+  public readonly courseOptions: Signal<OrgDropdownOption[]> = computed(() => [{ label: 'All Courses', value: '' }, ...this.response().filterOptions.courses]);
+  public readonly levelOptions: Signal<OrgDropdownOption[]> = computed(() => [{ label: 'All Levels', value: '' }, ...this.response().filterOptions.levels]);
+  public readonly formatOptions: Signal<OrgDropdownOption[]> = computed(() => [{ label: 'All Formats', value: '' }, ...this.response().filterOptions.formats]);
   // Certified rows carry no format, so a picked format leaves enrollments only; the template says so while one is picked.
   protected readonly formatPicked: Signal<boolean> = computed(() => !!this.filterValues().format);
 
@@ -147,7 +141,7 @@ export class TraineesComponent {
 
   protected readonly footerCountLabel: Signal<string> = computed(() => this.initFooterCountLabel());
 
-  protected readonly isFiltering: Signal<boolean> = computed(() => this.initIsFiltering());
+  public readonly isFiltering: Signal<boolean> = computed(() => this.initIsFiltering());
 
   protected readonly ariaSortMap: Signal<Record<OrgTraineeSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());
 
@@ -174,7 +168,7 @@ export class TraineesComponent {
     syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
   }
 
-  protected onSort(column: OrgTraineeSortColumn): void {
+  public onSort(column: OrgTraineeSortColumn): void {
     if (this.sortColumn() === column) {
       this.sortDirection.update((d) => (d === 1 ? -1 : 1));
       return;
@@ -182,6 +176,22 @@ export class TraineesComponent {
     this.sortColumn.set(column);
     // Name + recent (string columns) ascend on first click; numeric / status columns descend.
     this.sortDirection.set(column === 'name' || column === 'recent' ? 1 : -1);
+  }
+
+  public onPersonClick(row: OrgTraineeRowVm, event: Event): void {
+    event.stopPropagation();
+    // A learner outside the people list carries an opaque key no person endpoint accepts, so there is no drawer to open.
+    if (!row.onPeopleList) return;
+    this.drawer.open({
+      personKey: row.personKey,
+      name: row.name,
+      title: row.title,
+      initials: row.initials,
+      avatarColorClass: row.avatarColorClass,
+      defaultTab: 'training',
+      // The Code tab's Maintainer pills follow the range this tab lists the person in.
+      range: this.timeRange(),
+    });
   }
 
   protected toggleRow(personKey: string): void {
@@ -198,20 +208,6 @@ export class TraineesComponent {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     this.toggleRow(personKey);
-  }
-
-  protected onPersonClick(row: OrgTraineeRowVm, event: Event): void {
-    event.stopPropagation();
-    this.drawer.open({
-      personKey: row.personKey,
-      name: row.name,
-      title: row.title,
-      initials: row.initials,
-      avatarColorClass: row.avatarColorClass,
-      defaultTab: 'training',
-      // The Code tab's Maintainer pills follow the range this tab lists the person in.
-      range: this.timeRange(),
-    });
   }
 
   protected showAll(): void {

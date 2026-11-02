@@ -102,7 +102,8 @@ export class OrgTrainingComponent {
   });
 
   // ─── Writable Signals ──────────────────────────────────────────────────────
-  protected readonly statsLoading = signal(false);
+  // Starts true: the first org emission arrives after the first render, which must not state an as-of date it lacks.
+  protected readonly statsLoading = signal(true);
   protected readonly statsError = signal(false);
 
   protected readonly certificationsLoading = signal(false);
@@ -140,10 +141,12 @@ export class OrgTrainingComponent {
   protected readonly activeTab: Signal<OrgTrainingTabId> = this.initActiveTab();
   protected readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
   // Cumulative numbers and the in-progress snapshot render as separate rows so the snapshot never reads as a running total.
-  private readonly statTiles: Signal<OrgTrainingStatTileVm[]> = computed(() => buildOrgTrainingStatTiles(this.trainingStats()));
+  // Null while loading or failed, so no tile or heading states the previous organization's numbers or as-of dates.
+  private readonly shownStats: Signal<OrgTrainingStats | null> = computed(() => (this.statsLoading() || this.statsError() ? null : this.trainingStats()));
+  private readonly statTiles: Signal<OrgTrainingStatTileVm[]> = computed(() => buildOrgTrainingStatTiles(this.shownStats()));
   protected readonly cumulativeStatTiles = computed(() => this.statTiles().filter((tile) => tile.group === 'cumulative'));
   protected readonly snapshotStatTiles = computed(() => this.statTiles().filter((tile) => tile.group === 'snapshot'));
-  protected readonly snapshotAsOf = computed(() => formatOrgTrainingAsOf(this.trainingStats()?.inProgressAsOf));
+  protected readonly snapshotAsOf = computed(() => formatOrgTrainingAsOf(this.shownStats()?.inProgressAsOf));
   protected readonly certifications: Signal<OrgCertificationsResponse> = this.initCertifications();
   protected readonly trainings: Signal<OrgTrainingsResponse> = this.initTrainings();
   protected readonly hasActiveFilters = computed(() => !!this.searchValue() || !!this.levelValue());

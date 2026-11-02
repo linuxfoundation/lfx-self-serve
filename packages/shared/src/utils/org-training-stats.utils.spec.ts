@@ -117,4 +117,13 @@ describe('buildOrgTrainingStatTiles', () => {
     expect(tiles.every((tile) => tile.value === null)).toBe(true);
     expect(tiles.some((tile) => tile.caption === ORG_TRAINING_NO_ROSTER_NOTE)).toBe(false);
   });
+
+  it('shows no value, not an empty one, for a field an older response lacks', () => {
+    const { rosterMembers: _rosterMembers, peopleWithTrainingActivity: _activity, ...olderShape } = stats;
+    const tiles = byKey(buildOrgTrainingStatTiles(olderShape as OrgTrainingStats));
+
+    expect(tiles['rosterMembers'].value).toBeNull();
+    expect(tiles['peopleWithTrainingActivity'].value).toBeNull();
+    expect(tiles['certifiedPeople'].value).toBe(stats.certifiedEmployees);
+  });
 });

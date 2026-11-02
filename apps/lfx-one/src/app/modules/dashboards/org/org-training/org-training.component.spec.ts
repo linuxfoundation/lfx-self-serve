@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, signal } from '@angular/core';
+import { ApplicationRef, computed, signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import {
@@ -17,10 +17,12 @@ import { OrgLensTrainingService } from '@shared/services/org-lens-training.servi
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { OrgTrainingComponent } from './org-training.component';
+
+const ACME: Account = { accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' };
 
 // <lfx-person-detail-drawer /> is mounted unconditionally, so it needs the signal surface it reads.
 function personDrawerStub() {
@@ -42,9 +44,19 @@ function personDrawerStub() {
   };
 }
 
-async function render(state: OrgLensEmptyStateName | null, { settled = true, stats = null as OrgTrainingStats | null } = {}) {
+interface RenderOptions {
+  settled?: boolean;
+  stats?: OrgTrainingStats | null;
+  /** Answers the stats read per organization; defaults to `stats` for any. */
+  statsFor?: (orgUid: string) => Observable<OrgTrainingStats | null>;
+  selectedAccount?: WritableSignal<Account>;
+}
+
+async function render(
+  state: OrgLensEmptyStateName | null,
+  { settled = true, stats = null, statsFor, selectedAccount = signal<Account>(ACME) }: RenderOptions = {}
+) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
-  const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
 
   await TestBed.configureTestingModule({
     imports: [OrgTrainingComponent],
@@ -68,7 +80,7 @@ async function render(state: OrgLensEmptyStateName | null, { settled = true, sta
       {
         provide: OrgLensTrainingService,
         useValue: {
-          getTrainingStats: () => of(stats),
+          getTrainingStats: statsFor ?? (() => of(stats)),
           getOrgCertifications: () => of(EMPTY_ORG_CERTIFICATIONS_RESPONSE),
           getOrgTrainings: () => of(EMPTY_ORG_TRAININGS_RESPONSE),
         },
@@ -154,5 +166,42 @@ describe('OrgTrainingComponent — stat strip', () => {
     expect(value(el, 'org-training-stat-roster-members')).toBe('—');
     expect(el.querySelector('[data-testid="org-training-stat-roster-members-caption"]')?.textContent?.trim()).toBe(ORG_TRAINING_NO_ROSTER_NOTE);
     expect(value(el, 'org-training-stat-people-with-training-activity')).toBe('830');
+  });
+
+  it('states no as-of date and no previous organization’s captions while the stats load, on first load and on an org switch', async () => {
+    const responses: Record<string, Subject<OrgTrainingStats | null>> = {
+      'org-uid-1': new Subject<OrgTrainingStats | null>(),
+      'org-uid-2': new Subject<OrgTrainingStats | null>(),
+    };
+    const selectedAccount = signal<Account>(ACME);
+    const el = await render(null, { selectedAccount, statsFor: (orgUid) => responses[orgUid].asObservable() });
+    const appRef = TestBed.inject(ApplicationRef);
+    const captions = () => [...el.querySelectorAll('[data-testid$="-caption"]')].map((node) => node.textContent ?? '');
+    const snapshotAsOf = () => el.querySelector('[data-testid="org-training-stats-snapshot-as-of"]')?.textContent ?? null;
+
+    // First load, before the stats arrive.
+    expect(el.textContent).not.toContain('as-of date unavailable');
+    expect(captions()).toEqual([]);
+    expect(snapshotAsOf()).toBeNull();
+
+    responses['org-uid-1'].next(stats);
+    responses['org-uid-1'].complete();
+    await appRef.whenStable();
+    expect(captions().join(' ')).toContain('Oct 29, 2026');
+    expect(snapshotAsOf()).toContain('Nov 1, 2026');
+
+    // Switch to an organization whose stats are still on their way.
+    selectedAccount.set({ ...ACME, accountId: 'acc-2', accountName: 'Globex Corp.', uid: 'org-uid-2', slug: 'globex' });
+    await appRef.whenStable();
+    expect(captions()).toEqual([]);
+    expect(snapshotAsOf()).toBeNull();
+    expect(value(el, 'org-training-stat-roster-members')).toBe('—');
+    expect(el.textContent).not.toContain('Oct 29, 2026');
+
+    responses['org-uid-2'].next({ ...stats, rosterMembersAsOf: '2026-10-31T23:00:00.000Z', inProgressAsOf: '2026-11-02T10:15:00.000Z' });
+    responses['org-uid-2'].complete();
+    await appRef.whenStable();
+    expect(el.querySelector('[data-testid="org-training-stat-roster-members-caption"]')?.textContent).toContain('Oct 31, 2026');
+    expect(snapshotAsOf()).toContain('Nov 2, 2026');
   });
 });

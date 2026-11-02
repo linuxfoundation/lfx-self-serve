@@ -54,11 +54,12 @@ export function buildOrgTrainingStatTiles(stats: OrgTrainingStats | null): OrgTr
   return ORG_TRAINING_STAT_TILES.map((layout) => {
     const definition = ORG_TRAINING_STAT_DEFINITIONS[layout.key];
     const { value, asOf } = stats ? statReading(layout.key, stats) : { value: null, asOf: null };
-    const noRoster = stats !== null && layout.key === 'rosterMembers' && value === null;
+    const noRoster = stats !== null && layout.key === 'rosterMembers' && value == null;
     return {
       ...layout,
       label: definition.label,
-      value,
+      // A payload missing a field (an older response shape) reads as no value, never as an empty number.
+      value: value ?? null,
       caption: noRoster ? ORG_TRAINING_NO_ROSTER_NOTE : orgTrainingStatCaption(definition, asOf),
       tooltip: noRoster ? `${definition.definition} ${ORG_TRAINING_NO_ROSTER_NOTE}.` : orgTrainingStatTooltip(definition, asOf),
     };

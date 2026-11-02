@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
 import { provideRouter, Router } from '@angular/router';
 import { EMPTY_ORG_TRAINEES_RESPONSE } from '@lfx-one/shared/constants';
-import type { OrgLensTimeRange, OrgTraineeDetailRow, OrgTraineesResponse } from '@lfx-one/shared/interfaces';
+import type { OrgLensTimeRange, OrgTraineeDetailRow, OrgTraineeRowVm, OrgTraineesResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { firstValueFrom, Observable, of, timer } from 'rxjs';
@@ -70,7 +70,7 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
 
   const el = (): HTMLElement => fixture.nativeElement;
   const stat = (name: string): string => el().querySelector(`[data-testid="org-people-trainees-stat-${name}"] .text-2xl`)?.textContent?.trim() ?? '';
-  const form = (): FormGroup => (fixture.componentInstance as unknown as { filterForm: FormGroup }).filterForm;
+  const form = (): FormGroup => fixture.componentInstance.filterForm;
   const router = (): Router => TestBed.inject(Router);
 
   async function settle(): Promise<void> {
@@ -152,7 +152,7 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
 
   it('reads the picked range for the filtering state without waiting for the search debounce', async () => {
     await mount('/?tab=trainees');
-    const isFiltering = (): boolean => (fixture.componentInstance as unknown as { isFiltering: () => boolean }).isFiltering();
+    const isFiltering = (): boolean => fixture.componentInstance.isFiltering();
     expect(isFiltering()).toBe(false);
 
     form().controls['timeRange'].setValue('30d');
@@ -160,15 +160,28 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     expect(isFiltering()).toBe(true);
   });
 
-  it('opens the person drawer for the range the tab lists the person in', async () => {
+  it('opens the person drawer for the range the tab lists the person in, and none for a learner outside the people list', async () => {
     await mount('/?tab=trainees&range=30d');
     const open = (TestBed.inject(PersonDetailDrawerService) as unknown as { open: Mock }).open;
+    const row: OrgTraineeRowVm = {
+      personKey: 'p-1',
+      name: 'Ada Lovelace',
+      title: null,
+      email: null,
+      initials: 'AL',
+      avatarColorClass: '',
+      onPeopleList: true,
+      status: 'Enrolled',
+      coursesCount: 1,
+      certsCount: 0,
+      recentCourseName: null,
+      recentFoundationName: null,
+    };
 
-    (fixture.componentInstance as unknown as { onPersonClick(row: object, event: Event): void }).onPersonClick(
-      { personKey: 'p-1', name: 'Ada Lovelace', title: null, initials: 'AL', avatarColorClass: '' },
-      new Event('click')
-    );
+    fixture.componentInstance.onPersonClick(row, new Event('click'));
+    fixture.componentInstance.onPersonClick({ ...row, personKey: 'outside:1', onPeopleList: false }, new Event('click'));
 
+    expect(open).toHaveBeenCalledTimes(1);
     expect(open).toHaveBeenCalledWith(expect.objectContaining({ personKey: 'p-1', defaultTab: 'training', range: '30d' }));
   });
 
@@ -251,9 +264,9 @@ describe('TraineesComponent — project, course, level and format filters (lfx-s
   const stat = (name: string): string => el().querySelector(`[data-testid="org-people-trainees-stat-${name}"] .text-2xl`)?.textContent?.trim() ?? '';
   const listed = (): string[] =>
     [...el().querySelectorAll<HTMLElement>('tbody tr[role="button"]')].map((tr) => tr.getAttribute('data-testid')!.replace('org-people-trainees-row-', ''));
-  const form = (): FormGroup => (fixture.componentInstance as unknown as { filterForm: FormGroup }).filterForm;
+  const form = (): FormGroup => fixture.componentInstance.filterForm;
   const optionValues = (name: 'projectOptions' | 'levelOptions' | 'formatOptions' | 'courseOptions'): string[] =>
-    (fixture.componentInstance as unknown as Record<typeof name, () => { value: string }[]>)[name]().map((option) => option.value);
+    fixture.componentInstance[name]().map((option) => option.value);
 
   async function settle(): Promise<void> {
     fixture.detectChanges();
@@ -343,9 +356,6 @@ describe('TraineesComponent — a learner outside the people list (lfx-self-serv
   const stat = (name: string): string => el().querySelector(`[data-testid="org-people-trainees-stat-${name}"] .text-2xl`)?.textContent?.trim() ?? '';
   const listed = (): string[] =>
     [...el().querySelectorAll<HTMLElement>('tbody tr[role="button"]')].map((tr) => tr.getAttribute('data-testid')!.replace('org-people-trainees-row-', ''));
-  const component = (): { onSort(column: string): void; filterForm: FormGroup } =>
-    fixture.componentInstance as unknown as { onSort(column: string): void; filterForm: FormGroup };
-
   async function settle(): Promise<void> {
     fixture.detectChanges();
     await fixture.whenStable();
@@ -361,9 +371,9 @@ describe('TraineesComponent — a learner outside the people list (lfx-self-serv
       trainees: [
         { personKey: 'p-1', lfid: 'lfid-1', cdpMemberId: null, name: 'Ada Lovelace', title: 'Engineer', email: 'ada@example.com', onPeopleList: true },
         // The BFF sends nothing but the name for these learners; the row must not invent or borrow the rest.
-        { personKey: 'ti:outside', lfid: null, cdpMemberId: null, name: 'Bea Outside', title: null, email: null, onPeopleList: false },
+        { personKey: 'outside:1', lfid: null, cdpMemberId: null, name: 'Bea Outside', title: null, email: null, onPeopleList: false },
       ],
-      details: [detail('p-1', 'lfs101', 'Enrolled', 'lf'), detail('ti:outside', 'cka', 'Certified', 'cncf'), detail('ti:outside', 'lfs101', 'Enrolled', 'lf')],
+      details: [detail('p-1', 'lfs101', 'Enrolled', 'lf'), detail('outside:1', 'cka', 'Certified', 'cncf'), detail('outside:1', 'lfs101', 'Enrolled', 'lf')],
     };
     await TestBed.configureTestingModule({
       imports: [TraineesComponent],
@@ -380,9 +390,9 @@ describe('TraineesComponent — a learner outside the people list (lfx-self-serv
   });
 
   it('lists the learner with name and training status only, counted in the stat cards', () => {
-    const row = el().querySelector<HTMLElement>('[data-testid="org-people-trainees-row-ti:outside"]')!;
+    const row = el().querySelector<HTMLElement>('[data-testid="org-people-trainees-row-outside:1"]')!;
 
-    expect(listed().sort()).toEqual(['p-1', 'ti:outside']);
+    expect(listed().sort()).toEqual(['outside:1', 'p-1']);
     expect(stat('trainees')).toBe('2');
     expect(stat('certifications')).toBe('1');
     expect(row.textContent).toContain('Bea Outside');
@@ -393,24 +403,24 @@ describe('TraineesComponent — a learner outside the people list (lfx-self-serv
   });
 
   it('opens no person drawer from the learner, and the row still expands, sorts and searches', async () => {
-    el().querySelector<HTMLElement>('[data-testid="org-people-trainees-row-ti:outside-name"]')!.click();
+    el().querySelector<HTMLElement>('[data-testid="org-people-trainees-row-outside:1-name"]')!.click();
     await settle();
 
     expect(open).not.toHaveBeenCalled();
     // The click reached the row: it toggled the training details open.
-    expect(el().querySelector('[data-testid="org-people-trainees-row-ti:outside-detail-row"]')?.textContent).toContain('Courses & Certifications (2)');
+    expect(el().querySelector('[data-testid="org-people-trainees-row-outside:1-detail-row"]')?.textContent).toContain('Courses & Certifications (2)');
 
-    component().onSort('name');
+    fixture.componentInstance.onSort('name');
     await settle();
-    expect(listed()).toEqual(['p-1', 'ti:outside']);
-    component().onSort('name');
+    expect(listed()).toEqual(['p-1', 'outside:1']);
+    fixture.componentInstance.onSort('name');
     await settle();
-    expect(listed()).toEqual(['ti:outside', 'p-1']);
+    expect(listed()).toEqual(['outside:1', 'p-1']);
 
-    component().filterForm.patchValue({ search: 'bea' });
+    fixture.componentInstance.filterForm.patchValue({ search: 'bea' });
     await firstValueFrom(timer(200));
     await settle();
-    expect(listed()).toEqual(['ti:outside']);
+    expect(listed()).toEqual(['outside:1']);
     expect(stat('trainees')).toBe('1');
   });
 });
