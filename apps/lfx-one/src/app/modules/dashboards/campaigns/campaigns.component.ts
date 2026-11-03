@@ -69,6 +69,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   canonicalHttpUrl,
+  emailLinkDestinations,
   escapeHtml,
   hasVisibleHtmlText,
   normalizeSponsors,
@@ -1648,8 +1649,24 @@ export class CampaignsComponent {
     // public-looking, which `https://evil.example/phish` also is -- and staging forwards
     // `emailCtaDestination`, so the weaker list kept links in the preview that the draft drops.
     // One validator, not two: `emailCtaDestination` is lazily read, so declaration order is fine.
-    const destination = this.emailCtaDestination();
-    return destination === '' ? [] : [destination];
+    //
+    // Plus the links the event page itself published (CFP, agenda, venue, sponsorship) when they are on
+    // the call-to-action's host or an LF-owned domain (#3306). The controller judges the staged body
+    // with the same helper over the same list (`emailExtractedLinks`, sent with the stage request), so
+    // the preview still cannot show a link the draft drops.
+    return emailLinkDestinations(this.emailCtaDestination(), this.emailExtractedLinks());
+  });
+
+  /**
+   * The secondary links the event page published, as the scrape verified them (`verifyPageLink`): the
+   * candidates `generatedDestinations` may vouch for, and what the stage request sends as
+   * `secondaryLinkUrls` so the controller can judge the body the same way (#3306).
+   */
+  protected readonly emailExtractedLinks = computed<string[]>(() => {
+    const details = this.emailBriefOutput()?.eventDetails;
+    return [details?.cfpUrl, details?.agendaUrl, details?.venueUrl, details?.sponsorshipUrl]
+      .map((link) => canonicalHttpUrl(link))
+      .filter((link) => link !== '');
   });
 
   /**
@@ -3783,6 +3800,9 @@ export class CampaignsComponent {
           // substituting registrationUrl there sent "Submit Your Proposal" to the registration
           // page. When it omitted one, ctaLabel is '' and no button is sent at all.
           ...(ctaLabel !== '' ? { buttonText: ctaLabel, buttonUrl: ctaDestination } : {}),
+          // The event-page links the body may keep (#3306). Judged, not trusted: the controller keeps
+          // only those on the button's host or an LF-owned domain, and never forwards the list upstream.
+          ...(this.emailExtractedLinks().length > 0 ? { secondaryLinkUrls: this.emailExtractedLinks() } : {}),
           // Gated on a non-blank BODY (via `emailHeroImageUrl`, which reads
           // `emailBodyIsStageable`), not merely on `copy` being non-null -- a present-but-empty
           // body is the reachable case, and this one is DATA LOSS rather than a cosmetic gap:

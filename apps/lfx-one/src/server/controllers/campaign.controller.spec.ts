@@ -2566,6 +2566,62 @@ describe('CampaignController.createCampaign cutover', () => {
     }
   });
 
+  /**
+   * #3306. The event page's own links (CFP, agenda, venue, sponsorship) keep their href when they are
+   * on the button's host or an LF-owned domain. The list arrives from the client and is JUDGED: an
+   * off-host url in it is refused like any other, and the list itself never goes upstream.
+   */
+  it('keeps a vetted event-page link, strips an off-host one, and never forwards the list', async () => {
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            // The button is on the event's own site; the CFP link is on an LF-owned domain, which only the
+            // judged `secondaryLinkUrls` can vouch for, so this pins that the list is actually read.
+            bodyHtml:
+              '<p><a href="https://training.linuxfoundation.org/kubecon/cfp">Submit a talk</a> ' +
+              '<a href="https://evil.example/agenda">See the agenda</a> <a href="javascript:alert(1)">x</a></p>',
+            buttonText: 'Register',
+            buttonUrl: 'https://kubecon.example/register',
+            secondaryLinkUrls: ['https://training.linuxfoundation.org/kubecon/cfp', 'https://evil.example/agenda', 'javascript:alert(1)'],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(cfg['bodyHtml']).toContain('href="https://training.linuxfoundation.org/kubecon/cfp"');
+    expect(cfg['bodyHtml']).not.toContain('evil.example');
+    expect(cfg['bodyHtml']).toContain('See the agenda');
+    expect(cfg['bodyHtml']).not.toContain('javascript:');
+    expect(cfg['secondaryLinkUrls'], 'the judgement-only list was forwarded to campaign-service').toBeUndefined();
+  });
+
+  it('keeps the safe inline styles of a staged body and drops the unsafe declarations', async () => {
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p style="color: #0f172a; font-size: 16px; position: fixed; background-color: url(https://evil.test/x)">Hi</p>',
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(cfg['bodyHtml']).toBe('<p style="color:#0f172a;font-size:16px">Hi</p>');
+  });
+
   it.each(['bodyHtml', 'bodyHtmlB'])('refuses an oversized %s before sanitising or dispatching', async (field) => {
     // The sanitiser runs in `createConfigEnvelope`, ahead of every other check, and the only
     // other bound on its input is the 15 MB body-parser limit. The cap keeps its cost bounded.

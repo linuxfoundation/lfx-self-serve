@@ -3942,6 +3942,69 @@ export const MAX_SPONSOR_NAME_LENGTH = 100;
 export const MAX_HUBSPOT_BODY_HTML_LENGTH = 128 * 1024;
 
 /**
+ * The domains the Linux Foundation owns, for links in a generated email body (#3306).
+ *
+ * A link the event page itself published (CFP, agenda, venue, sponsorship) keeps its `href` when its
+ * host is the call-to-action's host or one of these, or a subdomain of either: the event's own site,
+ * or LF's. Every other host keeps the link text and loses the `href`, as an unknown host always has.
+ */
+export const LF_OWNED_EMAIL_LINK_DOMAINS: readonly string[] = ['linuxfoundation.org'];
+
+/** At most this many event-page links are vouched for in one email body, which is all a brief carries. */
+export const EMAIL_SECONDARY_LINK_LIMIT = 8;
+
+/**
+ * The inline-style properties a generated email body may keep (#3306). campaign-service styles every
+ * generated section inline (`internal/service/email_body_style.go`), because mail clients drop most
+ * other CSS, so stripping `style` previewed and staged the email unstyled. Only typography, colour,
+ * alignment, spacing, borders and widths are kept: nothing here can position an element over another,
+ * load a resource, or run code.
+ */
+export const EMAIL_BODY_ALLOWED_STYLE_PROPERTIES: readonly string[] = [
+  'color',
+  'background-color',
+  'font',
+  'font-family',
+  'font-size',
+  'font-style',
+  'font-variant',
+  'font-weight',
+  'text-align',
+  'text-decoration',
+  'line-height',
+  'padding',
+  'padding-top',
+  'padding-right',
+  'padding-bottom',
+  'padding-left',
+  'margin',
+  'margin-top',
+  'margin-right',
+  'margin-bottom',
+  'margin-left',
+  'border',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
+  'border-color',
+  'border-style',
+  'border-width',
+  'border-radius',
+  'border-collapse',
+  'width',
+  'max-width',
+];
+
+/**
+ * A kept style declaration's VALUE must not contain any of these (#3306): `url(` loads a resource,
+ * `expression(` and `behavior` run code in old engines, `javascript:` is a script URL, `@import` pulls in
+ * a stylesheet, and `position` is refused in a value as well as a property so a shorthand cannot smuggle
+ * it in.
+ */
+export const EMAIL_BODY_STYLE_VALUE_PATTERN = /^(?!.*(?:url\s*\(|expression\s*\(|@import|behavior|javascript:|position)).*$/i;
+
+/**
  * The exact hosts whose hero image the email preview may LOAD in the operator's browser. Every
  * other host is named, never loaded. Exact hosts, not the `linuxfoundation.org` zone: LFX One and
  * the SSO host sit under that zone, so a zone-wide rule let a scraped page point the preview at a

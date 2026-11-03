@@ -2398,6 +2398,13 @@ export interface HubSpotCampaignCreateRequest {
    */
   buttonUrl?: string;
   /**
+   * The links the event page published (CFP, agenda, venue, sponsorship), sent by the client so the BFF
+   * can judge the body's secondary links the way the preview did (#3306). BFF-ONLY: never forwarded to
+   * campaign-service. Not trusted either: the BFF keeps only those on `buttonUrl`'s host or an LF-owned
+   * domain (`emailLinkDestinations`), so an off-host url sent here is refused like any other.
+   */
+  secondaryLinkUrls?: string[];
+  /**
    * Hero banner image URL, rendered as its own image module ABOVE the body during the same full
    * content rebuild (`internal/dispatch/hubspot.go`'s `HeroImageURL`). Upstream re-hosts it to
    * HubSpot's file manager via `UploadImage` before attaching it; a failed upload degrades to no

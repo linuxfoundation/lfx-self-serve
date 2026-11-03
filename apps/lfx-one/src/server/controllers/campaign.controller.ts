@@ -5,7 +5,7 @@
 // re-exports `form.utils`, which imports `@angular/forms`. A server spec that pulls the
 // barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
 // Verified by switching to the barrel and watching the suite fail.
-import { hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import { emailLinkDestinations, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
@@ -7577,7 +7577,14 @@ export class CampaignController {
     // A request that sends no `buttonUrl` -- including one whose CTA label is empty, since the
     // client withholds the pair together -- vouches for nothing, and body links are dropped. That
     // is the conservative direction of the same rule: absent evidence is not permission.
-    const allowedBodyDestinations = [buttonUrl].filter((url) => url !== '');
+    //
+    // Plus the event page's own links the client sends as `secondaryLinkUrls` (#3306), judged rather
+    // than trusted: `emailLinkDestinations` keeps only those on the button's host or an LF-owned
+    // domain, and caps the list, so an injected off-host url loses its href like any other. The client
+    // preview vouches with the same helper over the same list. The list is never forwarded upstream.
+    const rawSecondary = body.hubspotConfig?.secondaryLinkUrls;
+    const secondaryLinkUrls = Array.isArray(rawSecondary) ? rawSecondary.filter((url): url is string => typeof url === 'string') : [];
+    const allowedBodyDestinations = emailLinkDestinations(buttonUrl, secondaryLinkUrls);
 
     const rawBody = body.hubspotConfig?.bodyHtml;
     const bodyHtml = stripResourceLoadingHtml(typeof rawBody === 'string' ? rawBody : '', allowedBodyDestinations).trim();

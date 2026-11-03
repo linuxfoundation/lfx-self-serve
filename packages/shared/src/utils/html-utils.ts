@@ -3,6 +3,12 @@
 
 import sanitizeHtml from 'sanitize-html';
 
+import {
+  EMAIL_BODY_ALLOWED_STYLE_PROPERTIES,
+  EMAIL_BODY_STYLE_VALUE_PATTERN,
+  EMAIL_SECONDARY_LINK_LIMIT,
+  LF_OWNED_EMAIL_LINK_DOMAINS,
+} from '../constants/campaign.constants';
 import { canonicalHttpUrl } from './url.utils';
 
 const NAMED_HTML_ENTITIES: Record<string, string> = {
@@ -537,8 +543,18 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
       'td',
       'th',
     ],
-    // `src`, `srcset`, `background`, `style` and `poster` are all absent for the same reason.
-    allowedAttributes: { a: ['href'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
+    // `src`, `srcset`, `background` and `poster` are all absent for the same reason.
+    //
+    // `style` is KEPT, on every allowed tag, but only through `allowedStyles` below (#3306).
+    // campaign-service writes the email's palette and type scale as inline styles, because mail
+    // clients drop most other CSS, so stripping the attribute previewed and staged every generated
+    // email unstyled.
+    allowedAttributes: { '*': ['style'], a: ['href'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
+    // Only the declarations on `EMAIL_BODY_ALLOWED_STYLE_PROPERTIES` survive, and only with a value
+    // free of `url(`, `expression(`, `behavior`, `javascript:`, `@import` and `position`
+    // (`EMAIL_BODY_STYLE_VALUE_PATTERN`). So `background: url(...)` cannot fetch, and `position`
+    // cannot lay one element over another. A `style` left with no declarations is removed whole.
+    allowedStyles: { '*': Object.fromEntries(EMAIL_BODY_ALLOWED_STYLE_PROPERTIES.map((property) => [property, [EMAIL_BODY_STYLE_VALUE_PATTERN]])) },
     transformTags: {
       // Runs BEFORE `allowedSchemes` / `allowProtocolRelative`, which sanitize-html applies in
       // the attribute loop after `transformTags` has been dispatched. So `href` arrives RAW here
@@ -604,4 +620,35 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
     //                              left to explain where it came from
     nonTextTags: ['script', 'style', 'iframe', 'object', 'embed', 'noscript', 'textarea', 'title', 'svg', 'math'],
   });
+}
+
+/**
+ * The destinations a generated email body may link to: the call-to-action, plus the links the event
+ * page itself published (`eventDetails.cfpUrl`, `agendaUrl`, `venueUrl`, `sponsorshipUrl`) whose host is
+ * the call-to-action's host or an LF-owned domain (`LF_OWNED_EMAIL_LINK_DOMAINS`), or a subdomain of
+ * either (#3306).
+ *
+ * Feed the result to `stripResourceLoadingHtml`. A secondary link on any other host is not vouched for,
+ * so the sanitizer keeps its text and drops its `href`, exactly as it does for an invented address. The
+ * host rule is the boundary, not where the list came from: a caller that passed an off-host url here
+ * would still have it refused.
+ *
+ * With no call-to-action (the stages that withhold a button), only LF-owned links can be vouched for.
+ */
+export function emailLinkDestinations(ctaDestination: string, extractedLinks: readonly (string | null | undefined)[]): string[] {
+  const cta = canonicalHttpUrl(ctaDestination);
+  const hostOf = (url: string): string => {
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  };
+  const trustedRoots = [...(cta === '' ? [] : [hostOf(cta)]), ...LF_OWNED_EMAIL_LINK_DOMAINS].filter((root) => root !== '');
+  const isTrusted = (host: string): boolean => trustedRoots.some((root) => host === root || host.endsWith(`.${root}`));
+  const secondary = extractedLinks
+    .map((link) => canonicalHttpUrl(link))
+    .filter((link) => link !== '' && isTrusted(hostOf(link)))
+    .slice(0, EMAIL_SECONDARY_LINK_LIMIT);
+  return [...new Set([...(cta === '' ? [] : [cta]), ...secondary])];
 }

@@ -18,7 +18,11 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
  *
  * The campaign service now applies the Linux Foundation's own palette and type scale to every
  * generated `rich_text` section as inline styles (`internal/service/email_body_style.go`), so there
- * is real styling to show. This component shows it.
+ * is real styling to show. This component shows it, and those styles reach it: the body sanitizer
+ * (`stripResourceLoadingHtml`) keeps `style` through an allow-list of safe properties
+ * (`EMAIL_BODY_ALLOWED_STYLE_PROPERTIES`) and drops any declaration that could load, run or position
+ * anything (#3306). It used to drop every `style`, so this paragraph described styling the preview
+ * never received.
  *
  * ## What keeps it safe
  *
