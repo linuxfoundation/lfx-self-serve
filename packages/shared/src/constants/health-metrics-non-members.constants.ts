@@ -24,7 +24,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     label: 'Company participation',
     heading: 'Company participation',
     description:
-      'Organizations engaging without paying. Ranked by meetings attended first, not code — showing up to meetings means they are already spending staff time, which is the stronger buying signal.',
+      'Companies engaging without paying. Ranked by meetings attended first, not code — showing up to meetings means they are already spending staff time, which is the stronger buying signal.',
     footnote: [],
     footnoteCaution: false,
   },
@@ -33,7 +33,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'People',
     heading: 'People',
-    description: 'The individuals behind those organizations — the actual contact to reach out to. A company is a lead; a person is a conversation.',
+    description: 'The individuals behind those companies — the actual contact to reach out to. A company is a lead; a person is a conversation.',
     footnote: [],
     footnoteCaution: false,
   },
@@ -42,7 +42,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Conversion opportunity',
     heading: 'Conversion opportunity',
-    description: 'What the pipeline is worth if the warmest organizations convert. Framed as upside — this section carries no risk badges, only opportunity.',
+    description: 'What the pipeline is worth if the warmest companies convert. Framed as upside — this section carries no risk badges, only opportunity.',
     footnote: [],
     footnoteCaution: false,
   },
@@ -52,7 +52,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_NON_MEMBERS_BLANK: HealthMetricsL2Blank = {
   icon: 'fa-light fa-buildings',
   noun: 'non-member',
-  lead: 'Organizations show here once they take part in foundation activities without a membership.',
+  lead: 'Companies show here once they take part in foundation activities without a membership.',
   reasons: [
     'No code, event, meeting or training activity is recorded yet',
     'New activity can take 24–48 hours to appear',
@@ -107,11 +107,11 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
 
 /** Under the table until the organization match is validated; the design's caution wording. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
-  'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
+  'Company matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
 
 /** Under the People table: each person's organization comes from the same unvalidated match. */
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_PROVISIONAL_NOTE =
-  "People are matched to organizations by the same process, so treat each person's organization as provisional too.";
+  "People are matched to companies by the same process, so treat each person's company as provisional too.";
 
 /** Both tables' last-activity dates ignore the period; the footnotes say so instead of the headers. */
 export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged / Last attended are all-time, not limited to the selected period.';

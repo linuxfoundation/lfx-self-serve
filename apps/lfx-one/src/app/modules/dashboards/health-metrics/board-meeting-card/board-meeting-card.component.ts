@@ -99,7 +99,7 @@ export class BoardMeetingCardComponent {
 
   private static readonly columnDefs: { field: BoardMeetingSortField; label: string }[] = [
     { field: 'inviteeFullName', label: 'Name' },
-    { field: 'organizationName', label: 'Organization' },
+    { field: 'organizationName', label: 'Company' },
     { field: 'attendancePercent', label: 'Attended (%)' },
     { field: 'lastAttended', label: 'Last Attended' },
   ];

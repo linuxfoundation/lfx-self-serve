@@ -21,11 +21,11 @@
     <div class="flex flex-col gap-2" data-testid="initiative-edit-attribution-entity">
       @if (options() === null) {
         <p class="text-xs text-red-500" role="alert" data-testid="initiative-edit-attribution-options-error">
-          Couldn't load your organizations and projects. Close this dialog and try again.
+          Couldn't load your companies and projects. Close this dialog and try again.
         </p>
       } @else if (options() && entities().length === 0) {
         <p class="text-sm text-gray-600" data-testid="initiative-edit-attribution-empty">
-          You don't have a role on any {{ selectedType() === 'organization' ? 'organization' : 'project or foundation' }} yet.
+          You don't have a role on any {{ selectedType() === 'organization' ? 'company' : 'project or foundation' }} yet.
         </p>
       } @else {
         <lfx-select

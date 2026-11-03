@@ -188,7 +188,7 @@ describe('EngagementRepresentativesComponent', () => {
     await render();
 
     const label: HTMLLabelElement | null = fixture.nativeElement.querySelector('label[for="engagement-representatives-search"]');
-    expect(label?.textContent?.trim()).toBe('Search person or organization');
+    expect(label?.textContent?.trim()).toBe('Search person or company');
     expect(fixture.nativeElement.querySelector('input#engagement-representatives-search')).not.toBeNull();
   });
 

@@ -179,7 +179,7 @@
                 <label
                   [attr.for]="hasOrganizationOptions() || loadingWorkExperiences() ? 'drawer-edit-organization' : 'drawer-edit-organization-readonly'"
                   class="block text-sm text-slate-900">
-                  Organization
+                  Company
                 </label>
                 <i
                   class="fa-light fa-circle-info text-gray-400 cursor-help"
@@ -199,7 +199,7 @@
                   control="organization"
                   inputId="drawer-edit-organization"
                   [options]="organizationOptions()"
-                  placeholder="Select your organization"
+                  placeholder="Select your company"
                   [filter]="true"
                   [loading]="loadingWorkExperiences()"
                   styleClass="w-full"
@@ -216,7 +216,7 @@
                   styleClass="w-full"
                   data-testid="profile-edit-drawer-organization">
                 </lfx-select>
-                <p class="text-sm text-gray-500 mt-1">Add a work experience to set your organization.</p>
+                <p class="text-sm text-gray-500 mt-1">Add a work experience to set your company.</p>
               }
             </div>
           </div>

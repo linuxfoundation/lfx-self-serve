@@ -109,7 +109,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
     await render();
 
     const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-non-member-participation-table"] th')) as HTMLElement[];
-    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Organization', 'Meetings attended', 'People', 'Membership']);
+    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Company', 'Meetings attended', 'People', 'Membership']);
     expect(fixture.nativeElement.querySelectorAll('[data-testid="engagement-non-member-participation-row-a-1"] td')).toHaveLength(4);
   });
 
@@ -176,7 +176,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
     await render(response({ counts: periodCounts(19, 33) }), (counts) => emitted.push(counts));
 
     expect(emitted).toEqual([null, { range: 'YTD', orgs: 19 }]);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('19 organizations');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('19 companies');
   });
 
   // The view counts its scope per period, so the caption and badge follow the pill without a re-read.
@@ -193,7 +193,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(emitted.at(-1)).toEqual({ range: 'COMPLETED_YEAR', orgs: 33 });
     // The period re-settles too, since whether it has any non-member moves the section's height.
     expect(verdicts).toEqual([false, false]);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('33 organizations');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('33 companies');
   });
 
   // The caption counts organizations that attended in the period, so the table lists the same ones.
@@ -228,7 +228,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
 
     expect(verdicts).toEqual([true]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-table"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('0 organizations');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('0 companies');
   });
 
   // Null attendance and a null count are unmeasured, so the caption must not claim nobody attended.

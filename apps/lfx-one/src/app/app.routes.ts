@@ -405,7 +405,7 @@ export const routes: Routes = [
       // project `viewer` on every read.
       {
         path: 'project/participating-orgs',
-        title: 'Participating Organizations',
+        title: 'Participating Companies',
         data: { lens: 'project' },
         // As on project/overview: a `?project=` change on this same route must re-run
         // projectQueryParamGuard, which seeds the project context the page reads its slug from.

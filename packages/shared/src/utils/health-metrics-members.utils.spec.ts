@@ -494,7 +494,7 @@ describe('buildHealthMetricsMembersMovementCountNote', () => {
 
   it('names both counts when they differ', () => {
     expect(buildHealthMetricsMembersMovementCountNote(6, 7)).toBe(
-      '6 organizations listed, while the bar counts 7. The list and the bar are counted separately, so they can differ slightly.'
+      '6 companies listed, while the bar counts 7. The list and the bar are counted separately, so they can differ slightly.'
     );
   });
 });

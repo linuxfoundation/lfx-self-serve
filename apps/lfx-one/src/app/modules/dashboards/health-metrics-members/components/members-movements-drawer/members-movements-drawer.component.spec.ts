@@ -99,7 +99,7 @@ describe('MembersMovementsDrawerComponent', () => {
     fixture.componentRef.setInput('barCount', 3);
     await open();
 
-    expect(text('members-movements-drawer-count-note')).toContain('2 organizations listed, while the bar counts 3');
+    expect(text('members-movements-drawer-count-note')).toContain('2 companies listed, while the bar counts 3');
   });
 
   it('still notes the bar when the list comes back empty', async () => {
@@ -109,7 +109,7 @@ describe('MembersMovementsDrawerComponent', () => {
     await open();
 
     expect(query('members-movements-drawer-empty')).not.toBeNull();
-    expect(text('members-movements-drawer-count-note')).toContain('0 organizations listed, while the bar counts 3');
+    expect(text('members-movements-drawer-count-note')).toContain('0 companies listed, while the bar counts 3');
   });
 
   it('appends the next page on "Show more" until the list is complete', async () => {

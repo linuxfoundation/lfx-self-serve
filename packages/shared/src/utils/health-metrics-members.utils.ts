@@ -235,7 +235,7 @@ export function buildHealthMetricsMembersMovementRows(
 export function buildHealthMetricsMembersMovementCountNote(totalRecords: number, barCount: number | null): string | null {
   if (barCount === null || barCount === totalRecords) return null;
 
-  return `${pluralize(totalRecords, 'organization')} listed, while the bar counts ${barCount.toLocaleString('en-US')}. The list and the bar are counted separately, so they can differ slightly.`;
+  return `${pluralize(totalRecords, 'company', 'companies')} listed, while the bar counts ${barCount.toLocaleString('en-US')}. The list and the bar are counted separately, so they can differ slightly.`;
 }
 
 /** Directory rows. A NULL activity count is not tracked for the foundation and renders as a dash, never 0. */

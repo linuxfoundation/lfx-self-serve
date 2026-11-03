@@ -121,7 +121,7 @@ export class NonMembersOrgsComponent {
   protected readonly lowConfidence = computed(() => (this.loading() ? null : buildHealthMetricsNonMembersOrgsLowConfidence(this.scopeTotal())));
   protected readonly totalRecordsLabel = computed(() => this.totalRecords().toLocaleString('en-US'));
   protected readonly scopeTotalLabel = computed(() => this.scopeTotal().toLocaleString('en-US'));
-  protected readonly noMatchLabel = computed(() => (this.search() ? `No organization matches “${this.search()}”.` : 'No organization matches this filter.'));
+  protected readonly noMatchLabel = computed(() => (this.search() ? `No company matches “${this.search()}”.` : 'No company matches this filter.'));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
