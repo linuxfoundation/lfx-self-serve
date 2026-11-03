@@ -152,4 +152,9 @@ describe('renderSurveyEmailForRecipient — send quarter', () => {
     const email = renderSurveyEmailForRecipient({ ...survey, survey_send_date: '2026-11-02T09:00:00Z', email_subject: '{{Quarter}} {{Year}} survey' }, row({}));
     expect(email.subject).toBe('Q4 2026 survey');
   });
+
+  it('blanks wizard variables the survey service has no data for, instead of leaking the token', () => {
+    const email = renderSurveyEmailForRecipient({ ...survey, email_subject: 'From {{SenderTitle}} <{{SenderEmail}}> re {{SurveyTemplate}}' }, row({}));
+    expect(email.subject).toBe('From  <> re ');
+  });
 });

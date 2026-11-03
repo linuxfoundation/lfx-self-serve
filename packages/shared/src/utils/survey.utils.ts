@@ -295,6 +295,11 @@ export function renderSurveyEmailForRecipient(survey: Survey, item: SurveyRespon
     ProgramManagerName: context.programManagerName ?? '',
     ProjectLogo: context.projectLogo ?? '',
     TrackerAlertPartial: '',
+    // Offered by the Self Serve wizard, but the survey service returns no template name or sender
+    // details. Blank rather than a literal token, which would read as a rendering bug.
+    SurveyTemplate: '',
+    SenderTitle: '',
+    SenderEmail: '',
   };
 
   const render = (template: string, escape: boolean): string =>
