@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS } from '@lfx-one/shared/constants';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, MeetingsHomeFilters } from '@lfx-one/shared/interfaces';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PersonaService } from '@services/persona.service';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsFiltersComponent } from './meetings-filters.component';
 
@@ -25,10 +27,21 @@ const ROWS = [
   row('c', { project_uid: 'p-1', project_name: 'CNCF', meeting_type: 'Technical' }),
 ];
 
+const CNCF = row('cncf', { project_uid: 'f-1', project_name: 'CNCF', is_foundation: true });
+const OPENSSF = row('openssf', { project_uid: 'f-2', project_name: 'OpenSSF', is_foundation: true });
+const FOUNDATION_ROWS = [
+  CNCF,
+  OPENSSF,
+  row('k8s', { project_uid: 'p-3', project_name: 'Kubernetes', parent_project_uid: 'f-1' }),
+  row('envoy', { project_uid: 'p-5', project_name: 'Envoy', parent_project_uid: 'f-1' }),
+  row('sigstore', { project_uid: 'p-4', project_name: 'Sigstore', parent_project_uid: 'f-2' }),
+];
+
 describe('MeetingsFiltersComponent', () => {
   let fixture: ComponentFixture<MeetingsFiltersComponent>;
   let emitted: MeetingsHomeFilters[];
   let outside: HTMLButtonElement;
+  const persona = { hasBoardRole: signal(true), hasProjectRole: signal(true) };
 
   const byTestId = (testId: string): HTMLElement | null => document.querySelector(`[data-testid="${testId}"]`);
   const button = (testId: string): HTMLButtonElement => byTestId(testId)?.querySelector('button') as HTMLButtonElement;
@@ -38,10 +51,14 @@ describe('MeetingsFiltersComponent', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     await fixture.whenStable();
   };
-  const render = async (filters: MeetingsHomeFilters = MEETINGS_HOME_DEFAULT_FILTERS, tab: MeetingDashboardView = 'upcoming'): Promise<void> => {
+  const render = async (
+    filters: MeetingsHomeFilters = MEETINGS_HOME_DEFAULT_FILTERS,
+    tab: MeetingDashboardView = 'upcoming',
+    rows: MeetingHomeRow[] = ROWS
+  ): Promise<void> => {
     fixture = TestBed.createComponent(MeetingsFiltersComponent);
     fixture.componentRef.setInput('tab', tab);
-    fixture.componentRef.setInput('rows', ROWS);
+    fixture.componentRef.setInput('rows', rows);
     fixture.componentRef.setInput('filters', filters);
     emitted = [];
     fixture.componentInstance.filters.subscribe((value) => emitted.push(value));
@@ -73,6 +90,12 @@ describe('MeetingsFiltersComponent', () => {
     await settle();
     return labels;
   };
+
+  beforeEach(() => {
+    persona.hasBoardRole.set(true);
+    persona.hasProjectRole.set(true);
+    TestBed.configureTestingModule({ providers: [{ provide: PersonaService, useValue: persona }] });
+  });
 
   afterEach(() => {
     fixture.destroy();
@@ -114,6 +137,84 @@ describe('MeetingsFiltersComponent', () => {
     expect(byTestId('meetings-home-filters-rsvp')).toBeNull();
     expect(byTestId('meetings-home-filters-organized')).toBeNull();
     expect(byTestId('meetings-home-filters-hide-declined')).toBeNull();
+  });
+
+  describe('foundation', () => {
+    it.each<[MeetingDashboardView, string, MeetingHomeRow[], string[] | null]>([
+      ['upcoming', 'no foundation', ROWS, null],
+      ['upcoming', 'one foundation', [CNCF, ...ROWS], ['All foundations', 'CNCF']],
+      ['upcoming', 'several foundations', FOUNDATION_ROWS, ['All foundations', 'CNCF', 'OpenSSF']],
+      ['past', 'no foundation', ROWS, null],
+      ['past', 'several foundations', FOUNDATION_ROWS, ['All foundations', 'CNCF', 'OpenSSF']],
+    ])('on %s with %s, shows Foundation above Project only when it has an option', async (tab, _, rows, expected) => {
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, tab, rows);
+      await open();
+
+      const fields = Array.from(document.querySelectorAll('[data-testid^="meetings-home-filters-"][label]')).map((field) => field.getAttribute('label'));
+      expect(fields.slice(0, 2)).toEqual(expected ? ['Foundation', 'Project'] : ['Project', 'Meeting type']);
+      if (expected) expect(await optionLabels('meetings-home-filters-foundation')).toEqual(expected);
+    });
+
+    it('lists only non-foundation projects in Project', async () => {
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', FOUNDATION_ROWS);
+      await open();
+
+      expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'Envoy', 'Kubernetes', 'Sigstore']);
+    });
+
+    it('hides Foundation without a board role and Project without a project role', async () => {
+      persona.hasBoardRole.set(false);
+      persona.hasProjectRole.set(false);
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', FOUNDATION_ROWS);
+      await open();
+
+      expect(byTestId('meetings-home-filters-foundation')).toBeNull();
+      expect(byTestId('meetings-home-filters-project')).toBeNull();
+      expect(byTestId('meetings-home-filters-type')).toBeTruthy();
+    });
+
+    it('narrows Project to the picked foundation and applies both', async () => {
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', FOUNDATION_ROWS);
+      await open();
+      await pick('meetings-home-filters-foundation', 'CNCF');
+
+      expect(emitted).toEqual([]);
+      expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'Envoy', 'Kubernetes']);
+
+      await pick('meetings-home-filters-project', 'Kubernetes');
+      button('meetings-home-filters-apply').click();
+      await settle();
+
+      expect(emitted).toEqual([{ ...MEETINGS_HOME_DEFAULT_FILTERS, foundation: 'f-1', project: 'p-3' }]);
+    });
+
+    it("keeps a project of the picked foundation and clears another foundation's project", async () => {
+      await render({ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-4' }, 'upcoming', FOUNDATION_ROWS);
+      await open();
+      await pick('meetings-home-filters-foundation', 'OpenSSF');
+      button('meetings-home-filters-apply').click();
+      await settle();
+
+      expect(emitted).toEqual([{ ...MEETINGS_HOME_DEFAULT_FILTERS, foundation: 'f-2', project: 'p-4' }]);
+
+      await open();
+      await pick('meetings-home-filters-foundation', 'CNCF');
+      button('meetings-home-filters-apply').click();
+      await settle();
+
+      expect(emitted[1]).toEqual({ ...MEETINGS_HOME_DEFAULT_FILTERS, foundation: 'f-1' });
+
+      await open();
+      await pick('meetings-home-filters-foundation', 'All foundations');
+
+      expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'Envoy', 'Kubernetes', 'Sigstore']);
+    });
+
+    it('counts an applied foundation on the button', async () => {
+      await render({ ...MEETINGS_HOME_DEFAULT_FILTERS, foundation: 'f-1' }, 'upcoming', FOUNDATION_ROWS);
+
+      expect(byTestId('meetings-home-filters-count')?.textContent?.trim()).toBe('1');
+    });
   });
 
   it('keeps edits as a draft and applies them only on Apply, then closes', async () => {

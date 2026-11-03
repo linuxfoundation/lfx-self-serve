@@ -15,6 +15,7 @@ export const MEETINGS_HOME_PAGE_SIZE = 20;
 
 /** Filters with nothing applied. */
 export const MEETINGS_HOME_DEFAULT_FILTERS: MeetingsHomeFilters = {
+  foundation: null,
   project: null,
   meetingType: null,
   rsvp: 'all',
@@ -40,6 +41,7 @@ export const MEETINGS_HOME_RSVP_CHOICES: readonly MeetingRsvpChoice[] = [
 
 /** Applied-filter chip copy. */
 export const MEETINGS_HOME_FILTER_CHIP_LABELS = {
+  foundation: 'Foundation',
   project: 'Project',
   meetingType: 'Meeting type',
   rsvp: 'RSVP',
