@@ -1,9 +1,9 @@
 ---
 title: Organization FAQ
-description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
-tags: [organization, faq, switch-organization, org-overview, dashboard, easycla, cla, ccla, cla-manager, access, remove, invite]
+tags: [organization, faq, switch-organization, org-overview, dashboard, memberships, easycla, cla, ccla, cla-manager, access, remove, invite]
 last_updated: 2026-11-03
 intercom_collection: Organization
 ---
@@ -15,6 +15,10 @@ You switch organizations from the organization switcher at the top of the sideba
 ## What does the Org Overview dashboard show?
 
 The Org Overview, the **Dashboard** of the Organization lens, summarizes how the selected organization takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the organization's active contributors, maintainer roles, event attendees and speakers, certified employees and training enrollments. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the organization's role, voting status and meeting participation. Selecting a foundation opens **Memberships**, and selecting an LF project opens that project's page. Return on investment (ROI) figures are on a separate page for Linux Foundation staff. See [What is the Org Overview?](../org-overview/#what-is-the-org-overview).
+
+## What does the Memberships page show?
+
+The Memberships page lists the selected organization's foundation memberships. **Active** lists current memberships, **Expired** lists memberships that have ended, and **Discover** lists foundations the organization can join. Select a foundation name on **Active** to open that membership's key contacts, board and committee seats, and membership agreements. A CLA (Contributor License Agreement) Manager with no other role on the organization sees **EasyCLA** instead of **Memberships**. See [What is the Memberships page?](../memberships/#what-is-the-memberships-page).
 
 ## Why can't I edit this corporate CLA?
 
