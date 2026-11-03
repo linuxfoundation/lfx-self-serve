@@ -223,7 +223,7 @@ Sending the agreement by email also leaves the signature to the signatory. Self 
 
 ## Related sections
 
-- [EasyCLA FAQ](../faq/) — short answers for editing, missing companies, access after removal, and a first CLA Manager
+- [Organization FAQ](../faq/) — short answers about switching organizations and, for EasyCLA, editing, missing companies, access after removal, and a first CLA Manager
 - [CLAs](../../account/my-clas/) — your own Individual CLA (ICLA) and your coverage under an employer's corporate CLA
 - [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) — CLA concepts, consoles, and troubleshooting outside Self Serve
 - [Corporate CLA Console](https://corporate.lfcla.com) — corporate CLAs for a company you cannot open in the Organization lens

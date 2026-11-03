@@ -25,7 +25,6 @@ import {
   expandMeetingOccurrences,
   filterMeetingsHome,
   getLargestSessionShareUrl,
-  getPastMeetingTranscriptUrl,
   getRsvpTimestampMs,
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
@@ -76,9 +75,9 @@ export class MeetingsHomeStore {
     this.upcomingLoadingState,
     this.upcomingFailedState
   );
-  // shortcut: past feed loads without include=artifacts. revisit: when past rows show Recording / AI Summary buttons
+  // Carries `has_recording` / `has_ai_summary` for the past rows' Recording and AI Summary buttons.
   private readonly pastMeetings: Signal<PastMeeting[]> = this.initFeed(
-    () => this.userService.getUserPastMeetings(),
+    () => this.userService.getUserPastMeetings({ includeArtifacts: true }),
     this.pastLoadingState,
     this.pastFailedState
   );
@@ -106,8 +105,6 @@ export class MeetingsHomeStore {
   public readonly tabRows: Signal<MeetingHomeRow[]> = computed(() => (this.tab() === 'past' ? this.pastRows() : this.upcomingRows()));
   /** The Next meeting card's date, whatever the search and filters: the soonest one not yet over, else the soonest one. */
   public readonly nextRow: Signal<MeetingHomeRow | null> = this.initNextRow();
-  /** Responses on the next meeting; empty when its roster is hidden from the viewer, null while loading. */
-  public readonly nextRowRsvps: Signal<MeetingRsvp[] | null> = this.initNextRowRsvps();
   /** The next date is inside its join window, and is not a restricted meeting the viewer is not invited to. */
   public readonly nextRowJoinable: Signal<boolean> = this.initNextRowJoinable();
   /** Join link for the next date, built for the real viewer while impersonating; null until joinable or when unavailable. */
@@ -137,10 +134,6 @@ export class MeetingsHomeStore {
   private readonly lastMeetingSummaryState: WritableSignal<PastMeetingSummary | null | undefined> = linkedSignal(() => this.fetchedLastMeetingSummary());
   /** Last meeting's AI summary: undefined while loading, null when there is none or the lookup failed. */
   public readonly lastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = this.lastMeetingSummaryState.asReadonly();
-  /** Whether the last meeting has a transcript file: undefined while loading, null when the lookup failed. */
-  public readonly lastMeetingHasTranscript: Signal<boolean | null | undefined> = this.initLastMeetingArtifact((id) =>
-    this.meetingService.getPastMeetingTranscript(id).pipe(map((transcript) => getPastMeetingTranscriptUrl(transcript) !== null))
-  );
   /** Share URL of the last meeting's recording: undefined while loading, null when there is none or the lookup failed. */
   public readonly lastMeetingRecordingUrl: Signal<string | null | undefined> = this.initLastMeetingArtifact((id) =>
     this.meetingService.getPastMeetingRecording(id).pipe(map((recording) => getLargestSessionShareUrl(recording)))
@@ -227,35 +220,6 @@ export class MeetingsHomeStore {
       const rows = this.upcomingRows();
       const nowMs = this.now().getTime();
       return rows.find((row) => Date.parse(row.startTime) + row.durationMinutes * 60_000 > nowMs) ?? rows[0] ?? null;
-    });
-  }
-
-  /** The roster as loaded, plus the viewer's answers saved since, which win as the newest; a hidden roster stays empty. */
-  private initNextRowRsvps(): Signal<MeetingRsvp[] | null> {
-    const loaded = toSignal(
-      toObservable(computed(() => this.nextRow()?.meeting.id ?? null)).pipe(
-        switchMap((id) =>
-          id
-            ? this.meetingService.getMeetingRsvps(id).pipe(
-                catchError((error: unknown) => {
-                  console.error(`Failed to load RSVPs for meeting ${id}:`, error);
-                  return of([] as MeetingRsvp[]);
-                }),
-                startWith(null)
-              )
-            : of(null)
-        )
-      ),
-      { initialValue: null }
-    );
-    return computed(() => {
-      const rsvps = loaded();
-      const meeting = this.nextRow()?.meeting;
-      if (!rsvps?.length || !meeting) return rsvps;
-      // Drops the viewer's own answers from registrations they removed since the roster loaded.
-      const current = rsvps.filter((rsvp) => !this.userService.isMeetingRegistrationEnded(meeting.id, rsvp.registrant_id));
-      // Confirmations go first so they win timestamp ties.
-      return [...this.currentRsvps(meeting, this.userService.confirmedMeetingRsvps(meeting.id)), ...current];
     });
   }
 

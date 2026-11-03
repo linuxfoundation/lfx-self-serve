@@ -8,7 +8,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeRecordingDialogComponent } from '../components/meetings-home-recording-dialog/meetings-home-recording-dialog.component';
 import { MeetingsHomeSummaryDialogComponent } from '../components/meetings-home-summary-dialog/meetings-home-summary-dialog.component';
-import { MeetingsHomeTranscriptDialogComponent } from '../components/meetings-home-transcript-dialog/meetings-home-transcript-dialog.component';
 import { MeetingsHomeDialogsService } from './meetings-home-dialogs.service';
 
 const ROW = { key: 'synthetic-meeting-occ', meeting: {} as Meeting, title: 'Synthetic sync' } as MeetingHomeRow;
@@ -28,11 +27,9 @@ describe('MeetingsHomeDialogsService', () => {
     const onChange = vi.fn();
 
     service.openSummary(ROW, summary, onChange);
-    service.openTranscript(ROW);
     service.openRecording(ROW, 'https://zoom.example/rec');
 
     expect(open).toHaveBeenCalledWith(MeetingsHomeSummaryDialogComponent, { data: { row: ROW, summary, onChange } });
-    expect(open).toHaveBeenCalledWith(MeetingsHomeTranscriptDialogComponent, { data: { row: ROW } });
     expect(open).toHaveBeenCalledWith(MeetingsHomeRecordingDialogComponent, { data: { row: ROW, shareUrl: 'https://zoom.example/rec' } });
   });
 });

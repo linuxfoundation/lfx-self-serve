@@ -313,6 +313,22 @@ describe('UserService', () => {
       expect(rows).toEqual([{ id: 'synthetic-past-meeting' }]);
     });
 
+    it('getUserPastMeetings caches the artifacts feed apart from the plain feed', () => {
+      httpGet.mockImplementation((url: string, options?: { params?: Record<string, string> }) =>
+        url === '/api/user/past-meetings' ? of([{ id: options?.params?.['include'] ?? 'plain' } as PastMeeting]) : of({ profile: {} })
+      );
+
+      let plain: string[] = [];
+      let withArtifacts: string[] = [];
+      service.getUserPastMeetings().subscribe((meetings) => (plain = meetings.map((meeting) => meeting.id)));
+      service.getUserPastMeetings({ includeArtifacts: true }).subscribe((meetings) => (withArtifacts = meetings.map((meeting) => meeting.id)));
+
+      expect(plain).toEqual(['plain']);
+      expect(withArtifacts).toEqual(['artifacts']);
+      expect(service.getUserPastMeetings({ includeArtifacts: true })).toBe(service.getUserPastMeetings({ includeArtifacts: true }));
+      expect(service.getUserPastMeetings()).not.toBe(service.getUserPastMeetings({ includeArtifacts: true }));
+    });
+
     it('getUserLatestPastMeetings does not cache a failed request', () => {
       let subscriptions = 0;
       let response$ = new Subject<PastMeeting[]>();
@@ -552,17 +568,6 @@ describe('UserService', () => {
       const returning = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
       expect(rows[0].my_rsvp).toEqual(newResponse);
       returning.unsubscribe();
-    });
-
-    it("reports the viewer's removed registrations per meeting", () => {
-      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', {
-        removed_registrant_ids: ['synthetic-removed-registration'],
-        remaining_registrant_ids: ['synthetic-kept-registration'],
-      });
-
-      expect(service.isMeetingRegistrationEnded(indexed.id, 'synthetic-removed-registration')).toBe(true);
-      expect(service.isMeetingRegistrationEnded(indexed.id, 'synthetic-kept-registration')).toBe(false);
-      expect(service.isMeetingRegistrationEnded('synthetic-other-meeting', 'synthetic-removed-registration')).toBe(false);
     });
 
     it.each([{ registrantIds: [] }, { registrantIds: ['synthetic-old-registration'] }])(

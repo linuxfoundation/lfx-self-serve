@@ -16,6 +16,15 @@ export function describeMktgAssetReadiness(report: MktgAssetReport | null): stri
   return clauses.length ? `Ready — ${clauses.join('; ')}.` : 'Ready.';
 }
 
+/**
+ * Under an approved revision's gaps: they were accepted at that approval and are still open.
+ * Null when the revision is not approved or has no gap, so the view adds nothing.
+ */
+export function describeMktgAcceptedGaps(report: MktgAssetReport | null, approval: MktgRevisionApproval | null, version: number | null): string | null {
+  if (!approval || !report?.gaps.length) return null;
+  return version === null ? 'Accepted at approval; still open.' : `Accepted when v${version} was approved; still open.`;
+}
+
 /** Standalone asset previews have no other-current annotation until their caller resolves it. */
 export function mktgAssetHeaderFallback(
   agentKey: MktgDocumentAgentKey,

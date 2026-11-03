@@ -6,7 +6,7 @@ import { Component, signal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
-import { MktgFaqAsset, MktgDocumentComment, MktgDocumentCommentScope, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
+import { MktgFaqAsset, MktgDocumentComment, MktgDocumentCommentScope, MktgRevisionApproval, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
 import { provideMktgCommentsStub, mktgCommentScopeFixture, mktgCommentFixture } from '@shared/testing/mktg-comments-test-service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -23,6 +23,7 @@ class HostComponent {
   public readonly showMetadata = signal(true);
   public readonly commentsEnabled = signal(false);
   public readonly revisions = signal<MktgRevisionSummary[]>([]);
+  public readonly approval = signal<MktgRevisionApproval | null>(null);
 }
 
 const ASSET: MktgFaqAsset = {
@@ -326,7 +327,16 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-sources-read')).toContain('https://testorbit.example.org');
     expect(text('mktg-faq-view-sources-failed')).toContain('404');
     expect(text('mktg-faq-view-gaps')).toContain('How much does membership cost?');
+    expect(query('mktg-faq-view-gaps-accepted')).toBeNull();
     expect(query('mktg-faq-view-checks-empty')).not.toBeNull();
+  });
+
+  it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {
+    host.approval.set({ approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-gaps')).toContain('How much does membership cost?');
+    expect(text('mktg-faq-view-gaps-accepted')).toBe('Accepted when v3 was approved; still open.');
   });
 
   it('moves along the tabs with the arrow keys', async () => {

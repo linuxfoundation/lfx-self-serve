@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { MeetingRegistrant } from '@lfx-one/shared/interfaces';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { firstValueFrom, of, Subject, throwError, toArray } from 'rxjs';
@@ -240,6 +241,17 @@ describe('MeetingInviteResendService', () => {
 
       expect(await firstValueFrom(service.resendOwn$(MEETING_UID).pipe(toArray()))).toEqual([]);
       expect(await firstValueFrom(service.resendOwn$('').pipe(toArray()))).toEqual([]);
+      expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+    });
+
+    it('shares its in-flight state with the toast-free service', () => {
+      const ownResend = TestBed.inject(MeetingOwnInviteResendService);
+      resendMyMeetingInvitation.mockReturnValueOnce(new Subject<{ message: string }>());
+
+      ownResend.resendOwn$(MEETING_UID).subscribe();
+
+      expect(service.isResendingOwn(MEETING_UID)).toBe(true);
+      service.resendOwn(MEETING_UID);
       expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
     });
 

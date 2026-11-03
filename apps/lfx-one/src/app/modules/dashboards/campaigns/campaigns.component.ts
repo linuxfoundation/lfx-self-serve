@@ -1029,6 +1029,12 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMetaInstagramDsaEnabled = signal<boolean | null>(null);
   /** Whether the Implement tab searches Google's geo target table — `CampaignListResult.googleGeoSearchEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsGoogleGeoSearchEnabled = signal<boolean | null>(null);
+
+  /**
+   * `CampaignListResult.multiCampaignPlatforms` (#4983, "ss-3"): where "create another campaign" is
+   * offered. Read and cleared like the capabilities above; absent from an older BFF reads as `[]`.
+   */
+  protected readonly briefCampaignsMultiCampaignPlatforms = signal<string[] | null>(null);
   /**
    * Whether THIS caller may send Google audience segments — `CampaignListResult.googleAudienceSegmentsEnabled`,
    * read and cleared like the capabilities above. Per caller, not per deployment: root only.
@@ -2607,6 +2613,7 @@ export class CampaignsComponent {
         this.briefCampaignsMetaInstagramDsaEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
         this.briefCampaignsGoogleGeoSearchEnabled.set(null);
+        this.briefCampaignsMultiCampaignPlatforms.set(null);
         this.briefCampaignsCapabilityRead.set('unknown');
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
@@ -4972,6 +4979,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
           this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
+          this.briefCampaignsMultiCampaignPlatforms.set(result.multiCampaignPlatforms ?? []);
           this.briefCampaignsCapabilityRead.set('ready');
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
@@ -5002,6 +5010,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaInstagramDsaEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
           this.briefCampaignsGoogleGeoSearchEnabled.set(null);
+          this.briefCampaignsMultiCampaignPlatforms.set(null);
           this.briefCampaignsCapabilityRead.set('failed');
         },
       });
@@ -5077,6 +5086,7 @@ export class CampaignsComponent {
       this.briefCampaignsMetaInstagramDsaEnabled.set(null);
       this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
       this.briefCampaignsGoogleGeoSearchEnabled.set(null);
+      this.briefCampaignsMultiCampaignPlatforms.set(null);
       // `unknown` until a read is actually dispatched below — the early return starts none.
       this.briefCampaignsCapabilityRead.set('unknown');
     }
@@ -5122,6 +5132,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
             this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
+            this.briefCampaignsMultiCampaignPlatforms.set(result.multiCampaignPlatforms ?? []);
             this.briefCampaignsCapabilityRead.set('ready');
           }
         },
@@ -5150,6 +5161,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaInstagramDsaEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
             this.briefCampaignsGoogleGeoSearchEnabled.set(null);
+            this.briefCampaignsMultiCampaignPlatforms.set(null);
             this.briefCampaignsCapabilityRead.set('failed');
           }
         },

@@ -138,7 +138,7 @@ describe('UiSplitButtonComponent', () => {
     await fixture.whenStable();
 
     expect(chevron().className).toContain('h-ui-tiny');
-    expect(chevron().className).toContain('rounded-r-[8px]');
+    expect(chevron().className).toContain('rounded-r-[10px]');
     expect(chevron().className).toContain('text-[12px]');
     expect(chevron().className).toContain('-ml-px');
     expect(chevron().className).toContain('border-ui-neutral-alpha-200');
@@ -163,6 +163,8 @@ describe('UiSplitButtonComponent', () => {
     expect(main().disabled).toBe(true);
     expect(chevron().disabled).toBe(true);
     expect(chevron().className).toContain('bg-ui-neutral-50');
+    expect(chevron().className).toContain('cursor-not-allowed');
+    expect(chevron().className).not.toContain('cursor-pointer');
 
     chevron().click();
     await fixture.whenStable();

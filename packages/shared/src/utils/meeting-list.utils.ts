@@ -30,13 +30,16 @@ import { getEntityCommands } from './entity-route.utils';
 import {
   buildMeetingOccurrenceRoute,
   buildRecurrenceSummary,
+  collectMeetingOrganizers,
   convertRecurrenceToPattern,
   getActiveOccurrences,
   getApplicableMeetingRsvp,
+  getMeetingOrganizerDisplayName,
   getUpcomingMeetingStartTime,
   isMeetingInviteResponsesEnabled,
   isMeetingOrganizedByViewer,
   MEETING_END_BUFFER_MS,
+  normalizeUsername,
   resolveOccurrenceRecurrence,
   resolveShownOccurrenceId,
   resolveUpcomingMeetingDurationMinutes,
@@ -325,6 +328,18 @@ export function getMeetingHomeRowType(meeting: Pick<Meeting, 'meeting_type'>): M
   if (!type || type === MeetingType.NONE) return null;
   const config = MEETING_TYPE_CONFIGS[type.toLowerCase()];
   return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
+}
+
+/** "Organized by" text: owner or creator ("you" for the viewer), first name + "+N" for extra `organizers`. */
+export function getMeetingHomeRowOrganizer(meeting: Pick<Meeting, 'created_by' | 'owner' | 'organizers'>, viewerUsername?: string | null): string | null {
+  const [primary] = collectMeetingOrganizers(meeting);
+  if (!primary) return null;
+  const isYou = isMeetingOrganizedByViewer(meeting, viewerUsername);
+  const name = isYou ? 'you' : getMeetingOrganizerDisplayName(primary);
+  // Entries are usernames on read but emails on create, so the primary is skipped in either form.
+  const primaryKeys = [normalizeUsername(primary.username), normalizeUsername(primary.email)];
+  const others = new Set((meeting.organizers ?? []).map(normalizeUsername).filter((key) => key && !primaryKeys.includes(key))).size;
+  return others ? `${name.split(/\s+/)[0]} +${others}` : name;
 }
 
 function isRsvpPending(meeting: Meeting, rsvp: MeetingRsvp | null | undefined): boolean {

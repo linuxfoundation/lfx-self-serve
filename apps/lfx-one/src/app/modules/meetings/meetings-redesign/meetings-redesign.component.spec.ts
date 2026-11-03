@@ -1,20 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
-import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
+import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
 import { MeetingsRedesignComponent } from './meetings-redesign.component';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -59,6 +64,10 @@ describe('MeetingsRedesignComponent', () => {
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let navigate: ReturnType<typeof vi.fn>;
   let observerCallback: IntersectionObserverCallback | null;
+  let canWriteMeetings: WritableSignal<boolean>;
+  let openCreateDialog: ReturnType<typeof vi.fn>;
+  let refreshUserMeetings: ReturnType<typeof vi.fn>;
+  let refreshUserPastMeetings: ReturnType<typeof vi.fn>;
 
   const render = (): ComponentFixture<MeetingsRedesignComponent> => {
     const fixture = TestBed.createComponent(MeetingsRedesignComponent);
@@ -88,6 +97,10 @@ describe('MeetingsRedesignComponent', () => {
     queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
     navigate = vi.fn().mockResolvedValue(true);
     observerCallback = null;
+    canWriteMeetings = signal(true);
+    openCreateDialog = vi.fn();
+    refreshUserMeetings = vi.fn();
+    refreshUserPastMeetings = vi.fn();
     vi.stubGlobal(
       'IntersectionObserver',
       class {
@@ -123,17 +136,18 @@ describe('MeetingsRedesignComponent', () => {
             meetingJoinIdentity: signal(null),
             confirmedMeetingRsvps: () => [],
             isMeetingRsvpCurrent: () => true,
-            isMeetingRegistrationEnded: () => false,
+            refreshUserMeetings,
+            refreshUserPastMeetings,
           },
         },
-        { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
+        { provide: ProjectContextService, useValue: { canWriteMeetings } },
+        { provide: CreateArtifactDialogService, useValue: { open: openCreateDialog } },
+        { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         {
           provide: MeetingService,
           useValue: {
             removedRegistrationMeetingIds: signal(new Set<string>()),
-            getMeetingRsvps: () => of([]),
             getPastMeetingSummary: () => of(null),
-            getPastMeetingTranscript: () => of(null),
             getPastMeetingRecording: () => of(null),
           },
         },
@@ -206,13 +220,85 @@ describe('MeetingsRedesignComponent', () => {
     expect(query(fixture, 'meetings-redesign-rail-last-meeting')).toBeNull();
     expect(query(fixture, 'meetings-redesign-folded-last-meeting')).toBeNull();
     expect(query(fixture, 'meetings-redesign-rail-next-meeting')).toBeTruthy();
+    // The lone folded card spans both columns.
+    const folded = query(fixture, 'meetings-redesign-folded-next-meeting');
+    expect(folded?.className).toContain('@[621px]:only:col-span-2');
+    expect(folded?.parentElement?.querySelectorAll(':scope > section')).toHaveLength(1);
   });
 
-  it('has no Create meeting button', async () => {
+  describe('Create Meeting', () => {
+    it('opens the create dialog for meetings from a labelled button', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+
+      const button = query(fixture, 'meetings-home-create')?.querySelector('button');
+      expect(button?.textContent?.trim()).toBe('Create Meeting');
+      expect(button?.querySelector('i')?.className).toContain('fa-plus');
+      button?.click();
+
+      expect(openCreateDialog).toHaveBeenCalledWith('meeting');
+    });
+
+    it('is left out without meeting write access, and the header actions hide with nothing pending', async () => {
+      canWriteMeetings.set(false);
+      const fixture = render();
+      await loadFeeds(fixture, [buildMeeting(1)]);
+
+      expect(query(fixture, 'meetings-home-create')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-header-actions')?.classList).toContain('hidden');
+      // Capped to the header and wrapping, so both buttons fit on a 320px phone.
+      expect(query(fixture, 'meetings-redesign-header-actions')?.className).toContain('max-w-full flex-none flex-wrap');
+    });
+
+    it('takes focus once the last pending RSVP is answered, else the heading does', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      const pending = (): PendingRsvpsComponent => fixture.debugElement.query(By.directive(PendingRsvpsComponent)).componentInstance;
+
+      expect(pending().fallbackFocus()).toBe(fixture.debugElement.query(By.css('[data-testid="meetings-home-create"]')).componentInstance);
+
+      canWriteMeetings.set(false);
+      await fixture.whenStable();
+      expect(pending().fallbackFocus()).toBe(query(fixture, 'meetings-redesign-title'));
+    });
+
+    it('refetches both feeds after the composer saves', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      expect(refreshUserMeetings).not.toHaveBeenCalled();
+
+      TestBed.inject(MeetingComposerService).notifySaved();
+      await fixture.whenStable();
+
+      expect(refreshUserMeetings).toHaveBeenCalledOnce();
+      expect(refreshUserPastMeetings).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('folds the right column into a two-column grid and hides the description at 1024px and below', async () => {
     const fixture = render();
     await fixture.whenStable();
 
-    expect(fixture.nativeElement.textContent).not.toContain('Create meeting');
+    const folded = query(fixture, 'meetings-redesign-folded-rail');
+    expect(folded?.className).toContain('grid grid-cols-1');
+    expect(folded?.className).toContain('@[621px]:grid-cols-2');
+    expect(folded?.className).toContain('min-[1025px]:hidden');
+    expect(folded?.parentElement?.classList).toContain('@container');
+    expect(query(fixture, 'meetings-redesign-right-column')?.className).toContain('hidden');
+    expect(query(fixture, 'meetings-redesign-description')?.className).toContain('hidden text-[13px] text-gray-600 min-[1025px]:block');
+  });
+
+  it('shows skeleton Next meeting cards while the upcoming feed loads, and hides them when it fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fixture = render();
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.querySelector('[data-testid="meetings-home-next-card-loading"]')).toBeTruthy();
+
+    upcoming$.error(new Error('down'));
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-redesign-rail-next-meeting')).toBeNull();
+    expect(query(fixture, 'meetings-redesign-folded-next-meeting')).toBeNull();
   });
 
   it('shows the Pending RSVPs button in the header once the feed has dates to answer', async () => {
