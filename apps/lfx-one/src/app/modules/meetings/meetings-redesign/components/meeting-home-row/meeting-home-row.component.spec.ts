@@ -15,6 +15,7 @@ import { UserService } from '@services/user.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
@@ -107,6 +108,7 @@ describe('MeetingHomeRowComponent', () => {
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: UserService, useValue: { authenticated: signal(true), viewerUsername } },
         { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
+        { provide: MeetingsHomeDeleteService, useValue: {} },
       ],
     });
   });

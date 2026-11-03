@@ -8,6 +8,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
   Meeting,
+  MeetingCancelledOccurrence,
   MeetingDashboardView,
   MeetingDayGroup,
   MeetingFilterChip,
@@ -25,9 +26,11 @@ import {
   expandMeetingOccurrences,
   filterMeetingsHome,
   getLargestSessionShareUrl,
+  getMeetingSeriesUid,
   getRsvpTimestampMs,
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
+  isSameOccurrenceId,
   selectApplicableRsvp,
   sortPastMeetingsDescending,
   toPastMeetingHomeRow,
@@ -57,6 +60,9 @@ export class MeetingsHomeStore {
   private readonly lastMeetingLoadingState: WritableSignal<boolean> = signal(true);
   private readonly lastMeetingFailedState: WritableSignal<boolean> = signal(false);
   private readonly retry$ = new Subject<void>();
+  // Kept for the page's lifetime, so a refetch that still lists a deleted meeting or cancelled date does not bring it back.
+  private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
+  private readonly cancelledOccurrences: WritableSignal<readonly MeetingCancelledOccurrence[]> = signal([]);
   /** Current time, ticking every minute so ended dates drop out and day buckets roll over. */
   public readonly now: Signal<Date> = this.initClock();
 
@@ -126,7 +132,7 @@ export class MeetingsHomeStore {
     () =>
       this.latestPastMeetings()
         .map((meeting) => toPastMeetingHomeRow(meeting))
-        .find((row) => row !== null) ?? null
+        .find((row) => row !== null && !this.isRemoved(row)) ?? null
   );
   private readonly fetchedLastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = this.initLastMeetingArtifact((id) =>
     this.meetingService.getPastMeetingSummary(id)
@@ -175,6 +181,16 @@ export class MeetingsHomeStore {
   /** Re-requests every feed after a failure. */
   public retry(): void {
     this.retry$.next();
+  }
+
+  /** Drops every row of a deleted meeting, upcoming and past. */
+  public removeMeeting(meetingId: string): void {
+    this.deletedMeetingIds.update((ids) => new Set(ids).add(meetingId));
+  }
+
+  /** Drops the row of one cancelled date. */
+  public removeOccurrence(meetingId: string, occurrenceId: string): void {
+    this.cancelledOccurrences.update((cancelled) => [...cancelled, { meetingId, occurrenceId }]);
   }
 
   /** Keeps the Last meeting card in step after an organizer edits or approves the summary. */
@@ -275,7 +291,9 @@ export class MeetingsHomeStore {
         .filter((meeting) => meeting.organizer || !removed.has(meeting.id))
         .map((meeting) => (removed.has(meeting.id) ? { ...meeting, invited: false, my_registrant_ids: [], my_rsvp: null, my_rsvps: [] } : meeting))
         .map((meeting) => this.withCurrentRsvps(meeting));
-      return expandMeetingOccurrences(meetings, this.now()).map((row) => this.withConfirmedRowRsvp(row));
+      return expandMeetingOccurrences(meetings, this.now())
+        .filter((row) => !this.isRemoved(row))
+        .map((row) => this.withConfirmedRowRsvp(row));
     });
   }
 
@@ -288,7 +306,17 @@ export class MeetingsHomeStore {
   }
 
   private initPastRows(): Signal<MeetingHomeRow[]> {
-    return computed(() => sortPastMeetingsDescending(this.pastMeetings()).flatMap((meeting) => toPastMeetingHomeRow(meeting) ?? []));
+    return computed(() =>
+      sortPastMeetingsDescending(this.pastMeetings())
+        .flatMap((meeting) => toPastMeetingHomeRow(meeting) ?? [])
+        .filter((row) => !this.isRemoved(row))
+    );
+  }
+
+  private isRemoved(row: MeetingHomeRow): boolean {
+    const meetingId = getMeetingSeriesUid(row.meeting);
+    if (this.deletedMeetingIds().has(meetingId)) return true;
+    return this.cancelledOccurrences().some((cancelled) => cancelled.meetingId === meetingId && isSameOccurrenceId(cancelled.occurrenceId, row.occurrenceId));
   }
 
   /** Loads one artifact of the last meeting, again whenever it changes; a missing or failed lookup reads as null. */

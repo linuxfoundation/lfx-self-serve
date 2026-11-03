@@ -530,6 +530,33 @@ describe('MeetingsHomeStore', () => {
     });
   });
 
+  describe('deleted and cancelled', () => {
+    it('drops every row of a deleted meeting, the Last meeting card included, and keeps them out after a refetch', () => {
+      const store = create();
+      const pastOfIt = { ...buildPastMeeting('a', inDays(-1)), meeting_id: 'm-1' };
+      upcoming$.next([weeklyMeeting([inDays(1), inDays(8)]), buildMeeting({ id: 'm-2' })]);
+      past$.next([pastOfIt, buildPastMeeting('b', inDays(-2))]);
+      latestPast$.next([pastOfIt]);
+
+      store.removeMeeting('m-1');
+      upcoming$.next([weeklyMeeting([inDays(1), inDays(8)]), buildMeeting({ id: 'm-2' })]);
+
+      expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['m-2']);
+      expect(store.pastRows().map((row) => row.key)).toEqual(['m-past-b']);
+      expect(store.lastMeeting()).toBeNull();
+    });
+
+    it('drops only the cancelled date of a series', () => {
+      const store = create();
+      const [first, second] = [inDays(1), inDays(8)];
+      upcoming$.next([weeklyMeeting([first, second])]);
+
+      store.removeOccurrence('m-1', seconds(first));
+
+      expect(store.upcomingRows().map((row) => row.occurrenceId)).toEqual([seconds(second)]);
+    });
+  });
+
   describe('last meeting', () => {
     const summary = { uid: 's-1', approved: true, requires_approval: false } as PastMeetingSummary;
 
