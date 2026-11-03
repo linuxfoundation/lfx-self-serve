@@ -4891,6 +4891,69 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBodyHtmlPreview()).toContain('href="https://events.linuxfoundation.org/kubecon-eu-2026/register"');
     });
 
+    /**
+     * #3306. The event page's own links keep their href in the preview when they are on the CTA's host
+     * or an LF-owned domain; an off-host one keeps its words only. The controller judges the staged
+     * body with the same helper over `emailExtractedLinks`, which the stage request carries.
+     */
+    it('keeps vetted event-page links in the preview and strips an off-host one', () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://kubecon.example/eu/',
+          cfpUrl: 'https://kubecon.example/eu/cfp',
+          agendaUrl: 'https://evil.example/agenda',
+          venueUrl: 'https://training.linuxfoundation.org/venue',
+          sponsorshipUrl: '',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body:
+          '<p><a href="https://kubecon.example/eu/cfp">CFP</a> <a href="https://evil.example/agenda">Agenda</a> ' +
+          '<a href="https://training.linuxfoundation.org/venue">Venue</a></p>',
+        cta: 'Register now',
+        ctaUrl: 'https://kubecon.example/eu/',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      const preview = internals().emailBodyHtmlPreview();
+      expect(preview).toContain('href="https://kubecon.example/eu/cfp"');
+      expect(preview).toContain('href="https://training.linuxfoundation.org/venue"');
+      expect(preview).not.toContain('evil.example');
+      expect(preview).toContain('Agenda');
+    });
+
+    it('strips an LF-owned link the event page did not publish: the preview narrows the service pass', () => {
+      // The service's first pass keeps any LF-owned link, since it cannot see the event page. The
+      // preview must narrow that back to the page's own links, or an invented LF address survives.
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://kubecon.example/eu/',
+          cfpUrl: 'https://kubecon.example/eu/cfp',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body: '<p><a href="https://training.linuxfoundation.org/invented">Invented</a></p>',
+        cta: 'Register now',
+        ctaUrl: 'https://kubecon.example/eu/',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      expect(internals().emailBodyHtmlPreview()).not.toContain('training.linuxfoundation.org');
+      expect(internals().emailBodyHtmlPreview()).toContain('Invented');
+    });
+
     it('shows a refused CTA as plain text instead of dropping it silently', () => {
       selectEmail();
       internals().emailBriefOutput.set({
@@ -7822,6 +7885,35 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.abTestEnabled).toBeUndefined();
       expect(cfg?.subjectB).toBeUndefined();
       expect(cfg?.bodyHtmlB).toBeUndefined();
+    });
+
+    /** #3306: the event page's links ride with the stage request, so the controller can judge the body as the preview did. */
+    it('sends the event-page links with the stage request as secondaryLinkUrls', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://kubecon.example/eu/',
+          cfpUrl: 'https://kubecon.example/eu/cfp',
+          agendaUrl: '',
+          venueUrl: 'https://training.linuxfoundation.org/venue',
+          sponsorshipUrl: 'not a url',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register', ctaUrl: 'https://kubecon.example/eu/' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.secondaryLinkUrls).toEqual(['https://kubecon.example/eu/cfp', 'https://training.linuxfoundation.org/venue']);
     });
 
     it('omits the CTA when the registration URL is not an http(s) URL', async () => {

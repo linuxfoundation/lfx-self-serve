@@ -5,6 +5,7 @@ import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE,
+  LF_OWNED_EMAIL_LINK_DOMAINS,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
   CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN,
@@ -42,7 +43,7 @@ import { encodePathSegment } from '../helpers/url-validation';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
 import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
-import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import { emailLinkDestinations, escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -1554,7 +1555,16 @@ export class CampaignServiceClient {
       // and the controller re-filters again at the request boundary. If a server-side consumer is
       // ever added, it must not treat this output as vouched.
       const firstButtonUrl = sections.find((section) => section.type === 'button')?.url;
-      const generatedDestinations = typeof firstButtonUrl === 'string' && firstButtonUrl !== '' ? [firstButtonUrl] : [];
+      // The button's own destination, plus the LF-owned domains (#3306). This pass has only the brief
+      // id, not the event page's links, so it cannot tell an extracted CFP or agenda link from an
+      // invented one; it keeps any link on the button's host or an LF-owned domain, and the client
+      // preview and the stage request then narrow that to the event page's own links
+      // (`emailLinkDestinations` with `eventDetails`). A stripped href cannot be put back downstream,
+      // so this first pass must not be the narrower one.
+      const generatedDestinations = emailLinkDestinations(
+        typeof firstButtonUrl === 'string' ? firstButtonUrl : '',
+        LF_OWNED_EMAIL_LINK_DOMAINS.map((domain) => `https://${domain}/`)
+      );
 
       const body = sections
         .filter(
@@ -1593,7 +1603,8 @@ export class CampaignServiceClient {
           // applies no sanitizer of its own, so there is nothing upstream to rely on. An
           // earlier comment in this file claimed an upstream allow-list covered it; that
           // allow-list exists only on the wizard path, which this is not.
-          return stripResourceLoadingHtml(section.html, generatedDestinations);
+          // The button is the only base a relative href may resolve against (#3306).
+          return stripResourceLoadingHtml(section.html, generatedDestinations, typeof firstButtonUrl === 'string' ? firstButtonUrl : '');
         })
         .join('');
       const buttonSection = sections.find((section) => section.type === 'button');
@@ -1646,8 +1657,12 @@ export class CampaignServiceClient {
       // here vouches for nothing by construction and strips every link in a legacy body. The
       // flat shape carries its destination in `ctaUrl`, which is what this branch must judge
       // against, exactly as the sections branch judges against its button url.
-      const legacyDestinations = [legacyText(legacy.ctaUrl)].filter((url) => url !== '');
-      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body), legacyDestinations) : '';
+      // Widened the same way as `generatedDestinations` above, for the same reason (#3306).
+      const legacyDestinations = emailLinkDestinations(
+        legacyText(legacy.ctaUrl),
+        LF_OWNED_EMAIL_LINK_DOMAINS.map((domain) => `https://${domain}/`)
+      );
+      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body), legacyDestinations, legacyText(legacy.ctaUrl)) : '';
       const effectiveBody = isLegacyShape ? legacyBody : body;
       const effectiveCta = isLegacyShape ? sanitizeDisplayText(legacyText(legacy.cta)) : cta;
       const effectiveCtaUrl = isLegacyShape ? legacyText(legacy.ctaUrl) : ctaUrl;
