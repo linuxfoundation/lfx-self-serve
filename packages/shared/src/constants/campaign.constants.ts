@@ -125,6 +125,16 @@ export const CAMPAIGN_FUNNEL_STAGE_SHORT_LABELS: Readonly<Record<CampaignFunnelS
   lower: 'lower-funnel',
 };
 
+/** A funnel stage as a campaign list's Stage column names it (#4983). */
+export const CAMPAIGN_FUNNEL_STAGE_COLUMN_LABELS: Readonly<Record<CampaignFunnelStage, string>> = {
+  top: 'Top of funnel',
+  mid: 'Mid funnel',
+  lower: 'Lower funnel',
+};
+
+/** What a campaign list shows for a label the index does not record (#4983). */
+export const CAMPAIGN_LABEL_ABSENT = '—';
+
 /** The tactic labels a campaign can carry: campaign-service's controlled list (#453). */
 export const CAMPAIGN_TACTIC_OPTIONS: readonly CampaignLabelOption<CampaignTactic>[] = [
   { id: 'prospecting', label: 'Prospecting' },
@@ -4884,8 +4894,8 @@ export const GOOGLE_CREATIVE_REQUEST_KEYS = {
 /**
  * The heading each creative section carries in the Implementation tab.
  *
- * Deliberately NOT {@link GOOGLE_CAMPAIGN_CHANNEL_LABELS}, which is Google Ads' own reporting
- * shorthand (`DG Display`, `PMax`) and belongs on a metrics row, not above a form an operator is
+ * Deliberately NOT {@link GOOGLE_CAMPAIGN_NAME_TOKENS}, which is Google Ads' own reporting
+ * shorthand (`DG Display`) and belongs in a campaign name, not above a form an operator is
  * filling in. These spell the channel the way its own checkbox does, so the section a user opens
  * is named the same as the box they ticked to open it.
  */

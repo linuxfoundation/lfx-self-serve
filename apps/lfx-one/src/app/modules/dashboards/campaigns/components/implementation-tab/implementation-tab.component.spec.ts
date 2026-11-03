@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Component, DestroyRef, EnvironmentProviders, input, output, Provider, type WritableSignal } from '@angular/core';
+import { Component, DestroyRef, EnvironmentProviders, input, output, PLATFORM_ID, Provider, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -15195,13 +15195,69 @@ describe('ImplementationTabComponent already created for this event', () => {
     expect(q('implementation-existing-row-gone'), 'a deleted campaign was listed as already created').toBeNull();
     const cells = (id: string): string[] =>
       [...(q(`implementation-existing-row-${id}`)?.querySelectorAll('td') ?? [])].map((td) => td.textContent?.trim() ?? '');
-    expect(cells('g1')).toEqual(['Google Ads', 'KubeCon EU 2026 | google-ads | g1', 'active', '1']);
+    expect(cells('g1')).toEqual(['Google Ads', 'KubeCon EU 2026 | google-ads | g1', 'active', '1', '—', '—', '—', '—']);
     // No slot recorded (indexed before the field existed) reads as unknown, not as slot 1.
     expect(cells('g2')[3]).toBe('—');
-    expect(cells('r1')).toEqual(['Reddit Ads', 'KubeCon EU 2026 | reddit-ads | r1', 'created degraded', '2']);
+    expect(cells('r1')).toEqual(['Reddit Ads', 'KubeCon EU 2026 | reddit-ads | r1', 'created degraded', '2', '—', '—', '—', '—']);
 
     expect(q('implementation-existing-notice-google-ads')?.textContent?.trim()).toBe('You already have 2 Google Ads campaigns for this event.');
     expect(q('implementation-existing-notice-reddit-ads')?.textContent?.trim()).toBe('You already have 1 Reddit Ads campaign for this event.');
+  });
+
+  /** #4983 ("ss-4"): the labels that tell a second campaign from the first, "—" on a legacy row. */
+  it('shows the channel, stage, tactic and created date of each campaign, and "—" where none is recorded', () => {
+    setList([
+      { ...doc('g1', 'google-ads', 'active', 1), variant: 'default' },
+      {
+        ...doc('g2', 'google-ads', 'active', 2),
+        variant: 'default',
+        funnel_stage: 'lower',
+        tactic: 'retargeting',
+        created_at: '2026-11-02T12:00:00Z',
+      },
+    ]);
+
+    const labels = (id: string): string[] =>
+      ['channel', 'stage', 'tactic', 'created'].map((column) => q(`implementation-existing-${column}-${id}`)?.textContent?.trim() ?? 'missing');
+    // The viewer's own calendar day, so the assertion holds in any CI time zone.
+    expect(labels('g2')).toEqual([
+      'Search',
+      'Lower funnel',
+      'Retargeting',
+      new Date('2026-11-02T12:00:00Z').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+    ]);
+    expect(labels('g1')).toEqual(['Search', '—', '—', '—']);
+    const headings = [...((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid="implementation-existing-table"] th') ?? [])].map((th) =>
+      th.textContent?.trim()
+    );
+    expect(headings).toEqual(['Platform', 'Name', 'Status', 'Slot', 'Channel', 'Stage', 'Tactic', 'Created']);
+  });
+
+  it('scrolls the eight-column table inside the card rather than widening the page', () => {
+    setList([doc('g1', 'google-ads', 'active', 1)]);
+    expect(q('implementation-existing-table-scroll')?.classList.contains('overflow-x-auto')).toBe(true);
+    expect(q('implementation-existing-table-scroll')?.querySelector('[data-testid="implementation-existing-table"]')).not.toBeNull();
+  });
+
+  it("leaves the created date to the browser during a server render, so the server's day is never shown", async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: PLATFORM_ID, useValue: 'server' },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.componentRef.setInput('briefData', brief);
+    setList([{ ...doc('g2', 'google-ads', 'active', 2), variant: 'default', funnel_stage: 'lower', created_at: '2026-11-02T12:00:00Z' }]);
+
+    expect(q('implementation-existing-created-g2')?.textContent?.trim()).toBe('—');
+    expect(q('implementation-existing-stage-g2')?.textContent?.trim()).toBe('Lower funnel');
   });
 
   it('says a failed read failed, with Retry, instead of rendering as "nothing created"', () => {
@@ -15480,6 +15536,17 @@ describe('ImplementationTabComponent create another campaign', () => {
     fixture.detectChanges();
 
     expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).not.toBe('Existing Campaigns Returned');
+  });
+
+  it('labels a campaign this tab just created with the stage and tactic its job reported', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 2, variant: 'default', funnelStage: 'mid', tactic: 'keyword' }]);
+    c().anotherForm.controls.stage.setValue('top');
+    fixture.detectChanges();
+
+    c().submit();
+    const existing = (dialogOpen.mock.calls[0] as unknown as [unknown, { data: { existing: { slot: string; labels: unknown }[] } }])[1].data.existing;
+    expect(existing.find((row) => row.slot === '2')?.labels).toEqual({ channel: 'Search', stage: 'Mid funnel', tactic: 'Keyword', created: '—' });
   });
 
   it('heads a reused row beside a proven pre-create failure as both, not as unconfirmed', () => {
