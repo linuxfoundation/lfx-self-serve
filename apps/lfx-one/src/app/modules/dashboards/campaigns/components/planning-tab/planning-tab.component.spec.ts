@@ -2203,6 +2203,18 @@ describe('PlanningTabComponent email brief editing', () => {
     expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('short');
   });
 
+  it('refuses a survey source edit past the raw size, even when its spacing collapses to a short count', async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'short' });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue(`A${' '.repeat(24000)}B`);
+
+    internals().saveEmailEdit();
+
+    expect(internals().isEditingEmailBrief()).toBe(true);
+    expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('short');
+  });
+
   it.each([[''], ['/survey'], ['not a link']])('refuses a survey link edit that is not a full web address (%j)', async (bad) => {
     await buildWithScrape('survey');
     internals().eventDetails.set({ ...scraped, sourceText: 'Title', registrationUrl: 'https://surveys.example.com/s/one' });

@@ -2587,7 +2587,9 @@ export class CampaignsComponent {
       this.abTestCopyState() !== 'generating' &&
       // A survey series' first send IS this brief: while the series is staging, or holds a send
       // whose draft may exist, a single-send create could clone a second draft for it.
-      !this.sequenceLocksSingleSend()
+      !this.sequenceLocksSingleSend() &&
+      // Email may stage the template as it is; a survey email has to carry its generated copy.
+      (!this.isSurvey() || this.emailCopy() !== null)
   );
 
   /**
@@ -4691,7 +4693,10 @@ export class CampaignsComponent {
       this.sequenceLocksSingleSend() ||
       // Hidden in series mode; refused here too, so nothing can stage a restarted survey's
       // ORIGINAL brief.
-      this.surveySeriesMode()
+      this.surveySeriesMode() ||
+      // A survey email is its generated copy: with none, the draft would keep the template's own
+      // content instead of promoting the survey.
+      (this.isSurvey() && copy === null)
     ) {
       return;
     }

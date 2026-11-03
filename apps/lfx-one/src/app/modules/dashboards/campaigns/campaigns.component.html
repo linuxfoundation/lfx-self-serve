@@ -1225,6 +1225,8 @@
                           Wait for the copy to finish generating before staging.
                         } @else if (sequenceLocksSingleSend()) {
                           The email series below is staging or has an unconfirmed draft for this campaign &mdash; finish it first.
+                        } @else if (isSurvey() && emailCopy() === null) {
+                          Generate the email content first. A survey email is written from its source text.
                         }
                       </span>
                     }

@@ -1725,7 +1725,12 @@ export class PlanningTabComponent implements OnInit {
       return;
     }
     // The same limit campaign-service enforces at save: a longer source would be refused there,
-    // after the operator had moved on believing the edit was kept.
+    // after the operator had moved on believing the edit was kept. The raw size first, as Generate
+    // and the BFF check it: mostly blank space collapses to a short count but is still refused.
+    if (this.isSurvey() && (this.emailEditForm.controls.sourceText.value ?? '').length > CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS) {
+      this.emailEditError.set('The source text is too large, mostly blank space. Remove the extra spacing or shorten it.');
+      return;
+    }
     const sourceLength = campaignSurveySourceTextLength(this.emailEditForm.controls.sourceText.value ?? '');
     if (this.isSurvey() && sourceLength > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS) {
       this.emailEditError.set(`The source text is ${sourceLength} characters; shorten it to ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS} or fewer.`);

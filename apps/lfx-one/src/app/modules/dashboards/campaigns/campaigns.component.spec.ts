@@ -9865,6 +9865,20 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(search).toHaveBeenCalledWith('tlf', '');
     });
 
+    it('stages a one-email survey only once its copy is generated, since the template alone promotes nothing', async () => {
+      stageable(1);
+      const component = fixture.componentInstance as unknown as { canStageEmail(): boolean };
+      const create = vi.spyOn(service, 'createCampaign');
+      seq().emailCopy.set(null);
+
+      expect(component.canStageEmail()).toBe(false);
+      await seq().onStageEmailSend();
+      expect(create).not.toHaveBeenCalled();
+
+      seq().emailCopy.set(copyFor('Survey Promo'));
+      expect(component.canStageEmail()).toBe(true);
+    });
+
     it('does not pick the survey template while a search is replacing the list', () => {
       const component = fixture.componentInstance as unknown as {
         emailTemplatesLoading: { set(v: boolean): void };
