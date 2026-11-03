@@ -11,6 +11,12 @@ const router = Router();
 
 const voteController = new VoteController();
 
+// Summary responses contain voter identities, including partial/failed send details (#4830).
+router.use(['/:uid/summary-recipients', '/:uid/summary'], (_req, res, next) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  next();
+});
+
 // GET /votes - get all votes
 router.get('/', (req, res, next) => voteController.getVotes(req, res, next));
 
