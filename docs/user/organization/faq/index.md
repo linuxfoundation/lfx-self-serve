@@ -4,7 +4,7 @@ description: Short answers about the Organization lens — adding and removing O
 audience: [all]
 product_area: Organization
 tags: [organization, faq, easycla, cla, ccla, cla-manager, access, remove, invite]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Organization
 ---
 
@@ -14,7 +14,7 @@ You can change a corporate CLA (CCLA) only when you are a CLA Manager named on t
 
 ## Why can't I see my company in the Organization lens?
 
-You see EasyCLA for an organization you can open in the Organization lens. If you are a CLA Manager for a company that does not appear there, manage that company's agreements in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself hide a company: Linux Foundation staff can open organizations that are not members. A CLA Manager with no other Organization lens role sees **EasyCLA** and nothing else in the sidebar. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+You see EasyCLA for an organization you can open in the Organization lens. If you are a CLA Manager for a company that does not appear there, manage that company's agreements in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself hide a company: Linux Foundation staff can open organizations that are not members. A CLA Manager, or an initial CLA Manager designee, with no other Organization lens role sees **EasyCLA** and nothing else in the sidebar. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
 ## What does "View only" mean on a corporate CLA?
 
