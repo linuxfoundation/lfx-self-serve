@@ -389,6 +389,17 @@ describe('filterMeetingsHome', () => {
     expect(keys(filterMeetingsHome(rows, filters({ meetingType: 'Technical' }), '', null))).toEqual(['tsc-1', 'tsc-2', 'quiet-1']);
   });
 
+  it('filters by foundation: its own meetings and its non-foundation children, with a project taking precedence', () => {
+    const foundationRows = [
+      row({ key: 'f', meeting: buildMeeting({ id: 'f', project_uid: 'f-1', is_foundation: true }) }),
+      row({ key: 'child', meeting: buildMeeting({ id: 'child', project_uid: 'p-3', parent_project_uid: 'f-1' }) }),
+      row({ key: 'sub', meeting: buildMeeting({ id: 'sub', project_uid: 'f-2', parent_project_uid: 'f-1', is_foundation: true }) }),
+      row({ key: 'other', meeting: buildMeeting({ id: 'other', project_uid: 'p-4', parent_project_uid: 'f-2' }) }),
+    ];
+    expect(keys(filterMeetingsHome(foundationRows, filters({ foundation: 'f-1' }), '', null))).toEqual(['f', 'child']);
+    expect(keys(filterMeetingsHome(foundationRows, filters({ foundation: 'f-1', project: 'p-3' }), '', null))).toEqual(['child']);
+  });
+
   it('filters by the RSVP for each date', () => {
     expect(keys(filterMeetingsHome(rows, filters({ rsvp: 'pending' }), '', null))).toEqual(['board-3']);
     expect(keys(filterMeetingsHome(rows, filters({ rsvp: 'accepted' }), '', null))).toEqual(['board-2']);
@@ -429,13 +440,15 @@ describe('filterMeetingsHome', () => {
 describe('countAppliedMeetingFilters', () => {
   it('counts each applied filter', () => {
     expect(countAppliedMeetingFilters(MEETINGS_HOME_DEFAULT_FILTERS)).toBe(0);
-    expect(countAppliedMeetingFilters(filters({ project: 'p-1', meetingType: 'Board', rsvp: 'pending', organizedByMe: true, hideDeclined: true }))).toBe(5);
+    expect(
+      countAppliedMeetingFilters(filters({ foundation: 'f-1', project: 'p-1', meetingType: 'Board', rsvp: 'pending', organizedByMe: true, hideDeclined: true }))
+    ).toBe(6);
     expect(countAppliedMeetingFilters(filters({ rsvp: 'maybe' }))).toBe(1);
   });
 });
 
 describe('buildMeetingFilterChips', () => {
-  const rows = [row()];
+  const rows = [row(), row({ meeting: buildMeeting({ id: 'f', project_uid: 'f-1', project_name: 'Foundation One', is_foundation: true }) })];
 
   it('returns no chips for the defaults', () => {
     expect(buildMeetingFilterChips(MEETINGS_HOME_DEFAULT_FILTERS, rows)).toEqual([]);
@@ -443,10 +456,11 @@ describe('buildMeetingFilterChips', () => {
 
   it('labels every applied filter in popover order', () => {
     const chips = buildMeetingFilterChips(
-      filters({ project: 'p-1', meetingType: 'Technical', rsvp: 'declined', organizedByMe: true, hideDeclined: true }),
+      filters({ foundation: 'f-1', project: 'p-1', meetingType: 'Technical', rsvp: 'declined', organizedByMe: true, hideDeclined: true }),
       rows
     );
     expect(chips).toEqual([
+      { key: 'foundation', label: 'Foundation: Foundation One' },
       { key: 'project', label: 'Project: Project One' },
       { key: 'meetingType', label: 'Meeting type: Technical' },
       { key: 'rsvp', label: 'RSVP: Not going' },
@@ -455,7 +469,8 @@ describe('buildMeetingFilterChips', () => {
     ]);
   });
 
-  it('falls back to the project UID and uses the RSVP option labels', () => {
+  it('falls back to the foundation or project UID and uses the RSVP option labels', () => {
+    expect(buildMeetingFilterChips(filters({ foundation: 'f-9' }), rows)).toEqual([{ key: 'foundation', label: 'Foundation: f-9' }]);
     expect(buildMeetingFilterChips(filters({ project: 'p-9' }), rows)).toEqual([{ key: 'project', label: 'Project: p-9' }]);
     expect(buildMeetingFilterChips(filters({ rsvp: 'pending' }), rows)[0].label).toBe('RSVP: Needs response');
     expect(buildMeetingFilterChips(filters({ rsvp: 'accepted' }), rows)[0].label).toBe('RSVP: Going');

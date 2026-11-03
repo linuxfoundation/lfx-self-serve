@@ -518,6 +518,21 @@ describe('MeetingsHomeStore', () => {
       expect(store.filterChips().map((chip) => chip.key)).toEqual(['organizedByMe']);
     });
 
+    it('names the foundation chip and keeps the project when the foundation chip is removed', () => {
+      const store = create();
+      upcoming$.next([
+        buildMeeting({ id: 'f', project_uid: 'f-1', project_name: 'Foundation One', is_foundation: true }),
+        buildMeeting({ parent_project_uid: 'f-1' }),
+      ]);
+      store.setFilters({ ...store.filters(), foundation: 'f-1', project: 'p-1' });
+
+      expect(store.filterChips().map((chip) => chip.label)).toEqual(['Foundation: Foundation One', 'Project: Project One']);
+
+      store.clearFilter('foundation');
+
+      expect(store.filters()).toEqual({ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-1' });
+    });
+
     it('clears both filters and search on reset', () => {
       const store = create();
       store.setSearch('sync');
