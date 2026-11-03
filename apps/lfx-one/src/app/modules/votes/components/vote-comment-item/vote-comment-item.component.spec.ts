@@ -165,6 +165,18 @@ describe('VoteCommentItemComponent', () => {
       expect(row(el).classList).toContain('cursor-pointer');
     });
 
+    it('keeps single, double and triple clicks on comment prose from opening the ballot', () => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+      const paragraph = row(el).querySelector('p')!;
+
+      for (const detail of [1, 2, 3]) {
+        paragraph.dispatchEvent(new MouseEvent('click', { bubbles: true, detail }));
+        expect(emitted).toEqual([]);
+      }
+      expect(row(el).querySelector('.comment-text')?.classList).toContain('cursor-text');
+    });
+
     it('preserves selected comment prose without opening the ballot', () => {
       const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
       const emitted = collect();
@@ -177,14 +189,14 @@ describe('VoteCommentItemComponent', () => {
       expect(selection.toString()).toBe('Synthetic comment');
     });
 
-    it('opens the ballot when the text selection is collapsed', () => {
+    it('opens the ballot from the row background when the text selection is collapsed', () => {
       const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
       const emitted = collect();
       const selection = selectCommentText(el);
       selection.collapseToEnd();
       expect(selection.isCollapsed).toBe(true);
 
-      row(el).querySelector('p')!.click();
+      row(el).click();
 
       expect(emitted).toEqual(['synthetic-response-1']);
     });

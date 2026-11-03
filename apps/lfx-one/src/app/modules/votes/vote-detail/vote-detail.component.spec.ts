@@ -794,9 +794,7 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup();
 
       expect(cardActions(fixture)).toEqual(['responses', 'comments', undefined]);
-      expect(notVotedCard(fixture).ctas).toEqual([
-        { label: 'View voters', action: 'responses', text: true },
-      ]);
+      expect(notVotedCard(fixture).ctas).toEqual([{ label: 'View voters', action: 'responses', text: true }]);
     });
 
     it('uses the darker caption class on every tile', async () => {

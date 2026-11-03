@@ -25,7 +25,7 @@ export class VoteCommentItemComponent {
   public readonly showBallotLink = input<boolean>(false);
   /**
    * `button` (default) shows a trailing "View ballot" button. `row` drops it: the commenter's name becomes the keyboard
-   * control and a pointer click anywhere on the row opens the ballot too. Only effective where `showBallotLink` is allowed.
+   * control and a pointer click outside the comment prose opens the ballot too. Only effective where `showBallotLink` is allowed.
    */
   public readonly linkStyle = input<'button' | 'row'>('button');
 
@@ -39,12 +39,12 @@ export class VoteCommentItemComponent {
   protected readonly rowClickable: Signal<boolean> = computed(() => this.linkStyle() === 'row' && this.ballotId() !== null);
 
   // === Protected Methods ===
-  /** Pointer convenience for row mode; links and buttons inside the row (comment links, expand control, name button) keep their own behavior. */
+  /** Pointer convenience for row mode; prose stays selectable and nested links/buttons keep their own behavior. */
   protected onRowClick(event: MouseEvent): void {
     const voteId = this.ballotId();
     if (!this.rowClickable() || !voteId) return;
     const target = event.target as Element | null;
-    if (target?.closest('a, button')) return;
+    if (target?.closest('.comment-text, a, button')) return;
     // Selecting a quote is not an intent to open the ballot.
     if (target?.ownerDocument.defaultView?.getSelection()?.isCollapsed === false) return;
     this.viewBallot.emit(voteId);
