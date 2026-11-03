@@ -609,10 +609,10 @@ export class ImplementationTabComponent implements OnInit {
   public readonly microsoftScheduleEnabled = input<boolean | null>(null);
 
   /**
-   * Whether THIS caller may send Google audience segments — `CampaignListResult.googleAudienceSegmentsEnabled`.
-   * Root only, until a user list can be mapped to a project: every foundation's Google Ads connection
-   * points at one shared LF customer. `null` (unanswered) and `false` hide the section, and a draft
-   * that still holds segments raises `googleAudienceSegmentsBlock` rather than dropping them.
+   * Whether Google audience segments can be sent — `CampaignListResult.googleAudienceSegmentsEnabled`,
+   * true wherever the campaign-service create path serves. `null` (unanswered) and `false` hide the
+   * section, and a draft that still holds segments raises `googleAudienceSegmentsBlock` rather than
+   * dropping them.
    */
   public readonly googleAudienceSegmentsEnabled = input<boolean | null>(null);
 
@@ -8514,7 +8514,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   private initGoogleAudienceSegmentsAvailable(): Signal<boolean> {
     return computed(() => {
-      // Root only: the per-caller capability must be an explicit yes, never a `null`.
+      // The capability must be an explicit yes, never a `null`.
       if (this.googleAudienceSegmentsEnabled() !== true) return false;
       const channel = this.googleBiddingChannel();
       return channel !== null && (GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(channel);
@@ -8527,9 +8527,8 @@ export class ImplementationTabComponent implements OnInit {
    *
    * Speaks only on a channel that takes segments: anywhere else the channel is the reason, and
    * {@link initGoogleAudienceSegmentsWithheldWarning} says so whatever the capability answers.
-   * `restricted` is the root-only rule — the caller is not a root writer or root campaign manager,
-   * so the create route would answer 403. It HOLDS Create rather than dropping the list, because
-   * segments change who the campaign is aimed at; Remove is offered in every state.
+   * It HOLDS Create rather than dropping the list, because segments change who the campaign is
+   * aimed at; Remove is offered in every state.
    */
   private initGoogleAudienceSegmentsBlock(): Signal<CampaignGoogleAudienceSegmentsBlock | null> {
     return computed(() => {
@@ -8539,16 +8538,10 @@ export class ImplementationTabComponent implements OnInit {
       if (count === 0 || this.googleAudienceSegmentsAvailable()) return null;
       const held = `${count} audience segment${count === 1 ? '' : 's'}`;
 
-      if (this.googleCreativeEnabled() === false) {
+      if (this.googleCreativeEnabled() === false || this.googleAudienceSegmentsEnabled() === false) {
         return {
           kind: 'unsupported',
           message: `Google audience segments are not available on this deployment, so the ${held} on this brief cannot be sent. Remove them to create the campaign.`,
-        };
-      }
-      if (this.googleAudienceSegmentsEnabled() === false) {
-        return {
-          kind: 'restricted',
-          message: `Only LF administrators can add Google audience segments, because every foundation shares one Google Ads account. Remove the ${held} on this brief to create the campaign.`,
         };
       }
       // `unknown` is treated like a failure, as the bidding block records: nothing else starts the read.
@@ -8576,7 +8569,7 @@ export class ImplementationTabComponent implements OnInit {
    * when it is not — the audience twin of {@link initGoogleCalloutsWithheldWarning}, on the same
    * terms and for the same reason: it asks {@link resolveGoogleChannel} and tests the channel
    * directly, so it neither goes quiet on Demand Gen while a capability read is unanswered nor claims
-   * Search takes no segments. The capability reason, root-only rule included, belongs to
+   * Search takes no segments. The capability reason belongs to
    * {@link initGoogleAudienceSegmentsBlock}. One string feeds both the visible notice and its live
    * region.
    */

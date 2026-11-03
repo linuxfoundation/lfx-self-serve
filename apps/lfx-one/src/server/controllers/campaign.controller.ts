@@ -131,8 +131,6 @@ import {
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN,
-  GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
-  GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
@@ -698,37 +696,19 @@ export class CampaignController {
       const body = req.body as CampaignCreateRequest;
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
 
-      // Google audience segments are ROOT-ONLY until a user list can be mapped to a project. Every
-      // foundation's Google Ads connection points at one shared LF customer, so a segment is a
-      // resource name on THAT account, and a non-root operator could name another foundation's list
-      // (campaign-service refuses to list user lists on the shared account for the same reason,
-      // linuxfoundation/lfx-v2-campaign-service#411). First of every guard, so nothing is
-      // normalised, judged or created for a caller who may not send the field at all, and on either
-      // path: the legacy creator drops the list, but the request still asked for it.
-      //
-      // A 403 with a code, not a 400 naming the field: the body is well formed and the refusal is
-      // about WHO is asking, which is how `requireSharedAccountMonitorAccess` answers the same
-      // shared-account question for reads. Any present value other than an empty list counts as
-      // carrying segments, so a malformed one cannot slip past to a shape refusal a non-root caller
-      // could probe with.
+      // Google audience segments are open to every campaign manager the route admits
+      // (`requireCampaignManager`). The role is held only by the internal LF marketing team, which
+      // manages every foundation, so a user list on the shared LF Google Ads customer is not scoped
+      // per foundation (paid-marketing owner decision, 2026-11-03; lfx-v2-campaign-service#468).
+      // Any present value other than an empty list counts as carrying segments.
       const rawSegments = body?.audienceSegments as unknown;
       const carriesSegments = rawSegments !== undefined && rawSegments !== null && !(Array.isArray(rawSegments) && rawSegments.length === 0);
-      if (platforms.includes('google-ads') && carriesSegments && !(await this.isRootCampaignPrincipal(req))) {
-        next(
-          new AuthorizationError(GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE, {
-            operation: 'campaign_create',
-            service: 'campaign_controller',
-            path: req.path,
-            code: GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
-          })
-        );
-        return;
-      }
-      // Then, for a caller who MAY send them, refused rather than dropped when the serving create
-      // path cannot carry them — the `bidding` reasoning below. Only campaign-service reads the key;
-      // the legacy creator would create the campaign without the user lists and report success. The
-      // form never sends them in that state (`googleAudienceSegmentsEnabled` is false there), but a
-      // capability read and a create can land on pods with different flags mid-rollout.
+      //
+      // Refused rather than dropped when the serving create path cannot carry them — the `bidding`
+      // reasoning below. Only campaign-service reads the key; the legacy creator would create the
+      // campaign without the user lists and report success. The form never sends them in that state
+      // (`googleAudienceSegmentsEnabled` is false there), but a capability read and a create can land
+      // on pods with different flags mid-rollout.
       if (platforms.includes('google-ads') && carriesSegments && !canCreateWithAudienceSegments()) {
         next(
           ServiceValidationError.forField('audienceSegments', 'Google audience segments are not enabled on this deployment; omit audienceSegments', {
@@ -3044,11 +3024,10 @@ export class CampaignController {
 
     try {
       const listed = await this.campaignServiceClient.listBriefCampaigns(req, projectSlug, briefId);
-      // The one PER-CALLER capability, so it is decided here where the caller is known rather than
-      // in the service. Only on the campaign-service create path (`canCreateWithAudienceSegments`, the
-      // same test the create route refuses on), and that test runs first so a deployment that cannot
-      // send segments asks no persona question at all.
-      const googleAudienceSegmentsEnabled = canCreateWithAudienceSegments() && (await this.isRootCampaignPrincipal(req));
+      // Decided here, on the same test the create route refuses on (`canCreateWithAudienceSegments`):
+      // segments are offered wherever the campaign-service create path serves. Every caller the route
+      // admits is a campaign manager, and campaign managers may send them (see `createCampaign`).
+      const googleAudienceSegmentsEnabled = canCreateWithAudienceSegments();
       const result: CampaignListResult = { ...listed, googleAudienceSegmentsEnabled };
       logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
       res.json(result);
@@ -4846,9 +4825,8 @@ export class CampaignController {
 
   /**
    * Whether the caller is a cross-foundation principal: a ROOT writer, or a holder of ROOT
-   * `global_marketing_ops`. The one test for every shared-account question — monitor reads and the
-   * root-only Google audience segments. Both checks are request-cached and fail closed, and a ROOT
-   * writer returns without a second lookup.
+   * `global_marketing_ops`. The test for shared-account monitor reads. Both checks are
+   * request-cached and fail closed, and a ROOT writer returns without a second lookup.
    */
   private async isRootCampaignPrincipal(req: Request): Promise<boolean> {
     return (await personaDetectionService.checkRootWriter(req)) || (await personaDetectionService.checkRootCampaignManager(req));

@@ -8125,16 +8125,18 @@ describe('ImplementationTabComponent google audience segments', () => {
   }
 
   /**
-   * ROOT-ONLY. A non-root caller is answered `false`: the section hides, nothing is sent, and a
-   * draft that still holds segments HOLDS Create with a way out rather than dropping them.
+   * Answered `false` where the deployment cannot send segments: the section hides, nothing is sent,
+   * and a draft that still holds segments HOLDS Create with a way out rather than dropping them.
+   * There is no per-caller refusal: every campaign manager may send segments.
    */
-  it('hides the section and holds Create for a non-root caller whose draft still has segments', () => {
+  it('hides the section and holds Create when segments are unavailable and the draft still has some', () => {
     const c = holdSegment(false, 'ready');
 
     expect(find('implementation-google-audience-segments-section')).toBeNull();
     expect(c['googleAudienceSegmentsPayload']()).toEqual({});
-    expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('restricted');
-    expect(find('implementation-google-audience-segments-block-restricted')?.textContent).toContain('Only LF administrators can add Google audience segments');
+    expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('unsupported');
+    expect(find('implementation-google-audience-segments-block-unsupported')?.textContent).toContain('not available on this deployment');
+    expect(find('implementation-google-audience-segments-block-unsupported')?.textContent).not.toContain('administrators');
     expect(find('implementation-google-audience-segments-block-live')?.textContent?.trim()).toBe(c['googleAudienceSegmentsBlockMessage']());
     expect(c['canSubmit']()).toBe(false);
     expect(find('implementation-google-audience-segments-block-retry')).toBeNull();
@@ -8147,7 +8149,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(c['canSubmit']()).toBe(true);
   });
 
-  it('hides the section for a non-root caller with no segments, and holds nothing', () => {
+  it('hides the section when segments are unavailable and the draft has none, and holds nothing', () => {
     const c = seedAudience({ includeSearch: true }, false);
 
     expect(find('implementation-google-audience-segments-section')).toBeNull();
@@ -8155,7 +8157,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(c['canSubmit']()).toBe(true);
   });
 
-  it('holds Create while the per-caller answer is still being read', () => {
+  it('holds Create while the capability answer is still being read', () => {
     const c = holdSegment(null, 'pending');
 
     expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('pending');

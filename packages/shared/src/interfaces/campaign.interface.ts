@@ -5710,14 +5710,11 @@ export interface CampaignListResult {
   /**
    * Whether THIS caller may send Google audience segments (`audienceSegments`) on a create.
    *
-   * Per CALLER, unlike every capability above: true only when the campaign-service create path
-   * serves the create AND the caller is a ROOT writer or ROOT campaign manager. Every foundation's
-   * Google Ads connection points at one shared LF customer, and a user list cannot yet be mapped to
-   * a project, so a non-root operator could otherwise target another foundation's list — the same
-   * reason campaign-service refuses to list user lists on the shared account
-   * (linuxfoundation/lfx-v2-campaign-service#411). The create route refuses a non-root caller's
-   * segments with a 403 `GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE`. Modelled on the client like the
-   * capabilities above (`boolean | null`, `null` for unanswered): only an explicit yes shows the section.
+   * True when the campaign-service create path serves the create. Every caller of the route is a
+   * campaign manager, and campaign managers may send segments: the role is held only by the internal
+   * LF marketing team, which manages every foundation, so a user list on the shared LF Google Ads
+   * customer is not scoped per foundation (lfx-v2-campaign-service#468). Modelled on the client like
+   * the capabilities above (`boolean | null`, `null` for unanswered): only an explicit yes shows the section.
    */
   googleAudienceSegmentsEnabled: boolean;
   /**
@@ -5942,13 +5939,12 @@ export interface CampaignGoogleLocationsCapabilityBlock {
 
 /**
  * Why Create is blocked for Google audience segments the draft still holds but the request cannot
- * carry. `restricted`: the caller is not a root writer or root campaign manager, so the segments
- * would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
- * campaign-service create path does not serve this deployment. The other kinds mean what they do on
+ * carry. `unsupported`: the campaign-service create path does not serve this deployment
+ * (`CampaignListResult.googleAudienceSegmentsEnabled`). The other kinds mean what they do on
  * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
  */
 export interface CampaignGoogleAudienceSegmentsBlock {
-  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
   message: string;
 }
 
