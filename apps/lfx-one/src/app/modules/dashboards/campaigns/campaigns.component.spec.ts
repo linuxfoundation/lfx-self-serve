@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -17,6 +18,8 @@ import type {
   CampaignServiceEmailMetrics,
   EmailBriefCopy,
   CampaignBriefApproveResult,
+  CampaignBriefEditRequest,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
@@ -27,6 +30,7 @@ import type {
   CampaignJobOutcome,
   CampaignListResult,
   CampaignProgramType,
+  CampaignSavedBriefOffer,
   CampaignTab,
   CampaignTabOption,
   ProjectContext,
@@ -37,13 +41,13 @@ import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywo
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
-import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LENGTH } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE, EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LENGTH } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { map, NEVER, Observable, of, Subject, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 
 import { CampaignsComponent } from './campaigns.component';
@@ -236,6 +240,44 @@ describe('CampaignsComponent brief persistence', () => {
 
     expect(setScope.mock.calls.at(-1)).toEqual(['foundation-b', '']);
     page.destroy();
+  });
+
+  /**
+   * #4756. The paid planner keeps the event URL in `?event=` and prefills it on creation. A program
+   * switch recreates that planner precisely so one program's brief cannot carry into the other, so
+   * the switch must drop the parameter before the new planner reads it.
+   */
+  describe('the event URL in the page address on a program switch', () => {
+    const EVENT_URL = 'https://events.example.com/kubecon-eu-2026';
+
+    function eventParam(): string | null {
+      return new URL(TestBed.inject(Location).path(), 'https://app.example').searchParams.get('event');
+    }
+
+    beforeEach(() => {
+      TestBed.inject(Location).replaceState(`/campaigns?project=foundation-a&event=${encodeURIComponent(EVENT_URL)}`);
+    });
+
+    it('drops ?event= when the user switches program, keeping the other parameters', () => {
+      switchProgram('education');
+
+      expect(eventParam()).toBeNull();
+      expect(TestBed.inject(Location).path()).toContain('project=foundation-a');
+    });
+
+    it('keeps the #fragment when it drops ?event=', () => {
+      TestBed.inject(Location).replaceState(`/campaigns?project=foundation-a&event=${encodeURIComponent(EVENT_URL)}#plan`);
+
+      switchProgram('education');
+
+      expect(TestBed.inject(Location).path(true)).toBe('/campaigns?project=foundation-a#plan');
+    });
+
+    it("keeps ?event= when a restore adopts the brief's own program", () => {
+      restore({ ...brief, programType: 'education' } as CampaignBriefOutput, 'b-1', true, 'W/"1"');
+
+      expect(eventParam()).toBe(EVENT_URL);
+    });
   });
 
   it('switches to the Implementation tab before the save resolves', async () => {
@@ -890,7 +932,9 @@ describe('CampaignsComponent brief persistence', () => {
           await fixture.whenStable();
 
           expect(state().status).toBe('error');
-          expect(state().message).toBe('This saved brief could not be confirmed as approved. Reload and re-enter the event URL to try again.');
+          expect(state().message).toBe(
+            'This saved brief could not be confirmed as approved. Reload and try again from the Plan tab (enter the event URL there if it is not already filled in).'
+          );
         }
       );
 
@@ -1553,6 +1597,251 @@ describe('CampaignsComponent brief persistence', () => {
       // happens before the generation check, because ownership does not expire when the user
       // navigates away. See the queued-save test below for the case that distinction protects.
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null, false);
+    });
+
+    /**
+     * #4731. A regenerated brief for an event that already has a saved one is refused as
+     * `unowned-brief-exists`, and Restore was the only escape — it discards the brief on screen, so
+     * its generated callouts and sitelinks could never be saved. Replace reads the stored row's id
+     * and ETag and re-saves the brief on screen as its owner, with the ETag as `If-Match`.
+     */
+    describe('Replace saved brief', () => {
+      let loadBrief: Mock;
+
+      function replace(): void {
+        (fixture.componentInstance as unknown as { onReplaceSavedBrief(): void }).onReplaceSavedBrief();
+      }
+
+      /**
+       * Saves run on a promise chain, so a save a guard failed to stop reaches the service only
+       * once that chain drains. Every "no save was sent" assertion waits for it, or it passes
+       * whether the guard exists or not.
+       */
+      async function drainSaves(): Promise<void> {
+        await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      }
+
+      function loaded(briefId: string | null, etag: string | null, status: CampaignBriefLoadResult['status'] = 'loaded'): CampaignBriefLoadResult {
+        return { status, briefId, brief: null, etag, approved: false } as unknown as CampaignBriefLoadResult;
+      }
+
+      beforeEach(async () => {
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-a', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext, false);
+        TestBed.tick();
+        await fixture.whenStable();
+        loadBrief = vi.fn();
+        vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' }));
+        proceed();
+        await fixture.whenStable();
+      });
+
+      it('marks the unowned refusal so the Implementation tab can offer Replace', () => {
+        expect(state().status).toBe('error');
+        expect(state().conflict).toBe('unowned-brief-exists');
+      });
+
+      it('re-saves the brief on screen as the owner of the stored row, with its ETag as the precondition', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"6"', created: false, approved: true }));
+
+        replace();
+        await fixture.whenStable();
+
+        expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+        // A validator was read, so no overwrite licence is granted: the save is a real If-Match.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
+        expect(state()).toMatchObject({ status: 'saved', briefId: 'stored-1', approved: true });
+        expect(state().conflict).toBeUndefined();
+      });
+
+      it('replaces with fallback permission when the read returned no ETag', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', null)));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+      });
+
+      it('replaces a stored brief this build cannot open', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"', 'unreadable')));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
+      });
+
+      it('creates when the stored brief has gone since the refusal', async () => {
+        loadBrief.mockReturnValue(of(loaded(null, null, 'none')));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', null, null, false);
+      });
+
+      it('warns rather than overwrites when the stored brief moved after the read', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+
+        replace();
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().conflict).toBe('stale-brief');
+        expect(state().message).toContain('Someone else changed this brief');
+      });
+
+      it('keeps Replace on offer when the stored brief cannot be read', async () => {
+        loadBrief.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        const savesBefore = persistBrief.mock.calls.length;
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        replace();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(logged).toHaveBeenCalledWith('[campaigns] Failed to read the saved brief to replace it', expect.any(HttpErrorResponse));
+        logged.mockRestore();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+        // '' as the refusal carries it: a null id would re-open Create for a brief still unsaved.
+        expect(state()).toMatchObject({ status: 'error', briefId: '', conflict: 'unowned-brief-exists' });
+        expect(state().message).toContain('was not replaced');
+      });
+
+      it('marks an older Restore offer superseded when the replacing save fails', async () => {
+        // The read may see a version newer than the offer Planning cached. If the replace then
+        // fails, restoring that offer must not pair its older content and approval with the newer
+        // ETag this read recorded -- that would enable Create against content never shown.
+        loadBrief.mockReturnValue(of({ ...loaded('stored-1', 'W/"5"'), approved: true }));
+        persistBrief.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+        const tokenBefore = refreshToken();
+
+        replace();
+        await fixture.whenStable();
+        expect(refreshToken(), 'Planning was not told to re-read the row').toBeGreaterThan(tokenBefore);
+
+        const approvalsBefore = approveBrief.mock.calls.length;
+        // Read under the SAME token the replace's record took: the case a plain stamp waves through.
+        restoreAt(tokenBefore, brief, 'stored-1', true, 'W/"4"');
+        await fixture.whenStable();
+
+        expect(state().approved).toBe(false);
+        expect(state().message).toContain('changed after the copy shown here was read');
+        expect(approveBrief.mock.calls.length).toBe(approvalsBefore);
+      });
+
+      it('drops a read answered after a foundation switch but before the page reacts to it', async () => {
+        // The switch bumps the counters only once the `activeFoundationSlug` subscription runs, so
+        // the read is answered here BEFORE `TestBed.tick()`: only the slug check stands in that gap.
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext, false);
+        read.next(loaded('stored-1', 'W/"5"'));
+        TestBed.tick();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('drops the read when the foundation changes while it is out', async () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext, false);
+        TestBed.tick();
+        read.next(loaded('stored-1', 'W/"5"'));
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('does not hand the adopted id to a save queued before the replace', async () => {
+        // Saves are serialized and read ownership when they START. A save queued before the replace
+        // adopted the stored row must not inherit that id: it was never sent with it. The epoch bump
+        // is what refuses it, as a restore's does.
+        const first = new Subject<CampaignBriefPersistResult>();
+        persistBrief.mockReturnValueOnce(first).mockReturnValueOnce(NEVER).mockReturnValueOnce(NEVER);
+        proceed();
+        proceed();
+        await fixture.whenStable();
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        const callsBefore = persistBrief.mock.calls.length;
+
+        // Driven directly: the button is hidden while a save is in flight, so this is the guard
+        // behind that, not a path a click reaches.
+        replace();
+        first.next({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' });
+        first.complete();
+        await fixture.whenStable();
+
+        expect(persistBrief.mock.calls[callsBefore]).toEqual([brief, 'foundation-a', null, null, false]);
+      });
+
+      it('cancels the read when the page is destroyed', () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        fixture.destroy();
+
+        expect(read.observed).toBe(false);
+        read.next(loaded('stored-1', 'W/"5"'));
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('drops the read when the brief is discarded while it is out', async () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        switchProgram();
+        read.next(loaded('stored-1', 'W/"5"'));
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('returns to idle when brief persistence turns out to be off', async () => {
+        loadBrief.mockReturnValue(of(loaded(null, null, 'off')));
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+        expect(state()).toMatchObject({ status: 'off', briefId: null });
+      });
+
+      it('treats an ETag omitted mid-rolling-deploy as absent, not as a validator', async () => {
+        // An older pod omits the field, so JSON yields `undefined` where the type says null. Left
+        // un-normalised it reads as "a validator was sent", withholding the overwrite licence and
+        // refusing the very save Replace exists for -- the case `onRestoreSavedBrief` normalises.
+        loadBrief.mockReturnValue(of({ status: 'loaded', briefId: 'stored-1', brief: null, approved: false } as unknown as CampaignBriefLoadResult));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+      });
     });
 
     /**
@@ -2751,8 +3040,91 @@ describe('CampaignsComponent brief persistence', () => {
         (fixture.componentInstance as unknown as { selectTab(t: string, o: string): void }).selectTab('implementation', 'paid-marketing');
         await fixture.whenStable();
 
-        expect(list.mock.calls.length).toBe(afterFirst);
+        // One more read: the Implement tab's list-only re-read of the campaigns already created
+        // (#4983). The capability is neither cleared nor read again by it.
+        expect(list.mock.calls.length).toBe(afterFirst + 1);
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+        expect((fixture.componentInstance as unknown as { briefCampaignsCapabilityRead(): string }).briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * #4983. The Implement tab's list read (its Retry, and after a create settles) reports a failure
+       * as unavailable for the panel, and leaves the capabilities that tab gates its controls on alone.
+       */
+      /** #4983: a switch invalidates the pending read, so it must also end the "checking" state itself. */
+      it("ends the Implement list's checking state when the foundation switches during a read", async () => {
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }));
+        const pending = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(pending);
+        proceed();
+        await fixture.whenStable();
+        const loading = (): boolean => (fixture.componentInstance as unknown as { briefCampaignsLoading(): boolean }).briefCampaignsLoading();
+        expect(loading()).toBe(true);
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        expect(loading(), 'the panel would say "Checking…" for good').toBe(false);
+      });
+
+      it('marks the Implement list unavailable on a failed re-read without blanking the capability', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            enabled: true,
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        list.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        (fixture.componentInstance as unknown as { refreshImplementCampaigns(): void }).refreshImplementCampaigns();
+        await fixture.whenStable();
+
+        const page = fixture.componentInstance as unknown as {
+          briefCampaignsUnavailable(): boolean;
+          briefCampaignsDemandGenEnabled(): boolean | null;
+          briefCampaignsCapabilityRead(): string;
+        };
+        expect(page.briefCampaignsUnavailable()).toBe(true);
+        expect(page.briefCampaignsDemandGenEnabled(), 'a list-only read blanked the create capability').toBe(true);
+        expect(page.briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * #4983. Proceeding with a newly generated brief drops the PREVIOUS brief's campaign list at once,
+       * so the Implement tab never shows another brief's campaigns while (or instead of, on a refused
+       * save) this brief's own read.
+       */
+      it('drops the previous brief campaigns when a new brief is proceeded', async () => {
+        const campaigns = (): unknown => (fixture.componentInstance as unknown as { briefCampaigns(): unknown }).briefCampaigns();
+        (fixture.componentInstance as unknown as { briefCampaigns: { set(v: unknown): void } }).briefCampaigns.set([
+          { id: 'old', platform: 'google-ads', status: 'active' },
+        ]);
+        persistBrief.mockReturnValue(NEVER);
+
+        proceed(otherBrief);
+
+        expect(campaigns(), "the previous brief's campaigns stayed on Implement").toBeNull();
       });
 
       it('clears the previous brief campaigns when the foundation changes', async () => {
@@ -3115,6 +3487,369 @@ describe('CampaignsComponent brief persistence', () => {
 
         expect(unavailable()).toBe(false);
         expect(campaigns()).toHaveLength(1);
+      });
+    });
+  });
+
+  /**
+   * #4983. The saved brief can be reopened in the Plan editor and saved back over its own row, from
+   * the restore offer, from the unowned refusal on Implement, or from Edit brief on Implement.
+   */
+  describe('open the saved brief to edit', () => {
+    const offer = (readAt = 0, etag: string | null = 'W/"3"'): CampaignSavedBriefOffer => ({ brief, briefId: 'stored-1', etag, approved: true, readAt });
+
+    function openFromOffer(o: CampaignSavedBriefOffer): void {
+      (fixture.componentInstance as unknown as { onOpenSavedBriefToEdit(o: CampaignSavedBriefOffer): void }).onOpenSavedBriefToEdit(o);
+    }
+
+    function editRequest(): CampaignBriefEditRequest | null {
+      return (fixture.componentInstance as unknown as { planningEditRequest(): CampaignBriefEditRequest | null }).planningEditRequest();
+    }
+
+    // The foundation is persisted to a cookie, which outlives this TestBed; put back whatever was
+    // there so the suites after this one read the foundation they were written against.
+    let previousFoundation: ProjectContext | null = null;
+
+    beforeEach(async () => {
+      const context = TestBed.inject(ProjectContextService);
+      previousFoundation = context.selectedFoundation();
+      context.setFoundation({ uid: 'f-a', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext, false);
+      TestBed.tick();
+      await fixture.whenStable();
+    });
+
+    afterEach(() => {
+      const context = TestBed.inject(ProjectContextService);
+      if (previousFoundation === null) {
+        context.clearFoundation(false);
+      } else {
+        context.setFoundation(previousFoundation, false);
+      }
+    });
+
+    it('records ownership from the offer, so the edited brief is saved over the stored row with its ETag as If-Match', async () => {
+      openFromOffer(offer());
+      expect(editRequest()?.brief).toBe(brief);
+      expect(tab()).toBe('planning');
+
+      // The edited brief comes back through Proceed, exactly as Planning emits it.
+      const edited = { ...brief, keywords: [{ term: 'edited', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"4"', created: false, approved: true }));
+      proceed(edited);
+      await fixture.whenStable();
+
+      // A replace of THIS row, conditioned on the version the user opened. `saveBrief` approves it
+      // in the same call, which is what re-enables Create.
+      expect(persistBrief).toHaveBeenLastCalledWith(edited, 'foundation-a', 'stored-1', 'W/"3"', false);
+      expect(state()).toMatchObject({ status: 'saved', briefId: 'stored-1', approved: true });
+      expect(tab()).toBe('implementation');
+    });
+
+    it('grants the overwrite licence only when the offer carried no validator, as a restore does', async () => {
+      openFromOffer(offer(0, null));
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed();
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+    });
+
+    it('keeps a newer validator this session holds for the same content (an approval moved only the ETag)', async () => {
+      // This session restored the row and approved it: same bytes, newer ETag.
+      approveBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"4"', approved: true }));
+      restore(brief, 'stored-1', false, 'W/"3"');
+      await fixture.whenStable();
+
+      // Planning still offers its cached pre-approval read.
+      openFromOffer(offer(0, 'W/"3"'));
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed();
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
+    });
+
+    it("re-reads the row instead of opening an offer older than this session's last save", async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"9"', created: false, approved: true }));
+      restore(brief, 'stored-1', true, 'W/"3"');
+      proceed();
+      await fixture.whenStable();
+
+      // Planning's offer was read BEFORE that save, so it holds bytes this session already replaced.
+      const current = { ...brief, keywords: [{ term: 'current', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief: current, briefId: 'stored-1', etag: 'W/"9"', approved: true }));
+      openFromOffer(offer(0, 'W/"3"'));
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+      expect(editRequest()?.brief, 'the stale offer was opened instead of the stored brief').toBe(current);
+
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed(current);
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(current, 'foundation-a', 'stored-1', 'W/"9"', false);
+    });
+
+    it('waits for a save still running, then re-reads, rather than opening the offer under it', async () => {
+      const save = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValueOnce(save);
+      proceed();
+      const current = { ...brief, keywords: [{ term: 'current', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief: current, briefId: 'b-new', etag: 'W/"1"', approved: true }));
+
+      openFromOffer(offer(0, 'W/"0"'));
+      await fixture.whenStable();
+      expect(loadBrief, 'the row was read before the running save landed').not.toHaveBeenCalled();
+      expect(editRequest()).toBeNull();
+
+      save.next({ enabled: true, briefId: 'b-new', etag: 'W/"1"', created: true, approved: true });
+      save.complete();
+      await fixture.whenStable();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalledTimes(1);
+      expect(editRequest()?.brief).toBe(current);
+    });
+
+    it('keeps an approval still in flight for the same row, so its new ETag is the precondition', async () => {
+      const approval = new Subject<CampaignBriefApproveResult>();
+      approveBrief.mockReturnValueOnce(approval);
+      restore(brief, 'stored-1', false, 'W/"3"');
+      await fixture.whenStable();
+
+      // Open to edit on the same, unchanged content while the approval is out.
+      openFromOffer(offer(0, 'W/"3"'));
+      approval.next({ enabled: true, briefId: 'stored-1', etag: 'W/"4"', approved: true });
+      approval.complete();
+      await fixture.whenStable();
+
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief, "the approval's ETag was dropped").toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
+    });
+
+    it('drops a pending re-read when Planning discards its brief meanwhile', async () => {
+      const save = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValueOnce(save);
+      proceed();
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief, briefId: 'b-new', etag: 'W/"1"', approved: true }));
+      openFromOffer(offer(0, 'W/"0"'));
+
+      // New Brief / Generate in Planning while the read waits on the running save.
+      (fixture.componentInstance as unknown as { onPlanningBriefDiscarded(): void }).onPlanningBriefDiscarded();
+      save.next({ enabled: true, briefId: 'b-new', etag: 'W/"1"', created: true, approved: true });
+      save.complete();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalled();
+      expect(editRequest(), 'the late read replaced what Planning holds now').toBeNull();
+    });
+
+    it('re-reads the row on Edit brief once ownership moved past the brief on Implement', async () => {
+      // Implement holds a brief handed over earlier...
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      // ...then Open to edit records a newer account of the same row.
+      openFromOffer(offer(5, 'W/"8"'));
+      const current = { ...brief, keywords: [{ term: 'current', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief: current, briefId: 'stored-1', etag: 'W/"8"', approved: true }));
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalledTimes(1);
+      expect(editRequest()?.brief, "Implement's older copy was reopened under the newer validator").toBe(current);
+    });
+
+    it('says why Edit brief opened nothing when its re-read fails, rather than reopening the older copy', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void } }).planningEditRequest.set(null);
+      vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await fixture.whenStable();
+      logged.mockRestore();
+
+      expect(editRequest(), "Implement's older copy was opened under the newer validator").toBeNull();
+      expect((fixture.componentInstance as unknown as { editBriefError(): string | null }).editBriefError()).toContain('could not be read');
+    });
+
+    it('does not re-read on Edit brief after the brief on Implement was itself saved over the row', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      // An Open to edit bumped the epoch, then Implement's own brief was saved over the row again
+      // (as Replace saved brief does), so the row holds exactly Implement's bytes.
+      openFromOffer(offer(5, 'W/"8"'));
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"9"', created: false, approved: true }));
+      (fixture.componentInstance as unknown as { persistBrief(b: CampaignBriefOutput): void }).persistBrief(
+        (fixture.componentInstance as unknown as { briefOutput(): CampaignBriefOutput }).briefOutput()
+      );
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief, briefId: 'stored-1', etag: 'W/"9"', approved: true }));
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      // A re-read would start only once the save queue drains, so wait for it before asserting none ran.
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief, 'Edit brief re-read a row that holds exactly the brief on Implement').not.toHaveBeenCalled();
+      expect(editRequest()?.brief).toEqual(brief);
+    });
+
+    it('drops a pending Edit brief re-read once a create job starts, so it cannot leave the running job', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (
+        fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void }; selectedTab: { set(v: string): void } }
+      ).planningEditRequest.set(null);
+      (fixture.componentInstance as unknown as { selectedTab: { set(v: string): void } }).selectedTab.set('implementation');
+      const read = new Subject<CampaignBriefLoadResult>();
+      vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockReturnValue(read);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      (fixture.componentInstance as unknown as { onCreateStarted(): void }).onCreateStarted();
+      read.next({ status: 'loaded', brief, briefId: 'stored-1', etag: 'W/"8"', approved: true });
+      read.complete();
+      await fixture.whenStable();
+
+      expect(editRequest(), 'the late read opened Planning over a running create').toBeNull();
+      expect(tab()).toBe('implementation');
+    });
+
+    it('says why Edit brief opened nothing when there is no foundation to read under', async () => {
+      // No foundation resolved for the whole flow: the handover and the Open to edit file under the same
+      // foundation-less key, so the epoch moves and Edit brief must re-read, which it cannot do.
+      vi.spyOn(fixture.componentInstance as unknown as { activeFoundationSlug(): string }, 'activeFoundationSlug').mockReturnValue('');
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void } }).planningEditRequest.set(null);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+
+      expect((fixture.componentInstance as unknown as { editBriefError(): string | null }).editBriefError()).not.toBeNull();
+    });
+
+    it('drops the X fields typed on Implement, which belong to the brief that was there', () => {
+      const flag = (): boolean => (fixture.componentInstance as unknown as { twitterCarryDiscarded: boolean }).twitterCarryDiscarded;
+      persistBrief.mockReturnValueOnce(NEVER);
+      // A proceed clears the flag, so the next one would carry the X fields over.
+      proceed();
+      expect(flag()).toBe(false);
+
+      openFromOffer(offer());
+      expect(flag(), 'the X draft of the brief on Implement would ride onto the stored brief').toBe(true);
+    });
+
+    it('drops the edit request when Planning discards its brief, and on a restore', () => {
+      openFromOffer(offer());
+      (fixture.componentInstance as unknown as { onPlanningBriefDiscarded(): void }).onPlanningBriefDiscarded();
+      expect(editRequest()).toBeNull();
+
+      openFromOffer(offer());
+      restore(brief, 'stored-1', true, 'W/"3"');
+      expect(editRequest()).toBeNull();
+    });
+
+    it('reopens the Implement brief in the editor on Edit brief, with a fresh request each time', () => {
+      proceed();
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      const first = editRequest();
+      expect(first?.brief).toEqual(brief);
+      expect(tab()).toBe('planning');
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      expect(editRequest()?.requestId).not.toBe(first?.requestId);
+    });
+
+    describe('from the unowned refusal on Implement', () => {
+      let loadBrief: Mock;
+      const stored = { ...brief, keywords: [{ term: 'stored', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+
+      function openFromImplement(): void {
+        (fixture.componentInstance as unknown as { onOpenSavedBriefFromImplement(): void }).onOpenSavedBriefFromImplement();
+      }
+
+      beforeEach(async () => {
+        loadBrief = vi.fn();
+        vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' }));
+        proceed();
+        await fixture.whenStable();
+      });
+
+      it('words the refusal around the two buttons under it', () => {
+        expect(state().conflict).toBe('unowned-brief-exists');
+        expect(state().message).toBe(CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE);
+        expect(state().message).toContain('Open the saved brief to edit it');
+      });
+
+      it('reads the stored brief, takes ownership of it, and opens it in the editor', async () => {
+        loadBrief.mockReturnValue(of({ status: 'loaded', brief: stored, briefId: 'stored-1', etag: 'W/"5"', approved: true }));
+
+        openFromImplement();
+        await fixture.whenStable();
+
+        expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+        expect(editRequest()?.brief).toBe(stored);
+        expect(tab()).toBe('planning');
+
+        persistBrief.mockReturnValueOnce(NEVER);
+        proceed(stored);
+        await fixture.whenStable();
+        expect(persistBrief).toHaveBeenLastCalledWith(stored, 'foundation-a', 'stored-1', 'W/"5"', false);
+      });
+
+      it('keeps the refusal, and Create blocked, when the open cannot even start', async () => {
+        // No foundation to read under: a failed open, not persistence going dark.
+        vi.spyOn(fixture.componentInstance as unknown as { activeFoundationSlug(): string }, 'activeFoundationSlug').mockReturnValue('');
+
+        openFromImplement();
+        await fixture.whenStable();
+
+        expect(loadBrief).not.toHaveBeenCalled();
+        expect(state(), 'the unowned refusal was cleared and Create re-enabled').toMatchObject({
+          status: 'error',
+          briefId: '',
+          conflict: 'unowned-brief-exists',
+        });
+        expect(state().message).toContain('could not be read');
+      });
+
+      it('keeps Replace on offer when the stored brief cannot be opened', async () => {
+        loadBrief.mockReturnValue(of({ status: 'unreadable', brief: null, briefId: 'stored-1', etag: 'W/"5"', approved: false }));
+
+        openFromImplement();
+        await fixture.whenStable();
+
+        expect(editRequest()).toBeNull();
+        expect(state()).toMatchObject({ status: 'error', briefId: '', conflict: 'unowned-brief-exists' });
+        expect(state().message).toContain('could not be opened');
       });
     });
   });
@@ -4154,6 +4889,69 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       expect(internals().generatedDestinations()).toEqual(['https://events.linuxfoundation.org/kubecon-eu-2026/']);
       expect(internals().emailBodyHtmlPreview()).toContain('href="https://events.linuxfoundation.org/kubecon-eu-2026/register"');
+    });
+
+    /**
+     * #3306. The event page's own links keep their href in the preview when they are on the CTA's host
+     * or an LF-owned domain; an off-host one keeps its words only. The controller judges the staged
+     * body with the same helper over `emailExtractedLinks`, which the stage request carries.
+     */
+    it('keeps vetted event-page links in the preview and strips an off-host one', () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://kubecon.example/eu/',
+          cfpUrl: 'https://kubecon.example/eu/cfp',
+          agendaUrl: 'https://evil.example/agenda',
+          venueUrl: 'https://training.linuxfoundation.org/venue',
+          sponsorshipUrl: '',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body:
+          '<p><a href="https://kubecon.example/eu/cfp">CFP</a> <a href="https://evil.example/agenda">Agenda</a> ' +
+          '<a href="https://training.linuxfoundation.org/venue">Venue</a></p>',
+        cta: 'Register now',
+        ctaUrl: 'https://kubecon.example/eu/',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      const preview = internals().emailBodyHtmlPreview();
+      expect(preview).toContain('href="https://kubecon.example/eu/cfp"');
+      expect(preview).toContain('href="https://training.linuxfoundation.org/venue"');
+      expect(preview).not.toContain('evil.example');
+      expect(preview).toContain('Agenda');
+    });
+
+    it('strips an LF-owned link the event page did not publish: the preview narrows the service pass', () => {
+      // The service's first pass keeps any LF-owned link, since it cannot see the event page. The
+      // preview must narrow that back to the page's own links, or an invented LF address survives.
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://kubecon.example/eu/',
+          cfpUrl: 'https://kubecon.example/eu/cfp',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body: '<p><a href="https://training.linuxfoundation.org/invented">Invented</a></p>',
+        cta: 'Register now',
+        ctaUrl: 'https://kubecon.example/eu/',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      expect(internals().emailBodyHtmlPreview()).not.toContain('training.linuxfoundation.org');
+      expect(internals().emailBodyHtmlPreview()).toContain('Invented');
     });
 
     it('shows a refused CTA as plain text instead of dropping it silently', () => {
@@ -7089,6 +7887,35 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.bodyHtmlB).toBeUndefined();
     });
 
+    /** #3306: the event page's links ride with the stage request, so the controller can judge the body as the preview did. */
+    it('sends the event-page links with the stage request as secondaryLinkUrls', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://kubecon.example/eu/',
+          cfpUrl: 'https://kubecon.example/eu/cfp',
+          agendaUrl: '',
+          venueUrl: 'https://training.linuxfoundation.org/venue',
+          sponsorshipUrl: 'not a url',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register', ctaUrl: 'https://kubecon.example/eu/' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.secondaryLinkUrls).toEqual(['https://kubecon.example/eu/cfp', 'https://training.linuxfoundation.org/venue']);
+    });
+
     it('omits the CTA when the registration URL is not an http(s) URL', async () => {
       selectEmail();
       internals().emailBriefOutput.set({
@@ -8953,6 +9780,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     emailTemplatesRendered: Signal<HubSpotMarketingEmail[]>;
     selectedEmailTypeId: WritableSignal<string>;
     canStageEmail: Signal<boolean>;
+    emailAudience: WritableSignal<CampaignAudience | null>;
   }
   const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
 
@@ -8992,7 +9820,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
    *
    * The mapping of event -> branding lives in HubSpot, in the names its operators gave their
    * templates. These pin that it is read rather than guessed at, and — more importantly — that a
-   * weak signal is NOT turned into a confident pre-selection.
+   * weak signal is NOT turned into a confident pre-selection. Since #2057 even a strong one is
+   * only a recommendation: nothing is selected until the operator clicks a row.
    */
   describe('event-derived template suggestion', () => {
     const briefFor = (name: string, slug: string, city = ''): CampaignBriefOutput => ({ eventDetails: { name, slug, city } }) as unknown as CampaignBriefOutput;
@@ -9020,19 +9849,13 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     };
 
     /**
-     * A pending search must release a SUGGESTED selection at dispatch, not only when it answers.
+     * A pending search clears the suggestion at dispatch, not only when it answers: it describes
+     * the rows being replaced. Nothing was ever selected for the operator, so there is no
+     * selection to release and Stage stays disabled throughout.
      *
-     * Every arm that clears the template list also released the suggestion, but all of them run
-     * after the response lands. In between, the loading branch hides the list while
-     * `canStageEmail` still reads only `selectedEmailTemplateId` -- and `onStageEmailSend`
-     * snapshots that id before its first await. So the operator could stage a suggestion the
-     * in-flight search was about to remove, with the row that justified it already off screen:
-     * a silent wrong clone, which is the exact failure this feature exists to prevent.
-     *
-     * Asserts the state DURING the flight -- the request is deliberately left unanswered, because
-     * flushing it is what the old code needed in order to look correct.
+     * Asserts the state DURING the flight -- the request is deliberately left unanswered.
      */
-    it('releases a suggested selection when a new search is dispatched, before it answers', () => {
+    it('clears the suggestion when a new search is dispatched, before it answers', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('KubeCon Europe 2026', 'kubecon-eu-2026'));
       picker().searchEmailTemplates('kubecon');
@@ -9043,14 +9866,15 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         emails: [{ id: 'k26', name: 'KubeCon Europe 2026 announcement', subject: 'Register now' }] as HubSpotMarketingEmail[],
       });
 
-      // The suggestion took, and it is SYSTEM-owned -- the precondition for the release.
-      expect(picker().selectedEmailTemplateId()).toBe('k26');
+      // Suggested, and NOT selected (#2057).
       expect(picker().emailTemplateSuggestionId()).toBe('k26');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
       // Dispatch a narrower search and leave it IN FLIGHT.
       picker().searchEmailTemplates('workshop');
       fixture.detectChanges();
 
+      expect(picker().emailTemplateSuggestionId(), 'the suggestion outlived the rows it described').toBe('');
       expect(picker().selectedEmailTemplateId()).toBe('');
       expect(picker().canStageEmail()).toBe(false);
 
@@ -9081,17 +9905,15 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      * threshold alone. An unrelated "Nairobi newsletter" is then auto-selected.
      */
     /**
-     * An UN-LISTED generic long word still pre-selects, and that is the known trade-off.
+     * An UN-LISTED generic long word still SUGGESTS, and that is the known trade-off.
      *
      * `EVENT_TERM_GENERIC` is a vocabulary, so a generic word nobody has added yet -- `developer`
      * -- still scores the double weight and clears the threshold alone. This test pins the
-     * CURRENT behavior rather than asserting it is correct: the honest statement of the limit is
-     * that the deny-list closes words someone has noticed, and the next un-noticed one is a fresh
-     * false positive.
+     * CURRENT behavior rather than asserting it is correct: the deny-list closes words someone has
+     * noticed, and the next un-noticed one is a fresh false positive.
      *
-     * It is here so the limit is visible and measured. If the scoring ever becomes structural --
-     * corroboration, or evidence weighted by rarity -- this test flips to `toBe('')` and the
-     * change is deliberate rather than silent.
+     * What #2057 changed is the cost of that false positive: it is a badge, not a selection, so the
+     * unrelated template is never staged unless the operator picks it. The test pins both halves.
      */
     it('does not let a generic-heavy row block an eligible suggestion', () => {
       showPicker();
@@ -9114,7 +9936,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().emailTemplateSuggestionId()).toBe('eligible');
     });
 
-    it('still pre-selects on an un-enumerated generic long word (known limit)', () => {
+    it('still suggests on an un-enumerated generic long word (known limit), but selects nothing', () => {
       showPicker();
       expect(EVENT_TERM_GENERIC.has('developer')).toBe(false);
       picker().emailBriefOutput.set(briefFor('Developer Conference', 'developer-conference'));
@@ -9127,6 +9949,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('unrelated');
+      expect(picker().selectedEmailTemplateId(), 'a heuristic match selected a template nobody chose').toBe('');
+      expect(picker().canStageEmail()).toBe(false);
     });
 
     /**
@@ -9247,10 +10071,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId(), 'the prior edition outranked the year-matching one').toBe('current');
-      expect(picker().selectedEmailTemplateId()).toBe('current');
+      expect(picker().selectedEmailTemplateId()).toBe('');
     });
 
-    it('pre-selects the template whose name carries the event, and says what it matched', () => {
+    it('suggests the template whose name carries the event, badges it, and says what it matched', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -9265,10 +10089,70 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('mcp');
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId(), "the suggestion selected a template on the operator's behalf").toBe('');
       // The REASON must be visible; a suggestion nobody can check is one nobody should trust.
       expect(picker().emailTemplateSuggestionTerms()).toContain('nairobi');
       expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).not.toBeNull();
+
+      // A visible TEXT badge on the suggested row only -- not colour alone.
+      const host = fixture.nativeElement as HTMLElement;
+      // Both badges stay MOUNTED, so a row's width never shifts as the suggestion moves; only the
+      // suggested row's badge is visible (frontend-checklist 8).
+      const suggestedBadge = host.querySelector('[data-testid="campaigns-email-template-suggested-mcp"]');
+      const otherBadge = host.querySelector('[data-testid="campaigns-email-template-suggested-kc"]');
+      expect(suggestedBadge?.textContent?.trim()).toBe('Suggested');
+      expect(suggestedBadge?.classList.contains('invisible')).toBe(false);
+      expect(otherBadge, 'the badge slot was removed rather than hidden').not.toBeNull();
+      expect(otherBadge?.classList.contains('invisible')).toBe(true);
+      // And the row is NOT drawn as selected: the badge is the only mark it carries.
+      const row = host.querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-mcp"]');
+      expect(row?.getAttribute('aria-pressed')).toBe('false');
+      // aria-label replaces the badge text for assistive tech, so the label carries the same fact.
+      expect(row?.getAttribute('aria-label')).toContain('suggested for this event');
+      expect(host.querySelector('[data-testid="campaigns-email-template-kc"]')?.getAttribute('aria-label')).not.toContain('suggested');
+    });
+
+    /**
+     * The core of #2057: the suggestion RECOMMENDS, and only an explicit click selects.
+     *
+     * Every other Stage precondition is satisfied here, so the selection is the only thing that
+     * can hold Stage back -- and it must, until the operator clicks. Before #2057 the suggestion
+     * wrote `selectedEmailTemplateId`, which becomes `hubspotConfig.sourceEmailId` on stage, so a
+     * heuristic match could clone a branded HubSpot draft that nobody chose.
+     */
+    it('selects nothing and keeps Stage disabled until the operator clicks the suggested row', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().emailAudience.set({
+        id: 'aud-1',
+        briefId: 'brief-1',
+        platform: 'hubspot',
+        platformMasterListId: '900',
+        inclusionSummary: '1 signal list',
+        status: 'built',
+        version: 1,
+      });
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'kc', name: 'KubeCon registration reminder' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId(), 'selected before any click').toBe('');
+      expect(picker().canStageEmail(), 'Stage was enabled on a template nobody chose').toBe(false);
+
+      // The explicit operator action, through the DOM rather than the handler.
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-mcp"]')?.click();
+      fixture.detectChanges();
+
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().canStageEmail(), 'fixture precondition: the click is the only thing Stage was waiting for').toBe(true);
     });
 
     /**
@@ -9307,7 +10191,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().selectedEmailTemplateId()).toBe('');
     });
 
-    it('stops calling the selection system-chosen once the operator picks it themselves', () => {
+    it('drops the banner and announcement once the operator picks the suggested row themselves', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -9326,23 +10210,20 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         'precondition: the suggestion banner is up'
       ).not.toBeNull();
 
-      const c = fixture.componentInstance as unknown as { onSelectEmailTemplate(id: string): void };
-      // Override to another row, then deliberately pick the suggested one BACK.
-      c.onSelectEmailTemplate('kc');
-      c.onSelectEmailTemplate('mcp');
+      // The operator accepts the suggestion with a click -- now it is their choice.
+      picker().onSelectEmailTemplate('mcp');
       fixture.detectChanges();
 
-      // The ids coincide again -- an equality check would still say "system chose this".
       expect(picker().emailTemplateSuggestionId()).toBe('mcp');
       expect(picker().selectedEmailTemplateId()).toBe('mcp');
 
       expect(
         fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]'),
-        "the banner called the operator's own re-pick a pre-selection"
+        'the banner kept recommending after the operator chose'
       ).toBeNull();
       expect(
         (fixture.componentInstance as unknown as { emailTemplateSuggestionAnnouncement(): string }).emailTemplateSuggestionAnnouncement(),
-        "the screen-reader announcement called the operator's own re-pick a pre-selection"
+        'the screen-reader announcement kept recommending after the operator chose'
       ).toBe('');
     });
 
@@ -9541,7 +10422,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         { id: 'other', name: 'Nairobi welcome note' },
       ] as HubSpotMarketingEmail[];
       respond({ enabled: true, error: null, possiblyTruncated: false, emails });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
       picker().onSelectEmailTemplate('other');
       picker().searchEmailTemplates('');
@@ -9551,38 +10432,41 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * The worst state this feature can reach: a banner announcing a pre-selected template while no
-     * VISIBLE row carries it.
+     * The worst state this feature can reach: a banner pointing at a "Suggested" row that no
+     * VISIBLE row carries.
      *
      * Ranking and the suggestion agree on the event half but not the type half, and a tie falls to
      * the server's original order — so a genuinely-suggested template can rank below enough
      * type-keyword matches to be cut by the 100-row render limit. The operator would then be told
-     * something was chosen for them with no way to see or change it. The selected row is spliced
-     * back in at the top for exactly this reason.
+     * about a recommendation they cannot see or accept. The suggested row is spliced back in for
+     * exactly this reason.
      *
-     * Built to reproduce it: 150 rows that match six keywords of the seven-keyword
-     * `final-countdown` type, plus one true KubeCon template that matches none of them.
+     * Built to reproduce it: 150 rows that match three GENERIC event words, which rank but can
+     * never justify a suggestion, plus one true KubeCon template.
      */
-    it('always draws the selected row, even when ranking would cut it past the render limit', () => {
+    it('always draws the suggested row, even when ranking would cut it past the render limit', () => {
       showPicker();
-      picker().selectedEmailTypeId.set('final-countdown');
-      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026'));
+      // Ranking counts GENERIC event terms; the suggestion does not. So 150 rows matching three
+      // generic words ("community", "training", "webinar") all outrank the one row carrying the
+      // decisive `kubecon`, pushing it past the render cap -- while it is still the only row
+      // eligible to be suggested.
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
       picker().searchEmailTemplates('');
 
       const noise = Array.from({ length: 150 }, (_, i) => ({
         id: `noise-${i}`,
-        name: `Final countdown: last chance, closing deadline, closes soon #${i}`,
+        name: `Community training webinar newsletter #${i}`,
       })) as HubSpotMarketingEmail[];
       respond({
         enabled: true,
         error: null,
         possiblyTruncated: false,
-        emails: [...noise, { id: 'kc', name: 'KubeCon NA 2026 Modern Template' } as HubSpotMarketingEmail],
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('kc');
-      expect(picker().selectedEmailTemplateId()).toBe('kc');
-      // The assertion that matters: it is actually DRAWN, not merely selected.
+      expect(picker().selectedEmailTemplateId()).toBe('');
+      // The assertion that matters: it is actually DRAWN, so its badge can be seen and clicked.
       expect(
         picker()
           .emailTemplatesRendered()
@@ -9590,6 +10474,56 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       ).toBe(true);
       // And the render cap is still honoured — the splice replaces a row, it does not append.
       expect(picker().emailTemplatesRendered().length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    });
+
+    /**
+     * Both pinned rows past the cap at once: a hand-picked row AND a different suggested row. The
+     * cap must hold, both must be drawn, and the selection keeps the last slot it always had.
+     */
+    it('draws both the selected and the suggested row when ranking cuts both past the render limit', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
+      picker().searchEmailTemplates('');
+      const noise = Array.from({ length: 150 }, (_, i) => ({
+        id: `noise-${i}`,
+        name: `Community training webinar newsletter #${i}`,
+      })) as HubSpotMarketingEmail[];
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
+      });
+      // The noise rows tie, so the server order decides and the last one ranks 150th -- past the cap.
+      picker().onSelectEmailTemplate('noise-149');
+
+      const rendered = picker().emailTemplatesRendered();
+      expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+      expect(rendered.slice(-2).map((t) => t.id)).toEqual(['kc', 'noise-149']);
+      expect(new Set(rendered.map((t) => t.id)).size, 'a pinned row was drawn twice').toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    });
+
+    /** One pinned row already drawn, the other cut: the drawn one keeps its place, the cap holds. */
+    it('keeps an already-drawn selection in place while pinning a cut suggestion', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
+      picker().searchEmailTemplates('');
+      const noise = Array.from({ length: 150 }, (_, i) => ({
+        id: `noise-${i}`,
+        name: `Community training webinar newsletter #${i}`,
+      })) as HubSpotMarketingEmail[];
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
+      });
+      picker().onSelectEmailTemplate('noise-0');
+
+      const rendered = picker().emailTemplatesRendered();
+      expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+      expect(rendered[0].id).toBe('noise-0');
+      expect(rendered[rendered.length - 1].id).toBe('kc');
     });
 
     /**
@@ -9621,9 +10555,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /**
      * The chosen template belongs to the brief that chose it. Left set, it survives into the next
-     * event in the same foundation — where it is both wrong AND silently suppresses the new
-     * suggestion, since the derivation only fills an empty selection. The feature would fail
-     * precisely on the second event.
+     * event in the same foundation — where it is wrong, still stageable, and hides the new event's
+     * suggestion banner, which shows only while nothing is selected.
      */
     it('clears the chosen template when the brief-derived state resets', () => {
       showPicker();
@@ -9635,6 +10568,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         possiblyTruncated: false,
         emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
       });
+      picker().onSelectEmailTemplate('mcp');
       expect(picker().selectedEmailTemplateId()).toBe('mcp');
 
       (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
@@ -9642,9 +10576,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * The banner asserts what is SELECTED, so it must not survive an override. Keyed on the
-     * suggestion merely existing, it read "pre-selected ... for this event" beside a template the
-     * derivation never chose.
+     * The banner is help BEFORE a decision, so it must not survive one: repeating the
+     * recommendation beside a template the operator chose argues with their choice.
      */
     it('hides the suggestion banner once the operator picks a different row', () => {
       showPicker();
@@ -9690,7 +10623,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().emailTemplateSuggestionTerms()).toContain('kubecon');
     });
 
-    /** The banner is one sentence; an @if between text nodes rendered "event . Pick a different". */
+    /** The banner is one sentence; an @if between text nodes rendered "event . Nothing is". */
     it('renders the banner without a space before the full stop', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
@@ -9704,13 +10637,13 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
       const text = fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
       expect(text).not.toContain(' .');
-      expect(text).toContain('. Pick a different one to override it.');
+      expect(text).toContain('. Nothing is selected until you choose a template.');
     });
 
     /**
      * The type is the tie-break, so it must be re-applied when the type CHANGES. A suggestion made
-     * under Registration Push is the wrong answer once the operator switches to CFP Launch — and
-     * left alone the stale template stayed selected and would have been the one staged.
+     * under Registration Push is the wrong answer once the operator switches to CFP Launch. Only
+     * the badge moves; nothing is selected either side of the change.
      */
     it('re-derives the suggestion when the email type changes', () => {
       showPicker();
@@ -9726,10 +10659,12 @@ describe('CampaignsComponent — HubSpot template picker', () => {
           { id: 'reg', name: 'MCP Dev Summit Nairobi — registration reminder' },
         ] as HubSpotMarketingEmail[],
       });
-      expect(picker().selectedEmailTemplateId()).toBe('reg');
+      expect(picker().emailTemplateSuggestionId()).toBe('reg');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
       (fixture.componentInstance as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
-      expect(picker().selectedEmailTemplateId()).toBe('cfp');
+      expect(picker().emailTemplateSuggestionId()).toBe('cfp');
+      expect(picker().selectedEmailTemplateId(), 'a type change selected the re-derived suggestion').toBe('');
     });
 
     /** A hand-picked template is the operator's; a type change is not permission to replace it. */
@@ -9774,10 +10709,9 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /**
      * The banner is a plain <p> inserted when the suggestion lands, and a newly inserted element is
-     * not reliably announced — so a screen-reader user could miss that a template was chosen for
-     * them and that it is the one staging will use.
+     * not reliably announced — so a screen-reader user could miss that one row is recommended.
      */
-    it('announces the auto-selection through the existing live region', () => {
+    it('announces the suggestion through the existing live region', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -9789,14 +10723,15 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       const live = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
-      expect(live).toContain('MCP Dev Summit Nairobi registration');
+      expect(live).toContain('Suggested template for this event: MCP Dev Summit Nairobi registration');
       expect(live).toContain('nairobi');
+      expect(live).toContain('Nothing is selected until you choose a template.');
 
-      // Silent once the operator overrides — it no longer describes what is selected.
+      // Silent once the operator has chosen.
       picker().onSelectEmailTemplate('mcp-other');
       fixture.detectChanges();
       const after = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
-      expect(after).not.toContain('Template selected for this event');
+      expect(after).not.toContain('Suggested template for this event');
     });
 
     /**
@@ -9822,14 +10757,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * A search that drops the auto-selected row must release it.
-     *
-     * Only the suggestion id was cleared, not the selection — so after a narrowed search the id
-     * stayed selected while the banner hid (it renders only while the suggestion IS the
-     * selection), and staging would clone a template no longer in the list. The same
-     * silent-wrong-clone the feature exists to prevent, reached from the other direction.
+     * A search that drops the suggested row drops the suggestion, and selects nothing in its
+     * place -- a badge must never describe a row the results no longer contain.
      */
-    it('releases an auto-selected template when a search no longer returns it', () => {
+    it('drops the suggestion when a search no longer returns it, and selects nothing', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -9839,9 +10770,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         possiblyTruncated: false,
         emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
       });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
-      // A narrowed search that no longer returns the auto-selected row.
+      // A narrowed search that no longer returns the suggested row.
       picker().searchEmailTemplates('newsletter');
       respond({
         enabled: true,
@@ -9850,15 +10782,13 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         emails: [{ id: 'other', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[],
       });
 
+      expect(picker().emailTemplateSuggestionId()).toBe('');
       expect(picker().selectedEmailTemplateId()).toBe('');
     });
 
     /**
-     * ID equality cannot establish provenance.
-     *
-     * After suggestion A the operator can pick B, then deliberately pick A again — the ids
-     * coincide, so an equality check treats their explicit choice as system-owned and silently
-     * releases it on the next search. Provenance is a fact about how the value was SET.
+     * A hand-pick of the SUGGESTED row is the operator's like any other, and survives a search
+     * that no longer returns it.
      */
     it('keeps a hand-picked template that happens to match the suggestion', () => {
       showPicker();
@@ -9869,9 +10799,9 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         { id: 'other', name: 'Something else' },
       ] as HubSpotMarketingEmail[];
       respond({ enabled: true, error: null, possiblyTruncated: false, emails });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
-      // Away and deliberately back to the SAME id — now the operator's choice, not the system's.
+      // Away and deliberately back to the suggested id.
       picker().onSelectEmailTemplate('other');
       picker().onSelectEmailTemplate('mcp');
 
@@ -9882,13 +10812,12 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * A FAILED search must release a system-owned selection too.
+     * A FAILED search drops the suggestion too, and leaves nothing selected.
      *
-     * `applyEventTemplateSuggestion` runs only after a successful listing, so the error arms set
-     * `emailTemplates` to null while leaving the auto-selected id in place — invisible, since
-     * there is no list to show it in, and still stageable.
+     * `applyEventTemplateSuggestion` runs only after a successful listing, so the error arms must
+     * clear it themselves or a suggestion would outlive the list it described.
      */
-    it('releases an auto-selected template when the search fails', () => {
+    it('drops the suggestion when the search fails, leaving nothing selected', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -9898,12 +10827,80 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         possiblyTruncated: false,
         emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
       });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
 
       picker().searchEmailTemplates('anything');
       respond({ enabled: true, error: 'HubSpot refused the search', possiblyTruncated: false, emails: [] });
 
+      expect(picker().emailTemplateSuggestionId()).toBe('');
       expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
+     * When the list is GONE rather than replaced, a hand-picked template goes with it (#2057).
+     *
+     * There is no list to render the row in, and `canStageEmail` reads the id, so a surviving
+     * selection would let Stage Email Draft clone a template the operator can no longer see. One
+     * row per terminal arm of `searchEmailTemplates` that answers a request. The fifth arm, no
+     * foundation, is reached only through a foundation switch, and that switch clears the
+     * selection itself, so a row for it could not fail. A search that merely replaces the list
+     * keeps the pick (the test below).
+     */
+    it.each([
+      ['HubSpot refuses the search', (): void => respond({ enabled: true, error: 'HubSpot refused the search', possiblyTruncated: false, emails: [] })],
+      ['the channel is off', (): void => respond({ enabled: false, error: null, possiblyTruncated: false, emails: [] })],
+      [
+        'every row is unusable',
+        (): void => respond({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: '', name: 'No id' }] as HubSpotMarketingEmail[] }),
+      ],
+      [
+        'the request fails in transport',
+        (): void => {
+          httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').error(new ProgressEvent('error'));
+          fixture.detectChanges();
+        },
+      ],
+    ])('clears a hand-picked template when %s', (_arm, fail) => {
+      showPicker();
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'hand', name: 'Something the operator knows about' }] as HubSpotMarketingEmail[],
+      });
+      picker().onSelectEmailTemplate('hand');
+      expect(picker().selectedEmailTemplateId()).toBe('hand');
+
+      picker().searchEmailTemplates('newsletter');
+      fail();
+
+      expect(picker().selectedEmailTemplateId(), 'an invisible, stageable selection survived the list').toBe('');
+      expect(picker().emailTemplatesRendered()).toEqual([]);
+      expect(picker().canStageEmail()).toBe(false);
+    });
+
+    /**
+     * A type change during a search must not re-derive the suggestion from the rows that search is
+     * replacing: the loading state hides them, so the live region would announce a recommendation
+     * for a row nobody can see. The search's own answer derives it under the new type.
+     */
+    it('does not suggest from the previous results while a search is pending', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+
+      picker().searchEmailTemplates('newsletter');
+      (picker() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+
+      expect(picker().emailTemplateSuggestionId(), 'a suggestion was derived from rows the pending search is replacing').toBe('');
     });
 
     /** A HAND-PICKED template is the operator's and survives a search that drops it. */
@@ -10029,8 +11026,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /**
      * A template matched on its SUBJECT may carry no name, and announcing an empty string reads as
-     * "Template selected for this event: . Choose another" — which tells a screen-reader user
-     * nothing about what was chosen for them.
+     * "Suggested template for this event: . Nothing is selected" — which tells a screen-reader user
+     * nothing about what is recommended.
      */
     it('announces a subject-matched template by its subject rather than an empty name', () => {
       showPicker();
@@ -11798,6 +12795,25 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     expect(tab()['googleAudienceSegmentsEnabled']()).toBe(enabled);
   });
 
+  /** #4983 ("ss-3"): where "create another campaign" is offered travels the same path. */
+  it('hands the create-another platforms to the Implementation tab', async () => {
+    const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+    listBriefCampaigns.mockReturnValue(capability(false).pipe(map((result) => ({ ...result, multiCampaignPlatforms: ['google-ads'] }))));
+
+    page().onProceedToImplementation(withGoogle);
+    await settle();
+    expect(tab()['multiCampaignPlatforms']()).toEqual(['google-ads']);
+  });
+
+  it('hands no create-another platforms when the BFF sends none', async () => {
+    const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+    listBriefCampaigns.mockReturnValue(capability(false));
+
+    page().onProceedToImplementation(withGoogle);
+    await settle();
+    expect(tab()['multiCampaignPlatforms']()).toEqual([]);
+  });
+
   /** The geo-search capability travels the same path: the real page reads it and binds it to the tab. */
   it.each([[true], [false]])('hands a google geo search capability of %s to the Implementation tab', async (enabled) => {
     listBriefCampaigns.mockReturnValue(capability(false, false, false, enabled));
@@ -11827,7 +12843,9 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     page().onProceedToImplementation(brief);
     await settle();
 
+    // One read: the capability read also files the list for the Implement tab's panel (#4983).
     expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
+    expect((page() as unknown as { briefCampaigns(): unknown }).briefCampaigns(), 'the save did not file the campaign list').not.toBeNull();
     expect(page().briefCampaignsBiddingEnabled()).toBe(true);
     expect(q('implementation-bidding-capability-unsaved')).toBeNull();
     expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });

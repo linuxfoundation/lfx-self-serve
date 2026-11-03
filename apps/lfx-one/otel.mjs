@@ -199,14 +199,12 @@ if (!otlpEndpoint) {
           const url = req.url || '';
           return url === '/livez' || url === '/readyz' || url.startsWith('/.well-known');
         },
-        // Server spans record the request URL (http.target/http.url, or url.query under the stable
-        // semconv) with its query string, which carries the invite token on the credential pages.
+        // Server spans record the query string in url.query (the only HTTP semconv emitted since
+        // 0.221), which carries the invite token on the credential pages.
         requestHook: (span, request) => {
           if (typeof request.url !== 'string') return;
           const redacted = redactCredentialUrl(request.url);
           if (redacted === request.url) return;
-          span.setAttribute('http.target', redacted);
-          span.setAttribute('http.url', `${request.socket?.encrypted ? 'https' : 'http'}://${request.headers?.host ?? 'localhost'}${redacted}`);
           span.setAttribute('url.query', redacted.split('?')[1] ?? '');
         },
         applyCustomAttributesOnSpan: (span, request, response) => {

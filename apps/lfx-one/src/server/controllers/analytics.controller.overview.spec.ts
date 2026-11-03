@@ -12,6 +12,7 @@ const reads = vi.hoisted(() => ({
   getEvents: vi.fn(),
   getBoard: vi.fn(),
   getCode: vi.fn(),
+  getNewsletters: vi.fn(),
 }));
 
 vi.mock('../services/health-metrics-overview.service', () => ({
@@ -23,6 +24,7 @@ vi.mock('../services/health-metrics-overview.service', () => ({
     public getEvents = reads.getEvents;
     public getBoard = reads.getBoard;
     public getCode = reads.getCode;
+    public getNewsletters = reads.getNewsletters;
   },
 }));
 // The controller constructs nine unrelated domain services; none of them are exercised here.
@@ -53,7 +55,8 @@ type Handler =
   | 'getOverviewOutstandingBalance'
   | 'getOverviewEvents'
   | 'getOverviewBoard'
-  | 'getOverviewCode';
+  | 'getOverviewCode'
+  | 'getOverviewNewsletters';
 
 const period = { totals: null, tiers: [{ tier: 'Gold Membership' }] };
 
@@ -84,6 +87,13 @@ const CASES: [Handler, keyof typeof reads, string, unknown, Record<string, unkno
   ],
   ['getOverviewBoard', 'getBoard', 'get_overview_board', { periods: {}, members: [{ key: 'k1' }, { key: 'k2' }] }, { member_count: 2 }],
   ['getOverviewCode', 'getCode', 'get_overview_code', { measured: true, periods: {} }, { measured: true }],
+  [
+    'getOverviewNewsletters',
+    'getNewsletters',
+    'get_overview_newsletters',
+    { measured: true, periods: {}, newsletters: [{ key: 'n1' }, { key: 'n2' }] },
+    { measured: true, newsletter_count: 2 },
+  ],
 ];
 
 function call(handler: Handler, queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {

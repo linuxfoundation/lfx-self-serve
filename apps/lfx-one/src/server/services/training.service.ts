@@ -35,21 +35,33 @@ const CERTIFICATES_UNFILTERED_QUERY = `${CERTIFICATES_BASE_QUERY}
   ORDER BY ISSUED_TS DESC
 `;
 
+// Exam enrollments are listed only while the user holds no certificate for the course, so each exam
+// appears on exactly one tab; the certificate match mirrors UNIFIED_CERTIFICATIONS_QUERY's best_cert.
+// Trainings are kept by the e.PRODUCT_TYPE predicate inside the subquery rather than by an OR, because
+// Snowflake does not allow a correlated EXISTS as an argument to OR.
 const ENROLLMENTS_QUERY = `
-  SELECT ENROLLMENT_ID, COURSE_NAME, COURSE_GROUP_DESCRIPTION,
-         LOGO_URL, PROJECT_NAME, LEVEL, COURSE_SLUG, COURSE_ID,
-         STATUS, IS_ACTIVE_ENROLLMENT, ENROLLMENT_TS, TOTAL_TIME
-  FROM ANALYTICS.PLATINUM_LFX_ONE.USER_COURSE_ENROLLMENTS
-  WHERE USER_NAME = ? AND PRODUCT_TYPE = ?
+  SELECT e.ENROLLMENT_ID, e.COURSE_NAME, e.COURSE_GROUP_DESCRIPTION,
+         e.LOGO_URL, e.PROJECT_NAME, e.LEVEL, e.COURSE_SLUG, e.COURSE_ID,
+         e.STATUS, e.IS_ACTIVE_ENROLLMENT, e.ENROLLMENT_TS, e.TOTAL_TIME, e.PRODUCT_TYPE
+  FROM ANALYTICS.PLATINUM_LFX_ONE.USER_COURSE_ENROLLMENTS e
+  WHERE e.USER_NAME = ? AND e.PRODUCT_TYPE IN (?, ?)
+    AND NOT EXISTS (
+      SELECT 1
+      FROM ANALYTICS.PLATINUM_LFX_ONE.USER_CERTIFICATES c
+      WHERE e.PRODUCT_TYPE = ?
+        AND c.USER_NAME = e.USER_NAME
+        AND c.COURSE_ID = e.COURSE_ID
+        AND c.PRODUCT_TYPE = ?
+    )
   ORDER BY
-    CASE STATUS
+    CASE e.STATUS
       WHEN 'started' THEN 1
       WHEN 'not-started' THEN 2
       WHEN 'not-completed' THEN 3
       WHEN 'completed' THEN 4
       ELSE 5
     END,
-    COURSE_NAME ASC
+    e.COURSE_NAME ASC
 `;
 
 const UNIFIED_CERTIFICATIONS_QUERY = `
@@ -149,7 +161,13 @@ export class TrainingService {
     let result: { rows: EnrollmentRow[] };
 
     try {
-      result = await this.snowflakeService.execute<EnrollmentRow>(ENROLLMENTS_QUERY, [username, TRAINING_PRODUCT_TYPE]);
+      result = await this.snowflakeService.execute<EnrollmentRow>(ENROLLMENTS_QUERY, [
+        username,
+        TRAINING_PRODUCT_TYPE,
+        CERTIFICATION_PRODUCT_TYPE,
+        CERTIFICATION_PRODUCT_TYPE,
+        CERTIFICATION_PRODUCT_TYPE,
+      ]);
     } catch (error) {
       logger.warning(req, 'get_enrollments', 'Snowflake query failed, returning empty enrollments', {
         error: error instanceof Error ? error.message : String(error),
@@ -244,6 +262,7 @@ export class TrainingService {
       totalTime: row.TOTAL_TIME ?? null,
       status: row.STATUS ?? null,
       isActiveEnrollment: row.IS_ACTIVE_ENROLLMENT,
+      productType: row.PRODUCT_TYPE,
     };
   }
 

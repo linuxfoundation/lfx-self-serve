@@ -39,8 +39,11 @@ export interface SnowflakeQueryOptions {
    */
   expectMissingObject?: boolean | string;
 
-  /** Identifier that may be absent during a coordinated schema rollout. A matching error is not counted toward the circuit breaker; the query still rejects so the caller can retry a legacy query. */
-  expectInvalidIdentifier?: string;
+  /**
+   * Identifier(s) that may be absent during a coordinated schema rollout. An error blaming one of them is not counted
+   * toward the circuit breaker; the query still rejects so the caller can retry a legacy query.
+   */
+  expectInvalidIdentifier?: string | readonly string[];
 }
 
 /**

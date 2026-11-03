@@ -4,8 +4,14 @@
 import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE,
+  LF_OWNED_EMAIL_LINK_DOMAINS,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_FUNNEL_STAGE_OPTIONS,
+  CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS,
+  CAMPAIGN_TACTIC_OPTIONS,
   CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
+  CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
@@ -40,7 +46,7 @@ import { encodePathSegment } from '../helpers/url-validation';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
 import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
-import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import { emailLinkDestinations, escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -65,6 +71,9 @@ import type {
   CampaignNegativeKeywordsResult,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignCreateAnother,
+  CampaignFunnelStage,
+  CampaignTactic,
   CampaignProgramType,
   CampaignServiceAccountMonitor,
   CampaignServiceAudience,
@@ -112,6 +121,7 @@ import type {
   RedditBriefCopy,
   StoredCreativeAsset,
 } from '@lfx-one/shared/interfaces';
+import { MULTI_CAMPAIGN_PLATFORMS_ENV } from '../constants/campaign-multi.constants';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -155,6 +165,12 @@ interface CampaignServiceJobPollResponse {
     /** Best-effort steps of a successful create that did not apply (email channel: a hero that could not be added). */
     warnings?: string[];
     error?: string;
+    /** lfx-v2-campaign-service#453: an existing campaign came back instead of a new one. */
+    reused?: boolean;
+    slot_version?: number;
+    variant?: string;
+    funnel_stage?: CampaignFunnelStage;
+    tactic?: CampaignTactic;
   }[];
   error?: string;
 }
@@ -563,6 +579,51 @@ export function canCreateWithGoogleCriteria(): boolean {
 }
 
 /**
+ * The platforms "create another campaign" is offered on (#4983, "ss-3"): the deployment's
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS`, narrowed to the platforms campaign-service
+ * accepts `new_version` and the stage/tactic labels for. Empty while the create cutover is dark, since
+ * only that path can carry the request.
+ */
+export function multiCampaignPlatforms(): string[] {
+  if (!cutoverOwnsCreate()) return [];
+  const listed = (process.env[MULTI_CAMPAIGN_PLATFORMS_ENV] ?? '')
+    .split(',')
+    .map((platform) => platform.trim().toLowerCase())
+    .filter((platform) => platform !== '');
+  return CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS.filter((platform) => listed.includes(platform));
+}
+
+/**
+ * Why a "create another" request cannot go upstream as it stands, or `null` when it can (#4983).
+ *
+ * The BFF refuses it rather than forwarding, for the cases campaign-service would refuse with a 400 and
+ * one it would not: a platform outside the deployment's list. An overlapping create must carry ONLY
+ * platforms that are being created again, each with the slot version the operator saw.
+ */
+export function createAnotherRefusal(platforms: readonly string[], another: CampaignCreateAnother): string | null {
+  const allowed = multiCampaignPlatforms();
+  const unsupported = platforms.filter((platform) => !allowed.includes(platform));
+  if (unsupported.length > 0) {
+    return `Another campaign can't be created on ${unsupported.join(', ')} yet. Create it on its own, without the other platforms, or create it again later.`;
+  }
+  if (!CAMPAIGN_FUNNEL_STAGE_OPTIONS.some((option) => option.id === another.funnelStage)) {
+    return 'Choose a funnel stage for the new campaign.';
+  }
+  if (another.tactic !== undefined && !CAMPAIGN_TACTIC_OPTIONS.some((option) => option.id === another.tactic)) {
+    return 'Choose a tactic from the list for the new campaign.';
+  }
+  const expected = another.expectedSlotVersions ?? {};
+  const keys = Object.keys(expected);
+  const exactKeys = keys.length === platforms.length && platforms.every((platform) => keys.includes(platform));
+  // 0 is valid: "the caller saw none in the slot" (campaign-service `expected_slot_versions`).
+  const validVersions = Object.values(expected).every((version) => Number.isInteger(version) && version >= 0);
+  if (!exactKeys || !validVersions) {
+    return 'This page could not tell which campaigns already exist, so nothing was created. Reload and try again.';
+  }
+  return null;
+}
+
+/**
  * Whether a Microsoft create may carry `microsoftConfig.startDate` / `endDate`.
  *
  * Needs the campaign-service create path to serve the create AND the Microsoft-schedule flag.
@@ -911,6 +972,7 @@ export class CampaignServiceClient {
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
+        multiCampaignPlatforms: multiCampaignPlatforms(),
       };
     }
 
@@ -981,6 +1043,7 @@ export class CampaignServiceClient {
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
+      multiCampaignPlatforms: multiCampaignPlatforms(),
     };
   }
 
@@ -1552,7 +1615,16 @@ export class CampaignServiceClient {
       // and the controller re-filters again at the request boundary. If a server-side consumer is
       // ever added, it must not treat this output as vouched.
       const firstButtonUrl = sections.find((section) => section.type === 'button')?.url;
-      const generatedDestinations = typeof firstButtonUrl === 'string' && firstButtonUrl !== '' ? [firstButtonUrl] : [];
+      // The button's own destination, plus the LF-owned domains (#3306). This pass has only the brief
+      // id, not the event page's links, so it cannot tell an extracted CFP or agenda link from an
+      // invented one; it keeps any link on the button's host or an LF-owned domain, and the client
+      // preview and the stage request then narrow that to the event page's own links
+      // (`emailLinkDestinations` with `eventDetails`). A stripped href cannot be put back downstream,
+      // so this first pass must not be the narrower one.
+      const generatedDestinations = emailLinkDestinations(
+        typeof firstButtonUrl === 'string' ? firstButtonUrl : '',
+        LF_OWNED_EMAIL_LINK_DOMAINS.map((domain) => `https://${domain}/`)
+      );
 
       const body = sections
         .filter(
@@ -1591,7 +1663,8 @@ export class CampaignServiceClient {
           // applies no sanitizer of its own, so there is nothing upstream to rely on. An
           // earlier comment in this file claimed an upstream allow-list covered it; that
           // allow-list exists only on the wizard path, which this is not.
-          return stripResourceLoadingHtml(section.html, generatedDestinations);
+          // The button is the only base a relative href may resolve against (#3306).
+          return stripResourceLoadingHtml(section.html, generatedDestinations, typeof firstButtonUrl === 'string' ? firstButtonUrl : '');
         })
         .join('');
       const buttonSection = sections.find((section) => section.type === 'button');
@@ -1644,8 +1717,12 @@ export class CampaignServiceClient {
       // here vouches for nothing by construction and strips every link in a legacy body. The
       // flat shape carries its destination in `ctaUrl`, which is what this branch must judge
       // against, exactly as the sections branch judges against its button url.
-      const legacyDestinations = [legacyText(legacy.ctaUrl)].filter((url) => url !== '');
-      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body), legacyDestinations) : '';
+      // Widened the same way as `generatedDestinations` above, for the same reason (#3306).
+      const legacyDestinations = emailLinkDestinations(
+        legacyText(legacy.ctaUrl),
+        LF_OWNED_EMAIL_LINK_DOMAINS.map((domain) => `https://${domain}/`)
+      );
+      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body), legacyDestinations, legacyText(legacy.ctaUrl)) : '';
       const effectiveBody = isLegacyShape ? legacyBody : body;
       const effectiveCta = isLegacyShape ? sanitizeDisplayText(legacyText(legacy.cta)) : cta;
       const effectiveCtaUrl = isLegacyShape ? legacyText(legacy.ctaUrl) : ctaUrl;
@@ -1757,9 +1834,10 @@ export class CampaignServiceClient {
     // Named-optional rather than a sixth positional string[], which would sit next to `platforms`
     // and be silently swappable with it — both are string arrays, so a transposition would type-
     // check and only surface as a wrong refusal. Read only for the Demand Gen check below.
-    opts: { campaignTypes?: string[] } = {}
+    opts: { campaignTypes?: string[]; another?: CampaignCreateAnother } = {}
   ): Promise<CampaignServiceCreateResult> {
     const campaignTypes = opts.campaignTypes;
+    const another = opts.another;
     // CREATE has TWO prerequisites, and neither is an independent switch. Treating them as
     // independent is the difference between a dark cutover and a broken page, because a
     // half-set pair answers `enabled: true` — the one result the controller may NOT fall
@@ -1791,6 +1869,15 @@ export class CampaignServiceClient {
     }
     if (platforms.length === 0) {
       return { enabled: true, jobId: null, error: 'Select at least one platform before creating campaigns.' };
+    }
+
+    // A deliberate "create another" (#4983) is refused here, before anything leaves, when it cannot be
+    // served as asked; see `createAnotherRefusal`. Definite, so the user may simply try again.
+    if (another !== undefined) {
+      const refusal = createAnotherRefusal(platforms, another);
+      if (refusal !== null) {
+        return { enabled: true, jobId: null, error: refusal };
+      }
     }
 
     // A selected platform with no config in the envelope is refused, rather than dispatched.
@@ -1971,7 +2058,22 @@ export class CampaignServiceClient {
         path,
         'POST',
         undefined,
-        { input: { platforms, config } }
+        {
+          input: {
+            platforms,
+            config,
+            // Only on a confirmed "create another" (#4983). Without `new_version` campaign-service treats a
+            // repeat create as a retry and returns the existing campaign, which is the safe default.
+            ...(another === undefined
+              ? {}
+              : {
+                  new_version: true,
+                  expected_slot_versions: another.expectedSlotVersions,
+                  funnel_stage: another.funnelStage,
+                  ...(another.tactic === undefined ? {} : { tactic: another.tactic }),
+                }),
+          },
+        }
       );
       const jobId = response.data?.job_id ?? '';
       if (jobId === '') {
@@ -2024,6 +2126,18 @@ export class CampaignServiceClient {
       }
       const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
       if (definitelyRejected) {
+        // The brief moved since this page read it (#4983): edited and saved in another tab, which
+        // resets it to `draft` and bumps its version. "Please try again" would be wrong here, because
+        // a retry from this tab is refused identically; only a refresh brings back the stored brief.
+        // Matched on the service's own wording and on the two statuses it uses for it, so nothing
+        // else upstream sends is relabelled — see `CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN`.
+        if (
+          error instanceof MicroserviceError &&
+          (error.statusCode === 409 || error.statusCode === 400) &&
+          CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN.test(error.message)
+        ) {
+          return { enabled: true, jobId: null, error: CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE };
+        }
         // The one refusal worth naming: an invalid bid (#3299). Matched on the service's own wording,
         // so nothing else upstream sends is rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN`.
         const biddingRefusal =
@@ -3062,6 +3176,19 @@ export class CampaignServiceClient {
       'GET',
       window ? { window } : undefined
     );
+  }
+
+  /**
+   * The Google Ads account monitor (`monitor-google-ads-account`). Read through the project's OWN
+   * connection only, as the Meta monitor below is, so a project without one gets a 404. Unlike Meta,
+   * upstream returns only the campaigns campaign-service recorded for the project, and refuses with a
+   * 409 when one of them was created under a different customer than `accountId`.
+   *
+   * `days` is sent as given: upstream REJECTS a value outside 7–90 rather than clamping, so the
+   * caller clamps (the controller does).
+   */
+  public async getGoogleAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'google-ads', projectSlug, accountId, days);
   }
 
   /**
@@ -4846,6 +4973,12 @@ export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): 
       hubspotUrl: r.hubspot_url,
       ...(warnings.length > 0 ? { warnings } : {}),
       error: r.error,
+      // lfx-v2-campaign-service#453. Copied only when sent, so an older service's result is unchanged.
+      ...(r.reused === true ? { reused: true } : {}),
+      ...(typeof r.slot_version === 'number' ? { slotVersion: r.slot_version } : {}),
+      ...(typeof r.variant === 'string' && r.variant !== '' ? { variant: r.variant } : {}),
+      ...(r.funnel_stage ? { funnelStage: r.funnel_stage } : {}),
+      ...(r.tactic ? { tactic: r.tactic } : {}),
     };
   });
 

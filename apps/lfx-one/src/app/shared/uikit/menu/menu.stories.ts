@@ -1,21 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { type Meta, moduleMetadata, type StoryObj } from '@storybook/angular';
 
+import { UiButtonComponent } from '../button/button.component';
 import { UiMenuGroupComponent } from './menu-group.component';
 import { UiMenuItemComponent } from './menu-item.component';
 import { UiMenuSeparatorComponent } from './menu-separator.component';
 import { UiMenuComponent } from './menu.component';
 
-// The triggers below are plain buttons styled like the library's secondary button; lfx-ui-button is not realigned yet and renders its
-// own inner button, so it cannot carry `cdkMenuTriggerFor`.
+// The triggers are `lfx-ui-button [menu]`.
 const meta: Meta<UiMenuComponent> = {
   title: 'Uikit/Menu',
   component: UiMenuComponent,
   subcomponents: { UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent },
-  decorators: [moduleMetadata({ imports: [CdkMenuTrigger, UiMenuComponent, UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent] })],
+  decorators: [moduleMetadata({ imports: [UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent] })],
   parameters: { layout: 'padded' },
   args: { ariaLabel: 'Project actions' },
   // Aliased CDK menu item inputs and output; Compodoc cannot see host-directive aliases.
@@ -39,9 +38,7 @@ const meta: Meta<UiMenuComponent> = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <button type="button" class="edge inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm bg-ui-background-100 px-[14px] label-14 font-medium text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
-        Actions <i class="fa-light fa-chevron-down text-[12px]" aria-hidden="true"></i>
-      </button>
+      <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
       <ng-template #menu>
         <lfx-ui-menu [ariaLabel]="cfg.ariaLabel">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square">Edit</lfx-ui-menu-item>
@@ -64,9 +61,7 @@ export const ItemVariants: Story = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <button type="button" class="edge inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm bg-ui-background-100 px-[14px] label-14 font-medium text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
-        Actions <i class="fa-light fa-chevron-down text-[12px]" aria-hidden="true"></i>
-      </button>
+      <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions" class="!w-[240px]">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square" shortcut="⌘E">Edit</lfx-ui-menu-item>
@@ -90,10 +85,7 @@ export const IconTrigger: Story = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <!-- Exact px, not rem; 14px root. No w-ui-* width utility, so the square matches h-ui-medium by hand. -->
-      <button type="button" aria-label="More actions" class="edge inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm bg-ui-background-100 text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
-        <i class="fa-light fa-ellipsis" aria-hidden="true"></i>
-      </button>
+      <lfx-ui-button variant="secondary" size="large" iconOnly icon="fa-light fa-ellipsis" ariaLabel="More actions" [menu]="menu" />
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="More actions">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square">Edit</lfx-ui-menu-item>
@@ -111,9 +103,7 @@ export const FlipsAtTheEdge: Story = {
     props: { cfg: args },
     template: `
       <div class="flex h-[360px] items-end">
-        <button type="button" class="edge inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm bg-ui-background-100 px-[14px] label-14 font-medium text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
-          Actions <i class="fa-light fa-chevron-up text-[12px]" aria-hidden="true"></i>
-        </button>
+        <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-up" [menu]="menu">Actions</lfx-ui-button>
       </div>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions">
@@ -121,6 +111,28 @@ export const FlipsAtTheEdge: Story = {
           <lfx-ui-menu-item icon="fa-light fa-copy">Duplicate</lfx-ui-menu-item>
           <lfx-ui-menu-item icon="fa-light fa-link">Copy Link</lfx-ui-menu-item>
           <lfx-ui-menu-item icon="fa-light fa-user-plus">Invite Members</lfx-ui-menu-item>
+        </lfx-ui-menu>
+      </ng-template>`,
+  }),
+};
+
+/** Shortcut keycaps: `+` splits keys, a `+` with no key on one side is the `+` key itself, and a leading ⌘ ⇧ ⌥ ⌃ is its own key. */
+export const Shortcuts: Story = {
+  render: (args) => ({
+    props: { cfg: args },
+    template: `
+      <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
+      <ng-template #menu>
+        <lfx-ui-menu ariaLabel="Shortcut forms" class="!w-[280px]">
+          <lfx-ui-menu-item shortcut="⌘K">Search</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="⌘ K">Search, spaced</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="Ctrl+Shift+K">Delete Line</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="+K">Add Keyword</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="Ctrl++K">Zoom to Fit</lfx-ui-menu-item>
+          <lfx-ui-menu-separator />
+          <lfx-ui-menu-item shortcut="+">Expand</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="Ctrl+">Zoom In</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="⌘+">Larger Text</lfx-ui-menu-item>
         </lfx-ui-menu>
       </ng-template>`,
   }),

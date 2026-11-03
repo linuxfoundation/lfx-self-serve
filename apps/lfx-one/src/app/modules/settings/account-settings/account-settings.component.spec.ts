@@ -4,8 +4,18 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
-import { EMAIL_ALREADY_CONNECTED_MESSAGE, EMAIL_VERIFICATION_SENT_MESSAGE, ERROR_CODES } from '@lfx-one/shared/constants';
+import {
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_RESEND_FAILED_MESSAGE,
+  EMAIL_RESEND_SUPPORT_MESSAGE,
+  EMAIL_RESEND_SUPPORT_TITLE,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
+  ERROR_CODES,
+} from '@lfx-one/shared/constants';
 import { EmailManagementData, MeetingInviteEmail, SendEmailVerificationResponse, UserEmail, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -13,7 +23,7 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountSettingsComponent } from './account-settings.component';
 
@@ -574,6 +584,176 @@ describe('AccountSettingsComponent — email verification support', () => {
     const supportButton = otpStep.querySelector<HTMLButtonElement>('[data-testid="otp-support-hint"] [data-testid="otp-support-button"]');
     expect(supportButton?.disabled).toBe(false);
     expect(root.querySelector('[data-testid="add-email-form"]')).toBeNull();
+  });
+});
+
+describe('AccountSettingsComponent — resend escalation (#4695)', () => {
+  const normalizedText = (element: Element | null): string => (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  async function setup(
+    send: () => Observable<SendEmailVerificationResponse> = () => of<SendEmailVerificationResponse>({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE })
+  ) {
+    const userServiceMock = {
+      impersonating: signal(false),
+      getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+      getDeveloperTokenInfo: vi.fn(() => of({ token: '' })),
+      sendEmailVerificationCode: vi.fn(send),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    component.addEmailForm.setValue({ email: 'new-address@example.test' });
+    component.sendVerificationCode();
+    fixture.detectChanges();
+
+    return { component, userServiceMock, fixture, root: fixture.nativeElement as HTMLElement };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('words the complete email flow conditionally before and after a generic successful send', async () => {
+    const response$ = new Subject<SendEmailVerificationResponse>();
+    const { component, fixture, root } = await setup(() => response$);
+
+    expect(component.otpStep()).toBe(false);
+    expect(normalizedText(root)).toContain("If this address can be added to your account, we'll send a 6-digit verification code to it.");
+    expect(normalizedText(root)).not.toContain('A 6-digit verification code will be sent to the new address');
+
+    response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
+    response$.complete();
+    fixture.detectChanges();
+
+    expect(component.otpStep()).toBe(true);
+    const otpStep = root.querySelector('[data-testid="otp-step"]');
+    expect(normalizedText(otpStep)).toContain('If this address can be added to your account, a 6-digit code has been sent to new-address@example.test');
+    expect(normalizedText(otpStep)).not.toContain("we'll send a 6-digit code");
+    expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
+    expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_TITLE);
+    expect(root.querySelector('[data-testid="resend-support-callout"]')).toBeNull();
+  });
+
+  it('replaces Resend with Contact support after the first successful resend', async () => {
+    vi.useFakeTimers();
+    const { component, fixture, root } = await setup();
+    expect(component.showResendSupport()).toBe(false);
+
+    vi.advanceTimersByTime(60_000);
+    component.sendVerificationCode();
+    fixture.detectChanges();
+
+    expect(component.resendCount()).toBe(1);
+    expect(component.showResendSupport()).toBe(true);
+    const callout = root.querySelector('[data-testid="resend-support-callout"]');
+    expect(callout).not.toBeNull();
+    expect(callout?.querySelector('[data-testid="resend-support-button"]')?.hasAttribute('lfxOpenIntercom')).toBe(true);
+    expect(root.querySelector('button[data-testid="resend-code-link"]')).toBeNull();
+    expect(normalizedText(callout)).toContain(EMAIL_RESEND_SUPPORT_TITLE);
+    expect(normalizedText(callout)).toContain(EMAIL_RESEND_SUPPORT_MESSAGE);
+    expect(root.querySelector('[data-testid="otp-support-hint"]')).toBeNull();
+    expect(root.querySelector('[data-testid="otp-input"]')).not.toBeNull();
+    expect(normalizedText(root)).not.toContain('a few minutes');
+    vi.advanceTimersByTime(60_000);
+    component.sendVerificationCode();
+    expect(component.resendCount()).toBe(1);
+  });
+
+  it.each([false, true])('shows a retryable error for a failed resend (HTTP error: %s)', async (httpError) => {
+    vi.useFakeTimers();
+    const { component, fixture, root, userServiceMock } = await setup();
+    const add = vi.spyOn(fixture.debugElement.injector.get(MessageService), 'add');
+    const response$ = new Subject<SendEmailVerificationResponse>();
+    userServiceMock.sendEmailVerificationCode.mockReturnValue(response$);
+
+    const button = root.querySelector('[data-testid="resend-code-link"]') as HTMLButtonElement;
+    expect(normalizedText(button)).toBe('Resend code in 60s');
+    expect(button.disabled).toBe(true);
+    component.sendVerificationCode();
+    expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(60_000);
+    fixture.detectChanges();
+    button.click();
+    component.sendVerificationCode();
+    fixture.detectChanges();
+
+    expect(normalizedText(button)).toBe('Requesting code…');
+    expect(button.disabled).toBe(true);
+    expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(2);
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="change-email-button"] button')?.disabled).toBe(true);
+    component.changeEmail();
+    expect(component.otpStep()).toBe(true);
+
+    if (httpError) {
+      response$.error(new HttpErrorResponse({ status: 500, error: { message: 'Internal error' } }));
+    } else {
+      response$.next({ success: false, message: 'Internal error' });
+      response$.complete();
+    }
+    fixture.detectChanges();
+
+    expect(add).toHaveBeenLastCalledWith({ severity: 'error', summary: 'Error', detail: EMAIL_RESEND_FAILED_MESSAGE });
+    expect(component.resendCount()).toBe(0);
+    expect(button.disabled).toBe(false);
+    expect(normalizedText(button)).toBe('Resend code');
+    userServiceMock.sendEmailVerificationCode.mockReturnValue(of<SendEmailVerificationResponse>({ success: true }));
+    button.click();
+    fixture.detectChanges();
+    expect(component.showResendSupport()).toBe(true);
+  });
+
+  it('lets users change the address after escalation and starts the new address fresh', async () => {
+    vi.useFakeTimers();
+    const { component, fixture, root, userServiceMock } = await setup();
+    vi.advanceTimersByTime(60_000);
+    component.sendVerificationCode();
+    component.otpForm.setValue({ otp: '123456' });
+    fixture.detectChanges();
+    expect(component.resendCount()).toBe(1);
+
+    (root.querySelector('[data-testid="change-email-button"] button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.otpStep()).toBe(false);
+    expect(component.pendingEmail()).toBe('');
+    expect(component.otpForm.controls.otp.value).toBeNull();
+    expect(component.resendCount()).toBe(0);
+    expect(root.querySelector('[data-testid="otp-step"]')).toBeNull();
+    expect(root.querySelector('[data-testid="add-email-form"]')).not.toBeNull();
+
+    component.addEmailForm.setValue({ email: 'another@example.test' });
+    component.sendVerificationCode();
+    fixture.detectChanges();
+    expect(userServiceMock.sendEmailVerificationCode).toHaveBeenLastCalledWith('another@example.test');
+    expect(component.pendingEmail()).toBe('another@example.test');
+    expect(component.resendCount()).toBe(0);
+    expect(component.resendCooldown()).toBe(60);
+  });
+
+  it('keeps the pending address while verification is in progress', async () => {
+    const { component, fixture, root } = await setup();
+    component.verifyingOtp.set(true);
+    fixture.detectChanges();
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="change-email-button"] button')?.disabled).toBe(true);
+    component.changeEmail();
+    expect(component.pendingEmail()).toBe('new-address@example.test');
+    expect(component.otpStep()).toBe(true);
+    component.verifyingOtp.set(false);
   });
 });
 

@@ -70,7 +70,11 @@ export function isValueConversionError(error: unknown): boolean {
   return normalizedErrorCode === '100038' || /\b(?:date|time|timestamp|numeric value|boolean value) '[^']*' is not recognized/i.test(message);
 }
 
-/** True when Snowflake rejects a column reference, optionally for one expected identifier. */
+/**
+ * True when Snowflake rejects a column reference, optionally for one expected identifier. Snowflake names the
+ * reference as written, so an aliased column (`r.IS_CDP_TEAM_MEMBER`) comes back qualified (`'R.IS_CDP_TEAM_MEMBER'`):
+ * quotes are stripped and a qualified name matches on its last part.
+ */
 export function isInvalidIdentifierError(error: unknown, expectedIdentifier?: string): boolean {
   const message = error instanceof Error ? error.message : String(error);
   let errorCode = '';
@@ -84,6 +88,7 @@ export function isInvalidIdentifierError(error: unknown, expectedIdentifier?: st
   }
 
   const identifierMatch = /invalid identifier\s+(?:'([^']+)'|"([^"]+)"|([^\s,;]+))/i.exec(message);
-  const actualIdentifier = identifierMatch?.[1] ?? identifierMatch?.[2] ?? identifierMatch?.[3];
-  return actualIdentifier?.toUpperCase() === expectedIdentifier.toUpperCase();
+  const actual = (identifierMatch?.[1] ?? identifierMatch?.[2] ?? identifierMatch?.[3])?.replace(/["']/g, '').toUpperCase();
+  const expected = expectedIdentifier.replace(/["']/g, '').toUpperCase();
+  return actual !== undefined && (actual === expected || actual.endsWith(`.${expected}`));
 }

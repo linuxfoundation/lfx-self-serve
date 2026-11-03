@@ -16,7 +16,11 @@ import {
   campaignActionItemLever,
   campaignActionRuleLever,
   campaignEtagVersion,
+  campaignFlightDays,
+  campaignLabelColumns,
+  dailyBudgetFromTotal,
   describeCampaignDispatchFailure,
+  isReversedCampaignFlight,
   keywordActionKey,
   normalizeSponsors,
   parseNegativeKeywordInput,
@@ -355,5 +359,151 @@ describe('describeCampaignDispatchFailure', () => {
     'dispatcher returned no campaign',
   ])('does not flag %j as nothing created', (error) => {
     expect(describeCampaignDispatchFailure(error)).toEqual({ message: error, nextStep: null, nothingCreated: false });
+  });
+});
+
+describe('campaignFlightDays', () => {
+  it('counts the start and end days both', () => {
+    expect(campaignFlightDays('2026-10-29', '2026-11-28')).toBe(31);
+  });
+
+  it('counts a same-day flight as one day', () => {
+    expect(campaignFlightDays('2026-12-01', '2026-12-01')).toBe(1);
+  });
+
+  it('counts whole days across a daylight-saving change', () => {
+    // US clocks go back on 2026-11-01 and Sydney's go forward on 2026-10-04; neither may shave a day.
+    expect(campaignFlightDays('2026-10-31', '2026-11-02')).toBe(3);
+    expect(campaignFlightDays('2026-10-03', '2026-10-05')).toBe(3);
+  });
+
+  it('counts across a leap day', () => {
+    expect(campaignFlightDays('2028-02-28', '2028-03-01')).toBe(3);
+  });
+
+  it('returns null when the end is before the start', () => {
+    expect(campaignFlightDays('2026-12-10', '2026-12-01')).toBeNull();
+  });
+
+  it.each([[''], ['2026-1-01'], ['2026-02-30'], ['2026-13-01'], ['01/12/2026'], ['2026-12-01T00:00:00Z']])('returns null for the date %j', (bad) => {
+    expect(campaignFlightDays(bad, '2026-12-31')).toBeNull();
+    expect(campaignFlightDays('2026-01-01', bad)).toBeNull();
+  });
+});
+
+describe('isReversedCampaignFlight', () => {
+  it('is true for an end before the start', () => {
+    expect(isReversedCampaignFlight('2026-12-10', '2026-12-09')).toBe(true);
+    expect(isReversedCampaignFlight('2027-01-01', '2026-12-31')).toBe(true);
+  });
+
+  it('is false for a same-day flight, which Google accepts', () => {
+    expect(isReversedCampaignFlight('2026-12-10', '2026-12-10')).toBe(false);
+  });
+
+  it('is false for a forward flight', () => {
+    expect(isReversedCampaignFlight('2026-12-10', '2026-12-11')).toBe(false);
+  });
+
+  it.each([[''], ['2026-1-01'], ['2026-02-30'], ['not a date']])('is false when a date is not a real calendar day (%j)', (bad) => {
+    expect(isReversedCampaignFlight(bad, '2026-01-01')).toBe(false);
+    expect(isReversedCampaignFlight('2026-12-31', bad)).toBe(false);
+  });
+});
+
+describe('dailyBudgetFromTotal', () => {
+  it('divides the total over the days, rounded down to the cent', () => {
+    expect(dailyBudgetFromTotal(900, 31)).toBe(29.03);
+    expect(dailyBudgetFromTotal(5000, 30)).toBe(166.66);
+  });
+
+  it('never spends more than the total over the flight', () => {
+    for (const [total, days] of [
+      [900, 31],
+      [5000, 30],
+      [1234.56, 7],
+      [0.07, 7],
+      [100, 3],
+    ]) {
+      const daily = dailyBudgetFromTotal(total, days) as number;
+      expect(Math.round(daily * days * 100)).toBeLessThanOrEqual(Math.round(total * 100));
+    }
+  });
+
+  it('keeps an exact division exact', () => {
+    expect(dailyBudgetFromTotal(3100, 31)).toBe(100);
+    expect(dailyBudgetFromTotal(500, 1)).toBe(500);
+  });
+
+  it('steps back a cent when a total holding a fraction of a cent would round up past itself', () => {
+    // Rounding 31.309 to the cent gives 31.31, which divides to 1.01 a day and 31.31 over the flight.
+    expect(dailyBudgetFromTotal(31.309, 31)).toBe(1);
+    expect(dailyBudgetFromTotal(31.304, 31)).toBe(1);
+    expect((dailyBudgetFromTotal(31.309, 31) as number) * 31).toBeLessThanOrEqual(31.309);
+  });
+
+  it('can return less than one when the total is small for the flight', () => {
+    expect(dailyBudgetFromTotal(10, 31)).toBe(0.32);
+  });
+
+  it.each([
+    [0, 31],
+    [-100, 31],
+    [Number.NaN, 31],
+    [Number.POSITIVE_INFINITY, 31],
+    [900, 0],
+    [900, 2.5],
+    [900, -1],
+  ])('returns null for a total of %d over %d day(s)', (total, days) => {
+    expect(dailyBudgetFromTotal(total, days)).toBeNull();
+  });
+});
+
+/** #4983 ("ss-4"): the labels that tell a brief's campaigns on one platform apart, "—" when absent. */
+describe('campaignLabelColumns', () => {
+  it('names the Google channel, stage, tactic and created date a labelled campaign records', () => {
+    const labels = campaignLabelColumns(
+      {
+        platform: 'google-ads',
+        variant: 'demand-gen',
+        funnel_stage: 'mid',
+        tactic: 'content-promotion',
+        created_at: '2026-11-02T12:00:00Z',
+      },
+      'UTC'
+    );
+    expect(labels).toEqual({ channel: 'Demand Gen', stage: 'Mid funnel', tactic: 'Content promotion', created: 'Nov 2, 2026' });
+  });
+
+  it("leaves the created date to the browser when the viewer's zone is not known (a server render)", () => {
+    expect(campaignLabelColumns({ platform: 'google-ads', created_at: '2026-11-02T12:00:00Z' }, null).created).toBe('—');
+  });
+
+  it('dates a campaign by the calendar day in the zone it is given', () => {
+    const lateEvening = { platform: 'google-ads', created_at: '2026-11-03T03:00:00Z' };
+    expect(campaignLabelColumns(lateEvening, 'UTC').created).toBe('Nov 3, 2026');
+    expect(campaignLabelColumns(lateEvening, 'America/Los_Angeles').created).toBe('Nov 2, 2026');
+  });
+
+  it("reads Google's default variant as Search, and names no channel on a single-channel platform", () => {
+    expect(campaignLabelColumns({ platform: 'google-ads', variant: 'default' }).channel).toBe('Search');
+    expect(campaignLabelColumns({ platform: 'microsoft-ads', variant: 'default' }).channel).toBe('—');
+  });
+
+  it('shows "—" for every label a legacy campaign does not record', () => {
+    expect(campaignLabelColumns({ platform: 'google-ads' })).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });
+  });
+
+  it('shows "—", never raw text or "Invalid Date", for values this build does not know', () => {
+    const labels = campaignLabelColumns({
+      platform: 'google-ads',
+      variant: 'shopping',
+      // @ts-expect-error an unknown stage, as the unvalidated index can carry
+      funnel_stage: 'toString',
+      // @ts-expect-error an unknown tactic, as the unvalidated index can carry
+      tactic: '<b>other</b>',
+      created_at: 'yesterday',
+    });
+    expect(labels).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });
   });
 });

@@ -236,6 +236,24 @@ export const EMAIL_CALLBACK_RETRY_MESSAGE =
 /** Enumeration-safe response shared by accepted and already-linked send-code requests. */
 export const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to your account, a verification code has been sent.';
 
+/** Resends allowed on the code step before Resend is replaced by a Contact support action. */
+export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
+
+/** Heading for the initial code-step guidance, neutral about delivery and linked-account status. */
+export const EMAIL_CODE_NOT_RECEIVED_TITLE = 'No code yet?';
+
+/** Standalone code-step hint shown alongside a secondary Contact support action. */
+export const EMAIL_CODE_NOT_RECEIVED_HINT = 'Check the email address above and your spam or junk folder.';
+
+/** Heading for the support-first state after the allowed successful resend. */
+export const EMAIL_RESEND_SUPPORT_TITLE = 'Still waiting for your code?';
+
+/** Escalation guidance that makes no delivery-time promise and preserves late-code entry. */
+export const EMAIL_RESEND_SUPPORT_MESSAGE = "If it hasn't arrived, contact support for help. You can still enter the code here if it arrives later.";
+
+/** Retryable, non-identifying error shown when a resend request fails. */
+export const EMAIL_RESEND_FAILED_MESSAGE = "We couldn't request another code. Please try again.";
+
 /** Generic error code for every non-service-unavailable OTP verification failure. */
 export const EMAIL_VERIFICATION_FAILED_ERROR = 'verification_failed';
 

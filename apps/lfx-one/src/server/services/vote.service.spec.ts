@@ -20,12 +20,21 @@ import {
   VOTE_REMINDER_SELECTION_STALE,
   VOTE_SEND_BALLOTS_BATCH_SIZE,
   VOTE_SUMMARY_NOT_ENDED,
+  VOTE_SUMMARY_PRECHECK_FAILED,
   VOTE_SUMMARY_SEND_FAILED,
   VOTE_VOTERS_DRAFT,
-  VOTE_VOTERS_PSEUDO_ANONYMOUS,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
-import type { CreateVoteResponseRequest, IndexedVote, IndexedVoteResponse, QueryServiceResponse, VoteResultsResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CreateVoteResponseRequest,
+  IndexedVote,
+  IndexedVoteResponse,
+  MyVoteResponse,
+  QueryServiceResponse,
+  VoteResultsResponse,
+  Vote,
+  VoteVoter,
+} from '@lfx-one/shared/interfaces';
 
 // Only `@lfx-one/shared/utils` is stubbed: its barrel pulls `@angular/common/http` (HttpParams via
 // meeting.utils), which can't JIT-compile in this plain-Node env. Enums/constants resolve for real via the alias.
@@ -71,7 +80,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   // a stub. Deep importActual avoids the barrel's @angular/common/http graph (compiler shim above).
   const { compareVotesByRecency, isVoteClosingSoon, computeResultPercentage } =
     await vi.importActual<typeof import('@lfx-one/shared/utils/vote.utils')>('@lfx-one/shared/utils/vote.utils');
-  const { countVotesByStatus, normalizePollStatus } =
+  const { countVotesByStatus, normalizePollStatus, sortCommentResponsesByText } =
     await vi.importActual<typeof import('@lfx-one/shared/utils/poll.utils')>('@lfx-one/shared/utils/poll.utils');
   const { maskIdentifierForLogs } = await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils');
   const { escapeHtml } = await vi.importActual<typeof import('@lfx-one/shared/utils/html-utils')>('@lfx-one/shared/utils/html-utils');
@@ -85,6 +94,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     maskIdentifierForLogs,
     escapeHtml,
     sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
+    sortCommentResponsesByText,
   };
 });
 vi.mock('./logger.service', () => ({
@@ -128,6 +138,7 @@ vi.mock('../helpers/entity-project-enrichment.helper', () => ({
 vi.mock('../helpers/poll-endpoint.helper', () => ({ pollEndpoint }));
 vi.mock('../helpers/query-service.helper', () => ({ fetchAllQueryResources }));
 vi.mock('../utils/auth-helper', () => ({
+  isImpersonating: (req: Request) => req.impersonationActive === true,
   getEffectiveEmail,
   getRawEffectiveEmail,
   getUsernameFromAuth,
@@ -157,6 +168,7 @@ describe('VoteService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    req.impersonationActive = false;
     proxyRequest.mockResolvedValue(voteFixture);
     proxyRequestWithResponse.mockResolvedValue({ data: voteFixture, headers: {} });
     assertVoteWrite.mockResolvedValue(undefined);
@@ -996,18 +1008,247 @@ describe('VoteService', () => {
   });
 
   describe('getVoteResults', () => {
-    it('encodes the uid in the /results path', async () => {
-      proxyRequest.mockResolvedValue({ poll_results: [], comment_results: [], num_votes_cast: 0 });
+    const RESULTS_UID = 'v0000000-0000-0000-0000-00000000c001';
+    // Vote-writer reads keep today's behaviour; the non-writer gate (#4330) has its own block below.
+    const writer = { canWrite: true };
+    const nonWriter = { canWrite: false };
+    const namedEndedVote = { ...voteFixture, uid: RESULTS_UID, status: 'ended', pseudo_anonymity: false, poll_questions: [{ question_id: 'q-1' }] };
+    const pseudoVote = (overrides: Record<string, unknown> = {}) => ({ ...namedEndedVote, status: 'active', pseudo_anonymity: true, ...overrides });
+    const upstreamResults = (overrides: Record<string, unknown> = {}) => ({
+      poll_results: [{ question_id: 'q-1', total_voting_request_invitations: 5 }],
+      comment_results: [
+        {
+          prompt: { prompt_id: 'p-1', prompt: 'Any concerns?' },
+          responses: [
+            {
+              vote_id: 'b-1',
+              user_id: 'u-1',
+              user_name: 'Avery Example',
+              profile_picture: 'https://avatars.example/avery.png',
+              comment_text: 'Zebra crossing',
+              vote_creation_time: '2026-10-02T09:30:00Z',
+              abstained: false,
+            },
+            { vote_id: 'b-2', comment_text: 'apple pie', vote_creation_time: '2026-10-03T09:30:00Z', abstained: true },
+          ],
+        },
+      ],
+      num_recipients: 5,
+      num_votes_cast: 2,
+      num_abstained: 1,
+      poll_end_time: '2026-10-10T18:00:00Z',
+      poll_end_time_timezone: 'UTC',
+      ...overrides,
+    });
+    const heldPayload = {
+      poll_results: [],
+      comment_results: [],
+      num_recipients: 5,
+      num_votes_cast: 2,
+      poll_end_time: '2026-10-10T18:00:00Z',
+      poll_end_time_timezone: 'UTC',
+      results_held: true,
+    };
+    /** Routes the concurrent vote lookup and results fetch by path. */
+    const mockVoteAndResults = (vote: unknown, results: unknown) =>
+      proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: string) => (path.endsWith('/results') ? results : vote));
 
-      await service.getVoteResults(req, HOSTILE_UID);
+    it('encodes the uid in the /results path', async () => {
+      mockVoteAndResults({ ...namedEndedVote, uid: HOSTILE_UID }, { poll_results: [], comment_results: [], num_votes_cast: 0 });
+
+      await service.getVoteResults(req, HOSTILE_UID, writer);
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef/results', 'GET');
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef', 'GET');
     });
 
     it('rejects a dot-segment uid without proxying', async () => {
-      await expect(service.getVoteResults(req, '..')).rejects.toThrow(ServiceValidationError);
+      await expect(service.getVoteResults(req, '..', writer)).rejects.toThrow(ServiceValidationError);
 
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an open pseudo-anonymous vote', pseudoVote()],
+      ['a disabled pseudo-anonymous vote', pseudoVote({ status: 'disabled' })],
+      ['an open vote with no pseudo_anonymity flag', pseudoVote({ pseudo_anonymity: undefined })],
+      ['an open pseudo-anonymous vote with a legacy mixed-case status', pseudoVote({ status: 'Active' })],
+    ])('holds totals, the abstention count and comments on %s (#3916)', async (_label, vote) => {
+      mockVoteAndResults(vote, upstreamResults());
+
+      const results = await service.getVoteResults(req, RESULTS_UID, writer);
+
+      expect(results).toEqual(heldPayload);
+      expect(results).not.toHaveProperty('num_abstained');
+    });
+
+    it.each([
+      ['upstream marks the results held', upstreamResults({ results_held: true })],
+      ['upstream returns no poll_results for a vote with questions', upstreamResults({ poll_results: [] })],
+      ['upstream omits poll_results for a vote with questions', upstreamResults({ poll_results: undefined })],
+    ])('holds an ended pseudo-anonymous vote when %s (#3916)', async (_label, upstream) => {
+      mockVoteAndResults(pseudoVote({ status: 'ended' }), upstream);
+
+      expect(await service.getVoteResults(req, RESULTS_UID, writer)).toEqual(heldPayload);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'get_vote_results', expect.stringContaining('still holding'), expect.any(Object));
+    });
+
+    it('passes an ended named vote with empty upstream results through unheld', async () => {
+      const upstream = upstreamResults({ poll_results: [], comment_results: [] });
+      mockVoteAndResults(namedEndedVote, upstream);
+
+      const results = await service.getVoteResults(req, RESULTS_UID, writer);
+
+      expect(results).toEqual(upstream);
+      expect(results.results_held).toBeUndefined();
+    });
+
+    it('returns text-only comments in text order on an ended pseudo-anonymous vote (#3916)', async () => {
+      mockVoteAndResults(pseudoVote({ status: 'ended' }), upstreamResults());
+
+      const results = await service.getVoteResults(req, RESULTS_UID, writer);
+
+      expect(results.results_held).toBeUndefined();
+      expect(results.num_abstained).toBe(1);
+      expect(results.poll_results).toHaveLength(1);
+      expect(results.comment_results[0].total_responses).toBe(2);
+      expect(results.comment_results[0].responses).toEqual([{ comment_text: 'apple pie' }, { comment_text: 'Zebra crossing' }]);
+    });
+
+    it('leaves a named vote unchanged, with attributed comments', async () => {
+      const upstream = upstreamResults();
+      mockVoteAndResults(namedEndedVote, upstreamResults());
+
+      const results = await service.getVoteResults(req, RESULTS_UID, writer);
+
+      expect(results).toEqual({
+        ...upstream,
+        comment_results: [{ ...upstream.comment_results[0], total_responses: 2 }],
+      });
+    });
+
+    it('rejects when the vote lookup fails, never falling back to unheld results (#3916)', async () => {
+      const upstream = new MicroserviceError('vote lookup failed', 502, 'BAD_GATEWAY', {});
+      proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: string) => {
+        if (path.endsWith('/results')) return upstreamResults();
+        throw upstream;
+      });
+
+      await expect(service.getVoteResults(req, RESULTS_UID, writer)).rejects.toBe(upstream);
+    });
+
+    it('keeps live results for a writer on an active named vote', async () => {
+      const getMyVoteResponse = vi.spyOn(service, 'getMyVoteResponse');
+      mockVoteAndResults({ ...namedEndedVote, status: 'active' }, upstreamResults());
+
+      const results = await service.getVoteResults(req, RESULTS_UID, writer);
+
+      expect(results.comment_results[0].responses[0]).toHaveProperty('user_name', 'Avery Example');
+      expect(getMyVoteResponse).not.toHaveBeenCalled();
+    });
+
+    describe('non-writer gate (#4330)', () => {
+      const invitedRow = { uid: 'vr-1', vote_uid: RESULTS_UID, voter_removed: false };
+      const resultsCalls = () => proxyRequest.mock.calls.filter(([, , path]) => String(path).endsWith('/results'));
+
+      it.each([
+        ['an active vote', 'active'],
+        ['a disabled vote', 'disabled'],
+        ['an active vote with a legacy mixed-case status', 'Active'],
+      ])('rejects %s with a 403 before fetching results', async (_label, status) => {
+        const getMyVoteResponse = vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(invitedRow as never);
+        mockVoteAndResults({ ...namedEndedVote, status }, upstreamResults());
+
+        await expect(service.getVoteResults(req, RESULTS_UID, nonWriter)).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
+        expect(resultsCalls()).toHaveLength(0);
+        expect(getMyVoteResponse).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['has no vote_response row', null],
+        ['was removed from the vote', { ...invitedRow, voter_removed: true }],
+      ])('rejects an ended vote with a 403 when the caller %s', async (_label, row) => {
+        vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(row as never);
+        mockVoteAndResults(namedEndedVote, upstreamResults());
+
+        await expect(service.getVoteResults(req, RESULTS_UID, nonWriter)).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
+        expect(resultsCalls()).toHaveLength(0);
+      });
+
+      describe('re-invitation results access through the real personal-response lookup', () => {
+        const removedRow = { ...invitedRow, uid: 'vr-removed', username: 'spec-user', voter_removed: true };
+        const currentRow = { ...invitedRow, uid: 'vr-current', username: 'spec-user' };
+
+        beforeEach(() => {
+          getUsernameFromAuth.mockResolvedValue('spec-user');
+          getEffectiveEmail.mockReturnValue('spec-user@example.org');
+          fetchAllQueryResources.mockImplementation(async (_req: unknown, fetchPage: () => Promise<QueryServiceResponse<IndexedVoteResponse>>) => {
+            const page = await fetchPage();
+            return page.resources.map((resource) => resource.data);
+          });
+        });
+
+        it.each([
+          ['the removed row comes first', [removedRow, currentRow]],
+          ['the current row comes first', [currentRow, removedRow]],
+        ])('allows an ended vote when %s', async (_label, rows) => {
+          proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: string) => {
+            if (path === '/query/resources') return { resources: rows.map((data) => ({ data })) };
+            return path.endsWith('/results') ? upstreamResults() : namedEndedVote;
+          });
+
+          const results = await service.getVoteResults(req, RESULTS_UID, nonWriter);
+
+          expect(results.num_votes_cast).toBe(2);
+          expect(results.comment_results[0].responses).toEqual([{ comment_text: 'apple pie' }, { comment_text: 'Zebra crossing' }]);
+          expect(resultsCalls()).toHaveLength(1);
+        });
+
+        it('allows a current legacy invitation when the vote_uid query finds only a removed invitation', async () => {
+          proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: string, _method: unknown, params?: { filters?: string[] }) => {
+            if (path === '/query/resources') {
+              const rows = params?.filters?.includes(`poll_id:${RESULTS_UID}`) ? [{ ...currentRow, vote_uid: undefined, poll_id: RESULTS_UID }] : [removedRow];
+              return { resources: rows.map((data) => ({ data })) };
+            }
+            return path.endsWith('/results') ? upstreamResults() : namedEndedVote;
+          });
+
+          const results = await service.getVoteResults(req, RESULTS_UID, nonWriter);
+
+          expect(results.num_votes_cast).toBe(2);
+          expect(resultsCalls()).toHaveLength(1);
+        });
+
+        it('rejects a removed-only invitation before fetching results', async () => {
+          proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: string) => {
+            if (path === '/query/resources') return { resources: [{ data: removedRow }] };
+            return path.endsWith('/results') ? upstreamResults() : namedEndedVote;
+          });
+
+          await expect(service.getVoteResults(req, RESULTS_UID, nonWriter)).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
+
+          expect(resultsCalls()).toHaveLength(0);
+        });
+      });
+
+      it('returns text-only comments in text order on an ended named vote for an invitee', async () => {
+        vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(invitedRow as never);
+        mockVoteAndResults(namedEndedVote, upstreamResults());
+
+        const results = await service.getVoteResults(req, RESULTS_UID, nonWriter);
+
+        expect(results.num_votes_cast).toBe(2);
+        expect(results.poll_results).toHaveLength(1);
+        expect(results.comment_results[0].total_responses).toBe(2);
+        expect(results.comment_results[0].responses).toEqual([{ comment_text: 'apple pie' }, { comment_text: 'Zebra crossing' }]);
+      });
+
+      it('keeps the pseudo-anonymous hold for an invitee when upstream is still holding', async () => {
+        vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(invitedRow as never);
+        mockVoteAndResults(pseudoVote({ status: 'ended' }), upstreamResults({ results_held: true }));
+
+        expect(await service.getVoteResults(req, RESULTS_UID, nonWriter)).toEqual(heldPayload);
+      });
     });
   });
 
@@ -1642,6 +1883,34 @@ describe('VoteService', () => {
       });
     });
 
+    it.each([IndexedVoteResponseStatus.AWAITING_RESPONSE, IndexedVoteResponseStatus.RESPONDED])(
+      'excludes removed invitations regardless of ballot status: %s',
+      async (voteStatus) => {
+        fetchAllQueryResources.mockResolvedValue([{ vote_uid: MY_VOTE_UID, username: 'spec-user', vote_status: voteStatus, voter_removed: true }]);
+
+        await expect(service.getMyVotes(req)).resolves.toEqual({ votes: [], complete: true });
+        expect(proxyRequest).not.toHaveBeenCalled();
+        expect(getProjectsByIds).not.toHaveBeenCalled();
+      }
+    );
+
+    it('uses only current invitations for the feed and response status after a re-invitation', async () => {
+      fetchAllQueryResources.mockResolvedValue([
+        { vote_uid: 'removed-vote', username: 'spec-user', voter_removed: true },
+        { vote_uid: MY_VOTE_UID, username: 'spec-user', vote_status: IndexedVoteResponseStatus.RESPONDED, voter_removed: true },
+        { vote_uid: MY_VOTE_UID, username: 'spec-user', vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE, voter_removed: false },
+      ]);
+      proxyRequest.mockResolvedValue(detailVote);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getMyVotes(req);
+
+      expect(result.complete).toBe(true);
+      expect(result.votes).toEqual([expect.objectContaining({ uid: MY_VOTE_UID, response_status: VoteResponseStatus.AWAITING_RESPONSE })]);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/votes/${MY_VOTE_UID}`, 'GET');
+    });
+
     it('orders by the canonical recency comparator — active tier first, creation_time desc within it (GH-1558)', async () => {
       // end_time desc (the pre-GH-1558 inline sort) would put UID_B before UID_A; creation_time desc must win.
       const UID_A = 'v0000000-0000-0000-0000-00000000d201';
@@ -1848,6 +2117,48 @@ describe('VoteService', () => {
       expect(result).toMatchObject({ uid: 'vr-1', vote_uid: VOTE_UID });
     });
 
+    describe.each(['vote_uid', 'poll_id'] as const)('current invitation selection via %s', (parentKey) => {
+      const removedRow = { uid: 'vr-removed', [parentKey]: VOTE_UID, username: 'spec-user', voter_removed: true };
+      const currentRow = { uid: 'vr-current', [parentKey]: VOTE_UID, username: 'spec-user', voter_removed: false };
+
+      it.each([
+        ['removed first', [removedRow, currentRow]],
+        ['current first', [currentRow, removedRow]],
+      ])('prefers the current invitation with %s', async (_label, rows) => {
+        proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: string, _method: unknown, params: { filters: string[] }) => ({
+          resources: params.filters.includes(`${parentKey}:${VOTE_UID}`) ? rows.map((data) => ({ data })) : [],
+        }));
+
+        await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toMatchObject({ uid: 'vr-current', vote_uid: VOTE_UID, voter_removed: false });
+      });
+    });
+
+    it('prefers a current poll_id-only invitation over a removed vote_uid invitation', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ data: { uid: 'vr-removed', vote_uid: VOTE_UID, username: 'spec-user', voter_removed: true } }] })
+        .mockResolvedValueOnce({ resources: [{ data: { uid: 'vr-current', poll_id: VOTE_UID, username: 'spec-user', voter_removed: false } }] });
+
+      await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toMatchObject({ uid: 'vr-current', vote_uid: VOTE_UID, voter_removed: false });
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('retains the removed vote_uid invitation when the legacy query has no usable current match', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({
+          resources: [{ data: { uid: 'vr-removed', vote_uid: VOTE_UID, username: 'spec-user', voter_removed: true } }],
+        })
+        .mockResolvedValueOnce({
+          resources: [
+            { data: { uid: 'vr-foreign', poll_id: VOTE_UID, username: 'someone-else', voter_removed: false } },
+            { data: { uid: 'vr-other-vote', poll_id: 'other-vote', username: 'spec-user', voter_removed: false } },
+            { data: { poll_id: VOTE_UID, username: 'spec-user', voter_removed: false } },
+          ],
+        });
+
+      await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toMatchObject({ uid: 'vr-removed', vote_uid: VOTE_UID, voter_removed: true });
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+    });
+
     it('returns null when the only indexed row belongs to a different vote', async () => {
       // Row carries the mocked identity so the helper's ownership re-check keeps it — the null
       // must come from the vote_uid mismatch, not from the row being filtered out.
@@ -1947,6 +2258,152 @@ describe('VoteService', () => {
       await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toBeNull();
       expect(fetchAllQueryResources).not.toHaveBeenCalled();
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Admin Mode response metadata (#4331)', () => {
+    it('never forwards indexed ballot fields while impersonating, regardless of privacy', async () => {
+      req.impersonationActive = true;
+      getEffectiveEmail.mockReturnValue('spec-voter@example.org');
+      fetchAllQueryResources.mockResolvedValue([
+        {
+          uid: 'owned-row',
+          vote_uid: 'vote-1',
+          vote_status: 'responded',
+          user_email: 'spec-voter@example.org',
+          abstained: true,
+          poll_answers: [{ question_id: 'q-1' }],
+          comment_responses: [{ comment_text: 'private' }],
+          vote_creation_time: '2026-10-20T10:00:00Z',
+        },
+      ]);
+
+      await expect(service.getMyVoteResponse(req, 'vote-1')).resolves.toEqual({
+        uid: 'owned-row',
+        vote_uid: 'vote-1',
+        vote_status: 'responded',
+        voter_removed: undefined,
+      });
+    });
+  });
+
+  describe('getMyVoteBallot (#4331)', () => {
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000d401';
+    const OWN_ROW_UID = 'vr000000-0000-0000-0000-00000000d401';
+    const ownRow = (overrides: Partial<MyVoteResponse> = {}): MyVoteResponse => ({
+      uid: OWN_ROW_UID,
+      vote_uid: VOTE_UID,
+      vote_status: IndexedVoteResponseStatus.RESPONDED,
+      voter_removed: false,
+      ...overrides,
+    });
+    const detail = {
+      vote_response_uid: OWN_ROW_UID,
+      vote_uid: VOTE_UID,
+      project_uid: 'p0000000-0000-0000-0000-00000000d401',
+      vote_status: IndexedVoteResponseStatus.RESPONDED,
+      abstained: false,
+      user_email: 'spec-voter@example.org',
+      user_name: 'Spec Voter',
+      ses_message_id: 'ses-1',
+      vote_creation_time: '2026-10-20T10:00:00Z',
+      poll_answers: [
+        { question_id: 'q-1', prompt: 'Approve?', type: 'single_choice', user_choice: [{ choice_id: 'c-yes', choice_text: 'Yes' }], total_voters: 4 },
+      ],
+      comment_responses: [{ prompt_id: 'p-1', comment_text: 'Looks good', created_at: '2026-10-20T10:00:00Z' }],
+    };
+
+    it.each([
+      ['no row', null],
+      ['a removed row', ownRow({ voter_removed: true })],
+      ['an awaiting row', ownRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE })],
+    ])('returns null without reading upstream for %s', async (_label, row) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(row);
+
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toBeNull();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('reads only the identity-matched row with the user token and allowlists the ballot', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue(detail);
+
+      const ballot = await service.getMyVoteBallot(req, VOTE_UID);
+
+      expect(service.getMyVoteResponse).toHaveBeenCalledWith(req, VOTE_UID);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/vote_responses/${OWN_ROW_UID}`, 'GET');
+      expect(ballot).toEqual({
+        vote_response_uid: OWN_ROW_UID,
+        vote_uid: VOTE_UID,
+        abstained: false,
+        poll_answers: [
+          { question_id: 'q-1', prompt: 'Approve?', type: 'single_choice', user_choice: [{ choice_id: 'c-yes', choice_text: 'Yes' }], ranked_user_choice: [] },
+        ],
+        comment_responses: [{ prompt_id: 'p-1', comment_text: 'Looks good' }],
+        vote_creation_time: '2026-10-20T10:00:00Z',
+      });
+    });
+
+    it.each([null, undefined])('rejects an empty upstream ballot body (%s) instead of fabricating a blank ballot', async (body) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue(body);
+
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'VOTE_BALLOT_EMPTY',
+      });
+    });
+
+    it('returns null and warns when upstream returns a response for a different vote', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue({ ...detail, vote_uid: 'v0000000-0000-0000-0000-00000000d499' });
+
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toBeNull();
+      expect(logger.warning).toHaveBeenCalledWith(req, 'get_my_vote_ballot', expect.any(String), expect.objectContaining({ vote_uid: VOTE_UID }));
+    });
+
+    it.each([true, undefined, null])('blocks impersonated ballot content for privacy %s before the detail read', async (privacy) => {
+      req.impersonationActive = true;
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      vi.spyOn(service, 'getVoteById').mockResolvedValue({ pseudo_anonymity: privacy } as Vote);
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).rejects.toMatchObject({ statusCode: 403, code: 'IMPERSONATION_BALLOT_PRIVATE' });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('allows named read-only inspection while impersonating', async () => {
+      req.impersonationActive = true;
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      vi.spyOn(service, 'getVoteById').mockResolvedValue({ pseudo_anonymity: false } as Vote);
+      proxyRequest.mockResolvedValue(detail);
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toMatchObject({ vote_response_uid: OWN_ROW_UID, abstained: false });
+      expect(proxyRequest).toHaveBeenCalledOnce();
+    });
+
+    it('fails closed when impersonated privacy cannot be loaded', async () => {
+      req.impersonationActive = true;
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      vi.spyOn(service, 'getVoteById').mockRejectedValue(new Error('synthetic lookup failure'));
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).rejects.toThrow('synthetic lookup failure');
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('normalizes missing choice arrays, comments and abstention', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue({
+        vote_response_uid: OWN_ROW_UID,
+        vote_uid: VOTE_UID,
+        poll_answers: [{ question_id: 'q-1', prompt: 'Rank', type: 'single_choice' }],
+      });
+
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toEqual({
+        vote_response_uid: OWN_ROW_UID,
+        vote_uid: VOTE_UID,
+        abstained: false,
+        poll_answers: [{ question_id: 'q-1', prompt: 'Rank', type: 'single_choice', user_choice: [], ranked_user_choice: [] }],
+        comment_responses: [],
+        vote_creation_time: undefined,
+      });
     });
   });
 
@@ -2090,6 +2547,8 @@ describe('VoteService', () => {
     });
     const namedVote = { ...voteFixture, uid: VOTE_UID, status: 'active', pseudo_anonymity: false, end_time: '2099-06-01T18:00:00Z' };
     const queryResourceCalls = () => proxyRequest.mock.calls.filter(([, , path]) => path === '/query/resources');
+    /** Named votes return full `VoteVoter` rows; narrows the union return for field assertions. */
+    const getNamedVoters = async () => (await service.getVoteVoters(req, VOTE_UID)) as VoteVoter[];
 
     beforeEach(() => {
       proxyRequest.mockResolvedValue(namedVote);
@@ -2120,13 +2579,53 @@ describe('VoteService', () => {
       { status: 'active', pseudo_anonymity: undefined },
       { status: 'ended', pseudo_anonymity: undefined },
       { status: 'active', pseudo_anonymity: null },
-    ])('refuses a vote that is not explicitly named (%j) with 403 before reading any ballot (AC-4)', async (state) => {
+    ])('returns name-sorted participation-only rows on a vote that is not explicitly named (%j) (#3916)', async (state) => {
       proxyRequest.mockResolvedValue({ ...namedVote, ...state });
+      fetchAllQueryResources.mockResolvedValue([
+        row({
+          uid: 'b-voted',
+          user_name: 'Casey Example',
+          vote_status: IndexedVoteResponseStatus.RESPONDED,
+          vote_creation_time: '2026-10-02T09:30:00Z',
+          abstained: false,
+          poll_answers: [genericAnswer],
+          comment_responses: [comment],
+        }),
+        row({
+          uid: 'b-abstained',
+          user_name: 'Blake Example',
+          vote_status: IndexedVoteResponseStatus.RESPONDED,
+          vote_creation_time: '2026-10-03T11:00:00Z',
+          abstained: true,
+          poll_answers: [],
+          comment_responses: [comment],
+        }),
+        row({ uid: 'b-pending', user_name: 'Avery Example' }),
+      ]);
 
-      await expect(service.getVoteVoters(req, VOTE_UID)).rejects.toMatchObject({ statusCode: 403, code: VOTE_VOTERS_PSEUDO_ANONYMOUS });
+      const voters = await service.getVoteVoters(req, VOTE_UID);
 
-      expect(fetchAllQueryResources).not.toHaveBeenCalled();
-      expect(queryResourceCalls()).toHaveLength(0);
+      const identity = { user_org_name: 'Acme Motors', user_role: 'Member', user_voting_status: 'Voting Rep' };
+      expect(voters).toEqual([
+        { user_name: 'Avery Example', ...identity, status: 'pending' },
+        { user_name: 'Blake Example', ...identity, status: 'responded' },
+        { user_name: 'Casey Example', ...identity, status: 'responded' },
+      ]);
+      for (const voter of voters) {
+        for (const field of [
+          'uid',
+          'poll_answers',
+          'comment_responses',
+          'abstained',
+          'submitted_at',
+          'vote_creation_time',
+          'user_email',
+          'username',
+          'profile_picture',
+        ]) {
+          expect(voter).not.toHaveProperty(field);
+        }
+      }
     });
 
     it('propagates a vote lookup failure without reading any ballot', async () => {
@@ -2205,7 +2704,7 @@ describe('VoteService', () => {
         row({ vote_status: IndexedVoteResponseStatus.RESPONDED, poll_answers: [genericAnswer, rankedAnswer, unanswered] }),
       ]);
 
-      const [voter] = await service.getVoteVoters(req, VOTE_UID);
+      const [voter] = await getNamedVoters();
 
       expect(voter.poll_answers).toEqual([
         { ...genericAnswer, ranked_user_choice: [] },
@@ -2280,7 +2779,7 @@ describe('VoteService', () => {
         row({ uid: undefined }),
       ]);
 
-      const voters = await service.getVoteVoters(req, VOTE_UID);
+      const voters = await getNamedVoters();
 
       expect(voters.map((voter) => voter.uid).sort()).toEqual(['current', 'legacy']);
     });
@@ -2292,7 +2791,7 @@ describe('VoteService', () => {
         row({ uid: 'b-avery', user_name: 'Avery Example' }),
       ]);
 
-      const voters = await service.getVoteVoters(req, VOTE_UID);
+      const voters = await getNamedVoters();
 
       expect(voters.map((voter) => voter.uid)).toEqual(['b-unnamed', 'b-avery', 'b-zed']);
     });
@@ -2334,10 +2833,43 @@ describe('VoteService', () => {
 
       await service.getVoteVoters(req, VOTE_UID);
 
-      expect(logger.debug).toHaveBeenCalledWith(req, 'get_vote_voters', 'Mapped vote voters', { vote_uid: VOTE_UID, row_count: 2, voter_count: 1 });
+      expect(logger.debug).toHaveBeenCalledWith(req, 'get_vote_voters', 'Mapped vote voters', {
+        vote_uid: VOTE_UID,
+        row_count: 2,
+        voter_count: 1,
+        participation_only: false,
+      });
       const loggedMetadata = JSON.stringify(vi.mocked(logger.debug).mock.calls);
       expect(loggedMetadata).not.toContain('avery@acme-motors.example');
       expect(loggedMetadata).not.toContain('Avery Example');
+    });
+  });
+
+  describe('endVote (#4143)', () => {
+    it('checks writer access before any proxy call', async () => {
+      const forbidden = new MicroserviceError('Forbidden', 403, 'FORBIDDEN', {});
+      assertVoteWrite.mockRejectedValueOnce(forbidden);
+
+      await expect(service.endVote(req, CANONICAL_UID)).rejects.toBe(forbidden);
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('posts to the upstream end action with no body and returns the vote', async () => {
+      proxyRequest.mockResolvedValue({ uid: CANONICAL_UID, status: 'ended' });
+
+      const vote = await service.endVote(req, CANONICAL_UID);
+
+      expect(assertVoteWrite).toHaveBeenCalledWith(req, CANONICAL_UID, 'end_vote');
+      expect(proxyRequest).toHaveBeenCalledExactlyOnceWith(req, 'LFX_V2_SERVICE', `/votes/${CANONICAL_UID}/end`, 'POST');
+      expect(vote).toEqual({ uid: CANONICAL_UID, status: 'ended' });
+    });
+
+    it('lets an upstream rejection (409 not started, 400 past its end time) through unchanged', async () => {
+      const conflict = new MicroserviceError('poll has not started', 409, 'CONFLICT', {});
+      proxyRequest.mockRejectedValue(conflict);
+
+      await expect(service.endVote(req, CANONICAL_UID)).rejects.toBe(conflict);
     });
   });
 
@@ -2655,11 +3187,26 @@ describe('VoteService', () => {
       }
     );
 
+    it.each([
+      ['held results', { ...resultsFixture, results_held: true }],
+      ['results without an abstention count', { ...resultsFixture, num_abstained: undefined }],
+    ])('refuses to email %s as a final summary', async (_label, results) => {
+      vi.mocked(service.getVoteResults).mockResolvedValue(results);
+
+      await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({
+        statusCode: 502,
+        code: VOTE_SUMMARY_PRECHECK_FAILED,
+      });
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
     it('sends one email per recipient and returns the sent count', async () => {
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
+      expect(service.getVoteResults).toHaveBeenCalledWith(req, CANONICAL_UID, { canWrite: true });
+
       expect(sendEmail).toHaveBeenCalledTimes(2);
-      expect(result).toEqual({ recipient_count: 2, failed_count: 0 });
+      expect(result).toEqual({ recipient_count: 2, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
     });
 
     it('sends the identical rendered email to every recipient — never personalized per voter', async () => {
@@ -2673,13 +3220,13 @@ describe('VoteService', () => {
       expect(firstCall[1].text).toBe(secondCall[1].text);
     });
 
-    it('filters out recipients with no email before sending', async () => {
+    it('does not send to recipients with no email and reports them as skipped', async () => {
       vi.mocked(service.getVoteSummaryRecipients).mockResolvedValue([...recipientsFixture, { uid: 'r-3', user_name: 'No Email' }]);
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
       expect(sendEmail).toHaveBeenCalledTimes(2);
-      expect(result).toEqual({ recipient_count: 2, failed_count: 0 });
+      expect(result).toEqual({ recipient_count: 2, failed_count: 0, skipped_count: 1, uncertain_count: 0 });
     });
 
     it('deduplicates recipients sharing the same email before sending', async () => {
@@ -2692,19 +3239,23 @@ describe('VoteService', () => {
 
       expect(sendEmail).toHaveBeenCalledTimes(2);
       expect(result.recipient_count).toBe(2);
+      // Collapsed by a shared email is not skipped: that voter got the same email via the sibling row.
+      expect(result.skipped_count).toBe(0);
     });
 
     it('counts a partial send failure without throwing, and logs a warning for the failed recipient', async () => {
-      sendEmail.mockResolvedValueOnce({ email_id: 'email-sent' }).mockRejectedValueOnce(new Error('smtp down'));
+      sendEmail
+        .mockResolvedValueOnce({ email_id: 'email-sent' })
+        .mockRejectedValueOnce(new MicroserviceError('Rejected before sending', 502, 'EMAIL_SEND_FAILED', {}));
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
-      expect(result).toEqual({ recipient_count: 1, failed_count: 1 });
+      expect(result).toEqual({ recipient_count: 1, failed_count: 1, skipped_count: 0, uncertain_count: 0 });
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'send_vote_summary',
-        'Failed to send the summary email to one recipient',
-        expect.objectContaining({ vote_uid: CANONICAL_UID, recipient_uid: 'r-2' })
+        'Summary email was not confirmed sent to one recipient',
+        expect.objectContaining({ vote_uid: CANONICAL_UID, recipient_uid: 'r-2', outcome: 'failed' })
       );
     });
 
@@ -2716,21 +3267,132 @@ describe('VoteService', () => {
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
-      expect(result).toEqual({ recipient_count: 1, failed_count: 1 });
+      expect(result).toEqual({ recipient_count: 1, failed_count: 1, skipped_count: 0, uncertain_count: 0 });
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'send_vote_summary',
-        'Failed to send the summary email to one recipient',
-        expect.objectContaining({ vote_uid: CANONICAL_UID, recipient_uid: 'r-2' })
+        'Summary email was not confirmed sent to one recipient',
+        expect.objectContaining({ vote_uid: CANONICAL_UID, recipient_uid: 'r-2', outcome: 'failed' })
       );
     });
 
-    it('throws when every send fails, reporting none sent', async () => {
-      sendEmail.mockRejectedValue(new Error('smtp down'));
+    it('throws a retry-safe 502 when every send is confirmed failed, reporting none sent', async () => {
+      sendEmail.mockRejectedValue(new MicroserviceError('Rejected before sending', 502, 'EMAIL_SEND_FAILED', {}));
 
       await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({
         statusCode: 502,
         code: VOTE_SUMMARY_SEND_FAILED,
+        message: 'No summaries were sent. Please try again.',
+      });
+    });
+
+    it('treats a rejected email-service reply (not marked as a transport failure) as failed, not uncertain', async () => {
+      sendEmail.mockRejectedValue(new MicroserviceError('The email service rejected the email', 502, 'EMAIL_SEND_FAILED', {}));
+
+      await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 502, code: VOTE_SUMMARY_SEND_FAILED });
+    });
+
+    it.each([new Error('Unexpected send error'), new TypeError('Unexpected reply'), new MicroserviceError('Unknown error', 502, 'UNKNOWN', {}), undefined])(
+      'treats an unrecognized rejection %j as uncertain rather than retry-safe',
+      async (reason) => {
+        sendEmail.mockRejectedValue(reason);
+
+        await expect(service.sendVoteSummary(req, CANONICAL_UID)).resolves.toEqual({
+          recipient_count: 0,
+          failed_count: 0,
+          skipped_count: 0,
+          uncertain_count: 2,
+        });
+        expect(sendEmail).toHaveBeenCalledTimes(2);
+        expect(logger.warning).toHaveBeenCalledWith(
+          req,
+          'send_vote_summary',
+          'Summary email was not confirmed sent to one recipient',
+          expect.objectContaining({ outcome: 'uncertain' })
+        );
+      }
+    );
+
+    it('counts a transport-marked rejection as uncertain, not failed, and logs it', async () => {
+      sendEmail
+        .mockResolvedValueOnce({ email_id: 'email-sent' })
+        .mockRejectedValueOnce(new MicroserviceError('Unable to reach the email service', 502, 'EMAIL_SEND_FAILED', { transportFailure: true }));
+
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(result).toEqual({ recipient_count: 1, failed_count: 0, skipped_count: 0, uncertain_count: 1 });
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'send_vote_summary',
+        'Summary email was not confirmed sent to one recipient',
+        expect.objectContaining({ recipient_uid: 'r-2', outcome: 'uncertain' })
+      );
+    });
+
+    it('reports sent, failed, uncertain and skipped together on a mixed send', async () => {
+      vi.mocked(service.getVoteSummaryRecipients).mockResolvedValue([
+        ...recipientsFixture,
+        { uid: 'r-3', user_name: 'Casey Example', user_email: 'casey@acme-motors.example' },
+        { uid: 'r-4', user_name: 'Drew Example', user_email: 'drew@acme-motors.example' },
+        { uid: 'r-5', user_name: 'No Email' },
+      ]);
+      sendEmail
+        .mockResolvedValueOnce({ email_id: 'email-sent' })
+        .mockRejectedValueOnce(new MicroserviceError('Rejected before sending', 502, 'EMAIL_SEND_FAILED', {}))
+        .mockRejectedValueOnce(new MicroserviceError('Unable to reach the email service', 502, 'EMAIL_SEND_FAILED', { transportFailure: true }))
+        .mockResolvedValueOnce({});
+
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(result).toEqual({ recipient_count: 1, failed_count: 2, skipped_count: 1, uncertain_count: 1 });
+    });
+
+    it('returns 200 with counts, not a 502, when every send is uncertain', async () => {
+      sendEmail.mockRejectedValue(new MicroserviceError('Unable to reach the email service', 502, 'EMAIL_SEND_FAILED', { transportFailure: true }));
+
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(result).toEqual({ recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 2 });
+    });
+
+    it('returns skipped counts without sending when no invited voter has an email', async () => {
+      vi.mocked(service.getVoteSummaryRecipients).mockResolvedValue([
+        { uid: 'r-1', user_name: 'No Email One' },
+        { uid: 'r-2', user_name: 'No Email Two' },
+      ]);
+
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(result).toEqual({ recipient_count: 0, failed_count: 0, skipped_count: 2, uncertain_count: 0 });
+    });
+
+    describe('pre-send failures', () => {
+      it('marks an unexpected failure reading the results as VOTE_SUMMARY_PRECHECK_FAILED, with nothing sent', async () => {
+        vi.mocked(service.getVoteResults).mockRejectedValue(new Error('boom'));
+
+        await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 500, code: VOTE_SUMMARY_PRECHECK_FAILED });
+        expect(sendEmail).not.toHaveBeenCalled();
+      });
+
+      it('keeps the upstream status when a pre-send read fails with a service error', async () => {
+        vi.mocked(service.getVoteSummaryRecipients).mockRejectedValue(new MicroserviceError('Bad gateway', 502, 'UPSTREAM', {}));
+
+        await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 502, code: VOTE_SUMMARY_PRECHECK_FAILED });
+        expect(sendEmail).not.toHaveBeenCalled();
+      });
+
+      it('passes a 429 through unchanged', async () => {
+        const limited = new MicroserviceError('Too many requests', 429, 'RATE_LIMITED', {});
+        assertVoteWrite.mockRejectedValueOnce(limited);
+
+        await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toBe(limited);
+      });
+
+      it('passes a not-ended conflict through unchanged', async () => {
+        proxyRequest.mockResolvedValue({ ...endedVote, status: 'active' });
+
+        await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 409, code: VOTE_SUMMARY_NOT_ENDED });
       });
     });
 
@@ -2740,7 +3402,7 @@ describe('VoteService', () => {
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
       expect(sendEmail).not.toHaveBeenCalled();
-      expect(result).toEqual({ recipient_count: 0, failed_count: 0 });
+      expect(result).toEqual({ recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
     });
 
     it('renders first-choice vote counts and percentages for a ranked-choice question', async () => {

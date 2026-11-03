@@ -16,7 +16,7 @@
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import { ADMIN_PROGRAM_URL, stubAdminMentees, stubAdminProgramPage, stubAdminTasks } from './helpers/mentorship-admin-program.helper';
 import { newTermStubState, stubTermActions, TERM_CLOSABLE_ID, TERM_CLOSED_ID, TERM_EMPTY_ID } from './helpers/mentorship-admin-terms.helper';
 
@@ -36,7 +36,6 @@ const menuLabels = async (page: Page, termId: string): Promise<string[]> => {
 
 test.describe('Admin Terms tab actions — structure', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPage(page);
     await stubAdminMentees(page, { mentees: [], tasks: [] });
     await stubAdminTasks(page, { mentees: [], tasks: [] });

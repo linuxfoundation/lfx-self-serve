@@ -38,6 +38,7 @@ vi.mock('./logger.service', () => ({ logger }));
 import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CALLOUTS,
@@ -64,6 +65,7 @@ import {
   deriveEventSlug,
   fromBriefResponse,
   isCampaignServiceJobId,
+  multiCampaignPlatforms,
   readBriefValidator,
 } from './campaign-service.service';
 
@@ -2426,6 +2428,39 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toBe('Campaign creation was rejected and nothing was created. Please try again.');
   });
 
+  /**
+   * The brief moved since this page read it (#4983): another tab edited and saved it, which resets it
+   * to `draft` and bumps its version. campaign-service refuses the create with one of two messages,
+   * and retrying from this tab is refused identically, so the user is told to refresh, not to retry.
+   */
+  it.each([
+    ['the 409 stale approval', 409, 'brief is no longer approved at the expected version; refresh and re-approve, then retry'],
+    ['the 400 unapproved brief', 400, 'brief must be approved before creating campaigns'],
+  ])('tells the user to refresh after %s', async (_label, status, message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.indeterminate, 'a definite refusal was marked indeterminate').toBeUndefined();
+    expect(res.error).toBe(CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE);
+    expect(res.error).toContain('Refresh the page');
+    expect(res.error).not.toContain('Please try again');
+  });
+
+  it.each([
+    ['a 409 that is not a stale approval', 409, 'another write to this campaign is already in progress; retry shortly'],
+    ['the stale wording on a 412', 412, 'brief is no longer approved at the expected version; refresh and re-approve, then retry'],
+  ])('keeps the generic refusal text for %s', async (_label, status, message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.error).toBe('Campaign creation was rejected and nothing was created. Please try again.');
+  });
+
   it('does NOT tell the user to retry after an indeterminate failure', async () => {
     bothFlagsOn();
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream exploded', 502, 'campaign_service'));
@@ -3325,6 +3360,34 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
 
     expect(result.copy?.body).toContain('href="https://events.linuxfoundation.org/x"');
     expect(result.copy?.body).not.toContain('second.example');
+  });
+
+  /**
+   * #3306. This first pass has only the brief id, so it cannot tell an event page's own link from an
+   * invented one. It keeps any link on an LF-owned domain (and the button's host), because a stripped
+   * href cannot be restored by the narrower passes after it, and strips every other host.
+   */
+  it('keeps an LF-owned secondary link even with no button, and strips an off-host one', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 'S',
+        preheader: 'P',
+        sections: [
+          {
+            type: 'rich_text',
+            html: '<p style="color: #0f172a; position: absolute"><a href="https://events.linuxfoundation.org/kubecon/cfp">CFP</a> <a href="https://evil.example/cfp">fake</a></p>',
+          },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.body).toContain('href="https://events.linuxfoundation.org/kubecon/cfp"');
+    expect(result.copy?.body).not.toContain('evil.example');
+    expect(result.copy?.body).toContain('fake');
+    // The safe inline style survives this pass too; the unsafe declaration does not.
+    expect(result.copy?.body).toContain('style="color:#0f172a"');
   });
 
   it('does not refill an empty sections field from a leftover flat field', async () => {
@@ -4728,6 +4791,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaInstagramDsaEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
+      multiCampaignPlatforms: [],
     });
   });
 
@@ -5252,6 +5316,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaInstagramDsaEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
+      multiCampaignPlatforms: [],
     });
   });
 });
@@ -5894,6 +5959,7 @@ describe('CampaignServiceClient account monitors', () => {
   });
 
   it.each([
+    ['getGoogleAdsAccountMonitor', 'google-ads', '8666746580'],
     ['getLinkedInAdsAccountMonitor', 'linkedin-ads', '512345678'],
     ['getMetaAdsAccountMonitor', 'meta-ads', 'act_100000000000001'],
     ['getRedditAdsAccountMonitor', 'reddit-ads', 't2_abc123'],
@@ -6516,5 +6582,123 @@ describe('CampaignServiceClient.listTwitterAdsAccounts', () => {
 
     expect(caught).toBeInstanceOf(ServiceValidationError);
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #4983 ("ss-3"): a deliberate second campaign on a platform that already has one, offered only on the
+ * platforms the deployment lists AND campaign-service supports, and refused by the BFF when it cannot
+ * be served as asked.
+ */
+describe('CampaignServiceClient — create another campaign', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
+    vi.stubEnv('LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS', ' microsoft-ads, google-ads , hubspot');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    isServerFeatureEnabled.mockReset();
+  });
+
+  it('offers it only on listed platforms campaign-service supports, and nowhere while the create cutover is dark', () => {
+    // The email channel is listed but campaign-service accepts no labels or new_version for it.
+    expect(multiCampaignPlatforms()).toEqual(['microsoft-ads', 'google-ads']);
+
+    vi.stubEnv('LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS', '');
+    expect(multiCampaignPlatforms()).toEqual([]);
+
+    vi.stubEnv('LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS', 'microsoft-ads');
+    isServerFeatureEnabled.mockReturnValue(false);
+    expect(multiCampaignPlatforms()).toEqual([]);
+  });
+
+  it('sends new_version with the expected slot versions, stage and tactic only for a confirmed create', async () => {
+    proxyRequestWithResponse.mockResolvedValue({ data: { job_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6' } });
+
+    await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 100 } },
+      {
+        another: { funnelStage: 'mid', tactic: 'retargeting', expectedSlotVersions: { 'google-ads': 2 } },
+      }
+    );
+    expect(proxyRequestWithResponse.mock.calls[0][5]).toEqual({
+      input: {
+        platforms: ['google-ads'],
+        config: { googleAdsConfig: { budget: 100 } },
+        new_version: true,
+        expected_slot_versions: { 'google-ads': 2 },
+        funnel_stage: 'mid',
+        tactic: 'retargeting',
+      },
+    });
+
+    // A plain create carries none of it, so a repeat stays a retry upstream.
+    await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+    expect(proxyRequestWithResponse.mock.calls[1][5]).toEqual({ input: { platforms: ['google-ads'], config: { googleAdsConfig: { budget: 100 } } } });
+  });
+
+  it.each([
+    ['a platform the deployment does not list', ['meta-ads'], { funnelStage: 'top', expectedSlotVersions: { 'meta-ads': 1 } }, "can't be created on meta-ads"],
+    ['a stage outside the list', ['microsoft-ads'], { funnelStage: 'awareness', expectedSlotVersions: { 'microsoft-ads': 1 } }, 'funnel stage'],
+    ['a free-text tactic', ['microsoft-ads'], { funnelStage: 'top', tactic: 'my | tactic', expectedSlotVersions: { 'microsoft-ads': 1 } }, 'tactic'],
+    ['an expectation missing for a platform', ['microsoft-ads', 'google-ads'], { funnelStage: 'top', expectedSlotVersions: { 'microsoft-ads': 1 } }, 'Reload'],
+    ['a non-integer expectation', ['microsoft-ads'], { funnelStage: 'top', expectedSlotVersions: { 'microsoft-ads': 0.5 } }, 'Reload'],
+  ])('refuses %s before anything is sent', async (_label, platforms, another, message) => {
+    const result = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', platforms, Object.fromEntries(platforms.map((p) => [p, {}])), {
+      another: another as never,
+    });
+
+    expect(result.jobId).toBeNull();
+    expect(result.error).toContain(message);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('accepts 0, campaign-service\'s "saw none in the slot", as an expectation', async () => {
+    proxyRequestWithResponse.mockResolvedValue({ data: { job_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6' } });
+
+    const result = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['microsoft-ads'],
+      { microsoftConfig: {} },
+      {
+        another: { funnelStage: 'top', expectedSlotVersions: { 'microsoft-ads': 0 } },
+      }
+    );
+
+    expect(result.error).toBeNull();
+    expect((proxyRequestWithResponse.mock.calls[0][5] as { input: { expected_slot_versions: unknown } }).input.expected_slot_versions).toEqual({
+      'microsoft-ads': 0,
+    });
+  });
+
+  it('maps the reuse, slot and labels a job result reports', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j',
+      status: 'succeeded',
+      result: [
+        {
+          platform: 'google-ads',
+          ok: true,
+          campaign_id: '9',
+          reused: true,
+          slot_version: 2,
+          variant: 'demand-gen',
+          funnel_stage: 'mid',
+          tactic: 'retargeting',
+        },
+      ],
+    });
+
+    expect(adapted.status === 'done' && adapted.platformResults?.[0]).toEqual(
+      expect.objectContaining({ reused: true, slotVersion: 2, variant: 'demand-gen', funnelStage: 'mid', tactic: 'retargeting' })
+    );
   });
 });

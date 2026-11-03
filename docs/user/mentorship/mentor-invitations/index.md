@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentor, invitation, accept, decline, email]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
@@ -14,28 +14,31 @@ A Program Admin can invite you to mentor their program. The invitation arrives b
 ## Before you begin
 
 - Use the link in the invitation email. The link identifies your invitation.
-- If you do not have a mentor profile yet, you are asked to create one first.
+- The email names the program. The invitation page does not, so keep the email to hand.
 
 ## Steps
 
-1. Open the invitation email and select its link. It opens your mentor invitations page, already showing that invitation.
-2. Sign in at [app.lfx.dev](https://app.lfx.dev) if you are not already signed in.
-3. Review the program named on the page.
-4. Select **Accept** or **Decline**.
+1. Open the invitation email and select its link.
+2. Sign in at [app.lfx.dev](https://app.lfx.dev) if you are not already signed in. The page reads **You've been invited to mentor**.
+3. Select **Accept** or **Decline**.
 
 The page only records your answer when you select one of those buttons, so a mail scanner that follows the link cannot answer on your behalf.
 
+You can also answer from **Mentor Profile → Edit Mentor Profile**, where the invitation is listed with the status **Invited**. See [Your Mentor Programs](../mentor-programs/).
+
 ## After completing
 
-Accepting puts the program on your **My Programs** tab, with its mentees, applicants and tasks. Declining leaves the program unchanged and tells the Program Admin.
+- **Accept** shows **Invitation accepted**. Select **Go to My Programs** to see the program on your **My Programs** tab.
+- **Decline** shows **Invitation declined** and lets the program admins know.
 
 ## Troubleshooting
 
 | What you see                                 | What it means                                                                                                                   |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | "This invitation is for a different account" | You are signed in with a different LF ID from the one the email was sent to. Sign in with that account and open the link again. |
-| "This invitation link can't be used"         | The invitation was already answered or withdrawn. Ask the Program Admin to invite you again.                                    |
-| The page asks you to register first          | You have no mentor profile. See [Become a Mentor](../become-a-mentor/).                                                         |
+| "This invitation link can't be used"         | The invitation expired or was already answered. Ask the Program Admin to invite you again.                                      |
+| "You're viewing as another user"             | You are in a view-as session. Leave it, then open the link again.                                                               |
+| "Something went wrong"                       | Your answer was not recorded. Select **Try again**.                                                                             |
 
 ## Related
 

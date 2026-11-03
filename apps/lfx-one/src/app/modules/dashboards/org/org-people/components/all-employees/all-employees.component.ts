@@ -29,20 +29,28 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
+import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { readOrgScope } from '@shared/utils/org-scope-url.util';
+import { readOrgTeamMembers } from '@shared/utils/org-team-members-url.util';
 
 import {
   DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT,
   DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_COMMIT_FILTERS,
+  DEFAULT_ORG_SCOPE,
+  DEFAULT_ORG_TEAM_MEMBERS,
   EMPTY_ORG_ALL_EMPLOYEES_RESPONSE,
   ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS,
+  ORG_ALL_EMPLOYEE_CODE_NOTE,
   ORG_ALL_EMPLOYEE_CODE_STAT_LABEL,
-  ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE,
   ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS,
+  ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE,
   ORG_ALL_EMPLOYEES_INITIAL_LIMIT,
   ORG_ALL_FOUNDATIONS_LABEL,
   ORG_CODE_MEASURE_DEFINITION,
@@ -54,6 +62,14 @@ import {
   ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
   ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
+  ORG_SCOPE_CAPTION_PHRASE,
+  ORG_SCOPE_CODE_ONLY_NOTE,
+  ORG_SCOPE_QUERY_PARAM,
+  ORG_TEAM_MEMBERS_LABEL,
+  ORG_TEAM_MEMBERS_OPTIONS,
+  ORG_TEAM_MEMBERS_QUERY_PARAM,
+  ORG_TEAM_MEMBERS_TOOLTIP,
+  ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
 } from '@lfx-one/shared/constants';
 import type {
   OrgAccessBadgeState,
@@ -78,6 +94,9 @@ import type {
   OrgLensTimeRangeOption,
   OrgProjectScope,
   OrgProjectScopeOption,
+  OrgScopeFilter,
+  OrgTeamMembersFilter,
+  OrgTeamMembersOption,
 } from '@lfx-one/shared/interfaces';
 import {
   computeOrgAllEmployeeStats,
@@ -86,9 +105,14 @@ import {
   orgCommitFiltersUrlMatches,
   orgCommitFiltersUrlParams,
   orgLensTimeRangeUrlParam,
+  orgScopeUrlParam,
+  orgTeamMembersUrlParam,
   parseOrgLensTimeRange,
+  parseOrgScopeFilter,
+  parseOrgTeamMembersFilter,
   readOrgCommitFilters,
   sameOrgCommitFilters,
+  servedOrgScopeForCaption,
 } from '@lfx-one/shared/utils';
 
 import { AllEmployeesService } from '../../services/all-employees.service';
@@ -106,6 +130,8 @@ import { AllEmployeesDetailComponent } from './all-employees-detail.component';
     EmptyStateComponent,
     InputTextComponent,
     SelectComponent,
+    OrgScopeSelectComponent,
+    MoreFiltersToggleComponent,
     AllEmployeesDetailComponent,
   ],
   templateUrl: './all-employees.component.html',
@@ -115,6 +141,7 @@ export class AllEmployeesComponent {
     'cursor-pointer border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
 
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgScopeService = inject(OrgLensOrgScopeService);
   private readonly dataService = inject(AllEmployeesService);
   private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly drawer = inject(PersonDetailDrawerService);
@@ -131,8 +158,16 @@ export class AllEmployeesComponent {
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
   protected readonly projectScopeLabel = ORG_PROJECT_SCOPE_LABEL;
   protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
+  protected readonly teamMembersOptions: OrgTeamMembersOption[] = [...ORG_TEAM_MEMBERS_OPTIONS];
+  protected readonly teamMembersLabel = ORG_TEAM_MEMBERS_LABEL;
+  protected readonly orgScopeNote = ORG_SCOPE_CODE_ONLY_NOTE;
+  protected readonly teamMembersTooltip = ORG_TEAM_MEMBERS_TOOLTIP;
+  protected readonly teamMembersUnavailableNote = ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE;
   // The code tile counts Code Contributors whatever the code-count option; only the table's column follows the option.
   protected readonly codeStatLabel = ORG_ALL_EMPLOYEE_CODE_STAT_LABEL;
+  protected readonly unclassifiedRowNote = ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE;
+  // The one description element the name buttons of those rows point at, so the note is not repeated per row.
+  protected readonly unclassifiedRowNoteId = 'org-people-all-employees-unclassified-note';
   protected readonly statSkeletonLabels: readonly string[] = [
     'Employees Active in Open Source',
     'In Governance',
@@ -144,11 +179,16 @@ export class AllEmployeesComponent {
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
 
   // The URL-backed filters as the page opened: `?employment=`, `?range=` (shared with the other People tabs and Code
-  // Contributions) and `?projectScope=` / `?metric=` (shared with the Contributors tab). They seed the form and the signals below.
+  // Contributions), `?projectScope=` / `?metric=` (shared with the Contributors tab), `?teamMembers=` (shared with
+  // Contributors, lfx-self-serve#4685) and `?orgScope=` (shared with the other pages with an organization scope picker:
+  // Contributors, Code Contributions, Projects and Project Detail, lfx-self-serve-ops#1219). They seed the form and the
+  // signals below.
   private readonly initialEmployment = AllEmployeesComponent.parseEmployment(this.route.snapshot.queryParamMap.get('employment'));
   private readonly initialRange = parseOrgLensTimeRange(this.route.snapshot.queryParamMap.get('range'));
   private readonly initialFilters = readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name));
   private readonly initialCodeFilters = orgCodeFilterValues(this.initialFilters);
+  private readonly initialTeamMembers = readOrgTeamMembers(this.route);
+  private readonly initialOrgScope = readOrgScope(this.route);
 
   // The filter bar. The signals below stay the source of truth (the URL, Clear filters, an account switch and the
   // foundation clean-up write them); a control change is handed to them and they are mirrored back into the form.
@@ -160,6 +200,8 @@ export class AllEmployeesComponent {
     range: new FormControl<OrgLensTimeRange>(this.initialRange, { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialCodeFilters.projectScope, { nonNullable: true }),
     metric: new FormControl<OrgCodeMeasure>(this.initialCodeFilters.metric, { nonNullable: true }),
+    teamMembers: new FormControl<OrgTeamMembersFilter>(this.initialTeamMembers, { nonNullable: true }),
+    orgScope: new FormControl<OrgScopeFilter>(this.initialOrgScope, { nonNullable: true }),
   });
 
   protected readonly searchTerm = signal<string>('');
@@ -172,6 +214,12 @@ export class AllEmployeesComponent {
   // Follows `?projectScope=` / `?metric=`: the project scope picks who is listed, the code-count option (commits, merged
   // commits or all code contributions) picks the code count. Read by the BFF with the range.
   protected readonly selectedFilters = signal<OrgCommitFilters>(this.initialFilters);
+  // Follows `?teamMembers=`: unless included, CDP team members' code is removed from both rosters and the code tile;
+  // someone whose only engagement was code is not listed.
+  protected readonly selectedTeamMembers = signal<OrgTeamMembersFilter>(this.initialTeamMembers);
+  // Follows `?orgScope=`: whose code the rosters, their code columns and the code tile count — the Insights organization's
+  // or every related organization's. Governance, events and training rows are not affected.
+  protected readonly selectedOrgScope = signal<OrgScopeFilter>(this.initialOrgScope);
 
   // Default sort: the code count (commits or code contributions, per the metric) descending.
   protected readonly sortColumn = signal<OrgAllEmployeeSortColumn>('commits');
@@ -201,18 +249,27 @@ export class AllEmployeesComponent {
   // Seeded true: toSignal seeds EMPTY_ORG_ALL_EMPLOYEES_RESPONSE and a real fetch fires synchronously on mount.
   private readonly loadingState = signal<boolean>(true);
   private readonly fetchErrorState = signal<boolean>(false);
-  // The former roster is read in every view (lfx-self-serve#4311): it is listed under "Former" and "All", and under
-  // "Current" it supplies the stored activity of someone who is current again. Seeded true like `loadingState`.
+  // The off-roster read runs in every view (lfx-self-serve#4311, #4730): former employees are listed under "Former" and
+  // "All", and under "Current" supply the stored activity of someone who is current again; people with code but no
+  // employment row are listed only under "All". Seeded true like `loadingState`.
   private readonly formerLoadingState = signal<boolean>(true);
   private readonly formerErrorState = signal<boolean>(false);
 
   private readonly showCurrent = computed(() => this.selectedEmployment() !== 'former');
   private readonly showFormer = computed(() => this.selectedEmployment() !== 'current');
+  private readonly showUnclassified = computed(() => this.selectedEmployment() === 'all');
   protected readonly selectedCodeFilters: Signal<OrgCodeFilterValues> = computed(() => orgCodeFilterValues(this.selectedFilters()));
-  // Range and commit filters as one value, so a change to both (Clear filters, a URL step) starts a single read.
-  private readonly rosterQuery = computed(() => ({ range: this.selectedRange(), filters: this.selectedFilters() }));
+  // Range, commit filters, team members and organization scope as one value, so a change to several (Clear filters, a URL step) starts a single read.
+  private readonly rosterQuery = computed(() => ({
+    range: this.selectedRange(),
+    filters: this.selectedFilters(),
+    teamMembers: this.selectedTeamMembers(),
+    orgScope: this.selectedOrgScope(),
+  }));
   private readonly rosterQuery$ = toObservable(this.rosterQuery).pipe(
-    distinctUntilChanged((a, b) => a.range === b.range && sameOrgCommitFilters(a.filters, b.filters))
+    distinctUntilChanged(
+      (a, b) => a.range === b.range && sameOrgCommitFilters(a.filters, b.filters) && a.teamMembers === b.teamMembers && a.orgScope === b.orgScope
+    )
   );
   private readonly filterFormValue = computed(() => ({
     search: this.searchTerm(),
@@ -222,12 +279,16 @@ export class AllEmployeesComponent {
     range: this.selectedRange(),
     projectScope: this.selectedCodeFilters().projectScope,
     metric: this.selectedCodeFilters().metric,
+    teamMembers: this.selectedTeamMembers(),
+    orgScope: this.selectedOrgScope(),
   }));
   protected readonly codeColumnLabel = computed(() => ORG_CODE_METRIC_LABEL[this.selectedFilters().metric]);
   protected readonly codeColumnTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[this.selectedCodeFilters().metric]);
   protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
-  // Under "Current employees" the tile leaves out people who have left, unlike Contributors and Code; say so.
-  protected readonly codeStatNote = computed(() => (this.selectedEmployment() === 'current' ? ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE : null));
+  // Under "Current employees" the tile leaves out people who have left, unlike Contributors and Code; under "All
+  // employees" it matches them, people with code but no employment record included. Say which, and whose code it
+  // counts: the organization scope served (an account without an Insights organization is served every related one).
+  protected readonly codeStatNote: Signal<string> = computed(() => this.initCodeStatNote());
   // The code activity option is named after the metric it filters on.
   protected readonly activityOptions: Signal<OrgAllEmployeeActivityOption[]> = computed(() =>
     ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS.map((option) => (option.value === 'code' ? { ...option, label: this.codeColumnLabel() } : option))
@@ -251,6 +312,9 @@ export class AllEmployeesComponent {
 
   // Former employees are a separate read so they never enter the shared people directory the reassign pickers use.
   protected readonly formerResponse: Signal<OrgAllEmployeesResponse> = this.initFormerResponse();
+
+  // Exclude team members was asked but the team-member data could not be read (lfx-self-serve#4685): the rosters include them.
+  protected readonly teamMembersUnavailable = computed(() => !!this.response().teamMembersUnavailable || !!this.formerResponse().teamMembersUnavailable);
 
   private readonly rosterRows: Signal<OrgAllEmployeeRow[]> = computed(() => this.initRosterRows());
 
@@ -276,6 +340,18 @@ export class AllEmployeesComponent {
   protected readonly isFiltering: Signal<boolean> = computed(() => this.initIsFiltering());
   // The filter bar's "Clear filters" also covers the code-count option, which changes the count but not who is listed.
   protected readonly canClearFilters: Signal<boolean> = computed(() => this.isFiltering() || this.selectedCodeFilters().metric !== DEFAULT_ORG_CODE_MEASURE);
+  // The secondary filters behind "More filters" (lfx-self-serve#4735): shown for this visit only, and counted while not
+  // at their default so a pick from the URL stays visible on the collapsed link.
+  protected readonly moreFiltersExpanded = signal(false);
+  protected readonly hiddenFilterCount: Signal<number> = computed(
+    () =>
+      [
+        this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT,
+        this.selectedCodeFilters().metric !== DEFAULT_ORG_CODE_MEASURE,
+        this.selectedTeamMembers() !== DEFAULT_ORG_TEAM_MEMBERS,
+        this.selectedOrgScope() !== DEFAULT_ORG_SCOPE,
+      ].filter(Boolean).length
+  );
 
   // Precomputed aria-sort per column — keeps the template free of method calls in [attr.aria-sort] bindings.
   protected readonly ariaSortMap: Signal<Record<OrgAllEmployeeSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());
@@ -337,6 +413,22 @@ export class AllEmployeesComponent {
       )
       .subscribe((filters) => this.selectedFilters.set(filters));
 
+    this.route.queryParamMap
+      .pipe(
+        map((params) => parseOrgTeamMembersFilter(params.get(ORG_TEAM_MEMBERS_QUERY_PARAM)) ?? DEFAULT_ORG_TEAM_MEMBERS),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((teamMembers) => this.selectedTeamMembers.set(teamMembers));
+
+    this.route.queryParamMap
+      .pipe(
+        map((params) => parseOrgScopeFilter(params.get(ORG_SCOPE_QUERY_PARAM)) ?? DEFAULT_ORG_SCOPE),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((orgScope) => this.selectedOrgScope.set(orgScope));
+
     const controls = this.filterForm.controls;
     controls.search.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.searchTerm.set(value));
     controls.foundation.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.selectedFoundationId.set(value));
@@ -345,6 +437,8 @@ export class AllEmployeesComponent {
     controls.range.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onRangeChange(value));
     controls.projectScope.valueChanges.pipe(takeUntilDestroyed()).subscribe((projectScope) => this.onFiltersChange({ projectScope }));
     controls.metric.valueChanges.pipe(takeUntilDestroyed()).subscribe((metric) => this.onFiltersChange({ metric }));
+    controls.teamMembers.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onTeamMembersChange(value));
+    controls.orgScope.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onOrgScopeChange(value));
     // URL changes, Clear filters, an account switch and the handlers write the signals; mirror them back without re-firing the handlers.
     toObservable(this.filterFormValue)
       .pipe(takeUntilDestroyed())
@@ -429,6 +523,10 @@ export class AllEmployeesComponent {
       // The Code tab's Maintainer pills and counts follow the page range, project type and code count.
       range: this.selectedRange(),
       codeFilters: this.selectedFilters(),
+      teamMembers: this.selectedTeamMembers(),
+      orgScope: this.selectedOrgScope(),
+      // Someone with no employment record (`isUnclassified`) opens as People → Contributors opens them: never badged
+      // former, and their address lookup finds none, as code alone never puts a person on the address model's roster.
       isFormer: row.isFormer === true,
     });
   }
@@ -453,6 +551,26 @@ export class AllEmployeesComponent {
     });
   }
 
+  protected onTeamMembersChange(value: OrgTeamMembersFilter): void {
+    this.selectedTeamMembers.set(value);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { [ORG_TEAM_MEMBERS_QUERY_PARAM]: orgTeamMembersUrlParam(value) },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  protected onOrgScopeChange(value: OrgScopeFilter): void {
+    this.selectedOrgScope.set(value);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { [ORG_SCOPE_QUERY_PARAM]: orgScopeUrlParam(value) },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
   protected onFiltersChange(change: Partial<OrgCodeFilterValues>): void {
     const filters = orgCommitFiltersFor({ ...this.selectedCodeFilters(), ...change });
     this.selectedFilters.set(filters);
@@ -467,9 +585,17 @@ export class AllEmployeesComponent {
     this.selectedEmployment.set(DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT);
     this.selectedRange.set(ORG_LENS_DEFAULT_TIME_RANGE);
     this.selectedFilters.set(DEFAULT_ORG_COMMIT_FILTERS);
+    this.selectedTeamMembers.set(DEFAULT_ORG_TEAM_MEMBERS);
+    this.selectedOrgScope.set(DEFAULT_ORG_SCOPE);
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { employment: null, range: orgLensTimeRangeUrlParam(ORG_LENS_DEFAULT_TIME_RANGE), ...orgCommitFiltersUrlParams(DEFAULT_ORG_COMMIT_FILTERS) },
+      queryParams: {
+        employment: null,
+        range: orgLensTimeRangeUrlParam(ORG_LENS_DEFAULT_TIME_RANGE),
+        ...orgCommitFiltersUrlParams(DEFAULT_ORG_COMMIT_FILTERS),
+        [ORG_TEAM_MEMBERS_QUERY_PARAM]: null,
+        [ORG_SCOPE_QUERY_PARAM]: null,
+      },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
@@ -526,13 +652,20 @@ export class AllEmployeesComponent {
     return [{ label: ORG_ALL_FOUNDATIONS_LABEL, value: '' }, ...options];
   }
 
+  private initCodeStatNote(): string {
+    const orgScope = servedOrgScopeForCaption(this.selectedOrgScope(), this.orgScopeService.current());
+    return [ORG_ALL_EMPLOYEE_CODE_NOTE[this.selectedEmployment()], ORG_SCOPE_CAPTION_PHRASE[orgScope]].filter(Boolean).join(' ');
+  }
+
   /** Tiles count the reconciled rows of the selected view, so someone who is current again carries their stored activity into them. */
   private initStats(): OrgAllEmployeeStats {
     return computeOrgAllEmployeeStats(this.rosterRows());
   }
 
   /**
-   * Current and former rows for the selected view, reconciled by LF username in every view. Someone in the former roster can
+   * Current and off-roster rows for the selected view, reconciled by LF username in every view. The off-roster read
+   * carries former employees and people with code but no employment row (`isUnclassified`, lfx-self-serve#4730), who
+   * are reconciled like former employees in every view but listed only under "All". Someone in the former roster can
    * also arrive from the live roster before the next warehouse build. A live row's username is only verified when
    * the row was created by a seat or an Org Lens access principal. The server merges seats, then key contacts,
    * then access, so the first source is the creating one. A row created by a key contact carries member-service's
@@ -542,8 +675,10 @@ export class AllEmployeesComponent {
    * - With a live seat or key-contact role, they are current again: one row with the former row's warehouse
    *   activity plus the live sources, seats and access badge, untagged. A former name the warehouse could not
    *   supply (blank or the placeholder) and a missing title or photo are taken from the live row; an address never is.
-   * - With only Org Lens access, they are still former: the former row, carrying the access badge. The server tags
-   *   such a live row `isFormer`, so it is never listed as current, whichever view is selected.
+   * - With only Org Lens access, they are still former (or unclassified): the off-roster row, carrying the access badge.
+   *   The server tags such a live former row `isFormer`; an unclassified one is folded into its warehouse row (or the
+   *   former row the server kept in its place, which carries its username), or left out when Exclude team members
+   *   removed that row (`unclassifiedUsernames`), so neither is ever listed as current, whichever view is selected.
    * The two warehouse rosters are disjoint within a build but cached separately, so right after a build one can
    * be stale. Someone on both is treated as current (matched on person key or the stored username): under "All"
    * they are shown once, as the stored current row, and the Former view leaves them out.
@@ -553,7 +688,12 @@ export class AllEmployeesComponent {
   private initRosterRows(): OrgAllEmployeeRow[] {
     const accountId = this.currentAccountId();
     const current = this.response();
-    const formerRows = this.formerResponse().accountId === accountId ? this.formerResponse().rows : [];
+    const showUnclassified = this.showUnclassified();
+    const former = this.formerResponse().accountId === accountId ? this.formerResponse() : null;
+    const formerRows = former?.rows ?? [];
+    const unclassifiedUsernames = new Set(
+      (former?.unclassifiedUsernames ?? []).map((username) => AllEmployeesComponent.usernameKey(username)).filter((username) => !!username)
+    );
     const liveRows = current.accountId === accountId ? current.rows : [];
     // Usernames are matched case-insensitively, as the server merge does.
     const formerUsernames = new Set(formerRows.map((row) => AllEmployeesComponent.usernameKey(row.lfUsername)).filter((username) => !!username));
@@ -569,7 +709,11 @@ export class AllEmployeesComponent {
         continue;
       }
       const liveUsername = AllEmployeesComponent.usernameKey(row.lfUsername);
-      if (!liveUsername || !formerUsernames.has(liveUsername)) continue;
+      if (!liveUsername) continue;
+      if (!formerUsernames.has(liveUsername)) {
+        if (unclassifiedUsernames.has(liveUsername) && row.sources.every((source) => source === 'access')) folded.add(row);
+        continue;
+      }
       if (createdBy !== 'board' && createdBy !== 'committee' && createdBy !== 'access') continue;
       if (row.sources.some((source) => source === 'board' || source === 'committee' || source === 'keyContact')) {
         liveRoles.set(liveUsername, row);
@@ -586,13 +730,14 @@ export class AllEmployeesComponent {
       const role = formerUsername ? liveRoles.get(formerUsername) : undefined;
       const accessBadge = (formerUsername ? liveAccess.get(formerUsername) : undefined) ?? row.accessBadge;
       if (!role) {
-        shownFormerRows.push({ ...row, accessBadge });
+        if (showUnclassified || !row.isUnclassified) shownFormerRows.push({ ...row, accessBadge });
         continue;
       }
       rejoinedRows.push({
         ...row,
         ...AllEmployeesComponent.liveDisplayFields(row, role),
         isFormer: false,
+        isUnclassified: false,
         sources: [...new Set([...row.sources, ...role.sources])],
         seatsCount: role.seatsCount,
         boardSeatsCount: role.boardSeatsCount,
@@ -678,7 +823,9 @@ export class AllEmployeesComponent {
       this.selectedActivity() !== 'all' ||
       this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT ||
       this.selectedRange() !== ORG_LENS_DEFAULT_TIME_RANGE ||
-      this.selectedFilters().projectScope !== DEFAULT_ORG_COMMIT_FILTERS.projectScope
+      this.selectedFilters().projectScope !== DEFAULT_ORG_COMMIT_FILTERS.projectScope ||
+      this.selectedTeamMembers() !== DEFAULT_ORG_TEAM_MEMBERS ||
+      this.selectedOrgScope() !== DEFAULT_ORG_SCOPE
     );
   }
 
@@ -716,12 +863,12 @@ export class AllEmployeesComponent {
           this.loadingState.set(true);
           this.fetchErrorState.set(false);
         }),
-        switchMap(([orgUid, { range, filters }]) => {
+        switchMap(([orgUid, { range, filters, teamMembers, orgScope }]) => {
           if (!orgUid) {
             this.loadingState.set(false);
             return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
           }
-          return this.loadRoster(orgUid, range, filters);
+          return this.loadRoster(orgUid, range, filters, teamMembers, orgScope);
         })
       ),
       { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
@@ -732,7 +879,7 @@ export class AllEmployeesComponent {
   private initFormerResponse(): Signal<OrgAllEmployeesResponse> {
     return toSignal(
       combineLatest([this.orgUid$, this.rosterQuery$, toObservable(this.retryTrigger)]).pipe(
-        switchMap(([orgUid, { range, filters }]) => {
+        switchMap(([orgUid, { range, filters, teamMembers, orgScope }]) => {
           if (!orgUid) {
             this.formerLoadingState.set(false);
             return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
@@ -742,7 +889,7 @@ export class AllEmployeesComponent {
           }
           this.formerLoadingState.set(true);
           this.formerErrorState.set(false);
-          return this.dataService.getFormerEmployees(orgUid, range, filters).pipe(
+          return this.dataService.getFormerEmployees(orgUid, range, filters, teamMembers, orgScope).pipe(
             take(1),
             catchError((error: unknown) => {
               console.error('Failed to load former employees:', error);
@@ -779,7 +926,13 @@ export class AllEmployeesComponent {
    * after hydration. These reads have not been observed holding SSR in prod, but the cause is not
    * established, so this is guarded like org-groups (#2063).
    */
-  private loadRoster(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters): Observable<OrgAllEmployeesResponse> {
+  private loadRoster(
+    orgUid: string,
+    range: OrgLensTimeRange,
+    filters: OrgCommitFilters,
+    teamMembers: OrgTeamMembersFilter,
+    orgScope: OrgScopeFilter
+  ): Observable<OrgAllEmployeesResponse> {
     if (!isPlatformBrowser(this.platformId)) {
       return EMPTY;
     }
@@ -803,7 +956,7 @@ export class AllEmployeesComponent {
     };
     const missingStoredRoster = (): Error => new Error('Live directory is missing the stored roster');
 
-    const snowflake$ = this.dataService.getAllEmployees(orgUid, range, filters).pipe(
+    const snowflake$ = this.dataService.getAllEmployees(orgUid, range, filters, teamMembers, orgScope).pipe(
       take(1),
       mergeMap((res) => {
         if (state.liveLanded) return EMPTY;
@@ -824,7 +977,7 @@ export class AllEmployeesComponent {
         return state.liveFailed ? bothFailed() : EMPTY;
       })
     );
-    const live$ = this.directory.getDirectory(orgUid, range, filters).pipe(
+    const live$ = this.directory.getDirectory(orgUid, range, filters, teamMembers, orgScope).pipe(
       take(1),
       mergeMap((res) => {
         if (!res.rows.some((row) => row.sources.includes('snowflake'))) {
@@ -856,7 +1009,7 @@ export class AllEmployeesComponent {
     this.clearDetailError(key);
     this.detailLoading.update((state) => ({ ...state, [key]: true }));
     this.dataService
-      .getEmployeeDetail(orgUid, row.personKey, this.selectedRange(), this.selectedFilters())
+      .getEmployeeDetail(orgUid, row.personKey, this.selectedRange(), this.selectedFilters(), this.selectedTeamMembers(), this.selectedOrgScope())
       .pipe(
         take(1),
         takeUntil(this.detailCancel$),

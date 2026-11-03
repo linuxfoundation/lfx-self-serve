@@ -100,10 +100,10 @@ test.describe('Newsletter Reader Page — Structural Tests', () => {
     await page.goto(`/newsletters/${PROJECT_SLUG}/news-456`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
 
-    // Core testid contract: breadcrumb, title, metadata, copy button all present
+    // Core testid contract: breadcrumb, title, metadata, share button all present
     await expect(page.getByTestId('newsletter-reader-title')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('newsletter-reader-received')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(page.getByTestId('newsletter-reader-copy-link')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-reader-share')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
     // Heading hierarchy: h1 for title
     const heading = page.getByRole('heading', { level: 1 });
@@ -140,7 +140,7 @@ test.describe('Newsletter Reader Page — Structural Tests', () => {
 
     // After data arrives, full content should render
     await expect(page.getByTestId('newsletter-reader-title')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(page.getByTestId('newsletter-reader-copy-link')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-reader-share')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 
   test('not-found card renders with correct structure on missing project', async ({ page }) => {
@@ -175,7 +175,7 @@ test.describe('Newsletter Reader Page — Structural Tests', () => {
     await expect(notFoundCard.getByRole('heading')).toBeVisible();
   });
 
-  test('copy-link button is properly labeled and interactive', async ({ page }) => {
+  test('share button is properly labeled and interactive', async ({ page }) => {
     skipWhenAuthMissing();
     await stubProjectApi(page, MOCK_PROJECT_MANAGER);
     await stubNewsletterApi(page, PROJECT_UID, 'news-456', 'sent', true);
@@ -183,16 +183,16 @@ test.describe('Newsletter Reader Page — Structural Tests', () => {
     await page.goto(`/newsletters/${PROJECT_SLUG}/news-456`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
 
-    const copyButton = page.getByTestId('newsletter-reader-copy-link');
-    await expect(copyButton).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    const shareButton = page.getByTestId('newsletter-reader-share');
+    await expect(shareButton).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
     // Button should be interactive (clickable)
-    await expect(copyButton).toBeEnabled();
+    await expect(shareButton).toBeEnabled();
 
     // Button should have accessible text or aria-label
-    const textContent = await copyButton.textContent();
+    const textContent = await shareButton.textContent();
     const hasText = textContent && textContent.trim().length > 0;
-    const hasAriaLabel = await copyButton.getAttribute('aria-label');
+    const hasAriaLabel = await shareButton.getAttribute('aria-label');
     expect(hasText || hasAriaLabel).toBeTruthy();
   });
 });

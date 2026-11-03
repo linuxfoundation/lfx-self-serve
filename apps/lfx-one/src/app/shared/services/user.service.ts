@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
+import { USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
 import {
   CdpProjectAffiliation,
   ChangePasswordRequest,
@@ -138,6 +139,7 @@ export class UserService {
   private userMeetingsDirty = false;
   private userMeetingsSubject: string | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
+  private userPastMeetingsWithArtifacts$: Observable<PastMeeting[]> | null = null;
   private userLatestPastMeetings$: Observable<PastMeeting[]> | null = null;
 
   public constructor() {
@@ -166,6 +168,7 @@ export class UserService {
         this.userMeetings$ = null;
         this.userMeetingsDirty = false;
         this.userPastMeetings$ = null;
+        this.userPastMeetingsWithArtifacts$ = null;
         this.userLatestPastMeetings$ = null;
         this.userIdentities$ = null;
       });
@@ -462,7 +465,14 @@ export class UserService {
       // to a new Subject after firing .next() on this one, so the old chain completes cleanly.
       const destroy$ = this.userMeetingsDestroy$;
       this.userMeetingsSubject = subject;
-      this.userMeetings$ = combineLatest([
+      const dropIfCurrent = (): void => {
+        // Guarded so a stale response can't drop a newer chain (e.g. a user/identity change
+        // that already rebuilt it while this one was still erroring out).
+        if (this.userMeetings$ === meetings$) {
+          this.userMeetings$ = null;
+        }
+      };
+      const meetings$: Observable<Meeting[]> = combineLatest([
         this.userMeetingsRefresh$.pipe(
           startWith(undefined),
           switchMap(() => this.http.get<Meeting[]>('/api/user/meetings').pipe(tap((meetings) => this.reconcileMeetingRegistrations(meetings, subject))))
@@ -471,8 +481,17 @@ export class UserService {
       ]).pipe(
         map(([meetings, confirmed]) => this.applyConfirmedMeetingRsvps(meetings, subject, confirmed)),
         takeUntil(destroy$),
+        // Never cache a failure — shareReplay otherwise replays it to every subscriber
+        // forever, so the dashboard's Retry control (GH-4780) would just re-show the same
+        // stale error instead of issuing a new request. Drop the cached reference so the
+        // next caller rebuilds the chain and actually re-fetches.
+        catchError((error: unknown) => {
+          dropIfCurrent();
+          return throwError(() => error);
+        }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
+      this.userMeetings$ = meetings$;
     }
     return this.userMeetings$;
   }
@@ -480,18 +499,33 @@ export class UserService {
   /**
    * Gets past meetings for the current authenticated user.
    * Call refreshUserPastMeetings() to re-fetch.
+   * @param options - `includeArtifacts` adds `has_recording` / `has_ai_summary`, cached apart from the plain feed
    */
-  public getUserPastMeetings(): Observable<PastMeeting[]> {
-    if (!this.userPastMeetings$) {
-      const destroy$ = this.userPastMeetingsDestroy$;
-      this.userPastMeetings$ = this.userPastMeetingsRefresh$.pipe(
-        startWith(undefined),
-        switchMap(() => this.http.get<PastMeeting[]>('/api/user/past-meetings')),
-        takeUntil(destroy$),
-        shareReplay({ bufferSize: 1, refCount: false })
-      );
-    }
-    return this.userPastMeetings$;
+  public getUserPastMeetings(options?: { includeArtifacts?: boolean }): Observable<PastMeeting[]> {
+    const includeArtifacts = options?.includeArtifacts === true;
+    const cached = includeArtifacts ? this.userPastMeetingsWithArtifacts$ : this.userPastMeetings$;
+    if (cached) return cached;
+
+    // Both caches share the destroy signal, so a viewer change tears down either chain.
+    const destroy$ = this.userPastMeetingsDestroy$;
+    const params = includeArtifacts ? { include: USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } : undefined;
+    const setCache = (value: Observable<PastMeeting[]> | null): void => {
+      if (includeArtifacts) this.userPastMeetingsWithArtifacts$ = value;
+      else this.userPastMeetings$ = value;
+    };
+    const pastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
+      startWith(undefined),
+      switchMap(() => this.http.get<PastMeeting[]>('/api/user/past-meetings', { params })),
+      takeUntil(destroy$),
+      // Never cache a failure — see getUserMeetings() for why.
+      catchError((error: unknown) => {
+        if ((includeArtifacts ? this.userPastMeetingsWithArtifacts$ : this.userPastMeetings$) === pastMeetings$) setCache(null);
+        return throwError(() => error);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    setCache(pastMeetings$);
+    return pastMeetings$;
   }
 
   /**
@@ -504,15 +538,26 @@ export class UserService {
   public getUserLatestPastMeetings(): Observable<PastMeeting[]> {
     if (!this.userLatestPastMeetings$) {
       const destroy$ = this.userLatestPastMeetingsDestroy$;
+      const dropIfCurrent = (): void => {
+        if (this.userLatestPastMeetings$ === latestPastMeetings$) {
+          this.userLatestPastMeetings$ = null;
+        }
+      };
       // Shares `userPastMeetingsRefresh$` with `getUserPastMeetings()` on purpose — the two
       // caches represent different slices of the same underlying data, so `refreshUserPastMeetings()`
       // invalidates both together and they re-fetch in lockstep.
-      this.userLatestPastMeetings$ = this.userPastMeetingsRefresh$.pipe(
+      const latestPastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
         startWith(undefined),
         switchMap(() => this.http.get<PastMeeting[]>('/api/user/latest-past-meetings')),
         takeUntil(destroy$),
+        // Never cache a failure — see getUserMeetings() for why.
+        catchError((error: unknown) => {
+          dropIfCurrent();
+          return throwError(() => error);
+        }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
+      this.userLatestPastMeetings$ = latestPastMeetings$;
     }
     return this.userLatestPastMeetings$;
   }

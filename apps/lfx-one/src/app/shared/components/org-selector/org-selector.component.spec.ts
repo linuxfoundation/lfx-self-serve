@@ -110,6 +110,14 @@ describe('OrgSelectorComponent.selectItem', () => {
     await fixture.whenStable();
   });
 
+  it('shows "No logo" in the trigger instead of a building icon when the org has no logo', () => {
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="org-selector-trigger-logo-fallback"]')?.textContent?.trim()).toBe('No logo');
+    expect(el.querySelector('.fa-building')).toBeNull();
+  });
+
   it('selects another organization and re-addresses the page as a switch', () => {
     const selected = vi.fn();
     fixture.componentInstance.itemSelected.subscribe(selected);

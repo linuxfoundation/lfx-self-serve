@@ -6,7 +6,12 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { IMPERSONATION_SELF_MESSAGE, IMPERSONATION_TARGET_USER_NOT_FOUND_CODE, IMPERSONATION_USER_NOT_FOUND_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  IMPERSONATION_EMPTY_TARGET_MESSAGE,
+  IMPERSONATION_SELF_MESSAGE,
+  IMPERSONATION_TARGET_USER_NOT_FOUND_CODE,
+  IMPERSONATION_USER_NOT_FOUND_MESSAGE,
+} from '@lfx-one/shared/constants';
 import { ImpersonationSuggestion, RecentImpersonation, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { ImpersonationService } from '@services/impersonation.service';
 import { SearchService } from '@services/search.service';
@@ -181,25 +186,47 @@ describe('ImpersonationDialogComponent', () => {
       expect(startImpersonation).not.toHaveBeenCalled();
     });
 
-    it('enables Start as soon as there is text or a pick, and disables it when the field is blank', async () => {
-      const start = (): HTMLButtonElement => fixture.nativeElement.querySelector('[data-testid="impersonation-submit-button"] button');
-      expect(start().disabled).toBe(true);
+    const startButton = (): HTMLButtonElement => fixture.nativeElement.querySelector('[data-testid="impersonation-submit-button"] button');
 
-      dialog().targetUserForm.controls.targetUser.setValue('jane');
-      await fixture.whenStable();
-      expect(start().disabled).toBe(false);
+    it('never disables Start for what is in the field, only while a request is running', async () => {
+      expect(startButton().disabled).toBe(false);
 
       dialog().targetUserForm.controls.targetUser.setValue('   ');
       await fixture.whenStable();
-      expect(start().disabled).toBe(true);
+      expect(startButton().disabled).toBe(false);
 
       pickTarget('jdoe');
       await fixture.whenStable();
-      expect(start().disabled).toBe(false);
+      expect(startButton().disabled).toBe(false);
 
-      dialog().targetUserForm.controls.targetUser.setValue('');
+      startImpersonation.mockReturnValueOnce(NEVER);
+      dialog().submit();
       await fixture.whenStable();
-      expect(start().disabled).toBe(true);
+      expect(startButton().disabled).toBe(true);
+    });
+
+    it('starts with a single character typed into the real input, even though nothing matches it', async () => {
+      startImpersonation.mockReturnValueOnce(NEVER);
+      const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+      input.value = 'A';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      startButton().click();
+
+      expect(startImpersonation).toHaveBeenCalledWith('A', false);
+    });
+
+    it('explains an empty field instead of sending a request', async () => {
+      startButton().click();
+      await fixture.whenStable();
+
+      expect(startImpersonation).not.toHaveBeenCalled();
+      expect(dialog().error()).toBe(IMPERSONATION_EMPTY_TARGET_MESSAGE);
+
+      dialog().targetUserForm.controls.targetUser.setValue('   ');
+      dialog().submit();
+      expect(startImpersonation).not.toHaveBeenCalled();
     });
 
     it('refuses typed text that is the signed-in admin’s own username or email', async () => {
@@ -239,12 +266,6 @@ describe('ImpersonationDialogComponent', () => {
         expect(startImpersonation).toHaveBeenCalledWith('asmith', true);
         expect(dialog().error()).not.toBe(IMPERSONATION_SELF_MESSAGE);
       });
-    });
-
-    it('does not request impersonation with an empty field', () => {
-      dialog().submit();
-
-      expect(startImpersonation).not.toHaveBeenCalled();
     });
 
     const jane: ImpersonationSuggestion = { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', name: 'Jane Doe' };

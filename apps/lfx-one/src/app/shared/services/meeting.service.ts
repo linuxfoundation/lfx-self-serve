@@ -831,11 +831,14 @@ export class MeetingService {
       // `occurrence_id`. Falling back to it sends the stored scope back as it is, so an update that only
       // means to change something else (the host flag) can't leave an occurrence-scoped guest unscoped.
       occurrence_id: registrant.occurrence_id || (registrant as MeetingRegistrantWithState & { occurrence?: string }).occurrence || null,
-      // `user_id` has to go back exactly as stored: upstream treats it as immutable, and an update that leaves
-      // it out reads as a change and fails with "user_id cannot be changed". The index record carries it.
+      // `user_id` and `username` have to go back exactly as stored: ITX compares an update's values with the
+      // stored ones and rejects any difference, and a blank counts as one for a guest linked to an LF user. It
+      // checks `user_id` first, so a missing `username` only surfaces once `user_id` is right. The index record
+      // carries both; a guest with no link has neither, and sends neither. The meeting service maps ITX's
+      // `NONE` placeholder for a blank `user_id` to empty.
       ...(registrant.user_id ? { user_id: registrant.user_id } : {}),
-      // `username` and `avatar_url` are not sent: both are derived from the linked user, and the Edit Guest
-      // form never carried either.
+      ...(registrant.username ? { username: registrant.username } : {}),
+      // `avatar_url` is not sent: it is derived from the linked user and ITX does not compare it.
       linkedin_profile: registrant.linkedin_profile || null,
     };
   }

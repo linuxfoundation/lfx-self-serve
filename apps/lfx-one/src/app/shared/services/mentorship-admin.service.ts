@@ -142,7 +142,10 @@ export class MentorshipAdminService {
       .pipe(this.logFailure('getApplicationTasks'));
   }
 
-  /** Accepts (with an attendance type), declines or graduates one application. Resolves on 204. */
+  /**
+   * Accepts (with an attendance type), declines or graduates one application, undoes a graduation (an accept without
+   * one), or re-opens a declined or withdrawn one (`pending`). Resolves on 204.
+   */
   public updateApplicationStatus(applicationId: string, body: MentorshipAdminApplicationStatusUpdate): Observable<void> {
     return this.http
       .patch<void>(`/api/mentorship/admin/applications/${encodeURIComponent(applicationId)}/status`, body)

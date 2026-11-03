@@ -10,7 +10,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
-import { VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
+import { VOTE_CLOSE_CONFIRMATION, VOTE_SUMMARY_NOT_ENDED, VOTE_SUMMARY_PRECHECK_FAILED, VOTE_SUMMARY_SEND_FAILED } from '@lfx-one/shared/constants';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
@@ -821,8 +821,8 @@ describe('VotesTableComponent — row More menu', () => {
     const items = table['rowActionMenuItems']();
     expect(items.map((item) => item.label)).toEqual(
       hasPMOAccess
-        ? ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Clone']
-        : ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list']
+        ? ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Close vote', 'Clone']
+        : ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Close vote']
     );
 
     const reminderItem = document.querySelector<HTMLElement>('[role="menuitem"][aria-label="Send reminder"]')!;
@@ -1474,7 +1474,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
   }
 
   beforeEach(async () => {
-    sendVoteSummary = vi.fn().mockReturnValue(of({ recipient_count: 3, failed_count: 0 }));
+    sendVoteSummary = vi.fn().mockReturnValue(of({ recipient_count: 3, failed_count: 0, skipped_count: 0, uncertain_count: 0 }));
     messageAdd = vi.fn();
     capturedConfirmation = null;
     await TestBed.configureTestingModule({
@@ -1533,14 +1533,44 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Summary sent to 3 voter(s).' }));
   });
 
-  it('shows a warn toast (not an error) when some sends fail', async () => {
-    sendVoteSummary.mockReturnValue(of({ recipient_count: 2, failed_count: 1 }));
+  /** Accepts the confirmation for the ended vote so the mocked sendVoteSummary result reaches the component. */
+  async function sendSummary(): Promise<void> {
     await settle();
     const item = await sendSummaryItem('ended');
     item!.command!({});
     capturedConfirmation?.accept?.();
+  }
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', detail: 'Summary sent to 2 voter(s); 1 failed.' }));
+  it('shows a warn toast (not an error) when some sends fail', async () => {
+    sendVoteSummary.mockReturnValue(of({ recipient_count: 2, failed_count: 1, skipped_count: 0, uncertain_count: 0 }));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary partially sent' }));
+    expect(messageAdd.mock.calls[0][0].detail).toContain('1 failed');
+  });
+
+  it('shows a partial warn toast naming the skipped voters when some have no email', async () => {
+    sendVoteSummary.mockReturnValue(of({ recipient_count: 2, failed_count: 0, skipped_count: 2, uncertain_count: 0 }));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary partially sent' }));
+    expect(messageAdd.mock.calls[0][0].detail).toContain('2 skipped');
+  });
+
+  it('shows "No summaries sent" rather than a success toast when nobody has an email', async () => {
+    sendVoteSummary.mockReturnValue(of({ recipient_count: 0, failed_count: 0, skipped_count: 3, uncertain_count: 0 }));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledTimes(1);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'No summaries sent' }));
+  });
+
+  it('warns about duplicates when some outcomes are unconfirmed', async () => {
+    sendVoteSummary.mockReturnValue(of({ recipient_count: 1, failed_count: 0, skipped_count: 0, uncertain_count: 2 }));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary delivery unconfirmed', life: 8000 }));
+    expect(messageAdd.mock.calls[0][0].detail).toContain('retrying may send duplicate summaries');
   });
 
   it('maps a 409 VOTE_SUMMARY_NOT_ENDED error to a specific message', async () => {
@@ -1555,14 +1585,90 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     );
   });
 
-  it('falls back to a generic error message for any other failure', async () => {
-    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
-    await settle();
-    const item = await sendSummaryItem('ended');
-    item!.command!({});
-    capturedConfirmation?.accept?.();
+  it('shows a retry-safe error for a pre-send failure', async () => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { code: VOTE_SUMMARY_PRECHECK_FAILED } })));
+    await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: "We couldn't send the summary. Please try again." }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Nothing was sent. Please try again.' }));
+  });
+
+  it.each([
+    [401, 'Nothing was sent. Sign in again before sending a summary.'],
+    [404, 'Nothing was sent. This vote is no longer available.'],
+  ])('shows actionable guidance for a pre-send failure with status %s', async (status, detail) => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: status as number, error: { code: VOTE_SUMMARY_PRECHECK_FAILED } })));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail }));
+    expect(messageAdd.mock.calls[0][0].detail).not.toContain('try again');
+  });
+
+  it.each([
+    undefined,
+    null,
+    {},
+    { recipient_count: 0, failed_count: 1, skipped_count: 0 },
+    { recipient_count: 0, failed_count: 1, skipped_count: -1, uncertain_count: 0 },
+    { recipient_count: 0, failed_count: 1.5, skipped_count: 0, uncertain_count: 0 },
+    { recipient_count: 1, failed_count: 1, skipped_count: 0, uncertain_count: 0 },
+    { recipient_count: 0, failed_count: 1, skipped_count: 0, uncertain_count: 1 },
+    { recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0 },
+  ])('keeps a legacy or invalid total-failure result %j unconfirmed', async (details) => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { code: VOTE_SUMMARY_SEND_FAILED, details } })));
+    await sendSummary();
+
+    const toast = messageAdd.mock.calls[0][0];
+    expect(toast).toMatchObject({ severity: 'warn', summary: 'Summary delivery unconfirmed', life: 8000 });
+    expect(toast.detail).toContain('retrying may send duplicate summaries');
+    expect(toast.detail).not.toContain('try again');
+  });
+
+  it('reports the skipped and failed counts when every attempted summary was confirmed unsent', async () => {
+    sendVoteSummary.mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 502,
+            error: {
+              code: VOTE_SUMMARY_SEND_FAILED,
+              details: { recipient_count: 0, failed_count: 1, skipped_count: 2, uncertain_count: 0 },
+            },
+          })
+      )
+    );
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: "Couldn't send summary",
+        detail: 'No summaries were sent: 2 invited voter(s) have no email address; 1 send(s) failed.',
+        life: 8000,
+      })
+    );
+  });
+
+  it.each([401, 403])('shows a retry-safe error for a clear rejection with status %s', async (status) => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No summaries were sent. Please try again.' }));
+  });
+
+  it.each([
+    ['a BFF transport failure', new HttpErrorResponse({ status: 502, error: { code: VOTE_SUMMARY_SEND_FAILED, transport: true } })],
+    ['a gateway 504', new HttpErrorResponse({ status: 504 })],
+    ['a plain 502 without a BFF code', new HttpErrorResponse({ status: 502 })],
+    ['a dropped connection (status 0)', new HttpErrorResponse({ status: 0 })],
+    ['a non-HTTP error', new Error('timeout')],
+  ])('treats %s as unconfirmed, with a duplicate warning and no "try again" wording', async (_label, failure) => {
+    sendVoteSummary.mockReturnValue(throwError(() => failure));
+    await sendSummary();
+
+    const toast = messageAdd.mock.calls[0][0];
+    expect(toast).toMatchObject({ severity: 'warn', summary: 'Summary delivery unconfirmed', life: 8000 });
+    expect(toast.detail).toContain('retrying may send duplicate summaries');
+    expect(toast.detail).not.toContain('try again');
   });
 });
 
@@ -1674,5 +1780,131 @@ describe('VotesTableComponent — mobile cards (#4148)', () => {
     expect(info).toBeTruthy();
     expect(info!.className).toContain('max-sm:min-w-[44px]');
     expect(info!.className).toContain('max-sm:min-h-[44px]');
+  });
+});
+
+describe('VotesTableComponent — Close vote (#4740)', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
+  let endVote: ReturnType<typeof vi.fn>;
+  let add: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
+  const ROWS = [
+    vote('active', { writer: true }),
+    vote('other', { writer: false }),
+    vote('ended', { status: PollStatus.ENDED, writer: true }),
+    vote('draft', { status: PollStatus.DISABLED, writer: true }),
+  ];
+
+  const menuLabels = async (uid: string): Promise<string[]> => {
+    const more = fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`) as HTMLButtonElement | null;
+    if (!more) return []; // drafts have no row menu at all
+    more.click();
+    await settle();
+    return table['rowActionMenuItems']().map((item) => item.label as string);
+  };
+  const closeItem = async (uid: string) => {
+    await menuLabels(uid);
+    return table['rowActionMenuItems']().find((item) => item.label === 'Close vote');
+  };
+  const rowStatus = (uid: string) => table['displayedVotes']().find((row) => row.uid === uid)?.status;
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(async () => {
+    endVote = vi.fn().mockReturnValue(of(vote('active', { status: PollStatus.ENDED, early_end_time: '2026-10-12T10:00:00Z' })));
+    add = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { endVote, isAwaitingInvitationCount: () => false } },
+        { provide: MessageService, useValue: { add } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.detectChanges();
+    confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm') as unknown as ReturnType<typeof vi.fn>;
+    await settle();
+  });
+  afterEach(() => fixture?.destroy());
+
+  it('offers Close only on a writer row whose vote is active', async () => {
+    expect(await menuLabels('active')).toContain('Close vote');
+    expect(await menuLabels('other')).not.toContain('Close vote');
+    expect(await menuLabels('ended')).not.toContain('Close vote');
+    expect(await menuLabels('draft')).not.toContain('Close vote');
+  });
+
+  it('asks with the shared Close copy and sends nothing until it is accepted', async () => {
+    (await closeItem('active'))!.command!({});
+
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining(VOTE_CLOSE_CONFIRMATION));
+    expect(endVote).not.toHaveBeenCalled();
+  });
+
+  it('closes once on accept, flips the row to ended, tells the host and toasts', async () => {
+    const closed = vi.fn();
+    table.voteClosed.subscribe(closed);
+    (await closeItem('active'))!.command!({});
+    const accept = (confirm.mock.calls[0][0] as Confirmation).accept!;
+    accept();
+    await settle();
+
+    expect(endVote).toHaveBeenCalledTimes(1);
+    expect(endVote).toHaveBeenCalledWith('active');
+    expect(rowStatus('active')).toBe(PollStatus.ENDED);
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Vote closed' }));
+  });
+
+  it('toasts the upstream message on failure and leaves the row as it was', async () => {
+    endVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'Vote has not started' } })));
+    const closed = vi.fn();
+    table.voteClosed.subscribe(closed);
+    (await closeItem('active'))!.command!({});
+    (confirm.mock.calls[0][0] as Confirmation).accept!();
+    await settle();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Vote has not started' }));
+    expect(rowStatus('active')).toBe(PollStatus.ACTIVE);
+    expect(closed).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second accept while the first close is in flight, and one for a vote that is already closed', async () => {
+    const pending = new Subject<Vote>();
+    endVote.mockReturnValue(pending);
+    (await closeItem('active'))!.command!({});
+    const accept = (confirm.mock.calls[0][0] as Confirmation).accept!;
+    accept();
+    accept();
+    expect(endVote).toHaveBeenCalledTimes(1);
+
+    pending.next(vote('active', { status: PollStatus.ENDED }));
+    pending.complete();
+    await settle();
+    accept();
+    expect(endVote).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an accept for a row that has left the list', async () => {
+    (await closeItem('active'))!.command!({});
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.filter((row) => row.uid !== 'active')
+    );
+    fixture.detectChanges();
+    (confirm.mock.calls[0][0] as Confirmation).accept!();
+
+    expect(endVote).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
   });
 });

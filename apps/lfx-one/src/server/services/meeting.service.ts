@@ -2757,8 +2757,9 @@ export class MeetingService {
    *
    * {@link NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} gets the same treatment for the same reason,
    * without the rename: `job_title` and `username` are declared upstream under the app's own name and
-   * are equally non-nullable, and `getChangedFields` nulls them too — so a `null` on either is
-   * skipped even though the key itself is allowed through. `linkedin_profile` is left alone: it
+   * are equally non-nullable. `getChangedFields` nulls `job_title` when it is blank, and sends
+   * `username` back as stored or leaves it out — so a `null` on either is skipped even though the
+   * key itself is allowed through. `linkedin_profile` is left alone: it
    * isn't declared upstream at all, so Goa discards the key rather than the value.
    *
    * Cost: clearing an organization on an edit leaves the stored value in place. It did before this

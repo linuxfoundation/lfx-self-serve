@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HashAwareSpyLocation } from '@shared/testing/hash-aware-spy-location';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
@@ -19,7 +21,7 @@ import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { PlanningTabComponent } from './planning-tab.component';
 
@@ -239,7 +241,7 @@ describe('PlanningTabComponent brief read-back', () => {
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
 
     const announcement = (fixture.componentInstance as unknown as { savedBriefAnnouncement(): string }).savedBriefAnnouncement();
-    expect(announcement).toContain('A restore action is available.');
+    expect(announcement).toContain('Open to edit and restore actions are available.');
     expect(announcement).toContain('never approved');
   });
 
@@ -816,6 +818,309 @@ describe('PlanningTabComponent brief read-back', () => {
     await fixture.whenStable();
 
     expect(campaignService.loadBrief).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #4983: open the event's saved brief in the Plan editor, and edit an existing brief without being
+ * able to move it to another event.
+ */
+describe('PlanningTabComponent editing an existing brief', () => {
+  const storedBrief = {
+    eventDetails: {
+      slug: 'kubecon-eu-2026',
+      name: 'KubeCon EU 2026',
+      registrationUrl: 'https://events.example.com/kubecon-eu-2026',
+      dates: '',
+      city: '',
+      countryCode: '',
+      audience: '',
+      themes: [],
+      speakers: [],
+      formatNotes: '',
+      description: '',
+      agendaUrl: '',
+      cfpUrl: '',
+      venueUrl: '',
+      sponsorshipUrl: '',
+    },
+    structuredCopy: { google_search: { headlines: ['Stored headline'], descriptions: ['Stored description'] } },
+    keywords: [{ term: 'kubecon', matchType: 'Exact', intentLevel: 'High', notes: '' }],
+    hsUtm: 'utm-stored',
+    totalBudget: 5000,
+    driveFolderUrl: '',
+    campaignGoal: 'conversions',
+    programType: 'events',
+    deliveryType: 'paid-marketing',
+    selectedPlatforms: ['google-ads', 'reddit-ads'],
+    googleCallouts: [],
+    redditCopy: { variants: [{ headline: 'Stored reddit headline' }] },
+  } as unknown as CampaignBriefOutput;
+
+  const programTypeConfig: CampaignProgramTypeOption = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  };
+
+  interface EditInternals {
+    step(): string;
+    isEditing(): boolean;
+    editingExistingBrief(): boolean;
+    keywords(): { term: string }[];
+    editSearchHeadlines: { set(v: string[]): void };
+    eventDetails: { set(v: unknown): void };
+    briefForm: FormGroup;
+    openSavedBriefToEdit(): void;
+    onUrlInput(): void;
+    onProceedToImplementation(): void;
+    reset(): void;
+  }
+
+  let fixture: ComponentFixture<PlanningTabComponent>;
+  let loadBrief: Mock;
+  const internals = (): EditInternals => fixture.componentInstance as unknown as EditInternals;
+  const el = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    loadBrief = vi.fn();
+    vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+    const context = TestBed.inject(ProjectContextService);
+    context.setRouteLensKind('foundation');
+    context.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  const openInEditor = async (requestId = 1): Promise<void> => {
+    fixture.componentRef.setInput('editRequest', { brief: storedBrief, requestId });
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it('offers Open to edit beside Restore, and emits the offer with its provenance rather than proceeding', async () => {
+    loadBrief.mockReturnValue(of({ status: 'loaded', brief: storedBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }));
+    internals().briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    internals().onUrlInput();
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(el('planning-open-saved-brief'), 'no Open to edit action on the restore offer').not.toBeNull();
+    const opened: unknown[] = [];
+    const restored: unknown[] = [];
+    const proceeded: unknown[] = [];
+    fixture.componentInstance.openSavedBriefRequested.subscribe((v) => opened.push(v));
+    fixture.componentInstance.restoreSavedBriefRequested.subscribe((v) => restored.push(v));
+    fixture.componentInstance.proceedToImplementation.subscribe((v) => proceeded.push(v));
+
+    internals().openSavedBriefToEdit();
+
+    // The id and validator go with it: the parent records ownership from them before the editor
+    // opens, so the edited brief can be saved over this row.
+    expect(opened).toEqual([{ brief: storedBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true, readAt: 0 }]);
+    expect(restored).toEqual([]);
+    expect(proceeded).toEqual([]);
+  });
+
+  it('opens a requested brief on the review step, in the editor, with the stored copy', async () => {
+    await openInEditor();
+
+    expect(internals().step()).toBe('review');
+    expect(internals().editingExistingBrief()).toBe(true);
+    expect(internals().isEditing(), 'the brief opened read-only, not in the editor').toBe(true);
+    expect(
+      internals()
+        .keywords()
+        .map((k) => k.term)
+    ).toEqual(['kubecon']);
+    expect(el('planning-success-banner')?.textContent).toContain("Editing this event's brief");
+  });
+
+  it('holds the event fixed while editing: the URL is read-only and Proceed keeps the stored slug', async () => {
+    await openInEditor();
+
+    expect(internals().briefForm.controls['url'].disabled, 'the URL stayed editable on an existing brief').toBe(true);
+    expect(el('planning-edit-existing-url')?.textContent?.trim()).toBe('https://events.example.com/kubecon-eu-2026');
+
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().editSearchHeadlines.set(['Edited headline']);
+    // Whatever the planner holds as the event, Proceed files the brief under the STORED event.
+    internals().eventDetails.set({ ...storedBrief.eventDetails, slug: 'some-other-event' });
+    internals().onProceedToImplementation();
+
+    expect(proceeded).toHaveLength(1);
+    expect(proceeded[0].eventDetails.slug).toBe('kubecon-eu-2026');
+    expect((proceeded[0].structuredCopy?.['google_search'] as { headlines: string[] }).headlines).toEqual(['Edited headline']);
+    // What this planner does not model rides through from the stored brief instead of being dropped.
+    expect(proceeded[0].redditCopy).toEqual(storedBrief.redditCopy);
+    expect(proceeded[0].googleCallouts, 'an emptied callout list came back as absent').toEqual([]);
+    expect(proceeded[0].hsUtm).toBe('utm-stored');
+  });
+
+  it('opens a brief with no Google copy read-only, so Proceed adds no empty Google blocks, and keeps an absent goal absent', async () => {
+    const redditOnly = {
+      ...storedBrief,
+      structuredCopy: { reddit_ads: { variants: [{ headline: 'Stored reddit headline' }] } },
+      keywords: [],
+      campaignGoal: null,
+      selectedPlatforms: ['reddit-ads'],
+    } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('editRequest', { brief: redditOnly, requestId: 7 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(internals().step()).toBe('review');
+    expect(internals().isEditing(), 'the Google-only editor opened on a brief with no Google copy').toBe(false);
+
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().onProceedToImplementation();
+
+    expect(proceeded[0].structuredCopy?.['google_search']).toBeUndefined();
+    expect(proceeded[0].campaignGoal, 'a goal nobody chose was stored').toBeNull();
+  });
+
+  it('closes a previous edit session when the next brief opens without the editor', async () => {
+    await openInEditor(1);
+    expect(internals().isEditing()).toBe(true);
+
+    const copyless = { ...storedBrief, structuredCopy: null, keywords: [], selectedPlatforms: ['reddit-ads'] } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('editRequest', { brief: copyless, requestId: 2 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(internals().isEditing(), "the previous brief's editor stayed open").toBe(false);
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().onProceedToImplementation();
+    expect(proceeded[0].structuredCopy, "the previous brief's Google copy was written into this one").toBeNull();
+    expect(proceeded[0].keywords).toEqual([]);
+  });
+
+  it('writes no Google block the brief did not have when only its keywords are edited', async () => {
+    const keywordsOnly = { ...storedBrief, structuredCopy: { reddit_ads: { variants: [] } } } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('editRequest', { brief: keywordsOnly, requestId: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(internals().isEditing()).toBe(true);
+
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().onProceedToImplementation();
+
+    expect(proceeded[0].structuredCopy?.['google_search'], 'an empty Search block was added').toBeUndefined();
+    expect(proceeded[0].structuredCopy?.['google_display'], 'an empty Display block was added').toBeUndefined();
+    expect(proceeded[0].structuredCopy?.['reddit_ads']).toEqual({ variants: [] });
+  });
+
+  it('keeps the stored HubSpot token and the stored LinkedIn copy when neither was changed here', async () => {
+    const linkedInCopy = {
+      variants: [{ introText: 'Stored intro', headline: 'Stored LinkedIn headline', imageAssetId: 'asset-1' }],
+      recommendedGeoTargets: [],
+      recommendedTargetingProfile: 'cloud-native',
+    };
+    const withLinkedIn = {
+      ...storedBrief,
+      selectedPlatforms: ['google-ads', 'linkedin-ads'],
+      structuredCopy: {
+        google_search: { headlines: ['Stored headline'], descriptions: ['Stored description'] },
+        linkedin_sponsored: { variants: [{ intro_text: 'Stored intro', headline: 'Stored LinkedIn headline' }] },
+      },
+      linkedInCopy,
+    } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('editRequest', { brief: withLinkedIn, requestId: 4 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // A lookup for whatever the URL field named answered after the brief opened.
+    (fixture.componentInstance as unknown as { hsUtm: { set(v: string | null): void } }).hsUtm.set('utm-of-another-event');
+
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().editSearchHeadlines.set(['Edited headline']);
+    internals().onProceedToImplementation();
+
+    expect(proceeded[0].hsUtm, "another event's token was saved on this brief").toBe('utm-stored');
+    expect(proceeded[0].linkedInCopy, 'a Google-only edit rebuilt the LinkedIn copy and dropped its fields').toEqual(linkedInCopy);
+  });
+
+  it('writes a Google block the brief lacked once the editor gives it text', async () => {
+    const keywordsOnly = { ...storedBrief, structuredCopy: { reddit_ads: { variants: [] } } } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('editRequest', { brief: keywordsOnly, requestId: 5 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().editSearchHeadlines.set(['A new search headline']);
+    internals().onProceedToImplementation();
+
+    expect((proceeded[0].structuredCopy?.['google_search'] as { headlines: string[] }).headlines).toEqual(['A new search headline']);
+    expect(proceeded[0].structuredCopy?.['google_display']).toBeUndefined();
+  });
+
+  it('forgets an abandoned HubSpot lookup, so the same URL can be looked up again later', async () => {
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'Kubecon Eu 2026';
+    await openInEditor(6);
+
+    expect((fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent).toBe('');
+  });
+
+  it('frees the event again on New Brief', async () => {
+    await openInEditor();
+    internals().reset();
+    fixture.detectChanges();
+
+    expect(internals().editingExistingBrief()).toBe(false);
+    expect(internals().briefForm.controls['url'].enabled).toBe(true);
+    expect(internals().step()).toBe('input');
+  });
+
+  it('applies each request once, so a repeated value does not reopen a brief the user left', async () => {
+    await openInEditor(1);
+    internals().reset();
+    fixture.detectChanges();
+
+    fixture.componentRef.setInput('editRequest', { brief: storedBrief, requestId: 1 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(internals().step()).toBe('input');
+
+    await openInEditor(2);
+    expect(internals().step()).toBe('review');
+  });
+
+  it('offers no Open to edit on the email planner', async () => {
+    fixture.componentRef.setInput('deliveryType', 'email');
+    fixture.detectChanges();
+    loadBrief.mockReturnValue(of({ status: 'loaded', brief: storedBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }));
+    internals().briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    internals().onUrlInput();
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(el('planning-restore-brief')).not.toBeNull();
+    expect(el('planning-open-saved-brief')).toBeNull();
   });
 });
 
@@ -3848,5 +4153,157 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
 
     expect(instance()['hsUtm']()).toBe('kubecon-na-2026');
     expect(instance()['hsNotFound']()).toBe(false);
+  });
+});
+
+/**
+ * #4756. The paid planner keeps the event URL in `?event=` so a reload, a second tab or a shared
+ * link prefills it and offers the saved brief again, instead of opening blank.
+ *
+ * `HashAwareSpyLocation` stands in for the address bar: it is what both `replaceState` and the planner's
+ * reader go through, so these tests see exactly what the browser would.
+ */
+describe('PlanningTabComponent event URL in the page address', () => {
+  const EVENT_URL = 'https://events.example.com/kubecon-eu-2026';
+  const programTypeConfig = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  } as CampaignProgramTypeOption;
+
+  let loadBrief: Mock;
+  let location: HashAwareSpyLocation;
+
+  async function mount(address: string, deliveryType: 'paid-marketing' | 'email' = 'paid-marketing'): Promise<ComponentFixture<PlanningTabComponent>> {
+    location.replaceState(address);
+    const fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.componentRef.setInput('deliveryType', deliveryType);
+    fixture.detectChanges();
+    // Past the lookup's 500ms debounce on fake time: no real wait, and no race with the debounce.
+    // `whenStable()` is not used here: the zoneless scheduler runs on the faked `setTimeout`, so
+    // advancing time is what lets it run.
+    await settle(500);
+    return fixture;
+  }
+
+  /** Advance fake time (running the debounce and the change-detection scheduler), then render. */
+  async function settle(ms = 0): Promise<void> {
+    await vi.advanceTimersByTimeAsync(ms);
+    TestBed.tick();
+  }
+
+  function urlField(fixture: ComponentFixture<PlanningTabComponent>): string {
+    return (fixture.componentInstance as unknown as { briefForm: FormGroup }).briefForm.controls['url'].value;
+  }
+
+  function type(fixture: ComponentFixture<PlanningTabComponent>, url: string): void {
+    const component = fixture.componentInstance as unknown as { briefForm: FormGroup; onUrlInput(): void };
+    component.briefForm.controls['url'].setValue(url);
+    component.onUrlInput();
+  }
+
+  function eventParam(): string | null {
+    return new URL(location.path(), 'https://app.example').searchParams.get('event');
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: Location, useClass: HashAwareSpyLocation },
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    loadBrief = vi.fn().mockReturnValue(of({ status: 'none', brief: null, briefId: null, etag: null, approved: false } as CampaignBriefLoadResult));
+    vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+    const context = TestBed.inject(ProjectContextService);
+    context.setRouteLensKind('foundation');
+    context.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    location = TestBed.inject(Location) as HashAwareSpyLocation;
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('prefills the event URL from the address and looks up its saved brief', async () => {
+    const fixture = await mount(`/campaigns?project=foundation-a&event=${encodeURIComponent(EVENT_URL)}`);
+
+    expect(urlField(fixture)).toBe(EVENT_URL);
+    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+  });
+
+  it.each([
+    ['a non-http URL', 'javascript:alert(1)'],
+    ['an unparseable value', 'not a url'],
+    ['an over-long value', `https://events.example.com/${'a'.repeat(2100)}`],
+  ])('ignores %s in the address', async (_label, value) => {
+    const fixture = await mount(`/campaigns?event=${encodeURIComponent(value)}`);
+
+    expect(urlField(fixture)).toBe('');
+    expect(loadBrief).not.toHaveBeenCalled();
+  });
+
+  it('writes a typed event URL to the address, keeping the other parameters', async () => {
+    const fixture = await mount('/campaigns?project=foundation-a');
+
+    type(fixture, EVENT_URL);
+
+    expect(eventParam()).toBe(EVENT_URL);
+    expect(new URL(location.path(), 'https://app.example').searchParams.get('project')).toBe('foundation-a');
+  });
+
+  it('keeps the #fragment of the address when it writes or removes the parameter', async () => {
+    const fixture = await mount('/campaigns?project=foundation-a#plan');
+
+    type(fixture, EVENT_URL);
+    expect(location.path(true)).toMatch(/#plan$/);
+
+    type(fixture, '');
+    expect(location.path(true)).toBe('/campaigns?project=foundation-a#plan');
+  });
+
+  it('removes the parameter when the field is cleared or holds no usable URL', async () => {
+    const fixture = await mount(`/campaigns?event=${encodeURIComponent(EVENT_URL)}`);
+
+    type(fixture, '');
+    expect(eventParam()).toBeNull();
+
+    type(fixture, 'events.example.com/kubecon');
+    expect(eventParam()).toBeNull();
+  });
+
+  it('leaves the parameter to the paid planner: the email planner neither reads nor writes it', async () => {
+    const fixture = await mount(`/campaigns?event=${encodeURIComponent(EVENT_URL)}`, 'email');
+
+    expect(urlField(fixture)).toBe('');
+
+    type(fixture, 'https://events.example.com/open-source-summit');
+    expect(eventParam()).toBe(EVENT_URL);
+  });
+
+  it('keeps the parameter through a foundation switch that rewrites the address', async () => {
+    const fixture = await mount('/campaigns?project=foundation-a');
+    type(fixture, EVENT_URL);
+    // `setFoundation` with its URL sync ON, as the sidebar switch calls it: it rewrites the address,
+    // and must keep the `?event=` the replaceState above wrote.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' });
+    await settle();
+
+    expect(eventParam()).toBe(EVENT_URL);
+    expect(new URL(location.path(), 'https://app.example').searchParams.get('project')).toBe('foundation-b');
   });
 });

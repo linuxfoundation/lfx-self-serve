@@ -89,7 +89,8 @@ export class Member360ResultComponent {
       (row) => row.days_to_renewal !== null && row.days_to_renewal >= 0 && row.days_to_renewal <= MEMBER_360_RENEWAL_RED_DAYS
     )
   );
-  protected readonly renewalValue = computed(() => this.renewals().reduce((sum, row) => sum + (row.annual_value ?? 0), 0));
+  protected readonly renewalKnownValue = computed(() => this.renewals().reduce((sum, row) => (row.annual_value === null ? sum : sum + row.annual_value), 0));
+  protected readonly renewalUnknownCount = computed(() => this.renewals().filter((row) => row.annual_value === null).length);
   protected readonly tierDistribution = computed(() =>
     Object.entries(this.summary().tier_distribution)
       .map(([tier, count]) => `${count} ${tier.toLowerCase()}`)
@@ -200,7 +201,7 @@ export class Member360ResultComponent {
         key: 'renewals',
         label: `Renewals within ${MEMBER_360_RENEWAL_RED_DAYS} days`,
         value: String(this.renewals().length),
-        note: `${this.currency(this.renewalValue())} at list price`,
+        note: this.renewalNote(),
       },
     ]);
   }
@@ -243,6 +244,15 @@ export class Member360ResultComponent {
       trendAriaLabel: trend === null ? 'no trend' : null,
       trendState: trend ?? 'none',
     };
+  }
+  private renewalNote(): string {
+    const count = this.renewals().length;
+    const unknown = this.renewalUnknownCount();
+    if (count === 0) return `No renewals within ${MEMBER_360_RENEWAL_RED_DAYS} days`;
+    if (unknown === count) return `No list-price value for ${count === 1 ? 'this renewal' : `these ${count} renewals`}`;
+    const amount = this.currency(this.renewalKnownValue());
+    if (unknown > 0) return `${amount} known at list price · ${unknown} without a value`;
+    return `${amount} at list price`;
   }
   private currency(value: number): string {
     return formatCurrency(value, 'en-US', '$', 'USD', '1.0-0');

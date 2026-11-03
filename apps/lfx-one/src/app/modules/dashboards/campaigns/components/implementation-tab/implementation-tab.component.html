@@ -50,28 +50,37 @@
   The visible `<p>` carries no role of its own — the text would otherwise be announced twice,
   the same reason `briefPersistenceAnnouncement` stays empty in its `error` state.
 
-  `aria-atomic="true"` on every live region in this template is not a fix: with a single
+  `aria-atomic="true"` on the top-level live regions in this template is not a fix: with a single
   interpolated text node there is no partial update for a non-atomic region to clip, which is why
   #3402 adjudicated it Low. It is added because the module is inconsistent and this template's
-  regions are the ones in hand — all three of them, the brief-status one above, the Google
-  creative-empty one below and the Reddit no-ad one after it — while among the campaigns
-  module's single-interpolation sr-only regions, `campaign-negative-keywords-form.component.html:11`
-  and `optimization-tab.component.html:248` carry it while `campaigns.component.html:243` and
-  `:256` and `planning-tab.component.html:36` and `:68` do not. Those four are untouched here
-  rather than swept in: none of them is Reddit or Google creative, and widening this commit into
-  two more components buys nothing an operator can observe. (`audience-builder-tab.component.html:150`
-  is excluded on its merits, not overlooked — it is the one region here that is neither `sr-only`
-  nor a single text node, so `aria-atomic` would genuinely change what it announces, which makes
-  it a behavioural change and not this commit's parity sweep.)
+  regions are the ones in hand — every top-level region at the head of this file carries it — while
+  among the campaigns module's single-interpolation sr-only regions,
+  `campaign-negative-keywords-form.component.html:11` and `optimization-tab.component.html:248`
+  carry it while `campaigns.component.html:243` and `:256` and `planning-tab.component.html:36` and
+  `:68` do not. Those four are untouched here rather than swept in: none of them is Reddit or Google
+  creative, and widening this commit into two more components buys nothing an operator can observe.
+  (`audience-builder-tab.component.html:150` is excluded on its merits, not overlooked — it is the
+  one region here that is neither `sr-only` nor a single text node, so `aria-atomic` would genuinely
+  change what it announces, which makes it a behavioural change and not this commit's parity sweep.)
 -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-creative-empty-live">
   {{ googleCreativeEmptyWarning() }}
 </div>
 
 <!--
+  Pasted Google image URL checks, announced. Top-level and mounted empty for the reason the regions
+  above are: each line under an image field appears after focus has left that field, inside an `@if`
+  that the result itself creates, so it is never announced on its own. The visible line has no role,
+  so nothing is read twice.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-image-url-check-live">
+  {{ googleTypedImageAnnouncement() }}
+</div>
+
+<!--
   Reddit no-ad warning, announced.
 
-  Top-level and outside the guard for the reason the two regions above are: the visible copy lives
+  Top-level and outside the guard for the reason the regions above are: the visible copy lives
   inside `@if (redditNoAdWarning())`, so it is created by the very change that gives it its text,
   and an aria-live element inserted with its text already present is not reliably announced.
 
@@ -85,7 +94,7 @@
 </div>
 
 <!--
-  Google ad extensions withheld, announced. Top-level for the same reason as the three regions above:
+  Google ad extensions withheld, announced. Top-level for the same reason as the regions above:
   the visible notice is created by the change that gives it its text. Polite, because the campaign
   is still created; the visible `<p>` carries no role, or the sentence would be announced twice.
 -->
@@ -153,15 +162,15 @@
   @case ('saved') {
     <div class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800" data-testid="implementation-brief-saved">
       <!--
-        Names the ACTION a recovery needs, rather than promising a reload just works. It does
-        not: the read is keyed on the event slug, and after a reload the page holds no URL to
-        derive one from, so the brief comes back only once the user pastes the event URL again.
-        "It will still be here if you reload" would be the same false assurance the 'error' arm
-        below exists to prevent, pointed the other way.
+        Names the ACTION a recovery needs, rather than promising a reload just works. The read is
+        keyed on the event slug: a reload keeps the event URL in `?event=` (#4756), so Planning
+        prefills it and OFFERS the saved brief, but restoring it is still the user's click.
+        "It will still be here if you reload" would skip that step — the same false assurance the
+        'error' arm below exists to prevent, pointed the other way.
       -->
       <!--
         Rendered from `briefPersistenceAnnouncement`, not repeated here. The two used to be
-        separate strings and drifted: the banner gained the re-entry instruction while the live
+        separate strings and drifted: the banner gained the reload instruction while the live
         region still announced only "Brief saved.", so screen-reader users got the reassurance
         without the part they cannot recover on their own. One source cannot drift.
       -->
@@ -174,7 +183,145 @@
       class="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
       data-testid="implementation-brief-save-error">
       <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ briefPersistence().message }}
+      @if (canReplaceSavedBrief()) {
+        <div class="mt-2 flex flex-col gap-2" data-testid="implementation-brief-replace">
+          <p>
+            Open to edit loads the saved brief in the Plan tab so you can change it; this one is discarded when you proceed from there. To keep this one
+            instead, replace the saved brief with it — the saved brief is overwritten.
+          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <lfx-button
+              label="Open to edit"
+              size="small"
+              icon="fa-light fa-pen-to-square"
+              (onClick)="openSavedBriefRequested.emit()"
+              ariaLabel="Open the saved brief in the Plan tab to edit it"
+              data-testid="implementation-brief-open-saved-btn" />
+            <lfx-button
+              label="Replace saved brief"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="replaceSavedBriefRequested.emit()"
+              data-testid="implementation-brief-replace-btn" />
+          </div>
+        </div>
+      }
     </div>
+  }
+}
+
+<!--
+  Edit brief (#4983): reopen this brief in the Plan tab's editor. Proceeding from there saves it over
+  the stored brief and approves it again. Disabled while a create job is polling, with the reason in
+  the line beside it, since a disabled button alone says nothing.
+-->
+@if (showEditBrief()) {
+  <div class="mb-4 flex flex-wrap items-center gap-3" data-testid="implementation-edit-brief">
+    <lfx-button
+      label="Edit brief"
+      size="small"
+      severity="secondary"
+      [outlined]="true"
+      icon="fa-light fa-pen-to-square"
+      [disabled]="!canEditBrief()"
+      (onClick)="editBriefRequested.emit()"
+      ariaLabel="Edit this brief in the Plan tab"
+      data-testid="implementation-edit-brief-btn" />
+    <span class="text-xs text-gray-500" data-testid="implementation-edit-brief-hint">
+      @if (canEditBrief()) {
+        Opens this brief in the Plan tab to change its copy and keywords. Changes made on this tab are not carried over.
+      } @else {
+        Available once campaign creation finishes.
+      }
+    </span>
+    @if (editBriefError(); as editError) {
+      <p role="alert" class="w-full text-xs text-amber-800" data-testid="implementation-edit-brief-error">{{ editError }}</p>
+    }
+  </div>
+}
+
+<!--
+  Already created for this event (#4983). The campaigns this brief already has, so a second create on
+  the same platform is a choice made knowing the first exists.
+
+  Five states, kept apart on purpose:
+    - the read FAILED: say so, with Retry. Rendering nothing would read as "none created" over
+      campaigns that may be live and spending (the failure-as-absence rule).
+    - answered with live campaigns: list them, with the per-platform count.
+    - a read in flight: say it is checking, since `null` alone cannot tell that from "nothing".
+    - answered empty but possibly stale: indexing lags a create, so say recent ones may be missing.
+      (Only an empty answer can be stale: the BFF sets `possiblyStale` for an empty list alone.)
+    - answered empty and fresh, or not loaded: no panel.
+  Hidden while a create runs; the list is re-read when it settles.
+-->
+@if (step() !== 'creating') {
+  @if (briefCampaignsUnavailable()) {
+    <div
+      class="mb-4 flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+      data-testid="implementation-existing-unavailable">
+      <p>
+        <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>The campaigns already created for this event could not be loaded, so this page
+        can't show whether one exists. Check before creating another.
+      </p>
+      <div>
+        <lfx-button
+          label="Retry"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="retryBriefCampaigns.emit()"
+          data-testid="implementation-existing-retry" />
+      </div>
+    </div>
+  } @else if (existingCampaigns().length > 0) {
+    <div class="mb-4 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4" data-testid="implementation-existing-campaigns">
+      <h3 class="text-sm font-semibold text-blue-900">Already created for this event</h3>
+      <div class="flex flex-col gap-1">
+        @for (notice of existingPlatformNotices(); track notice.platform) {
+          <p class="text-xs text-blue-900" [attr.data-testid]="'implementation-existing-notice-' + notice.platform">{{ notice.message }}</p>
+        }
+      </div>
+      <!-- Eight columns are wider than a phone: the table scrolls inside the card, not the page. -->
+      <div class="overflow-x-auto" data-testid="implementation-existing-table-scroll">
+        <table class="w-full text-left text-xs text-gray-700" data-testid="implementation-existing-table">
+          <thead>
+            <tr class="text-gray-500">
+              <th scope="col" class="py-1 pr-3 font-medium">Platform</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Name</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Status</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Slot</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Channel</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Stage</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Tactic</th>
+              <th scope="col" class="py-1 font-medium">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (campaign of existingCampaigns(); track campaign.id) {
+              <tr class="border-t border-blue-100" [attr.data-testid]="'implementation-existing-row-' + campaign.id">
+                <td class="py-1 pr-3">{{ campaign.platformLabel }}</td>
+                <td class="break-all py-1 pr-3 font-mono">{{ campaign.name }}</td>
+                <td class="py-1 pr-3">{{ campaign.status }}</td>
+                <td class="py-1 pr-3">{{ campaign.slot }}</td>
+                <td class="py-1 pr-3" [attr.data-testid]="'implementation-existing-channel-' + campaign.id">{{ campaign.labels.channel }}</td>
+                <td class="py-1 pr-3" [attr.data-testid]="'implementation-existing-stage-' + campaign.id">{{ campaign.labels.stage }}</td>
+                <td class="py-1 pr-3" [attr.data-testid]="'implementation-existing-tactic-' + campaign.id">{{ campaign.labels.tactic }}</td>
+                <td class="whitespace-nowrap py-1" [attr.data-testid]="'implementation-existing-created-' + campaign.id">{{ campaign.labels.created }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  } @else if (briefCampaignsLoading()) {
+    <p class="mb-4 text-xs text-gray-600" data-testid="implementation-existing-loading">
+      <i class="fa-light fa-spinner-third fa-spin mr-1.5" aria-hidden="true"></i>Checking for campaigns already created for this event…
+    </p>
+  } @else if (briefCampaigns() !== null && briefCampaignsStale()) {
+    <p class="mb-4 text-xs text-gray-600" data-testid="implementation-existing-stale">
+      No campaigns are listed for this event yet, but campaigns created in the last few minutes may not be listed yet.
+    </p>
   }
 }
 
@@ -226,15 +373,39 @@
       <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-budget-section">
         <h3 class="mb-4 text-sm font-semibold text-gray-900">Budget &amp; Schedule</h3>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-gray-700">Total Budget (USD)</label>
-            <input
-              type="number"
-              formControlName="budgetUsd"
-              min="1"
-              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              data-testid="implementation-budget" />
-          </div>
+          @if (showGoogleSection()) {
+            <!-- DAILY, not a total (#4847): campaign-service creates the Google budget with no period,
+                 which Google treats as an average daily budget. The flight total it implies sits
+                 underneath, with the brief's planned total when there is one, so the operator sees both
+                 numbers. Google-only, like every reader of the field: the dates beside it are shared. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="implementation-budget">Google Ads Daily Budget</label>
+              <input
+                id="implementation-budget"
+                type="number"
+                formControlName="budgetUsd"
+                min="1"
+                step="0.01"
+                [attr.aria-describedby]="googleBudgetInvalid() ? 'implementation-budget-hint implementation-budget-error' : 'implementation-budget-hint'"
+                [attr.aria-invalid]="googleBudgetInvalid() ? 'true' : null"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-budget" />
+              <span id="implementation-budget-hint" class="text-xs text-gray-400" data-testid="implementation-budget-hint">
+                An average daily amount, in the ad account's currency.
+                @if (googleBudgetFlight(); as flight) {
+                  About {{ flight.total | number: '1.0-2' }} over {{ flight.days }} {{ flight.days === 1 ? 'day' : 'days' }}, start and end days included.
+                }
+                @if (googleBriefTotalBudget(); as planned) {
+                  The brief plans {{ planned | number: '1.0-2' }} in total.
+                }
+              </span>
+              @if (googleBudgetInvalid()) {
+                <span id="implementation-budget-error" class="text-xs text-red-600" data-testid="implementation-budget-error"
+                  >Enter a daily budget of at least 1.</span
+                >
+              }
+            </div>
+          }
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-gray-700">Start Date</label>
             <input
@@ -250,8 +421,13 @@
               type="date"
               formControlName="endDate"
               [min]="todayDate"
+              [attr.aria-describedby]="googleFlightError() ? 'implementation-google-flight-error' : null"
+              [attr.aria-invalid]="googleFlightError() ? 'true' : null"
               class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               data-testid="implementation-end-date" />
+            @if (googleFlightError(); as error) {
+              <span id="implementation-google-flight-error" class="text-xs text-red-600" data-testid="implementation-google-flight-error">{{ error }}</span>
+            }
           </div>
         </div>
 
@@ -279,7 +455,12 @@
                line at tablet width and below. -->
           <div class="mt-4 flex flex-wrap items-center gap-4">
             <label class="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" formControlName="includeSearch" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <input
+                type="checkbox"
+                formControlName="includeSearch"
+                (change)="onGoogleChannelPicked('search', $event)"
+                [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               Search Campaign
             </label>
             <!-- Hidden, not disabled, when the deployment cannot create Demand Gen: a disabled
@@ -287,7 +468,12 @@
                  create is refused either way. Search stays available, so the section is not empty. -->
             @if (demandGenAvailable()) {
               <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                <input
+                  type="checkbox"
+                  formControlName="includeDemandGen"
+                  (change)="onGoogleChannelPicked('demand-gen', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Demand Gen Campaign
               </label>
             }
@@ -301,6 +487,8 @@
                 <input
                   type="checkbox"
                   formControlName="includePerformanceMax"
+                  (change)="onGoogleChannelPicked('performance-max', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   data-testid="implementation-include-performance-max"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Performance Max Campaign
@@ -335,12 +523,29 @@
                 <input
                   type="checkbox"
                   formControlName="includeDisplay"
+                  (change)="onGoogleChannelPicked('display', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   data-testid="implementation-include-display"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Display Campaign
               </label>
             }
           </div>
+          <!-- #4755. The campaign-service road creates one Google type per create, so the row above is
+               an exclusive choice there; say so, since checkboxes alone read as "tick several". -->
+          <!-- Only where there is a choice to make: with Search the sole box offered, "choose one" says nothing.
+               The id is each type checkbox's `aria-describedby`, gated on the same signal. -->
+          @if (googleChannelNoteShown()) {
+            <p id="implementation-google-channel-single-note" class="mt-2 text-xs text-gray-500" data-testid="implementation-google-channel-single-note">
+              Each Google campaign type is created on its own, so choose one.
+            </p>
+          }
+          @if (googleChannelConflict(); as conflict) {
+            <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-channel-conflict">{{ conflict }}</p>
+          }
+          @if (googleSearchKeywordsError(); as error) {
+            <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-search-keywords-error">{{ error }}</p>
+          }
         }
       </div>
 
@@ -2111,6 +2316,9 @@
             about whichever section the operator happened to be looking at.
           -->
           <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
+          @if (section.channel === 'performance-max' && performanceMaxPrefillShown()) {
+            <p class="mt-1 text-xs text-gray-500" data-testid="implementation-creative-prefill-notice-performance-max">{{ performanceMaxPrefillNotice }}</p>
+          }
           <div class="mt-4 flex flex-col gap-4" [formGroupName]="section.groupName">
             @for (field of section.fields; track field.control) {
               <div class="flex flex-col gap-1">
@@ -2119,6 +2327,7 @@
                   <textarea
                     [id]="section.channel + '-' + field.control"
                     [formControlName]="field.control"
+                    (blur)="onGoogleImageFieldBlur(section.groupName, field)"
                     rows="3"
                     class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
@@ -2135,6 +2344,13 @@
                   <span class="text-xs text-red-600" [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control">{{
                     error
                   }}</span>
+                }
+                @if (googleTypedImageWarnings()[section.groupName + '.' + field.control]; as warning) {
+                  <span
+                    class="text-xs break-all text-amber-700"
+                    [attr.data-testid]="'implementation-creative-url-check-' + section.channel + '-' + field.control"
+                    >{{ warning }}</span
+                  >
                 }
                 <!-- The slot's stored images, beside its pasted URLs. Present only on an image slot,
                      and only on an explicit yes from `googleAssetUploadAvailable()`; see `googleImageSlots`. -->
@@ -3656,6 +3872,11 @@
                     Only LF administrators can see the X account details. The campaign is created under the ad account bound on this project's X connection.
                   </p>
                 }
+                @case ('forbidden') {
+                  <p class="text-gray-500" data-testid="implementation-twitter-account-forbidden">
+                    campaign-service refused to read this project's X connection. Your account needs the campaign manager role on this project.
+                  </p>
+                }
                 @case ('error') {
                   <div class="flex flex-col items-start gap-1" data-testid="implementation-twitter-account-error">
                     <p class="text-amber-800">
@@ -3893,7 +4114,12 @@
             [projectSlug]="activeFoundationSlug()"
             [briefId]="briefPersistence().briefId ?? ''"
             [platforms]="selectedPlatforms()"
-            [reloadToken]="creativeLibraryRevision()" />
+            [reloadToken]="creativeLibraryRevision()"
+            [suggestionTargets]="googleSuggestionTargets()"
+            [applyResult]="googleSuggestedApplyResult()"
+            [applySeq]="googleSuggestedApplySeq()"
+            [formFilled]="googleFormFilledSlots()"
+            (applySuggested)="onApplySuggestedGoogleImages($event)" />
         </div>
       }
 
@@ -3939,6 +4165,52 @@
               (onClick)="switchRetainedBiddingToAutomatic()"
               data-testid="implementation-bidding-capability-automatic" />
           </div>
+        </div>
+      }
+
+      <!--
+        Create another campaign (#4983, "ss-3"). Shown when a selected platform already has a campaign
+        for this event and this deployment can add a deliberate second one there. The new campaign is
+        labelled by funnel stage (required) and tactic, and Create Campaign then opens a confirmation
+        that lists what exists; only confirming sends it.
+      -->
+      @if (createAnotherPlatforms().length > 0) {
+        <div class="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4" data-testid="implementation-create-another">
+          <h3 class="text-sm font-semibold text-blue-900">Create another campaign</h3>
+          <p class="text-xs text-blue-900">
+            This event already has a campaign on the selected platform. Creating again adds a separate, separately budgeted campaign, labelled by funnel stage
+            so its numbers stay apart from the first.
+          </p>
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label for="implementation-another-stage" class="text-xs font-medium text-gray-700">Funnel stage (required)</label>
+              <lfx-select
+                [form]="anotherForm"
+                control="stage"
+                [options]="funnelStageOptions"
+                optionValue="id"
+                inputId="implementation-another-stage"
+                placeholder="Choose a stage"
+                size="small"
+                data-testid="implementation-another-stage" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="implementation-another-tactic" class="text-xs font-medium text-gray-700">Tactic (optional)</label>
+              <lfx-select
+                [form]="anotherForm"
+                control="tactic"
+                [options]="tacticOptions"
+                optionValue="id"
+                inputId="implementation-another-tactic"
+                placeholder="No tactic"
+                [showClear]="true"
+                size="small"
+                data-testid="implementation-another-tactic" />
+            </div>
+          </div>
+          @if (createAnotherBlock(); as block) {
+            <p class="text-xs text-amber-800" data-testid="implementation-create-another-block">{{ block }}</p>
+          }
         </div>
       }
 
@@ -4167,7 +4439,11 @@
                   <span class="sr-only">
                     @switch (outcome) {
                       @case ('created') {
-                        created
+                        @if (pr.reused) {
+                          existing campaign returned, nothing new created
+                        } @else {
+                          created
+                        }
                       }
                       @case ('orphaned') {
                         created upstream but not recorded — needs reconciliation
@@ -4185,6 +4461,17 @@
                   <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
                 }
               </div>
+              <!-- campaign-service handed back an existing campaign instead of creating one (#4983):
+                   a retry, or a "create another" that a double click, reload or second tab had already sent. -->
+              @if (pr.reused) {
+                <p class="mt-1 text-xs font-medium text-gray-700" data-testid="implementation-platform-result-reused">
+                  @if (pr.funnelStage) {
+                    Existing {{ funnelStageShortLabels[pr.funnelStage] }} campaign returned; nothing new was created.
+                  } @else {
+                    Existing campaign returned; nothing new was created.
+                  }
+                </p>
+              }
               @if (outcome === 'nothing-created') {
                 <p class="mt-1 text-xs font-medium text-gray-700" data-testid="implementation-platform-result-nothing-created">
                   Nothing was created on the platform.
@@ -4213,6 +4500,13 @@
       </div>
     }
 
+    <!-- Until a deliberate second campaign ships (#4983), a repeat create on a platform that already
+         has one returns that campaign. Said before the click rather than discovered in the results. -->
+    @if (createAnotherNotice(); as notice) {
+      <p class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="implementation-create-another-notice">
+        <i class="fa-light fa-circle-info mr-1.5" aria-hidden="true"></i>{{ notice }}
+      </p>
+    }
     <lfx-button
       label="Create Another"
       icon="fa-light fa-plus"

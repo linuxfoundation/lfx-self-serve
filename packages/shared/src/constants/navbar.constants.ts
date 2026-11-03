@@ -81,10 +81,7 @@ export const NAVBAR_NARROW_MAX_WIDTH_PX = 1200;
 /** `localStorage` key holding the viewer's docked-collapsed navbar preference. */
 export const NAVBAR_COLLAPSED_STORAGE_KEY = 'lfx-navbar-collapsed';
 
-/** Hover on the rail's sidebar toggle before the navbar peeks open over the page (ms). */
-export const NAVBAR_PEEK_OPEN_DELAY_MS = 80;
-
-/** Grace period after the pointer leaves a hover-opened peek before it closes; re-entering cancels it (ms). */
+/** Grace period after the pointer leaves an unpinned peek before it closes; re-entering cancels it (ms). */
 export const NAVBAR_PEEK_CLOSE_DELAY_MS = 150;
 
 /** After a menu, panel or dialog opened from a peek closes, wait this long before checking whether the pointer left (ms). */

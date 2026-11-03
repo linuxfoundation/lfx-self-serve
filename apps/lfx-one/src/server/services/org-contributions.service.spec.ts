@@ -5,9 +5,10 @@ import { EMPTY_ORG_CONTRIBUTIONS_QUERY } from '@lfx-one/shared/constants';
 import type { OrgContributionsQuery } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, withOrgCache } = vi.hoisted(() => ({
+const { execute, withOrgCache, resolveOrgScope } = vi.hoisted(() => ({
   execute: vi.fn(),
   withOrgCache: vi.fn(),
+  resolveOrgScope: vi.fn(),
 }));
 
 // The `@lfx-one/shared/utils` barrel pulls Angular; the service only needs these modules
@@ -15,9 +16,16 @@ const { execute, withOrgCache } = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-team-members.utils')),
 }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./valkey.service', () => ({ withOrgCache }));
+// The scope served (lfx-self-serve-ops#1219): `all` unless a test grants the account an Insights organization.
+vi.mock('../helpers/org-scope.helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../helpers/org-scope.helper')>()),
+  resolveOrgScope,
+}));
+vi.mock('./logger.service', () => ({ logger: { warning: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() } }));
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgContributionsService } from './org-contributions.service';
@@ -59,6 +67,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   execute.mockResolvedValue({ rows: [] });
   withOrgCache.mockImplementation(async (_account: string, _key: string, _ttl: number, factory: () => Promise<unknown>) => factory());
+  resolveOrgScope.mockResolvedValue('all');
   service = new OrgContributionsService();
 });
 
@@ -105,7 +114,7 @@ describe('OrgContributionsService — commit filters', () => {
 
 describe('OrgContributionsService — range window', () => {
   it('windows Past 365 days as 365 calendar days, on every commit read', async () => {
-    await service.getContributions(ACCOUNT, query({ metric: 'commits' }));
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', dateRange: '365d' }));
 
     expect(execute).toHaveBeenCalledTimes(6);
     for (const { sql } of commitReads()) {
@@ -116,7 +125,7 @@ describe('OrgContributionsService — range window', () => {
   });
 
   it('windows Past 365 days code activity on activity_date', async () => {
-    await service.getContributions(ACCOUNT, query({ metric: 'code' }));
+    await service.getContributions(ACCOUNT, query({ metric: 'code', dateRange: '365d' }));
 
     expect(kpiCall().sql).toContain('activity_date >= DATEADD(day, -365, CURRENT_DATE())');
   });
@@ -237,8 +246,9 @@ describe('OrgContributionsService — exact project and foundation filters', () 
   );
 
   it.each([
+    // The code metric's lifetime first-activity CTE takes its own account bind; the commits metric reads lf-dbt's
+    // lifetime first commit column, so it binds the account once.
     ['commits', [ACCOUNT]],
-    // The code read's lifetime first-activity CTE takes its own account bind.
     ['code', [ACCOUNT, ACCOUNT]],
   ] as const)(
     'adds foundation_id = ? to every data read and the employee options, bound before the project, employee and search binds (metric=%s)',
@@ -319,11 +329,130 @@ describe('OrgContributionsService — exact project and foundation filters', () 
   });
 });
 
+describe('OrgContributionsService — team members', () => {
+  it.each(['commits', 'code'] as const)('leaves team members in every read under include (metric=%s)', async (metric) => {
+    await service.getContributions(ACCOUNT, query({ metric, teamMembers: 'include' }));
+
+    expect(calls().some(({ sql }) => sql.includes('is_cdp_team_member'))).toBe(false);
+  });
+
+  it.each(['commits', 'code'] as const)('drops team members from every read by default (metric=%s)', async (metric) => {
+    await service.getContributions(ACCOUNT, query({ metric }));
+
+    expect(execute).toHaveBeenCalledTimes(6);
+    for (const { sql } of calls()) {
+      expect(sql).toContain('NOT COALESCE(is_cdp_team_member, FALSE)');
+    }
+  });
+
+  it('keys include and exclude apart in the cache', async () => {
+    await service.getContributions(ACCOUNT, query({ teamMembers: 'include' }));
+    await service.getContributions(ACCOUNT, query({ teamMembers: 'exclude' }));
+    const [include, exclude] = withOrgCache.mock.calls.map((call) => call[1] as string);
+
+    expect(include).not.toBe(exclude);
+  });
+
+  it.each(['commits', 'code'] as const)(
+    'tells Snowflake a missing flag column is expected on every read under exclude, and nothing under include (metric=%s)',
+    async (metric) => {
+      await service.getContributions(ACCOUNT, query({ metric }));
+      // The commits metric's repository read also expects lf-dbt's non-team first commit column (lfx-self-serve#4685).
+      const repoSql = repoCall().sql;
+      for (const [sql, , options] of execute.mock.calls as [string, unknown, { expectInvalidIdentifier?: string | string[] } | undefined][]) {
+        expect(options?.expectInvalidIdentifier).toEqual(
+          metric === 'commits' && sql === repoSql ? ['IS_CDP_TEAM_MEMBER', 'ORG_REPO_FIRST_NON_TEAM_COMMIT_TS'] : 'IS_CDP_TEAM_MEMBER'
+        );
+      }
+
+      execute.mockClear();
+      await service.getContributions(ACCOUNT, query({ metric, teamMembers: 'include' }));
+      expect(execute.mock.calls.every((call) => call[2] === undefined)).toBe(true);
+    }
+  );
+
+  it("reads lf-dbt's lifetime first commit without team members under the commits metric, with no first-commit CTE", async () => {
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', projectScope: 'lf', commitScope: 'merged' }));
+
+    const { sql, binds } = repoCall();
+    expect(sql).toContain('MIN(ORG_REPO_FIRST_NON_TEAM_COMMIT_TS) AS first_commit_ts');
+    expect(sql).not.toContain('org_repo_first_commit_ts');
+    expect(sql).not.toContain('repo_first');
+    expect(binds[0]).toBe(ACCOUNT);
+    expect(binds.filter((bind) => bind === ACCOUNT)).toHaveLength(1);
+  });
+
+  it("keeps the warehouse's lifetime first commit under include", async () => {
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', teamMembers: 'include' }));
+
+    expect(repoCall().sql).toContain('MIN(org_repo_first_commit_ts) AS first_commit_ts');
+    expect(repoCall().sql).not.toContain('FIRST_NON_TEAM');
+  });
+
+  it('reads the inclusive first commit without the counts note, and never stores the payload, while the non-team column is not built yet', async () => {
+    const missingFirstCommit = Object.assign(
+      new Error("SQL compilation error: error line 11 at position 14\ninvalid identifier 'ORG_REPO_FIRST_NON_TEAM_COMMIT_TS'"),
+      {
+        code: '000904',
+      }
+    );
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_REPO_FIRST_NON_TEAM_COMMIT_TS')) throw missingFirstCommit;
+      return { rows: [] };
+    });
+
+    const response = await service.getContributions(ACCOUNT, query({ metric: 'commits' }));
+
+    // Only the First Commit falls back: team members stay out of the counts, so the counts note stays off.
+    expect(response.teamMembersUnavailable).toBeUndefined();
+    const repoReads = execute.mock.calls.filter(([sql]) => String(sql).includes('first_commit_ts'));
+    expect(repoReads.at(-1)?.[0]).toContain('MIN(org_repo_first_commit_ts) AS first_commit_ts');
+    expect(repoReads.at(-1)?.[0]).toContain('NOT COALESCE(is_cdp_team_member, FALSE)');
+    // The payload the service built is flagged, so `storable` keeps it out of the cache.
+    const raw = await (withOrgCache.mock.results[0].value as Promise<{ firstCommitUnavailable?: true }>);
+    expect(raw.firstCommitUnavailable).toBe(true);
+    const storable = withOrgCache.mock.calls[0][5] as (value: unknown) => boolean;
+    expect(storable(raw)).toBe(false);
+    expect(storable({ teamMembersUnavailable: true })).toBe(false);
+    expect(storable({})).toBe(true);
+  });
+
+  describe('while the warehouse has no team-member flag yet', () => {
+    const missingColumn = Object.assign(new Error("SQL compilation error: error line 9 at position 18\ninvalid identifier 'IS_CDP_TEAM_MEMBER'"), {
+      code: '000904',
+    });
+
+    beforeEach(() => {
+      execute.mockImplementation(async (sql: string) => {
+        if (sql.includes('is_cdp_team_member')) throw missingColumn;
+        return { rows: [] };
+      });
+    });
+
+    it('serves every read with team members, says so, and never stores the payload', async () => {
+      const response = await service.getContributions(ACCOUNT, query());
+
+      expect(response.teamMembersUnavailable).toBe(true);
+      const unfiltered = execute.mock.calls.filter(([sql]) => !String(sql).includes('is_cdp_team_member'));
+      expect(unfiltered).toHaveLength(6);
+      const storable = withOrgCache.mock.calls[0][5] as (value: unknown) => boolean;
+      expect(storable({ teamMembersUnavailable: true })).toBe(false);
+      expect(storable({})).toBe(true);
+    });
+
+    it('still rejects any other warehouse error', async () => {
+      execute.mockRejectedValue(new Error('Warehouse timeout'));
+
+      await expect(service.getContributions(ACCOUNT, query())).rejects.toThrow('Warehouse timeout');
+    });
+  });
+});
+
 describe('OrgContributionsService — cache key', () => {
   it('is versioned and differs per projectScope, commitScope, metric and foundation', async () => {
     const variants: Partial<OrgContributionsQuery>[] = [
       {},
-      { projectScope: 'all' },
+      { projectScope: 'lf' },
       { projectScope: 'non_lf' },
       { commitScope: 'merged' },
       { metric: 'commits' },
@@ -356,5 +485,104 @@ describe('OrgContributionsService — cache key', () => {
 
     expect(longKey).not.toBe(shortKey);
     expect(longKey.length).toBe(shortKey.length);
+  });
+});
+
+// lfx-self-serve-ops#1219
+describe('OrgContributionsService — organization scope', () => {
+  const grantInsights = () => resolveOrgScope.mockImplementation(async (_snowflake: unknown, _account: string, scope: string) => scope);
+
+  it('resolves the requested scope for the account before reading', async () => {
+    await service.getContributions(ACCOUNT, query({ orgScope: 'insights' }));
+
+    expect(resolveOrgScope).toHaveBeenCalledWith(expect.anything(), ACCOUNT, 'insights');
+  });
+
+  it('reads exactly the all-organizations SQL and key when an insights request resolves to all', async () => {
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', commitScope: 'merged', orgScope: 'all' }));
+    const allSql = calls().map(({ sql }) => sql);
+    const allKey = withOrgCache.mock.calls[0][1];
+
+    execute.mockClear();
+    withOrgCache.mockClear();
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', commitScope: 'merged', orgScope: 'insights' }));
+
+    expect(calls().map(({ sql }) => sql)).toEqual(allSql);
+    expect(withOrgCache.mock.calls[0][1]).toBe(allKey);
+    for (const sql of allSql) {
+      expect(sql).not.toContain('insights');
+    }
+  });
+
+  it("keeps only Insights-scoped commits under insights, with the Insights scope's merged flag", async () => {
+    grantInsights();
+
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', commitScope: 'merged', orgScope: 'insights' }));
+
+    expect(commitReads()).toHaveLength(5);
+    for (const { sql } of commitReads()) {
+      expect(sql).toContain('AND COALESCE(is_insights_scope, FALSE)');
+      expect(sql).toContain('AND insights_is_merged = TRUE');
+    }
+    expect(foundationOptionCall().sql).toContain('AND insights_code_activities > 0');
+  });
+
+  it("reads the first commit's insights_ twin under insights, with and without team members", async () => {
+    grantInsights();
+
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', orgScope: 'insights' }));
+    expect(repoCall().sql).toContain('MIN(INSIGHTS_ORG_REPO_FIRST_NON_TEAM_COMMIT_TS) AS first_commit_ts');
+
+    execute.mockClear();
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', teamMembers: 'include', orgScope: 'insights' }));
+    expect(repoCall().sql).toContain('MIN(insights_org_repo_first_commit_ts) AS first_commit_ts');
+  });
+
+  it('falls back to the inclusive insights_ first commit while the Insights non-team twin is not built yet', async () => {
+    grantInsights();
+    const missingTwin = Object.assign(new Error("SQL compilation error:\ninvalid identifier 'INSIGHTS_ORG_REPO_FIRST_NON_TEAM_COMMIT_TS'"), {
+      code: '000904',
+    });
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('INSIGHTS_ORG_REPO_FIRST_NON_TEAM_COMMIT_TS')) throw missingTwin;
+      return { rows: [] };
+    });
+
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', orgScope: 'insights' }));
+
+    const repoReads = execute.mock.calls.filter(([sql]) => String(sql).includes('first_commit_ts'));
+    expect(repoReads.at(-1)?.[0]).toContain('MIN(insights_org_repo_first_commit_ts) AS first_commit_ts');
+  });
+
+  it('sums and gates on the Insights-scoped code activities under insights; the feed keeps Insights-scoped commits', async () => {
+    grantInsights();
+
+    await service.getContributions(ACCOUNT, query({ metric: 'code', orgScope: 'insights' }));
+
+    expect(kpiCall().sql).toContain('COALESCE(SUM(insights_code_activities), 0) AS COMMITS');
+    for (const call of [repoCall(), projectOptionCall(), employeeOptionCall()]) {
+      expect(call.sql).toContain('SUM(insights_code_activities) AS commits');
+    }
+    for (const call of [kpiCall(), repoCall(), foundationOptionCall(), projectOptionCall(), employeeOptionCall()]) {
+      expect(call.sql).toContain('AND insights_code_activities > 0');
+      expect(call.sql).not.toMatch(/SUM\(code_activities\)/);
+    }
+    // The lifetime first-activity CTE counts only Insights-scoped repositories too.
+    expect(repoCall().sql.match(/AND insights_code_activities > 0/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(feedCall().sql).toContain('AND COALESCE(is_insights_scope, FALSE)');
+    for (const { binds, sql } of calls()) {
+      expect(binds).toHaveLength((sql.match(/\?/g) ?? []).length);
+    }
+  });
+
+  it('keys insights and all apart in the cache', async () => {
+    grantInsights();
+
+    await service.getContributions(ACCOUNT, query({ orgScope: 'insights' }));
+    await service.getContributions(ACCOUNT, query({ orgScope: 'all' }));
+    const [insights, all] = withOrgCache.mock.calls.map((call) => call[1] as string);
+
+    expect(insights).toMatch(/^contributions:v5:[0-9a-f]{64}$/);
+    expect(insights).not.toBe(all);
   });
 });

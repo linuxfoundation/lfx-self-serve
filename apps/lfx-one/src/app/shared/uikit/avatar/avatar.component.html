@@ -1,7 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (!placeholder()) {
+@if (placeholder()) {
+  <lfx-ui-skeleton width="100%" height="100%" data-testid="ui-avatar-skeleton" />
+} @else {
   @if (photoSrc(); as url) {
     <img
       #photo
@@ -12,9 +14,12 @@
       (error)="onPhotoError(url)"
       data-testid="ui-avatar-image" />
   } @else if (icon()) {
-    <i [class]="icon()" aria-hidden="true" data-testid="ui-avatar-icon"></i>
-  } @else {
+    <i class="ui-icon" [class]="icon()" aria-hidden="true" data-testid="ui-avatar-icon"></i>
+  } @else if (text()) {
     <span aria-hidden="true" data-testid="ui-avatar-initials">{{ text() }}</span>
+  } @else {
+    <!-- No photo, icon or initials to show: a neutral person glyph keeps the circle from looking broken. -->
+    <i class="ui-icon fa-light fa-user" aria-hidden="true" data-testid="ui-avatar-fallback"></i>
   }
   @if (badgeIcon()) {
     <!-- Exact px, not rem: the app root font is 14px. -->
@@ -23,7 +28,7 @@
       [style.font-size.px]="size() * 0.26"
       aria-hidden="true"
       data-testid="ui-avatar-badge">
-      <i [class]="badgeIcon()"></i>
+      <i class="ui-icon" [class]="badgeIcon()"></i>
     </span>
   }
 }

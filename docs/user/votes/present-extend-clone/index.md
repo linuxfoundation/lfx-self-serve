@@ -4,7 +4,7 @@ description: How to present a vote on screen, extend its deadline, send the resu
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, present, extend, clone, summary, qr-code, deadline]
-last_updated: 2026-10-28
+last_updated: 2026-11-02
 intercom_collection: Votes
 ---
 
@@ -17,25 +17,41 @@ This article is for people who manage votes. These actions are in the **⋮** (*
 1. Find an active or ended vote you manage.
 2. Select **⋮ → Present**. The presenter opens in a new browser tab at `/votes/:id/present`.
 
-You can also open it from the **Present** button in the vote's [Results drawer](../vote-results/).
+You can also open it from the **Present** button on the vote's [page](../vote-results/).
 
 You need permission to manage the vote. If you don't have it, **Present** isn't in the menu.
 
 ### While the vote is open
 
-The presenter shows the vote's title and description, a live count of how many people have voted out of how many are eligible, and when the vote closes. It does not show how the votes are splitting. Tallies stay hidden until the vote ends.
+The presenter shows the vote's title and description (with its paragraphs, line breaks, and lists kept; a long description scrolls inside its own area), a live count of how many people have voted out of how many are eligible, and when the vote closes. It does not show how the votes are splitting. Tallies stay hidden until the vote ends.
+
+Descriptions follow the same [formatting rules](../create-vote/#description-formatting) as the ballot and vote page, including a literal fallback for mixed unsupported placeholders and HTML.
 
 On the right it shows a **Copy link** button and a QR code with the text **In the room? Scan instead**, so people can open the vote on their phones. The page refreshes itself, and a line at the bottom shows how long ago it last updated. If the connection drops, it keeps trying to reconnect.
+
+### Close the vote early
+
+While the vote is open, **Close vote** at the bottom of the presenter ends it now instead of at its deadline. LFX asks **Close the vote now? Members can no longer cast or change ballots.** Select **Close vote** to confirm, or **Cancel** to keep it open. Pressing **Esc** while this question is showing cancels it; it doesn't leave the presenter.
+
+After you confirm, the presenter switches to the final results within a few seconds. The vote keeps its original deadline on record and also shows when it was closed. If the vote can't be closed (for example it hasn't started yet), LFX shows the reason and the vote stays open. You need permission to manage the vote.
+
+You can also close an open vote from the votes list: select **⋮ → Close vote** on its row. It asks the same question. After you confirm, the row shows as ended and a **Vote closed** message appears; if the vote can't be closed, LFX shows the reason and the row stays as it was.
+
+### Leave the presenter
+
+While the vote is open, **Exit** (or **Esc**) asks **Leave the presenter? The vote stays open.** Select **Leave** to go to the vote's page, or **Stay** to keep presenting. Pressing **Esc** or clicking outside the question also keeps you on the presenter. The same goes for the questions from **Close vote** and **Send ballots now**: **Esc** only dismisses the question. If you dismiss the question, focus goes back to the button you used. After you close the vote, focus moves to **Exit**.
 
 ### After the vote ends
 
 The same page switches to the final results: the tally for each question, abstentions when the vote allowed them, turnout (how many cast a vote out of those eligible, and how many didn't), and when the vote closed.
 
-Press **Esc** to leave the presenter. It takes you to the vote's page in LFX.
+If results are still being finalized, the presenter keeps tallies, abstentions, and turnout hidden and checks again for a limited time. A failed check during that wait does not interrupt the finalizing message or stop the remaining checks. If results are still unavailable after the automatic checks stop, exit and reopen the presenter to try again.
+
+Press **Exit** or **Esc** to leave the presenter. Once the vote has ended it leaves straight away, with no question. It takes you to the vote's page in LFX.
 
 ### Copy slide
 
-The Results drawer for a vote you manage also has a **Copy slide** button, which copies an image with the vote's title, link, and QR code so you can paste it into Slides or PowerPoint. If your browser can't copy images, LFX saves the image as a file instead.
+The page for a vote you manage also has a **Copy slide** button, which copies an image with the vote's title, link, and QR code so you can paste it into Slides or PowerPoint. If your browser can't copy images, LFX saves the image as a file instead.
 
 ## Extend the deadline
 
@@ -54,7 +70,16 @@ The row shows the new deadline right away. You can only extend a vote that is st
 1. Select **⋮ → Send summary** on an ended vote.
 2. Confirm. The message warns that sending can't be undone.
 
-LFX shows how many voters received the summary, and how many failed if any did. If you try to send before the vote has closed, LFX says the vote hasn't closed yet. The summary is sent only when you ask for it. It is never sent automatically.
+After you send, LFX reports what it knows about each invited voter:
+
+- **Sent:** the email service accepted the summary for sending to the voter's email address. Delivery to their inbox is not confirmed.
+- **Skipped:** the voter has no email address on file, so nothing was sent to them. Skipped voters are reported, never silently left out.
+- **Failed:** the email could not be sent to the voter.
+- **Unconfirmed:** LFX couldn't confirm whether the email went out, for example after a timeout, lost connection, or an email-service error after sending may have started. Some of these emails may already have been delivered, so check with voters before sending again. Sending again may send duplicate summaries.
+
+If any voter was skipped, failed or unconfirmed, LFX does not show a complete-success message. If every attempted send fails, the error still reports how many failed and how many voters were skipped for having no email address. If none of the invited voters has an email address, LFX tells you that no summaries were sent. If you try to send before the vote has closed, LFX says the vote hasn't closed yet. The summary is sent only when you ask for it. It is never sent automatically.
+
+If pre-send checks find that you need to sign in again or that the vote is no longer available, LFX says that nothing was sent and explains the issue instead of asking you to retry the same send.
 
 ## Clone a vote
 

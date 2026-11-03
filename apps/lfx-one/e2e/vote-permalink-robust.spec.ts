@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Structural companion to vote-permalink.spec.ts (#3659).
+ * Structural companion to vote-permalink.spec.ts (#3659): `/votes/:id` renders the vote detail page.
  * Boots the real My Votes shell, then uses SPA navigation so the permalink's synthetic
  * API requests are intercepted in the browser rather than bypassing stubs during SSR.
  */
@@ -74,7 +74,7 @@ async function navigateToPermalink(page: Page): Promise<void> {
 test.describe('Vote permalink structure (#3659)', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('preserves the row action-menu contract without opening a drawer', async ({ page }) => {
+  test('preserves the row action-menu contract without opening the vote', async ({ page }) => {
     await bootMyVotes(page);
     const more = page.getByTestId(`votes-more-${VOTE_UID}`);
     await expect(more.locator('button')).toHaveAttribute('aria-label', 'More actions');
@@ -82,10 +82,12 @@ test.describe('Vote permalink structure (#3659)', () => {
 
     await expect(page.getByTestId('votes-row-action-menu')).toBeAttached();
     await expect(page.getByRole('menu')).toBeVisible();
-    await expect(page.getByTestId('votes-dashboard-cast-drawer').getByRole('dialog')).toHaveCount(0);
+    await expect(page).not.toHaveURL(new RegExp(`/votes/${VOTE_UID}`));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('vote-cast-drawer-header')).toHaveCount(0);
   });
 
-  test('preserves skeleton, error, retry and view-only drawer test IDs', async ({ page }) => {
+  test('preserves skeleton, error, retry and view-only panel test IDs on the vote page', async ({ page }) => {
     let release: (() => void) | undefined;
     const pending = new Promise<void>((resolve) => (release = resolve));
     let attempts = 0;
@@ -100,22 +102,28 @@ test.describe('Vote permalink structure (#3659)', () => {
     await navigateToPermalink(page);
 
     try {
-      const root = page.getByTestId('vote-permalink');
-      const loading = root.getByTestId('vote-permalink-loading');
+      const root = page.getByTestId('vote-detail');
+      const loading = root.getByTestId('vote-detail-loading');
       await expect(loading).toBeVisible({ timeout: RENDER_TIMEOUT });
       await expect(loading.locator('p-skeleton')).toHaveCount(2);
-      await expect(root.getByTestId('vote-permalink-error')).toHaveCount(0);
+      await expect(root.getByTestId('vote-detail-error')).toHaveCount(0);
       release?.();
 
-      const error = root.getByTestId('vote-permalink-error');
+      const error = root.getByTestId('vote-detail-error');
       await expect(error).toBeVisible({ timeout: RENDER_TIMEOUT });
-      await expect(root.getByTestId('vote-permalink-loading')).toHaveCount(0);
-      await error.getByTestId('vote-permalink-retry').getByRole('button').click();
+      await expect(root.getByTestId('vote-detail-loading')).toHaveCount(0);
+      await error.getByTestId('vote-detail-retry').getByRole('button').click();
 
-      await expect(page.getByTestId('vote-results-voter-not-participant')).toBeVisible({ timeout: RENDER_TIMEOUT });
-      await expect(page.getByTestId('vote-results-voter-description')).toBeVisible();
-      await expect(root.getByTestId('vote-permalink-error')).toHaveCount(0);
-      await expect(page.getByTestId('vote-results-voter-final')).toHaveCount(0);
+      await expect(page.getByTestId('vote-detail-voter-not-participant')).toBeVisible({ timeout: RENDER_TIMEOUT });
+      await expect(page.getByTestId('vote-detail-header-title')).toHaveText(VOTE.name);
+      await expect(page.getByTestId('vote-detail-header-status')).toBeVisible();
+      await expect(page.getByTestId('vote-detail-description')).toHaveCount(0);
+      await expect(page.getByTestId('vote-detail-facts')).toHaveCount(0);
+      for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+        await expect(page.getByTestId(`vote-detail-header-${suffix}`)).toHaveCount(0);
+      }
+      await expect(root.getByTestId('vote-detail-error')).toHaveCount(0);
+      await expect(page.getByTestId('vote-detail-overview-results')).toHaveCount(0);
     } finally {
       release?.();
     }

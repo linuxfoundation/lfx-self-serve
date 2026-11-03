@@ -1,0 +1,18 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (icon()) {
+  <!-- Decorative: the title carries the meaning. -->
+  <span [class]="iconClasses()" aria-hidden="true" data-testid="ui-empty-state-icon">
+    <i class="ui-icon" [class]="icon()"></i>
+  </span>
+}
+<ng-content select="[empty-state-media]" />
+<p [class]="headingClasses()" role="heading" [attr.aria-level]="headingLevel()" data-testid="ui-empty-state-heading">
+  {{ heading() }}
+</p>
+@if (description()) {
+  <p [class]="descriptionClasses()" data-testid="ui-empty-state-description">{{ description() }}</p>
+}
+<div [class]="actionsClasses()" data-testid="ui-empty-state-actions"><ng-content select="[empty-state-action]" /></div>
+<ng-content />

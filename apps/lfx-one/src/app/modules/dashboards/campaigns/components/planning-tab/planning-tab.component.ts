@@ -1,19 +1,36 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass } from '@angular/common';
+import { isPlatformBrowser, Location, NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_EVENT_URL_MAX_LENGTH, CAMPAIGN_EVENT_URL_QUERY_PARAM, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { coerceCampaignEventDetails, normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, merge, of, skip, Subject, Subscription, switchMap, take } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  debounceTime,
+  distinctUntilChanged,
+  filter,
+  finalize,
+  map,
+  merge,
+  of,
+  skip,
+  Subject,
+  Subscription,
+  switchMap,
+  take,
+} from 'rxjs';
 
 import type {
+  CampaignBriefEditRequest,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
@@ -25,6 +42,7 @@ import type {
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
+  CampaignSavedBriefOffer,
   CampaignSitelink,
   CampaignSSEEventType,
   HubSpotUtmLookupResult,
@@ -71,6 +89,8 @@ export class PlanningTabComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
 
   // === Inputs ===
   public readonly programTypeConfig = input.required<CampaignProgramTypeOption>();
@@ -143,6 +163,22 @@ export class PlanningTabComponent implements OnInit {
   public readonly twitterCreateEnabled = input<boolean | null>(null);
 
   /**
+   * A brief the page asks this planner to open in its editor (#4983): the saved brief after Open to
+   * edit, or the Implement tab's brief after Edit brief.
+   *
+   * The PARENT sends it, not this component, even for Open to edit, which starts here: the parent
+   * owns the brief's row (`knownBriefIds`), so it records ownership first and only then asks for the
+   * editor. Opening here directly would let a save leave before the page could name the row it
+   * replaces, and that save is refused as `unowned-brief-exists`.
+   *
+   * Applied once per `requestId` by THIS instance. A planner re-created by a program change reads the
+   * current request afresh, which is how Open to edit reaches the planner for the brief's own program;
+   * a stale one never reaches it because the parent clears the request whenever the brief is discarded
+   * or restored.
+   */
+  public readonly editRequest = input<CampaignBriefEditRequest | null>(null);
+
+  /**
    * DOM id for the readonly UTM field, unique per INSTANCE.
    *
    * Two `lfx-planning-tab` instances stay mounted at once -- paid and email are
@@ -184,28 +220,14 @@ export class PlanningTabComponent implements OnInit {
    * restored one came out of storage and must NOT be written back. Emitting both through one
    * channel would leave the parent guessing which it received.
    */
-  public readonly restoreSavedBriefRequested = output<{
-    brief: CampaignBriefOutput;
-    briefId: string;
-    etag: string | null;
-    approved: boolean;
-    /**
-     * The `savedBriefRefreshToken` this offer's lookup was DISPATCHED under.
-     *
-     * The parent keeps its own record of the row and has to decide, on every restore, whether
-     * that record or this offer is the newer account. Neither is reliably newer on its own: the
-     * offer loses to a record written by an approval the cache has not seen, and the record loses
-     * to a read that happened after it (a different editor moved the row and this tab looked
-     * again). The id cannot separate those — it is the same row in both.
-     *
-     * This token can, because the parent bumps it on every write it makes to the row. An offer
-     * carrying a token ABOVE the one the parent stamped on its record was read after that write
-     * and is therefore the newer account; one at or below it is a replay of what this tab already
-     * held. Emitted rather than inferred, because only this tab knows which token its cached
-     * answer belongs to.
-     */
-    readAt: number;
-  }>();
+  public readonly restoreSavedBriefRequested = output<CampaignSavedBriefOffer>();
+
+  /**
+   * The saved brief on offer, to be opened in this planner's editor rather than handed to Implement
+   * (#4983). Same payload as `restoreSavedBriefRequested`, because the parent has to record ownership
+   * of the row exactly as a restore does before the edited brief can be saved over it.
+   */
+  public readonly openSavedBriefRequested = output<CampaignSavedBriefOffer>();
 
   // === Constants ===
   /**
@@ -556,7 +578,9 @@ export class PlanningTabComponent implements OnInit {
     const warning = this.savedBriefWarning();
     if (saved !== null) {
       const name = saved.eventDetails.name || saved.eventDetails.slug;
-      const offer = `A saved brief was found for ${name}. A restore action is available.`;
+      // Paid also offers Open to edit (#4983), so it names both actions; the email planner has only Restore.
+      const actions = this.isEmail() ? 'A restore action is available.' : 'Open to edit and restore actions are available.';
+      const offer = `A saved brief was found for ${name}. ${actions}`;
       // Both, when both are set. The offer used to win outright, which was right while a warning
       // meant there was nothing to restore. It is not any more: a loaded-but-unapproved brief now
       // sets BOTH, and announcing only the offer drops the half that says the brief cannot be
@@ -598,6 +622,14 @@ export class PlanningTabComponent implements OnInit {
    */
   private savedBriefReadAt = 0;
 
+  /**
+   * The brief `editingExistingBrief` opened, kept whole so Proceed can carry what this planner does
+   * not model: the Reddit and Meta copy blocks, the program and the identity fields. Proceed builds
+   * its brief from this planner's signals, and a brief built only from those would silently drop
+   * them from the row it replaces.
+   */
+  private editBase: CampaignBriefOutput | null = null;
+
   private readonly slugInput$ = new Subject<string>();
 
   /**
@@ -618,6 +650,17 @@ export class PlanningTabComponent implements OnInit {
   protected readonly editDisplayCta = signal('');
   protected readonly editKeywords = signal<CampaignKeyword[]>([]);
   protected readonly isEditing = signal(false);
+
+  /**
+   * True while the review step holds a brief that already exists (#4983): the saved brief opened from
+   * the offer, or the Implement tab's brief reopened with Edit brief.
+   *
+   * The event is FIXED in this mode, and the URL field is disabled with it. The brief's row is keyed
+   * on its event slug, and a replace that changed it would move the brief off its event: the next
+   * lookup for that event would find nothing, and attribution keyed on the slug would split.
+   * New Brief (`reset`) is the way to plan a different event.
+   */
+  protected readonly editingExistingBrief = signal(false);
 
   // === Refine Mode Signals ===
   protected readonly isRefining = signal(false);
@@ -716,10 +759,22 @@ export class PlanningTabComponent implements OnInit {
   // of an unchanged `(slug, project, delivery, stage)` — and dropping it is exactly how the
   // cached answer outlived the row it described. See `savedBriefRefreshToken`.
   private readonly savedBriefRefreshToken$ = toObservable(this.savedBriefRefreshToken);
+  // Converted here, in the injection context `toObservable` needs; subscribed in `ngOnInit`.
+  private readonly editRequest$ = toObservable(this.editRequest);
 
   // === Lifecycle ===
   public ngOnInit(): void {
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
+
+    // An observable of the input rather than an effect: opening the editor writes a dozen signals,
+    // and it must happen once per request, not whenever something it reads changes.
+    this.editRequest$
+      .pipe(
+        filter((request): request is CampaignBriefEditRequest => request !== null),
+        distinctUntilChanged((a, b) => a.requestId === b.requestId),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((request) => this.openBriefInEditor(request.brief));
 
     // `switchMap`, so an edited URL cancels the lookup for the previous one. The persist path
     // needed a generation counter for the same hazard because its request must outlive the
@@ -916,6 +971,15 @@ export class PlanningTabComponent implements OnInit {
         this.savedBriefReadAt = 0;
         this.savedBriefWarning.set(null);
       });
+
+    // Last, so the lookup pipeline above is already listening (#4756). A reload, a second tab or a
+    // shared link carrying `?event=` prefills the field and runs the same lookup a typed URL does,
+    // so the Restore offer is waiting. Nothing is restored or generated: the offer stays a choice.
+    const fromAddress = this.eventUrlFromAddress();
+    if (fromAddress !== null && this.briefForm.controls.url.value === '') {
+      this.briefForm.controls.url.setValue(fromAddress);
+      this.onUrlInput();
+    }
   }
 
   // === Public Methods ===
@@ -969,6 +1033,9 @@ export class PlanningTabComponent implements OnInit {
     this.refineStatusMessages.set([]);
     this.lastAppliedFeedback.set(null);
     this.refineCount.set(0);
+    // New Brief is how the user leaves an existing brief to plan another event, so the event becomes
+    // editable again here and nowhere else.
+    this.leaveExistingBrief();
   }
 
   // === Protected Methods ===
@@ -1051,34 +1118,27 @@ export class PlanningTabComponent implements OnInit {
       }
       this.slugInput$.next(slug);
     }
+    this.syncEventParam(url);
   }
 
   /** Hand the saved brief straight to the Implementation tab, skipping generation. */
   protected restoreSavedBrief(): void {
-    // Refuse when the field no longer names the event this offer was fetched for. The offer is
-    // deliberately KEPT while the url is empty or half-typed — clearing it there strands it, since
-    // `onUrlInput` only issues a lookup when the slug CHANGES and retyping the same url is a
-    // no-op — but keeping it visible must not mean acting on it. Mid-edit toward event B, the
-    // panel still reads "A brief was already saved for <A>", and restoring then hands the
-    // Implementation tab a brief for an event the user is in the middle of leaving.
-    //
-    // Guarding the ACTION rather than the offer keeps both properties: the offer survives an
-    // emptied field and comes back when the url is retyped, and it can only ever be applied while
-    // the field still names its own event.
-    if (this.extractSlug(this.briefForm.controls.url.value) !== this.currentSlug) {
-      return;
+    const offer = this.currentOffer();
+    if (offer !== null) {
+      this.restoreSavedBriefRequested.emit(offer);
     }
-    const brief = this.savedBrief();
-    // Both, or neither. A restore without its id would reach the parent as an unowned save and
-    // be refused — a worse outcome than not offering the button, so the guard covers the pair.
-    if (brief !== null && this.savedBriefId !== null) {
-      this.restoreSavedBriefRequested.emit({
-        brief,
-        briefId: this.savedBriefId,
-        etag: this.savedBriefEtag,
-        approved: this.savedBriefApproved,
-        readAt: this.savedBriefReadAt,
-      });
+  }
+
+  /**
+   * Open the saved brief in this planner's editor instead of handing it to Implement (#4983).
+   *
+   * Emitted to the parent rather than opened here: the parent records ownership of the row first,
+   * as a restore does, and then sends the brief back through `editRequest`. See that input.
+   */
+  protected openSavedBriefToEdit(): void {
+    const offer = this.currentOffer();
+    if (offer !== null) {
+      this.openSavedBriefRequested.emit(offer);
     }
   }
 
@@ -1363,6 +1423,10 @@ export class PlanningTabComponent implements OnInit {
 
   protected generate(): void {
     if (!this.canGenerate()) return;
+    // Generating writes a NEW brief. Unreachable from the editor today (Generate lives on the input
+    // step, which only `reset` returns to), and cleared here anyway so a generated brief can never be
+    // proceeded as an edit of the one before it.
+    this.leaveExistingBrief();
     // A generation replaces whatever brief Planning held, including one restored without passing
     // through `reset()`, so the next proceed must not carry that brief's X fields onto this one.
     this.briefDiscarded.emit();
@@ -1456,7 +1520,7 @@ export class PlanningTabComponent implements OnInit {
     const details: CampaignEventDetails = this.eventDetails() ?? coerceCampaignEventDetails({ name: fallbackName, registrationUrl: url, slug: fallbackSlug });
     const budgetRaw2 = this.briefForm.controls.totalBudget.value;
     const budgetStr = typeof budgetRaw2 === 'string' ? budgetRaw2.trim() : String(budgetRaw2 ?? '');
-    this.proceedToImplementation.emit({
+    const built: CampaignBriefOutput = {
       eventDetails: details,
       structuredCopy: this.structuredCopy(),
       keywords: this.keywords(),
@@ -1489,7 +1553,8 @@ export class PlanningTabComponent implements OnInit {
       // surface asking. Omitting it here would store every brief as untyped — which reads as
       // paid — and an email brief saved that way is unopenable from the surface that wrote it.
       deliveryType: this.deliveryType(),
-    });
+    };
+    this.proceedToImplementation.emit(this.editBase === null ? built : this.briefOverEditBase(this.editBase, built));
   }
 
   protected copyToClipboard(): void {
@@ -1608,9 +1673,22 @@ export class PlanningTabComponent implements OnInit {
     display['business_name'] = this.editDisplayBusinessName();
     display['call_to_action'] = this.editDisplayCta();
 
-    copy['google_search'] = search;
+    // Each block is written only when the brief already had it or the editor now gives it content. The
+    // editor shows both, so writing both unconditionally added an empty Google Search or Display block to
+    // a brief that never had one (#4983: a keyword-only or single-channel stored brief).
+    const hasText = (values: string[]): boolean => values.some((value) => value.trim() !== '');
+    if (this.getSearchCopy() !== null || hasText(this.editSearchHeadlines()) || hasText(this.editSearchDescriptions())) {
+      copy['google_search'] = search;
+    }
     const displayKey = copy['demand_gen'] ? 'demand_gen' : 'google_display';
-    copy[displayKey] = display;
+    if (
+      this.getDisplayCopy() !== null ||
+      hasText(this.editDisplayHeadlines()) ||
+      hasText(this.editDisplayDescriptions()) ||
+      hasText([this.editDisplayBusinessName(), this.editDisplayCta()])
+    ) {
+      copy[displayKey] = display;
+    }
 
     this.structuredCopy.set(copy);
     this.keywords.set(this.editKeywords());
@@ -1808,6 +1886,150 @@ export class PlanningTabComponent implements OnInit {
   }
 
   /**
+   * The offer the restore and Open to edit actions act on, or null when neither may act.
+   */
+  private currentOffer(): CampaignSavedBriefOffer | null {
+    // Refuse when the field no longer names the event this offer was fetched for. The offer is
+    // deliberately KEPT while the url is empty or half-typed — clearing it there strands it, since
+    // `onUrlInput` only issues a lookup when the slug CHANGES and retyping the same url is a
+    // no-op — but keeping it visible must not mean acting on it. Mid-edit toward event B, the
+    // panel still reads "A brief was already saved for <A>", and restoring then hands the
+    // Implementation tab a brief for an event the user is in the middle of leaving.
+    //
+    // Guarding the ACTION rather than the offer keeps both properties: the offer survives an
+    // emptied field and comes back when the url is retyped, and it can only ever be applied while
+    // the field still names its own event.
+    if (this.extractSlug(this.briefForm.controls.url.value) !== this.currentSlug) {
+      return null;
+    }
+    const brief = this.savedBrief();
+    // Both, or neither. A restore without its id would reach the parent as an unowned save and
+    // be refused — a worse outcome than not offering the button, so the guard covers the pair.
+    if (brief === null || this.savedBriefId === null) {
+      return null;
+    }
+    return { brief, briefId: this.savedBriefId, etag: this.savedBriefEtag, approved: this.savedBriefApproved, readAt: this.savedBriefReadAt };
+  }
+
+  /**
+   * Put an existing brief on the review step, in the editor (#4983).
+   *
+   * Loads every field Proceed reads back, so proceeding re-emits this brief with only the operator's
+   * edits applied. Any generation still streaming is cancelled first, or its late events would land
+   * in the fields this just filled.
+   */
+  private openBriefInEditor(brief: CampaignBriefOutput): void {
+    this.briefSubscription?.unsubscribe();
+    this.briefSubscription = null;
+    this.generateGeneration++;
+    // A HubSpot lookup still answering for whatever the URL field named must not land on this brief:
+    // its token is the stored brief's (and Proceed takes it from there, see `briefOverEditBase`).
+    this.lookupGeneration++;
+    this.hsSearching.set(false);
+    // Forgotten too, as a foundation switch forgets it: `lookupHubSpot` skips an event it last looked
+    // up, so keeping the abandoned one would stop a later lookup for the same URL from ever running.
+    this.lastLookedUpEvent = '';
+    // Close any edit session first. This planner stays mounted, so a previous brief's editor and its
+    // buffers would otherwise survive into a brief the editor does not open for, and Proceed would
+    // write the previous brief's copy and keywords into this one.
+    this.isEditing.set(false);
+    this.statusMessages.set([]);
+    this.errorMessage.set(null);
+    this.eventDetails.set(brief.eventDetails);
+    this.isEditingEmailBrief.set(false);
+    this.copyBuffer.set('');
+    this.structuredCopy.set(brief.structuredCopy);
+    this.keywords.set(brief.keywords ?? []);
+    this.googleCallouts.set(brief.googleCallouts ?? []);
+    this.googleSitelinks.set(brief.googleSitelinks ?? []);
+    this.negativeKeywords.set(brief.negativeKeywords ?? []);
+    this.hsUtm.set(brief.hsUtm);
+    this.linkedInStrategy.set(brief.linkedInCopy?.strategy ?? null);
+    // Only a stored selection replaces the tiles, the same rule `populateFromBrief` applies: an empty
+    // list would otherwise leave the default standing as though the user had chosen it.
+    if (brief.selectedPlatforms && brief.selectedPlatforms.length > 0) {
+      this.selectedPlatforms.set(new Set(brief.selectedPlatforms));
+    }
+    this.briefForm.patchValue({
+      // '' rather than a default: Proceed sends `|| null`, so a brief stored without a goal stays
+      // without one instead of gaining 'conversions' nobody chose.
+      campaignGoal: brief.campaignGoal ?? '',
+      totalBudget: brief.totalBudget === null ? '' : String(brief.totalBudget),
+      driveFolderUrl: brief.driveFolderUrl,
+    });
+    this.briefForm.controls.url.disable();
+    this.isRefining.set(false);
+    this.isRefineStreaming.set(false);
+    this.refineFeedback.set('');
+    this.refineStatusMessages.set([]);
+    this.lastAppliedFeedback.set(null);
+    this.refineCount.set(0);
+    this.editBase = brief;
+    this.editingExistingBrief.set(true);
+    this.step.set('review');
+    // The editor edits Google copy and keywords only, and Proceed writes its fields back whenever it is
+    // open. So it opens by itself only when there is something there for it; a LinkedIn-, Reddit- or
+    // Meta-only brief opens read-only rather than gaining empty Google blocks on save.
+    if (this.getSearchCopy() !== null || this.getDisplayCopy() !== null || this.keywords().length > 0) {
+      this.enterEditMode();
+    }
+  }
+
+  /** Leave existing-brief mode: the event and its URL become editable again. */
+  private leaveExistingBrief(): void {
+    this.editBase = null;
+    this.editingExistingBrief.set(false);
+    this.briefForm.controls.url.enable();
+  }
+
+  /**
+   * The brief Proceed emits while editing an existing one: the stored brief with this planner's
+   * fields applied over it.
+   *
+   * The event comes from the STORED brief, whatever the planner holds, because the row is keyed on its
+   * slug (see `editingExistingBrief`). The extension lists fall back to the stored ones, because
+   * Proceed reports an empty list as absent and this planner has no editor that could have emptied
+   * them. LinkedIn copy falls back the same way when no variant could be rebuilt from the copy.
+   */
+  private briefOverEditBase(base: CampaignBriefOutput, built: CampaignBriefOutput): CampaignBriefOutput {
+    // The stored LinkedIn block is kept whole unless the LinkedIn copy itself changed here (a refine).
+    // The rebuild from `structuredCopy` models only some of its fields — `imageAssetId` on a variant,
+    // for one — so rebuilding it after a Google-only edit would drop the rest.
+    const linkedInChanged = this.linkedInBlockOf(base.structuredCopy) !== this.linkedInBlockOf(built.structuredCopy);
+    return {
+      ...base,
+      ...built,
+      eventDetails: base.eventDetails,
+      googleCallouts: built.googleCallouts ?? base.googleCallouts,
+      googleSitelinks: built.googleSitelinks ?? base.googleSitelinks,
+      negativeKeywords: built.negativeKeywords ?? base.negativeKeywords,
+      linkedInCopy: this.editedLinkedInCopy(base, built, linkedInChanged),
+      // The HubSpot token identifies the event's campaign for attribution. The review step offers no
+      // way to change it, so the stored one stands, whatever a lookup left in the planner.
+      hsUtm: base.hsUtm,
+      deliveryType: base.deliveryType ?? built.deliveryType,
+      emailStage: base.emailStage,
+    };
+  }
+
+  /** The LinkedIn block of a structured copy, serialised for comparison (top level or under `platforms`). */
+  private linkedInBlockOf(copy: Record<string, unknown> | null): string {
+    const nested = copy?.['platforms'] as Record<string, unknown> | undefined;
+    return JSON.stringify(copy?.['linkedin_sponsored'] ?? nested?.['linkedin_sponsored'] ?? null);
+  }
+
+  /**
+   * The LinkedIn copy an edited existing brief carries: the stored block while its LinkedIn copy is
+   * unchanged; otherwise the rebuild, falling back to the stored block when no variant could be rebuilt.
+   */
+  private editedLinkedInCopy(base: CampaignBriefOutput, built: CampaignBriefOutput, linkedInChanged: boolean): LinkedInBriefCopy | undefined {
+    if (!linkedInChanged && base.linkedInCopy !== undefined) {
+      return base.linkedInCopy;
+    }
+    return built.linkedInCopy && built.linkedInCopy.variants.length > 0 ? built.linkedInCopy : (base.linkedInCopy ?? built.linkedInCopy);
+  }
+
+  /**
    * Record what the brief lookup found.
    *
    * `null` is the transport failure `catchError` mapped — distinct from every `status` the
@@ -1893,6 +2115,65 @@ export class PlanningTabComponent implements OnInit {
       return slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
     } catch {
       return '';
+    }
+  }
+
+  /**
+   * Whether this planner owns the page's `?event=` parameter (#4756): the PAID planner only.
+   *
+   * Both planners stay mounted, so both reading and writing one shared parameter would have the
+   * email planner prefill a paid event and each overwrite the other's URL on every keystroke. The
+   * email surface also resets its stage selector on a reload, so a prefilled URL would look up the
+   * wrong send there anyway.
+   */
+  private ownsEventParam(): boolean {
+    return this.deliveryType() === 'paid-marketing';
+  }
+
+  /**
+   * The event URL the page address carries, or null when there is none this planner should use.
+   *
+   * The parameter is caller-supplied, so it is bounded and must parse as an http(s) URL before it
+   * reaches the form; anything else is ignored rather than prefilled. Read from `location.path(true)`,
+   * not `router.url`, because every writer of this page's query string uses `replaceState`, which
+   * the router never sees.
+   */
+  private eventUrlFromAddress(): string | null {
+    if (!this.ownsEventParam() || !isPlatformBrowser(this.platformId)) return null;
+    const raw: unknown = this.router.parseUrl(this.location.path(true)).queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM];
+    if (typeof raw !== 'string' || raw === '' || raw.length > CAMPAIGN_EVENT_URL_MAX_LENGTH) return null;
+    return this.isEventUrl(raw) ? raw : null;
+  }
+
+  /**
+   * Mirror the url field into `?event=` with `Location.replaceState` (#4756): no navigation, no
+   * history entry, guards and resolvers untouched. This is the same mechanism
+   * `ProjectContextService.syncProjectQueryParam` uses for `?project=`, and it likewise skips while a
+   * navigation is in flight.
+   *
+   * Only a URL the lookup can use is written; an empty or unusable field removes the parameter, so
+   * a reload never prefills something the operator already cleared.
+   */
+  private syncEventParam(url: string): void {
+    if (!this.ownsEventParam() || !isPlatformBrowser(this.platformId) || this.router.getCurrentNavigation()) return;
+    const next = url.length <= CAMPAIGN_EVENT_URL_MAX_LENGTH && this.isEventUrl(url) && this.extractSlug(url) !== '' ? url : null;
+    const tree = this.router.parseUrl(this.location.path(true));
+    if ((tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM] ?? null) === next) return;
+    if (next === null) {
+      delete tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM];
+    } else {
+      tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM] = next;
+    }
+    this.location.replaceState(this.router.serializeUrl(tree));
+  }
+
+  /** An absolute http(s) URL — the only kind the event scrape and the slug lookup can use. */
+  private isEventUrl(url: string): boolean {
+    try {
+      const { protocol } = new URL(url);
+      return protocol === 'https:' || protocol === 'http:';
+    } catch {
+      return false;
     }
   }
 

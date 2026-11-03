@@ -6,7 +6,7 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { IMPERSONATION_SELF_MESSAGE, IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
+import { IMPERSONATION_EMPTY_TARGET_MESSAGE, IMPERSONATION_SELF_MESSAGE, IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
 import { ImpersonationSuggestion, RecentImpersonation } from '@lfx-one/shared/interfaces';
 import {
   composeFullName,
@@ -66,19 +66,12 @@ export class ImpersonationDialogComponent {
   // also start the impersonation before the admin has seen the username and email under the field.
   private pickedByEnter = false;
 
-  // What the field holds right now. A picked person wins, but anything typed can also be started: the directory only
-  // lists committee members, so an admin who knows an exact username or email must be able to try it unpicked, and
-  // an unknown user is refused by the start request.
-  private readonly typedText = signal('');
-  protected readonly canStart = computed(() => !!this.picked() || !!this.typedText().trim());
-
   public constructor() {
     // Closing mid-request would drop the loading UI while the change still goes through and reloads the page.
     lockDynamicDialogWhile(this.loading);
 
     // Typing over or clearing the shown name abandons the pick: the box then holds what the admin typed.
     this.targetUserForm.controls.targetUser.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
-      this.typedText.set(typeof value === 'string' ? value : '');
       if (this.picked() && value !== this.pickedLabel) {
         this.picked.set(null);
         this.pickedByEnter = false;
@@ -87,10 +80,16 @@ export class ImpersonationDialogComponent {
   }
 
   public submit(): void {
-    // A pick sends its username; otherwise the typed text is sent as entered, for the exchange to resolve as an
-    // exact email or username.
-    const target = this.picked()?.targetUser ?? this.typedText().trim();
-    if (!target) return;
+    // Start is never disabled, so anything can be tried: a pick sends its username, and otherwise whatever the field
+    // holds is sent as entered, for the exchange to resolve as an exact email or username. The directory only lists
+    // committee members, so an admin who knows an exact value must be able to try it unpicked, and an unknown user is
+    // refused by the start request. Read from the control rather than a mirrored signal so it is always what is shown.
+    const typed = this.targetUserForm.controls.targetUser.value;
+    const target = this.picked()?.targetUser ?? (typeof typed === 'string' ? typed.trim() : '');
+    if (!target) {
+      this.error.set(IMPERSONATION_EMPTY_TARGET_MESSAGE);
+      return;
+    }
 
     if (!this.picked() && this.isOwnIdentity(target)) {
       this.error.set(IMPERSONATION_SELF_MESSAGE);

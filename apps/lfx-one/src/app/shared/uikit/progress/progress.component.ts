@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 
 /** Bar for how much of a known total is done or used, such as seats, quota or an import. */
 @Component({
@@ -22,7 +22,7 @@ export class UiProgressComponent {
   /** Name of what is measured. Always the accessible name; also shown above the bar when `showLabel` is on. */
   public readonly label = input.required<string>();
   /** Shows the label and the value text above the bar. Turn off when the surrounding UI already names the bar. */
-  public readonly showLabel = input<boolean>(true);
+  public readonly showLabel = input<boolean, unknown>(true, { transform: booleanAttribute });
   /** Text for the right of the label row, such as `32 of 50`. Defaults to the rounded percentage. */
   public readonly valueText = input<string>('');
   /** Fill colour. The product picks it at its own thresholds (for example warning at 80%, error at 95%). */
@@ -59,7 +59,8 @@ export class UiProgressComponent {
         error: 'bg-ui-danger-600',
         secondary: 'bg-ui-neutral-400',
       };
-      return `progress-fill absolute inset-y-0 left-0 rounded-[inherit] ${tones[this.tone()]}`;
+      // Forced colours: a Highlight fill inside the track's CanvasText border.
+      return `progress-fill absolute inset-y-0 left-0 rounded-[inherit] ${tones[this.tone()]} forced-colors:bg-[color:Highlight]`;
     });
   }
 }

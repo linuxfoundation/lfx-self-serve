@@ -93,10 +93,10 @@ import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -162,6 +162,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
   private readonly inviteResend = inject(MeetingInviteResendService);
+  private readonly selfRemoval = inject(MeetingSelfRemovalService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -914,20 +915,17 @@ export class MeetingCardComponent implements OnInit {
 
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
-    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
     this.leavingMeeting.set(true);
 
-    this.meetingService
-      .removeMyMeetingRegistration(meetingId, 'meeting-card')
+    this.selfRemoval
+      .remove$(meetingId, 'meeting-card')
       .pipe(
         take(1),
         finalize(() => this.leavingMeeting.set(false))
       )
       .subscribe({
         next: (result) => {
-          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
-          const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
-          if (this.meeting().id !== meetingId || currentSubject !== subject) return;
+          if (this.meeting().id !== meetingId) return;
           if (result.remaining_registrant_ids.length > 0) {
             this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
             this.optimisticInvited.set(true);
@@ -936,13 +934,11 @@ export class MeetingCardComponent implements OnInit {
               summary: 'Removal incomplete',
               detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
             });
-            this.userService.refreshUserMeetings(false);
             this.refreshMeeting();
             return;
           }
           this.confirmedRsvps.set([]);
           this.optimisticInvited.set(false);
-          this.meetingService.markRegistrationRemoved(meetingId);
           this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
           this.messageService.add({
             severity: 'success',
@@ -952,12 +948,7 @@ export class MeetingCardComponent implements OnInit {
           this.meetingDeleted.emit();
         },
         error: (error: unknown) => {
-          const fallback = 'Unable to remove you from this meeting. Please try again.';
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback,
-          });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.selfRemoval.describeFailure(error) });
         },
       });
   }

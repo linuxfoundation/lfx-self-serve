@@ -1,0 +1,19 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<label [class]="labelClasses()" data-testid="ui-toggle-label">
+  <input
+    type="checkbox"
+    role="switch"
+    [class]="trackClasses()"
+    [checked]="checked()"
+    [disabled]="isDisabled()"
+    [attr.name]="name() || null"
+    [attr.aria-label]="label() ? null : ariaLabel() || null"
+    (change)="onChange($event)"
+    (blur)="onBlur()"
+    data-testid="ui-toggle-input" />
+  @if (label()) {
+    <span data-testid="ui-toggle-text">{{ label() }}</span>
+  }
+</label>

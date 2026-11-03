@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CAMPAIGN_SETTINGS_UNKNOWN_NOTES } from '../constants/campaign-optimize.constants';
 import type { CampaignServiceSettingsField, CampaignServiceSettingsReadback } from '../interfaces/campaign-optimize.interface';
+import type { CampaignServiceCampaignMetrics } from '../interfaces/campaign.interface';
 import {
   buildCampaignLiveCounters,
   buildCampaignSettingsDrift,
@@ -189,6 +190,57 @@ describe('withAdoptedMarker', () => {
     const result = withAdoptedMarker({ id: 'c-1', adopted: value as unknown as boolean });
     expect('adopted' in result).toBe(false);
     expect(result).toEqual({ id: 'c-1' });
+  });
+});
+
+describe('buildCampaignLiveCounters — conversions status (lfx-v2-campaign-service#175)', () => {
+  const base = {
+    campaign_id: 'c-1',
+    platform_campaign_id: '123',
+    window: 'last_30_days',
+    impressions: 1000,
+    clicks: 40,
+    cost_micros: 5_000_000,
+    ctr: 0.04,
+  } as const;
+
+  it('shows the total only when reported, unrounded', () => {
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 3 }, 'linkedin-ads')).toEqual(
+      expect.objectContaining({ conversions: '3', conversionsReported: true })
+    );
+    // Google Ads and Microsoft credit partial conversions: 0.4 is a value, not a zero.
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 0.4 }, 'google-ads').conversions).toBe('0.4');
+    // A non-zero total below 0.01 must not read as 0, and a reported 0 is a measured zero.
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 0.004 }, 'google-ads').conversions).toBe('0.004');
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 0 }, 'linkedin-ads')).toEqual(
+      expect.objectContaining({ conversions: '0', conversionsReported: true })
+    );
+  });
+
+  it.each([
+    ['unavailable', 'linkedin-ads', 'Not reported by LinkedIn'],
+    ['unavailable', 'microsoft-ads', 'Not reported by Microsoft Advertising'],
+    ['incomplete', 'linkedin-ads', 'Incomplete data for this window'],
+    ['no_conversions', 'linkedin-ads', 'No conversions in this window'],
+  ] as const)('gives a reason, never 0 or a blank, for %s on %s', (status, platform, reason) => {
+    // A stray total beside a non-reported status is ignored: only `reported` carries one.
+    const counters = buildCampaignLiveCounters({ ...base, conversions_status: status, conversions: 0 }, platform);
+
+    expect(counters.conversions).toBe(reason);
+    expect(counters.conversionsReported).toBe(false);
+  });
+
+  it('reads a reported status without a total, or an unknown status, as unavailable rather than 0', () => {
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported' }, 'linkedin-ads').conversions).toBe('Not reported by LinkedIn');
+    // @ts-expect-error a status a future campaign-service may add, outside today's union
+    const unknownStatus: CampaignServiceCampaignMetrics = { ...base, conversions_status: 'something_new', conversions: 2 };
+    expect(buildCampaignLiveCounters(unknownStatus, 'linkedin-ads').conversions).toBe('Not reported by LinkedIn');
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'unavailable' }, 'some-new-platform').conversions).toBe('Not reported by the platform');
+  });
+
+  it('shows no counter when the read carries no status (an older campaign-service) or on the email channel', () => {
+    expect(buildCampaignLiveCounters({ ...base, conversions: 5 }, 'linkedin-ads').conversions).toBeNull();
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 5 }, 'hubspot').conversions).toBeNull();
   });
 });
 

@@ -769,10 +769,13 @@ describe('MentorshipAdminService application decisions', () => {
 
     await service.updateApplicationStatus(buildReq(), APPLICATION_ID, { status: 'accepted', attendanceType: 'part_time' });
     await service.updateApplicationStatus(buildReq(), APPLICATION_ID, { status: 'declined', attendanceType: 'full_time' });
+    // Undo graduation: no attendance type, so upstream keeps the stored one.
+    await service.updateApplicationStatus(buildReq(), APPLICATION_ID, { status: 'accepted' });
 
     expect(spy.mock.calls.map((call) => [call[3], call[5]])).toEqual([
       ['PATCH', { status: 'accepted', attendance_type: 'part_time' }],
       ['PATCH', { status: 'declined' }],
+      ['PATCH', { status: 'accepted' }],
     ]);
   });
 

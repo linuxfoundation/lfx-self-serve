@@ -91,17 +91,17 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     getTrainees = vi.fn((_orgUid: string, range: OrgLensTimeRange) => of(responseFor(range)));
   });
 
-  it('reads Past 365 days by default and the range another tab left in the URL', async () => {
+  it('reads Past 2 years by default and the range another tab left in the URL', async () => {
     await mount('/?tab=training');
-    expect(getTrainees).toHaveBeenLastCalledWith(ORG, '365d');
+    expect(getTrainees).toHaveBeenLastCalledWith(ORG, '730d');
 
     TestBed.resetTestingModule();
     await mount('/?tab=training&range=30d');
     expect(getTrainees).toHaveBeenLastCalledWith(ORG, '30d');
 
     TestBed.resetTestingModule();
-    await mount('/?tab=training&range=730d');
-    expect(getTrainees).toHaveBeenLastCalledWith(ORG, '730d');
+    await mount('/?tab=training&range=365d');
+    expect(getTrainees).toHaveBeenLastCalledWith(ORG, '365d');
   });
 
   it('fetches the picked range, writes it to the URL and recomputes the stat cards for it', async () => {

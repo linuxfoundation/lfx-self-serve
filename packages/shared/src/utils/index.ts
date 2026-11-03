@@ -3,6 +3,7 @@
 
 export * from './ai.utils';
 export * from './avatar.utils';
+export * from './chunk-load.utils';
 export * from './color.utils';
 export * from './date-time.utils';
 export * from './docs.utils';
@@ -20,6 +21,7 @@ export * from './mailing-list.utils';
 export * from './meeting-attachment.utils';
 export * from './meeting-calendar.utils';
 export * from './meeting.utils';
+export * from './meeting-list.utils';
 export * from './meeting-attendee-lock.utils';
 export * from './meeting-privacy.utils';
 export * from './past-meeting-summary.utils';
@@ -156,3 +158,6 @@ export * from './org-people-stats.utils';
 export * from './org-commit-filters.utils';
 export * from './mktg-run-navigation.utils';
 export * from './org-employment.utils';
+export * from './org-team-members.utils';
+export * from './org-scope.utils';
+export * from './social-share.utils';

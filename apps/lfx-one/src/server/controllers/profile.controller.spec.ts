@@ -2160,6 +2160,9 @@ describe('ProfileController.sendEmailVerification — enumeration-safe (lfx-self
     expect(res.status).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
     expect(next).not.toHaveBeenCalled();
+    // A linked address was not sent a code, so it must not be logged as a successful send.
+    expect(vi.mocked(logger.success)).toHaveBeenCalledTimes(linked ? 0 : 1);
+    expect(vi.mocked(logger.warning)).toHaveBeenCalledTimes(linked ? 1 : 0);
     const warnings = vi.mocked(logger.warning).mock.calls.map(([, , message, metadata]) => ({ message, metadata }));
     const successes = vi.mocked(logger.success).mock.calls.map(([, , , metadata]) => metadata);
     expect(JSON.stringify({ warnings, successes })).not.toContain('typed@example.test');

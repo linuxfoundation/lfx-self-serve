@@ -3,12 +3,13 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Component, EnvironmentProviders, input, output, Provider } from '@angular/core';
+import { Component, DestroyRef, EnvironmentProviders, input, output, PLATFORM_ID, Provider, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import {
+  DEFAULT_GOOGLE_DAILY_BUDGET_USD,
   CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
@@ -37,14 +38,18 @@ import {
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
+  GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
   REDDIT_CALL_TO_ACTIONS,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
+  CampaignIndexDoc,
+  CampaignJobOutcome,
   CampaignBriefPersistenceState,
   CampaignCreateResult,
   CampaignImplementationDraft,
@@ -60,9 +65,10 @@ import type {
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { AutoComplete } from 'primeng/autocomplete';
-import { of, Subject, throwError } from 'rxjs';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EMPTY, NEVER, Observable, of, Subject, throwError } from 'rxjs';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { ImplementationTabComponent } from './implementation-tab.component';
@@ -96,6 +102,9 @@ beforeEach(() => {
  * fall-through to the legacy path. So a user who submits during that window used to be told
  * "brief has not been saved yet" about a brief that was being saved as they clicked.
  */
+/** One usable keyword, so a Search create is not held for having none (#4848). */
+const SEED_KEYWORD = { term: 'cloud native conference', matchType: 'Phrase', intentLevel: 'High', notes: '' };
+
 describe('ImplementationTabComponent submit gate', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
 
@@ -113,12 +122,15 @@ describe('ImplementationTabComponent submit gate', () => {
   function makeOtherwiseValid(): void {
     const c = fixture.componentInstance as unknown as {
       selectedPlatforms: { set(v: string[]): void };
+      briefKeywords: { set(v: unknown[]): void };
       campaignForm: {
         controls: Record<string, { setValue(v: unknown): void }>;
         get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
       };
     };
     c.selectedPlatforms.set(['google-ads']);
+    // A Search create needs a keyword (#4848).
+    c.briefKeywords.set([SEED_KEYWORD]);
     c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
     c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
@@ -283,12 +295,15 @@ describe('ImplementationTabComponent submit gate', () => {
   it('blocks submit when Google is selected with only a hidden DemandGen checked', async () => {
     const c = fixture.componentInstance as unknown as {
       selectedPlatforms: { set(v: string[]): void };
+      briefKeywords: { set(v: unknown[]): void };
       campaignForm: {
         controls: Record<string, { setValue(v: unknown): void }>;
         get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
       };
     };
     c.selectedPlatforms.set(['google-ads']);
+    // A Search create needs a keyword (#4848).
+    c.briefKeywords.set([SEED_KEYWORD]);
     c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
     c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
@@ -1891,12 +1906,15 @@ describe('ImplementationTabComponent hubspotConfig wiring', () => {
   function makeOtherwiseValid(): void {
     const c = fixture.componentInstance as unknown as {
       selectedPlatforms: { set(v: string[]): void };
+      briefKeywords: { set(v: unknown[]): void };
       campaignForm: {
         controls: Record<string, { setValue(v: unknown): void }>;
         get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
       };
     };
     c.selectedPlatforms.set(['google-ads']);
+    // A Search create needs a keyword (#4848).
+    c.briefKeywords.set([SEED_KEYWORD]);
     c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
     c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
@@ -4445,6 +4463,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
@@ -4479,6 +4498,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
@@ -4505,6 +4525,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
@@ -4556,6 +4577,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
@@ -4636,6 +4658,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
   }
@@ -4757,6 +4780,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
   }
@@ -4819,6 +4843,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
@@ -5040,6 +5065,118 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     expect(c['campaignName']()).toContain('| Search |');
     expect(c['campaignName']()).not.toContain('| Multi |');
   });
+
+  /**
+   * #4755. On the campaign-service road one Google type is created per create, so the type row is an
+   * exclusive choice there: ticking a second type unticks the first instead of leaving Create
+   * disabled with no reason given. The legacy road still creates Search + Demand Gen together.
+   */
+  describe('one Google campaign type per create', () => {
+    const cutover = { demandGen: true, googleChannels: true, googleCreative: true };
+
+    function tick(control: string): void {
+      const box = checkbox(control);
+      expect(box, `${control} is not rendered`).not.toBeNull();
+      box!.click();
+      fixture.detectChanges();
+    }
+
+    function q(testId: string): HTMLElement | null {
+      return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    }
+
+    it('unticks the other types when one is ticked on the campaign-service road', () => {
+      seedGoogleForm({ includeSearch: true }, cutover);
+
+      tick('includePerformanceMax');
+
+      expect(value('includePerformanceMax')).toBe(true);
+      expect(value('includeSearch')).toBe(false);
+
+      tick('includeDemandGen');
+
+      expect(value('includeDemandGen')).toBe(true);
+      expect(value('includePerformanceMax')).toBe(false);
+    });
+
+    it('leaves the others alone when a type is unticked', () => {
+      const c = seedGoogleForm({ includeSearch: true, includeDisplay: true }, cutover);
+
+      tick('includeDisplay');
+
+      expect(value('includeDisplay')).toBe(false);
+      expect(value('includeSearch')).toBe(true);
+      expect(c['canSubmit']()).toBe(true);
+    });
+
+    it('keeps Search and Demand Gen tickable together, with the split, on the legacy road', () => {
+      seedGoogleForm({ includeSearch: true }, { demandGen: true, googleChannels: false, googleCreative: false });
+
+      tick('includeDemandGen');
+
+      expect(value('includeSearch')).toBe(true);
+      expect(value('includeDemandGen')).toBe(true);
+      expect(q('implementation-budget-split')).not.toBeNull();
+      expect(q('implementation-google-channel-single-note')).toBeNull();
+    });
+
+    it('says each type is created on its own, and offers no budget split, on the campaign-service road', () => {
+      seedGoogleForm({ includeSearch: true }, cutover);
+
+      expect(q('implementation-google-channel-single-note')?.textContent).toContain('created on its own');
+
+      // The pair the split funds, reached by a route this road still allows: a restored selection.
+      seedGoogleForm({ includeSearch: true, includeDemandGen: true }, cutover);
+
+      expect(q('implementation-budget-split')).toBeNull();
+    });
+
+    it('names the conflict a restored multi-type selection leaves, rather than silently disabling Create', () => {
+      const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true, includeDisplay: true }, cutover);
+
+      expect(c['canSubmit']()).toBe(false);
+      const conflict = q('implementation-google-channel-conflict');
+      expect(conflict?.getAttribute('role')).toBe('alert');
+      expect(conflict?.textContent).toContain('Search, Demand Gen and Display cannot be created together');
+      // Named, not cleared: which campaign to make is the operator's call.
+      expect(value('includeSearch')).toBe(true);
+      expect(value('includeDemandGen')).toBe(true);
+    });
+
+    it('omits the note, and the description pointing at it, when Search is the only type offered', () => {
+      seedGoogleForm({ includeSearch: true }, { demandGen: false, googleChannels: false, googleCreative: true });
+
+      expect(q('implementation-google-channel-single-note')).toBeNull();
+      expect(checkbox('includeSearch')?.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('describes each type checkbox by the note, so ticking one explains unticking the rest', () => {
+      seedGoogleForm({ includeSearch: true }, cutover);
+
+      const note = fixture.nativeElement.querySelector('#implementation-google-channel-single-note');
+      expect(note).not.toBeNull();
+      for (const control of ['includeSearch', 'includeDemandGen', 'includePerformanceMax', 'includeDisplay']) {
+        expect(checkbox(control)?.getAttribute('aria-describedby'), control).toBe('implementation-google-channel-single-note');
+      }
+    });
+
+    it('describes no checkbox by the note on the legacy road', () => {
+      seedGoogleForm({ includeSearch: true }, { demandGen: true, googleChannels: false, googleCreative: false });
+
+      expect(checkbox('includeSearch')?.getAttribute('aria-describedby')).toBeNull();
+      expect(checkbox('includeDemandGen')?.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('raises the conflict when the capability answer arrives after a multi-type selection', () => {
+      seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: null });
+      expect(q('implementation-google-channel-conflict')).toBeNull();
+
+      fixture.componentRef.setInput('googleCreativeEnabled', true);
+      fixture.detectChanges();
+
+      expect(q('implementation-google-channel-conflict')?.textContent).toContain('Search and Demand Gen cannot be created together');
+    });
+  });
 });
 
 /**
@@ -5072,6 +5209,7 @@ describe('ImplementationTabComponent create failure messaging', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
   };
@@ -5188,6 +5326,8 @@ function seedChannel(fixture: ComponentFixture<ImplementationTabComponent>, patc
   fixture.componentRef.setInput('briefData', {
     eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
     selectedPlatforms: ['google-ads'],
+    // One keyword, so a Search create is not held for having none (#4848).
+    keywords: [SEED_KEYWORD],
   } as unknown as CampaignBriefOutput);
   fixture.detectChanges();
 
@@ -5700,6 +5840,7 @@ const DISPLAY_COMPLETE = {
   descriptions: 'A description',
   businessName: 'Acme',
   marketingImages: 'https://example.com/a.png',
+  squareMarketingImages: 'https://example.com/square.png',
 };
 
 /**
@@ -5776,22 +5917,76 @@ describe('ImplementationTabComponent google creative minimums', () => {
   });
 
   /**
-   * The either-or, which no per-field bound can state: `min: 1` on both members would refuse the
-   * half upstream takes, and on one member would name the wrong field. Both assertions matter —
-   * the first alone passes against a rule that fires even when a marketing image IS supplied.
+   * Display requires BOTH marketing shapes (#4848): Google's `ResponsiveDisplayAdInfo` refuses an ad
+   * with only one, after the budget and the campaign exist. Each missing shape is named on its own.
    */
-  it('requires one of the two marketing arrays, and accepts either', () => {
+  it.each([
+    { missing: 'marketingImages', present: 'squareMarketingImages' },
+    { missing: 'squareMarketingImages', present: 'marketingImages' },
+  ] as const)('refuses a display creative without $missing, even with $present', ({ missing }) => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.patchValue({ ...DISPLAY_COMPLETE, [missing]: '' });
+    const spec = creativeSpec('display', missing);
+
+    expect(c['googleCreativeError']()).toBe(`${GOOGLE_CREATIVE_SECTION_TITLES.display} creative needs at least 1 entry in ${spec.label} — 0 given.`);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /** Demand Gen's pair stays reciprocal: either shape alone satisfies it. */
+  it('accepts a demand gen creative with either marketing shape', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    const group = c['campaignForm'].controls.demandGenCreative;
+    const base = { headlines: 'One headline', descriptions: 'A description', businessName: 'Acme', logoImages: 'https://example.com/logo.png' };
+
+    group.patchValue({ ...base, marketingImages: 'https://example.com/a.png', squareMarketingImages: '' });
+    expect(c['googleCreativeError']()).toBeNull();
+
+    group.patchValue({ marketingImages: '', squareMarketingImages: 'https://example.com/square.png' });
+    expect(c['googleCreativeError']()).toBeNull();
+
+    group.patchValue({ squareMarketingImages: '' });
+    expect(c['googleCreativeError']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES['demand-gen']} creative ${GOOGLE_CREATIVE_EITHER_OR_RULES['demand-gen'][0].message}`
+    );
+  });
+
+  /**
+   * A ceiling shared across fields (#4848): three landscape and three square logos each sit under
+   * their own cap of five, and together sit over the five upstream allows across both.
+   */
+  it('refuses display logos over the cap the two logo fields share', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     const group = c['campaignForm'].controls.displayCreative;
-    group.patchValue({ ...DISPLAY_COMPLETE, marketingImages: '' });
+    const urls = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `https://example.com/${prefix}${i}.png`).join('\n');
+    group.patchValue({ ...DISPLAY_COMPLETE, logoImages: urls('logo', 3), squareLogoImages: urls('square-logo', 3) });
 
-    expect(c['googleCreativeError']()).toBe(`${GOOGLE_CREATIVE_SECTION_TITLES.display} creative ${GOOGLE_CREATIVE_EITHER_OR_RULES.display[0].message}`);
+    expect(c['googleCreativeError']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES.display} creative has 6 logo images across its fields (pasted URLs and stored images together) — 1 over the shared cap of 5.`
+    );
+    expect(c['canSubmit']()).toBe(false);
 
-    group.patchValue({ squareMarketingImages: 'https://example.com/square.png' });
+    group.patchValue({ squareLogoImages: urls('square-logo', 2) });
     expect(c['googleCreativeError']()).toBeNull();
+  });
 
-    group.patchValue({ squareMarketingImages: '', marketingImages: 'https://example.com/a.png' });
-    expect(c['googleCreativeError']()).toBeNull();
+  /** The same check on Demand Gen's four marketing shapes, which share twenty between them. */
+  it('refuses demand gen marketing images over the cap the four shapes share', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    const urls = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `https://example.com/${prefix}${i}.png`).join('\n');
+    c['campaignForm'].controls.demandGenCreative.patchValue({
+      headlines: 'One headline',
+      descriptions: 'A description',
+      businessName: 'Acme',
+      logoImages: 'https://example.com/logo.png',
+      marketingImages: urls('m', 6),
+      squareMarketingImages: urls('s', 5),
+      portraitImages: urls('p', 5),
+      tallPortraitImages: urls('t', 5),
+    });
+
+    expect(c['googleCreativeError']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES['demand-gen']} creative has 21 marketing images across its fields (pasted URLs and stored images together) — 1 over the shared cap of 20.`
+    );
   });
 
   /** Performance Max states its two marketing requirements separately, so it carries no rule. */
@@ -8134,6 +8329,7 @@ describe('ImplementationTabComponent google extension seeding', () => {
     const next = {
       eventDetails: { name: 'Open Source Summit', slug: 'oss-na-2026', registrationUrl: 'https://example.com/oss', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
       structuredCopy: { google_search: { headlines: ['Attend OSS'], descriptions: ['Join us in Denver'] } },
     } as unknown as CampaignBriefOutput;
     fixture.componentRef.setInput('draft', null);
@@ -8157,7 +8353,15 @@ describe('ImplementationTabComponent google extension seeding', () => {
       googlePostalGeoLabels: {},
     });
     for (const key of listKeys) expect(held.draft?.[key]).toEqual([]);
-    for (const group of Object.values(held.draft?.googleCreatives ?? {})) for (const value of Object.values(group)) expect(value).toBe('');
+    // Nothing typed for the previous brief survives. Performance Max is the one group the NEXT brief
+    // fills: its own generated Search copy prefills it (#4784), and every other field stays empty.
+    const prefilledFromNext: Record<string, string> = { headlines: 'Attend OSS', descriptions: 'Join us in Denver' };
+    for (const [name, group] of Object.entries(held.draft?.googleCreatives ?? {})) {
+      for (const [field, value] of Object.entries(group)) {
+        const expected = name === 'performanceMaxCreative' ? (prefilledFromNext[field] ?? '') : '';
+        expect(value, `${name}.${field}`).toBe(expected);
+      }
+    }
     const text = fixture.nativeElement.textContent as string;
     for (const stale of ['Hands-On Labs', 'Venue & Travel', 'Conference passes', '415 555 0100', 'Alpha', 'userLists/111', '9031945', 'Stale label']) {
       expect(text).not.toContain(stale);
@@ -12283,6 +12487,7 @@ describe('ImplementationTabComponent google stored images', () => {
     f.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     f.detectChanges();
     const c = f.componentInstance as unknown as Record<string, any>;
@@ -12508,6 +12713,7 @@ describe('ImplementationTabComponent google stored images', () => {
     display.descriptions.setValue('D1');
     display.businessName.setValue('LF');
     display.marketingImages.setValue('https://cdn.example.org/m.png');
+    display.squareMarketingImages.setValue('https://cdn.example.org/sq.png');
     c['onGoogleImagePick'](SLOT, WIDE_LOGO);
     display.logoImages.setValue(['1', '2', '3', '4', '5'].map((n) => `https://cdn.example.org/${n}.png`).join('\n'));
 
@@ -12518,7 +12724,14 @@ describe('ImplementationTabComponent google stored images', () => {
   });
 
   const FIVE_LOGO_URLS = ['1', '2', '3', '4', '5'].map((n) => `https://cdn.example.org/${n}.png`).join('\n');
-  const DISPLAY_COPY = { headlines: 'H1', longHeadline: 'Long', descriptions: 'D1', businessName: 'LF', marketingImages: 'https://cdn.example.org/m.png' };
+  const DISPLAY_COPY = {
+    headlines: 'H1',
+    longHeadline: 'Long',
+    descriptions: 'D1',
+    businessName: 'LF',
+    marketingImages: 'https://cdn.example.org/m.png',
+    squareMarketingImages: 'https://cdn.example.org/sq.png',
+  };
 
   /** A draft can carry an over-cap slot the controls could not have produced; Create must still refuse it. */
   it('refuses a restored draft whose slot is over its cap', async () => {
@@ -12638,6 +12851,174 @@ describe('ImplementationTabComponent google stored images', () => {
 
     expect(c['googleImageAssetBlock']()?.kind).toBe('uploadFailed');
     expect(c['googleImageSlots']()[SLOT].error).toBe('image is not decodable');
+  });
+
+  /** "Use suggested images" (#4825): the asset plan's assignments fill only EMPTY, rendered Google image fields. */
+  describe('applying the asset plan', () => {
+    const assignment = (slot: string, assetIds: string[], channel = 'DISPLAY', platform = 'google-ads') => ({
+      slotKey: `${platform}/${channel}/${slot}`,
+      platform,
+      channel,
+      slot,
+      label: slot,
+      requirement: '',
+      assetIds,
+      minCount: 0,
+      maxCount: 5,
+    });
+
+    it('fills empty rendered fields and reports how many', async () => {
+      const { c, latest } = await mount(true);
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO]), assignment('squareLogoImages', [SQUARE_LOGO])]);
+
+      expect(logos(c)).toEqual([{ imageAssetId: WIDE_LOGO }]);
+      expect(c['googleCreativePayload']()['displayCreative']['squareLogoImages']).toEqual([{ imageAssetId: SQUARE_LOGO }]);
+      expect(latest()?.googleImageAssets?.[SLOT]).toEqual([{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }]);
+      expect(c['googleSuggestedApplyResult']()).toBe('Filled 2 empty image slots with suggested images.');
+    });
+
+    it('leaves a field the operator filled — by a pick or a pasted URL — exactly as it is', async () => {
+      const { c } = await mount(true);
+      c['onGoogleImagePick'](SLOT, SQUARE_LOGO);
+      c['campaignForm'].controls.displayCreative.controls.squareLogoImages.setValue('https://cdn.example.org/square.png');
+      c['onApplySuggestedGoogleImages']([
+        assignment('logoImages', [WIDE_LOGO]),
+        assignment('squareLogoImages', [SQUARE_LOGO]),
+        assignment('marketingImages', [UPLOADED]),
+      ]);
+
+      expect(logos(c)).toEqual([{ imageAssetId: SQUARE_LOGO }]);
+      expect(c['googleCreativePayload']()['displayCreative']['squareLogoImages']).toEqual(['https://cdn.example.org/square.png']);
+      expect(c['googleCreativePayload']()['displayCreative']['marketingImages']).toEqual([{ imageAssetId: UPLOADED }]);
+      expect(c['googleSuggestedApplyResult']()).toBe('Filled 1 empty image slot with suggested images. Left 2 slots you had already filled as they were.');
+    });
+
+    /** The running upload's file is held when it lands, so filling the field now would put it over its max. */
+    it('leaves a field with an upload still running as it is', async () => {
+      const { c } = await mount(true);
+      c['googleImageUploadStatus'].set('uploading');
+      c['googleImageUploadSlot'].set(SLOT);
+      expect(c['googleImageSlots']()[SLOT].uploading).toBe(true);
+
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO]), assignment('squareLogoImages', [SQUARE_LOGO])]);
+
+      expect(logos(c)).toBeUndefined();
+      expect(c['googleCreativePayload']()['displayCreative']['squareLogoImages']).toEqual([{ imageAssetId: SQUARE_LOGO }]);
+      expect(c['googleSuggestedApplyResult']()).toBe('Filled 1 empty image slot with suggested images. Left 1 slot you had already filled as it was.');
+    });
+
+    it('fills nothing for another channel, another platform, or a field not on screen', async () => {
+      const { c, latest } = await mount(true);
+      c['onApplySuggestedGoogleImages']([
+        // A real Performance Max slot, mapped, but Performance Max is not the type on screen.
+        assignment('LOGO', [WIDE_LOGO], 'PERFORMANCE_MAX'),
+        assignment('logoImages', [WIDE_LOGO], 'DISPLAY', 'meta-ads'),
+        assignment('youtubeVideoIds', ['x'], 'DISPLAY'),
+      ]);
+
+      expect(logos(c)).toBeUndefined();
+      expect(latest()?.googleImageAssets?.[SLOT] ?? []).toEqual([]);
+      expect(c['googleHeldImages']()['performanceMaxCreative.logoImages'] ?? []).toEqual([]);
+      expect(c['googleSuggestedApplyResult']()).toBe('No suggested images to apply: no Google image field on screen has a suggestion.');
+    });
+
+    it('caps a field at its own catalogued max', async () => {
+      const { c } = await mount(true);
+      const max = GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'logoImages')?.max ?? 0;
+      const many = Array.from({ length: max + 2 }, (_, i) => `aaaaaaaa-0000-4000-8000-${String(i).padStart(12, '0')}`);
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', many)]);
+
+      expect((logos(c) as unknown[]).length).toBe(max);
+    });
+
+    it('says when every suggested field was already filled, and pressing again changes nothing', async () => {
+      const { c } = await mount(true);
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO])]);
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', [SQUARE_LOGO])]);
+      // Each apply bumps the sequence, so the grid announces a repeated sentence again.
+      expect(c['googleSuggestedApplySeq']()).toBe(2);
+
+      expect(logos(c)).toEqual([{ imageAssetId: WIDE_LOGO }]);
+      expect(c['googleSuggestedApplyResult']()).toBe('Nothing to fill: every image field with a suggestion already has images.');
+    });
+
+    /** The slot grid reads the library only; the tab tells it what the form already holds, by plan slot (#4833). */
+    it('counts pasted URLs and images held for the open brief per plan slot, for the grid', async () => {
+      const { c } = await mount(true);
+      expect(c['googleFormFilledSlots']()).toEqual({});
+
+      c['campaignForm'].controls.displayCreative.controls.logoImages.setValue('https://cdn.example.org/a.png\nhttps://cdn.example.org/b.png');
+      c['onGoogleImagePick']('displayCreative.logoImages', WIDE_LOGO);
+      c['onGoogleImagePick']('displayCreative.squareLogoImages', SQUARE_LOGO);
+      // Held for another brief: not sent, so not counted.
+      c['googleHeldImages'].update((held: Record<string, unknown[]>) => ({
+        ...held,
+        'displayCreative.marketingImages': [{ id: UPLOADED, name: '', briefId: OTHER_BRIEF }],
+      }));
+
+      expect(c['googleFormFilledSlots']()).toEqual({
+        'google-ads/DISPLAY/logoImages': 3,
+        'google-ads/DISPLAY/squareLogoImages': 1,
+      });
+    });
+
+    /** Pasted URLs fill a slot whatever the library answers; held images count only where the request would send them. */
+    it('counts pasted URLs with the library off, and ignores held images it would not send', async () => {
+      const { c } = await mount(false);
+      c['campaignForm'].controls.displayCreative.controls.marketingImages.setValue('https://cdn.example.org/wide.png');
+      c['googleHeldImages'].update((held: Record<string, unknown[]>) => ({
+        ...held,
+        'displayCreative.logoImages': [{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }],
+      }));
+
+      expect(c['googleFormFilledSlots']()).toEqual({ 'google-ads/DISPLAY/marketingImages': 1 });
+    });
+
+    /** Performance Max names its slots by Google asset field type; the table maps them onto the request's fields. */
+    it("maps Performance Max's asset field types onto its fields", async () => {
+      const { f, c } = await mount(true);
+      c['campaignForm'].patchValue({ includeDisplay: false, includePerformanceMax: true });
+      f.detectChanges();
+      c['onApplySuggestedGoogleImages']([
+        assignment('MARKETING_IMAGE', [WIDE_LOGO], 'PERFORMANCE_MAX'),
+        assignment('marketingImages', [SQUARE_LOGO], 'PERFORMANCE_MAX'),
+      ]);
+
+      expect(c['googleCreativePayload']()['performanceMaxCreative']['marketingImages']).toEqual([{ imageAssetId: WIDE_LOGO }]);
+    });
+
+    it('maps every planned slot onto an image field of its own channel', () => {
+      for (const [channel, slots] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS)) {
+        const imageControls = (
+          GOOGLE_CREATIVE_FIELD_SPECS[channel as keyof typeof GOOGLE_CREATIVE_FIELD_SPECS] as readonly { control: string; image?: unknown }[]
+        )
+          .filter((field) => field.image)
+          .map((field) => field.control);
+        for (const control of Object.values(slots)) {
+          expect(imageControls, `${channel} ${control}`).toContain(control);
+        }
+      }
+    });
+
+    it('offers suggestions only while a Google image field is on screen, and drops the result on a brief switch', async () => {
+      const { f, c } = await mount(true);
+      // Display on screen: its four image fields, in the plan's own vocabulary.
+      expect(c['googleSuggestionTargets']()).toEqual([
+        'google-ads/DISPLAY/marketingImages',
+        'google-ads/DISPLAY/squareMarketingImages',
+        'google-ads/DISPLAY/logoImages',
+        'google-ads/DISPLAY/squareLogoImages',
+      ]);
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO])]);
+      expect(c['googleSuggestedApplyResult']()).not.toBe('');
+
+      f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: OTHER_BRIEF, message: null, approved: true });
+      f.detectChanges();
+      expect(c['googleSuggestedApplyResult']()).toBe('');
+
+      const off = await mount(false);
+      expect(off.c['googleSuggestionTargets']()).toEqual([]);
+    });
   });
 });
 
@@ -13343,6 +13724,16 @@ describe('ImplementationTabComponent x create', () => {
       expect(q(fixture, 'implementation-twitter-account-retry')).not.toBeNull();
     });
 
+    /** A refusal for lack of the project's `campaign_manager` role (#4837) is standing: named, with no Retry. */
+    it('names the missing project role when campaign-service refused to read the X connection', async () => {
+      getTwitterAdsAccounts.mockReturnValue(accounts({ state: 'forbidden', accountId: null, label: null }));
+      const { fixture } = await mount(true);
+
+      expect(q(fixture, 'implementation-twitter-account-forbidden')?.textContent).toContain('Your account needs the campaign manager role on this project');
+      expect(q(fixture, 'implementation-twitter-account-retry')).toBeNull();
+      expect(q(fixture, 'implementation-twitter-account-error')).toBeNull();
+    });
+
     it('says the LF shared account is used when the project has no X connection, and lets Create through', async () => {
       getTwitterAdsAccounts.mockReturnValue(accounts({ state: 'no_connection', accountId: null, label: null }));
       const { fixture } = await mount(true);
@@ -13793,5 +14184,1437 @@ describe('ImplementationTabComponent microsoft image extension', () => {
     click(f, 'implementation-microsoft-image-asset-block-remove');
     expect(q(f, 'implementation-microsoft-image-asset-block-uploadFailed')).toBeNull();
     expect(at(f).canSubmit()).toBe(true);
+  });
+});
+
+/**
+ * #4731. The `unowned-brief-exists` refusal is the one save failure Retry cannot clear and Restore
+ * escapes only by discarding the brief on screen, so the banner offers Replace saved brief on it —
+ * and on nothing else.
+ */
+describe('ImplementationTabComponent replace saved brief', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function setPersistence(state: CampaignBriefPersistenceState, inFlight = false): void {
+    fixture.componentRef.setInput('briefPersistence', state);
+    fixture.componentRef.setInput('briefSaveInFlight', inFlight);
+    fixture.detectChanges();
+  }
+
+  function replaceButton(): HTMLElement | null {
+    return (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-brief-replace-btn"]');
+  }
+
+  const refused: CampaignBriefPersistenceState = {
+    status: 'error',
+    briefId: '',
+    message: 'This event already has a saved brief for this send that was not opened here, so this one was not saved over it.',
+    approved: false,
+    conflict: 'unowned-brief-exists',
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('offers Replace saved brief on an unowned-brief-exists refusal', () => {
+    setPersistence(refused);
+    expect(replaceButton()).not.toBeNull();
+  });
+
+  it('asks the parent to replace when clicked', () => {
+    setPersistence(refused);
+    const emitted = vi.fn();
+    fixture.componentInstance.replaceSavedBriefRequested.subscribe(emitted);
+
+    // The inner native button: `(onClick)` is the wrapper's gated output, which a host click skips.
+    replaceButton()?.querySelector('button')?.click();
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not offer it on any other save error', () => {
+    setPersistence({ ...refused, conflict: 'stale-brief' });
+    expect(replaceButton()).toBeNull();
+
+    setPersistence({ ...refused, conflict: undefined });
+    expect(replaceButton()).toBeNull();
+  });
+
+  it('withholds it while a save is in flight', () => {
+    setPersistence(refused, true);
+    expect(replaceButton()).toBeNull();
+  });
+
+  /** #4983: the other way out of the same refusal — keep the saved brief and edit it. */
+  it('offers Open to edit beside Replace, and asks the parent to open the saved brief', () => {
+    setPersistence(refused);
+    const open = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-brief-open-saved-btn"]');
+    expect(open, 'no Open to edit on the unowned refusal').not.toBeNull();
+    const emitted = vi.fn();
+    fixture.componentInstance.openSavedBriefRequested.subscribe(emitted);
+
+    open?.querySelector('button')?.click();
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * #4983. Edit brief reopens this tab's brief in the Plan editor, except while a create job is being
+ * polled: saving from the editor resets the brief to `draft` under a job already running from it.
+ */
+describe('ImplementationTabComponent edit brief', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const brief = {
+    eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US' },
+    selectedPlatforms: ['google-ads'],
+  } as unknown as CampaignBriefOutput;
+
+  const button = (): HTMLButtonElement | null =>
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="implementation-edit-brief-btn"] button');
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.componentRef.setInput('briefData', brief);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('asks the parent to reopen the brief in the Plan editor', () => {
+    const emitted = vi.fn();
+    fixture.componentInstance.editBriefRequested.subscribe(emitted);
+
+    expect(button()?.disabled).toBe(false);
+    button()?.click();
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not offered on the unowned-brief refusal, where Open to edit and Replace are the ways out', () => {
+    fixture.componentRef.setInput('briefPersistence', {
+      status: 'error',
+      briefId: '',
+      message: 'refused',
+      approved: false,
+      conflict: 'unowned-brief-exists',
+    } as CampaignBriefPersistenceState);
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-btn"]')).toBeNull();
+  });
+
+  it('says why the last Edit brief opened nothing', () => {
+    fixture.componentRef.setInput('editBriefError', 'The saved brief could not be read, so nothing was opened. Try Edit brief again.');
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-error"]')?.textContent).toContain('could not be read');
+  });
+
+  it('tells the parent a create job is starting', () => {
+    const started = vi.fn();
+    fixture.componentInstance.createStarted.subscribe(started);
+    vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(NEVER);
+    vi.spyOn(fixture.componentInstance as unknown as { canSubmit(): boolean }, 'canSubmit').mockReturnValue(true);
+
+    (fixture.componentInstance as unknown as { submit(): void }).submit();
+
+    expect(started).toHaveBeenCalledTimes(1);
+  });
+
+  it('is disabled, with the reason beside it, while a create job is polling', () => {
+    (fixture.componentInstance as unknown as { step: WritableSignal<string> }).step.set('creating');
+    fixture.detectChanges();
+
+    expect(button()?.disabled, 'Edit brief stayed enabled under a running create job').toBe(true);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-hint"]')?.textContent).toContain(
+      'Available once campaign creation finishes'
+    );
+  });
+});
+
+/**
+ * #4784. Performance Max was the one Google channel whose copy a person still had to write, though
+ * the brief already holds copy of the right shape. The seed fills headlines, long headlines,
+ * descriptions and the business name from the generated Search and Demand Gen copy, each within its
+ * own catalogue bounds, and the draft restore still wins over it.
+ */
+describe('ImplementationTabComponent performance max prefill', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const longText = (n: number): string => 'x'.repeat(n);
+
+  function brief(structuredCopy: Record<string, unknown> | undefined): CampaignBriefOutput {
+    return {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      structuredCopy,
+    } as unknown as CampaignBriefOutput;
+  }
+
+  function seed(b: CampaignBriefOutput, draft?: CampaignImplementationDraft): void {
+    if (draft !== undefined) fixture.componentRef.setInput('draft', draft);
+    fixture.componentRef.setInput('briefData', b);
+    fixture.detectChanges();
+  }
+
+  function pmax(): Record<string, string> {
+    return (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['performanceMaxCreative'].getRawValue();
+  }
+
+  function lines(value: string): string[] {
+    return value === '' ? [] : value.split('\n');
+  }
+
+  function prefilled(): boolean {
+    return (fixture.componentInstance as unknown as { performanceMaxPrefillShown(): boolean }).performanceMaxPrefillShown();
+  }
+
+  const generated = {
+    google_search: {
+      headlines: ['Join KubeCon EU', 'Cloud native in Amsterdam', 'Register for KubeCon'],
+      descriptions: [
+        'Three days of talks, workshops and the hallway track with the cloud native community.',
+        'Meet the maintainers and end users of the CNCF projects you run in production.',
+      ],
+    },
+    google_display: {
+      headlines: ['KubeCon EU 2026 in Amsterdam', 'Where cloud native meets'],
+      descriptions: ['Register now for KubeCon EU 2026.'],
+      business_name: 'CNCF',
+    },
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('fills headlines, long headlines, descriptions and the business name from the brief', () => {
+    seed(brief(generated));
+
+    expect(lines(pmax()['headlines'])).toEqual(generated.google_search.headlines);
+    expect(lines(pmax()['longHeadlines'])).toEqual(generated.google_display.headlines);
+    expect(lines(pmax()['descriptions'])).toEqual([...generated.google_search.descriptions, ...generated.google_display.descriptions]);
+    expect(pmax()['businessName']).toBe('CNCF');
+    expect(prefilled()).toBe(true);
+  });
+
+  it('keeps every value within its field bounds: width, count and duplicates', () => {
+    // The duplicate sits INSIDE the 15-entry cap, so it is the de-duplication that keeps it out,
+    // not the cap.
+    const headlines = [longText(31), 'Headline 0', 'Headline 0', ...Array.from({ length: 19 }, (_, i) => `Headline ${i + 1}`)];
+    seed(brief({ google_search: { headlines, descriptions: [] }, google_display: { business_name: longText(26) } }));
+
+    const seeded = lines(pmax()['headlines']);
+    expect(seeded).toHaveLength(15);
+    expect(seeded).not.toContain(longText(31));
+    expect(new Set(seeded).size).toBe(seeded.length);
+    expect(pmax()['businessName']).toBe('');
+  });
+
+  it('keeps one description short enough for the short slot when the brief has one', () => {
+    const wordy = Array.from({ length: 5 }, (_, i) => `${longText(70)} ${i}`);
+    seed(brief({ google_search: { headlines: [], descriptions: wordy }, google_display: { descriptions: ['Register today.'] } }));
+
+    const seeded = lines(pmax()['descriptions']);
+    expect(seeded).toHaveLength(5);
+    expect(seeded).toContain('Register today.');
+  });
+
+  it('seeds from the older demand_gen key too', () => {
+    seed(brief({ demand_gen: { headlines: ['Legacy long headline'], business_name: 'CNCF' } }));
+
+    expect(lines(pmax()['longHeadlines'])).toEqual(['Legacy long headline']);
+    expect(pmax()['businessName']).toBe('CNCF');
+  });
+
+  it('leaves the creative empty, with no prefill notice, when the brief has no generated copy', () => {
+    seed(brief(undefined));
+
+    expect(pmax()['headlines']).toBe('');
+    expect(pmax()['businessName']).toBe('');
+    expect(prefilled()).toBe(false);
+  });
+
+  it('lets a restored draft win over the seed', () => {
+    const draft = {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://events.example.com/kubecon',
+      headlines: [''],
+      descriptions: [''],
+      // The whole group, as `emitDraft` snapshots it: every field is the operator's.
+      googleCreatives: {
+        performanceMaxCreative: {
+          headlines: 'Operator headline',
+          longHeadlines: 'Operator long headline',
+          descriptions: 'Operator description',
+          businessName: 'Operator Co',
+        },
+      },
+    } as unknown as CampaignImplementationDraft;
+    seed(brief(generated), draft);
+
+    expect(pmax()['headlines']).toBe('Operator headline');
+    expect(pmax()['businessName']).toBe('Operator Co');
+    // The operator's copy is not the brief's, so the notice must not claim it is.
+    expect(prefilled()).toBe(false);
+  });
+
+  /** A draft as the parent holds it, with the given Performance Max fields. */
+  function draftWith(performanceMaxCreative: Record<string, string>): CampaignImplementationDraft {
+    return {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://events.example.com/kubecon',
+      headlines: [''],
+      descriptions: [''],
+      googleCreatives: { performanceMaxCreative },
+    } as unknown as CampaignImplementationDraft;
+  }
+
+  it('drops the notice when a restored draft cleared the copy, as the notice invites', () => {
+    seed(brief(generated), draftWith({ headlines: '', longHeadlines: '', descriptions: '', businessName: '' }));
+
+    expect(pmax()['headlines']).toBe('');
+    expect(prefilled()).toBe(false);
+  });
+
+  it('keeps the notice across a round trip that restores the seeded copy unchanged', () => {
+    seed(brief(generated));
+    const seeded = { ...pmax() };
+    fixture.componentRef.setInput('briefData', null);
+    fixture.detectChanges();
+
+    seed(brief(generated), draftWith(seeded));
+
+    expect(prefilled()).toBe(true);
+  });
+
+  it('drops the notice once the operator rewrites the seeded copy', () => {
+    seed(brief(generated));
+    const group = (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['performanceMaxCreative'];
+    group.patchValue({ headlines: 'Mine', longHeadlines: 'Mine too', descriptions: 'Mine as well', businessName: 'Mine Co' });
+
+    expect(prefilled()).toBe(false);
+  });
+
+  it('folds a line break inside one generated value into a space', () => {
+    seed(brief({ google_search: { headlines: ['Join\nKubeCon EU'], descriptions: [] } }));
+
+    expect(lines(pmax()['headlines'])).toEqual(['Join KubeCon EU']);
+  });
+
+  it('reads copy nested under platforms, for Search and Performance Max alike', () => {
+    seed(
+      brief({
+        platforms: { google_search: { headlines: ['Nested headline'], descriptions: ['Nested description'] }, google_display: { business_name: 'CNCF' } },
+      })
+    );
+
+    const searchHeadlines = (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['headlines'].getRawValue();
+    expect(searchHeadlines).toEqual(['Nested headline']);
+    expect(lines(pmax()['headlines'])).toEqual(['Nested headline']);
+    expect(pmax()['businessName']).toBe('CNCF');
+  });
+
+  it('clears the prefill when a brief without copy replaces one with it', () => {
+    seed(brief(generated));
+    seed(brief(undefined));
+
+    expect(pmax()['headlines']).toBe('');
+    expect(prefilled()).toBe(false);
+  });
+
+  it('shows the prefill notice on the Performance Max section when the copy came from the brief', () => {
+    fixture.componentRef.setInput('googleChannelsEnabled', true);
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    seed(brief(generated));
+    (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
+    fixture.detectChanges();
+
+    const notice = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-prefill-notice-performance-max"]');
+    expect(notice?.textContent).toContain('filled in from the brief');
+  });
+});
+
+/**
+ * Pasted Google image URLs are checked in the browser when the operator leaves the field: an
+ * advisory line only, since campaign-service downloads and checks every pasted URL before anything
+ * is created. jsdom never loads an image, so `Image` is a controllable fake.
+ */
+describe('ImplementationTabComponent pasted Google image URL check', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let images: FakeImage[];
+
+  class FakeImage {
+    public onload: (() => void) | null = null;
+    public onerror: (() => void) | null = null;
+    public naturalWidth = 0;
+    public naturalHeight = 0;
+    public src = '';
+    public referrerPolicy = '';
+    public constructor() {
+      images.push(this);
+    }
+    public load(width: number, height: number): void {
+      this.naturalWidth = width;
+      this.naturalHeight = height;
+      this.onload?.();
+    }
+    public fail(): void {
+      this.onerror?.();
+    }
+    /** What the component calls to cancel a download; a real browser stops fetching when `src` goes. */
+    public removeAttribute(name: string): void {
+      if (name === 'src') this.src = '';
+    }
+  }
+
+  const group = GOOGLE_CREATIVE_REQUEST_KEYS.display;
+  const key = `${group}.marketingImages`;
+  const marketingField = (): Record<string, unknown> =>
+    GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'marketingImages') as Record<string, unknown>;
+
+  function setUrls(c: Record<string, any>, value: string): void {
+    c['campaignForm'].controls[group].controls['marketingImages'].setValue(value);
+  }
+
+  function warning(c: Record<string, any>): string | undefined {
+    return (c['googleTypedImageWarnings']() as Record<string, string>)[key];
+  }
+
+  beforeEach(async () => {
+    images = [];
+    vi.stubGlobal('Image', FakeImage);
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('names a pasted image that misses the slot shape, with its measured size', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images.map((i) => i.src)).toEqual(['https://cdn.example.com/square.png']);
+    expect(warning(c)).toBeUndefined();
+
+    images[0].load(300, 300);
+
+    // Only the pixel size is measured here; the requirement, byte cap included, is what the slot needs.
+    expect(warning(c)).toContain('Measured here: https://cdn.example.com/square.png (300x300) does not fit. This slot needs 1.91:1');
+    // "Likely": a browser applies EXIF rotation that campaign-service's decoder does not.
+    expect(warning(c)).toContain('Create will likely be refused for it;');
+    expect(images[0]).toMatchObject({ referrerPolicy: 'no-referrer' });
+  });
+
+  it('says nothing about a pasted image that fits', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/wide.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(1200, 628);
+
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('reports an image that will not load as unchecked, not as wrong', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/hotlinked.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].fail();
+
+    expect(warning(c)).toBe('Could not be loaded here, so not checked: https://cdn.example.com/hotlinked.png. campaign-service checks it again at Create.');
+  });
+
+  it('gives up on a slow host after the timeout, as unchecked', () => {
+    vi.useFakeTimers();
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://slow.example.com/a.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    vi.advanceTimersByTime(GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS - 1);
+    expect(warning(c)).toBeUndefined();
+    vi.advanceTimersByTime(1);
+    expect(warning(c)).toContain('Could not be loaded here');
+    // The timeout cancels the download, so a slow host is not left sending an image nothing reads.
+    expect(images[0].src).toBe('');
+    // A late load after the timeout changes nothing.
+    images[0].load(300, 300);
+    expect(warning(c)).not.toContain('does not fit');
+  });
+
+  it('stops a probe still loading when the tab is destroyed, and records nothing after', () => {
+    vi.useFakeTimers();
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://slow.example.com/a.png');
+    const timersBefore = vi.getTimerCount();
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(vi.getTimerCount()).toBe(timersBefore + 1);
+    const probes = c['googleTypedImageProbes'] as () => Record<string, { state: string }>;
+    expect(probes()['https://slow.example.com/a.png']).toEqual({ state: 'checking' });
+
+    fixture.destroy();
+
+    // Only the probe's own timer is counted: the tab's other timers are not this probe's to clear.
+    expect(vi.getTimerCount()).toBe(timersBefore);
+    expect(images[0].onload).toBeNull();
+    expect(images[0].onerror).toBeNull();
+    expect(images[0].src).toBe('');
+    vi.advanceTimersByTime(GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS);
+    expect(probes()['https://slow.example.com/a.png']).toEqual({ state: 'checking' });
+  });
+
+  it('releases its destroy callback once the answer is in', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const destroyRef = c['destroyRef'] as DestroyRef;
+    const register = destroyRef.onDestroy.bind(destroyRef);
+    const releases: ReturnType<typeof vi.fn>[] = [];
+    vi.spyOn(destroyRef, 'onDestroy').mockImplementation((callback: () => void) => {
+      const release = vi.fn(register(callback));
+      releases.push(release);
+      return release;
+    });
+    setUrls(c, 'https://cdn.example.com/wide.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(releases).toHaveLength(1);
+    expect(releases[0]).not.toHaveBeenCalled();
+
+    images[0].load(1200, 628);
+
+    // One callback per probe would otherwise pile up for the life of the tab.
+    expect(releases[0]).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the warning when the URL is removed', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    expect(warning(c)).toBeDefined();
+
+    setUrls(c, '');
+    expect(warning(c)).toBeUndefined();
+  });
+
+  /**
+   * A settled URL is probed again, so a host that answers differently now is heard. In a real browser a
+   * same-URL replacement may still come back from the cache, which is why this is best effort; here the
+   * fake answers whatever the test loads.
+   */
+  it('probes a settled URL again on the next blur and shows the newer answer', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/hero.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    expect(warning(c)).toContain('(300x300)');
+
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images).toHaveLength(2);
+    // The last answer stays up while the URL is checked again, rather than blanking until it settles.
+    expect(warning(c)).toContain('(300x300)');
+    // Still in flight, so leaving the field again starts no third probe.
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images).toHaveLength(2);
+    images[1].load(1200, 628);
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('retries a URL that could not be loaded', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://flaky.example.com/a.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].fail();
+    expect(warning(c)).toContain('Could not be loaded here');
+
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[1].load(1200, 628);
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('starts one probe for a URL pasted on two lines', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/twice.png\nhttps://cdn.example.com/twice.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+  });
+
+  /** The line appears after focus has left the field, so an always-mounted region announces it. */
+  it('announces the line in a live region that is mounted empty, naming the section and field', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    fixture.detectChanges();
+    const region = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-google-image-url-check-live"]');
+    expect(region()).not.toBeNull();
+    expect(region()?.textContent?.trim()).toBe('');
+    expect(region()?.getAttribute('role')).toBe('status');
+
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    fixture.detectChanges();
+
+    const marketingLabel = (marketingField() as { label: string }).label;
+    expect(region()?.textContent?.trim()).toContain(
+      `${GOOGLE_CREATIVE_SECTION_TITLES.display} ${marketingLabel}: Measured here: https://cdn.example.com/square.png (300x300) does not fit.`
+    );
+    // The visible line carries no role, so the text is read once.
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-url-check-display-marketingImages"]')?.getAttribute('role')
+    ).toBeNull();
+  });
+
+  it('does not start a second probe while one for the same URL is still loading', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/slow.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+  });
+
+  it('names every misfit and every unchecked URL in one line, in the plural', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/a.png\nhttps://cdn.example.com/b.png\nhttps://down.example.com/c.png\nhttps://down.example.com/d.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    images[1].load(100, 52);
+    images[2].fail();
+    images[3].fail();
+
+    const line = warning(c) ?? '';
+    expect(line).toContain('https://cdn.example.com/a.png (300x300), https://cdn.example.com/b.png (100x52) do not fit.');
+    expect(line).toContain('Create will likely be refused for them;');
+    expect(line).toContain('not checked: https://down.example.com/c.png, https://down.example.com/d.png. campaign-service checks them again at Create.');
+  });
+
+  it('probes nothing for a non-image field or a value that is not an http(s) URL', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls[group].controls['headlines'].setValue('https://cdn.example.com/a.png');
+    c['onGoogleImageFieldBlur'](
+      group,
+      GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'headlines')
+    );
+    setUrls(c, 'not a url\nftp://files.example.com/a.png\nlfx-asset:1234');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(0);
+  });
+
+  /** The browser would send the operator's session cookie with it, so a route such as `/logout` would act on the session. */
+  it("never probes a URL on the application's own host, whatever its scheme, port or trailing dot", () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const host = window.location.hostname;
+    setUrls(
+      c,
+      `${window.location.origin}/logout\nhttp://${host}/logout\nhttps://${host}:8443/logout\nhttps://${host.toUpperCase()}./logout\nhttps://cdn.example.com/hero.png`
+    );
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+    expect(images[0].src).toBe('https://cdn.example.com/hero.png');
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('probes on leaving the textarea and renders the line under the field', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    fixture.detectChanges();
+    const textarea = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="implementation-creative-display-marketingImages"]'
+    ) as HTMLTextAreaElement;
+    textarea.dispatchEvent(new Event('blur'));
+    images[0].load(300, 300);
+    fixture.detectChanges();
+
+    const line = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-url-check-display-marketingImages"]');
+    expect(line?.textContent).toContain('(300x300)');
+  });
+});
+
+/**
+ * The Google budget is DAILY (#4847). campaign-service creates it with no period, which Google treats
+ * as daily, so the brief's planning TOTAL is divided over the flight the tab opens with, and the
+ * flight total the daily figure implies is shown beside it.
+ */
+describe('ImplementationTabComponent google daily budget', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let c: Record<string, any>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    c = fixture.componentInstance as unknown as Record<string, any>;
+  });
+
+  /** Mount a brief through the real `populateFromBrief` path, with no draft to restore over it. */
+  function mountBrief(patch: Record<string, unknown>): void {
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      ...patch,
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  const text = (testId: string): string | null =>
+    (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+
+  it('labels the field as a daily budget', () => {
+    mountBrief({ totalBudget: 900 });
+
+    const label = (fixture.nativeElement as HTMLElement).querySelector('label[for="implementation-budget"]');
+    expect(label?.textContent?.trim()).toBe('Google Ads Daily Budget');
+  });
+
+  it("seeds the daily budget from the brief's total divided over the opening flight", () => {
+    mountBrief({ totalBudget: 900 });
+
+    // The tab opens on today to today + 30: 31 days with both ends counted, and 900 / 31 = 29.03 rounded down.
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(29.03);
+    expect(text('implementation-budget-hint')).toBe(
+      "An average daily amount, in the ad account's currency. About 899.93 over 31 days, start and end days included. The brief plans 900 in total."
+    );
+  });
+
+  it.each([[null], [undefined], [0], [-50]])('opens on the default daily budget when the brief total is %j', (totalBudget) => {
+    mountBrief({ totalBudget });
+
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(DEFAULT_GOOGLE_DAILY_BUDGET_USD);
+    expect(c['googleBriefTotalBudget']()).toBeNull();
+    expect(text('implementation-budget-hint')).not.toContain('The brief plans');
+  });
+
+  it('keeps a seeded daily figure below one rather than rounding it up past the plan', () => {
+    mountBrief({ totalBudget: 10 });
+
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(0.32);
+    expect(text('implementation-budget-error')).toBe('Enter a daily budget of at least 1.');
+  });
+
+  it('recomputes the flight total as the budget and dates change', () => {
+    mountBrief({ totalBudget: 900 });
+
+    c['campaignForm'].patchValue({ budgetUsd: 10, startDate: '2026-12-01', endDate: '2026-12-10' });
+    fixture.detectChanges();
+    expect(text('implementation-budget-hint')).toContain('About 100 over 10 days, start and end days included.');
+
+    c['campaignForm'].patchValue({ endDate: '2026-12-01' });
+    fixture.detectChanges();
+    expect(text('implementation-budget-hint')).toContain('About 10 over 1 day, start and end days included.');
+  });
+
+  it.each([
+    ['an emptied budget', { budgetUsd: null }],
+    ['an end before the start', { startDate: '2026-12-10', endDate: '2026-12-01' }],
+    ['an emptied date', { endDate: '' }],
+  ])('drops the flight total for %s', (_label, patch) => {
+    mountBrief({ totalBudget: 900 });
+
+    c['campaignForm'].patchValue(patch);
+    fixture.detectChanges();
+
+    expect(c['googleBudgetFlight']()).toBeNull();
+    expect(text('implementation-budget-hint')).not.toContain('About');
+  });
+
+  it.each([[null], [0], [0.5]])('names the minimum under the field for a daily budget of %j', (budgetUsd) => {
+    mountBrief({ totalBudget: 900 });
+
+    c['campaignForm'].patchValue({ budgetUsd });
+    fixture.detectChanges();
+
+    expect(text('implementation-budget-error')).toBe('Enter a daily budget of at least 1.');
+  });
+
+  it('shows no budget error at the minimum', () => {
+    mountBrief({ totalBudget: 900 });
+
+    c['campaignForm'].patchValue({ budgetUsd: 1 });
+    fixture.detectChanges();
+
+    expect(text('implementation-budget-error')).toBeNull();
+  });
+
+  it("drops the previous brief's planned total when a brief without one is handed over", () => {
+    mountBrief({ totalBudget: 900 });
+    expect(text('implementation-budget-hint')).toContain('The brief plans 900 in total.');
+
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'OSS NA 2027', slug: 'oss-na-2027', registrationUrl: 'https://example.org', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(DEFAULT_GOOGLE_DAILY_BUDGET_USD);
+    expect(text('implementation-budget-hint')).not.toContain('The brief plans');
+  });
+
+  it('shows neither the field nor its error when Google is not selected', () => {
+    // A total this small seeds a daily figure below the minimum, which would show the error.
+    mountBrief({ totalBudget: 10, selectedPlatforms: ['meta-ads'] });
+
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(0.32);
+    expect(text('implementation-budget-hint')).toBeNull();
+    expect(text('implementation-budget-error')).toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget"]')).toBeNull();
+  });
+
+  it('sends the daily figure on screen, not the brief total', () => {
+    const seeded = seedChannel(fixture, { includeSearch: true });
+    seeded['campaignForm'].patchValue({ budgetUsd: 29.03 });
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: '' }) as never);
+
+    seeded['submit']();
+
+    expect(createCampaign).toHaveBeenCalledTimes(1);
+    expect(createCampaign.mock.calls[0][0]).toMatchObject({ budgetUsd: 29.03 });
+  });
+
+  /** The error is announced with the field, not only shown under it (#4848, review of #4852). */
+  it('ties the budget error to the field only while it shows', () => {
+    mountBrief({ totalBudget: 900 });
+    const input = (): HTMLElement => (fixture.nativeElement as HTMLElement).querySelector('#implementation-budget') as HTMLElement;
+
+    expect(input().getAttribute('aria-describedby')).toBe('implementation-budget-hint');
+    expect(input().getAttribute('aria-invalid')).toBeNull();
+
+    c['campaignForm'].patchValue({ budgetUsd: 0 });
+    fixture.detectChanges();
+    expect(input().getAttribute('aria-describedby')).toBe('implementation-budget-hint implementation-budget-error');
+    expect(input().getAttribute('aria-invalid')).toBe('true');
+    expect((fixture.nativeElement as HTMLElement).querySelector('#implementation-budget-error')?.textContent?.trim()).toBe(
+      'Enter a daily budget of at least 1.'
+    );
+  });
+});
+
+describe('ImplementationTabComponent google flight and keywords', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  const text = (testId: string): string | null =>
+    (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+
+  /** #4848: Google refuses an end before the start, and the operator saw only the generic failure. */
+  it('names an end date before the start and holds Create', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    expect(c['canSubmit']()).toBe(true);
+
+    c['campaignForm'].patchValue({ startDate: '2026-12-10', endDate: '2026-12-09' });
+    fixture.detectChanges();
+
+    expect(text('implementation-google-flight-error')).toBe('Google needs the end date (2026-12-09) on or after the start date (2026-12-10).');
+    expect(c['canSubmit']()).toBe(false);
+    const end = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-end-date"]') as HTMLElement;
+    expect(end.getAttribute('aria-describedby')).toBe('implementation-google-flight-error');
+    expect(end.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  /** Google accepts a same-day flight, so it is not refused here. */
+  it('accepts a same-day flight', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].patchValue({ startDate: '2026-12-10', endDate: '2026-12-10' });
+    fixture.detectChanges();
+
+    expect(c['googleFlightError']()).toBeNull();
+    expect(text('implementation-google-flight-error')).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /** The Google rule only: the other platforms judge the window by their own rules. */
+  it('says nothing about the flight when Google is not selected', () => {
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['meta-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].patchValue({ startDate: '2026-12-10', endDate: '2026-12-09' });
+    fixture.detectChanges();
+
+    expect(c['googleFlightError']()).toBeNull();
+    expect(text('implementation-google-flight-error')).toBeNull();
+  });
+
+  /** #4848: zero keywords creates a Search campaign that can never serve. */
+  it.each([
+    ['no keywords', []],
+    [
+      'only blank keywords',
+      [
+        { ...SEED_KEYWORD, term: '   ' },
+        { ...SEED_KEYWORD, term: '' },
+      ],
+    ],
+  ])('holds a Search create whose brief has %s, and says why', (_label, keywords) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['briefKeywords'].set(keywords);
+    fixture.detectChanges();
+
+    expect(text('implementation-google-search-keywords-error')).toBe(
+      'Search needs at least one keyword to serve, and this brief has none filled in. Choose another campaign type, or give the brief keywords first.'
+    );
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /** Only Search carries keywords upstream, so another type is not held for having none. */
+  it('does not hold a non-Search create for having no keywords', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['briefKeywords'].set([]);
+    c['campaignForm'].controls.displayCreative.patchValue(DISPLAY_COMPLETE);
+    fixture.detectChanges();
+
+    expect(c['googleSearchKeywordsError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /** A blank term is dropped from the request rather than refused upstream with the generic failure. */
+  it('sends only the keywords with a term', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['briefKeywords'].set([{ ...SEED_KEYWORD, term: ' ' }, SEED_KEYWORD]);
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: '' }) as never);
+
+    c['submit']();
+
+    expect(createCampaign).toHaveBeenCalledTimes(1);
+    expect(createCampaign.mock.calls[0][0]).toMatchObject({ keywords: [SEED_KEYWORD] });
+  });
+});
+
+/**
+ * #4983. The Implement tab names the campaigns already created for this event, keeps a failed or
+ * lagging read from reading as "none", and says before Create Another what a repeat create on a
+ * platform that already has a campaign really does.
+ */
+describe('ImplementationTabComponent already created for this event', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const brief = {
+    eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US' },
+    selectedPlatforms: ['google-ads'],
+  } as unknown as CampaignBriefOutput;
+
+  const doc = (id: string, platform: string, status: string, slot?: number): CampaignIndexDoc =>
+    ({
+      id,
+      project_id: 'tlf',
+      brief_id: 'b-1',
+      platform,
+      campaign_name: `KubeCon EU 2026 | ${platform} | ${id}`,
+      status,
+      version: 1,
+      platform_campaign_id: `pc-${id}`,
+      ...(slot === undefined ? {} : { slot_version: slot }),
+    }) as CampaignIndexDoc;
+
+  const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+  function setList(campaigns: CampaignIndexDoc[] | null, stale = false, unavailable = false, loading = false): void {
+    fixture.componentRef.setInput('briefCampaigns', campaigns);
+    fixture.componentRef.setInput('briefCampaignsStale', stale);
+    fixture.componentRef.setInput('briefCampaignsUnavailable', unavailable);
+    fixture.componentRef.setInput('briefCampaignsLoading', loading);
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.componentRef.setInput('briefData', brief);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('lists the live campaigns with platform, name, status and slot, and counts them per platform', () => {
+    setList([
+      doc('g1', 'google-ads', 'active', 1),
+      doc('g2', 'google-ads', 'paused'),
+      doc('r1', 'reddit-ads', 'created_degraded', 2),
+      doc('gone', 'google-ads', 'deleted', 3),
+    ]);
+
+    expect(q('implementation-existing-campaigns')).not.toBeNull();
+    const rows = (fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid^="implementation-existing-row-"]');
+    expect(rows).toHaveLength(3);
+    expect(q('implementation-existing-row-gone'), 'a deleted campaign was listed as already created').toBeNull();
+    const cells = (id: string): string[] =>
+      [...(q(`implementation-existing-row-${id}`)?.querySelectorAll('td') ?? [])].map((td) => td.textContent?.trim() ?? '');
+    expect(cells('g1')).toEqual(['Google Ads', 'KubeCon EU 2026 | google-ads | g1', 'active', '1', '—', '—', '—', '—']);
+    // No slot recorded (indexed before the field existed) reads as unknown, not as slot 1.
+    expect(cells('g2')[3]).toBe('—');
+    expect(cells('r1')).toEqual(['Reddit Ads', 'KubeCon EU 2026 | reddit-ads | r1', 'created degraded', '2', '—', '—', '—', '—']);
+
+    expect(q('implementation-existing-notice-google-ads')?.textContent?.trim()).toBe('You already have 2 Google Ads campaigns for this event.');
+    expect(q('implementation-existing-notice-reddit-ads')?.textContent?.trim()).toBe('You already have 1 Reddit Ads campaign for this event.');
+  });
+
+  /** #4983 ("ss-4"): the labels that tell a second campaign from the first, "—" on a legacy row. */
+  it('shows the channel, stage, tactic and created date of each campaign, and "—" where none is recorded', () => {
+    setList([
+      { ...doc('g1', 'google-ads', 'active', 1), variant: 'default' },
+      {
+        ...doc('g2', 'google-ads', 'active', 2),
+        variant: 'default',
+        funnel_stage: 'lower',
+        tactic: 'retargeting',
+        created_at: '2026-11-02T12:00:00Z',
+      },
+    ]);
+
+    const labels = (id: string): string[] =>
+      ['channel', 'stage', 'tactic', 'created'].map((column) => q(`implementation-existing-${column}-${id}`)?.textContent?.trim() ?? 'missing');
+    // The viewer's own calendar day, so the assertion holds in any CI time zone.
+    expect(labels('g2')).toEqual([
+      'Search',
+      'Lower funnel',
+      'Retargeting',
+      new Date('2026-11-02T12:00:00Z').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+    ]);
+    expect(labels('g1')).toEqual(['Search', '—', '—', '—']);
+    const headings = [...((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid="implementation-existing-table"] th') ?? [])].map((th) =>
+      th.textContent?.trim()
+    );
+    expect(headings).toEqual(['Platform', 'Name', 'Status', 'Slot', 'Channel', 'Stage', 'Tactic', 'Created']);
+  });
+
+  it('scrolls the eight-column table inside the card rather than widening the page', () => {
+    setList([doc('g1', 'google-ads', 'active', 1)]);
+    expect(q('implementation-existing-table-scroll')?.classList.contains('overflow-x-auto')).toBe(true);
+    expect(q('implementation-existing-table-scroll')?.querySelector('[data-testid="implementation-existing-table"]')).not.toBeNull();
+  });
+
+  it("leaves the created date to the browser during a server render, so the server's day is never shown", async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: PLATFORM_ID, useValue: 'server' },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.componentRef.setInput('briefData', brief);
+    setList([{ ...doc('g2', 'google-ads', 'active', 2), variant: 'default', funnel_stage: 'lower', created_at: '2026-11-02T12:00:00Z' }]);
+
+    expect(q('implementation-existing-created-g2')?.textContent?.trim()).toBe('—');
+    expect(q('implementation-existing-stage-g2')?.textContent?.trim()).toBe('Lower funnel');
+  });
+
+  it('says a failed read failed, with Retry, instead of rendering as "nothing created"', () => {
+    setList(null, false, true);
+    const retry = vi.fn();
+    fixture.componentInstance.retryBriefCampaigns.subscribe(retry);
+
+    expect(q('implementation-existing-unavailable')?.textContent).toContain('could not be loaded');
+    expect(q('implementation-existing-campaigns')).toBeNull();
+    q('implementation-existing-retry')?.querySelector('button')?.click();
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('says an empty but possibly stale answer may be missing recent campaigns, and shows nothing for a fresh empty one', () => {
+    setList([], true);
+    expect(q('implementation-existing-stale')?.textContent).toContain('may not be listed yet');
+
+    setList([], false);
+    expect(q('implementation-existing-stale')).toBeNull();
+    expect(q('implementation-existing-campaigns')).toBeNull();
+
+    // Not loaded and not loading: nothing to say, so no panel and no caveat.
+    setList(null, false);
+    expect(q('implementation-existing-campaigns')).toBeNull();
+    expect(q('implementation-existing-stale')).toBeNull();
+    expect(q('implementation-existing-loading')).toBeNull();
+  });
+
+  it('says it is checking while the list is being read, rather than showing nothing', () => {
+    setList(null, false, false, true);
+    expect(q('implementation-existing-loading')?.textContent).toContain('Checking for campaigns already created');
+    expect(q('implementation-existing-campaigns')).toBeNull();
+  });
+
+  it('says before Create Another that a platform with a campaign returns it rather than making a second', () => {
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('results');
+    setList([doc('g1', 'google-ads', 'active', 1), doc('gone', 'reddit-ads', 'deleted', 1), doc('claim', 'meta-ads', 'pending', 1)]);
+
+    const notice = q('implementation-create-another-notice')?.textContent ?? '';
+    expect(notice).toContain('Creating the same campaign again on Google Ads returns the one already created there');
+    expect(notice, 'a deleted campaign was counted as one campaign-service returns').not.toContain('Reddit');
+    expect(notice, 'a pending claim was counted as one campaign-service returns').not.toContain('Meta');
+
+    setList([]);
+    expect(q('implementation-create-another-notice')).toBeNull();
+  });
+
+  it('names the platforms the job just created, before the list has caught up', () => {
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('results');
+    (fixture.componentInstance as unknown as { platformResults: { set(v: unknown): void } }).platformResults.set([
+      { platform: 'microsoft-ads', ok: true },
+      { platform: 'reddit-ads', ok: false, error: 'refused' },
+    ]);
+    setList(null, false, false, true);
+
+    const notice = q('implementation-create-another-notice')?.textContent ?? '';
+    expect(notice).toContain('Microsoft Ads');
+    expect(notice, 'a failed platform was named as created').not.toContain('Reddit');
+  });
+
+  it.each([
+    ['an outcome', (): Observable<CampaignJobOutcome | null> => of({ campaigns: [], platformResults: [], errors: [] } as unknown as CampaignJobOutcome)],
+    ['a lost poll', (): Observable<CampaignJobOutcome | null> => throwError(() => new Error('lost'))],
+    ['a poll that runs out', (): Observable<CampaignJobOutcome | null> => EMPTY],
+  ])('asks the parent to re-read the list once when a create job settles with %s', (_label, answer) => {
+    vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(answer());
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('creating');
+    const settled = vi.fn();
+    fixture.componentInstance.createJobSettled.subscribe(settled);
+
+    (fixture.componentInstance as unknown as { pollJob(jobId: string, projectSlug: string): void }).pollJob('job-1', 'tlf');
+
+    expect(settled).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * #4983 ("ss-3"). A deliberate second campaign on a platform that already has one: offered only where
+ * the deployment allows it, labelled by funnel stage, confirmed every time, and sent with the slot
+ * version the operator saw for the SAME slot (for Google, the same channel).
+ */
+describe('ImplementationTabComponent create another campaign', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let dialogClose: Subject<boolean | undefined>;
+  let dialogOpen: ReturnType<typeof vi.fn>;
+  let createCampaign: MockInstance<CampaignService['createCampaign']>;
+
+  const doc = (id: string, slot: number, variant = 'default', status = 'active', platformCampaignId: string | undefined = `pc-${id}`): CampaignIndexDoc =>
+    ({
+      id,
+      project_id: 'tlf',
+      brief_id: 'b-1',
+      platform: 'google-ads',
+      platform_campaign_id: platformCampaignId,
+      campaign_name: `KubeCon | ${id}`,
+      status,
+      version: 1,
+      slot_version: slot,
+      variant,
+    }) as CampaignIndexDoc;
+
+  interface Internals {
+    selectedPlatforms: { set(v: string[]): void };
+    briefKeywords: { set(v: unknown[]): void };
+    campaignForm: { controls: Record<string, { setValue(v: unknown): void }>; get(name: string): { controls: { setValue(v: unknown): void }[] } | null };
+    canSubmit(): boolean;
+    submit(): void;
+    anotherForm: { controls: { stage: { setValue(v: string | null): void; value: string | null }; tactic: { setValue(v: string | null): void } } };
+    step: { set(v: string): void };
+    platformResults: { set(v: unknown): void };
+    rememberSlotVersions(results: unknown[]): void;
+  }
+  const c = (): Internals => fixture.componentInstance as unknown as Internals;
+  const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+  function makeGoogleSearchValid(): void {
+    c().selectedPlatforms.set(['google-ads']);
+    c().briefKeywords.set([SEED_KEYWORD]);
+    c().campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c().campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
+    c().campaignForm.controls['startDate'].setValue('2026-09-01');
+    c().campaignForm.controls['endDate'].setValue('2026-09-30');
+    c().campaignForm.controls['includeSearch'].setValue(true);
+    c().campaignForm.controls['includeDemandGen'].setValue(false);
+    c()
+      .campaignForm.get('headlines')
+      ?.controls.forEach((ctrl) => ctrl.setValue('Attend KubeCon'));
+    c()
+      .campaignForm.get('descriptions')
+      ?.controls.forEach((ctrl) => ctrl.setValue('Join us in September'));
+    fixture.detectChanges();
+  }
+
+  function setLists(campaigns: CampaignIndexDoc[], allowed: string[]): void {
+    fixture.componentRef.setInput('briefCampaigns', campaigns);
+    fixture.componentRef.setInput('multiCampaignPlatforms', allowed);
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    dialogClose = new Subject<boolean | undefined>();
+    dialogOpen = vi.fn(() => ({ onClose: dialogClose }));
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    })
+      .overrideComponent(ImplementationTabComponent, { set: { providers: [{ provide: DialogService, useValue: { open: dialogOpen } }] } })
+      .compileComponents();
+    createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(NEVER);
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true } as CampaignBriefPersistenceState);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    makeGoogleSearchValid();
+  });
+
+  it('offers it only on a platform the deployment allows, and leaves a plain retry alone elsewhere', () => {
+    setLists([doc('g1', 1)], []);
+    expect(q('implementation-create-another')).toBeNull();
+    expect(c().canSubmit(), 'a repeat create where another is not offered must stay a retry').toBe(true);
+
+    setLists([doc('g1', 1)], ['google-ads']);
+    expect(q('implementation-create-another')).not.toBeNull();
+  });
+
+  it('requires a funnel stage before the create can go', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    expect(c().canSubmit()).toBe(false);
+    expect(q('implementation-create-another-block')?.textContent).toContain('Choose a funnel stage');
+
+    c().anotherForm.controls.stage.setValue('mid');
+    fixture.detectChanges();
+    expect(c().canSubmit()).toBe(true);
+  });
+
+  it('refuses a create that mixes a platform being created again with one that is not', () => {
+    setLists([doc('g1', 1)], ['google-ads', 'microsoft-ads']);
+    c().anotherForm.controls.stage.setValue('mid');
+    c().selectedPlatforms.set(['google-ads', 'microsoft-ads']);
+    fixture.detectChanges();
+
+    expect(c().canSubmit()).toBe(false);
+    expect(q('implementation-create-another-block')?.textContent).toContain('can only include platforms that already have one');
+  });
+
+  it('confirms first, then sends the latest slot version of the same channel with the stage and tactic', () => {
+    // Search (the default slot) is at version 2; a Demand Gen campaign on its own slot is ignored.
+    setLists([doc('g1', 1), doc('g2', 2), doc('dg', 5, 'demand-gen')], ['google-ads']);
+    c().anotherForm.controls.stage.setValue('mid');
+    c().anotherForm.controls.tactic.setValue('retargeting');
+    fixture.detectChanges();
+
+    c().submit();
+    expect(dialogOpen).toHaveBeenCalledTimes(1);
+    expect(createCampaign, 'nothing may be sent before the operator confirms').not.toHaveBeenCalled();
+
+    dialogClose.next(true);
+
+    expect(createCampaign).toHaveBeenCalledTimes(1);
+    expect(createCampaign.mock.calls[0][0].another).toEqual({ funnelStage: 'mid', tactic: 'retargeting', expectedSlotVersions: { 'google-ads': 2 } });
+  });
+
+  it('sends nothing when the confirmation is dismissed', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().anotherForm.controls.stage.setValue('top');
+    fixture.detectChanges();
+
+    c().submit();
+    dialogClose.next(false);
+
+    expect(createCampaign).not.toHaveBeenCalled();
+  });
+
+  it("expects past this tab's own job when the list has not caught up yet", () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 3, variant: 'default' }]);
+    c().anotherForm.controls.stage.setValue('lower');
+    fixture.detectChanges();
+
+    c().submit();
+    dialogClose.next(true);
+
+    expect(createCampaign.mock.calls[0][0].another?.expectedSlotVersions).toEqual({ 'google-ads': 3 });
+  });
+
+  it('keeps a first campaign on a new Google channel a plain create', () => {
+    // Search has a campaign; Demand Gen is a different slot with none, so there is nothing to add another to.
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().campaignForm.controls['includeSearch'].setValue(false);
+    c().campaignForm.controls['includeDemandGen'].setValue(true);
+    fixture.detectChanges();
+
+    expect(q('implementation-create-another'), 'a first Demand Gen campaign was forced into create-another').toBeNull();
+    expect(q('implementation-create-another-block')).toBeNull();
+  });
+
+  it('leaves an unfinished latest campaign to a plain retry, which is what reconciles it', () => {
+    setLists([doc('g1', 1), doc('g2', 2, 'default', 'pending', undefined)], ['google-ads']);
+
+    expect(q('implementation-create-another')).toBeNull();
+    expect(c().canSubmit()).toBe(true);
+  });
+
+  it('forgets the slots it saw when the brief changes', () => {
+    setLists([], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 1, variant: 'default' }]);
+    fixture.detectChanges();
+    expect(q('implementation-create-another')).not.toBeNull();
+
+    fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-2', message: null, approved: true } as CampaignBriefPersistenceState);
+    fixture.detectChanges();
+    expect(q('implementation-create-another'), "another brief's slot was treated as this one's").toBeNull();
+  });
+
+  it('heads the results as returned, not created, when every campaign came back existing', () => {
+    c().step.set('results');
+    c().platformResults.set([{ platform: 'google-ads', ok: true, campaignId: '9', reused: true }]);
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).toBe('Existing Campaigns Returned');
+  });
+
+  it('does not head a reused row beside an unconfirmed one as if every campaign already existed', () => {
+    c().step.set('results');
+    c().platformResults.set([
+      { platform: 'google-ads', ok: true, campaignId: '9', reused: true },
+      { platform: 'microsoft-ads', ok: false, error: 'campaign-service did not answer in time' },
+    ]);
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).not.toBe('Existing Campaigns Returned');
+  });
+
+  it('labels a campaign this tab just created with the stage and tactic its job reported', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 2, variant: 'default', funnelStage: 'mid', tactic: 'keyword' }]);
+    c().anotherForm.controls.stage.setValue('top');
+    fixture.detectChanges();
+
+    c().submit();
+    const existing = (dialogOpen.mock.calls[0] as unknown as [unknown, { data: { existing: { slot: string; labels: unknown }[] } }])[1].data.existing;
+    expect(existing.find((row) => row.slot === '2')?.labels).toEqual({ channel: 'Search', stage: 'Mid funnel', tactic: 'Keyword', created: '—' });
+  });
+
+  it('heads a reused row beside a proven pre-create failure as both, not as unconfirmed', () => {
+    c().step.set('results');
+    c().platformResults.set([
+      { platform: 'google-ads', ok: true, campaignId: '9', reused: true },
+      { platform: 'reddit-ads', ok: false, error: 'reddit-ads refused the request (HTTP 400) before anything was created; nothing was created' },
+    ]);
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).toBe(
+      'Existing Campaigns Returned; Nothing Else Created'
+    );
+  });
+
+  it('lists a campaign this tab just created in the confirmation, before the index shows it', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 2, variant: 'default' }]);
+    c().anotherForm.controls.stage.setValue('top');
+    fixture.detectChanges();
+
+    c().submit();
+    const existing = (dialogOpen.mock.calls[0] as unknown as [unknown, { data: { existing: { id: string; slot: string }[] } }])[1].data.existing;
+    expect(existing.map((row) => row.slot)).toEqual(['1', '2']);
+  });
+
+  it('matches a Google campaign indexed before channels were recorded to no channel, leaving a plain create', () => {
+    const legacy = { ...doc('g1', 1) } as CampaignIndexDoc;
+    delete legacy.variant;
+    setLists([legacy], ['google-ads']);
+
+    expect(q('implementation-create-another'), 'an unlabelled Google campaign was read as Search').toBeNull();
+    expect(c().canSubmit()).toBe(true);
+  });
+
+  it('stops expecting a slot this tab saw once the list shows that campaign deleted', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 2, variant: 'default' }]);
+    setLists([doc('g1', 1), doc('g2', 2, 'default', 'deleted')], ['google-ads']);
+    c().anotherForm.controls.stage.setValue('mid');
+    fixture.detectChanges();
+
+    c().submit();
+    dialogClose.next(true);
+
+    expect(createCampaign.mock.calls[0][0].another?.expectedSlotVersions).toEqual({ 'google-ads': 1 });
+  });
+
+  it('keeps the chosen stage shown when the pickers are hidden and shown again', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().anotherForm.controls.stage.setValue('lower');
+    fixture.detectChanges();
+    setLists([], ['google-ads']);
+    expect(q('implementation-create-another')).toBeNull();
+    setLists([doc('g1', 1)], ['google-ads']);
+
+    // What the picker DISPLAYS, whichever control renders it: a native select's chosen option or the select's label.
+    const host = q('implementation-another-stage');
+    const shown = host?.querySelector('select')?.selectedOptions[0]?.textContent ?? host?.querySelector('.p-select-label')?.textContent;
+    expect(shown?.trim()).toBe('Lower funnel (conversion)');
+    expect(c().canSubmit()).toBe(true);
+  });
+
+  it('says when campaign-service returned an existing campaign instead of creating one', () => {
+    c().step.set('results');
+    c().platformResults.set([{ platform: 'google-ads', ok: true, campaignId: '9', reused: true, funnelStage: 'mid' }]);
+    fixture.detectChanges();
+
+    expect(q('implementation-platform-result-reused')?.textContent?.trim()).toBe('Existing mid-funnel campaign returned; nothing new was created.');
   });
 });

@@ -164,11 +164,18 @@ describe('MeetingService registrant payload mapping', () => {
       expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('user_id');
     });
 
-    // `username` and `avatar_url` are derived from the linked user, and the Edit Guest form never sent them.
-    it('never sends the username or avatar a listed guest carries', () => {
-      const body = service.getChangedFields(registrant({ state: 'modified', username: 'guest-a', avatar_url: 'https://avatars.example/guest-a.png' }));
+    // ITX rejects an update whose `username` differs from the stored one, and a blank counts as different when a
+    // username is stored. It is checked after `user_id`, so it matters once that is sent.
+    it('sends back the username a listed guest has, and omits it when there is none', () => {
+      expect(service.getChangedFields(registrant({ state: 'modified', username: 'guest-a' })).username).toBe('guest-a');
+      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('username');
+      expect(service.getChangedFields(registrant({ state: 'modified', username: null }))).not.toHaveProperty('username');
+    });
 
-      expect(body).not.toHaveProperty('username');
+    // The avatar is derived from the linked user and ITX does not compare it.
+    it('never sends the avatar a listed guest carries', () => {
+      const body = service.getChangedFields(registrant({ state: 'modified', avatar_url: 'https://avatars.example/guest-a.png' }));
+
       expect(body).not.toHaveProperty('avatar_url');
     });
   });

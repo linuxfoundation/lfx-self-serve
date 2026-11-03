@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, DOCUMENT, NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, OnInit, output, Signal, signal } from '@angular/core';
+import { DecimalPipe, DOCUMENT, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
+import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, OnInit, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type {
   BriefMetrics,
@@ -101,6 +102,7 @@ import {
   campaignActionItemLever,
   campaignBiddingSummary,
   campaignEtagVersion,
+  campaignLabelColumns,
   keywordActionKey,
   keywordIdentityKey,
   metaAdSetCampaignEligibility,
@@ -169,6 +171,11 @@ export class OptimizationTabComponent implements OnInit {
   // constructor, and the editor it focuses is rendered by this template a tick after it opens.
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
+  /**
+   * The zone a campaign's Created date is dated in: the viewer's own in the browser (`undefined`), and none
+   * during a server render (`null`, shown as "—"), so the server's UTC day is never rendered (#4983).
+   */
+  private readonly labelTimeZone: null | undefined = isPlatformBrowser(inject(PLATFORM_ID)) ? undefined : null;
 
   /**
    * The campaigns this brief created, or `null` when the list has not been loaded.
@@ -605,6 +612,8 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly loading = signal(false);
   protected readonly monitorData = signal<CampaignMonitorResponse | null>(null);
   protected readonly error = signal<string | null>(null);
+  /** The Google read was refused for the caller's role (a 403, #4837). Retrying repeats the refusal, so no Retry is offered. */
+  protected readonly errorRefused = signal(false);
   /**
    * The Google Ads monitor was refused because the customer is shared by every foundation
    * (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`, lfx-self-serve-ops#54): a notice in place of the action
@@ -620,6 +629,15 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly actionItems = computed(() => this.monitorData()?.actionItems ?? []);
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
   protected readonly hasActionItems = computed(() => this.actionItems().length > 0);
+  /** True when the Google monitor's amounts are a connected account's own, unnamed currency (#4807): printed without `$`. */
+  protected readonly googleAmountsInAccountCurrency = computed(() => this.monitorData()?.amountsInAccountCurrency === true);
+  /** The same for the Google keyword read, which campaign-service also reports unconverted. */
+  protected readonly keywordAmountsInAccountCurrency = computed(() => this.keywordsData()?.amountsInAccountCurrency === true);
+  /**
+   * Google campaigns campaign-service could not read (#4526). It raises no action items for them, so
+   * "no action items" is not an all-clear while any exists; the template says so instead.
+   */
+  protected readonly unreadCampaignCount = computed(() => this.campaigns().filter((c) => c.fetchFailed === true).length);
   protected readonly hasCampaigns = computed(() => this.campaigns().length > 0);
   protected readonly pulledAt = computed(() => this.monitorData()?.pulledAt ?? '');
 
@@ -636,11 +654,21 @@ export class OptimizationTabComponent implements OnInit {
     return all.filter((k) => k.qualityScore !== null && k.qualityScore <= 4).sort((a, b) => (a.qualityScore ?? 0) - (b.qualityScore ?? 0));
   });
 
+  /**
+   * The non-Search campaigns, lowest CTR first. On the campaign-service path (#4526) a row campaign-service
+   * could not read carries zero placeholders, so it is left out rather than ranked as a 0% CTR, and a row
+   * it could not pace shows "Unknown" with an empty bar rather than a measured 0%. The legacy read sets
+   * neither flag, so its rows are unchanged.
+   */
   protected readonly displayCampaigns = computed(() => {
     return this.campaigns()
-      .filter((c) => !c.adFormat.toLowerCase().includes('search'))
+      .filter((c) => !c.adFormat.toLowerCase().includes('search') && c.fetchFailed !== true)
       .sort((a, b) => a.ctr - b.ctr)
-      .map((c) => ({ ...c, displayPacingPct: Math.min(c.pacingPct, 100) }));
+      .map((c) => ({
+        ...c,
+        displayPacingPct: c.pacingUnknown === true ? 0 : Math.min(c.pacingPct, 100),
+        displayPacingText: c.pacingUnknown === true ? 'Unknown' : `${c.pacingPct}%`,
+      }));
   });
 
   /**
@@ -736,6 +764,7 @@ export class OptimizationTabComponent implements OnInit {
         status,
         action,
         conflicted,
+        labels: campaignLabelColumns(campaign, this.labelTimeZone),
         unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported, campaign.platform) : '',
         toggleLabel: CAMPAIGN_TOGGLE_LABELS[action],
         describedBy: this.describedByFor(campaign.id, action, toggleErrors, resumeAdopted),
@@ -1632,6 +1661,7 @@ export class OptimizationTabComponent implements OnInit {
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.errorRefused.set(err instanceof HttpErrorResponse && err.status === 403);
           this.error.set(extractErrorMessage(err, 'Failed to load optimization data'));
         },
       });

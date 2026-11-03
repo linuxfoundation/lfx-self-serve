@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { Observable, of, throwError } from 'rxjs';
+import { NEVER, Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteLinkBallotComponent } from './vote-link-ballot.component';
@@ -104,6 +104,21 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(testId('vote-link-invalid')?.textContent).toContain('This link is invalid or has expired');
   });
 
+  it('shows the LFX mark linking to a plain / on the invalid-link state (#4753)', async () => {
+    await open(of(BALLOT), '');
+
+    expect(testId('vote-link-lfx-mark')).not.toBeNull();
+    expect(testId('vote-link-lfx-mark-link')?.getAttribute('href')).toBe('/');
+  });
+
+  it('shows the LFX mark linking to a plain / while the ballot is loading, with nothing token-derived in the page (#4753)', async () => {
+    await open(NEVER);
+
+    expect(state()).toBe('loading');
+    expect(testId('vote-link-lfx-mark-link')?.getAttribute('href')).toBe('/');
+    expect(fixture.nativeElement.innerHTML).not.toContain(TOKEN);
+  });
+
   it('renders the vote and form for an active vote with title and description only, no identity chrome', async () => {
     await open(of(BALLOT));
 
@@ -111,6 +126,98 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(testId('vote-link-description')).not.toBeNull();
     expect(testId('vote-link-ballot-form')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('lfx-header, lfx-navbar, [data-testid="user-menu"]')).toBeNull();
+  });
+
+  it('styles description links so emailed ballot voters can recognize them (#4655)', async () => {
+    await open(of({ ...BALLOT, description: '<p>Read the <a href="https://example.com/charter">charter</a>.</p>' }));
+
+    const description = testId('vote-link-description')!;
+    expect(description.querySelector('a')?.textContent).toBe('charter');
+    expect(description.classList.contains('[&_a]:text-blue-600')).toBe(true);
+    expect(description.classList.contains('[&_a]:underline')).toBe(true);
+  });
+
+  it.each([
+    { href: 'https://example.com/charter', plain: false },
+    { href: '//example.com/charter', plain: false },
+    { href: '/docs/charter', plain: false },
+    { href: 'https://example.com/charter', plain: true },
+  ])('opens description link $href (plain: $plain) without replacing or resetting the ballot (#4655)', async ({ href, plain }) => {
+    const html = plain ? `Read ${href}.` : `<p>Read the <a href="${href}"><strong>charter</strong></a>.</p>`;
+    await open(of({ ...BALLOT, description: html }));
+    const description = testId('vote-link-description')!;
+    const link = description.querySelector('a')!;
+    const base = document.createElement('base');
+    base.href = 'https://vote.example/votes/v-1';
+    document.head.prepend(base);
+    const form = testId('vote-link-ballot-form')!;
+    const choice = form.querySelector<HTMLInputElement>('input[type="radio"]')!;
+    choice.click();
+    fixture.detectChanges();
+    expect(choice.checked).toBe(true);
+    const locationBefore = window.location.href;
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+
+    try {
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+      (link.querySelector('strong') ?? link).dispatchEvent(event);
+      fixture.detectChanges();
+
+      expect(opened).toHaveBeenCalledExactlyOnceWith(new URL(href, base.href).href, '_blank', 'noopener,noreferrer');
+      expect(event.defaultPrevented).toBe(true);
+      expect(window.location.href).toBe(locationBefore);
+      expect(state()).toBe('ready');
+      expect(testId('vote-link-ballot-form')).toBe(form);
+      expect(testId('vote-link-description')).toBe(description);
+      expect(choice.checked).toBe(true);
+      expect(submitLinkResponse).not.toHaveBeenCalled();
+      expect(getLinkBallot).toHaveBeenCalledTimes(1);
+    } finally {
+      opened.mockRestore();
+      base.remove();
+    }
+  });
+
+  describe('description formatting (#4727)', () => {
+    const description = () => testId('vote-link-description');
+
+    it('preserves plain-text whitespace and keeps the mobile scroll region', async () => {
+      const raw = '  First\n\n\n    - indented  bullet\n1.  numbered';
+      await open(of({ ...BALLOT, description: raw }));
+
+      expect(description()?.textContent).toBe(raw);
+      expect(description()?.querySelector('span.whitespace-pre-wrap')?.children).toHaveLength(0);
+      expect(description()?.classList.contains('whitespace-normal')).toBe(true);
+      expect(description()?.classList.contains('prose')).toBe(true);
+      expect(description()?.classList.contains('max-sm:max-h-[40dvh]')).toBe(true);
+      expect(description()?.getAttribute('role')).toBe('region');
+      expect(description()?.getAttribute('aria-label')).toBe('Vote description');
+      expect(description()?.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('renders supported HTML structure as elements', async () => {
+      await open(of({ ...BALLOT, description: '<p>One <strong>bold</strong> <em>it</em></p><ul><li>A<ol><li>B</li></ol></li></ul>' }));
+
+      expect(description()?.querySelectorAll('p')).toHaveLength(1);
+      expect(description()?.querySelector('ul > li > ol > li')?.textContent).toBe('B');
+      expect(description()?.querySelector('strong')?.textContent).toBe('bold');
+      expect(description()?.querySelector('em')?.textContent).toBe('it');
+      expect(description()?.textContent).not.toContain('<p>');
+    });
+
+    it('strips unsafe content', async () => {
+      await open(of({ ...BALLOT, description: '<p>ok</p><script>alert(1)</script><img src="x" onerror="alert(2)"><a href="javascript:alert(3)">link</a>' }));
+
+      expect(description()?.querySelector('script')).toBeNull();
+      expect(description()?.innerHTML).not.toContain('onerror');
+      expect(description()?.querySelector('a')?.getAttribute('href')).toMatch(/^unsafe:/);
+    });
+
+    it('renders no description section for an empty description', async () => {
+      await open(of({ ...BALLOT, description: '' }));
+
+      expect(description()).toBeNull();
+    });
   });
 
   it('renders the loading state before the ballot arrives', async () => {
@@ -342,7 +449,7 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     expect(text('vote-link-project-name')).toBe('Synthetic Project');
     expect(testId('vote-link-project-logo')?.getAttribute('src')).toBe(PROJECT.logo_url);
     expect(text('vote-link-title')).toBe('Synthetic board vote');
-    expect(testId('vote-link-lfx-mark')).toBeNull();
+    expect(testId('vote-link-lfx-mark')).not.toBeNull();
   });
 
   it('looks the project up by slug when only the slug is present', async () => {
@@ -370,12 +477,12 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     expect(testId('vote-link-project-name')).toBeNull();
   });
 
-  it('falls back to the LFX mark when the project has no logo', async () => {
+  it('shows only the LFX mark, once, when the project has no logo', async () => {
     getPublicProjectSummary.mockReturnValue(of({ ...PROJECT, logo_url: null }));
     await openWith({ ...BALLOT, project_uid: 'p-1' });
 
     expect(testId('vote-link-project-logo')).toBeNull();
-    expect(testId('vote-link-lfx-mark')).not.toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="vote-link-lfx-mark"]').length).toBe(1);
     expect(text('vote-link-project-name')).toBe('Synthetic Project');
   });
 
@@ -420,13 +527,15 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     expect(text('vote-link-thank-you-secret')).toBe('Your ballot is secret');
   });
 
-  it('says "Your vote is updated" after an update, with no navigation, sign-in prompt or identity', async () => {
+  it('says "Your vote is updated" after an update, with only the two Self Serve links and no sign-in prompt or identity', async () => {
     await openWith({ ...BALLOT, pseudo_anonymity: false, ballot: { ...BALLOT.ballot, already_voted: true, vote_status: 'responded' } });
     (fixture.componentInstance as unknown as { onStartUpdate: () => void }).onStartUpdate();
     submit();
 
     expect(text('vote-link-thank-you-heading')).toBe('Your vote is updated');
-    expect(fixture.nativeElement.querySelector('a, nav, lfx-button')).toBeNull();
+    expect(fixture.nativeElement.querySelector('nav, lfx-button')).toBeNull();
+    const hrefs = Array.from<HTMLAnchorElement>(fixture.nativeElement.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(['/', '/votes']);
     expect(fixture.nativeElement.textContent).not.toMatch(/sign in|log in/i);
   });
 

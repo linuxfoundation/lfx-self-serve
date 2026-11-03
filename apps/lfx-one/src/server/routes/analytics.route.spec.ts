@@ -131,6 +131,8 @@ describe.each([
   ['/engagement-attendance-trend', 'foundationSlug'],
   ['/engagement-group-attendance', 'foundationSlug'],
   ['/engagement-meeting-participation', 'foundationSlug'],
+  ['/engagement-newsletter-performance', 'foundationSlug'],
+  ['/engagement-newsletter-recipients', 'foundationSlug'],
   ['/engagement-non-member-participation', 'foundationSlug'],
   ['/engagement-org-participation', 'foundationSlug'],
   ['/engagement-representatives', 'foundationSlug'],
@@ -170,6 +172,7 @@ describe.each([
   ['/overview-events', 'foundationSlug'],
   ['/overview-board', 'foundationSlug'],
   ['/overview-code', 'foundationSlug'],
+  ['/overview-newsletters', 'foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });

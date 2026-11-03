@@ -13,6 +13,7 @@ import {
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
+  getTimezoneAbbreviation,
   isLocalDateOnlyString,
   localDateStamp,
   normalizeSnowflakeTimestamp,
@@ -256,6 +257,19 @@ describe('formatVoteDeadline', () => {
   it('returns an empty string for missing or invalid input', () => {
     expect(formatVoteDeadline(null)).toBe('');
     expect(formatVoteDeadline('not-a-date', 'America/New_York')).toBe('');
+  });
+
+  it.each([
+    ['Europe/Lisbon', '2027-01-15T12:00:00.000Z', 'Jan 15, 2027 12:00 PM UTC'],
+    ['Atlantic/Azores', '2027-07-15T12:00:00.000Z', 'Jul 15, 2027 12:00 PM UTC'],
+  ])('shows a zero-offset zone with no abbreviation (%s) as UTC, not GMT+0 (#4767)', (zone, instant, expected) => {
+    expect(formatVoteDeadline(instant, zone)).toBe(expected);
+  });
+
+  it('leaves zero-offset zones that have an abbreviation, and non-zero offsets, unchanged', () => {
+    expect(formatVoteDeadline('2027-01-15T12:00:00.000Z', 'Europe/London')).toBe('Jan 15, 2027 12:00 PM GMT');
+    expect(formatVoteDeadline('2027-07-15T12:00:00.000Z', 'Europe/London')).toBe('Jul 15, 2027 1:00 PM GMT+1');
+    expect(formatVoteDeadline('2027-01-15T12:00:00.000Z', 'UTC')).toBe('Jan 15, 2027 12:00 PM UTC');
   });
 });
 
@@ -544,5 +558,29 @@ describe('findSameWallClockZone', () => {
 
   it('does not pair zones whose clocks change an hour or a day apart', () => {
     expect(findSameWallClockZone('REF', 2026, ['HOUR_LATER', 'DAY_LATER'], offsetAt)).toBeNull();
+  });
+});
+
+describe('getTimezoneAbbreviation', () => {
+  it('returns the standard abbreviation in winter and the daylight one in summer', () => {
+    expect(getTimezoneAbbreviation('2026-01-15T20:00:00Z', 'America/Los_Angeles')).toBe('PST');
+    expect(getTimezoneAbbreviation('2026-07-15T20:00:00Z', 'America/Los_Angeles')).toBe('PDT');
+  });
+
+  it('resolves the abbreviation for the instant, across a DST boundary', () => {
+    expect(getTimezoneAbbreviation('2026-03-08T09:59:00Z', 'America/Los_Angeles')).toBe('PST');
+    expect(getTimezoneAbbreviation('2026-03-08T10:01:00Z', 'America/Los_Angeles')).toBe('PDT');
+  });
+
+  it('returns UTC for the UTC zone', () => {
+    expect(getTimezoneAbbreviation('2026-01-15T20:00:00Z', 'UTC')).toBe('UTC');
+  });
+
+  it('falls back to the zone id for an invalid zone', () => {
+    expect(getTimezoneAbbreviation('2026-01-15T20:00:00Z', 'Not/AZone')).toBe('Not/AZone');
+  });
+
+  it('returns an empty string for an invalid date', () => {
+    expect(getTimezoneAbbreviation('not-a-date', 'America/New_York')).toBe('');
   });
 });

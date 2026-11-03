@@ -253,6 +253,25 @@
                 <div class="flex min-w-0 flex-col gap-0.5">
                   <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
                   <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                  <!-- What tells this campaign apart from the brief's others on its platform; "—" when the index does not record it (#4983). -->
+                  <dl class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-labels-' + row.campaign.id">
+                    <div class="flex gap-1">
+                      <dt>Channel:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-channel-' + row.campaign.id">{{ row.labels.channel }}</dd>
+                    </div>
+                    <div class="flex gap-1">
+                      <dt>Stage:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-stage-' + row.campaign.id">{{ row.labels.stage }}</dd>
+                    </div>
+                    <div class="flex gap-1">
+                      <dt>Tactic:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-tactic-' + row.campaign.id">{{ row.labels.tactic }}</dd>
+                    </div>
+                    <div class="flex gap-1">
+                      <dt>Created:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-created-' + row.campaign.id">{{ row.labels.created }}</dd>
+                    </div>
+                  </dl>
                   @if (row.biddingSummary) {
                     <span class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-bidding-' + row.campaign.id">{{ row.biddingSummary }}</span>
                   }
@@ -644,13 +663,15 @@
       <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
       <p class="text-sm font-medium text-red-700">Failed to load optimization data</p>
       <p class="max-w-md text-center text-xs text-red-500">{{ error() }}</p>
-      <button
-        type="button"
-        (click)="fetchData()"
-        class="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-        data-testid="optimization-retry">
-        Retry
-      </button>
+      @if (!errorRefused()) {
+        <button
+          type="button"
+          (click)="fetchData()"
+          class="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+          data-testid="optimization-retry">
+          Retry
+        </button>
+      }
     </div>
   } @else if (!hasCampaigns()) {
     <div
@@ -684,6 +705,11 @@
     @if (hasActionItems()) {
       <div class="flex flex-col gap-3" data-testid="optimization-action-items">
         <h4 class="text-sm font-semibold text-gray-900">Action Items</h4>
+        @if (googleAmountsInAccountCurrency()) {
+          <p class="text-xs text-gray-500" data-testid="optimization-google-currency-note-actions">
+            Spend, and the amounts in each issue, are in the Google Ads account's own currency.
+          </p>
+        }
         <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
@@ -710,13 +736,17 @@
                     </td>
                     <td class="px-4 py-3 text-gray-700">{{ item.issue }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ item.action }}</td>
-                    <td class="px-4 py-3 text-right text-gray-700">{{ item.metrics.spend | adsCurrency }}</td>
+                    <td class="px-4 py-3 text-right text-gray-700">{{ item.metrics.spend | adsCurrency: googleAmountsInAccountCurrency() }}</td>
                     <td class="px-4 py-3 text-right">
-                      <span
-                        class="text-sm font-medium"
-                        [class]="item.metrics.pacingPct < 50 ? 'text-red-600' : item.metrics.pacingPct > 100 ? 'text-red-600' : 'text-gray-700'">
-                        {{ item.metrics.pacingPct }}%
-                      </span>
+                      @if (item.metrics.pacingUnknown) {
+                        <span class="text-sm font-medium text-gray-500">Unknown</span>
+                      } @else {
+                        <span
+                          class="text-sm font-medium"
+                          [class]="item.metrics.pacingPct < 50 ? 'text-red-600' : item.metrics.pacingPct > 100 ? 'text-red-600' : 'text-gray-700'">
+                          {{ item.metrics.pacingPct }}%
+                        </span>
+                      }
                     </td>
                   </tr>
                 }
@@ -724,6 +754,16 @@
             </table>
           </div>
         </div>
+      </div>
+    } @else if (unreadCampaignCount() > 0) {
+      <div
+        class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-8"
+        data-testid="optimization-actions-incomplete">
+        <i class="fa-light fa-triangle-exclamation text-2xl text-amber-600" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-amber-800">No action items, but the check is incomplete</p>
+        <p class="text-xs text-amber-700">
+          {{ unreadCampaignCount() }} of {{ campaigns().length }} campaigns could not be read, so they were not checked. Refresh to try again.
+        </p>
       </div>
     } @else {
       <div
@@ -744,6 +784,9 @@
           <h4 class="text-sm font-semibold text-gray-900">Display / Demand Gen Campaign Performance</h4>
           <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ displayCampaigns().length }}</span>
         </div>
+        @if (googleAmountsInAccountCurrency()) {
+          <p class="text-xs text-gray-500" data-testid="optimization-google-currency-note-display">Spend is in the Google Ads account's own currency.</p>
+        }
         <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
@@ -761,7 +804,7 @@
               </thead>
               <tbody>
                 @for (c of displayCampaigns(); track c.campaignId) {
-                  <tr class="border-b border-gray-100 last:border-0">
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'optimization-display-row-' + $index">
                     <td class="px-4 py-2.5">
                       <p class="font-medium text-gray-900">{{ c.eventName || c.name }}</p>
                       <p class="text-xs text-gray-400">{{ c.targeting }}</p>
@@ -776,16 +819,20 @@
                     <td class="px-4 py-2.5 text-right" [class]="c.ctr < 0.3 ? 'font-medium text-red-600' : 'text-gray-700'">
                       {{ c.ctr | adsPct }}
                     </td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.spend | adsCurrency }}</td>
-                    <td class="px-4 py-2.5 text-right" [class]="c.conversions === 0 ? 'font-medium text-red-600' : 'text-gray-700'">
-                      {{ c.conversions | number }}
-                    </td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.spend | adsCurrency: googleAmountsInAccountCurrency() }}</td>
+                    @if (c.conversionsMeasured === false) {
+                      <td class="px-4 py-2.5 text-right text-gray-500">Not measured</td>
+                    } @else {
+                      <td class="px-4 py-2.5 text-right" [class]="c.conversions === 0 ? 'font-medium text-red-600' : 'text-gray-700'">
+                        {{ c.conversions | number }}
+                      </td>
+                    }
                     <td class="px-4 py-2.5">
                       <div class="flex items-center gap-2">
                         <div class="h-2 w-16 overflow-hidden rounded-full bg-gray-200">
                           <div class="h-full rounded-full" [class]="c | pacingClass" [style.width.%]="c.displayPacingPct"></div>
                         </div>
-                        <span class="text-xs text-gray-500">{{ c.pacingPct }}%</span>
+                        <span class="text-xs text-gray-500">{{ c.displayPacingText }}</span>
                       </div>
                     </td>
                   </tr>
@@ -1005,6 +1052,11 @@
           <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{{ wastedKeywords().length }}</span>
         }
       </div>
+      @if (keywordAmountsInAccountCurrency()) {
+        <p class="text-xs text-gray-500" data-testid="optimization-keyword-currency-note">
+          Keyword spend and CPC are in the Google Ads account's own currency.
+        </p>
+      }
       @if (keywordsLoading() && !keywordsData()) {
         <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8">
           <div class="flex items-center gap-2 text-sm text-gray-500">
@@ -1080,7 +1132,7 @@
               </thead>
               <tbody>
                 @for (kw of wastedKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
-                  <tr class="border-b border-gray-100 last:border-0">
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'optimization-wasted-keyword-row-' + $index">
                     <td class="px-4 py-2.5">
                       <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
                     </td>
@@ -1095,10 +1147,10 @@
                       </span>
                     </td>
                     <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
-                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ kw.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ kw.spend | adsCurrency: keywordAmountsInAccountCurrency() }}</td>
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.ctr | adsPct }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc | adsCurrency: keywordAmountsInAccountCurrency() }}</td>
                     <td class="px-4 py-2.5 text-right font-medium text-red-600">0</td>
                     <td class="px-4 py-2.5 text-center">
                       @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
@@ -1184,7 +1236,7 @@
               </thead>
               <tbody>
                 @for (kw of lowQualityKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
-                  <tr class="border-b border-gray-100 last:border-0">
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'optimization-low-quality-row-' + $index">
                     <td class="px-4 py-2.5 font-medium text-gray-900">{{ kw.keyword }}</td>
                     <td class="px-4 py-2.5">
                       <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
@@ -1197,7 +1249,7 @@
                     <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.impressions | number }}</td>
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency: keywordAmountsInAccountCurrency() }}</td>
                     <td class="px-4 py-2.5 text-center">
                       @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
                         <!--

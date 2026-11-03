@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { BreakpointObserver } from '@angular/cdk/layout';
+import { signal } from '@angular/core';
+import { UserService } from '@services/user.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -26,6 +28,7 @@ describe('VoteBallotInlineComponent — comment prompts (LFXV2-2562)', () => {
   let fixture: ComponentFixture<VoteBallotInlineComponent>;
   let component: VoteBallotInlineComponent;
   let submitMyResponse: ReturnType<typeof vi.fn>;
+  const impersonating = signal(false);
 
   const VOTE: Vote = {
     uid: 'vote-1',
@@ -50,6 +53,7 @@ describe('VoteBallotInlineComponent — comment prompts (LFXV2-2562)', () => {
 
   beforeEach(async () => {
     submitMyResponse = vi.fn(() => of(undefined));
+    impersonating.set(false);
 
     await TestBed.configureTestingModule({
       imports: [VoteBallotInlineComponent],
@@ -57,6 +61,7 @@ describe('VoteBallotInlineComponent — comment prompts (LFXV2-2562)', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: VoteService, useValue: { submitMyResponse } },
+        { provide: UserService, useValue: { impersonating } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     }).compileComponents();
@@ -128,6 +133,17 @@ describe('VoteBallotInlineComponent — comment prompts (LFXV2-2562)', () => {
     });
   });
 
+  it('explains read-only Admin Mode and refuses direct submission without side effects', async () => {
+    impersonating.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-vote-readonly"]')?.textContent).toContain('Ballots are read-only');
+    expect(fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-vote-submit"]')).toBeNull();
+    component.abstainControl.setValue(true);
+    component['onSubmit']();
+    expect(submitMyResponse).not.toHaveBeenCalled();
+  });
+
   it('omits empty comments from the submission', async () => {
     component.abstainControl.setValue(true);
     commentControl().setValue('   ');
@@ -180,6 +196,7 @@ describe('VoteBallotInlineComponent — mobile layout (#4148)', () => {
         provideNoopAnimations(),
         { provide: BreakpointObserver, useValue: { observe: () => of({ matches, breakpoints: {} }), isMatched: () => matches } },
         { provide: VoteService, useValue: { submitMyResponse: vi.fn(() => of(undefined)) } },
+        { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     }).compileComponents();

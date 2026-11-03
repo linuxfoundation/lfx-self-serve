@@ -20,10 +20,11 @@ class ChartStubComponent {
 @Component({
   selector: 'lfx-metric-card-test-host',
   imports: [MetricCardComponent],
-  template: `<lfx-metric-card title="Active Contributors" chartType="bar" [infoTooltip]="info()" value="876" />`,
+  template: `<lfx-metric-card title="Active Contributors" chartType="bar" [infoTooltip]="info()" [chartCaption]="caption()" value="876" />`,
 })
 class HostComponent {
   public readonly info = signal<string | undefined>(undefined);
+  public readonly caption = signal<string | undefined>(undefined);
 }
 
 const infoButton = (root: HTMLElement): HTMLButtonElement | null => root.querySelector('[data-testid="metric-card-info"]');
@@ -60,5 +61,31 @@ describe('MetricCardComponent info tooltip', () => {
     button?.dispatchEvent(new FocusEvent('focus'));
 
     await vi.waitFor(() => expect(tooltipText()).toBe('Who is counted and over what range.'));
+  });
+});
+
+describe('MetricCardComponent chart caption', () => {
+  const caption = (root: HTMLElement): HTMLElement | null => root.querySelector('[data-testid="metric-card-chart-caption"]');
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ imports: [HostComponent] });
+    TestBed.overrideComponent(MetricCardComponent, { remove: { imports: [ChartComponent] }, add: { imports: [ChartStubComponent] } });
+  });
+
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('states the chart window under the chart when given one', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.caption.set('Per month, Nov 2025 – Oct 2026 to date');
+    await fixture.whenStable();
+
+    expect(caption(fixture.nativeElement)?.textContent?.trim()).toBe('Per month, Nov 2025 – Oct 2026 to date');
+  });
+
+  it('renders no caption without one', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+
+    expect(caption(fixture.nativeElement)).toBeNull();
   });
 });

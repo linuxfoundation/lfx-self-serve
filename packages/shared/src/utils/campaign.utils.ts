@@ -6,8 +6,12 @@ import {
   CAMPAIGN_DISPATCH_CONNECTION_NOT_USABLE_PATTERN,
   CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS,
   CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES,
+  CAMPAIGN_FUNNEL_STAGE_COLUMN_LABELS,
+  CAMPAIGN_LABEL_ABSENT,
   CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_TACTIC_OPTIONS,
+  GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_SPONSORS,
   MAX_SPONSOR_NAME_LENGTH,
@@ -17,6 +21,8 @@ import type {
   BriefMetricsActionRule,
   CampaignDispatchFailureDescription,
   CampaignEventSponsor,
+  CampaignIndexDoc,
+  CampaignLabelColumns,
   CampaignOptimizeLever,
   KeywordActionPlatform,
   NegativeKeywordInputProblem,
@@ -205,4 +211,116 @@ export function describeCampaignDispatchFailure(error: string): CampaignDispatch
     nextStep: template.replace('{platform}', label),
     nothingCreated,
   };
+}
+
+const CALENDAR_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A `YYYY-MM-DD` date as a UTC day number, or `null` when the string is not a real calendar date. */
+function calendarDayNumber(date: string): number | null {
+  const match = CALENDAR_DATE_PATTERN.exec(date);
+  if (!match) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  // A round trip refuses a date the constructor silently rolls over, such as 2026-02-30.
+  if (utc.getUTCFullYear() !== year || utc.getUTCMonth() !== month - 1 || utc.getUTCDate() !== day) return null;
+  return utc.getTime() / 86_400_000;
+}
+
+/**
+ * How many days a campaign flight runs, counting the start and end days both (#4847).
+ *
+ * Both days count because Google runs a campaign from 00:00 on its start date to 23:59:59 on its
+ * end date (campaign-service `validateFlightWindow`), so a same-day flight is one day of spend.
+ * Counted on UTC day numbers so a daylight-saving change between the two dates cannot make the
+ * count fractional.
+ *
+ * @param startDate - The flight's first day, `YYYY-MM-DD`
+ * @param endDate - The flight's last day, `YYYY-MM-DD`
+ * @returns The day count, or `null` when either date is not a real calendar date or the end is
+ *   before the start
+ */
+export function campaignFlightDays(startDate: string, endDate: string): number | null {
+  const start = calendarDayNumber(startDate);
+  const end = calendarDayNumber(endDate);
+  if (start === null || end === null || end < start) return null;
+  return end - start + 1;
+}
+
+/**
+ * Whether a flight ends BEFORE it starts, which Google refuses (#4848). A same-day flight is not
+ * reversed: Google's test is campaign-service `validateFlightWindow`'s `end.Before(start)`.
+ *
+ * `false` for a date that is not a real `YYYY-MM-DD` calendar day, because this answers only the
+ * reversed question; a blank date is the required validator's to report.
+ */
+export function isReversedCampaignFlight(startDate: string, endDate: string): boolean {
+  const start = calendarDayNumber(startDate);
+  const end = calendarDayNumber(endDate);
+  return start !== null && end !== null && end < start;
+}
+
+/**
+ * The daily budget that spends a total over a flight, rounded DOWN to the cent (#4847).
+ *
+ * Rounded down so the daily figure times the flight never exceeds the total it came from.
+ *
+ * @param total - The flight's total budget; positive and finite
+ * @param days - The flight's length in days, from {@link campaignFlightDays}; a positive integer
+ * @returns The daily amount, or `null` when either input is unusable
+ */
+export function dailyBudgetFromTotal(total: number, days: number): number | null {
+  if (!Number.isFinite(total) || total <= 0 || !Number.isInteger(days) || days < 1) return null;
+  // Divides a whole number of cents, so the floor works on cents rather than on a float of dollars.
+  // A total holding a fraction of a cent rounds UP here (31.309 to 3131), and dividing that would
+  // overspend it, so step back to the cent below the total.
+  let cents = Math.round(total * 100);
+  if (cents / 100 > total) cents -= 1;
+  return Math.floor(cents / days) / 100;
+}
+
+/**
+ * A campaign's channel, funnel stage, tactic and created date as a campaign list shows them (#4983).
+ *
+ * Each is "—" when absent. The index is unvalidated, so a value this build does not know is "—" too,
+ * rather than raw text. The channel is a Google one only: Google's variant is the channel (search is
+ * `default`), and every other platform has a single channel, so naming one there would add nothing.
+ * A created date that does not parse is "—", never "Invalid Date".
+ *
+ * The date is the calendar day in `timeZone`, or in the runtime's own zone when omitted, which is the
+ * viewer's in the browser. `null` means the viewer's zone is not known, as in a server render: Created is
+ * then "—", and the browser dates it once it renders, so the server's day (UTC) is never shown to a viewer
+ * whose day differs near midnight.
+ */
+export function campaignLabelColumns(
+  campaign: Pick<CampaignIndexDoc, 'platform' | 'variant' | 'funnel_stage' | 'tactic' | 'created_at'>,
+  timeZone?: string | null
+): CampaignLabelColumns {
+  return {
+    channel: campaignChannelLabel(campaign.platform, campaign.variant),
+    stage: lookupLabel(CAMPAIGN_FUNNEL_STAGE_COLUMN_LABELS, campaign.funnel_stage),
+    tactic: CAMPAIGN_TACTIC_OPTIONS.find((option) => option.id === campaign.tactic)?.label ?? CAMPAIGN_LABEL_ABSENT,
+    created: timeZone === null ? CAMPAIGN_LABEL_ABSENT : campaignCreatedLabel(campaign.created_at, timeZone),
+  };
+}
+
+function campaignChannelLabel(platform: unknown, variant: unknown): string {
+  if (platform !== 'google-ads' || typeof variant !== 'string') {
+    return CAMPAIGN_LABEL_ABSENT;
+  }
+  return lookupLabel(GOOGLE_CAMPAIGN_CHANNEL_LABELS, variant === 'default' ? 'search' : variant);
+}
+
+function campaignCreatedLabel(createdAt: unknown, timeZone: string | undefined): string {
+  if (typeof createdAt !== 'string' || createdAt === '') {
+    return CAMPAIGN_LABEL_ABSENT;
+  }
+  const when = new Date(createdAt);
+  if (Number.isNaN(when.getTime())) {
+    return CAMPAIGN_LABEL_ABSENT;
+  }
+  return when.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', ...(timeZone === undefined ? {} : { timeZone }) });
+}
+
+function lookupLabel(labels: Readonly<Record<string, string>>, key: unknown): string {
+  return typeof key === 'string' && Object.prototype.hasOwnProperty.call(labels, key) ? labels[key] : CAMPAIGN_LABEL_ABSENT;
 }

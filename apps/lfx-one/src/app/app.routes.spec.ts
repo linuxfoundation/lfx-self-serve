@@ -13,11 +13,14 @@ import { routes } from './app.routes';
 import { HealthMetricsTrainingComponent } from './modules/dashboards/health-metrics-training/health-metrics-training.component';
 import { MyNewsletterFoundationsComponent } from './modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component';
 import { MyNewslettersComponent } from './modules/newsletters/my-newsletters/my-newsletters.component';
+import { NewsletterSharePreviewComponent } from './modules/newsletters/newsletter-share-preview/newsletter-share-preview.component';
 import { NEWSLETTER_ROUTES } from './modules/newsletters/newsletters.routes';
+import { VoteDetailComponent } from './modules/votes/vote-detail/vote-detail.component';
 import { authGuard } from './shared/guards/auth.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
+import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
 import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
@@ -66,14 +69,16 @@ describe('Personal newsletter route isolation', () => {
     const foundation = findRoute(routes, 'newsletters/my/:foundationSlug')!;
     expect(foundation).toMatchObject({ title: 'Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
     expect(await foundation.loadComponent!()).toBe(MyNewslettersComponent);
+    // Look these up in the shell: the signed-out share preview mounts its own top-level `newsletters/:projectSlug/:id`.
     for (const path of ['newsletters/:projectSlug/:id', 'newsletters']) {
-      expect(children.indexOf(personal)).toBeLessThan(children.indexOf(findRoute(routes, path)!));
-      expect(children.indexOf(foundation)).toBeLessThan(children.indexOf(findRoute(routes, path)!));
+      const later = children.find((route) => route.path === path)!;
+      expect(children.indexOf(personal)).toBeLessThan(children.indexOf(later));
+      expect(children.indexOf(foundation)).toBeLessThan(children.indexOf(later));
     }
     expect(NEWSLETTER_ROUTES.map((route) => route.path)).toEqual(['', 'list', 'create', ':projectUid/:id/edit', ':projectUid/:id/analytics']);
   });
   it('preserves reader and publisher guards', () => {
-    expect(findRoute(routes, 'newsletters/:projectSlug/:id')?.canActivate).toEqual([authGuard]);
+    expect(shellRoute.children!.find((route) => route.path === 'newsletters/:projectSlug/:id')?.canActivate).toEqual([authGuard]);
     expect(findRoute(routes, 'newsletters')?.canActivate).toEqual([lensRedirectGuard, projectQueryParamGuard]);
     for (const lens of ['foundation', 'project']) {
       expect(findRoute(routes, `${lens}/newsletters`)?.canActivate).toEqual([newsletterAccessGuard, projectQueryParamGuard]);
@@ -84,26 +89,50 @@ describe('Personal newsletter route isolation', () => {
   });
 });
 
+describe('Newsletter share preview route (#4940)', () => {
+  const preview = routes.find((route) => route.path === 'newsletters/:projectSlug/:id' && route.canMatch?.includes(newsletterAnonymousSsrMatchGuard))!;
+
+  it('mounts the signed-out share preview ahead of the authenticated shell', async () => {
+    expect(preview).toMatchObject({ pathMatch: 'full', canMatch: [newsletterAnonymousSsrMatchGuard] });
+    expect(preview.canActivate).toBeUndefined();
+    expect(routes.indexOf(preview)).toBeLessThan(routes.indexOf(shellRoute));
+    expect(await preview.loadComponent!()).toBe(NewsletterSharePreviewComponent);
+  });
+
+  it('leaves the signed-in reader in the shell behind authGuard', () => {
+    const reader = shellRoute.children!.find((route) => route.path === 'newsletters/:projectSlug/:id')!;
+    expect(reader.canActivate).toEqual([authGuard]);
+    expect(reader.canMatch).toBeUndefined();
+  });
+});
+
 describe('Vote permalink route isolation', () => {
   const children = shellRoute.children!;
-  const permalink = children.find((route) => route.path === 'votes/:id')!;
+  const voteIdEntries = children.filter((route) => route.path === 'votes/:id');
+  const flat = children.find((route) => route.path === 'votes')!;
 
-  it('mounts the auth-only Me permalink ahead of the lens-redirected votes mount', () => {
-    const flat = children.find((route) => route.path === 'votes')!;
-    expect(permalink).toMatchObject({
-      pathMatch: 'full',
-      data: { lens: 'me', preload: false },
-      canMatch: [votePermalinkMatchGuard],
-      canActivate: [authGuard],
-    });
-    expect(children.indexOf(permalink)).toBeLessThan(children.indexOf(flat));
+  it('mounts the vote detail page as the only auth-only /votes/:id entry, ahead of the lens-redirected votes mount', async () => {
+    expect(voteIdEntries).toHaveLength(1);
+    const [page] = voteIdEntries;
+
+    expect(await page.loadComponent!()).toBe(VoteDetailComponent);
+    expect(children.indexOf(page)).toBeLessThan(children.indexOf(flat));
+    expect(page).toMatchObject({ pathMatch: 'full', canMatch: [votePermalinkMatchGuard], canActivate: [authGuard] });
     expect(flat.canActivate).toEqual([lensRedirectGuard, projectQueryParamGuard]);
+  });
+
+  it('keeps the lens the user came from on the detail page — no lens data, no lens redirect', () => {
+    const [page] = voteIdEntries;
+
+    expect(page.data).toEqual({ preload: false });
+    expect(page.canActivate).not.toContain(lensRedirectGuard);
   });
 
   it('leaves /votes/create to the votes module and matches a vote uid', () => {
     const segments = (id: string) => [new UrlSegment('votes', {}), new UrlSegment(id, {})];
-    expect(votePermalinkMatchGuard(permalink, segments('create'))).toBe(false);
-    expect(votePermalinkMatchGuard(permalink, segments('3f2b6c1e-0000-4000-8000-000000000001'))).toBe(true);
+    const [page] = voteIdEntries;
+    expect(votePermalinkMatchGuard(page, segments('create'))).toBe(false);
+    expect(votePermalinkMatchGuard(page, segments('3f2b6c1e-0000-4000-8000-000000000001'))).toBe(true);
   });
 });
 

@@ -4,7 +4,7 @@
 import { afterNextRender, Component, computed, ElementRef, inject, linkedSignal, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { HEALTH_METRICS_OVERVIEW_FILL_CLASSES, HEALTH_METRICS_OVERVIEW_STROKES, HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_OVERVIEW_FILL_CLASSES, HEALTH_METRICS_OVERVIEW_PROGRESS_TINT, HEALTH_METRICS_OVERVIEW_STROKES } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsOverviewPastTrendView,
   buildHealthMetricsOverviewTrendMeta,
@@ -49,7 +49,7 @@ export class OverviewEventTrendDialogComponent {
   protected readonly isPast = this.dialogConfig.data!.isPast;
   protected readonly headingId = OverviewEventTrendDialogComponent.headingId;
   protected readonly strokes = HEALTH_METRICS_OVERVIEW_STROKES;
-  protected readonly bandFill = HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL;
+  protected readonly bandFill = HEALTH_METRICS_OVERVIEW_PROGRESS_TINT;
   protected readonly thisYearClass = HEALTH_METRICS_OVERVIEW_FILL_CLASSES.purple;
   protected readonly meta = buildHealthMetricsOverviewTrendMeta(this.event);
   protected readonly status = signal<HealthMetricsOverviewCardStatus>('loading');

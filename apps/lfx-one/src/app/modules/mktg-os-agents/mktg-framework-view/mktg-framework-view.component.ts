@@ -29,6 +29,7 @@ import {
   FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM,
   FOUNDATION_MESSAGE_VIEW_TABS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -46,6 +47,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildFoundationMessagePrintView,
+  describeMktgAcceptedGaps,
   mktgAssetHeaderFallback,
   foundationMessageAvoidRows,
   foundationMessageGoalViews,
@@ -143,6 +145,9 @@ export class MktgFrameworkViewComponent {
   protected readonly title = computed(() => `${this.projectName()} Messaging framework`);
   protected readonly header = computed(() => this.headerMetadata() ?? mktgAssetHeaderFallback('foundation-message', this.version(), null, this.approval()));
   protected readonly approvalRequiredNote = MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
+  protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
+  /** Under an approved revision's gaps: accepted at that approval, still open. */
+  protected readonly acceptedGapsNote = computed(() => describeMktgAcceptedGaps(this.report(), this.approval(), this.version()));
   protected readonly modeLabel = computed(() => {
     const asset = this.asset();
     return asset && asset.mode !== 'draft' ? FOUNDATION_MESSAGE_MODE_LABELS[asset.mode] : '';
@@ -197,7 +202,7 @@ export class MktgFrameworkViewComponent {
 
   public constructor() {
     // The print mark never outlives the view (a print dialog still up when the page goes).
-    this.destroyRef.onDestroy(() => this.printService.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS));
+    this.destroyRef.onDestroy(() => this.printService.clear());
     toObservable(this.printView)
       .pipe(takeUntilDestroyed())
       .subscribe((view) => {

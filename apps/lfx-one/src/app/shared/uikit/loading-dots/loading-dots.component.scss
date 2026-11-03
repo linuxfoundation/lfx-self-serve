@@ -1,0 +1,20 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Tailwind has no 1.4s blink keyframe; the loop runs only when motion is allowed, else the dots stay at 60%.
+@media (prefers-reduced-motion: no-preference) {
+  .dot {
+    animation: loading-dots-blink 1.4s infinite both;
+  }
+}
+
+@keyframes loading-dots-blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
+  }
+}

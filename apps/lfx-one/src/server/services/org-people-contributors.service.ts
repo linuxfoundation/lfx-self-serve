@@ -3,6 +3,8 @@
 
 import {
   DEFAULT_ORG_EMPLOYMENT,
+  DEFAULT_ORG_SCOPE,
+  DEFAULT_ORG_TEAM_MEMBERS,
   EMPTY_ORG_CONTRIBUTORS_RESPONSE,
   ORG_CONTRIBUTOR_PROJECT_COLUMNS,
   ORG_CONTRIBUTOR_ROW_COLUMNS,
@@ -23,14 +25,28 @@ import type {
   OrgEmploymentFilter,
   OrgLensTimeRange,
   OrgProjectScope,
+  OrgScopeFilter,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
 import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
-import { orgContributorCountColumn, orgContributorsActivityPredicate, orgContributorsCommitColumns } from '../helpers/org-contributors-sql.helper';
+import {
+  orgContributorCountColumn,
+  orgContributorsActivityPredicate,
+  orgContributorsCommitColumns,
+  orgContributorsScopePredicate,
+} from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { readOrgEmploymentPersonKeys } from '../helpers/org-people-employment.helper';
+import {
+  orgTeamMembersPredicate,
+  orgTeamMembersQueryOptions,
+  readOrgTeamMemberPersonKeys,
+  readWithOrgTeamMembersFallback,
+} from '../helpers/org-team-members.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
+import { resolveOrgScope } from '../helpers/org-scope.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
@@ -51,50 +67,97 @@ export class OrgPeopleContributorsService {
    * classifies them current or former — the list, the Contributors tile and the Projects/Foundations stats and options
    * follow it; someone with no row is listed only under `all`. The roles are not filtered: on Insights' rule the
    * Maintainer roles tile is credited to the current employer whatever the employment pick, and badges read the same
-   * roles. `all` (the default) reads no classification and filters nothing.
+   * roles. `all` (the default) reads no classification and filters nothing. `teamMembers: 'exclude'`
+   * (lfx-self-serve#4685) drops CDP team members from the list, the Contributors tile and the Projects/Foundations
+   * stats and options, by the People team-member key set; and from the roles, by ORG_MAINTAINER_ROLES' own
+   * IS_CDP_TEAM_MEMBER — the Overview headline's source, so a team member holding only a role leaves both. LFX Insights
+   * leaves team members' roles unattributed (no organization), so they never reach a company's Maintainer roles. While
+   * a flag is not in the warehouse, team members stay in, the response says so (`teamMembersUnavailable`) and the
+   * roles are not stored. `orgScope` (lfx-self-serve-ops#1219) picks whose code the rows count: under `insights` (when
+   * the account has an Insights organization) only that organization's code in repositories LFX Insights counts, so
+   * someone with none drops out. The roles are not scoped.
    */
   public async getContributors(
     accountId: string,
     timeRange: OrgLensTimeRange,
     filters: OrgCommitFilters,
-    employment: OrgEmploymentFilter = DEFAULT_ORG_EMPLOYMENT
+    employment: OrgEmploymentFilter = DEFAULT_ORG_EMPLOYMENT,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS,
+    orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
   ): Promise<OrgContributorsResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
 
-    // `people-contributors:v5:{timeRange}:{projectScope}` (lfx-self-serve#4482): the rows no longer carry the
-    // declared-maintainer flags, so a `v4` entry must miss. The commit scope, metric and employment only pick after
-    // the read, so they share the entry.
-    const [rows, roles, employmentKeys] = await Promise.all([
-      withOrgCompactCache(
-        accountId,
-        `people-contributors:v5:${timeRange}:${filters.projectScope}`,
-        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-        () => this.fetchPersonProjectRows(accountId, timeRange, filters.projectScope),
-        { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
-      ),
+    const scope = await resolveOrgScope(this.snowflakeService, accountId, orgScope);
+    // The roles filter team members in SQL, so their entry is per pick:
+    // `people-contributors-roles:v2:{timeRange}:{projectScope}:{teamMembers}` (`v1` held every role).
+    let rolesTeamMembersUnavailable = false;
+    const [rows, roles, employmentKeys, teamMemberKeys] = await Promise.all([
+      this.readPersonProjectRows(accountId, timeRange, filters.projectScope, scope),
       withOrgCache(
         accountId,
-        `people-contributors-roles:v1:${timeRange}:${filters.projectScope}`,
+        `people-contributors-roles:v2:${timeRange}:${filters.projectScope}:${teamMembers}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-        () => this.fetchMaintainerRoles(accountId, timeRange, filters.projectScope),
+        async () => {
+          const fetched = await readWithOrgTeamMembersFallback(teamMembers, 'get_org_people_contributors_roles', (pick) =>
+            this.fetchMaintainerRoles(accountId, timeRange, filters.projectScope, pick)
+          );
+          rolesTeamMembersUnavailable = fetched.teamMembersUnavailable;
+          return fetched.value;
+        },
         isMaintainerRoleRows,
-        // `null` (roles table missing) is served as unavailable — no badges, no tile count — and never stored.
-        (value) => value !== null
+        // `null` (roles table missing) is served as unavailable — no badges, no tile count — and never stored; nor
+        // are roles read with team members while the flag is missing.
+        (value) => value !== null && !rolesTeamMembersUnavailable
       ),
       readOrgEmploymentPersonKeys(this.snowflakeService, accountId, timeRange, filters.projectScope, employment),
+      readOrgTeamMemberPersonKeys(this.snowflakeService, accountId, teamMembers),
     ]);
-    const keptRows = employmentKeys === null ? rows : rows.filter((row) => employmentKeys.has(row.PERSON_KEY));
-    return buildResponse(accountId, timeRange, filters, keptRows, roles);
+    const excluded = teamMemberKeys.excluded;
+    const keptRows = rows.filter(
+      (row) => (employmentKeys === null || employmentKeys.has(row.PERSON_KEY)) && (excluded === null || !excluded.has(row.PERSON_KEY))
+    );
+    const response = buildResponse(accountId, timeRange, filters, keptRows, roles);
+    return teamMemberKeys.unavailable || rolesTeamMembersUnavailable ? { ...response, teamMembersUnavailable: true } : response;
+  }
+
+  /**
+   * The (person, project) code rows of the window, project scope and resolved organization scope, every count column
+   * included and team members kept — the one live code read People → Contributors and All Employees share
+   * (lfx-self-serve#4735), so both count the same people at any time of day.
+   * `people-contributors:v5:{timeRange}:{projectScope}:{orgScope}` (lfx-self-serve#4482, lfx-self-serve-ops#1219): the
+   * rows no longer carry the declared-maintainer flags, so a `v4` entry must miss. The commit scope, metric,
+   * employment and team members only pick after the read, so they share the entry; the organization scope picks the
+   * columns read.
+   */
+  public readPersonProjectRows(
+    accountId: string,
+    timeRange: OrgLensTimeRange,
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter
+  ): Promise<ContributorPersonProjectRow[]> {
+    return withOrgCompactCache(
+      accountId,
+      `people-contributors:v5:${timeRange}:${projectScope}:${orgScope}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchPersonProjectRows(accountId, timeRange, projectScope, orgScope),
+      { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
+    );
   }
 
   /**
    * Single SQL pass; cutoff and scope inlined (allow-listed) so the planner can fold them, only `account_id` is bound. dbt model gates bots.
-   * The commit columns follow the project scope ({@link orgContributorsCommitColumns}).
+   * The commit columns follow the project scope and the organization scope ({@link orgContributorsCommitColumns}); under
+   * `insights` only rows with Insights-scoped code are read, so the last-active date is that code's too.
    */
-  private async fetchPersonProjectRows(accountId: string, timeRange: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<ContributorPersonProjectRow[]> {
-    const columns = orgContributorsCommitColumns(projectScope);
+  private async fetchPersonProjectRows(
+    accountId: string,
+    timeRange: OrgLensTimeRange,
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter
+  ): Promise<ContributorPersonProjectRow[]> {
+    const columns = orgContributorsCommitColumns(projectScope, orgScope);
 
     const query = `
       SELECT
@@ -112,12 +175,13 @@ export class OrgPeopleContributorsService {
         MAX(foundation_slug) AS foundation_slug,
         SUM(${columns.commits}) AS commits,
         SUM(${columns.mergedCommits}) AS merged_commits,
-        SUM(daily_code_activities) AS code_activities,
+        SUM(${columns.codeActivities}) AS code_activities,
         MAX(activity_date) AS last_active_date
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
       WHERE account_id = ?
         ${orgContributorsActivityPredicate(timeRange)}
         ${orgProjectScopePredicate(projectScope)}
+        ${orgContributorsScopePredicate(orgScope)}
       GROUP BY person_key, project_id
     `;
 
@@ -125,11 +189,15 @@ export class OrgPeopleContributorsService {
     return result.rows;
   }
 
-  /** The account's maintainer roles overlapping the window in the project scope, whether or not the person has code in it; `null` when the roles table is missing. */
+  /**
+   * The account's maintainer roles overlapping the window in the project scope, whether or not the person has code in
+   * it, CDP team members' roles left out under `exclude`; `null` when the roles table is missing.
+   */
   private fetchMaintainerRoles(
     accountId: string,
     timeRange: OrgLensTimeRange,
-    projectScope: OrgProjectScope
+    projectScope: OrgProjectScope,
+    teamMembers: OrgTeamMembersFilter
   ): Promise<OrgContributorMaintainerRoleRow[] | null> {
     const overlap = orgMaintainerRoleOverlap(timeRange);
     const query = `
@@ -138,8 +206,15 @@ export class OrgPeopleContributorsService {
       WHERE ACCOUNT_ID = ?
         AND ${overlap.sql}
         ${orgProjectScopePredicate(projectScope, 'IS_LF_PROJECT')}
+        ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
     `;
-    return readMaintainerRoles<OrgContributorMaintainerRoleRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', query, [accountId, ...overlap.binds]);
+    return readMaintainerRoles<OrgContributorMaintainerRoleRow>(
+      this.snowflakeService,
+      'ORG_MAINTAINER_ROLES',
+      query,
+      [accountId, ...overlap.binds],
+      orgTeamMembersQueryOptions(teamMembers)
+    );
   }
 }
 

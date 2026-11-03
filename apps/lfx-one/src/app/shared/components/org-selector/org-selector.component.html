@@ -24,7 +24,7 @@
         } @else if (displayLogo()) {
           <img [src]="displayLogo()" alt="" data-testid="org-selector-trigger-logo-image" />
         } @else {
-          <i class="fa-light fa-building" aria-hidden="true" data-testid="org-selector-trigger-logo-fallback"></i>
+          <span class="lfxn__tile-empty" data-testid="org-selector-trigger-logo-fallback">No logo</span>
         }
       </span>
       <span class="lfxn__context-text">
@@ -76,7 +76,7 @@
         } @else if (displayLogo()) {
           <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" data-testid="org-selector-trigger-logo-image" />
         } @else {
-          <i class="fa-light fa-building text-gray-500 text-lg" aria-hidden="true" data-testid="org-selector-trigger-logo-fallback"></i>
+          <span class="text-[10px] font-medium leading-tight text-center text-gray-500" data-testid="org-selector-trigger-logo-fallback">No logo</span>
         }
       </div>
     </div>
@@ -257,10 +257,11 @@
                     [src]="displayItem.item.logoUrl"
                     [attr.data-testid]="'org-item-' + displayItem.item.uid + '-logo-image'" />
                 } @else {
-                  <i
-                    class="fa-light fa-building text-gray-500"
-                    aria-hidden="true"
-                    [attr.data-testid]="'org-item-' + displayItem.item.uid + '-logo-fallback'"></i>
+                  <span
+                    class="text-[8px] font-medium leading-tight text-center text-gray-500"
+                    [attr.data-testid]="'org-item-' + displayItem.item.uid + '-logo-fallback'"
+                    >No logo</span
+                  >
                 }
               </div>
             </div>

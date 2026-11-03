@@ -95,8 +95,11 @@ export const MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_MESSAGE = 'You do not have permi
 /** Attendance types an admin picks when accepting an application; `attendance_type` upstream. */
 export const MENTORSHIP_ATTENDANCE_TYPES = ['full_time', 'part_time'] as const;
 
-/** Statuses an admin may set through `PATCH …/applications/:applicationId/status`; Withdraw has its own route. */
-export const MENTORSHIP_ADMIN_DECISION_STATUSES = ['accepted', 'declined', 'graduated'] as const;
+/**
+ * Statuses an admin may set through `PATCH …/applications/:applicationId/status`; Withdraw has its own route. `pending`
+ * re-opens a declined or withdrawn application.
+ */
+export const MENTORSHIP_ADMIN_DECISION_STATUSES = ['pending', 'accepted', 'declined', 'graduated'] as const;
 
 export const MENTORSHIP_ATTENDANCE_TYPE_LABELS: Record<(typeof MENTORSHIP_ATTENDANCE_TYPES)[number], string> = {
   full_time: 'Full time',
@@ -116,14 +119,26 @@ export const MENTORSHIP_ADMIN_ACCEPT_DIALOG_HEADER = 'Accept Application';
 export const MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_LABEL = 'Attendance type';
 export const MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_REQUIRED_MESSAGE = 'Choose an attendance type to accept the application.';
 export const MENTORSHIP_ADMIN_DECLINE_CONFIRM_MESSAGE = 'Decline this application? The mentee is told it was declined.';
-export const MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE = "Withdraw this application on the mentee's behalf? This can't be undone.";
+export const MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE = "Withdraw this application on the mentee's behalf?";
 export const MENTORSHIP_ADMIN_GRADUATE_CONFIRM_MESSAGE = 'Graduate this mentee?';
+export const MENTORSHIP_ADMIN_UNDO_GRADUATION_CONFIRM_MESSAGE =
+  'Undo this graduation? The mentee goes back to Accepted and no email is sent. Their graduation email has already gone out.';
+/** Shown when Undo graduation hits a 422: the mentee holds another accepted mentorship, or the term is no longer open. */
+export const MENTORSHIP_ADMIN_UNDO_GRADUATION_REFUSED_MESSAGE =
+  "This graduation can't be undone: the mentee is accepted in another mentorship, or this term is no longer open.";
+export const MENTORSHIP_ADMIN_REOPEN_CONFIRM_MESSAGE = 'Re-open this application? It goes back to review, and no email is sent.';
+/** Shown when Re-open hits a 409: the application changed, or the mentee has since applied to the term again. */
+export const MENTORSHIP_ADMIN_REOPEN_CONFLICT_MESSAGE =
+  "This application can't be re-opened: it changed, or the mentee has applied to this term again. The list has been refreshed.";
+/** Shown when Re-open hits a 422: the program is hidden, the term is closed, or the mentee is at the pending-application limit. */
+export const MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE =
+  "This application can't be re-opened: the program is hidden, the term is closed, or the mentee already has three applications under review.";
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_HEADER = 'Decline by Term';
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_MESSAGE = "Decline every pending application in the term you pick. Accepted mentees aren't affected.";
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_NO_TERMS_MESSAGE = 'There is no open term to decline applications in.';
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_TERM_LABEL = 'Term';
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_REQUIRED_MESSAGE = 'Choose a term to continue.';
-export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_CONFIRM_TEMPLATE = 'Decline all pending applications in {term}? This cannot be undone.';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_CONFIRM_TEMPLATE = 'Decline all pending applications in {term}? You can re-open them only one at a time.';
 /** `{count}` is the number of applications the bulk decline reported. */
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_TEMPLATE = '{count} applications declined';
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_SINGULAR_TEMPLATE = '1 application declined';
@@ -132,6 +147,8 @@ export const MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES = {
   declined: 'Application declined',
   withdrawn: 'Application withdrawn',
   graduated: 'Mentee graduated',
+  ungraduated: 'Graduation undone',
+  reopened: 'Application re-opened',
 } as const;
 export const MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE = "The change couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is still being saved. Try again in a moment.';
@@ -237,6 +254,29 @@ export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_MESSAGES: Readonly<Record<numbe
   404: 'This file is no longer available. Refresh the page and try again.',
   503: 'File downloads are unavailable right now. Please try again later.',
 };
+
+/** Task file View: opens a PDF or plain-text file in a new tab, and saves any other type (DOC, DOCX) instead. */
+export const MENTORSHIP_TASK_FILE_VIEW_LABEL = 'View';
+export const MENTORSHIP_TASK_FILE_VIEW_ERROR_SUMMARY = 'Could not open the file';
+export const MENTORSHIP_TASK_FILE_VIEW_ERROR_FALLBACK = 'We could not open this file right now. Please try again.';
+export const MENTORSHIP_TASK_FILE_VIEW_DOWNLOADED_SUMMARY = 'File downloaded';
+export const MENTORSHIP_TASK_FILE_VIEW_DOWNLOADED_DETAIL = 'This file type cannot be previewed in the browser, so it was downloaded instead.';
+/**
+ * The type a viewable file is opened as, keyed by the response's type and by the file name's extension. The bytes are
+ * always re-typed to one of these: a `blob:` URL runs with this page's origin, so no other type may ever be opened.
+ * Text is always opened as UTF-8 on purpose: upstream stores a text file only when its bytes are valid UTF-8 (uploads
+ * and migrated legacy files alike), so a declared charset is never needed and is not trusted.
+ */
+export const MENTORSHIP_TASK_FILE_VIEW_TYPES: Readonly<Record<string, string>> = {
+  'application/pdf': 'application/pdf',
+  '.pdf': 'application/pdf',
+  'text/plain': 'text/plain;charset=utf-8',
+  '.txt': 'text/plain;charset=utf-8',
+};
+/** A response type that says nothing about the file, so its extension decides. */
+export const MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE = 'application/octet-stream';
+/** How long a viewed file's `blob:` URL is kept, so the new tab has time to load it before it is revoked. */
+export const MENTORSHIP_TASK_FILE_VIEW_URL_LIFE_MS = 60_000;
 
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by
@@ -481,15 +521,28 @@ export const MENTORSHIP_ACTIVE_APPLICATION_STATUSES: readonly MentorshipMenteeSt
 
 /**
  * Row actions on the admin Current Mentees tab. Source of the
- * `MentorshipCurrentMenteeAction` union; declaration order is the menu order.
+ * `MentorshipCurrentMenteeAction` union; each status's menu order is set by
+ * `MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS`.
  */
-export const MENTORSHIP_CURRENT_MENTEE_ACTIONS = ['accept', 'create-task', 'graduate', 'decline', 'withdraw'] as const;
+export const MENTORSHIP_CURRENT_MENTEE_ACTIONS = [
+  'accept',
+  'create-task',
+  'graduate',
+  'undo-graduation',
+  'reopen',
+  'decline',
+  'withdraw',
+  'contact-mentee',
+] as const;
 
 /** Menu labels for the Current Mentees row actions — imperative, unlike the status labels. */
 export const MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS: Record<MentorshipCurrentMenteeAction, string> = {
   accept: 'Accept',
   'create-task': 'Create task',
+  'contact-mentee': 'Contact Mentee',
   graduate: 'Graduate',
+  'undo-graduation': 'Undo graduation',
+  reopen: 'Re-open',
   decline: 'Decline',
   withdraw: 'Withdraw',
 };
@@ -497,7 +550,10 @@ export const MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS: Record<MentorshipCurrentMe
 export const MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS: Record<MentorshipCurrentMenteeAction, string> = {
   accept: 'fa-light fa-circle-check',
   'create-task': 'fa-light fa-list-check',
+  'contact-mentee': 'fa-light fa-envelope',
   graduate: 'fa-light fa-graduation-cap',
+  'undo-graduation': 'fa-light fa-arrow-rotate-left',
+  reopen: 'fa-light fa-arrow-rotate-left',
   decline: 'fa-light fa-circle-xmark',
   withdraw: 'fa-light fa-circle-minus',
 };
@@ -505,14 +561,16 @@ export const MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS: Record<MentorshipCurrentMen
 /**
  * Row actions each status offers on the Current Mentees tab. An application under
  * review can be decided; an accepted mentee can be given tasks and graduated. The
- * three terminal statuses offer nothing — the row keeps only its Note link.
+ * end states can be walked back: a graduation is undone back to accepted, and a
+ * declined or withdrawn application is re-opened back to review. The mentee can be
+ * contacted at every status.
  */
 export const MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS: Record<MentorshipMenteeStatus, readonly MentorshipCurrentMenteeAction[]> = {
-  pending: ['accept', 'decline', 'withdraw'],
-  accepted: ['create-task', 'graduate', 'decline', 'withdraw'],
-  declined: [],
-  withdrawn: [],
-  graduated: [],
+  pending: ['contact-mentee', 'accept', 'decline', 'withdraw'],
+  accepted: ['create-task', 'contact-mentee', 'graduate', 'decline', 'withdraw'],
+  declined: ['contact-mentee', 'reopen'],
+  withdrawn: ['contact-mentee', 'reopen'],
+  graduated: ['contact-mentee', 'undo-graduation'],
 };
 
 /**

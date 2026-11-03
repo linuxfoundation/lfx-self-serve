@@ -4,7 +4,7 @@ description: Manage your work history and see how your project affiliations and 
 audience: [all]
 product_area: Account
 tags: [account, work-history, affiliations, project-involvement, attribution, maintainer]
-last_updated: 2026-08-17
+last_updated: 2026-11-02
 intercom_collection: Account
 ---
 
@@ -48,7 +48,9 @@ If you have no entries yet, the section shows _No work experience added_ — use
 
 ## Project Involvement (affiliations)
 
-This section shows your role and organizational affiliation for each open-source project you contribute to. Affiliations are calculated automatically — you don't add projects manually.
+This section shows your role and affiliation for each project you're involved in, whether through code, events, training, or other activity. Affiliations are calculated automatically — you don't add projects manually.
+
+Only projects that LFX tracks appear here. Activity in a personal repository, or in a project LFX doesn't track, is not shown.
 
 Your contributions are attributed based on three inputs (see the **How affiliations work** dialog on the tab):
 
@@ -64,7 +66,7 @@ When the system attributes contributions from your employment timeline, you may 
 
 If the system detects you may be a maintainer, it asks you to verify: in the **Verify your role** dialog, choose **Yes, I'm a maintainer** or **No, I'm a contributor**. A role that comes from a project's repository configuration file is marked with a lock icon and the tooltip _Role defined in repository configuration file_; you can still open the role menu and change it to **Contributor** if it's wrong.
 
-If nothing is linked yet, the section shows _No project affiliations yet_ with prompts to **Verify identities** and **Add work experience**.
+If you haven't connected any identities or added work experience yet, the section shows _No project affiliations yet_. Once you have connected an identity, even one you haven't verified yet, or added work experience, it shows _No project contributions found_ until LFX finds contributions to a tracked project. Only verified identities are used to find your contributions, so if you see this message, check that the accounts you contribute with are verified on the [Identities](../identities/) tab. Both messages show buttons to **Verify identities** and **Add work experience**.
 
 ## Related
 

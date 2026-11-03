@@ -23,14 +23,11 @@ export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
  */
 export const MY_CLAS_M2_ENABLED_FLAG = 'my-clas-m2-enabled';
 export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
-/** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
-export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 /**
  * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the EasyCLA
- * route and sidebar entry. The org-lens prefix keeps it in the lens family alongside
- * `ORG_LENS_ROI_ENABLED_FLAG`; the `m3` suffix follows the `MY_CLAS_M2_ENABLED_FLAG`
- * milestone-gate precedent. Default false: a missing LaunchDarkly flag keeps the
- * module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
+ * route and sidebar entry. The org-lens prefix keeps it in the lens family; the `m3` suffix
+ * follows the `MY_CLAS_M2_ENABLED_FLAG` milestone-gate precedent. Default false: a missing
+ * LaunchDarkly flag keeps the module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
  *
  * Evaluated through `FeatureFlagService.getBooleanFlag`, which is the Web SDK and never runs
  * server-side, so this hides the route and nav without closing the BFF. **Turning this flag off
@@ -94,20 +91,6 @@ export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
  * be reachable.
  */
 export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
-
-/**
- * Dark-launch gate for the Mentorship module — the `/mentorship` route tree (admin list and the
- * enroll-a-program wizard) and its Me Lens sidebar section. Default false: a missing LaunchDarkly
- * flag keeps the module invisible. The route guard fails open like `myClasEnabledGuard` when the
- * provider is not ready, so a slow or blocked LaunchDarkly never bounces testers away; before
- * go-live anything a non-tester writes in that window is replaced by the final data import.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
- * SDK and never runs server-side, so it cannot gate an Express handler. The mentorship BFF routes
- * stay reachable by a direct API caller while this is off; add a `ServerFeatureFlag` counterpart if
- * the write paths ever need a kill switch of their own.
- */
-export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
 
 /**
  * Dark-launch gate for the LFXV2-3365 Health Metrics Overview replacement page (tiles + findings

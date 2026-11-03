@@ -4,9 +4,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { MeetingRegistrant } from '@lfx-one/shared/interfaces';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { of, Subject, throwError } from 'rxjs';
+import { firstValueFrom, of, Subject, throwError, toArray } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingInviteResendService } from './meeting-invite-resend.service';
@@ -214,6 +215,56 @@ describe('MeetingInviteResendService', () => {
 
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to resend the invitation. Please try again.' }));
       expect(service.isResendingOwn(MEETING_UID)).toBe(false);
+    });
+  });
+
+  describe('resendOwn$', () => {
+    it('resends without a toast and clears the in-flight state once it settles', async () => {
+      const result = await firstValueFrom(service.resendOwn$(MEETING_UID, '1700000000'));
+
+      expect(result).toEqual({ message: 'ok' });
+      expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_UID, '1700000000');
+      expect(messageAdd).not.toHaveBeenCalled();
+      expect(service.isResendingOwn(MEETING_UID)).toBe(false);
+    });
+
+    it('sends nothing until subscribed', () => {
+      service.resendOwn$(MEETING_UID);
+
+      expect(resendMyMeetingInvitation).not.toHaveBeenCalled();
+      expect(service.isResendingOwn(MEETING_UID)).toBe(false);
+    });
+
+    it('completes without a request for an empty id or while a send for the meeting is in flight', async () => {
+      resendMyMeetingInvitation.mockReturnValueOnce(new Subject<{ message: string }>());
+      service.resendOwn$(MEETING_UID).subscribe();
+
+      expect(await firstValueFrom(service.resendOwn$(MEETING_UID).pipe(toArray()))).toEqual([]);
+      expect(await firstValueFrom(service.resendOwn$('').pipe(toArray()))).toEqual([]);
+      expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+    });
+
+    it('shares its in-flight state with the toast-free service', () => {
+      const ownResend = TestBed.inject(MeetingOwnInviteResendService);
+      resendMyMeetingInvitation.mockReturnValueOnce(new Subject<{ message: string }>());
+
+      ownResend.resendOwn$(MEETING_UID).subscribe();
+
+      expect(service.isResendingOwn(MEETING_UID)).toBe(true);
+      service.resendOwn(MEETING_UID);
+      expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+    });
+
+    it('errors without a toast and leaves the copy to describeOwnResendFailure', async () => {
+      const failure = new HttpErrorResponse({ status: 429 });
+      resendMyMeetingInvitation.mockReturnValue(throwError(() => failure));
+
+      const error = await firstValueFrom(service.resendOwn$(MEETING_UID)).catch((caught: unknown) => caught);
+
+      expect(error).toBe(failure);
+      expect(messageAdd).not.toHaveBeenCalled();
+      expect(service.isResendingOwn(MEETING_UID)).toBe(false);
+      expect(service.describeOwnResendFailure(error)).toBe('You have resent your invitation too many times. Please try again later.');
     });
   });
 });

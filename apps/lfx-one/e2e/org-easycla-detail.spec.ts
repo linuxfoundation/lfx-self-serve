@@ -35,6 +35,7 @@ import {
   gotoEasyclaList,
   PAGE_LOAD_TIMEOUT,
   PDF_URL_ROUTE,
+  stubCatalogueNotFound,
   skipWithoutCredentials,
 } from './helpers/org-easycla.helper';
 
@@ -212,9 +213,12 @@ test.describe('Org Lens EasyCLA detail — content', () => {
    * asserted: a regression that redirects would otherwise pass on the empty-state check alone.
    */
   test('stays on a CLA Group address the organization holds nothing for', async ({ page }) => {
-    await gotoEasyclaDetail(page, UNHELD_GROUP_ID, stubList());
+    await gotoEasyclaDetail(page, UNHELD_GROUP_ID, async (p) => {
+      await stubList()(p);
+      await stubCatalogueNotFound(p);
+    });
 
-    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-group-not-found-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${UNHELD_GROUP_ID}$`));
     await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-error-state')).toHaveCount(0);

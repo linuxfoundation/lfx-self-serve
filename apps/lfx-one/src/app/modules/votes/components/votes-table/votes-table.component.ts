@@ -18,12 +18,19 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import { VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
+import {
+  VOTE_CLOSE_CONFIRMATION,
+  VOTE_SUMMARY_NOT_ENDED,
+  VOTE_SUMMARY_NOTICE_LIFE_MS,
+  VOTE_SUMMARY_PRECHECK_FAILED,
+  VOTE_SUMMARY_SEND_FAILED,
+} from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
   GroupsIOMailingList,
   MyVotesQuickFilter,
+  SendVoteSummaryResponse,
   Vote,
   VoteFilterState,
   VoteMailingListReminderDialogData,
@@ -33,6 +40,7 @@ import {
 import {
   buildMailtoHref,
   buildVoteMailingListReminder,
+  buildVoteSummarySendNotice,
   computeVoteRowParticipation,
   getEntityCommands,
   getMailingListEmail,
@@ -55,6 +63,7 @@ import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
+import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -155,11 +164,12 @@ export class VotesTableComponent {
   /**
    * Fires immediately with the confirmed vote once extendVote() succeeds (GH-3823 review, @greptile-apps) —
    * refresh.emit()'s search-index refetch can echo back a not-yet-reindexed (stale) deadline, which would
-   * otherwise leave an already-open results drawer showing the pre-extension deadline indefinitely, since its
-   * listVote input would see no change. A host feeding this table's votes into that drawer's listVote should
-   * apply this override until its own votes/refresh source catches up.
+   * otherwise leave the row showing the pre-extension deadline. A host feeding this table's votes should apply
+   * this override until its own votes/refresh source catches up.
    */
   public readonly voteExtended = output<Vote>();
+  /** Fires with the confirmed vote once a row-menu Close succeeds, so the host can refresh its status counters. */
+  public readonly voteClosed = output<Vote>();
 
   // === Forms ===
   public searchForm = new FormGroup({
@@ -180,6 +190,12 @@ export class VotesTableComponent {
   protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
   private readonly isResolvingMailingList = signal(false);
+  /**
+   * Overlays a just-closed vote onto its row as `ended`, for the same reason as `extendedDeadlines`: the index refetch can
+   * still report `active`. Evicted once the incoming `votes()` row reports a non-active status.
+   */
+  private readonly closingUids = signal<Set<string>>(new Set());
+  private readonly closedVotes = signal<Map<string, Pick<Vote, 'status' | 'early_end_time'>>>(new Map());
   /**
    * Overlays a just-extended deadline onto its row (GH-3661) — `extendVote()`'s success response lands
    * here immediately rather than waiting on `refresh.emit()`'s possibly-stale search-index refetch.
@@ -229,6 +245,7 @@ export class VotesTableComponent {
     toObservable(this.votes)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((votes) => {
+        this.evictClosedOverrides(votes);
         const overrides = this.extendedDeadlines();
         if (overrides.size === 0) return;
         const next = new Map(overrides);
@@ -319,6 +336,7 @@ export class VotesTableComponent {
         tooltipOptions: { tooltipLabel: 'Opens your mail app to send a reminder email to the mailing list', tooltipPosition: 'left' },
         command: () => this.sendMailingListReminder(vote),
       });
+      items.push({ label: 'Close vote', icon: 'fa-light fa-lock', command: () => this.onCloseVote(vote) });
     }
     // Summary can only be sent once the vote has closed (#3662) — upstream rejects it otherwise.
     if (vote.writer === true && vote.status === PollStatus.ENDED) {
@@ -460,20 +478,9 @@ export class VotesTableComponent {
           )
           .subscribe({
             next: (result) => {
-              const detail =
-                result.failed_count > 0
-                  ? `Summary sent to ${result.recipient_count} voter(s); ${result.failed_count} failed.`
-                  : `Summary sent to ${result.recipient_count} voter(s).`;
-              this.messageService.add({ severity: result.failed_count > 0 ? 'warn' : 'success', summary: 'Summary sent', detail });
+              this.messageService.add(buildVoteSummarySendNotice(result));
             },
-            error: (error: unknown) => {
-              const isNotEnded = error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === VOTE_SUMMARY_NOT_ENDED;
-              this.messageService.add({
-                severity: 'error',
-                summary: "Couldn't send summary",
-                detail: isNotEnded ? 'This vote has not closed yet.' : "We couldn't send the summary. Please try again.",
-              });
-            },
+            error: (error: unknown) => this.onSendSummaryFailed(error),
           });
       },
     });
@@ -521,6 +528,20 @@ export class VotesTableComponent {
             });
           },
         });
+    });
+  }
+
+  /** Close from the row menu: asks first, and an accept for a row that has left the list is ignored. */
+  protected onCloseVote(vote: Vote): void {
+    const uid = vote.uid;
+    this.confirmationService.confirm({
+      ...VOTE_CLOSE_CONFIRMATION,
+      accept: () => {
+        // Still listed, still open, and not already being closed: a second accept would only earn an upstream rejection.
+        const row = this.displayedVotes().find((r) => r.uid === uid);
+        if (row?.status !== PollStatus.ACTIVE || this.closingUids().has(uid)) return;
+        this.endVote(uid);
+      },
     });
   }
 
@@ -594,7 +615,11 @@ export class VotesTableComponent {
   private initDisplayedVotes(): Signal<VoteTableRow[]> {
     return computed(() => {
       const overrides = this.extendedDeadlines();
-      const allVotes = overrides.size === 0 ? this.votes() : this.votes().map((vote) => ({ ...vote, ...overrides.get(vote.uid) }));
+      const closed = this.closedVotes();
+      const allVotes =
+        overrides.size === 0 && closed.size === 0
+          ? this.votes()
+          : this.votes().map((vote) => ({ ...vote, ...overrides.get(vote.uid), ...closed.get(vote.uid) }));
 
       // For lazy (server-side paginated) mode, the server handles all filtering via filtersChange
       if (this.lazy()) {
@@ -632,6 +657,55 @@ export class VotesTableComponent {
   /** Copies the vote's lens-independent permalink; access is checked when the link is opened, so anyone who sees the row may share it. */
   private copyVoteLink(uid: string): void {
     this.clipboardShare.copyLink(toAbsoluteUrl(votePermalinkPath(uid), isPlatformBrowser(this.platformId)), 'Vote link copied to clipboard.');
+  }
+
+  /** Ends the vote, flips its row to `ended` locally and lets the host refresh its counters; a failure leaves the row alone. */
+  private endVote(uid: string): void {
+    this.closingUids.update((ids) => new Set(ids).add(uid));
+    this.voteService
+      .endVote(uid)
+      .pipe(
+        take(1),
+        finalize(() =>
+          this.closingUids.update((ids) => {
+            const next = new Set(ids);
+            next.delete(uid);
+            return next;
+          })
+        )
+      )
+      .subscribe({
+        next: (updatedVote) => {
+          this.closedVotes.update((map) => new Map(map).set(uid, { status: PollStatus.ENDED, early_end_time: updatedVote.early_end_time }));
+          this.voteClosed.emit(updatedVote);
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Vote closed' });
+        },
+        error: (error: unknown) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to close the vote',
+            detail: this.endErrorDetail(error),
+            life: 8000,
+          });
+        },
+      });
+  }
+
+  /** The upstream message when the BFF passed one through (409 not started, 400 past its end time), else a plain fallback. */
+  private endErrorDetail(error: unknown): string {
+    const body = error instanceof HttpErrorResponse ? (error.error as { error?: unknown } | null) : null;
+    return typeof body?.error === 'string' && body.error ? body.error : "We couldn't confirm the vote was closed. Please try again.";
+  }
+
+  /** Drops a closed overlay once the incoming row has caught up, so a vote reopened elsewhere shows its real status again. */
+  private evictClosedOverrides(votes: Vote[]): void {
+    const closed = this.closedVotes();
+    if (closed.size === 0) return;
+    const next = new Map(closed);
+    for (const vote of votes) {
+      if (next.has(vote.uid) && vote.status !== PollStatus.ACTIVE) next.delete(vote.uid);
+    }
+    if (next.size !== closed.size) this.closedVotes.set(next);
   }
 
   /** Opens the create form prefilled from this vote, carrying the row's own project/committee context (dashboard rows can span projects).
@@ -679,6 +753,59 @@ export class VotesTableComponent {
     if (isBrowser) {
       this.document.location.href = href;
     }
+  }
+
+  /**
+   * Reports a failed summary send (#4689). Only a clear rejection or a pre-send failure invites an
+   * immediate retry; a transport failure, timeout, gateway error or unknown 5xx can leave summaries
+   * already delivered, so those warn about duplicates instead of saying nothing was sent.
+   */
+  private onSendSummaryFailed(error: unknown): void {
+    const code = error instanceof HttpErrorResponse ? (error.error?.code as string | undefined) : undefined;
+
+    if (error instanceof HttpErrorResponse && error.status === 409 && code === VOTE_SUMMARY_NOT_ENDED) {
+      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'This vote has not closed yet.' });
+      return;
+    }
+
+    if (error instanceof HttpErrorResponse && code === VOTE_SUMMARY_PRECHECK_FAILED) {
+      let detail = 'Nothing was sent. Please try again.';
+      if (error.status === 401) {
+        detail = 'Nothing was sent. Sign in again before sending a summary.';
+      } else if (error.status === 404) {
+        detail = 'Nothing was sent. This vote is no longer available.';
+      }
+      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail });
+      return;
+    }
+
+    if (error instanceof HttpErrorResponse && error.status === 502 && code === VOTE_SUMMARY_SEND_FAILED && !isBffTransportFailure(error)) {
+      const counts = error.error?.details as SendVoteSummaryResponse | undefined;
+      // Only a complete, confirmed-unsent BFF result is retry-safe. Legacy or invalid counts stay unconfirmed below.
+      if (
+        counts &&
+        counts.recipient_count === 0 &&
+        counts.uncertain_count === 0 &&
+        counts.failed_count > 0 &&
+        [counts.failed_count, counts.skipped_count].every((count) => Number.isInteger(count) && count >= 0)
+      ) {
+        this.messageService.add({ ...buildVoteSummarySendNotice(counts), severity: 'error', summary: "Couldn't send summary" });
+        return;
+      }
+    }
+
+    const rejected = error instanceof HttpErrorResponse && !isBffTransportFailure(error) && [400, 401, 403, 429].includes(error.status);
+    if (rejected) {
+      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'No summaries were sent. Please try again.' });
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Summary delivery unconfirmed',
+      detail: "We couldn't confirm whether the summary was sent. Check with voters before retrying, since retrying may send duplicate summaries.",
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    });
   }
 
   private showNoMailingListToast(): void {

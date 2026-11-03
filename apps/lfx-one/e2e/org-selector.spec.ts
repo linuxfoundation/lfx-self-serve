@@ -31,7 +31,6 @@
  *   with FGA access to at least one b2b_org in the dev sandbox
  */
 
-import { ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 
 import {
@@ -42,7 +41,7 @@ import {
   SYNTHETIC_SECOND_ORG_DOMAIN,
   SYNTHETIC_SECOND_ORG_LEGAL_NAME,
 } from './fixtures/mock-data/synthetic-org.mock';
-import { stubFeatureFlags } from './helpers/org-roi.helper';
+import { skipUnlessLfStaff } from './helpers/org-roi.helper';
 
 const APP_HOME = '/';
 const SIDEBAR_TIMEOUT = 30_000;
@@ -385,15 +384,20 @@ const SINGLE_MAIN_ROUTES: { name: string; path: string; stayOn: RegExp; root: st
 test.describe('Org and foundation pages — single main landmark (GH-2220)', () => {
   for (const route of SINGLE_MAIN_ROUTES) {
     test(`exactly one main landmark on ${route.name}`, async ({ page }) => {
-      await stubFeatureFlags(page, { [ORG_LENS_ROI_ENABLED_FLAG]: true });
       await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
+
+      // The ROI routes are LF-staff only: skip a session the personas report as non-staff, but let a redirected staff session fail.
+      const staffOnly = route.name.startsWith('org-roi');
+      if (staffOnly) {
+        await skipUnlessLfStaff(page);
+      }
 
       await page.goto(route.path, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
-      if (!route.stayOn.test(new URL(page.url()).pathname)) {
-        test.skip(true, `${route.path} redirected away — flag or access gate`);
+      if (!staffOnly && !route.stayOn.test(new URL(page.url()).pathname)) {
+        test.skip(true, `${route.path} redirected away — access gate`);
       }
 
       await expect(page.getByTestId(route.root)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });

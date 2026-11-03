@@ -29,6 +29,7 @@ import {
   BRAND_KIT_WEB_VIEW_TABS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitBookView,
@@ -40,7 +41,7 @@ import {
   MktgRevisionApproval,
   MktgAssetHeaderMetadata,
 } from '@lfx-one/shared/interfaces';
-import { brandKitChapterSummaries, buildBrandKitBookView, mktgAssetHeaderFallback, mktgPrintBrand } from '@lfx-one/shared/utils';
+import { brandKitChapterSummaries, buildBrandKitBookView, describeMktgAcceptedGaps, mktgAssetHeaderFallback, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -125,6 +126,9 @@ export class BrandKitWebViewComponent {
     () => this.headerMetadata() ?? mktgAssetHeaderFallback('brand-kit', this.versionNumber(), this.kit().generatedAt, this.approval())
   );
   protected readonly approvalRequiredNote = MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
+  protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
+  /** Under an approved revision's gaps: accepted at that approval, still open. */
+  protected readonly acceptedGapsNote = computed(() => describeMktgAcceptedGaps(this.kit().report, this.approval(), this.versionNumber()));
   protected readonly printView = computed(() => {
     const kit = this.approvedKit();
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
@@ -173,7 +177,7 @@ export class BrandKitWebViewComponent {
   public constructor() {
     // The print mark never outlives the view (a print dialog still up when
     // the page goes), and a print still waiting for its font is cancelled.
-    this.destroyRef.onDestroy(() => this.printService.clear(BRAND_KIT_PRINT_BODY_CLASS));
+    this.destroyRef.onDestroy(() => this.printService.clear());
     toObservable(this.printFont)
       .pipe(takeUntilDestroyed())
       .subscribe((font) => {

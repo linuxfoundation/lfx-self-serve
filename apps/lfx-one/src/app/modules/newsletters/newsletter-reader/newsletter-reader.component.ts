@@ -2,21 +2,37 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { IMPERSONATION_READ_ONLY_ERROR_CODE, NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
-import { NewsletterJoinState, NewsletterReaderState, ServerRequestContext } from '@lfx-one/shared/interfaces';
-import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { ButtonComponent } from '@components/button/button.component';
+import { IMPERSONATION_READ_ONLY_ERROR_CODE, NEWSLETTER_INVITE_RELOOKUP_DELAY_MS, NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
+import {
+  MyNewsletterFoundation,
+  MyNewsletterFoundationsResponse,
+  NewsletterInviteDialogData,
+  NewsletterInviteLookup,
+  NewsletterReaderCrumb,
+  NewsletterJoinState,
+  NewsletterReaderState,
+  NewsletterShareEvent,
+  NewsletterShareTally,
+  NewsletterShareTarget,
+  ServerRequestContext,
+} from '@lfx-one/shared/interfaces';
+import { addShareToTally, newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
-import { ClipboardShareService } from '@services/clipboard-share.service';
+import { ShareDialogService } from '@services/share-dialog.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, defer, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap, timer } from 'rxjs';
 
 import { NewsletterMemberBenefitBannerComponent } from './newsletter-member-benefit-banner/newsletter-member-benefit-banner.component';
 import { NewsletterNotFoundComponent } from './newsletter-not-found/newsletter-not-found.component';
+import { NewsletterInviteDialogComponent } from '../components/newsletter-invite-dialog/newsletter-invite-dialog.component';
+import { NewsletterEngagementRailComponent } from '../components/newsletter-engagement-rail/newsletter-engagement-rail.component';
 import { NewsletterPreviewComponent } from '../components/newsletter-preview/newsletter-preview.component';
 
 /**
@@ -28,11 +44,21 @@ import { NewsletterPreviewComponent } from '../components/newsletter-preview/new
  * Foundation member companies read the issue; everyone else gets a members-only screen. A member
  * employee who is not yet in the group is added automatically — the join call fires once, in the
  * browser only, so SSR never writes.
+ * Readers allowed to invite coworkers to the issue's foundation newsletter (the same `can_invite`
+ * the My Newsletters cards use) get an "Invite a colleague" button; the lookup is browser-only too.
  * URL: slug-based (human-readable, not UID-based).
  */
 @Component({
   selector: 'lfx-newsletter-reader',
-  imports: [NewsletterMemberBenefitBannerComponent, NewsletterNotFoundComponent, NewsletterPreviewComponent, SkeletonModule],
+  imports: [
+    ButtonComponent,
+    NewsletterEngagementRailComponent,
+    NewsletterMemberBenefitBannerComponent,
+    NewsletterNotFoundComponent,
+    NewsletterPreviewComponent,
+    SkeletonModule,
+  ],
+  providers: [DialogService],
   templateUrl: './newsletter-reader.component.html',
 })
 export class NewsletterReaderComponent {
@@ -42,7 +68,8 @@ export class NewsletterReaderComponent {
   private readonly lensService = inject(LensService);
   private readonly projectService = inject(ProjectService);
   private readonly newsletterService = inject(NewsletterService);
-  private readonly clipboardShare = inject(ClipboardShareService);
+  private readonly shareDialog = inject(ShareDialogService);
+  private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
 
@@ -65,6 +92,23 @@ export class NewsletterReaderComponent {
   protected readonly state: Signal<NewsletterReaderState> = this.initState();
   /** Automatic member-benefit group add, driven by an `eligible` access decision. */
   protected readonly joinState: Signal<NewsletterJoinState> = this.initJoinState();
+  /**
+   * The issue's foundation card from My Newsletters (null until resolved, on SSR, or on failure). Drives the
+   * invite CTA and the breadcrumb's link back to that foundation's list (`/newsletters/my/:slug`, #4979).
+   */
+  protected readonly issueFoundation: Signal<MyNewsletterFoundation | null> = this.initIssueFoundation();
+  protected readonly canInvite = computed(() => !!this.issueFoundation()?.can_invite);
+  /**
+   * Breadcrumb middle crumb (#4979): the issue's foundation, linking to its newsletter list. Until the
+   * foundation resolves — or when the reader doesn't receive it — the project, linking to the cards.
+   */
+  protected readonly foundationCrumb: Signal<NewsletterReaderCrumb> = computed(() => {
+    const foundation = this.issueFoundation();
+    if (foundation?.slug) {
+      return { label: foundation.name, href: `/newsletters/my/${encodeURIComponent(foundation.slug)}`, commands: ['/newsletters/my', foundation.slug] };
+    }
+    return { label: this.pageTitle(), href: '/newsletters/my', commands: ['/newsletters/my'] };
+  });
 
   // === Computed: state projections ===
   protected readonly loading = computed(() => this.state().loading);
@@ -90,6 +134,9 @@ export class NewsletterReaderComponent {
     return nl?.sent_at ? `Received ${formatDate(nl.sent_at, 'MMM d, y', 'en-US')}` : '';
   });
 
+  // === Computed: views (upstream `total_opens`; null when unknown so the rail hides it) ===
+  protected readonly viewCount = computed(() => this.newsletter()?.total_opens ?? null);
+
   // === Computed: share URL (SSR-safe) ===
   protected readonly shareUrl = computed(() => {
     const slug = this.projectSlug();
@@ -98,21 +145,63 @@ export class NewsletterReaderComponent {
     return toAbsoluteUrl(newsletterIssuePath(slug, id), isPlatformBrowser(this.platformId));
   });
 
+  // === Writable Signals (linked) ===
+  /** Share count on the engagement rail's Share button: the server's `share_count`, bumped after each accepted share. Resets per issue. */
+  protected readonly shareTally = linkedSignal<NewsletterShareTally>(() => ({ count: this.newsletter()?.share_count ?? null, channels: [] }));
+
   // === Protected Methods ===
-  protected copyLink(): void {
+  protected openShare(): void {
     const url = this.shareUrl();
+    const project = this.project();
+    const newsletter = this.newsletter();
     if (!url) return;
 
-    this.clipboardShare.copyLink(url, 'Newsletter link copied to clipboard.');
+    // Bind the share to the issue the dialog opened for: Back/Forward can show another issue while it is open.
+    const target: NewsletterShareTarget | null = project && newsletter ? { projectUid: project.uid, newsletterId: newsletter.id } : null;
+    this.shareDialog.open({
+      url,
+      title: newsletter?.subject || this.pageTitle(),
+      copiedMessage: 'Newsletter link copied to clipboard.',
+      onShare: (channel) => {
+        if (target) this.onShared({ ...target, channel });
+      },
+    });
+  }
+
+  protected onInvite(): void {
+    const foundation = this.issueFoundation();
+    if (!foundation?.can_invite) return;
+    this.dialogService.open(NewsletterInviteDialogComponent, {
+      header: 'Invite a colleague',
+      width: '480px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { foundation } satisfies NewsletterInviteDialogData,
+    });
+  }
+
+  /**
+   * Records the share and, once the server accepts it, bumps the visible count if that issue is still shown.
+   * Not tied to the component's lifetime: leaving the page must not abort the write. `recordShare`
+   * completes after one emission, so nothing leaks, and the id check keeps a late result off another issue.
+   */
+  protected onShared(event: NewsletterShareEvent): void {
+    this.newsletterService.recordShare(event.projectUid, event.newsletterId, event.channel).subscribe((accepted) => {
+      if (accepted && this.newsletter()?.id === event.newsletterId) {
+        this.shareTally.update((tally) => addShareToTally(tally, event.channel));
+      }
+    });
   }
 
   protected retryJoin(): void {
     this.joinRetry$.next();
   }
 
-  // The personal route restores Me; eager selection updates this tab immediately,
-  // including when a modified click opens the feed in another tab.
-  protected goToMyNewsletters(event: MouseEvent): void {
+  // The personal routes restore Me; eager selection updates this tab immediately,
+  // including when a modified click opens the feed in another tab. Serves both
+  // breadcrumb links: the foundation cards (default) and one foundation's list.
+  protected goToMyNewsletters(event: MouseEvent, commands: string[] = ['/newsletters/my']): void {
     // Persist the lens before branching for a new-tab/window click.
     this.lensService.setLens('me');
 
@@ -123,7 +212,7 @@ export class NewsletterReaderComponent {
     }
 
     event.preventDefault();
-    void this.router.navigate(['/newsletters/my']);
+    void this.router.navigate(commands);
   }
 
   // === Private Initializers ===
@@ -225,5 +314,53 @@ export class NewsletterReaderComponent {
       ),
       { initialValue: idle }
     );
+  }
+
+  /**
+   * Looks up the issue's foundation in GET /api/newsletters/my-foundations once a readable issue has
+   * loaded, and again after the member-benefit join adds the reader to the group (they may now be
+   * able to invite). That second lookup waits {@link NEWSLETTER_INVITE_RELOOKUP_DELAY_MS}: the
+   * endpoint reads memberships from the query-service index, which picks up the join asynchronously.
+   * Browser-only; a failure just hides the CTA — the invite POST re-checks everything — and points the
+   * breadcrumb's middle crumb at the foundation cards instead of one foundation's list.
+   */
+  private initIssueFoundation(): Signal<MyNewsletterFoundation | null> {
+    const lookup = computed<NewsletterInviteLookup | null>(
+      () => {
+        const { loading, error, project, newsletter, access } = this.state();
+        if (loading || error || !project || !newsletter || !access || access.access === 'denied') return null;
+        const joinStatus = this.joinState().status;
+        return { projectUid: project.uid, newsletterId: newsletter.id, joined: joinStatus === 'added' || joinStatus === 'already_member' };
+      },
+      { equal: (a, b) => a?.projectUid === b?.projectUid && a?.newsletterId === b?.newsletterId && a?.joined === b?.joined }
+    );
+    return toSignal(
+      toObservable(lookup).pipe(
+        filter(() => isPlatformBrowser(this.platformId)),
+        switchMap((target) => {
+          if (!target) return of(null);
+          const fetch$ = defer(() => this.newsletterService.getMyNewsletterFoundations()).pipe(
+            map((response) => this.findIssueFoundation(response, target)),
+            // NewsletterService already logs the failure; here it only hides an optional button.
+            catchError(() => of(null))
+          );
+          return target.joined ? timer(NEWSLETTER_INVITE_RELOOKUP_DELAY_MS).pipe(switchMap(() => fetch$)) : fetch$;
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /**
+   * The issue's foundation card, keyed the way the server grouped the feed: the issue's own row, else
+   * any row from the same project (both carry the server-resolved `foundation_uid`), else the project's
+   * own card. Never guesses a parent — the server only maps a project to its parent when that parent
+   * is a foundation, and a wrong guess would invite to another newsletter group.
+   */
+  private findIssueFoundation(response: MyNewsletterFoundationsResponse, target: NewsletterInviteLookup): MyNewsletterFoundation | null {
+    const row =
+      response.newsletters.find((entry) => entry.id === target.newsletterId) ?? response.newsletters.find((entry) => entry.project_uid === target.projectUid);
+    const foundationUid = row ? (row.foundation_uid ?? row.project_uid) : target.projectUid;
+    return response.foundations.find((entry) => entry.uid === foundationUid) ?? null;
   }
 }

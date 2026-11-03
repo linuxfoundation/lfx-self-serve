@@ -10,6 +10,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS, FOUNDATION_MESSAGE_PRINT_ONLY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
+import { MktgPrintService } from '@services/mktg-print.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { NEVER, of } from 'rxjs';
@@ -27,8 +28,8 @@ const CDN_LOGO_URL = 'https://cdn.sanity.io/images/p4x9k2m1/production/0f3e9c2b8
  * page, the book for print): the framework view's header and keyboard tabs,
  * each tab rendered from a fixture kit, the built-from text with no URL, the
  * book in its print-only wrapper (never on screen), and Download PDF printing
- * it — the print class on the body, cleared after the print and on destroy,
- * never on the server.
+ * it in an isolated frame, cleared after the print and on destroy, never
+ * on the server.
  */
 describe('BrandKitWebViewComponent', () => {
   const activeContext = signal({ slug: 'synthetic', name: 'Synthetic project' });
@@ -459,7 +460,20 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-sources-read')?.textContent).toContain('logo.svg');
       expect(query('brand-kit-web-view-sources-failed')?.textContent).toContain('HTTP 404');
       expect(query('brand-kit-web-view-gaps')?.querySelectorAll('li')).toHaveLength(2);
+      expect(query('brand-kit-web-view-gaps-accepted')).toBeNull();
       expect(query('brand-kit-web-view-report-notes')?.querySelectorAll('li')).toHaveLength(2);
+    });
+
+    it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {
+      const kit = brandKitTestRevision();
+      kit.report = { ...kit.report, gaps: ['No stacked lockup was given.'] };
+      fixture.componentRef.setInput('kit', kit);
+      fixture.componentRef.setInput('version', 3);
+      fixture.componentRef.setInput('approval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+      await open('sources');
+
+      expect(query('brand-kit-web-view-gaps')?.querySelectorAll('li')).toHaveLength(1);
+      expect(query('brand-kit-web-view-gaps-accepted')?.textContent?.trim()).toBe('Accepted when v3 was approved; still open.');
     });
 
     it('says so where the run left nothing to report, and leaves the Sources and gaps tab uncounted', async () => {
@@ -467,47 +481,50 @@ describe('BrandKitWebViewComponent', () => {
       expect(tab('sources').textContent?.trim()).toBe('Sources and gaps');
       await open('sources');
 
-      expect(query('brand-kit-web-view-sources-failed-empty')).not.toBeNull();
+      expect(query('brand-kit-web-view-sources-failed-empty')?.textContent?.trim()).toBe('No source failed.');
       expect(query('brand-kit-web-view-gaps-empty')).not.toBeNull();
       expect(query('brand-kit-web-view-notes-empty')).not.toBeNull();
     });
 
-    it('Download PDF marks the body for the print, asks the browser to print the book, and clears the mark when the print ends', async () => {
+    it('Download PDF creates the isolated print frame in the click task and clears it when printing ends', async () => {
       button('brand-kit-web-view-download-pdf')?.click();
-      // Same tick, before any Promise continuation: Safari's activation is retained.
-      expect(print).toHaveBeenCalledOnce();
-      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
-      expect(print).toHaveBeenCalledTimes(1);
+      const frame = document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]');
+      expect(frame?.contentDocument?.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
+      expect(frame?.contentDocument?.querySelector('lfx-mktg-brand-kit-print')).not.toBeNull();
+      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
+      expect(print).not.toHaveBeenCalled();
 
-      window.dispatchEvent(new Event('afterprint'));
+      frame?.contentWindow?.dispatchEvent(new Event('afterprint'));
+      expect(frame?.isConnected).toBe(false);
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
     });
 
-    it('prepares the kit typeface ahead of the synchronous PDF click', async () => {
-      const load = vi.fn(() => Promise.resolve([]));
-      Object.defineProperty(document, 'fonts', { value: { load }, configurable: true });
+    it('prepares the kit typeface ahead of creating the PDF frame in the click task', async () => {
+      const prepare = vi.spyOn(TestBed.inject(MktgPrintService), 'prepare').mockResolvedValue(undefined);
       try {
-        // A newly selected approved typeface is prepared without opening a dialog.
         const kit = brandKitTestRevision();
         fixture.componentRef.setInput('approvedKit', { ...kit, chapters: { ...kit.chapters, type: { ...kit.chapters.type, family: 'Synthetic Font' } } });
         await fixture.whenStable();
         expect(print).not.toHaveBeenCalled();
-        expect(load.mock.calls).toEqual([['400 1em "Synthetic Font"'], ['700 1em "Synthetic Font"']]);
+        expect(prepare).toHaveBeenCalledWith('Synthetic Font', [400, 700]);
         button('brand-kit-web-view-download-pdf')?.click();
-        expect(print).toHaveBeenCalledTimes(1);
+        expect(document.querySelector('[data-testid="lfx-print-frame"]')).not.toBeNull();
+        expect(print).not.toHaveBeenCalled();
       } finally {
-        delete (document as unknown as Record<string, unknown>)['fonts'];
+        prepare.mockRestore();
       }
     });
 
-    it('clears the print mark when the view is destroyed with the dialog still up', async () => {
+    it('clears the isolated print frame when the view is destroyed with the dialog still up', async () => {
       button('brand-kit-web-view-download-pdf')?.click();
       await fixture.whenStable();
-      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
+      expect(document.querySelector('[data-testid="lfx-print-frame"]')).not.toBeNull();
+      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
 
       fixture.destroy();
 
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
+      expect(document.querySelector('[data-testid="lfx-print-frame"]')).toBeNull();
     });
   });
 

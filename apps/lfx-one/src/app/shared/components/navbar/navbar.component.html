@@ -30,17 +30,20 @@
                 class="lfxn__icon-btn lfxn__icon-btn--toggle"
                 data-flip="side"
                 (click)="onToggleClick($event)"
-                (mouseenter)="onToggleEnter()"
-                (mouseleave)="onToggleLeave()"
                 [attr.aria-label]="toggleLabel()"
+                [attr.aria-expanded]="!railVisible()"
                 [lfxNavTooltip]="toggleLabel()"
                 [lfxNavTooltipPlacement]="headTooltipPlacement()"
                 data-testid="navbar-collapse-toggle">
                 <span class="lfxn__icon-btn-glyph">
-                  <svg width="14" height="12" viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
-                    <rect x="0.65" y="0.65" width="12.7" height="10.7" rx="2.6" />
-                    <line x1="5" y1="0.65" x2="5" y2="11.35" />
-                  </svg>
+                  @if (railVisible()) {
+                    <i class="fa-light fa-bars" aria-hidden="true"></i>
+                  } @else {
+                    <svg width="14" height="12" viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+                      <rect x="0.65" y="0.65" width="12.7" height="10.7" rx="2.6" />
+                      <line x1="5" y1="0.65" x2="5" y2="11.35" />
+                    </svg>
+                  }
                 </span>
               </button>
             }

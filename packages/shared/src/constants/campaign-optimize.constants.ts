@@ -366,6 +366,9 @@ export const CAMPAIGN_SETTINGS_READ_FALLBACK = 'The live settings could not be r
 /** The email channel's platform token on a campaign row: its live counters are opens to date, with no cost. */
 export const CAMPAIGN_EMAIL_CHANNEL_PLATFORM = 'hubspot';
 
+/** How the email channel is named where campaigns of every platform are listed together (#4983). */
+export const CAMPAIGN_EMAIL_CHANNEL_LABEL = 'HubSpot email';
+
 /**
  * Platforms whose metrics read reports cost in USD whatever the ad account bills in: LinkedIn, whose
  * Ad Analytics `costInUsd` campaign-service converts to micros. Every other platform reports the ad
@@ -373,6 +376,30 @@ export const CAMPAIGN_EMAIL_CHANNEL_PLATFORM = 'hubspot';
  * `billed_charge_local_micro`), which the read does not name.
  */
 export const CAMPAIGN_USD_COST_PLATFORMS: ReadonlySet<string> = new Set(['linkedin-ads']);
+
+/**
+ * What the live Conversions counter says when campaign-service reports no total
+ * (lfx-v2-campaign-service#175). `unavailable` names the platform, see
+ * `CAMPAIGN_CONVERSIONS_PLATFORM_NAMES`.
+ */
+export const CAMPAIGN_CONVERSIONS_STATUS_REASONS = {
+  incomplete: 'Incomplete data for this window',
+  no_conversions: 'No conversions in this window',
+  unavailable: 'Not reported by',
+} as const;
+
+/**
+ * The platform as a conversions reason names it ("Not reported by LinkedIn"). Separate from the picker's
+ * labels ("LinkedIn Ads"), which read badly after "Not reported by".
+ */
+export const CAMPAIGN_CONVERSIONS_PLATFORM_NAMES: Readonly<Record<string, string>> = {
+  'google-ads': 'Google Ads',
+  'microsoft-ads': 'Microsoft Advertising',
+  'linkedin-ads': 'LinkedIn',
+  'meta-ads': 'Meta',
+  'reddit-ads': 'Reddit',
+  'twitter-ads': 'X',
+};
 
 /** The live cost counter's label, by what the platform's read reports cost in. */
 export const CAMPAIGN_LIVE_COST_LABELS = {

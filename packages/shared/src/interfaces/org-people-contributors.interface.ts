@@ -94,6 +94,8 @@ export interface OrgContributorStatsBaseline {
 
 /** Bundled GET response for `/api/orgs/:orgUid/lens/people/contributors?timeRange=…`. */
 export interface OrgContributorsResponse {
+  /** Set when Exclude team members was asked but the team-member flag could not be read: the counts include team members. */
+  teamMembersUnavailable?: true;
   accountId: string;
   /** Echo of the time window the BFF aggregated over — clients use this to ignore late responses from a previous request when the user clicked through windows quickly. */
   timeRange: OrgLensTimeRange;
