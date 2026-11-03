@@ -40,6 +40,11 @@ export class MailingListSyncSettingsComponent {
   // reuses that data instead of issuing its own getMailingListsByCommittee request. Left undefined
   // on the standalone mailing-list view page (#4024), where no such list exists to share.
   public readonly siblingCandidates = input<GroupsIOMailingList[] | undefined>(undefined);
+  // Set by the Auto Sync drawer while a *different* card is mid-save (#4899 review). Two cards can
+  // each read the same associatedMailingLists() snapshot and both pass their own "no active sync
+  // elsewhere" check before either save's round-trip lands and refreshes that snapshot — this locks
+  // the other cards' controls for the duration so only the saving card's own PUT can be in flight.
+  public readonly lockedBySibling = input(false);
   public readonly updated = output<GroupsIOMailingList>();
   // Lets a host that can destroy this component mid-save (the Auto Sync drawer, which tears down
   // every open instance's `(updated)` binding on close) know a save is in flight, so it can block
@@ -92,6 +97,11 @@ export class MailingListSyncSettingsComponent {
     // through onToggleChange()/save() below, never through this input-driven effect.
     effect(() => {
       const ml = this.mailingList();
+      // Skip while a save is in flight — onToggleChange() already set syncOn optimistically, and an
+      // unrelated mailingList() refresh landing mid-save (e.g. a sibling drawer card's own save
+      // triggering the shared refetch) must not clobber that optimistic value before save()'s own
+      // subscribe/catchError settles it (#4899 review).
+      if (this.saving()) return;
       this.syncOn.set(!!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL);
     });
 
@@ -111,7 +121,7 @@ export class MailingListSyncSettingsComponent {
     // linked mailing list already has one configured. Also lock it while a save is in flight so a
     // second direction change can't fire an overlapping PUT that races the first (#4880 review).
     effect(() => {
-      if (this.saving() || this.activeSync()) {
+      if (this.saving() || this.activeSync() || this.lockedBySibling()) {
         this.form.controls.direction.disable({ emitEvent: false });
       } else {
         this.form.controls.direction.enable({ emitEvent: false });
