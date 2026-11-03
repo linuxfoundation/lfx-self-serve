@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { QUERY_SERVICE_MAX_PAGES } from '@lfx-one/shared/constants';
+import { QUERY_SERVICE_MAX_PAGE_SIZE, QUERY_SERVICE_MAX_PAGES } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import type { GroupsIOMemberResponse, MailingListMember } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -106,8 +106,14 @@ describe('MailingListService member authorization', () => {
         .mockResolvedValueOnce({ resources: [{ type: 'groupsio_member', id: 'groupsio_member:member-1', data: indexedMember }], page_token: 'next' })
         .mockResolvedValueOnce({ resources: [] });
 
-      await expect(service.getMembers(req, 'list-1')).resolves.toEqual([indexedMember]);
-      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ tags: 'mailing_list_uid:list-1', page_token: 'next' });
+      await expect(service.getMembers(req, 'list-1', { page_size: 1, page_token: 'ignored' })).resolves.toEqual([indexedMember]);
+      expect(proxyRequest.mock.calls[0][4]).toEqual({ type: 'groupsio_member', tags: 'mailing_list_uid:list-1', page_size: QUERY_SERVICE_MAX_PAGE_SIZE });
+      expect(proxyRequest.mock.calls[1][4]).toEqual({
+        type: 'groupsio_member',
+        tags: 'mailing_list_uid:list-1',
+        page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
+        page_token: 'next',
+      });
       expect(addAccessToResources).toHaveBeenCalledWith(req, [indexedMember], 'groupsio_member');
     });
 

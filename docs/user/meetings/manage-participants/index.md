@@ -4,7 +4,7 @@ description: How to invite guests, add a group, resend invitations, remove peopl
 audience: [all]
 product_area: Meetings
 tags: [meetings, participants, guests, invite, registrants, groups, resend invite]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Meetings
 ---
 
@@ -41,6 +41,8 @@ You can link a group to the meeting to invite its members. Each member is still 
 3. The panel shows how many groups are selected and how many unique members will be added.
 
 Guests added through a group show a **via {group name}** label in the list, so you can tell them apart from people you added directly.
+
+Wait for every selected group's members to load before saving invitation changes. If a group's members fail to load, the groups panel explains that they have not been added as guests and offers **Try again**. Saving stays disabled until loading succeeds; changing the group selection waits for the new selection to load too.
 
 #### What happens when someone leaves a group
 

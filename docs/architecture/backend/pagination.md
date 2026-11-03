@@ -203,14 +203,22 @@ search-index consistency or an atomic snapshot across requests.
 The meeting committee manager also requests `require_complete=true`: its existing
 error/retry gate withholds both roster emissions and resolved-group coverage when
 pagination fails or stops early, preventing reconciliation from deleting saved guests
-that were merely absent from a partial response.
+that were merely absent from a partial response. The legacy registrants manager forwards
+that coverage to the meeting page, which blocks both Update Meeting and invitation-only
+submission until the selected rosters resolve. Selection changes immediately invalidate
+previous coverage; a successful retry re-enables submission.
 
 `OrgMembershipResolverService` uses `failOnPartial: true` before resolving or caching
 a membership context, so key-contact writes cannot select a membership from a partial
-scan. `MailingListService.getMembers` likewise requires complete pagination; failures
-reach the members UI's existing load-error state rather than a searchable prefix with
-a misleading total. These strict reads still fail for legitimate datasets beyond the
-page cap; they do not introduce user-facing cursor pagination.
+scan. Its `org-membership:v2` cache namespace excludes partial arrays produced by older
+pods during rollout; those legacy entries expire under their existing TTL.
+
+`MailingListService.getMembers` likewise requires complete pagination and explicitly uses
+`QUERY_SERVICE_MAX_PAGE_SIZE` (1,000), avoiding the upstream 50-row default. Failures
+reach a persistent error message and Retry action instead of an empty-list message or a
+searchable prefix with a misleading total. The 100-page cap remains: a continuing scan
+after 100,000 raw records still fails, and access filtering can reduce the visible roster
+below that bound. These reads do not introduce user-facing cursor pagination.
 
 ### Bound multi-request dashboard sources
 

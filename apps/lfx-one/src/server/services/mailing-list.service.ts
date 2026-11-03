@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import {
   CreateGroupsIOServiceRequest,
@@ -499,6 +500,7 @@ export class MailingListService {
       ...queryFilters,
       type: 'groupsio_member',
       tags: `mailing_list_uid:${mailingListId}`,
+      page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
     // The members UI treats this array as the complete, locally searchable roster.

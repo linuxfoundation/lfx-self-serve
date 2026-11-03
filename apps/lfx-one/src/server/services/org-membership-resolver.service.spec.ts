@@ -48,6 +48,30 @@ beforeEach(() => {
 });
 
 describe('OrgMembershipResolverService completeness', () => {
+  it('ignores a legacy partial cache entry and reuses only the complete v2 result', async () => {
+    const legacyKey = 'lfx-ui:test:org-membership:v1:viewer:org-1:foundation-1';
+    const strictKey = 'lfx-ui:test:org-membership:v2:viewer:org-1:foundation-1';
+    const cache = new Map<string, ProjectMembershipDoc[]>([[legacyKey, [older]]]);
+    withCache.mockImplementation(async (key: string, _ttl: number, fetcher: () => Promise<ProjectMembershipDoc[]>) => {
+      const hit = cache.get(key);
+      if (hit) return hit;
+      const docs = await fetcher();
+      cache.set(key, docs);
+      return docs;
+    });
+    proxyRequest.mockResolvedValueOnce(page([older], 'next')).mockResolvedValueOnce(page([newest]));
+    const resolver = new OrgMembershipResolverService();
+
+    await expect(resolver.resolveContext(req, 'org-1', 'foundation-1')).resolves.toMatchObject({ membershipUid: newest.uid });
+    expect(withCache.mock.calls[0][0]).toBe(strictKey);
+    expect(cache.get(legacyKey)).toEqual([older]);
+    expect(cache.get(strictKey)).toEqual([older, newest]);
+
+    proxyRequest.mockClear();
+    await expect(resolver.resolveContext(req, 'org-1', 'foundation-1')).resolves.toMatchObject({ membershipUid: newest.uid });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
   it('selects the newest active membership only after every page is fetched', async () => {
     proxyRequest.mockResolvedValueOnce(page([older], 'next')).mockResolvedValueOnce(page([newest]));
 
