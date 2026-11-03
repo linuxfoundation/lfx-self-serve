@@ -26,6 +26,8 @@
 
     @if (agent.id === 'dns') {
       <lfx-it-os-dns-agent />
+    } @else if (agent.id === 'github') {
+      <lfx-it-os-github-agent />
     } @else {
       <lfx-card data-testid="it-os-agent-chat-placeholder">
         <div class="flex flex-col items-center justify-center gap-2 py-12 text-center">

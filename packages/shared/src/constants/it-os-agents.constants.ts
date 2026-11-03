@@ -33,9 +33,10 @@ export const IT_OS_AGENTS: ItOsAgent[] = [
     name: 'GitHub Org Agent',
     icon: 'fa-brands fa-github',
     color: 'emerald',
-    tags: ['Repos', 'Access'],
+    tags: ['GitHub org', 'Access'],
     via: 'GitHub',
-    description: 'Connects your GitHub org to LF, creates repos, brings existing repos into the org, and manages who has access.',
+    description:
+      "Makes sure LF's GitHub account, thelinuxfoundation, is an owner of each of your project's GitHub orgs, and helps connect new ones. When it isn't, finds out why and walks you through the fix.",
   },
   {
     id: 'forwarding',

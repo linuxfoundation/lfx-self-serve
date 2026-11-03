@@ -1,0 +1,52 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" [attr.data-testid]="testId()">
+  <!-- Demo controls -->
+  <div class="flex flex-wrap items-center gap-3">
+    <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Agent views">
+      <button
+        type="button"
+        role="tab"
+        class="rounded-md px-3 py-1 text-sm"
+        [class]="tab() === 'agent' ? 'bg-white font-medium text-gray-900 shadow-sm' : 'text-gray-600'"
+        [attr.aria-selected]="tab() === 'agent'"
+        (click)="tab.set('agent')"
+        [attr.data-testid]="testId() + '-tab-agent'">
+        Agent
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="rounded-md px-3 py-1 text-sm"
+        [class]="tab() === 'details' ? 'bg-white font-medium text-gray-900 shadow-sm' : 'text-gray-600'"
+        [attr.aria-selected]="tab() === 'details'"
+        (click)="tab.set('details')"
+        [attr.data-testid]="testId() + '-tab-details'">
+        Details
+      </button>
+    </div>
+    <div class="ml-auto flex flex-wrap items-center gap-3">
+      @if (scenarioOptions().length) {
+        <span class="text-xs text-gray-500">Sample situation</span>
+        <lfx-select [form]="viewForm" control="scenario" [options]="scenarioOptions()" size="small" [attr.data-testid]="testId() + '-scenario'" />
+      }
+      <span class="text-xs text-gray-500">Viewing as</span>
+      <lfx-select-button [form]="viewForm" control="role" [options]="roleOptions" [unselectable]="false" [attr.data-testid]="testId() + '-role'" />
+      <lfx-button
+        label="Reset demo"
+        icon="fa-light fa-rotate-left"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        (onClick)="reset()"
+        [attr.data-testid]="testId() + '-reset'" />
+    </div>
+  </div>
+
+  @if (tab() === 'agent') {
+    <lfx-it-os-agent-chat [engine]="engine()" [icon]="icon()" [iconClass]="iconClass()" [testId]="testId()" />
+  } @else {
+    <ng-content />
+  }
+</div>
