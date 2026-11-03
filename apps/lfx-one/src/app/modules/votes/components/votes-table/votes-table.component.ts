@@ -349,11 +349,9 @@ export class VotesTableComponent {
     // Summary can only be sent once the vote has closed (#3662) — upstream rejects it otherwise.
     if (vote.writer === true && vote.status === PollStatus.ENDED) {
       // Only this vote's own send locks the item; other votes and the other row actions stay available (#4831).
-      const isSendingSummary = this.sendingSummaryUids().has(vote.uid);
       items.push({
-        label: isSendingSummary ? 'Sending summary…' : 'Send summary',
-        icon: isSendingSummary ? 'fa-light fa-spinner-third motion-safe:animate-spin' : 'fa-light fa-chart-simple',
-        disabled: isSendingSummary,
+        id: `send-summary-${vote.uid}`,
+        ...this.summarySendMenuState(this.sendingSummaryUids().has(vote.uid)),
         tooltipOptions: { tooltipLabel: 'Sends the results summary to every invited voter', tooltipPosition: 'left' },
         command: () => this.onSendSummary(vote),
       });
@@ -846,6 +844,19 @@ export class VotesTableComponent {
       }
       return next;
     });
+    // The popup model is a snapshot from when ⋮ opened; keep its summary item current without rebuilding vote rows.
+    if (this.rowActionMenuVoteUid() !== uid) return;
+    this.rowActionMenuItems.update((items) =>
+      items.map((item) => (item.id === `send-summary-${uid}` ? { ...item, ...this.summarySendMenuState(sending) } : item))
+    );
+  }
+
+  private summarySendMenuState(sending: boolean): Pick<MenuItem, 'label' | 'icon' | 'disabled'> {
+    return {
+      label: sending ? 'Sending summary…' : 'Send summary',
+      icon: sending ? 'fa-light fa-spinner-third motion-safe:animate-spin' : 'fa-light fa-chart-simple',
+      disabled: sending,
+    };
   }
 
   private showNoMailingListToast(): void {

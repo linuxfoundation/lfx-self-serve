@@ -10,8 +10,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, SendVoteSummaryResponse, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
+import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
 import { VOTE_CLOSE_CONFIRMATION, VOTE_SUMMARY_NOT_ENDED, VOTE_SUMMARY_PRECHECK_FAILED, VOTE_SUMMARY_SEND_FAILED } from '@lfx-one/shared/constants';
+import { SendVoteSummaryResponse } from '@lfx-one/shared/interfaces';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
@@ -1767,18 +1768,55 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
         'error',
       ],
       ['a dropped connection (status 0)', () => pending.error(new HttpErrorResponse({ status: 0 })), 'warn'],
-    ])('clears the indicator and re-enables Send summary after %s, keeping its toast', async (_label, settleRequest, severity) => {
+    ])('clears the indicator and restores the open summary menu after %s, keeping its toast', async (_label, settleRequest, severity) => {
       await startSend();
       expect(indicator('ended')).toBeTruthy();
+
+      // The confirmation is mocked, so close the initial popup explicitly before reopening it during the request.
+      if (table['rowActionMenuOpen']()) {
+        moreButton('ended')!.click();
+        await settle();
+      }
+      await menuItemsFor('ended');
+      expect(table['rowActionMenuOpen']()).toBe(true);
+      const panel = TestBed.inject(DOCUMENT).querySelector('[role="menu"]');
+      expect(panel?.querySelector('[role="menuitem"][aria-label="Sending summary…"]')?.getAttribute('aria-disabled')).toBe('true');
 
       settleRequest();
       await settle();
 
       expect(indicator('ended')).toBeNull();
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity }));
-      const items = await menuItemsFor('ended');
+      // Do not reopen: settlement must update the menu that the manager is already looking at.
+      expect(panel?.isConnected).toBe(true);
+      expect(table['rowActionMenuOpen']()).toBe(true);
+      const items = table['rowActionMenuItems']();
       expect(items.find((item) => item.label === 'Sending summary…')).toBeUndefined();
       expect(items.find((item) => item.label === 'Send summary')?.disabled).toBe(false);
+      const restored = panel?.querySelector('[role="menuitem"][aria-label="Send summary"]');
+      expect(restored).toBeTruthy();
+      expect(restored?.getAttribute('aria-disabled')).not.toBe('true');
+    });
+
+    it("does not rewrite another pending vote's menu when a different send settles", async () => {
+      await startSend();
+      const secondPending = new Subject<SendVoteSummaryResponse>();
+      sendVoteSummary.mockReturnValue(secondPending);
+      await startSend('ended-second');
+      const otherItems = await menuItemsFor('ended-second');
+
+      pending.next({ recipient_count: 3, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
+      await settle();
+
+      expect(indicator('ended')).toBeNull();
+      expect(indicator('ended-second')).toBeTruthy();
+      expect(table['rowActionMenuItems']()).toBe(otherItems);
+      expect(otherItems.find((item) => item.label === 'Sending summary…')?.disabled).toBe(true);
+
+      secondPending.next({ recipient_count: 3, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
+      await settle();
+
+      expect(table['rowActionMenuItems']().find((item) => item.label === 'Send summary')?.disabled).toBe(false);
     });
 
     it('preserves an unrelated row and its keyboard focus when a send settles', async () => {
