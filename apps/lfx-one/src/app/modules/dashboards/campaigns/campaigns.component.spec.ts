@@ -10113,6 +10113,41 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySeriesRestarted(), 'a restart must wait for the create').toBe(false);
     });
 
+    it('warns when HubSpot reports the built workflow as on, and only reassures for an off one', async () => {
+      stageable(3);
+      // Writing the series is what creates its date controls, which the panel binds.
+      await seq().onGenerateSurveySequence();
+      seq().selectedEmailTab.set('implementation');
+      const workflow = fixture.componentInstance as unknown as {
+        sendWorkflowState: WritableSignal<string>;
+        sendWorkflowResult: WritableSignal<unknown>;
+      };
+      workflow.sendWorkflowState.set('done');
+      workflow.sendWorkflowResult.set({ name: 'Survey sends', sendEmailSteps: 3, isEnabled: true, editUrl: '' });
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('[data-testid="campaigns-send-workflow-enabled"]')).not.toBeNull();
+      expect(host.querySelector('[data-testid="campaigns-send-workflow-result"]')?.textContent).not.toContain('turned OFF');
+
+      workflow.sendWorkflowResult.set({ name: 'Survey sends', sendEmailSteps: 3, isEnabled: false, editUrl: '' });
+      fixture.detectChanges();
+      expect(host.querySelector('[data-testid="campaigns-send-workflow-enabled"]')).toBeNull();
+      expect(host.querySelector('[data-testid="campaigns-send-workflow-result"]')?.textContent).toContain('turned OFF');
+    });
+
+    it('names a nameless survey template by its id rather than reading as still searching', () => {
+      selectSurvey();
+      seq().emailTemplates.set([{ id: 'hs-9', name: '', subject: 'S' }] as HubSpotMarketingEmail[]);
+      seq().selectedEmailTemplateId.set('hs-9');
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      const line = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-template-auto"]')?.textContent ?? '';
+      expect(line).toContain('hs-9');
+      expect(line).not.toContain('Finding');
+    });
+
     it('says to wait, not start over, while a single stage is in flight', () => {
       stageable(1);
       seq().selectedEmailTab.set('implementation');

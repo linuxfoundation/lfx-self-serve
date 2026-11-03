@@ -1559,8 +1559,10 @@
                       }
                       @if (sendWorkflowState() === 'done' && sendWorkflowResult(); as workflow) {
                         <p class="text-sm text-green-700" role="status" data-testid="campaigns-send-workflow-result">
-                          Built &ldquo;{{ workflow.name }}&rdquo; with {{ workflow.sendEmailSteps }} sends. It is turned OFF and sends nothing until you enable
-                          it.
+                          Built &ldquo;{{ workflow.name }}&rdquo; with {{ workflow.sendEmailSteps }} sends.
+                          @if (!workflow.isEnabled) {
+                            It is turned OFF and sends nothing until you enable it.
+                          }
                           @if (workflow.editUrl) {
                             <a
                               [href]="workflow.editUrl"
@@ -1574,6 +1576,12 @@
                             Find it under Workflows in HubSpot.
                           }
                         </p>
+                        @if (workflow.isEnabled) {
+                          <p class="text-sm font-medium text-red-700" role="alert" data-testid="campaigns-send-workflow-enabled">
+                            HubSpot reports this workflow as turned ON, so it may already be sending. Check it in HubSpot now and turn it off if it should not
+                            run yet.
+                          </p>
+                        }
                       }
                     </div>
                   }

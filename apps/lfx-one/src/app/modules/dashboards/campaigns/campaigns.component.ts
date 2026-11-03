@@ -1736,7 +1736,13 @@ export class CampaignsComponent {
     if (id === '') {
       return '';
     }
-    return this.emailTemplates()?.find((template) => template.id === id)?.name ?? '';
+    // The id when HubSpot gave the template no name: the survey surface hides the picker, so this
+    // line is the only place the operator can see which template is cloned.
+    return (
+      this.emailTemplates()
+        ?.find((template) => template.id === id)
+        ?.name?.trim() || `template ${id}`
+    );
   });
 
   /**
