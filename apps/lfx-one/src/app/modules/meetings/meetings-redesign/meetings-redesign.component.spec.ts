@@ -257,7 +257,6 @@ describe('MeetingsRedesignComponent', () => {
     });
 
     it("gives way to the empty Upcoming state's own button, and stays on an empty Past tab", async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const fixture = render();
       await fixture.whenStable();
 
@@ -274,9 +273,13 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
       expect(query(fixture, 'meetings-home-empty-past')).not.toBeNull();
       expect(query(fixture, 'meetings-home-create')).not.toBeNull();
+    });
 
-      query(fixture, 'ui-tab-upcoming')?.click();
+    it('stays beside the error when the Upcoming feed fails to load', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = render();
       await fixture.whenStable();
+
       upcoming$.error(new Error('down'));
       await fixture.whenStable();
       expect(query(fixture, 'meetings-home-error')).not.toBeNull();
