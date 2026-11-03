@@ -1111,6 +1111,40 @@ export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform
  */
 export const CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN = /invalid campaign config: (?:linkedIn|meta|microsoft|reddit|twitter)Config\.bidding: .+/;
 
+/**
+ * campaign-service's two refusals of a create whose brief is no longer the approved version this page
+ * read (#4983). Both mean the stored brief moved since this tab loaded it, most often because it was
+ * edited and saved in another tab: a replace resets it to `draft` and bumps its version.
+ *
+ * - 409 `brief is no longer approved at the expected version; refresh and re-approve, then retry`
+ *   (`domain.ErrStaleApproval` from the row-locked job insert, `mapBriefErr` in `internal/service/brief.go`)
+ * - 400 `brief must be approved before creating campaigns` (`BriefService.CreateCampaigns`, read before
+ *   the job is started)
+ *
+ * Matched on the service's own wording, as {@link CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN} is, so no
+ * other refusal is relabelled.
+ */
+export const CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN =
+  /brief is no longer approved at the expected version|brief must be approved before creating campaigns/;
+
+/**
+ * What the create flow says for {@link CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN}. Retrying from
+ * this tab cannot clear it: the brief on screen is not the one stored, so the remedy is a refresh.
+ *
+ * States the fact and names another tab only as the likely cause, because the 400 also follows an
+ * approval in this tab that failed or never finished, and another person can replace the brief too.
+ */
+export const CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE =
+  'This brief is no longer the approved version this page loaded (it may have been edited in another tab or window), so nothing was created. Refresh the page and open the brief again before creating campaigns.';
+
+/**
+ * The paid save refusal `unowned-brief-exists`, worded for the Implement tab, which offers both ways
+ * out right under it: Open to edit (load the saved brief into the Plan editor) and Replace saved brief
+ * (#4983). The email surface keeps its own wording, which has neither button.
+ */
+export const CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE =
+  'This event already has a saved brief that was not opened here, so this one was not saved over it. Open the saved brief to edit it, or replace it with this one.';
+
 /** The largest starting bid campaign-service sets on any platform (`maxCreateBid`), in the platform's currency. */
 export const CAMPAIGN_BIDDING_MAX_BID = 1_000_000;
 

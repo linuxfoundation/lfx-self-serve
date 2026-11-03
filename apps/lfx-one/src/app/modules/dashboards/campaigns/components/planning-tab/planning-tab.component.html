@@ -41,9 +41,27 @@
               <div class="flex flex-col gap-2">
                 <p class="text-xs text-blue-900">
                   A brief was already saved for <span class="font-medium">{{ saved.eventDetails.name || saved.eventDetails.slug }}</span
-                  >. Restore it instead of generating a new one.
+                  >.
+                  @if (isEmail()) {
+                    Restore it instead of generating a new one.
+                  } @else {
+                    Open it to edit, or restore it as it is, instead of generating a new one.
+                  }
                 </p>
-                <lfx-button label="Restore saved brief" size="small" [outlined]="true" (click)="restoreSavedBrief()" data-testid="planning-restore-brief" />
+                <!-- Open to edit is paid-only (#4983): the email planner has its own restore, which
+                     does not approve, and no per-send editor this path could open. -->
+                <div class="flex flex-wrap items-center gap-2">
+                  @if (!isEmail()) {
+                    <lfx-button
+                      label="Open to edit"
+                      size="small"
+                      icon="fa-light fa-pen-to-square"
+                      (click)="openSavedBriefToEdit()"
+                      ariaLabel="Open the saved brief to edit it"
+                      data-testid="planning-open-saved-brief" />
+                  }
+                  <lfx-button label="Restore saved brief" size="small" [outlined]="true" (click)="restoreSavedBrief()" data-testid="planning-restore-brief" />
+                </div>
               </div>
             </div>
           }
@@ -435,6 +453,9 @@
           @if (lastAppliedFeedback()) {
             <i class="fa-light fa-wand-magic-sparkles text-lg text-violet-600" aria-hidden="true"></i>
             <span class="text-sm font-semibold text-violet-800">Brief refined (iteration {{ refineCount() }})</span>
+          } @else if (editingExistingBrief()) {
+            <i class="fa-light fa-pen-to-square text-lg text-green-600" aria-hidden="true"></i>
+            <span class="text-sm font-semibold text-green-800">Editing this event's brief</span>
           } @else {
             <i class="fa-light fa-circle-check text-lg text-green-600" aria-hidden="true"></i>
             <span class="text-sm font-semibold text-green-800">Brief generated successfully</span>
@@ -472,6 +493,20 @@
               {{ details.city }}
             </span>
           }
+        </div>
+      }
+      <!-- The event is fixed while an existing brief is edited (#4983), so this says so and shows the
+           URL read-only rather than leaving the user to find out at the URL field. -->
+      @if (editingExistingBrief() && eventDetails(); as details) {
+        <div class="mt-2 flex flex-col gap-1 pl-7 text-xs text-gray-600" data-testid="planning-edit-existing-note">
+          <span
+            >Event URL:
+            <span class="break-all font-mono text-gray-800" data-testid="planning-edit-existing-url">{{ details.registrationUrl || details.slug }}</span></span
+          >
+          <span>
+            The event and its URL can't be changed while editing this brief. To plan a different event, select New Brief. When you proceed, your changes replace
+            this event's saved brief, which is then approved again.
+          </span>
         </div>
       }
       @if (lastAppliedFeedback()) {

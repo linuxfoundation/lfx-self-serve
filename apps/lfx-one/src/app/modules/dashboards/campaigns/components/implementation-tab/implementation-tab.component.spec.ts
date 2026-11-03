@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Component, DestroyRef, EnvironmentProviders, input, output, Provider } from '@angular/core';
+import { Component, DestroyRef, EnvironmentProviders, input, output, Provider, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -14254,6 +14254,84 @@ describe('ImplementationTabComponent replace saved brief', () => {
   it('withholds it while a save is in flight', () => {
     setPersistence(refused, true);
     expect(replaceButton()).toBeNull();
+  });
+
+  /** #4983: the other way out of the same refusal — keep the saved brief and edit it. */
+  it('offers Open to edit beside Replace, and asks the parent to open the saved brief', () => {
+    setPersistence(refused);
+    const open = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-brief-open-saved-btn"]');
+    expect(open, 'no Open to edit on the unowned refusal').not.toBeNull();
+    const emitted = vi.fn();
+    fixture.componentInstance.openSavedBriefRequested.subscribe(emitted);
+
+    open?.querySelector('button')?.click();
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * #4983. Edit brief reopens this tab's brief in the Plan editor, except while a create job is being
+ * polled: saving from the editor resets the brief to `draft` under a job already running from it.
+ */
+describe('ImplementationTabComponent edit brief', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const brief = {
+    eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US' },
+    selectedPlatforms: ['google-ads'],
+  } as unknown as CampaignBriefOutput;
+
+  const button = (): HTMLButtonElement | null =>
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="implementation-edit-brief-btn"] button');
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.componentRef.setInput('briefData', brief);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('asks the parent to reopen the brief in the Plan editor', () => {
+    const emitted = vi.fn();
+    fixture.componentInstance.editBriefRequested.subscribe(emitted);
+
+    expect(button()?.disabled).toBe(false);
+    button()?.click();
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not offered on the unowned-brief refusal, where Open to edit and Replace are the ways out', () => {
+    fixture.componentRef.setInput('briefPersistence', {
+      status: 'error',
+      briefId: '',
+      message: 'refused',
+      approved: false,
+      conflict: 'unowned-brief-exists',
+    } as CampaignBriefPersistenceState);
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-btn"]')).toBeNull();
+  });
+
+  it('is disabled, with the reason beside it, while a create job is polling', () => {
+    (fixture.componentInstance as unknown as { step: WritableSignal<string> }).step.set('creating');
+    fixture.detectChanges();
+
+    expect(button()?.disabled, 'Edit brief stayed enabled under a running create job').toBe(true);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-hint"]')?.textContent).toContain(
+      'Available once campaign creation finishes'
+    );
   });
 });
 
