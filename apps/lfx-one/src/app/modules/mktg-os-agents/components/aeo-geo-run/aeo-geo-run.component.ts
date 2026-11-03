@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DecimalPipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -17,6 +18,9 @@ import {
   AEO_GEO_TIMEOUT_MESSAGE,
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
+  MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import {
   MktgAgentIntake,
@@ -27,6 +31,7 @@ import {
   MktgRunQuestion,
   MktgRunQuestionDraft,
   MktgRunResultResponse,
+  Project,
 } from '@lfx-one/shared/interfaces';
 import { isAeoGeoKeyPageUrl, normalizeAeoGeoDomain, validateAeoGeoIntakeAnswers, mktgLinkWarnings } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
@@ -34,7 +39,24 @@ import { MktgPendingDocumentService } from '@services/mktg-pending-document.serv
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { catchError, distinctUntilChanged, EMPTY, forkJoin, Observable, map, of, Subscription, switchMap, takeWhile, tap, TimeoutError } from 'rxjs';
+import {
+  catchError,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  forkJoin,
+  Observable,
+  map,
+  of,
+  Subscription,
+  switchMap,
+  takeWhile,
+  tap,
+  throwError,
+  TimeoutError,
+} from 'rxjs';
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 import { MktgBreadcrumbComponent } from '../mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
@@ -68,6 +90,7 @@ export class AeoGeoRunComponent {
   private readonly router = inject(Router);
   private readonly platform = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly document = inject(DOCUMENT);
 
   public readonly intake = input.required<MktgAgentIntake>();
   protected readonly form = new FormGroup(
@@ -78,6 +101,9 @@ export class AeoGeoRunComponent {
   protected readonly busy = signal(false);
   protected readonly submitted = signal(false);
   protected readonly error = signal('');
+  /** The project read is failing transiently and the poller is retrying it: one quiet status line, nothing else changes. */
+  protected readonly retrying = signal(false);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly documentLink = signal<string[] | null>(null);
   protected readonly previousError = signal('');
   protected readonly previousLoading = signal(true);
@@ -85,7 +111,6 @@ export class AeoGeoRunComponent {
   protected readonly runCount = signal(0);
   protected readonly visiblePages = signal(3);
   protected readonly prefill = signal('');
-  protected readonly reload = signal(0);
   protected readonly activeRun = signal<MktgPendingDocumentRun | null>(null);
   protected readonly activity = signal<MktgRunActivity[]>([]);
   protected readonly questions = signal<MktgRunQuestion[]>([]);
@@ -121,9 +146,7 @@ export class AeoGeoRunComponent {
     (this.submitted() || this.answers().domain.trim()) && !this.domainName() ? AEO_GEO_INTAKE_ERRORS.domain : ''
   );
   protected readonly pagesError = this.initPagesError();
-  private readonly context$ = toObservable(
-    computed(() => ({ context: this.projectContext.activeContext(), sub: this.user.user()?.sub, reload: this.reload() }))
-  );
+  private readonly context$ = toObservable(computed(() => ({ context: this.projectContext.activeContext(), sub: this.user.user()?.sub })));
 
   public constructor() {
     if (!isPlatformBrowser(this.platform)) {
@@ -131,7 +154,7 @@ export class AeoGeoRunComponent {
     }
     this.context$
       .pipe(
-        distinctUntilChanged((a, b) => a.context?.uid === b.context?.uid && a.sub === b.sub && a.reload === b.reload),
+        distinctUntilChanged((a, b) => a.context?.uid === b.context?.uid && a.sub === b.sub),
         switchMap(({ context, sub }) => {
           this.generation?.unsubscribe();
           this.busy.set(false);
@@ -149,6 +172,7 @@ export class AeoGeoRunComponent {
           this.runs.set([]);
           this.runCount.set(0);
           this.error.set('');
+          this.retrying.set(false);
           this.documentLink.set(null);
           this.previousError.set('');
           this.previousLoading.set(true);
@@ -164,14 +188,57 @@ export class AeoGeoRunComponent {
             this.previousLoading.set(false);
             return of(null);
           }
-          return this.projects.getProject(context.slug, true).pipe(
-            switchMap((project) => {
-              this.loading.set(false);
-              if (!project) {
-                this.error.set('The project could not be loaded. Try again.');
+          // The strict read keeps the failure's status: a transient one (network, 408, 429, 5xx) is retried by the shared
+          // poller on its capped backoff and on tab return, focus or reconnect, behind one quiet line; a refused or missing
+          // project (401/403/404, any other final) is a plain state, latched, so no wake sends the same request again
+          // (RFC 9110 §15.5.4). No Try again button.
+          let projectFinal = false;
+          const readProject = (): Observable<Project> => {
+            if (projectFinal) return EMPTY;
+            return this.projects.getProjectStrict(context.slug).pipe(
+              catchError((error: unknown) => {
+                if (isTransientHttpError(error)) return throwError(() => error);
+                projectFinal = true;
+                const status = error instanceof HttpErrorResponse ? error.status : 0;
+                // Status only: no upstream payload enters diagnostics.
+                console.error('Marketing OS project read failed for good', { status });
+                this.retrying.set(false);
+                this.loading.set(false);
                 this.previousLoading.set(false);
-                return of(null);
+                // A final answer after a good read retires the writer-only parts (the form, the previous reports): the plain
+                // state stands alone instead of an error line above loaded content.
+                this.writer.set(false);
+                // A refused project is the plain no-access state; anything else final is a plain load error.
+                if (status !== 401 && status !== 403) this.error.set('The project could not be loaded.');
+                return EMPTY;
+              })
+            );
+          };
+          // The post-project work (the pending run's watch, the previous reports) runs once per project context. After a
+          // good read a wake replays getProjectStrict's shareReplay(1) cache and sends no request, so the loaded reports
+          // stay, the run's watch and its deadline are not restarted and nothing is downloaded again.
+          let primed = false;
+          return createVisibilityPoll(this.document, readProject, {
+            intervalMs: 0,
+            backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+            backoffMaxMs: MKTG_POLL_MAX_BACKOFF_MS,
+            shouldContinue: () => false,
+          }).pipe(
+            tap((event) => {
+              if (event.kind === 'error') {
+                // Status only; the poller retries on its capped backoff.
+                console.error('Marketing OS project read failed', { status: event.error instanceof HttpErrorResponse ? event.error.status : 0 });
+                this.loading.set(false);
               }
+              this.retrying.set(event.kind === 'error');
+            }),
+            // Decided before the flattening operator: a wake or a transient event during the first previous-reports load
+            // cannot cancel that load, and the reports load exactly once per project context.
+            filter((event): event is { kind: 'ok'; value: Project } => event.kind === 'ok' && !primed),
+            switchMap((event) => {
+              primed = true;
+              this.loading.set(false);
+              const project = event.value;
               this.writer.set(!!project.writer);
               if (!project.writer) {
                 this.previousLoading.set(false);
@@ -202,7 +269,8 @@ export class AeoGeoRunComponent {
                       )
                     : of([]);
                 }),
-                catchError(() => {
+                catchError((error: unknown) => {
+                  console.error('Marketing OS previous reports read failed', { status: error instanceof HttpErrorResponse ? error.status : 0 });
                   this.previousError.set('Previous runs could not be loaded. Open Documents to try again.');
                   return of(null);
                 })

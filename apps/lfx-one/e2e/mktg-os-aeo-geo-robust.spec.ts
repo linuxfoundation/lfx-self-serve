@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { AUDIT_MARKDOWN, PAGE_LOAD_TIMEOUT, setupAudit } from './helpers/mktg-os-aeo-geo.helper';
+import { AUDIT_MARKDOWN, AUDIT_PROJECT, PAGE_LOAD_TIMEOUT, setupAudit } from './helpers/mktg-os-aeo-geo.helper';
 import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
 test('the Kit Website & web family opens the audit form from Create', async ({ page }, testInfo) => {
@@ -70,6 +70,28 @@ test('a missing document is an explicit error, not an invented scorecard', async
   await expect(page.getByTestId('mktg-document-view-scorecard')).toHaveCount(0);
   await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('missing-document.png'), fullPage: true });
+});
+
+test('a project read outage on the run page shows the one plain line with no Try again button, then the form on its own', async ({ page }, testInfo) => {
+  const app = await setupAudit(page);
+  let outage = true;
+  // Registered after the helper's route, so it answers first; the helper's project answers once the outage ends.
+  await page.route(`**/api/projects/${AUDIT_PROJECT.slug}*`, (route) =>
+    outage ? route.fulfill({ status: 503, json: { error: 'Synthetic outage' } }) : route.fallback()
+  );
+  await app.go('/aeo-geo');
+  const line = page.getByTestId('mktg-aeo-run-retrying');
+  await expect(line).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: PAGE_LOAD_TIMEOUT });
+  await expect(line).toHaveAttribute('role', 'status');
+  await expect(page.getByTestId('mktg-aeo-run-error')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-aeo-run-no-access')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-aeo-run-retry')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('project-read-outage.png'), fullPage: true });
+  outage = false;
+  await expect(page.getByTestId('mktg-aeo-run-form')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  await expect(line).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('project-read-recovered.png'), fullPage: true });
 });
 
 test('a stored revision read outage shows the one plain line with no Check again button, then reopens the report on its own', async ({ page }, testInfo) => {

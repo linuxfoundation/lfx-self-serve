@@ -8,8 +8,17 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { provideRouter, Router } from '@angular/router';
-import { AEO_GEO_INTAKE, AEO_GEO_INTAKE_ERRORS, MKTG_INTAKE_LINK_ADVICE, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
-import { MktgAgentIntake, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+import {
+  AEO_GEO_INTAKE,
+  AEO_GEO_INTAKE_ERRORS,
+  AEO_GEO_TIMEOUT_MESSAGE,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_INTAKE_LINK_ADVICE,
+  MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
+} from '@lfx-one/shared/constants';
+import { MktgAgentIntake, MktgDocumentType, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -18,7 +27,7 @@ import { UserService } from '@services/user.service';
 // package-architecture.md § Import Patterns: test fixtures are not re-exported by the production utils barrel.
 import { aeoGeoQuestionsFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { aeoGeoRunQuestions } from '@lfx-one/shared/utils';
-import { of, throwError, TimeoutError } from 'rxjs';
+import { of, Subject, throwError, TimeoutError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AeoGeoRunComponent } from './aeo-geo-run.component';
 
@@ -42,6 +51,53 @@ describe('AeoGeoRunComponent', () => {
     ownerToken: 'owner-proof',
     savedAt: new Date().toISOString(),
   });
+  /** A typed stored report for the previous-runs list (synthetic content only). */
+  function report(type: MktgDocumentType, documentId: string, createdAt = '2026-10-01T10:00:00Z'): MktgRevisionResponse {
+    const revision = {
+      id: '000001-' + 'a'.repeat(64),
+      number: 1,
+      createdAt,
+      origin: 'generated' as const,
+      restoredFromNumber: null,
+      intakeMode: 'form' as const,
+      status: '',
+      contentSha256: 'a'.repeat(64),
+      format: 'markdown' as const,
+      commentCount: 0,
+      latest: true,
+      approval: null,
+    };
+    return {
+      project: 'project-1',
+      type,
+      documentId,
+      revisions: [revision],
+      revision,
+      approvedCurrent: null,
+      approval: null,
+      markdown: 'Synthetic audit',
+      sidecar: null,
+    };
+  }
+  /** The registered audit document type, from the catalog the component reads. */
+  function documentType(): MktgDocumentType {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === AEO_GEO_INTAKE.agentId);
+    if (!type) throw new Error('Expected the registered audit document type');
+    return type;
+  }
+  /** One stored report in the project's AEO/GEO group. */
+  function listWithOneReport(): void {
+    listDocuments.mockReturnValue(
+      of({
+        groups: [
+          {
+            type: { agentKey: 'aeo-geo' },
+            documents: [{ documentId: 'doc-1', latestRevisionId: 'rev-1', title: 'Report', updatedAt: new Date().toISOString() }],
+          },
+        ],
+      })
+    );
+  }
   function query(id: string): HTMLElement {
     const element: HTMLElement = fixture.nativeElement.querySelector(`[data-testid="${id}"], [data-test="${id}"]`);
     // Wrapper actions must be clicked/asserted through their native button.
@@ -85,7 +141,7 @@ describe('AeoGeoRunComponent', () => {
             activeContextUid: signal('project-1'),
           },
         },
-        { provide: ProjectService, useValue: { getProject } },
+        { provide: ProjectService, useValue: { getProjectStrict: getProject } },
         { provide: HttpClient, useValue: { post: pollPost } },
         { provide: UserService, useValue: { user: signal({ sub: 'synthetic-sub' }) } },
         { provide: MktgDocumentStoreService, useValue: { listDocuments } },
@@ -211,36 +267,10 @@ describe('AeoGeoRunComponent', () => {
   });
   it('uses the standard quiet link treatment for From LFX and previous-report links', async () => {
     await render();
-    const type = fixture.componentInstance['documentType']();
-    if (!type) throw new Error('Expected the registered audit document type');
-    const revision = {
-      id: '000001-' + 'a'.repeat(64),
-      number: 1,
-      createdAt: '2026-10-01T10:00:00Z',
-      origin: 'generated' as const,
-      restoredFromNumber: null,
-      intakeMode: 'form' as const,
-      status: '',
-      contentSha256: 'a'.repeat(64),
-      format: 'markdown' as const,
-      commentCount: 0,
-      latest: true,
-      approval: null,
-    };
-    const report: MktgRevisionResponse = {
-      project: 'project-1',
-      type,
-      documentId: 'run-' + 'a'.repeat(24),
-      revisions: [revision],
-      revision,
-      approvedCurrent: null,
-      approval: null,
-      markdown: 'Synthetic audit',
-      sidecar: null,
-    };
-    fixture.componentInstance['runs'].set([report]);
+    const stored = report(documentType(), 'run-' + 'a'.repeat(24));
+    fixture.componentInstance['runs'].set([stored]);
     fixture.detectChanges();
-    for (const id of ['mktg-aeo-run-from-lfx', 'mktg-aeo-run-all-reports-link', 'mktg-aeo-run-open-' + report.documentId]) {
+    for (const id of ['mktg-aeo-run-from-lfx', 'mktg-aeo-run-all-reports-link', 'mktg-aeo-run-open-' + stored.documentId]) {
       const link = query(id);
       expect(link.classList.contains('text-blue-700')).toBe(true);
       expect(link.classList.contains('font-medium')).toBe(true);
@@ -455,17 +485,169 @@ describe('AeoGeoRunComponent', () => {
     expect(query('mktg-breadcrumb-current').textContent).toBe('AEO/GEO');
     expect(query('mktg-aeo-run-all-reports-link')).not.toBeNull();
   });
-  it('exposes a stable retry action when the project lookup fails', async () => {
-    getProject.mockReturnValue(of(null));
+  it('reads a transiently failed project lookup again on its own behind one quiet line, with no Try again button', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      getProject.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      await render();
+      const reads = getProject.mock.calls.length;
+      expect(query('mktg-aeo-run-retrying').textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-aeo-run-retrying').getAttribute('role')).toBe('status');
+      expect(query('mktg-aeo-run-error')).toBeNull();
+      expect(query('mktg-aeo-run-retry')).toBeNull();
+      expect(query('mktg-aeo-run-form')).toBeNull();
+      getProject.mockReturnValue(of({ writer: true, website_url: 'https://project.example/' }));
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(getProject).toHaveBeenCalledTimes(reads + 1);
+      expect(query('mktg-aeo-run-retrying')).toBeNull();
+      expect(query('mktg-aeo-run-error')).toBeNull();
+      expect(query('mktg-aeo-run-form')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+  it.each([401, 403])('latches a refused project read (%s) as the plain no-access state: no retry, no wake re-sends it, no button', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      getProject.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+      await render();
+      const reads = getProject.mock.calls.length;
+      expect(query('mktg-aeo-run-no-access')).not.toBeNull();
+      expect(query('mktg-aeo-run-retrying')).toBeNull();
+      expect(query('mktg-aeo-run-error')).toBeNull();
+      expect(query('mktg-aeo-run-form')).toBeNull();
+      await vi.advanceTimersByTimeAsync(2 * MKTG_POLL_MAX_BACKOFF_MS);
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(getProject).toHaveBeenCalledTimes(reads);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('keeps a missing project (404) a plain final line: no retry and no button', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      getProject.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render();
+      const reads = getProject.mock.calls.length;
+      expect(query('mktg-aeo-run-error').textContent).toContain('The project could not be loaded.');
+      expect(query('mktg-aeo-run-retrying')).toBeNull();
+      expect(query('mktg-aeo-run-retry')).toBeNull();
+      await vi.advanceTimersByTimeAsync(2 * MKTG_POLL_MAX_BACKOFF_MS);
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(getProject).toHaveBeenCalledTimes(reads);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('runs the post-project work once: a focus wake keeps the loaded reports, the run error and the one pending watch, and downloads nothing again', async () => {
+    const getRevision = vi.fn(() => of(report(documentType(), 'doc-1', new Date().toISOString())));
+    TestBed.overrideProvider(MktgDocumentStoreService, { useValue: { listDocuments, getRevision } });
+    listWithOneReport();
+    loadActive.mockReturnValue(run());
+    poll.mockReturnValue(throwError(() => new TimeoutError()));
     await render();
-    expect(query('mktg-aeo-run-error').textContent).toContain('could not be loaded');
-    expect(query('mktg-aeo-run-retry')).not.toBeNull();
-    getProject.mockReturnValue(of({ writer: true, website_url: 'https://project.example/' }));
-    query('mktg-aeo-run-retry').click();
+    expect(query('mktg-aeo-run-error').textContent).toContain(AEO_GEO_TIMEOUT_MESSAGE);
+    expect(fixture.componentInstance['runs']()).toHaveLength(1);
+    const lists = listDocuments.mock.calls.length;
+    const downloads = getRevision.mock.calls.length;
+    const watches = poll.mock.calls.length;
+    window.dispatchEvent(new Event('focus'));
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(query('mktg-aeo-run-error')).toBeNull();
+    expect(query('mktg-aeo-run-error').textContent).toContain(AEO_GEO_TIMEOUT_MESSAGE);
+    expect(fixture.componentInstance['runs']()).toHaveLength(1);
+    expect(listDocuments).toHaveBeenCalledTimes(lists);
+    expect(getRevision).toHaveBeenCalledTimes(downloads);
+    expect(poll).toHaveBeenCalledTimes(watches);
+  });
+  it('finishes the first previous-reports load through a focus wake that lands while it is in flight', async () => {
+    const download = new Subject<MktgRevisionResponse>();
+    const getRevision = vi.fn(() => download);
+    TestBed.overrideProvider(MktgDocumentStoreService, { useValue: { listDocuments, getRevision } });
+    listWithOneReport();
+    await render();
+    const lists = listDocuments.mock.calls.length;
+    expect(getRevision).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['previousLoading']()).toBe(true);
+    // The project replays from its cache at once; the load decided before the flattening operator is not cancelled.
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['previousLoading']()).toBe(true);
+    expect(query('mktg-aeo-run-empty')).toBeNull();
+    download.next(report(documentType(), 'doc-1'));
+    download.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['runs']()).toHaveLength(1);
+    expect(fixture.componentInstance['previousLoading']()).toBe(false);
+    expect(listDocuments).toHaveBeenCalledTimes(lists);
+    expect(getRevision).toHaveBeenCalledTimes(1);
+  });
+  it('shows no empty state between a recovered project read and the previous reports landing', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      const download = new Subject<MktgRevisionResponse>();
+      const getRevision = vi.fn(() => download);
+      TestBed.overrideProvider(MktgDocumentStoreService, { useValue: { listDocuments, getRevision } });
+      listWithOneReport();
+      getProject.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      await render();
+      expect(query('mktg-aeo-run-retrying')).not.toBeNull();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      // The form is back; the reports are still loading, so the list says so rather than "No audits yet".
+      expect(query('mktg-aeo-run-retrying')).toBeNull();
+      expect(query('mktg-aeo-run-form')).not.toBeNull();
+      expect(fixture.componentInstance['previousLoading']()).toBe(true);
+      expect(query('mktg-aeo-run-empty')).toBeNull();
+      download.next(report(documentType(), 'doc-1'));
+      download.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.componentInstance['runs']()).toHaveLength(1);
+      expect(query('mktg-aeo-run-empty')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+  it('retires the form and the reports when a later project read is final (404): the error line stands alone', async () => {
+    const getRevision = vi.fn(() => of(report(documentType(), 'doc-1')));
+    TestBed.overrideProvider(MktgDocumentStoreService, { useValue: { listDocuments, getRevision } });
+    listWithOneReport();
+    await render();
     expect(query('mktg-aeo-run-form')).not.toBeNull();
+    expect(fixture.componentInstance['runs']()).toHaveLength(1);
+    // The strict cache evicted the project (a role check failed elsewhere); the wake's read is final this time.
+    getProject.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-aeo-run-error').textContent).toContain('The project could not be loaded.');
+    expect(query('mktg-aeo-run-retrying')).toBeNull();
+    expect(query('mktg-aeo-run-form')).toBeNull();
+    expect(query('mktg-aeo-run-open-doc-1')).toBeNull();
+  });
+  it.each([401, 403])('shows the plain no-access state when a later project read is refused (%s), with no form left behind', async (status) => {
+    await render();
+    expect(query('mktg-aeo-run-form')).not.toBeNull();
+    getProject.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-aeo-run-no-access')).not.toBeNull();
+    expect(query('mktg-aeo-run-error')).toBeNull();
+    expect(query('mktg-aeo-run-retrying')).toBeNull();
+    expect(query('mktg-aeo-run-form')).toBeNull();
   });
   it('stops loading and asks for project scope when none is selected', async () => {
     TestBed.overrideProvider(ProjectContextService, { useValue: { activeContext: signal(null), activeContextUid: signal(null) } });

@@ -112,6 +112,8 @@ export const MEMBER_360_WORKBOOK_CONTENT_TYPE = 'application/vnd.openxmlformats-
 export const MEMBER_360_RUN_CEILING_MS = 7_200_000;
 /** Slower polling while the run waits for the user's answers. */
 export const MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS = 30_000;
+/** Reason a partial roster read (`progressUnavailable`) ends its cycle; the page retries it like a transient failure, never as final. */
+export const MEMBER_360_OWNED_RUN_UNCONFIRMED = 'Owned run state is not confirmed.';
 /** Allow an interrupted intake to resume within six hours; rows remain private. */
 export const MEMBER_360_TRACKER_TTL_MS = 21_600_000;
 /** Cap objects per cleanup pass; each erase retries at most once. */
