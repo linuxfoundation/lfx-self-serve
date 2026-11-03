@@ -2,7 +2,7 @@
 
 **Feature:** Automatic and manual membership sync between a Group and its linked Groups.io mailing list(s).
 **Audience:** Support engineers, customer success, internal escalation handlers.
-**Status:** Draft against in-review branches. Every button label, dialog header, and flag name below was verified against the open PRs listed in [Implementation Status](#implementation-status). Re-verify against `main` once those PRs merge, before relying on this doc to resolve a live ticket.
+**Status:** Draft against in-review branches. Every button label, dialog header, and flag name below was verified against the open PRs linked from epic #4022 (see [Implementation Status](#implementation-status)). Re-verify against `main` once those PRs merge, before relying on this doc to resolve a live ticket.
 
 ## What Is This Feature?
 
@@ -37,13 +37,14 @@ The working entry point is the per-list **Sync Now** button (`settings-sync-now-
 ## Common User Scenarios
 
 1. **"I turned on sync but nothing happened."**
-   Auto sync is event-driven — it only fires when the _next_ join/leave event occurs, and that event triggers a full roster diff (not just the one member who joined/left), so it does end up reconciling existing gaps once something happens. If genuinely nothing has happened yet (no joins/leaves since the toggle was flipped), tell the user **Sync Now** can reconcile immediately instead of waiting — but only if the list already has an auto direction configured; Sync Now currently rejects `manual`/unset `sync_mode` (see scenario 2 and [Limitations](#limitations-and-known-constraints)).
+   Auto sync is event-driven — it only fires when the _next_ join/leave event occurs, and that event triggers a full roster diff (not just the one member who joined/left), so it does end up reconciling existing gaps once something happens. If genuinely nothing has happened yet (no joins/leaves since the toggle was flipped), tell the user **Sync Now** can reconcile immediately instead of waiting — but only if the list already has an auto direction configured; Sync Now currently rejects `manual`/unset `sync_mode` (see [Limitations](#limitations-and-known-constraints)).
 
 2. **"The direction picker won't let me pick a direction."**
    Check for the "Active Group sync" notice — only one mailing list per Group may run an auto direction. The manager must turn off sync on the other list first.
 
 3. **"People are being removed from the mailing list unexpectedly."**
-   Removal propagation only runs for mailing lists marked **private** in Groups.io. If the list is public, removals never auto-propagate — only adds do. Note this can only happen with Group→Mailing List auto sync, since only one list per Group can run an auto direction at a time (see [Limitations](#limitations-and-known-constraints)) — there's no sibling private list on the same Group to compare against. If the removal still looks wrong, escalate to the `lfx-v2-mailing-list-service` / ITX maintainers rather than reading the sync code directly — don't point the user or support staff at backend source files.
+   First check whether this was a **manual Sync Now apply** or truly automatic. A manual Sync Now always lets the manager review and approve each removal before applying — it is not restricted by the list's visibility, for either sync direction. If the removal happened with no one touching Sync Now, it came from the _automatic_ Group→Mailing List (`auto_c_to_ml`) path, which only auto-removes on a **private** mailing list — a public list only ever auto-adds, never auto-removes. (The reverse direction, `auto_ml_to_c`, has no automatic removal in this service at all — ITX propagates Groups.io unsubscribe events to the Group directly, independent of this restriction.)
+   Also check whether the removed person is still subscribed to another mailing list linked to the same Group — even one in `manual` mode. Automatic removal skips anyone still subscribed to a sibling list on the same Group, so they don't get dropped from one list while still belonging to another tied to the same committee. This is expected behavior, not a bug. If the removal still looks wrong after ruling out both of these, escalate to the `lfx-v2-mailing-list-service` / ITX maintainers rather than reading the sync code directly — don't point the user or support staff at backend source files.
 
 4. **"Sync toggle / Auto Sync button isn't showing up at all."**
    - Frontend: `MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG` (LaunchDarkly key: `mailing-list-committee-sync-enabled`) — controls whether the UI shows the Sync Settings section at all. Check this flag first for a visibility complaint.
@@ -72,10 +73,11 @@ The working entry point is the per-list **Sync Now** button (`settings-sync-now-
 
 ## Limitations and Known Constraints
 
-- **One auto direction per Group.** Only one linked mailing list can have an active `auto_*` direction per Group at a time (enforced via `MailingListService.getMailingListsByCommittee`). Other linked lists must stay `manual` or use Sync Now.
+- **One auto direction per Group.** Only one linked mailing list can have an active `auto_*` direction per Group at a time (enforced via `MailingListService.getMailingListsByCommittee`). Other linked lists must stay `manual`.
 - **No idle reconciliation.** Auto sync only runs its full roster diff when a join/leave event fires — it does not reconcile on a schedule or on toggle. If no event has happened since enabling, nothing has synced yet; **Sync Now** reconciles immediately instead of waiting for the next event, but only on a list that already has an auto direction set (it rejects `manual`/unset `sync_mode`; see scenario 1).
 - **No committee filters (role-scoped sync).** Unlike PCC, Self Serve cannot yet restrict Group→Mailing List sync to members with a specific committee role. Tracked under #4026/#4904, not implemented as of this writing.
-- **Removal propagation is private-list-only.** Removing someone from a public mailing list never auto-propagates to or from the Group; only private lists support auto-removal. This can only apply to Group→Mailing List auto sync, since only one list per Group may run an auto direction at a time — there is no same-direction sibling to guard against.
+- **Automatic removal is Group→Mailing List and private-list-only.** The realtime `auto_c_to_ml` auto-sync path (issue #4023) only auto-removes someone when the mailing list is private — a public list only ever auto-adds, never auto-removes. This restriction is specific to that automatic path: a manual **Sync Now** apply lets the manager approve removes regardless of visibility, for either sync direction, since a human is reviewing the diff. The reverse automatic direction (`auto_ml_to_c`) isn't implemented in this service at all — ITX propagates Groups.io unsubscribe events straight to the Group in real time, independent of this restriction.
+- **Automatic removal also checks sibling lists on the same Group.** Before an automatic removal is applied, the service checks whether the person is still subscribed to any other mailing list linked to the same Group — including one in `manual` mode — and skips the removal if so, so they aren't dropped from one list while still belonging to a sibling tied to the same committee.
 - **Conflicts are informational only.** The Sync Now dialog's Conflicts tab surfaces mismatched-email rows but never applies changes for them automatically.
 
 ## Implementation Status
