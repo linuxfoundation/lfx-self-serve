@@ -138,9 +138,9 @@
         </tr>
       </ng-template>
 
-      <!-- Totals over the whole tab: equal to the stat tiles of the same range and filters -->
+      <!-- Totals over the whole tab: equal to the stat tiles of the same range and filters. Hidden while a request is pending: the retained response is the previous view's. -->
       <ng-template #footer>
-        @if (groups().totals.coursesTaken > 0) {
+        @if (!loading() && groups().totals.coursesTaken > 0) {
           <tr data-testid="org-training-groups-totals" [attr.title]="totalsNote()">
             <td class="text-sm font-medium text-gray-900">
               Total

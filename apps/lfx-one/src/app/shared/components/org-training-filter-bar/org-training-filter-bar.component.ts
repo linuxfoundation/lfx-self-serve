@@ -22,11 +22,19 @@ import type { OrgDropdownOption, OrgLensTimeRange, OrgTrainingFilterOptions, Org
 import { hasOrgTrainingFilter, parseOrgTrainingViewState, serializeOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
-import { catchError, distinctUntilChanged, filter, map, of, pairwise, startWith, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, pairwise, startWith, switchMap } from 'rxjs';
 
 /** Label of a kept foundation/project selection once the options loaded without it: the raw id is never shown. */
 const KEPT_ID_LABEL = 'Selected';
 const NO_ROWS_SUFFIX = '(no rows in range)';
+
+/** Options of the current org and range: `options` is null while they load and after a failed load, `failed` tells the two apart. */
+interface OrgTrainingFilterOptionsLoad {
+  options: OrgTrainingFilterOptions | null;
+  failed: boolean;
+}
+
+const OPTIONS_PENDING: OrgTrainingFilterOptionsLoad = { options: null, failed: false };
 
 /**
  * The one filter bar of Training & Certification and People › Trainees: range, foundation, project, course, level and
@@ -73,8 +81,13 @@ export class OrgTrainingFilterBarComponent {
   );
   private readonly range: Signal<OrgLensTimeRange> = computed(() => this.state().range);
   private readonly orgUid: Signal<string> = computed(() => this.accountContext.selectedAccount().uid ?? '');
+  /** Re-reads the options of the current org and range (the inline Retry). */
+  private readonly optionsRetry$ = new BehaviorSubject<void>(undefined);
+  private readonly optionsLoad: Signal<OrgTrainingFilterOptionsLoad> = this.initOptions();
   /** Null until the options of the current org and range loaded (and after a failed load): a kept selection is then not known to be unlisted. */
-  private readonly options: Signal<OrgTrainingFilterOptions | null> = this.initOptions();
+  private readonly options: Signal<OrgTrainingFilterOptions | null> = computed(() => this.optionsLoad().options);
+  /** The options read failed: the dropdowns hold only "All" and the current pick until Retry succeeds. */
+  protected readonly optionsFailed: Signal<boolean> = computed(() => this.optionsLoad().failed);
 
   protected readonly hasFilter: Signal<boolean> = computed(() => hasOrgTrainingFilter(this.state()));
   /** Filters set behind the toggle, so a pick from the URL is never invisible while it is collapsed. */
@@ -125,6 +138,10 @@ export class OrgTrainingFilterBarComponent {
     this.navigate({ ...this.state(), foundation: null, project: null, course: null, level: null, format: null });
   }
 
+  protected retryOptions(): void {
+    this.optionsRetry$.next();
+  }
+
   private stateFromForm(): OrgTrainingViewState {
     const value = this.form.getRawValue();
     // The form's control names are the filter keys; the URL params (e.g. `trainingProject`) are the serializer's concern.
@@ -147,28 +164,29 @@ export class OrgTrainingFilterBarComponent {
     void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
-  private initOptions(): Signal<OrgTrainingFilterOptions | null> {
+  private initOptions(): Signal<OrgTrainingFilterOptionsLoad> {
     const orgUid$ = toObservable(this.orgUid);
     const range$ = toObservable(this.range);
     return toSignal(
       orgUid$.pipe(
-        // An org switch drops the previous org's options before the new ones load, so they are never shown for the new org.
-        switchMap((orgUid) => {
-          if (!orgUid) return of(null);
-          return range$.pipe(
-            switchMap((range) =>
+        switchMap((orgUid): Observable<OrgTrainingFilterOptionsLoad> => {
+          if (!orgUid) return of(OPTIONS_PENDING);
+          return combineLatest([range$, this.optionsRetry$]).pipe(
+            // Every request (a new org, a new range or a Retry) first drops the previous options, so a pending read is never shown as this range's options.
+            switchMap(([range]) =>
               this.trainingService.getFilterOptions(orgUid, range).pipe(
+                map((options): OrgTrainingFilterOptionsLoad => ({ options, failed: false })),
                 catchError((error: unknown) => {
                   console.error('Failed to load training filter options', error);
-                  return of(null);
-                })
+                  return of<OrgTrainingFilterOptionsLoad>({ options: null, failed: true });
+                }),
+                startWith(OPTIONS_PENDING)
               )
-            ),
-            startWith(null)
+            )
           );
         })
       ),
-      { initialValue: null }
+      { initialValue: OPTIONS_PENDING }
     );
   }
 

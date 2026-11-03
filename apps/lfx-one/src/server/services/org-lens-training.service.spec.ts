@@ -332,10 +332,20 @@ describe('OrgLensTrainingService — a filter value the organization never carri
   ];
   const ZERO_TOTALS = { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 };
 
+  /** Known values, groups, and the live roster row (null: the org has no LF Education client). */
+  function mockUnknownFilterWarehouse(roster: Record<string, unknown> | null): void {
+    execute.mockImplementation(async (sql: string) => {
+      if (isKnownValuesSql(sql)) return { rows: KNOWN_ROWS };
+      if (sql.includes('ORG_TRAINING_ROSTER_MEMBERS')) return { rows: roster ? [roster] : [] };
+      if (sql.includes('AS GROUP_KEY')) return { rows: GROUP_ROWS };
+      return { rows: [] };
+    });
+  }
+
   it.each(unknownFilters)(
     'answers an unknown %s with zero payloads, never an error, and reaches no stats/groups cache key or statement',
     async (_name, filter) => {
-      mockGroups(KNOWN_ROWS);
+      mockUnknownFilterWarehouse({ ROSTER_MEMBERS: 40, AS_OF_TS: '2026-10-29T23:00:00.000Z' });
       const query = { ...QUERY, ...filter };
 
       const stats = await service.getTrainingStats(ACCOUNT, query, 'org-grant');
@@ -351,8 +361,8 @@ describe('OrgLensTrainingService — a filter value the organization never carri
       expect(stats).toEqual({
         range: '730d',
         asOf: null,
-        rosterMembers: null,
-        rosterMembersAsOf: null,
+        rosterMembers: 40,
+        rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
         peopleWithTrainingActivity: 0,
         learnersOutsidePeopleList: 0,
         coursesTaken: 0,
@@ -374,15 +384,26 @@ describe('OrgLensTrainingService — a filter value the organization never carri
         data: [],
       });
 
-      // Only the known-values entry was read (its key carries no request value); no key or statement holds the unknown value.
+      // Only the known-values entry and the unfiltered stats entry (the roster's) were read; no key or statement holds the unknown value.
       const keys = withOrgCache.mock.calls.map(([, key]) => key as string);
-      expect(new Set(keys)).toEqual(new Set(['training-filter-known:v1']));
+      expect(new Set(keys)).toEqual(new Set(['training-filter-known:v1', `training-stats:v5:${orgTrainingFiltersSignature(QUERY)}`]));
       for (const [sql, binds] of execute.mock.calls as [string, unknown[]][]) {
-        expect(isKnownValuesSql(sql)).toBe(true);
-        expect(binds).toEqual([ACCOUNT]);
+        expect(binds).not.toContain(Object.values(filter)[0]);
+        expect(sql.includes('AS GROUP_KEY')).toBe(false);
       }
     }
   );
+
+  it('keeps a null roster for an unknown filter on an org without a roster row', async () => {
+    mockUnknownFilterWarehouse(null);
+
+    const stats = await service.getTrainingStats(ACCOUNT, { ...QUERY, level: 'Unknown level' }, 'org-grant');
+
+    expect(stats.rosterMembers).toBeNull();
+    expect(stats.rosterMembersAsOf).toBeNull();
+    expect(stats.asOf).toBeNull();
+    expect(stats.coursesTaken).toBe(0);
+  });
 
   it('does not share the zero groups payload between responses', async () => {
     mockGroups(KNOWN_ROWS);
@@ -397,13 +418,13 @@ describe('OrgLensTrainingService — a filter value the organization never carri
   });
 
   it('serves an auditor-entitlement caller the same zeros without touching the shared cache', async () => {
-    mockGroups(KNOWN_ROWS);
+    mockUnknownFilterWarehouse({ ROSTER_MEMBERS: 40, AS_OF_TS: '2026-10-29T23:00:00.000Z' });
 
     const stats = await service.getTrainingStats(ACCOUNT, { ...QUERY, course: 'Unknown course' }, 'auditor-entitlement');
 
     expect(stats.coursesTaken).toBe(0);
+    expect(stats.rosterMembers).toBe(40);
     expect(withOrgCache).not.toHaveBeenCalled();
-    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it('accepts every known value and keeps it in the cache key', async () => {

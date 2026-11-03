@@ -142,7 +142,17 @@ export class OrgLensTrainingService {
 
   /** The one stats function: both pages and the Overview tile call it, so equal queries always give equal numbers. */
   public async getTrainingStats(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<OrgTrainingStats> {
-    if (!(await this.carriesOnlyKnownFilters(accountId, query, qualification))) return emptyTrainingStats(query.range);
+    if (!(await this.carriesOnlyKnownFilters(accountId, query, qualification))) {
+      // Zeros for every range metric; the roster is live and unfiltered, so it comes from the unfiltered stats entry.
+      const unfiltered = await this.cached(
+        qualification,
+        accountId,
+        `training-stats:v5:${orgTrainingFiltersSignature({ range: query.range, foundation: null, project: null, course: null, level: null, format: null })}`,
+        () => this.fetchTrainingStats(accountId, { range: query.range, foundation: null, project: null, course: null, level: null, format: null }),
+        isTrainingStats
+      );
+      return emptyTrainingStats(query.range, unfiltered.rosterMembers, unfiltered.rosterMembersAsOf);
+    }
     return this.cached(
       qualification,
       accountId,
@@ -588,13 +598,13 @@ function buildKnownFilterValues(rows: readonly OrgTrainingKnownValueRow[]): OrgT
   };
 }
 
-/** The stats of a filter the org carries no value for: nothing counted, and no roster or build time read (the short-circuit reads no warehouse row). */
-function emptyTrainingStats(range: OrgLensTimeRange): OrgTrainingStats {
+/** The stats of a filter the org carries no value for: every range metric is zero; only the live, unfiltered roster is carried. */
+function emptyTrainingStats(range: OrgLensTimeRange, rosterMembers: number | null, rosterMembersAsOf: string | null): OrgTrainingStats {
   return {
     range,
     asOf: null,
-    rosterMembers: null,
-    rosterMembersAsOf: null,
+    rosterMembers,
+    rosterMembersAsOf,
     peopleWithTrainingActivity: 0,
     learnersOutsidePeopleList: 0,
     coursesTaken: 0,

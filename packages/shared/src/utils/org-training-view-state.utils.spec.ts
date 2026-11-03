@@ -31,6 +31,25 @@ describe('parseOrgTrainingViewState', () => {
     expect(state.format).toHaveLength(200);
   });
 
+  it('trims spaces only, as Snowflake TRIM does: a value surrounded by non-breaking spaces or holding tabs is kept as is and round-trips', () => {
+    const nbsp = '\u00a0Kubernetes Basics\u00a0';
+    const tabbed = '\tKubernetes\tBasics\t';
+
+    const state = fromQuery({ course: nbsp, level: tabbed, format: ' \u00a0E-Learning\u00a0 ' });
+
+    expect(state.course).toBe(nbsp);
+    expect(state.level).toBe(tabbed);
+    expect(state.format).toBe('\u00a0E-Learning\u00a0');
+    const serialized = serializeOrgTrainingViewState(state);
+    expect(serialized['course']).toBe(nbsp);
+    expect(serialized['level']).toBe(tabbed);
+    expect(fromQuery(toQuery(serialized))).toEqual(state);
+  });
+
+  it('keeps a value made only of non-breaking spaces or a tab, which Snowflake TRIM does not blank', () => {
+    expect(fromQuery({ course: '\u00a0', level: '\t' })).toMatchObject({ course: '\u00a0', level: '\t' });
+  });
+
   it('falls back to defaults for unknown range and groupBy, and reads the legacy 12mo as 365d', () => {
     expect(fromQuery({ range: 'bogus', groupBy: 'bogus' })).toMatchObject({ range: '730d', groupBy: 'course' });
     expect(fromQuery({ range: '12mo' }).range).toBe('365d');

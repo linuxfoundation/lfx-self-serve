@@ -35,22 +35,16 @@ export function normalizeOrgTrainingFilterValue(value: string | null | undefined
   return normalized === '' ? null : normalized;
 }
 
-function parseFilterValue(value: string | null | undefined): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed.slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH);
-}
-
 /** URL query (read through `get`) → view state: absent/empty = no filter, unknown range = default, unknown groupBy = course. */
 export function parseOrgTrainingViewState(get: (param: string) => string | null | undefined): OrgTrainingViewState {
   const groupBy = get(ORG_TRAINING_VIEW_QUERY_PARAMS.groupBy);
   return {
     range: parseOrgLensTimeRange(get(ORG_LENS_TIME_RANGE_QUERY_PARAM)),
-    foundation: parseFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.foundation)),
-    project: parseFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.project)),
-    course: parseFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.course)),
-    level: parseFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.level)),
-    format: parseFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.format)),
+    foundation: normalizeOrgTrainingFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.foundation)),
+    project: normalizeOrgTrainingFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.project)),
+    course: normalizeOrgTrainingFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.course)),
+    level: normalizeOrgTrainingFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.level)),
+    format: normalizeOrgTrainingFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.format)),
     groupBy: typeof groupBy === 'string' && VALID_ORG_TRAINING_GROUP_BY_VALUES.has(groupBy) ? (groupBy as OrgTrainingGroupBy) : ORG_TRAINING_DEFAULT_GROUP_BY,
   };
 }

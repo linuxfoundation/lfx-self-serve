@@ -207,6 +207,92 @@ describe('OrgTrainingFilterBarComponent', () => {
     error.mockRestore();
   });
 
+  it('drops the previous range options while the new range loads, and labels a kept pick plainly until they arrive', async () => {
+    await mount('/?foundation=fb&course=Kubernetes%20Basics');
+    const foundations = () => fixture.componentInstance['foundationOptions']().map((option) => option.label);
+    expect(foundations()).toEqual(['All Foundations', 'Foundation A', 'Foundation B']);
+    const pending = new Subject<OrgTrainingFilterOptions>();
+    getFilterOptions.mockReturnValue(pending);
+
+    await pick({ range: '30d' });
+
+    expect(getFilterOptions).toHaveBeenLastCalledWith(ORG, '30d');
+    expect(foundations()).toEqual(['All Foundations', 'Selected']);
+    expect(fixture.componentInstance['courseOptions']().map((option) => option.label)).toEqual(['All Courses', 'Kubernetes Basics']);
+    expect(el().querySelector('[data-testid="org-training-filter-options-error"]')).toBeNull();
+
+    pending.next(RECENT_OPTIONS);
+    pending.complete();
+    await settle();
+    expect(foundations()).toEqual(['All Foundations', 'Selected (no rows in range)', 'Foundation A']);
+  });
+
+  describe('options failure', () => {
+    const errorBox = (): Element | null => el().querySelector('[data-testid="org-training-filter-options-error"]');
+    const retry = (): HTMLButtonElement | null => el().querySelector<HTMLButtonElement>('[data-testid="org-training-filter-options-retry"] button');
+
+    it('shows an inline alert with Retry, keeps the selections applied, and logs the error', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getFilterOptions.mockReturnValue(new Observable((subscriber) => subscriber.error(new Error('down'))));
+      await mount('/?foundation=fa');
+
+      expect(errorBox()?.getAttribute('role')).toBe('alert');
+      expect(retry()).not.toBeNull();
+      expect(error).toHaveBeenCalled();
+      expect(router().url).toContain('foundation=fa');
+      expect(fixture.componentInstance.form.getRawValue().foundation).toBe('fa');
+      expect(fixture.componentInstance['foundationOptions']().map((option) => option.label)).toEqual(['All Foundations', 'Selected']);
+      error.mockRestore();
+    });
+
+    it('reloads the current org and range on Retry, and a success clears the error and fills the options', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getFilterOptions.mockReturnValueOnce(new Observable((subscriber) => subscriber.error(new Error('down'))));
+      await mount('/?range=30d');
+      expect(errorBox()).not.toBeNull();
+      expect(getFilterOptions).toHaveBeenCalledTimes(1);
+
+      retry()?.click();
+      await settle();
+
+      expect(getFilterOptions).toHaveBeenCalledTimes(2);
+      expect(getFilterOptions).toHaveBeenLastCalledWith(ORG, '30d');
+      expect(errorBox()).toBeNull();
+      expect(fixture.componentInstance['foundationOptions']().map((option) => option.value)).toEqual(['', 'fa']);
+      error.mockRestore();
+    });
+
+    it('hides the error while Retry is pending and shows it again if Retry fails', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getFilterOptions.mockReturnValueOnce(new Observable((subscriber) => subscriber.error(new Error('down'))));
+      await mount('/');
+      const pending = new Subject<OrgTrainingFilterOptions>();
+      getFilterOptions.mockReturnValueOnce(pending);
+
+      retry()?.click();
+      await settle();
+      expect(errorBox()).toBeNull();
+
+      pending.error(new Error('still down'));
+      await settle();
+      expect(errorBox()).not.toBeNull();
+      error.mockRestore();
+    });
+
+    it('clears the error when the range changes to one that loads', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getFilterOptions.mockReturnValueOnce(new Observable((subscriber) => subscriber.error(new Error('down'))));
+      await mount('/');
+      expect(errorBox()).not.toBeNull();
+
+      await pick({ range: '30d' });
+
+      expect(errorBox()).toBeNull();
+      expect(fixture.componentInstance['foundationOptions']().map((option) => option.value)).toEqual(['', 'fa']);
+      error.mockRestore();
+    });
+  });
+
   describe('unlisted selections', () => {
     const labelsOf = (name: 'foundationOptions' | 'projectOptions' | 'courseOptions' | 'levelOptions' | 'formatOptions') =>
       fixture.componentInstance[name]().map((option) => option.label);

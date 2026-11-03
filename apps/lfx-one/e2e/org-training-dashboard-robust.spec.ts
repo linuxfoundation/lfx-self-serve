@@ -23,7 +23,7 @@ test.describe('Org Training Dashboard — structure', () => {
 
     const primary = page.getByTestId('org-training-filter-primary');
     await expect(primary).toBeVisible();
-    await expect(primary.getByTestId('org-training-search-input')).toBeVisible();
+    await expect(primary.getByRole('textbox', { name: 'Search by name' })).toBeVisible();
     await expect(primary.locator('[data-test="org-training-filter-range"]')).toBeVisible();
     await expect(primary.locator('[data-test="org-training-filter-group-by"]')).toBeVisible();
 
@@ -77,12 +77,13 @@ test.describe('Org Training Dashboard — structure', () => {
 
     await page.getByTestId(`org-training-group-completed-${COURSE_KEY}`).getByRole('button').click();
 
-    const drawer = page.getByTestId('org-training-group-employees-drawer');
+    // PrimeNG's Drawer moves its panel (role "complementary") to the body, leaving the `data-testid` on <p-drawer> an empty zero-size host: find the panel by the title it holds.
+    const drawer = page.getByRole('complementary').filter({ has: page.getByTestId('org-training-group-employees-title') });
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('org-training-group-employees-title')).toContainText('Certified');
     await expect(page.getByTestId('org-training-group-employees-subtitle')).toContainText(COURSE_KEY);
     await expect(page.getByTestId('org-training-group-employees-note')).toBeVisible();
-    await expect(page.getByTestId('org-training-group-employees-search')).toBeVisible();
+    await expect(drawer.getByRole('textbox', { name: 'Search employees' })).toBeVisible();
     await expect(page.getByTestId('org-training-group-employee-certified@example.org')).toBeVisible();
 
     await page.keyboard.press('Escape');
@@ -104,7 +105,7 @@ test.describe('Org Training Dashboard — mobile viewport', () => {
     await expect(page.locator('[data-test="org-training-filter-course"]')).toBeVisible();
 
     // The filters stack in one column: each control sits below the previous one.
-    const search = await page.getByTestId('org-training-search-input').boundingBox();
+    const search = await page.getByRole('textbox', { name: 'Search by name' }).boundingBox();
     const rangeBox = await range.boundingBox();
     expect(search).not.toBeNull();
     expect(rangeBox).not.toBeNull();
@@ -115,7 +116,8 @@ test.describe('Org Training Dashboard — mobile viewport', () => {
     expect(overflow).toBeLessThanOrEqual(1);
 
     await page.getByTestId(`org-training-group-completed-${COURSE_KEY}`).getByRole('button').click();
-    const drawer = page.getByTestId('org-training-group-employees-drawer');
+    // PrimeNG's Drawer moves its panel (role "complementary") to the body, leaving the `data-testid` on <p-drawer> an empty zero-size host: find the panel by the title it holds.
+    const drawer = page.getByRole('complementary').filter({ has: page.getByTestId('org-training-group-employees-title') });
     await expect(drawer).toBeVisible();
     const drawerBox = await drawer.boundingBox();
     expect(drawerBox).not.toBeNull();

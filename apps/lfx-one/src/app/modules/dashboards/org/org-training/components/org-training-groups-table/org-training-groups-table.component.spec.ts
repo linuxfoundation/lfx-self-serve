@@ -14,7 +14,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgTrainingGroupsTableComponent } from './org-training-groups-table.component';
@@ -156,6 +156,39 @@ describe('OrgTrainingGroupsTableComponent', () => {
     await render('trainings');
 
     expect(byTestId('org-training-groups-totals-completed')?.getAttribute('aria-label')).toBe('Completed total 9, equals the Trainings completed tile');
+  });
+
+  describe('while the next view loads', () => {
+    const NEXT: OrgTrainingGroupsResponse = { data: [ROW], total: 1, totals: { people: 7, coursesTaken: 12, completed: 5, inProgress: 1 } };
+
+    it.each([
+      ['the range or filters change', 'query', { ...QUERY, range: '90d' }],
+      ['the organization switches', 'orgUid', 'org-2'],
+    ])('hides the previous totals, the scope note and the tile text when %s, and shows the new ones once they arrive', async (_name, input, value) => {
+      const { fixture, trainingService } = await render('certifications');
+      expect(text('org-training-groups-totals-courses-taken')).toBe('20');
+      const pending = new Subject<OrgTrainingGroupsResponse>();
+      trainingService.getGroups.mockReturnValue(pending);
+
+      fixture.componentRef.setInput(input, value);
+      await settle(fixture);
+
+      expect(trainingService.getGroups).toHaveBeenCalledTimes(2);
+      expect(byTestId('org-training-groups-totals')).toBeNull();
+      expect(byTestId('org-training-groups-totals-courses-taken')).toBeNull();
+      expect(byTestId('org-training-groups-scope-note')).toBeNull();
+      expect(document.body.textContent).not.toContain('equals the');
+
+      pending.next(NEXT);
+      pending.complete();
+      await settle(fixture);
+
+      expect(text('org-training-groups-totals-people')).toBe('7');
+      expect(text('org-training-groups-totals-courses-taken')).toBe('12');
+      expect(text('org-training-groups-totals-completed')).toBe('5');
+      expect(byTestId('org-training-groups-scope-note')).not.toBeNull();
+      expect(byTestId('org-training-groups-totals')?.getAttribute('title')).toContain('equals the “Certifications” tile');
+    });
   });
 
   it('narrows the groups by the page search term and never reads the stats', async () => {

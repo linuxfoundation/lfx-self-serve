@@ -4,6 +4,7 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import { MAX_ORG_TRAINING_FILTER_VALUE_LENGTH } from '@lfx-one/shared/constants';
+import { trimOrgTrainingSpaces } from '@lfx-one/shared/utils/org-training-view-state.utils';
 
 import { ServiceValidationError } from '../errors';
 
@@ -19,7 +20,7 @@ export function assertWellFormedOrgTrainingFilterValue(value: unknown, field: st
   if (typeof value !== 'string') {
     throw ServiceValidationError.forField(field, `${field} must be a single string`, { operation });
   }
-  const candidate = trim ? value.trim() : value;
+  const candidate = trim ? trimOrgTrainingSpaces(value) : value;
   if (candidate.length > MAX_ORG_TRAINING_FILTER_VALUE_LENGTH) {
     throw ServiceValidationError.forField(field, `${field} must be at most ${MAX_ORG_TRAINING_FILTER_VALUE_LENGTH} characters`, { operation });
   }
