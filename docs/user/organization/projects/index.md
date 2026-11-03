@@ -1,0 +1,267 @@
+---
+title: Projects and project detail
+description: How to read the Projects table for the selected organization, filter and export it, manage shared workspaces, and open a project's detail page to see the organization's influence, its leaderboard standing, and the influence trend.
+audience: [all]
+product_area: Organization
+tags: [organization, org, org-lens, projects, project-detail, workspaces, influence, leaderboard, health, contributors, participants]
+last_updated: 2026-11-03
+intercom_collection: Organization
+---
+
+These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. Adding projects and managing workspaces also needs Admin access to the organization. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Projects**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
+
+## What is the Projects page?
+
+The Projects page lists the open source projects the selected organization is involved in, with each project's health, the organization's influence on it, and how many of its people contribute and participate. Its address is `/org/<organization>/projects`.
+
+The page heading is **Projects —** followed by the organization's name. The line under it is **The open source projects your organization influences, contributes to, and depends on.** The sidebar item that opens it is **Projects**.
+
+The table shows one workspace at a time. A workspace is a saved list of projects that everyone at the organization shares. The first one is **All Projects with Activities**.
+
+## How do I open Projects?
+
+You open **Projects** from the Organization lens sidebar once an organization is selected. A CLA Manager or initial CLA Manager designee with no other role on that organization is sent to **EasyCLA** instead.
+
+1. Sign in to [app.lfx.dev](https://app.lfx.dev).
+2. Select **Organization** in the lens switcher.
+3. Select **Projects** in the sidebar. On a phone or small screen, selecting **Organization** in the navigation menu only shows that lens's menu: select **Projects** in it.
+
+If your only role on that organization is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+
+When you cannot open the organization, Projects is replaced by the same access message as the other Organization lens pages, such as **You do not have access to this organization**. Those messages are covered in [What happens when a link does not open an organization?](../choose-an-organization/#what-happens-when-a-link-does-not-open-an-organization).
+
+## What does each column in the Projects table show?
+
+Each row is one project in the selected workspace. Select a project name to open its detail page. Hover a column heading to read what it measures.
+
+| Column                   | What it shows                                                                                                                                                                                                                     |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Project**              | The project logo and name. The name opens the project's detail page                                                                                                                                                               |
+| **Health**               | The project's LFX Insights health label: **Excellent**, **Healthy**, **Fair**, **Concerning**, **Critical**, or **Unavailable**                                                                                                   |
+| **Technical influence**  | The organization's influence on the project's code activity (commits and pull requests), as a band: **Leading**, **Contributing**, **Participating**, or **Silent**                                                               |
+| **Ecosystem influence**  | The organization's influence on the project's non-code collaboration (documentation, committees, meetings, events), as the same bands. A project outside the Linux Foundation (LF) shows **Non-LF Project**                       |
+| **Influence Trend (1y)** | A line showing how the organization's combined influence changed over the rolling 12 months, and the change as a percentage                                                                                                       |
+| **Contributors**         | How many of the organization's employees contributed code to the project in the past 2 years. The number opens the project's detail page with its **Contributors** card open                                                      |
+| **Participants**         | How many of the organization's employees were involved in the project in any way in the past 2 years, including code contributions, documentation collaboration, events, and training. The number opens the project's detail page |
+
+The hover text on both influence columns says **Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).** and **Comparing our company's share of these activities to the project total indicates greater influence in the project.** Each band also shows signal bars: four filled for **Leading**, down to one for **Silent**.
+
+Under the trend line, a change of more than 1% either way shows an up or down arrow. A smaller change is shown without an arrow. Hover the line to see **Combined influence**, **Technical influence**, and **Ecosystem influence** changes separately.
+
+The table starts sorted by **Contributors**, most first. Select a column heading to sort by it, and select it again to reverse the order. It shows 25 rows per page. You can change that to 10 or 50 at the bottom of the table.
+
+## What does the Health label mean?
+
+The **Health** label is the project's health classification from LFX Insights. Hover or select the label to see the score and how it breaks down.
+
+The panel shows the label, the score out of 100, and three categories:
+
+| Category                    | Points |
+| --------------------------- | ------ |
+| **Maintainer Health**       | 40     |
+| **Security & Supply Chain** | 35     |
+| **Development Activity**    | 25     |
+
+A label with an asterisk, such as **Healthy\***, is a partial score. One category has no data for that project, and the panel names it: **\*The Health score is partial because the** category **category is missing data for this project.** A category with no data shows a dash (**—**) in place of its score.
+
+**Unavailable** means the project has no health score. The panel says **Health score is unavailable for this project.** When you sort by **Health**, projects with **Unavailable** come after the others in either direction.
+
+## Why does a project say "No activity yet"?
+
+**No activity yet** next to a project's name means the organization has no influence data for that project. This happens when a project was added to a workspace but the organization has no recorded involvement in it.
+
+On that row, the project name is not a link. **Technical influence**, **Ecosystem influence**, and **Influence Trend (1y)** say **Unavailable**. **Contributors** and **Participants** are numbers you cannot select. **Health** can still show a label, because health is measured for the project, not for the organization. These rows sort after the others when you sort by an influence or trend column.
+
+## How do I filter the Projects table?
+
+Use the menus above the table. Each filter changes only the rows shown and goes back to page 1.
+
+1. Open the workspace menu at the left, which shows the current workspace's name, and select a workspace under **Shared Workspaces**.
+2. Open the foundation menu. It starts on **All Foundations**. Type in **Search foundations…** to find one, and select it to keep only that foundation's projects.
+3. Open **All Employees** and select one or more people to keep only the projects they maintain, contribute to, or participate in.
+4. Select **More filters** to show **Organization scope**. While it is set to something other than its default, the link reads **More filters (1)**. Select **Fewer filters** to hide it again.
+
+When maintainer data cannot be read, the page says **Maintainer data is currently unavailable — the Employees filter matches contributors and participants only.**
+
+When the filters match no projects, the table says **No results for filters** and **Try a different workspace or clear your filters.** Select **Reset filters** to clear the workspace, foundation, employee, and organization scope choices at once.
+
+## What does Organization scope change?
+
+**Organization scope** chooses which of the company's organizations count toward contributors. On the Projects page it **Applies to the Contributors column only.**
+
+- **Insights organization**, the default, counts only the organization on the company's LFX Insights page, in the repositories LFX Insights counts. Maintainer roles are not affected.
+- **All related organizations** counts every organization linked to the company account, such as subsidiaries, acquisitions, and duplicate records, in every repository. The number in parentheses is how many related organizations there are.
+
+When the company has no LFX Insights organization with code activity in the past two years, the menu is locked on **All related organizations**. Its info button says **This company has no LFX Insights organization with code activity in the past two years; counts include every related organization.**
+
+Your choice is kept when you open a project's detail page and when you return to Projects. See [Organization scope](../../dashboards/#organization-scope).
+
+## How do I export the Projects table?
+
+Select **Export to CSV** to download the projects the table currently shows, across every page. The file has the columns **Project**, **Health Score**, **Technical Influence**, **Ecosystem Influence**, **Influence Trend (1y) %**, **Our Contributors**, and **Our Participants**. It follows the current workspace, filters, and sort.
+
+**Export to CSV** is unavailable while the table loads and when it has no rows. Its hover text is then **No rows to export**.
+
+## What is a workspace?
+
+A workspace is a named list of projects that the Projects table shows. Workspaces are shared: everyone who can open the organization sees the same ones, and a change by one Admin appears for everyone.
+
+**All Projects with Activities** is the workspace every organization starts with. It is filled with up to 50 of the organization's projects, those with the most participating employees first. It cannot be deleted.
+
+If you can only view the organization and no Admin has opened Projects for it yet, the table can say **No projects with activity yet** and **Projects will appear here once this organization has activity in the catalog.**
+
+## Who can manage workspaces and add projects?
+
+Only an Admin of the selected organization can add projects, hide projects, and add, rename, or delete workspaces. See [Manage Org Lens Access](../manage-org-lens-access/) for who is an Admin.
+
+When you are not an Admin, **Add Project** is unavailable and its hover text is **You have view-only access to this organization**. The workspace menu has no settings button and no **Add workspace**, and rows have no actions menu. An empty workspace you are viewing says **No projects in this workspace yet** and **An administrator of this organization can add projects to this workspace.**
+
+**Add Project** is also unavailable while projects load, with the hover text **Projects are still loading**, and after a load error, with **Resolve the loading error first**.
+
+## How do I add a project to a workspace?
+
+You add projects from **Add Project**, which adds them to the workspace the table is showing. You must be an Admin of the organization.
+
+1. Select the workspace in the workspace menu.
+2. Select **Add Project**. The dialog title is **Add project(s)**. A note says **This will be shared across all users in your company.**
+3. Type in **Search and select projects**. You can search any project in the LFX catalog, not only the ones the organization is already involved in. Type at least 2 characters.
+4. Select one or more projects.
+5. Select **Add project(s)**. Select **Cancel** to close without adding.
+
+While the search runs, the list says **Searching projects…**. When every match is already in the workspace, it says **Matching projects are already in this workspace.** When nothing matches, it says **No projects match your search.** When the search fails, it says **Couldn’t load matches. Edit your search to try again.**
+
+When the projects could not be added, the dialog says **Could not add the selected projects. Try again.**
+
+A new, empty workspace says **No projects in this workspace yet** and **Add projects from your organization catalog to start tracking this workspace.** with an **Add Project** button.
+
+## How do I hide a project from a workspace?
+
+You hide a project from the actions menu at the end of its row. You must be an Admin of the organization. Hiding removes the project from that workspace only. It does not change the project or the organization's activity in it.
+
+1. Select the three-dot button at the end of the row. Its name is **Row actions**.
+2. Select **Hide project from workspace**.
+
+When it did not work, the page says **Could not update workspace** and **The project was not hidden from this workspace. Please try again.**
+
+## How do I add, rename, or delete a workspace?
+
+You manage workspaces from the workspace menu at the left of the filters. You must be an Admin of the organization.
+
+1. Open the workspace menu.
+2. To add one, select **Add workspace**. To change one, select the gear next to its name, labeled **Workspace settings**.
+3. In **Workspace name**, type the name, such as the placeholder **e.g. Cloud Native focus**.
+4. Select **Save**. To delete the workspace instead, select **Delete workspace**. **Delete workspace** is not offered for **All Projects with Activities**.
+
+A new workspace opens as soon as it is saved, and it starts empty. After you delete the workspace you were viewing, the table switches to another workspace.
+
+A blank name shows **Workspace name is required.** A save or delete that did not work shows **Could not create this workspace. Try again.**, **Could not save workspace changes. Try again.**, or **Could not delete this workspace. Try again.**
+
+## What is a project detail page?
+
+A project detail page shows how the selected organization takes part in one project and how it compares with other organizations there. You open it by selecting a project name on Projects. Its address is `/org/<organization>/projects/<project>`.
+
+You can also open it from a project in the [Org Overview dashboard](../org-overview/) and from the **Org Projects** panel on [Memberships](../memberships/#what-does-the-org-projects-panel-show).
+
+The trail at the top reads **Projects** followed by the project name. Select **Projects** to go back to the list.
+
+The top of the page shows the project's logo, name, and description, with **Source: LFX Insights** linking to the project's page on LFX Insights. To the right are four facts about the project. They do not change with the time range.
+
+| Fact               | What it shows                                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **First commit**   | The month and year of the project's earliest commit on its main branch                                                                                  |
+| **Software value** | An estimate, in US dollars, of what it would cost to build the project's code. Its hover text is **Based on Constructive Cost Model (COCOMO)**          |
+| **Health score**   | The same health label as on Projects. Hover or select it to see the breakdown. See [What does the Health label mean?](#what-does-the-health-label-mean) |
+| **Foundation**     | The Linux Foundation foundation the project belongs to, or **Outside LF** for a project that is not part of one                                         |
+
+A dash (**—**) means the fact is not available for that project.
+
+## How do I change what the project detail page shows?
+
+Use the controls under the top of the page. Each choice is kept in the page address, so a copied link opens the same view.
+
+1. Select a tab: **Our Influence** or **Leaderboards**. **Our Influence** opens first.
+2. Select a time range: **1 year**, **2 years**, or **All time**. **2 years** is the default. The time range applies to both tabs.
+3. On **Leaderboards**, select **Calculated Influence** or **Activity Count** to choose what the leaderboards rank.
+4. Select **More filters** to show **Organization scope**.
+
+On a project detail page, **Organization scope** **Applies to contributor, commit and pull request counts, and to which leaderboard row is this company's.** Maintainer roles, health, and influence bands are the same under both choices. See [What does Organization scope change?](#what-does-organization-scope-change).
+
+## What does the Our Influence tab show?
+
+The **Our Influence** tab shows the organization's share of the project's activity, in two rows of cards: **Our Technical Influence** and **Our Ecosystem Influence**. The chip next to each heading is the organization's band, such as **Leading**. Use the arrows at the right of a heading to scroll its cards.
+
+Each card shows a chart of the organization's activity over the time range, a headline figure, and a short sentence. For example, the **Commits** card can say **Employees made** a percentage **of all commits.** A card with no activity shows **No data** in place of its chart.
+
+| Card                       | Group     | What it counts                                                                                                                   |
+| -------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **Maintainer roles**       | Technical | People named as maintainers in the project's governance files, counted once per project, credited to their current employer      |
+| **Contributors**           | Technical | Individuals who made at least one contribution (commit, PR, review, or comment) in the selected time range                       |
+| **Commits**                | Technical | Code contributions committed directly to the project's repositories                                                              |
+| **Pull Requests Opened**   | Technical | Pull requests opened against the project's repositories in the selected time range                                               |
+| **Avg Time to Merge PRs**  | Technical | Average time from when a pull request is opened to when it is merged, for the organization's contributors, compared with average |
+| **Collaboration Activity** | Ecosystem | Interactions across collaboration platforms including Slack, mailing lists, GitHub Issues, Jira, and community forums            |
+| **Meeting Attendance**     | Ecosystem | Attendance at project committee, working group, and community meetings                                                           |
+| **Board Members**          | Ecosystem | Seats on the governing board of the project's foundation                                                                         |
+| **Committee Members**      | Ecosystem | People on a foundation committee, such as advisory groups, steering committees, and marketing committees                         |
+| **Event Attendance**       | Ecosystem | Registration and attendance at events hosted or co-located with the project's foundation                                         |
+| **Event Speakers**         | Ecosystem | Employees who presented talks, workshops, or keynotes at foundation-hosted events                                                |
+| **Event Sponsorships**     | Ecosystem | Events where the organization sponsored, co-sponsored, or provided in-kind support                                               |
+| **Meetup Attendance**      | Ecosystem | Attendance at community meetups organized under the project's foundation                                                         |
+| **Certified Individuals**  | Ecosystem | Employees who hold active certifications issued or recognized by the project's foundation                                        |
+
+A project outside the Linux Foundation has no ecosystem cards. Its ecosystem chip says **Non-LF**, and the row says **No ecosystem influence data for this project yet.**
+
+### What happens when I select a card?
+
+Selecting a card opens a panel with the full detail for that metric. The panel title is the card's name. The line under it names the time range, such as **Last 24 months** or **All time**, and what the card covers: the project or foundation name on ecosystem cards, and **All projects** on technical cards.
+
+The panel shows the headline figure, then a table with **Definition**, **Total count for this project** (or **Average for this project**), and **Data source**. Under it is a list of the organization's people or activity for that metric, such as each contributor with **First activity**, **Most recent**, and **# Contributions**. Select a person's name to open their details.
+
+When the metric has nothing to list, the panel says **No data available for this metric.** When it fails to load, it says **Failed to load details** and **Please try again.** Select **Retry**.
+
+## What does the Leaderboards tab show?
+
+The **Leaderboards** tab ranks every organization involved in the project, side by side for technical and ecosystem activity, with an influence trend chart under them. The selected organization's row is highlighted and marked **You**.
+
+What the leaderboards rank depends on the metric you choose:
+
+| Metric                   | Technical board                                                       | Ecosystem board                                                         |
+| ------------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **Calculated Influence** | **Technical Influence Leaderboard**, with an **Influence Score** band | **Ecosystem Influence Leaderboard**, with an **Influence Score** band   |
+| **Activity Count**       | **Contribution Activities Leaderboard**, with **Total contributions** | **Collaboration Activities Leaderboard**, with **Total collaborations** |
+
+Each board has the columns **#**, **Organization**, and the score. Type in **Search** above a board to find an organization by name. The boards show 10, 25, or 50 rows per page.
+
+With **Calculated Influence**, select a row to open that organization's score breakdown, with its **Total score** and **How this score is calculated**. **Activity Count** rows do not open a breakdown.
+
+When a board has no rows, it says **No ranked organizations for this project yet.** When a search matches nothing, it says **No organizations match your search.** For a project outside the Linux Foundation, the ecosystem board is marked **Non-LF**.
+
+### What does the Influence Trend chart show?
+
+**Influence Trend** shows how the project's combined influence is shared among organizations over the time range. Each band is one of the 10 organizations with the most influence, and **All others** adds up the rest, so the bands always total 100%. When there is no trend to show, it says **No data available.**
+
+## Why did Projects or a project detail page fail to load?
+
+A failed load tells you to retry. It is not the same as an empty list.
+
+| What you see                                    | Where             | What to do                                                                |
+| ----------------------------------------------- | ----------------- | ------------------------------------------------------------------------- |
+| **Could not load your saved workspaces.**       | Projects          | Select **Retry** to restore the workspaces                                |
+| **Something went wrong loading your projects.** | Projects          | Select **Retry**. Your workspaces are still available                     |
+| **Could not load projects for this workspace**  | Projects          | Select **Retry**, or add the projects to the workspace again              |
+| **Project not found**                           | Project detail    | The project is not one of the organization's. Select **Back to Projects** |
+| **Failed to load project detail**               | Project detail    | Select **Retry**                                                          |
+| **Failed to load influence cards**              | **Our Influence** | Select **Retry**                                                          |
+| **Failed to load leaderboard**                  | **Leaderboards**  | Select **Retry** on that board                                            |
+| **Failed to load influence trend**              | **Leaderboards**  | Select **Retry** under **Influence Trend**                                |
+
+**Project not found** comes with **We couldn't find that project for your organization.** The other failures come with **Please try again.**
+
+## Related sections
+
+- [Choose and switch an organization](../choose-an-organization/) — pick the organization these projects belong to
+- [Org Overview dashboard](../org-overview/) — the **Dashboard**, whose project links open a project detail page
+- [Memberships](../memberships/) — the organization's foundation memberships, and the **Org Projects** panel for each one
+- [Manage Org Lens Access](../manage-org-lens-access/) — who is an Admin, and who can manage workspaces
+- [EasyCLA](../easycla/) — corporate CLAs (Contributor License Agreements) for the selected organization
+- [Organization FAQ](../faq/) — short answers about the Organization lens

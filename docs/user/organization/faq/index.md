@@ -1,9 +1,10 @@
 ---
 title: Organization FAQ
-description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
-tags: [organization, faq, switch-organization, org-overview, dashboard, memberships, easycla, cla, ccla, cla-manager, access, remove, invite]
+tags:
+  [organization, faq, switch-organization, org-overview, dashboard, memberships, projects, workspaces, easycla, cla, ccla, cla-manager, access, remove, invite]
 last_updated: 2026-11-03
 intercom_collection: Organization
 ---
@@ -19,6 +20,14 @@ The Org Overview, the **Dashboard** of the Organization lens, summarizes how the
 ## What does the Memberships page show?
 
 The Memberships page lists the selected organization's foundation memberships. **Active** lists current memberships, **Expired** lists memberships that have ended, and **Discover** lists foundations where the organization's people contribute but it has no active membership. Select a foundation name on **Active** to open that membership's key contacts, board and committee seats, and membership agreements. A CLA Manager or initial CLA Manager designee with no other role on the organization sees **EasyCLA** instead of **Memberships**. See [What is the Memberships page?](../memberships/#what-is-the-memberships-page).
+
+## What does the Projects page show?
+
+The Projects page lists the open source projects the selected organization is involved in, one workspace at a time. Each row shows the project's **Health**, the organization's **Technical influence** and **Ecosystem influence** (**Leading**, **Contributing**, **Participating**, or **Silent**), its **Influence Trend (1y)**, and how many of its employees are **Contributors** and **Participants** over the past 2 years. Select a project name to open its detail page, with the organization's influence cards on **Our Influence** and its rank among other organizations on **Leaderboards**. A CLA Manager or initial CLA Manager designee with no other role on the organization sees **EasyCLA** instead of **Projects**. See [What is the Projects page?](../projects/#what-is-the-projects-page).
+
+## How do I add a project to the Projects page?
+
+Add it to a workspace with **Add Project**. You must be an Admin of the organization. In the **Organization** lens, open **Projects**, pick the workspace in the workspace menu, select **Add Project**, search in **Search and select projects**, select one or more projects, then select **Add project(s)**. Workspaces are shared, so everyone who can open the organization sees the change. If you can only view the organization, **Add Project** is unavailable and says **You have view-only access to this organization**. See [How do I add a project to a workspace?](../projects/#how-do-i-add-a-project-to-a-workspace).
 
 ## Why can't I edit this corporate CLA?
 
