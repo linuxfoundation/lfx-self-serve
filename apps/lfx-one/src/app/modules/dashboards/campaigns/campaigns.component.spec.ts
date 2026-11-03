@@ -3040,8 +3040,91 @@ describe('CampaignsComponent brief persistence', () => {
         (fixture.componentInstance as unknown as { selectTab(t: string, o: string): void }).selectTab('implementation', 'paid-marketing');
         await fixture.whenStable();
 
-        expect(list.mock.calls.length).toBe(afterFirst);
+        // One more read: the Implement tab's list-only re-read of the campaigns already created
+        // (#4983). The capability is neither cleared nor read again by it.
+        expect(list.mock.calls.length).toBe(afterFirst + 1);
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+        expect((fixture.componentInstance as unknown as { briefCampaignsCapabilityRead(): string }).briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * #4983. The Implement tab's list read (its Retry, and after a create settles) reports a failure
+       * as unavailable for the panel, and leaves the capabilities that tab gates its controls on alone.
+       */
+      /** #4983: a switch invalidates the pending read, so it must also end the "checking" state itself. */
+      it("ends the Implement list's checking state when the foundation switches during a read", async () => {
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }));
+        const pending = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(pending);
+        proceed();
+        await fixture.whenStable();
+        const loading = (): boolean => (fixture.componentInstance as unknown as { briefCampaignsLoading(): boolean }).briefCampaignsLoading();
+        expect(loading()).toBe(true);
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        expect(loading(), 'the panel would say "Checking…" for good').toBe(false);
+      });
+
+      it('marks the Implement list unavailable on a failed re-read without blanking the capability', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            enabled: true,
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        list.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        (fixture.componentInstance as unknown as { refreshImplementCampaigns(): void }).refreshImplementCampaigns();
+        await fixture.whenStable();
+
+        const page = fixture.componentInstance as unknown as {
+          briefCampaignsUnavailable(): boolean;
+          briefCampaignsDemandGenEnabled(): boolean | null;
+          briefCampaignsCapabilityRead(): string;
+        };
+        expect(page.briefCampaignsUnavailable()).toBe(true);
+        expect(page.briefCampaignsDemandGenEnabled(), 'a list-only read blanked the create capability').toBe(true);
+        expect(page.briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * #4983. Proceeding with a newly generated brief drops the PREVIOUS brief's campaign list at once,
+       * so the Implement tab never shows another brief's campaigns while (or instead of, on a refused
+       * save) this brief's own read.
+       */
+      it('drops the previous brief campaigns when a new brief is proceeded', async () => {
+        const campaigns = (): unknown => (fixture.componentInstance as unknown as { briefCampaigns(): unknown }).briefCampaigns();
+        (fixture.componentInstance as unknown as { briefCampaigns: { set(v: unknown): void } }).briefCampaigns.set([
+          { id: 'old', platform: 'google-ads', status: 'active' },
+        ]);
+        persistBrief.mockReturnValue(NEVER);
+
+        proceed(otherBrief);
+
+        expect(campaigns(), "the previous brief's campaigns stayed on Implement").toBeNull();
       });
 
       it('clears the previous brief campaigns when the foundation changes', async () => {
@@ -3551,6 +3634,127 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief, "the approval's ETag was dropped").toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
     });
 
+    it('drops a pending re-read when Planning discards its brief meanwhile', async () => {
+      const save = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValueOnce(save);
+      proceed();
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief, briefId: 'b-new', etag: 'W/"1"', approved: true }));
+      openFromOffer(offer(0, 'W/"0"'));
+
+      // New Brief / Generate in Planning while the read waits on the running save.
+      (fixture.componentInstance as unknown as { onPlanningBriefDiscarded(): void }).onPlanningBriefDiscarded();
+      save.next({ enabled: true, briefId: 'b-new', etag: 'W/"1"', created: true, approved: true });
+      save.complete();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalled();
+      expect(editRequest(), 'the late read replaced what Planning holds now').toBeNull();
+    });
+
+    it('re-reads the row on Edit brief once ownership moved past the brief on Implement', async () => {
+      // Implement holds a brief handed over earlier...
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      // ...then Open to edit records a newer account of the same row.
+      openFromOffer(offer(5, 'W/"8"'));
+      const current = { ...brief, keywords: [{ term: 'current', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief: current, briefId: 'stored-1', etag: 'W/"8"', approved: true }));
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalledTimes(1);
+      expect(editRequest()?.brief, "Implement's older copy was reopened under the newer validator").toBe(current);
+    });
+
+    it('says why Edit brief opened nothing when its re-read fails, rather than reopening the older copy', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void } }).planningEditRequest.set(null);
+      vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await fixture.whenStable();
+      logged.mockRestore();
+
+      expect(editRequest(), "Implement's older copy was opened under the newer validator").toBeNull();
+      expect((fixture.componentInstance as unknown as { editBriefError(): string | null }).editBriefError()).toContain('could not be read');
+    });
+
+    it('does not re-read on Edit brief after the brief on Implement was itself saved over the row', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      // An Open to edit bumped the epoch, then Implement's own brief was saved over the row again
+      // (as Replace saved brief does), so the row holds exactly Implement's bytes.
+      openFromOffer(offer(5, 'W/"8"'));
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"9"', created: false, approved: true }));
+      (fixture.componentInstance as unknown as { persistBrief(b: CampaignBriefOutput): void }).persistBrief(
+        (fixture.componentInstance as unknown as { briefOutput(): CampaignBriefOutput }).briefOutput()
+      );
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief, briefId: 'stored-1', etag: 'W/"9"', approved: true }));
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      // A re-read would start only once the save queue drains, so wait for it before asserting none ran.
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief, 'Edit brief re-read a row that holds exactly the brief on Implement').not.toHaveBeenCalled();
+      expect(editRequest()?.brief).toEqual(brief);
+    });
+
+    it('drops a pending Edit brief re-read once a create job starts, so it cannot leave the running job', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (
+        fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void }; selectedTab: { set(v: string): void } }
+      ).planningEditRequest.set(null);
+      (fixture.componentInstance as unknown as { selectedTab: { set(v: string): void } }).selectedTab.set('implementation');
+      const read = new Subject<CampaignBriefLoadResult>();
+      vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockReturnValue(read);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      (fixture.componentInstance as unknown as { onCreateStarted(): void }).onCreateStarted();
+      read.next({ status: 'loaded', brief, briefId: 'stored-1', etag: 'W/"8"', approved: true });
+      read.complete();
+      await fixture.whenStable();
+
+      expect(editRequest(), 'the late read opened Planning over a running create').toBeNull();
+      expect(tab()).toBe('implementation');
+    });
+
+    it('says why Edit brief opened nothing when there is no foundation to read under', async () => {
+      // No foundation resolved for the whole flow: the handover and the Open to edit file under the same
+      // foundation-less key, so the epoch moves and Edit brief must re-read, which it cannot do.
+      vi.spyOn(fixture.componentInstance as unknown as { activeFoundationSlug(): string }, 'activeFoundationSlug').mockReturnValue('');
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void } }).planningEditRequest.set(null);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+
+      expect((fixture.componentInstance as unknown as { editBriefError(): string | null }).editBriefError()).not.toBeNull();
+    });
+
     it('drops the X fields typed on Implement, which belong to the brief that was there', () => {
       const flag = (): boolean => (fixture.componentInstance as unknown as { twitterCarryDiscarded: boolean }).twitterCarryDiscarded;
       persistBrief.mockReturnValueOnce(NEVER);
@@ -3619,6 +3823,22 @@ describe('CampaignsComponent brief persistence', () => {
         proceed(stored);
         await fixture.whenStable();
         expect(persistBrief).toHaveBeenLastCalledWith(stored, 'foundation-a', 'stored-1', 'W/"5"', false);
+      });
+
+      it('keeps the refusal, and Create blocked, when the open cannot even start', async () => {
+        // No foundation to read under: a failed open, not persistence going dark.
+        vi.spyOn(fixture.componentInstance as unknown as { activeFoundationSlug(): string }, 'activeFoundationSlug').mockReturnValue('');
+
+        openFromImplement();
+        await fixture.whenStable();
+
+        expect(loadBrief).not.toHaveBeenCalled();
+        expect(state(), 'the unowned refusal was cleared and Create re-enabled').toMatchObject({
+          status: 'error',
+          briefId: '',
+          conflict: 'unowned-brief-exists',
+        });
+        expect(state().message).toContain('could not be read');
       });
 
       it('keeps Replace on offer when the stored brief cannot be opened', async () => {
@@ -12604,7 +12824,9 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     page().onProceedToImplementation(brief);
     await settle();
 
+    // One read: the capability read also files the list for the Implement tab's panel (#4983).
     expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
+    expect((page() as unknown as { briefCampaigns(): unknown }).briefCampaigns(), 'the save did not file the campaign list').not.toBeNull();
     expect(page().briefCampaignsBiddingEnabled()).toBe(true);
     expect(q('implementation-bidding-capability-unsaved')).toBeNull();
     expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });

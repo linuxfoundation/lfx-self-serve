@@ -1314,8 +1314,8 @@
     }
   }
 
-  // Narrow viewports can't dock open, so a pinned overlay has no toggle; Create closes the gap. A hover peek keeps it,
-  // so the click the pointer was heading for still lands on it and pins the peek.
+  // Narrow viewports can't dock open, so a pinned overlay has no toggle; Create closes the gap. An unpinned peek keeps it,
+  // so a second click on it pins the peek.
   &.is-narrow.is-pinned:not(.is-collapsed) [data-flip='side'] {
     display: none;
   }

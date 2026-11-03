@@ -1505,8 +1505,16 @@
               [createCapabilityRead]="briefCampaignsCapabilityRead()"
               (retryCreateCapabilities)="retryCreateCapabilities()"
               (replaceSavedBriefRequested)="onReplaceSavedBrief()"
+              [editBriefError]="editBriefError()"
+              [briefCampaigns]="briefCampaigns()"
+              [briefCampaignsStale]="briefCampaignsStale()"
+              [briefCampaignsUnavailable]="briefCampaignsUnavailable()"
+              [briefCampaignsLoading]="briefCampaignsLoading()"
+              (retryBriefCampaigns)="refreshImplementCampaigns()"
+              (createJobSettled)="refreshImplementCampaigns()"
               (openSavedBriefRequested)="onOpenSavedBriefFromImplement()"
               (editBriefRequested)="onEditBriefFromImplement()"
+              (createStarted)="onCreateStarted()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>

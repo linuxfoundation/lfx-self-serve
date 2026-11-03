@@ -57,6 +57,7 @@ import type {
   CampaignImplementationDraft,
   CampaignIndexDoc,
   CampaignJobOutcome,
+  CampaignListResult,
   CampaignPaidTab,
   CampaignProgramType,
   CampaignSavedBriefOffer,
@@ -607,6 +608,31 @@ export class CampaignsComponent {
   private planningEditRequestSeq = 0;
 
   /**
+   * Bumped whenever Planning moves on — a discard (New Brief, Cancel, a fresh Generate) or another open —
+   * and when a create job starts on Implement, so an Open to edit still waiting on its re-read
+   * (`readAndOpenSavedBrief`) can tell it is stale and drop its answer instead of replacing whatever
+   * Planning holds now, or switching away from a running job (#4983).
+   */
+  private planningOpenGeneration = 0;
+
+  /**
+   * The ownership epoch of the brief handed to Implement, taken at the handover (#4983).
+   *
+   * An epoch bump means another account of the row arrived (an Open to edit or a re-read), whose
+   * validator may name newer bytes than the ones Implement holds. Edit brief compares against it: when
+   * the epoch has moved, it re-reads the row instead of reopening Implement's copy under that newer
+   * validator, which would replace the newer content without any conflict. A save of Implement's own
+   * brief (Replace saved brief included) refreshes it, since the row then holds exactly those bytes.
+   */
+  private briefOutputEpoch: number | null = null;
+
+  /**
+   * Why Edit brief could not open the brief, shown beside the button (#4983), or `null`. Set when its
+   * re-read failed or found the row unreadable; cleared by the next Edit brief and by any handover.
+   */
+  protected readonly editBriefError = signal<string | null>(null);
+
+  /**
    * True while `onRestoreSavedBrief` is adopting a restored brief's own program.
    *
    * The `programType` subscription treats a change as the user choosing a different program and
@@ -915,6 +941,14 @@ export class CampaignsComponent {
    * carries a meaning ("not loaded") and overloading it would make absence signal a second thing.
    */
   protected readonly briefCampaignsUnavailable = signal(false);
+
+  /**
+   * Whether a campaign-list read is in flight (#4983). `briefCampaigns` is `null` both before the
+   * first read and while a re-read runs, so without this the Implement tab could not tell "checking"
+   * from "nothing to say" — and it is exactly after a create, when the list is re-read, that the
+   * "Already created for this event" panel matters most.
+   */
+  protected readonly briefCampaignsLoading = signal(false);
 
   /**
    * Whether this DEPLOYMENT can service a pause/resume, as reported by the server with the list.
@@ -2552,6 +2586,9 @@ export class CampaignsComponent {
         this.briefCampaignsGeneration++;
         this.briefCampaigns.set(null);
         this.briefCampaignsStale.set(false);
+        // The bump above invalidates any list read still out, so its answer can no longer clear this
+        // flag; left set, the Implement panel would say "Checking…" for good (#4983).
+        this.briefCampaignsLoading.set(false);
         this.briefCampaignsToggleEnabled.set(false);
         this.briefCampaignsDemandGenEnabled.set(null);
         this.briefCampaignsGoogleChannelsEnabled.set(null);
@@ -2781,8 +2818,15 @@ export class CampaignsComponent {
       // effect and `loadBriefCampaigns`' own pre-request clear both reset it to `null`, and a
       // failed read leaves it `null` — so the read still re-fires on every occasion where the
       // answer is genuinely unknown, including a retry after failure.
+      //
+      // The campaign LIST, unlike the capability, is re-read on every entry, as Optimize does: the
+      // Implement tab names the campaigns already created for this event (#4983), and one created or
+      // deleted since the last look must show. One request either way: the capability read carries
+      // the list when it runs, and the list-only read is used when the capability is known.
       if (this.briefCampaignsDemandGenEnabled() === null) {
-        this.loadCreateCapabilities();
+        this.loadCreateCapabilities(true);
+      } else {
+        this.loadBriefCampaigns(false);
       }
     }
   }
@@ -2829,6 +2873,7 @@ export class CampaignsComponent {
     this.carriedTwitterDraft.set(null);
     this.twitterCarryDiscarded = true;
     this.planningEditRequest.set(null);
+    this.planningOpenGeneration++;
   }
 
   /**
@@ -2849,27 +2894,57 @@ export class CampaignsComponent {
     this.twitterCarryDiscarded = true;
     const key = this.ownershipKey(this.activeFoundationSlug(), offer.brief);
     if (key !== null && !this.recordEditOwnership(key, offer)) {
-      this.readAndOpenSavedBrief(offer.brief, () => {
-        // Nothing to open from a fresh read: let Planning re-read so its offer shows what is stored.
-        this.savedBriefRefreshToken.update((token) => token + 1);
-      });
+      // Nothing to open from a fresh read, or the read could not run: let Planning re-read so its offer
+      // shows what is stored.
+      const refreshOffer = (): void => this.savedBriefRefreshToken.update((token) => token + 1);
+      this.readAndOpenSavedBrief(offer.brief, refreshOffer, refreshOffer);
       return;
     }
     this.openInPlanningEditor(offer.brief);
   }
 
   /**
+   * A create job started on the Implement tab (#4983): drop any Open to edit / Edit brief re-read still
+   * waiting, whose answer would otherwise switch to Planning and tear down the tab polling that job.
+   */
+  protected onCreateStarted(): void {
+    this.planningOpenGeneration++;
+  }
+
+  /**
    * Edit brief, from the Implement tab (#4983): reopen the brief on that tab in Planning's editor.
    *
-   * Nothing is recorded: the brief on Implement already has whatever ownership this page holds — the
-   * restore that loaded it, or the save that created it — and the next Proceed resolves it from
-   * `knownBriefIds` as any second Proceed does.
+   * Two paths, decided by `briefOutputEpoch`:
+   * - The ownership epoch is unchanged since the handover: Implement's copy is reopened and nothing is
+   *   recorded. It already has whatever ownership this page holds — the restore that loaded it, or the
+   *   save that created it — and the next Proceed resolves it from `knownBriefIds` as any second
+   *   Proceed does.
+   * - Another account of the row arrived since: the row is re-read, ownership is recorded from that
+   *   read, and the READ brief is opened, so Implement's older bytes are never paired with the newer
+   *   validator. If the row is gone the brief on Implement opens (the next save creates); if the read
+   *   fails or the row cannot be shown, nothing opens and `editBriefError` says why.
    */
   protected onEditBriefFromImplement(): void {
     const brief = this.briefOutput();
-    if (brief !== null) {
-      this.openInPlanningEditor(brief);
+    if (brief === null) return;
+    this.editBriefError.set(null);
+    const key = this.ownershipKey(this.activeFoundationSlug(), brief);
+    if (key !== null && this.briefOutputEpoch !== null && (this.ownershipEpochs.get(key) ?? 0) !== this.briefOutputEpoch) {
+      // Another account of the row arrived after this brief was handed over (see `briefOutputEpoch`).
+      this.readAndOpenSavedBrief(
+        brief,
+        (status) => {
+          if (status === 'none') {
+            this.openInPlanningEditor(brief);
+            return;
+          }
+          this.editBriefError.set('The saved brief could not be opened here, so nothing was opened. Reload the page and open it from the Plan tab.');
+        },
+        () => this.editBriefError.set('The saved brief could not be read, so nothing was opened. Try Edit brief again.')
+      );
+      return;
     }
+    this.openInPlanningEditor(brief);
   }
 
   /**
@@ -2968,6 +3043,9 @@ export class CampaignsComponent {
     this.twitterCarryDiscarded = false;
     this.implementationDraft.set(null);
     this.briefOutput.set(handedOver);
+    const handedKey = this.ownershipKey(this.activeFoundationSlug(), handedOver);
+    this.briefOutputEpoch = handedKey === null ? null : (this.ownershipEpochs.get(handedKey) ?? 0);
+    this.editBriefError.set(null);
     this.selectedTab.set('implementation');
     if (alreadyPersisted) {
       // Bump the generation even though nothing is being saved. `persistBrief` normally does
@@ -3005,7 +3083,8 @@ export class CampaignsComponent {
       // so the capability must be asked for here — but the restored brief's id is written by the
       // branch above, and asking first read the PREVIOUS id and guarded out. A restored brief
       // then reached Implementation with the capability permanently unknown.
-      this.loadCreateCapabilities();
+      // With the campaigns already created from it, for the Implement tab's panel (#4983).
+      this.loadCreateCapabilities(true);
       // A restored brief that upstream holds as `draft` is approved HERE, and this is the whole
       // remedy for the dead end the restore offer used to lead to. campaign-service writes every
       // brief as `draft` and resets an existing one to `draft` on every PUT, so a stored brief
@@ -3032,6 +3111,11 @@ export class CampaignsComponent {
     // The create path has no id yet — `persistBrief` mints one — so the read is triggered from
     // its success arm rather than here. See `loadCreateCapabilitiesFor`.
     this.persistBrief(handedOver);
+    // But the PREVIOUS brief's campaign list goes now (#4983): `persistBrief` has just set the id to
+    // `null`, so this clears the list and invalidates any read still out, without a request. Left
+    // alone, the Implement tab would show another brief's campaigns until — or, on a refused or failed
+    // save, instead of — this brief's own read.
+    this.loadBriefCampaigns(false);
   }
 
   /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
@@ -4119,6 +4203,14 @@ export class CampaignsComponent {
   }
 
   /**
+   * Re-read the campaigns already created for this event, for the Implement tab's panel (#4983):
+   * its Retry, and after a create job settles. List only — see `loadBriefCampaigns`.
+   */
+  protected refreshImplementCampaigns(): void {
+    this.loadBriefCampaigns(false);
+  }
+
+  /**
    * `readAt` is the `savedBriefRefreshToken` Planning's lookup was DISPATCHED under — see the
    * output's own docblock in `planning-tab.component.ts`. It is the only thing that separates a
    * cached replay of what this session already knows from a genuinely fresh read of a row that
@@ -4800,8 +4892,10 @@ export class CampaignsComponent {
    * Read the create-time capabilities the Implementation tab gates controls on.
    *
    * Separate from `loadBriefCampaigns` deliberately, even though both read the same response
-   * today. That one is an Optimize concern: it needs a persisted `briefId`, it re-fetches on
-   * every entry because a status can go stale, and it clears its rows first. None of that is
+   * today. That one serves the campaign LIST (Optimize, and Implement's "Already created" panel):
+   * it needs a persisted `briefId`, it re-fetches on every entry because a status can go stale, and
+   * it clears its rows first. With `withList` this reader files the list too, from the same response,
+   * so the Implement tab's entry does not send the same request twice (#4983). None of that is
    * true here — the capability is a deployment fact, it is needed BEFORE a campaign exists, and
    * on the first-create path there may be no brief id at all.
    *
@@ -4809,8 +4903,8 @@ export class CampaignsComponent {
    * capability as `null` and withholds the control without touching the user's draft. That is
    * the correct reading of "not known", and it is why this is safe to skip.
    */
-  private loadCreateCapabilities(): void {
-    this.loadCreateCapabilitiesFor(this.briefPersistence().briefId);
+  private loadCreateCapabilities(withList = false): void {
+    this.loadCreateCapabilitiesFor(this.briefPersistence().briefId, withList);
   }
 
   /**
@@ -4827,9 +4921,18 @@ export class CampaignsComponent {
    * entry to receive an error, land in the arm below, and set the capability to `null` — the
    * control stays hidden either way, with a spurious 400 added.
    */
-  private loadCreateCapabilitiesFor(briefId: string | null): void {
+  private loadCreateCapabilitiesFor(briefId: string | null, withList = false): void {
     const projectSlug = this.activeFoundationSlug();
-    if (projectSlug === '' || !briefId) return;
+    // `withList` also answers the Implement tab's campaign list from the same response (#4983), so
+    // entering the tab, a restore and a save each cost one request rather than two identical ones.
+    const listIsCurrent = withList ? this.beginBriefCampaignsRead() : null;
+    if (projectSlug === '' || !briefId) {
+      this.briefCampaignsLoading.set(false);
+      return;
+    }
+    if (listIsCurrent !== null) {
+      this.briefCampaignsLoading.set(true);
+    }
 
     // Ordered by the SHARED capability generation — see `capabilityGeneration` — and checked
     // against the foundation too. The counter orders this against every other capability writer,
@@ -4843,10 +4946,13 @@ export class CampaignsComponent {
       .listBriefCampaigns(projectSlug, briefId)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        // ONLY the capability. This must not touch `briefCampaigns` or the staleness flag —
-        // those belong to Optimize's own read, and writing them from here would render a list
-        // the operator did not ask for and cannot see.
+        // The list is filed only when the caller asked for it (`withList`) and only under the list's
+        // own generation, so a read the list has since moved past cannot overwrite a newer answer.
+        // Without `withList` this stays capability-only, as before.
         next: (result) => {
+          if (listIsCurrent?.()) {
+            this.applyBriefCampaignsResult(result);
+          }
           if (!mayWrite()) return;
           this.capabilityGeneration++;
           this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
@@ -4875,6 +4981,9 @@ export class CampaignsComponent {
         // take the success ordering with it: two reads dispatched together, the first failing,
         // would otherwise advance the token and make the second's valid answer fail `mayWrite`.
         error: () => {
+          if (listIsCurrent?.()) {
+            this.applyBriefCampaignsFailure();
+          }
           if (!mayWrite()) return;
           this.briefCampaignsDemandGenEnabled.set(null);
           this.briefCampaignsGoogleChannelsEnabled.set(null);
@@ -4899,7 +5008,13 @@ export class CampaignsComponent {
   }
 
   /**
-   * Fetch the campaigns this brief created, for the Optimize tab's per-campaign controls.
+   * Fetch the campaigns this brief created: for the Optimize tab's per-campaign controls, and for
+   * the Implement tab's "Already created for this event" panel (#4983).
+   *
+   * `withCapabilities: false` is the Implement tab's list-only read: the same list, without clearing
+   * and re-reading the create capabilities that tab gates its controls on. Those are a deployment fact
+   * `loadCreateCapabilities` answers, and blanking them on every entry would withhold controls for a
+   * round trip for nothing.
    *
    * A failed read is REPORTED, not swallowed. An earlier revision left `briefCampaigns` at `null`
    * on failure, reasoning that an error banner would fire on the ordinary empty case too — but
@@ -4914,21 +5029,20 @@ export class CampaignsComponent {
    * the list under whichever foundation the user has since moved to — campaigns from one
    * foundation's brief, rendered as another's.
    */
-  private loadBriefCampaigns(): void {
+  private loadBriefCampaigns(withCapabilities = true): void {
     const projectSlug = this.activeFoundationSlug();
     const briefId = this.briefPersistence().briefId;
 
     // Bumped BEFORE the early return as well as before the request. The early return is itself a
     // context change ("this context has no brief"), and leaving the counter alone there would let
     // a request dispatched under the previous brief land afterwards and still pass `isCurrent()`.
-    const generation = ++this.briefCampaignsGeneration;
-    const isCurrent = (): boolean => generation === this.briefCampaignsGeneration;
+    const isCurrent = this.beginBriefCampaignsRead();
     // The capability is written from here too, under the SHARED answer ordering — see
     // `capabilityGeneration`. Without it an older list read failing after a newer capability read
     // succeeded would still pass `isCurrent` above (its own list generation is untouched by that
     // reader) and reset a live answer to `null`.
     const capabilityDispatchedAt = this.capabilityGeneration;
-    const mayWriteCapability = (): boolean => capabilityDispatchedAt === this.capabilityGeneration;
+    const mayWriteCapability = (): boolean => withCapabilities && capabilityDispatchedAt === this.capabilityGeneration;
 
     // Cleared on EVERY entry, before dispatch — not only on the early return below.
     //
@@ -4945,38 +5059,40 @@ export class CampaignsComponent {
     // by design (see `selectTab`), so there was never a cached render to preserve; what changes is
     // that the interim shows "not loaded" instead of the previous answer. Showing another brief's
     // clickable rows is not a trade worth a flicker.
-    this.briefCampaigns.set(null);
-    this.briefCampaignsStale.set(false);
-    this.briefCampaignsUnavailable.set(false);
-    this.briefCampaignsToggleEnabled.set(false);
-    this.briefCampaignsDemandGenEnabled.set(null);
-    this.briefCampaignsGoogleChannelsEnabled.set(null);
-    this.briefCampaignsGoogleCreativeEnabled.set(null);
-    this.briefCampaignsRedditCreativeEnabled.set(null);
-    this.briefCampaignsRedditAssetUploadEnabled.set(null);
-    this.briefCampaignsMetaCreativeEnabled.set(null);
-    this.briefCampaignsRedditConversionPixelEnabled.set(null);
-    this.briefCampaignsMetaAssetUploadEnabled.set(null);
-    this.briefCampaignsGoogleAssetUploadEnabled.set(null);
-    this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
-    this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
-    this.briefCampaignsBiddingEnabled.set(null);
-    this.briefCampaignsMicrosoftScheduleEnabled.set(null);
-    this.briefCampaignsTwitterCreateEnabled.set(null);
-    this.briefCampaignsMetaInstagramDsaEnabled.set(null);
-    this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
-    this.briefCampaignsGoogleGeoSearchEnabled.set(null);
-    // `unknown` until a read is actually dispatched below — the early return starts none.
-    this.briefCampaignsCapabilityRead.set('unknown');
+    if (withCapabilities) {
+      this.briefCampaignsDemandGenEnabled.set(null);
+      this.briefCampaignsGoogleChannelsEnabled.set(null);
+      this.briefCampaignsGoogleCreativeEnabled.set(null);
+      this.briefCampaignsRedditCreativeEnabled.set(null);
+      this.briefCampaignsRedditAssetUploadEnabled.set(null);
+      this.briefCampaignsMetaCreativeEnabled.set(null);
+      this.briefCampaignsRedditConversionPixelEnabled.set(null);
+      this.briefCampaignsMetaAssetUploadEnabled.set(null);
+      this.briefCampaignsGoogleAssetUploadEnabled.set(null);
+      this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
+      this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
+      this.briefCampaignsBiddingEnabled.set(null);
+      this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+      this.briefCampaignsTwitterCreateEnabled.set(null);
+      this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+      this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+      this.briefCampaignsGoogleGeoSearchEnabled.set(null);
+      // `unknown` until a read is actually dispatched below — the early return starts none.
+      this.briefCampaignsCapabilityRead.set('unknown');
+    }
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
       // there is nothing to list. Left as `null` — not `[]` — so the tab says "not loaded"
       // instead of asserting the brief has no campaigns. The clear above is what leaves it that
       // way; this arm only stops here.
+      this.briefCampaignsLoading.set(false);
       return;
     }
-    this.briefCampaignsCapabilityRead.set('pending');
+    this.briefCampaignsLoading.set(true);
+    if (withCapabilities) {
+      this.briefCampaignsCapabilityRead.set('pending');
+    }
 
     this.campaignService
       .listBriefCampaigns(projectSlug, briefId)
@@ -4986,10 +5102,7 @@ export class CampaignsComponent {
           if (!isCurrent()) {
             return;
           }
-          this.briefCampaigns.set(result.campaigns);
-          this.briefCampaignsStale.set(result.possiblyStale);
-          this.briefCampaignsUnavailable.set(false);
-          this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
+          this.applyBriefCampaignsResult(result);
           if (mayWriteCapability()) {
             this.capabilityGeneration++;
             this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
@@ -5016,12 +5129,7 @@ export class CampaignsComponent {
           if (!isCurrent()) {
             return;
           }
-          // `null` AND the flag. The list must not keep showing rows the read could not confirm,
-          // and the flag is what stops that `null` reading as "not loaded yet".
-          this.briefCampaigns.set(null);
-          this.briefCampaignsStale.set(false);
-          this.briefCampaignsUnavailable.set(true);
-          this.briefCampaignsToggleEnabled.set(false);
+          this.applyBriefCampaignsFailure();
           // Cleared WITHOUT stamping, for the reason the sibling reader's error arm gives: a
           // failure has established nothing and must not suppress an in-flight success.
           if (mayWriteCapability()) {
@@ -5046,6 +5154,42 @@ export class CampaignsComponent {
           }
         },
       });
+  }
+
+  /**
+   * Start a campaign-list read: invalidate any read still out and clear the previous answer before
+   * dispatch, so a late response cannot land and no other brief's rows show meanwhile (see the clear
+   * in `loadBriefCampaigns`). Returns the read's own currency check. Shared by both readers of the
+   * list, `loadBriefCampaigns` and `loadCreateCapabilitiesFor(…, true)` (#4983).
+   */
+  private beginBriefCampaignsRead(): () => boolean {
+    const generation = ++this.briefCampaignsGeneration;
+    this.briefCampaigns.set(null);
+    this.briefCampaignsStale.set(false);
+    this.briefCampaignsUnavailable.set(false);
+    this.briefCampaignsToggleEnabled.set(false);
+    return (): boolean => generation === this.briefCampaignsGeneration;
+  }
+
+  /** File a current list answer. */
+  private applyBriefCampaignsResult(result: CampaignListResult): void {
+    this.briefCampaigns.set(result.campaigns);
+    this.briefCampaignsStale.set(result.possiblyStale);
+    this.briefCampaignsUnavailable.set(false);
+    this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
+    this.briefCampaignsLoading.set(false);
+  }
+
+  /**
+   * File a current list failure: `null` AND the flag. The list must not keep showing rows the read
+   * could not confirm, and the flag is what stops that `null` reading as "not loaded yet".
+   */
+  private applyBriefCampaignsFailure(): void {
+    this.briefCampaigns.set(null);
+    this.briefCampaignsStale.set(false);
+    this.briefCampaignsUnavailable.set(true);
+    this.briefCampaignsToggleEnabled.set(false);
+    this.briefCampaignsLoading.set(false);
   }
 
   /**
@@ -6198,6 +6342,11 @@ export class CampaignsComponent {
           }
 
           if (generation !== this.briefPersistenceGeneration) return;
+          // The row now holds exactly the bytes on Implement (Replace saved brief included), so the
+          // epoch an earlier read or replace bumped no longer means "newer than Implement" (#4983).
+          if (result.enabled && wroteTheRow && ownershipKey !== null && this.briefOutput() === brief) {
+            this.briefOutputEpoch = this.ownershipEpochs.get(ownershipKey) ?? 0;
+          }
           if (!result.enabled) {
             this.briefPersistence.set(this.idlePersistence);
             return;
@@ -6317,7 +6466,7 @@ export class CampaignsComponent {
           // The capability read needs a brief id, and THIS is where a first create gets one: the
           // Implementation tab opened before the persist resolved, so the entry-time attempt
           // guarded itself out. Without this the create path never learns the capability.
-          this.loadCreateCapabilitiesFor(result.briefId);
+          this.loadCreateCapabilitiesFor(result.briefId, true);
           // The row on the server is now different from whatever Planning last looked up — it may
           // not even have existed then. Reached only past the conflict and `!enabled` returns
           // above, so it fires exactly when a write actually landed.
@@ -6778,11 +6927,22 @@ export class CampaignsComponent {
     onError: () => void = (): void => undefined
   ): void {
     const projectSlug = this.activeFoundationSlug();
-    if (projectSlug === '' || this.ownershipKey(projectSlug, seed) === null) return;
+    // Nothing to read without a foundation or an event. That is a FAILED open, not an answer about
+    // the row, so it goes through `onError`: every caller then says why nothing opened, and none of
+    // them mistakes it for persistence going dark (`'off'`), which on the Implement path would clear
+    // the unowned-brief refusal and re-enable Create while a stored brief still exists.
+    if (projectSlug === '' || this.ownershipKey(projectSlug, seed) === null) {
+      onError();
+      return;
+    }
     const generation = this.briefPersistenceGeneration;
     const ownershipAtSend = this.ownershipGeneration;
+    const openGeneration = ++this.planningOpenGeneration;
     const mayAdopt = (): boolean =>
-      generation === this.briefPersistenceGeneration && ownershipAtSend === this.ownershipGeneration && projectSlug === this.activeFoundationSlug();
+      generation === this.briefPersistenceGeneration &&
+      ownershipAtSend === this.ownershipGeneration &&
+      openGeneration === this.planningOpenGeneration &&
+      projectSlug === this.activeFoundationSlug();
 
     from(this.persistChain)
       .pipe(
@@ -6820,6 +6980,7 @@ export class CampaignsComponent {
 
   /** Hand a brief to the paid planner's editor and show the Plan tab (#4983). */
   private openInPlanningEditor(brief: CampaignBriefOutput): void {
+    this.planningOpenGeneration++;
     this.planningEditRequestSeq += 1;
     this.planningEditRequest.set({ brief, requestId: this.planningEditRequestSeq });
     this.selectedTab.set('planning');
