@@ -73,7 +73,7 @@ const rowOf = (meeting: PastMeeting): MeetingHomeRow => toPastMeetingHomeRow(mee
 
 describe('LastMeetingCardComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
-  let dialogs: { openSummary: ReturnType<typeof vi.fn>; openTranscript: ReturnType<typeof vi.fn>; openRecording: ReturnType<typeof vi.fn> };
+  let dialogs: { openSummary: ReturnType<typeof vi.fn>; openRecording: ReturnType<typeof vi.fn> };
 
   const render = async (inputs: Record<string, unknown>): Promise<ComponentFixture<LastMeetingCardComponent>> => {
     const fixture = TestBed.createComponent(LastMeetingCardComponent);
@@ -89,7 +89,7 @@ describe('LastMeetingCardComponent', () => {
 
   beforeEach(() => {
     navigateByUrl = vi.fn().mockResolvedValue(true);
-    dialogs = { openSummary: vi.fn(), openTranscript: vi.fn(), openRecording: vi.fn() };
+    dialogs = { openSummary: vi.fn(), openRecording: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
@@ -109,11 +109,11 @@ describe('LastMeetingCardComponent', () => {
   it('shows the empty card when the viewer has no past meeting', async () => {
     const fixture = await render({ row: null });
 
-    expect(text(fixture, 'meetings-home-last-card-empty')).toContain('You haven’t joined a meeting yet');
+    expect(text(fixture, 'meetings-home-last-card-empty')).toContain('No past meetings yet');
     expect(text(fixture, 'meetings-home-last-card-empty')).toContain('Your past meetings will appear here.');
   });
 
-  it('renders the tile, project, title, when line and tags', async () => {
+  it('renders the tile, project, title, when line and the type and recurring tags', async () => {
     const meeting = buildMeeting({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } });
     const fixture = await render({ row: rowOf(meeting), summary: null });
 
@@ -124,9 +124,9 @@ describe('LastMeetingCardComponent', () => {
     const day = START.toLocaleString('en-US', { weekday: 'short' });
     const time = START.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
     expect(text(fixture, 'meetings-home-last-card-when')).toBe(`${day}, ${time} · 60m`);
-    expect(text(fixture, 'meetings-home-last-card-recurring')).toBe('Recurring');
     expect(text(fixture, 'meetings-home-last-card-type')).toBe('Technical');
-    expect(text(fixture, 'meetings-home-last-card-group')).toBe('Steering Committee');
+    expect(text(fixture, 'meetings-home-last-card-recurring')).toBe('Recurring');
+    expect(fixture.nativeElement.textContent).not.toContain('Steering Committee');
   });
 
   it('opens the meeting page when the card is clicked', async () => {
@@ -137,61 +137,45 @@ describe('LastMeetingCardComponent', () => {
     expect(navigateByUrl).toHaveBeenCalledWith('/meetings/m-1-occ');
   });
 
-  describe('AI summary', () => {
-    it('shows a placeholder while the summary loads', async () => {
-      const fixture = await render({ row: rowOf(buildMeeting()), summary: undefined });
-
-      expect(query(fixture, 'meetings-home-last-card-summary-loading')).toBeTruthy();
-      expect(query(fixture, 'meetings-home-last-card-summary')).toBeNull();
-    });
-
-    it('shows the edited text without markdown', async () => {
-      const summary = buildSummary({ summary_data: { ...buildSummary().summary_data, edited_content: '**Edited** notes' } });
-      const fixture = await render({ row: rowOf(buildMeeting()), summary });
-
-      expect(text(fixture, 'meetings-home-last-card-summary-text')).toBe('Edited notes');
-    });
-
+  describe('recording and AI summary', () => {
     it.each<[string, Partial<PastMeetingSummary>, boolean | undefined, boolean]>([
       ['approved, invitee', { approved: true, requires_approval: true }, undefined, true],
       ['approval not required, invitee', { approved: false, requires_approval: false }, undefined, true],
       ['pending approval, invitee', { approved: false, requires_approval: true }, false, false],
       ['pending approval, organizer', { approved: false, requires_approval: true }, true, true],
-    ])('%s', async (_label, flags, organizer, shown) => {
+    ])('AI Summary for %s', async (_label, flags, organizer, shown) => {
       const fixture = await render({ row: rowOf(buildMeeting({ organizer })), summary: buildSummary(flags) });
 
       expect(!!query(fixture, 'meetings-home-last-card-summary')).toBe(shown);
     });
 
-    it('tells an organizer the summary is awaiting their review', async () => {
-      const pending = { approved: false, requires_approval: true };
-      const fixture = await render({ row: rowOf(buildMeeting({ organizer: true })), summary: buildSummary(pending) });
+    it.each<[PastMeetingSummary | null | undefined, string | null | undefined]>([
+      [undefined, undefined],
+      [null, null],
+      [buildSummary({ summary_data: { ...buildSummary().summary_data, content: '  ' } }), null],
+    ])('shows neither button for summary %o and recording %s', async (summary, recordingUrl) => {
+      const fixture = await render({ row: rowOf(buildMeeting()), summary, recordingUrl });
 
-      expect(text(fixture, 'meetings-home-last-card-summary-pending')).toBe('Awaiting your review');
-      expect(text(fixture, 'meetings-home-last-card-read-more')).toBe('Review summary');
-
-      fixture.componentRef.setInput('summary', buildSummary());
-      await fixture.whenStable();
-      expect(query(fixture, 'meetings-home-last-card-summary-pending')).toBeNull();
-      expect(text(fixture, 'meetings-home-last-card-read-more')).toBe('Read more');
+      expect(query(fixture, 'meetings-home-last-card-summary')).toBeNull();
+      expect(query(fixture, 'meetings-home-last-card-recording')).toBeNull();
     });
 
-    it('hides the section when there is no summary or it is empty', async () => {
-      const fixture = await render({ row: rowOf(buildMeeting()), summary: null });
-      expect(query(fixture, 'meetings-home-last-card-summary')).toBeNull();
+    it('puts Recording before AI Summary', async () => {
+      const fixture = await render({ row: rowOf(buildMeeting()), summary: buildSummary(), recordingUrl: 'https://zoom.example/rec' });
 
-      fixture.componentRef.setInput('summary', buildSummary({ summary_data: { ...buildSummary().summary_data, content: '  ' } }));
-      await fixture.whenStable();
-      expect(query(fixture, 'meetings-home-last-card-summary')).toBeNull();
+      const buttons = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('lfx-ui-button'));
+      expect(buttons.map((button) => button.dataset['testid'])).toEqual(['meetings-home-last-card-recording', 'meetings-home-last-card-summary']);
     });
 
-    it('opens the summary dialog without opening the meeting', async () => {
+    it('opens the recording and summary dialogs without opening the meeting', async () => {
       const summary = buildSummary();
-      const fixture = await render({ row: rowOf(buildMeeting()), summary });
+      const fixture = await render({ row: rowOf(buildMeeting()), summary, recordingUrl: 'https://zoom.example/rec' });
 
-      clickButton(fixture, 'meetings-home-last-card-read-more');
+      clickButton(fixture, 'meetings-home-last-card-recording');
+      clickButton(fixture, 'meetings-home-last-card-summary');
 
       expect(navigateByUrl).not.toHaveBeenCalled();
+      expect(dialogs.openRecording).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ' }), 'https://zoom.example/rec');
       expect(dialogs.openSummary).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ', title: 'Steering sync' }), summary, expect.any(Function));
     });
 
@@ -200,35 +184,11 @@ describe('LastMeetingCardComponent', () => {
       const changes: PastMeetingSummary[] = [];
       fixture.componentInstance.summaryChange.subscribe((change) => changes.push(change));
 
-      clickButton(fixture, 'meetings-home-last-card-read-more');
+      clickButton(fixture, 'meetings-home-last-card-summary');
       const approved = buildSummary({ approved: true });
       dialogs.openSummary.mock.calls[0][2](approved);
 
       expect(changes).toEqual([approved]);
-    });
-  });
-
-  describe('transcript and recording', () => {
-    it.each<[boolean | null | undefined, string | null | undefined]>([
-      [undefined, undefined],
-      [null, null],
-      [false, null],
-    ])('shows neither button for transcript %s and recording %s', async (hasTranscript, recordingUrl) => {
-      const fixture = await render({ row: rowOf(buildMeeting()), summary: null, hasTranscript, recordingUrl });
-
-      expect(query(fixture, 'meetings-home-last-card-transcript')).toBeNull();
-      expect(query(fixture, 'meetings-home-last-card-recording')).toBeNull();
-    });
-
-    it('opens the transcript and recording dialogs', async () => {
-      const fixture = await render({ row: rowOf(buildMeeting()), summary: null, hasTranscript: true, recordingUrl: 'https://zoom.example/rec' });
-
-      clickButton(fixture, 'meetings-home-last-card-transcript');
-      clickButton(fixture, 'meetings-home-last-card-recording');
-
-      expect(navigateByUrl).not.toHaveBeenCalled();
-      expect(dialogs.openTranscript).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ' }));
-      expect(dialogs.openRecording).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ' }), 'https://zoom.example/rec');
     });
   });
 });

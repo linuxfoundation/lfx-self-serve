@@ -136,7 +136,6 @@ describe('MeetingsRedesignComponent', () => {
             meetingJoinIdentity: signal(null),
             confirmedMeetingRsvps: () => [],
             isMeetingRsvpCurrent: () => true,
-            isMeetingRegistrationEnded: () => false,
             refreshUserMeetings,
             refreshUserPastMeetings,
           },
@@ -148,9 +147,7 @@ describe('MeetingsRedesignComponent', () => {
           provide: MeetingService,
           useValue: {
             removedRegistrationMeetingIds: signal(new Set<string>()),
-            getMeetingRsvps: () => of([]),
             getPastMeetingSummary: () => of(null),
-            getPastMeetingTranscript: () => of(null),
             getPastMeetingRecording: () => of(null),
           },
         },

@@ -4,14 +4,12 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary, PastMeetingTranscript } from '@lfx-one/shared/interfaces';
-import { calculateRsvpCounts } from '@lfx-one/shared/utils';
+import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeStore } from './meetings-home.store';
@@ -121,12 +119,8 @@ describe('MeetingsHomeStore', () => {
     removed = signal<ReadonlySet<string>>(new Set());
     meetingService = {
       removedRegistrationMeetingIds: removed,
-      getMeetingRsvps: vi.fn((): Observable<MeetingRsvp[]> => of([])),
       getPublicMeetingJoinUrl: vi.fn(() => of({ link: 'https://zoom.example.test/j/1' })),
       getPastMeetingSummary: vi.fn(() => summary$),
-      getPastMeetingTranscript: vi.fn(() =>
-        of({ recording_files: [{ file_type: 'TRANSCRIPT', download_url: 'https://zoom.example/t.vtt' }] } as PastMeetingTranscript)
-      ),
       getPastMeetingRecording: vi.fn(() =>
         of({
           sessions: [
@@ -144,7 +138,6 @@ describe('MeetingsHomeStore', () => {
       getUserLatestPastMeetings: vi.fn(() => latestPast$),
       confirmedMeetingRsvps: vi.fn(() => confirmed()),
       isMeetingRsvpCurrent: vi.fn(() => true),
-      isMeetingRegistrationEnded: vi.fn(() => false),
       authenticated: signal(true),
       meetingJoinIdentity: signal({ name: 'Real Viewer', email: 'real@example.test' }),
     };
@@ -349,20 +342,6 @@ describe('MeetingsHomeStore', () => {
     });
   });
 
-  describe('composer saves', () => {
-    it("reloads the next meeting's responses after a save", () => {
-      const store = create();
-      upcoming$.next([buildMeeting()]);
-      TestBed.tick();
-      expect(store.nextRowRsvps()).toEqual([]);
-
-      TestBed.inject(MeetingComposerService).notifySaved();
-      TestBed.tick();
-
-      expect(meetingService['getMeetingRsvps']).toHaveBeenCalledTimes(2);
-    });
-  });
-
   describe('identity', () => {
     it("re-requests on a viewer change and never shows the previous viewer's rows", () => {
       const store = create();
@@ -458,26 +437,6 @@ describe('MeetingsHomeStore', () => {
       expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['over']);
     });
 
-    it('loads the responses once per next meeting and reads a failure as a hidden roster', () => {
-      vi.spyOn(console, 'error').mockImplementation(() => undefined);
-      const responses = [rsvp()];
-      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce(of(responses))
-        .mockReturnValueOnce(throwError(() => new Error('down')));
-      const store = create();
-      upcoming$.next([buildMeeting()]);
-      TestBed.tick();
-
-      expect(store.nextRowRsvps()).toEqual(responses);
-      upcoming$.next([buildMeeting({ title: 'Renamed' })]);
-      TestBed.tick();
-      expect(meetingService['getMeetingRsvps']).toHaveBeenCalledTimes(1);
-
-      upcoming$.next([buildMeeting({ id: 'm-2' })]);
-      TestBed.tick();
-      expect(store.nextRowRsvps()).toEqual([]);
-    });
-
     it('builds the join link for the real viewer inside the join window only', () => {
       const store = create();
       upcoming$.next([buildMeeting({ password: 'pw' })]);
@@ -508,68 +467,6 @@ describe('MeetingsHomeStore', () => {
 
       pending$.next({ link: 'https://zoom.example.test/j/2' });
       expect(store.nextRowJoinUrl()).toMatch(/^https:\/\/zoom\.example\.test\/j\/2/);
-    });
-
-    it("adds the viewer's answers saved this session to a visible roster only", () => {
-      const others = [rsvp({ id: 'r-other', registrant_id: 'reg-other', email: 'other@example.test' })];
-      const mine = rsvp({ id: 'r-mine', response_type: 'maybe' });
-      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of(others)).mockReturnValueOnce(of([]));
-      const store = create();
-      upcoming$.next([buildMeeting()]);
-      TestBed.tick();
-
-      confirmed.set([mine]);
-      expect(store.nextRowRsvps()).toEqual([mine, ...others]);
-
-      upcoming$.next([buildMeeting({ id: 'm-2' })]);
-      TestBed.tick();
-      expect(store.nextRowRsvps()).toEqual([]);
-    });
-
-    it("drops the viewer's answers from registrations they removed", () => {
-      const others = [rsvp({ id: 'r-other', registrant_id: 'reg-other', email: 'other@example.test' })];
-      const mine = rsvp({ id: 'r-mine', registrant_id: 'reg-removed' });
-      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([mine, ...others]));
-      const ended = signal(new Set<string>());
-      (userService['isMeetingRegistrationEnded'] as ReturnType<typeof vi.fn>).mockImplementation((_id: string, registrantId: string) =>
-        ended().has(registrantId)
-      );
-      const store = create();
-      upcoming$.next([buildMeeting()]);
-      TestBed.tick();
-      expect(store.nextRowRsvps()).toEqual([mine, ...others]);
-
-      ended.set(new Set(['reg-removed']));
-
-      expect(store.nextRowRsvps()).toEqual(others);
-    });
-
-    it('keeps answers saved this session when every loaded answer came from a removed registration', () => {
-      const removed = rsvp({ id: 'r-removed', registrant_id: 'reg-removed' });
-      const survivor = rsvp({ id: 'r-survivor', registrant_id: 'reg-survivor', response_type: 'maybe' });
-      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([removed]));
-      (userService['isMeetingRegistrationEnded'] as ReturnType<typeof vi.fn>).mockImplementation(
-        (_id: string, registrantId: string) => registrantId === 'reg-removed'
-      );
-      const store = create();
-      upcoming$.next([buildMeeting()]);
-      TestBed.tick();
-
-      confirmed.set([survivor]);
-
-      expect(store.nextRowRsvps()).toEqual([survivor]);
-    });
-
-    it('counts a confirmed change over the loaded answer it replaces, even at the same time', () => {
-      const createdAt = new Date().toISOString();
-      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([rsvp({ created_at: createdAt })]));
-      const store = create();
-      upcoming$.next([buildMeeting()]);
-      TestBed.tick();
-
-      confirmed.set([rsvp({ response_type: 'declined', created_at: createdAt })]);
-
-      expect(calculateRsvpCounts(null, store.nextRowRsvps() ?? [])).toMatchObject({ accepted: 0, declined: 1 });
     });
 
     it('never lets the viewer join a restricted meeting they are not invited to', () => {
@@ -664,14 +561,13 @@ describe('MeetingsHomeStore', () => {
       expect(store.lastMeeting()).toBeNull();
     });
 
-    it("loads the last meeting's summary, transcript and recording", () => {
+    it("loads the last meeting's summary and recording", () => {
       const store = create();
       latestPast$.next([buildPastMeeting('b', inDays(-1))]);
       TestBed.tick();
 
       expect(meetingService['getPastMeetingSummary']).toHaveBeenCalledWith('m-past-b');
       expect(store.lastMeetingSummary()).toBeUndefined();
-      expect(store.lastMeetingHasTranscript()).toBe(true);
       expect(store.lastMeetingRecordingUrl()).toBe('https://zoom.example/large');
 
       summary$.next(summary);
@@ -692,7 +588,6 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.lastMeetingSummary()).toBeNull();
       expect(store.lastMeetingRecordingUrl()).toBeNull();
-      expect(store.lastMeetingHasTranscript()).toBe(true);
       expect(logged).toHaveBeenCalledTimes(1);
     });
   });

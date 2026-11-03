@@ -34,8 +34,6 @@ import {
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
   getPastMeetingSummaryContent,
-  isPastMeetingSummaryAwaitingApproval,
-  stripMarkdown,
 } from '@lfx-one/shared/utils';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
@@ -47,10 +45,9 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
 
 /**
- * Last meeting card of the meetings home right column: the viewer's most recent past meeting with its AI summary,
- * transcript and recording.
- * @description Each artifact shows only once it has loaded and exists; a failed lookup hides it. Read more, Transcript
- * and Recording open the meetings home dialogs.
+ * Last meeting card of the meetings home right column: the viewer's most recent past meeting with its recording and AI summary.
+ * @description Each button shows only once its artifact has loaded and exists; a failed lookup hides it. Both open the
+ * meetings home dialogs.
  */
 @Component({
   selector: 'lfx-last-meeting-card',
@@ -66,20 +63,17 @@ export class LastMeetingCardComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
-  private readonly groupNameElement = viewChild<ElementRef<HTMLElement>>('groupName');
 
   /** The last meeting; null when the viewer has none. */
   public readonly row = input.required<MeetingHomeRow | null>();
   public readonly loading = input<boolean>(false);
   /** Undefined while loading, null when there is none or the lookup failed. */
   public readonly summary = input<PastMeetingSummary | null | undefined>(undefined);
-  public readonly hasTranscript = input<boolean | null | undefined>(undefined);
   public readonly recordingUrl = input<string | null | undefined>(undefined);
   /** The summary after an organizer edited or approved it in the dialog. */
   public readonly summaryChange = output<PastMeetingSummary>();
 
   protected readonly projectTruncated = signal(false);
-  protected readonly groupTruncated = signal(false);
   protected readonly link: Signal<MeetingHomeRowLink | null> = computed(() => {
     const row = this.row();
     return row ? getMeetingHomeRowLink(row, 'past') : null;
@@ -95,17 +89,8 @@ export class LastMeetingCardComponent {
     return row ? getMeetingRecurrenceTooltip(row.meeting, row.occurrence) : null;
   });
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = this.initMeetingType();
-  protected readonly group: Signal<string> = computed(() =>
-    (this.row()?.meeting.committees ?? [])
-      .map((committee) => committee.name?.trim())
-      .filter(Boolean)
-      .join(', ')
-  );
   /** Raw summary text the viewer may read; organizers also see one awaiting their approval. */
   protected readonly summaryContent: Signal<string | null> = this.initSummaryContent();
-  protected readonly summaryText: Signal<string> = computed(() => stripMarkdown(this.summaryContent() ?? ''));
-  /** Only organizers see a summary that still needs approval; tell them invitees don't yet. */
-  protected readonly summaryAwaitingReview: Signal<boolean> = computed(() => !!this.summaryContent() && isPastMeetingSummaryAwaitingApproval(this.summary()));
   protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
     [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
     [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
@@ -117,10 +102,7 @@ export class LastMeetingCardComponent {
       if (!isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
       const isTruncated = (element: ElementRef<HTMLElement> | undefined): boolean =>
         !!element && element.nativeElement.scrollWidth > element.nativeElement.clientWidth;
-      const observer = new ResizeObserver(() => {
-        this.projectTruncated.set(isTruncated(this.projectNameElement()));
-        this.groupTruncated.set(isTruncated(this.groupNameElement()));
-      });
+      const observer = new ResizeObserver(() => this.projectTruncated.set(isTruncated(this.projectNameElement())));
       // The card re-renders as data loads, so observe its host rather than elements that come and go.
       observer.observe(this.host.nativeElement);
       this.destroyRef.onDestroy(() => observer.disconnect());
@@ -148,12 +130,6 @@ export class LastMeetingCardComponent {
     const summary = this.summary();
     if (!row || !summary || !this.summaryContent()) return;
     this.dialogs.openSummary(row, summary, (change) => this.summaryChange.emit(change));
-  }
-
-  protected openTranscript(event: Event): void {
-    event.stopPropagation();
-    const row = this.row();
-    if (row) this.dialogs.openTranscript(row);
   }
 
   protected openRecording(event: Event): void {
