@@ -5117,7 +5117,7 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /** Send the create; `another` only after the operator confirmed a deliberate second campaign. */
-  private dispatchCreate(another?: CampaignCreateAnother): void {
+  protected dispatchCreate(another?: CampaignCreateAnother): void {
     // The X start rule depends on the clock, which `canSubmit`'s memo cannot see move: a form left
     // open across midnight UTC would otherwise send a start campaign-service now refuses.
     const twitterFlightError = this.selectedPlatforms().includes('twitter-ads') ? this.twitterFlightErrorAt(Date.now()) : null;

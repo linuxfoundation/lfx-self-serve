@@ -15303,7 +15303,7 @@ describe('ImplementationTabComponent create another campaign', () => {
       variant,
     }) as CampaignIndexDoc;
 
-  type Internals = {
+  interface Internals {
     selectedPlatforms: { set(v: string[]): void };
     briefKeywords: { set(v: unknown[]): void };
     campaignForm: { controls: Record<string, { setValue(v: unknown): void }>; get(name: string): { controls: { setValue(v: unknown): void }[] } | null };
@@ -15314,7 +15314,7 @@ describe('ImplementationTabComponent create another campaign', () => {
     step: { set(v: string): void };
     platformResults: { set(v: unknown): void };
     rememberSlotVersions(results: unknown[]): void;
-  };
+  }
   const c = (): Internals => fixture.componentInstance as unknown as Internals;
   const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
 
