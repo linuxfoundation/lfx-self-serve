@@ -650,6 +650,7 @@ describe('getMeetingHomeRowOrganizer', () => {
   it.each<[Pick<Meeting, 'created_by' | 'owner' | 'organizers'>, string | null]>([
     [{ created_by: jane, organizers: [] }, 'Jane Doe'],
     [{ created_by: jane, organizers: ['jdoe', 'auth0|JDOE'] }, 'Jane Doe'],
+    [{ created_by: jane, organizers: ['Jane@Example.org', 'asmith'] }, 'Jane +1'],
     [{ created_by: jane, organizers: ['jdoe', 'asmith', 'auth0|bking', 'bking'] }, 'Jane +2'],
     [{ created_by: { name: '', username: 'viewer', email: '' }, organizers: ['viewer', 'asmith'] }, 'you +1'],
     [{ created_by: { name: 'Viewer', username: 'viewer', email: '' }, organizers: [] }, 'you'],

@@ -336,8 +336,9 @@ export function getMeetingHomeRowOrganizer(meeting: Pick<Meeting, 'created_by' |
   if (!primary) return null;
   const isYou = isMeetingOrganizedByViewer(meeting, viewerUsername);
   const name = isYou ? 'you' : getMeetingOrganizerDisplayName(primary);
-  const primaryUsername = normalizeUsername(primary.username);
-  const others = new Set((meeting.organizers ?? []).map(normalizeUsername).filter((username) => username && username !== primaryUsername)).size;
+  // Entries are usernames on read but emails on create, so the primary is skipped in either form.
+  const primaryKeys = [normalizeUsername(primary.username), normalizeUsername(primary.email)];
+  const others = new Set((meeting.organizers ?? []).map(normalizeUsername).filter((key) => key && !primaryKeys.includes(key))).size;
   return others ? `${name.split(/\s+/)[0]} +${others}` : name;
 }
 
