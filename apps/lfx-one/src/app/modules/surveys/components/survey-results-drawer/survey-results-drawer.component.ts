@@ -93,12 +93,12 @@ export class SurveyResultsDrawerComponent {
   protected readonly groupName: Signal<string> = this.initGroupName();
   protected readonly engagementRates: Signal<SurveyEngagementRates | null> = this.initEngagementRates();
   protected readonly comments: Signal<SurveyComment[]> = this.initComments();
-  /** Resync is offered only while open, and only when it can be kept to this project's committee. */
   /**
    * Reminders and resync email recipients, and the BFF allows them only for project writers. On a group's
    * page `hasPMOAccess` can mean group writer, which keeps the Responses tab but not these actions.
    */
   protected readonly canSendFollowUp: Signal<boolean> = computed(() => this.hasPMOAccess() && this.projectContextService.canWrite());
+  /** Resync is offered only while open, and only for this project's committees. */
   protected readonly resyncScope: Signal<SurveyResyncScope | null> = computed(() => {
     const s = this.survey();
     return s && this.canSendFollowUp() && isSurveyOpenForFollowUp(s) ? getSurveyResyncScope(s, this.projectUid()) : null;

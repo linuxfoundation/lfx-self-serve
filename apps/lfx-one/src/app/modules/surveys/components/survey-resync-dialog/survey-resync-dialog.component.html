@@ -46,7 +46,7 @@
         <tbody>
           @for (recipient of recipients(); track recipient.user_id) {
             <tr class="border-t border-gray-100" [attr.data-testid]="'survey-resync-dialog-row-' + recipient.user_id">
-              <td class="py-3 px-4 font-semibold text-gray-900">{{ recipientName(recipient) }}</td>
+              <td class="py-3 px-4 font-semibold text-gray-900">{{ recipientNames().get(recipient.user_id) }}</td>
               <td class="py-3 px-2 text-gray-500">{{ recipient.email }}</td>
               <td class="py-3 px-4 text-gray-500">{{ recipient.role || '—' }}</td>
             </tr>

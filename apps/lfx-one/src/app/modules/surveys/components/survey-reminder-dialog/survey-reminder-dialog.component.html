@@ -43,7 +43,7 @@
                 (click)="$event.stopPropagation()"
                 (change)="toggleRecipient(recipient.id)"></lfx-checkbox>
             </td>
-            <td class="py-3 px-2 font-semibold text-gray-900" [id]="'survey-reminder-name-' + recipient.id">{{ recipientName(recipient) }}</td>
+            <td class="py-3 px-2 font-semibold text-gray-900" [id]="'survey-reminder-name-' + recipient.id">{{ recipientNames.get(recipient.id) }}</td>
             <td class="py-3 px-2 text-gray-500">{{ recipient.email || '—' }}</td>
             <td class="py-3 px-2 text-gray-500">{{ recipient.organization?.name || '—' }}</td>
             <td class="py-3 px-4 text-gray-500">{{ recipient.response_status || '—' }}</td>

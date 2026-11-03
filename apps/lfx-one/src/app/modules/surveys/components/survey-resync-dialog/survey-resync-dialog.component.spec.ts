@@ -3,6 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
+import { SURVEY_FOLLOW_UP_PRECHECK_FAILED } from '@lfx-one/shared/constants';
 import { Survey, SurveyResyncPreview } from '@lfx-one/shared/interfaces';
 import { SurveyService } from '@services/survey.service';
 import { MessageService } from 'primeng/api';
@@ -170,5 +171,12 @@ describe('SurveyResyncDialogComponent', () => {
     fixture.componentInstance['cancel']();
 
     expect(close).toHaveBeenCalledWith(true);
+  });
+
+  it('says nothing was sent when the access check could not run', async () => {
+    const { fixture } = await mount(throwError(() => new HttpErrorResponse({ status: 503, error: { code: SURVEY_FOLLOW_UP_PRECHECK_FAILED } })));
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'survey-resync-dialog-error')?.textContent).toContain('Nothing was sent');
   });
 });

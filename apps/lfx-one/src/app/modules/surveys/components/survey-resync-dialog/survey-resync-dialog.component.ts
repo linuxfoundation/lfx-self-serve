@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { SURVEY_FOLLOW_UP_PRECHECK_FAILED } from '@lfx-one/shared/constants';
 import { SurveyResyncDialogData, SurveyResyncRecipient } from '@lfx-one/shared/interfaces';
 import { SurveyService } from '@services/survey.service';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
@@ -46,16 +47,17 @@ export class SurveyResyncDialogComponent {
   /** Committees whose preview found someone missing; only these are resynced. */
   private readonly committeesToSend = signal<string[]>([]);
 
+  /** Display names, derived once per preview rather than on every render. */
+  protected readonly recipientNames = computed<ReadonlyMap<string, string>>(
+    () => new Map(this.recipients().map((r) => [r.user_id, r.name || `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim() || r.email]))
+  );
+
   public constructor() {
     lockDynamicDialogWhile(this.sending);
     this.loadPreview();
   }
 
   // === Protected Methods ===
-  protected recipientName(recipient: SurveyResyncRecipient): string {
-    return recipient.name || `${recipient.first_name ?? ''} ${recipient.last_name ?? ''}`.trim() || recipient.email;
-  }
-
   protected retry(): void {
     this.loadPreview();
   }
@@ -141,6 +143,9 @@ export class SurveyResyncDialogComponent {
 
   private errorMessage(error: unknown, stage: 'load' | 'send'): string {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
+    if (error instanceof HttpErrorResponse && error.error?.code === SURVEY_FOLLOW_UP_PRECHECK_FAILED) {
+      return "Nothing was sent because your access couldn't be verified. Please try again.";
+    }
     if (status === 403) return "You don't have permission to resync this survey's recipients.";
     if (status === 429) return 'Too many requests just now. Please try again in a minute.';
     return stage === 'load'

@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { SURVEY_REMINDER_MAX_RECIPIENTS } from '@lfx-one/shared/constants';
+import { SURVEY_FOLLOW_UP_PRECHECK_FAILED, SURVEY_REMINDER_MAX_RECIPIENTS } from '@lfx-one/shared/constants';
 import { Survey, SurveyResponseItem } from '@lfx-one/shared/interfaces';
 import { SurveyService } from '@services/survey.service';
 import { MessageService } from 'primeng/api';
@@ -84,5 +84,13 @@ describe('SurveyReminderDialogComponent', () => {
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: "Couldn't send reminder", detail: expect.stringContaining('Nothing was sent') }));
     expect(close).not.toHaveBeenCalled();
+  });
+
+  it('says nothing was sent when the server refused before sending', async () => {
+    const { component, add } = await mount(throwError(() => new HttpErrorResponse({ status: 503, error: { code: SURVEY_FOLLOW_UP_PRECHECK_FAILED } })));
+
+    component['send']();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: "Couldn't send reminder", detail: expect.stringContaining('No reminders were sent') }));
   });
 });

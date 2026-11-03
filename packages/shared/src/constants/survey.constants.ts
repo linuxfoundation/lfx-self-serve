@@ -311,6 +311,13 @@ export const SURVEY_RESPONSES_MAX_PAGES = 50;
 export const SURVEY_REMINDER_MAX_RECIPIENTS = 1000;
 
 /**
+ * Error code for a reminder or resync refused before anything was sent, because the
+ * BFF couldn't verify the caller's access or the recipients (an upstream read or access
+ * check failed). The client can say nothing was sent and a retry is safe.
+ */
+export const SURVEY_FOLLOW_UP_PRECHECK_FAILED = 'SURVEY_FOLLOW_UP_PRECHECK_FAILED';
+
+/**
  * Position of each invitation-email status in the funnel (higher = further along).
  * A row at a later stage counts toward every earlier stage. "Responded" is deliberately
  * absent: someone can answer through a copied personal link after their email bounced,

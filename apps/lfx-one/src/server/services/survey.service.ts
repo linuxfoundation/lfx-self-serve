@@ -4,6 +4,7 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS,
+  SURVEY_FOLLOW_UP_PRECHECK_FAILED,
   SURVEY_LINK_ALLOWLIST,
   SURVEY_RESPONSES_MAX_PAGES,
   SURVEY_RESPONSES_PAGE_SIZE,
@@ -23,7 +24,7 @@ import {
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
+import { AuthenticationError, AuthorizationError, BaseApiError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -269,20 +270,22 @@ export class SurveyService {
    * ITX rejects closed surveys.
    */
   public async sendSurveyReminders(req: Request, surveyUid: string, recipientIds: string[]): Promise<SendSurveyRemindersResult> {
-    const [managed, rows] = await Promise.all([this.getManagedCommitteeUids(req, surveyUid), this.fetchAllResponseRows(req, surveyUid)]);
-    const committeeByRow = new Map(rows.map((r) => [r.id, r.committee_uid]));
-    const unmanaged = recipientIds.some((id) => {
-      const committeeUid = committeeByRow.get(id);
-      return !committeeUid || !managed.has(committeeUid);
-    });
-    if (unmanaged) {
-      throw new AuthorizationError('You can only remind recipients of committees in projects you manage.', {
-        operation: 'send_survey_reminders',
-        service: 'survey_service',
-        path: req.path,
-        code: 'SURVEY_RECIPIENT_NOT_MANAGED',
+    await this.runFollowUpPrecheck(req, 'send_survey_reminders', async () => {
+      const [{ managed }, rows] = await Promise.all([this.getCommitteeAccess(req, surveyUid, true), this.fetchAllResponseRows(req, surveyUid)]);
+      const committeeByRow = new Map(rows.map((r) => [r.id, r.committee_uid]));
+      const unmanaged = recipientIds.some((id) => {
+        const committeeUid = committeeByRow.get(id);
+        return !committeeUid || !managed.has(committeeUid);
       });
-    }
+      if (unmanaged) {
+        throw new AuthorizationError('You can only remind recipients of committees in projects you manage.', {
+          operation: 'send_survey_reminders',
+          service: 'survey_service',
+          path: req.path,
+          code: 'SURVEY_RECIPIENT_NOT_MANAGED',
+        });
+      }
+    });
 
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/bulk_resend`, 'POST', undefined, {
       recipient_ids: recipientIds,
@@ -632,7 +635,7 @@ export class SurveyService {
   }
 
   /** The survey's committee UIDs and the subset whose project the caller writes. Fails closed. */
-  private async getCommitteeAccess(req: Request, surveyUid: string): Promise<{ committeeUids: string[]; managed: Set<string> }> {
+  private async getCommitteeAccess(req: Request, surveyUid: string, strict = false): Promise<{ committeeUids: string[]; managed: Set<string> }> {
     const survey = await this.microserviceProxy.proxyRequest<Pick<Survey, 'committees'>>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}`, 'GET');
     // Keep the full inventory: a committee with no resolvable UID or project can never be managed,
     // so it blocks a whole-survey resync instead of silently dropping out of the check.
@@ -643,10 +646,9 @@ export class SurveyService {
       return { committeeUids: allCommittees.map((c) => c.committee_uid ?? ''), managed: new Set() };
     }
 
-    const grants = await this.accessCheckService.checkAccess(
-      req,
-      projectUids.map((id) => ({ resource: 'project', id, access: 'writer_guard' }))
-    );
+    // Writes use the strict check so an access-check outage surfaces as an error, not as "no access".
+    const resources = projectUids.map((id) => ({ resource: 'project' as const, id, access: 'writer_guard' as const }));
+    const grants = strict ? await this.accessCheckService.checkAccessStrict(req, resources) : await this.accessCheckService.checkAccess(req, resources);
     return {
       committeeUids: allCommittees.map((c) => c.committee_uid ?? ''),
       managed: new Set(committees.filter((c) => grants.get(`${c.project_uid}#writer_guard`) === true).map((c) => c.committee_uid)),
@@ -659,15 +661,45 @@ export class SurveyService {
    * committee on it; anything else is a 403.
    */
   private async assertManagesResyncScope(req: Request, surveyUid: string, committeeUid: string | undefined, operation: string): Promise<void> {
-    const { committeeUids, managed } = await this.getCommitteeAccess(req, surveyUid);
-    const allowed = committeeUid ? managed.has(committeeUid) : committeeUids.length > 0 && committeeUids.every((uid) => managed.has(uid));
-    if (!allowed) {
-      throw new AuthorizationError('You can only resync committees in projects you manage.', {
-        operation,
-        service: 'survey_service',
-        path: req.path,
-        code: 'SURVEY_COMMITTEE_NOT_MANAGED',
-      });
+    await this.runFollowUpPrecheck(req, operation, async () => {
+      const { committeeUids, managed } = await this.getCommitteeAccess(req, surveyUid, true);
+      const allowed = committeeUid ? managed.has(committeeUid) : committeeUids.length > 0 && committeeUids.every((uid) => managed.has(uid));
+      if (!allowed) {
+        throw new AuthorizationError('You can only resync committees in projects you manage.', {
+          operation,
+          service: 'survey_service',
+          path: req.path,
+          code: 'SURVEY_COMMITTEE_NOT_MANAGED',
+        });
+      }
+    });
+  }
+
+  /**
+   * Runs the checks that precede a reminder or resync. Actionable answers (400/403/422/429) pass
+   * through; any other failure means the checks couldn't run, so it becomes a retryable
+   * SURVEY_FOLLOW_UP_PRECHECK_FAILED (503 unless upstream gave a 5xx). Only these checks are known
+   * not to have sent anything; never wrap the send itself.
+   */
+  private async runFollowUpPrecheck(req: Request, operation: string, checks: () => Promise<void>): Promise<void> {
+    try {
+      await checks();
+    } catch (error) {
+      if (error instanceof BaseApiError && [400, 403, 422, 429].includes(error.statusCode)) {
+        throw error;
+      }
+      const status = error instanceof BaseApiError && error.statusCode >= 500 ? error.statusCode : 503;
+      throw new MicroserviceError(
+        "Nothing was sent because your access or the recipients couldn't be verified. Please try again.",
+        status,
+        SURVEY_FOLLOW_UP_PRECHECK_FAILED,
+        {
+          operation,
+          service: 'survey_service',
+          path: req.path,
+          originalError: error instanceof Error ? error : undefined,
+        }
+      );
     }
   }
 

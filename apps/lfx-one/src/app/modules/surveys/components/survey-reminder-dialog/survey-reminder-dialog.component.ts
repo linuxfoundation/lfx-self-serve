@@ -6,7 +6,7 @@ import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
-import { SURVEY_REMINDER_MAX_RECIPIENTS } from '@lfx-one/shared/constants';
+import { SURVEY_FOLLOW_UP_PRECHECK_FAILED, SURVEY_REMINDER_MAX_RECIPIENTS } from '@lfx-one/shared/constants';
 import { SurveyReminderDialogData, SurveyResponseItem } from '@lfx-one/shared/interfaces';
 import { SurveyService } from '@services/survey.service';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
@@ -53,15 +53,16 @@ export class SurveyReminderDialogComponent {
   protected readonly overCap = computed(() => this.selectedCount() > this.maxRecipients);
   protected readonly allSelected = computed(() => this.recipients.length > 0 && this.selectedCount() === this.recipients.length);
 
+  /** Display names, computed once for the dialog's fixed recipient list rather than on every render. */
+  protected readonly recipientNames: ReadonlyMap<string, string> = new Map(
+    this.recipients.map((r) => [r.id, `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim() || r.email || '—'])
+  );
+
   public constructor() {
     lockDynamicDialogWhile(this.sending);
   }
 
   // === Protected Methods ===
-  protected recipientName(item: SurveyResponseItem): string {
-    return `${item.first_name ?? ''} ${item.last_name ?? ''}`.trim() || item.email || '—';
-  }
-
   protected toggleRecipient(id: string): void {
     // While sending, re-assert the selection so a checkbox the user just clicked snaps back.
     if (this.sending()) {
@@ -135,12 +136,17 @@ export class SurveyReminderDialogComponent {
 
   private isUnconfirmedSend(error: unknown): boolean {
     if (!(error instanceof HttpErrorResponse) || isBffTransportFailure(error)) return true;
+    // The server refused before sending: its checks couldn't run, so nothing went out.
+    if (error.error?.code === SURVEY_FOLLOW_UP_PRECHECK_FAILED) return false;
     return ![400, 403, 404, 422, 429].includes(error.status);
   }
 
   private sendErrorMessage(error: unknown, unconfirmed: boolean): string {
     if (unconfirmed) {
       return "We couldn't confirm whether reminders were sent. Retrying may send duplicate emails.";
+    }
+    if ((error as HttpErrorResponse).error?.code === SURVEY_FOLLOW_UP_PRECHECK_FAILED) {
+      return "No reminders were sent because the recipients couldn't be verified. Please try again.";
     }
     switch ((error as HttpErrorResponse).status) {
       case 403:

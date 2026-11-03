@@ -52,6 +52,7 @@ vi.mock('./logger.service', () => ({
   },
 }));
 
+import { MicroserviceError } from '../errors';
 import { AccessCheckService } from './access-check.service';
 import { ApiClientService } from './api-client.service';
 import { SurveyService } from './survey.service';
@@ -444,7 +445,7 @@ describe('SurveyService.getSurveyResponses — personal link gate', () => {
 
 describe('SurveyService follow-up actions (#4340)', () => {
   let service: SurveyService;
-  let checkAccessSpy: MockInstance<AccessCheckService['checkAccess']>;
+  let checkAccessSpy: MockInstance<AccessCheckService['checkAccessStrict']>;
   const req = { path: '/api/surveys/s-1/resync', bearerToken: 'caller-token' } as Request;
   // Multi-foundation survey: the caller writes p-1 (committee c-1) but not p-2 (c-2).
   const survey = {
@@ -467,7 +468,7 @@ describe('SurveyService follow-up actions (#4340)', () => {
       return { affected_recipients: null };
     });
     service = new SurveyService();
-    checkAccessSpy = vi.spyOn(AccessCheckService.prototype, 'checkAccess').mockResolvedValue(
+    checkAccessSpy = vi.spyOn(AccessCheckService.prototype, 'checkAccessStrict').mockResolvedValue(
       new Map([
         ['p-1#writer_guard', true],
         ['p-2#writer_guard', false],
@@ -538,6 +539,25 @@ describe('SurveyService follow-up actions (#4340)', () => {
     });
 
     await expect(service.sendSurveyReminders(req, 's-1', ['r-1'])).rejects.toMatchObject({ statusCode: 422, code: 'SURVEY_TOO_MANY_RESPONSES' });
+    expect(writes()).toEqual([]);
+  });
+
+  it('reports an access-check outage as a retryable pre-check failure, not a 403, and sends nothing', async () => {
+    checkAccessSpy.mockRejectedValue(new Error('access-check unavailable'));
+
+    await expect(service.sendSurveyReminders(req, 's-1', ['r-1'])).rejects.toMatchObject({ statusCode: 503, code: 'SURVEY_FOLLOW_UP_PRECHECK_FAILED' });
+    await expect(service.resyncRecipients(req, 's-1', 'c-1')).rejects.toMatchObject({ statusCode: 503, code: 'SURVEY_FOLLOW_UP_PRECHECK_FAILED' });
+    expect(writes()).toEqual([]);
+  });
+
+  it('reports a failed recipient read before the send as a pre-check failure', async () => {
+    proxyRequestMock.mockImplementation(async (_req: Request, _svc: string, path: string, method: string) => {
+      if (method !== 'GET') return undefined;
+      if (path === '/surveys/s-1') return survey;
+      throw new MicroserviceError('upstream down', 502, 'UPSTREAM', {});
+    });
+
+    await expect(service.sendSurveyReminders(req, 's-1', ['r-1'])).rejects.toMatchObject({ statusCode: 502, code: 'SURVEY_FOLLOW_UP_PRECHECK_FAILED' });
     expect(writes()).toEqual([]);
   });
 });
