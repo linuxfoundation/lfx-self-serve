@@ -367,6 +367,13 @@ describe('MeetingsRedesignComponent', () => {
 
     await scrollListTo(HEADER_HEIGHT * 2 + 40);
     expect(fade()).not.toContain('mt-[24px]');
+
+    // Swapping the list for an empty state, with no scroll, drops the offset too.
+    await scrollListTo(HEADER_HEIGHT * 2 - 40);
+    query(fixture, 'ui-tab-past')?.click();
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-home-empty-past')).toBeTruthy();
+    expect(fade()).not.toContain('mt-[24px]');
   });
 
   it("counts the layout wrapper's bottom padding, not main's own, in the desktop column height", async () => {

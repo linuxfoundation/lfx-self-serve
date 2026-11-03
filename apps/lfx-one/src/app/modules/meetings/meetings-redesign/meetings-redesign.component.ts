@@ -4,6 +4,7 @@
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
+  afterRenderEffect,
   ChangeDetectionStrategy,
   Component,
   computed,
@@ -13,6 +14,7 @@ import {
   PLATFORM_ID,
   Signal,
   signal,
+  untracked,
   viewChild,
   WritableSignal,
 } from '@angular/core';
@@ -151,6 +153,11 @@ export class MeetingsRedesignComponent {
   public constructor() {
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.store.setTab(params.get('time') === 'past' ? 'past' : 'upcoming'));
     this.initLoadMore();
+    // The list comes and goes with the tab's state without a scroll, so re-check the stuck day heading then.
+    afterRenderEffect(() => {
+      this.list();
+      untracked(() => this.updateScroll());
+    });
     // The composer saves in place, so refetch to show the new or edited meeting; skip(1) drops the replayed count.
     toObservable(this.composer.saveCount)
       .pipe(skip(1), takeUntilDestroyed())
