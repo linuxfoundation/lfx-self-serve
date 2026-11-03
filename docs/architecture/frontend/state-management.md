@@ -428,7 +428,8 @@ opaque `run` query so a discarded/superseded marker can render safe navigation c
 instead of a blank page. No browser cache or actor identifier substitutes for server facts.
 
 `MktgRunProgressComponent` owns living-document public detail/body reads and their
-single bounded availability budget. The document view consumes its read cycles headlessly for living runs: only the
+one retry policy: uniform jitter in [base, min(cap, base·2^n)] (AWS "Full Jitter" offset to a floor at the reader's
+base interval, by the operator's ruling; cf. Google Cloud truncated exponential backoff), that never stops (a denied read is latched instead). The document view consumes its read cycles headlessly for living runs: only the
 failed card renders there, and an active `?run=` replaces to the run page. The
 run page owns one asset heading, one status line and the progress steps. A server-observed discarded/superseded marker cancels the document receiver matching private stream; late results cannot replace that closed view.
 One-off receivers keep their generating presentation and use the same visible/focus lifetime for reads. A living run-page `?run=` reader always measures public progress, including when a matching private attempt exists. Public landing opens the current
@@ -449,9 +450,17 @@ without any session capability. An accepted answer resumes public progress;
 safe display name (or Another writer), and resumes writing progress without
 resending. Identifier-like names are not echoed. A genuinely new server questions
 block remains answerable; other 409/412 responses refresh the current row. The waiting state
-checks on its own (`MKTG_RUN_POLL.questionsIntervalMs`) and keeps a held block through polls that
-omit it; it offers no Refresh button, and Refresh appears only once automatic checks pause after
-the poll deadline. Successful Send resumes normal polling. One-off answers remain creator-only.
+checks on its own (`MKTG_RUN_POLL.questionsIntervalMs`), on the run page and on the document card
+alike, and keeps a held block through polls that omit it. The run page, the document card and view, the Documents
+list and the comments panel offer no Refresh or Retry button (the re-read buttons still on the slides and family
+exports, LinkedIn, AEO/GEO, Member 360, Kit, family, downstream and dependency surfaces are the next item): a failed
+or partial read shows one plain line (`MKTG_POLL_RETRYING_TEXT`) while the shared visibility poller
+(`createVisibilityPoll`) retries with uniform jitter in [base, min(cap, base·2^n)] (cap `MKTG_POLL_MAX_BACKOFF_MS`),
+pausing while the tab is hidden and reading at once on tab return, window focus or reconnect; a 401/403 is a plain
+line whose scope the reader latches (the poller's wakes get `EMPTY` for it) — the run progress reader, the agent-run
+persistence watch, the comments service, the Documents list and detail and the document view's stored-report read
+all do; the Kit and Family pages keep polling at `MKTG_RUN_POLL.intervalMs` and the Kit service latches only a 403 —
+and any other final failure is a plain line. Successful Send resumes normal polling. One-off answers remain creator-only.
 Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay
 on the document view. Revision workflows, not the retired inline feedback form,

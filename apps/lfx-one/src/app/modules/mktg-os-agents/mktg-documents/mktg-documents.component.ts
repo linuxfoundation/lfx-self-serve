@@ -9,7 +9,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
-import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_POLL, MKTG_DOCUMENT_PROGRESS_POLL } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_POLL_RETRYING_TEXT, MKTG_RUN_POLL, MKTG_DOCUMENT_PROGRESS_POLL } from '@lfx-one/shared/constants';
 import {
   MktgDocumentDetailResponse,
   MktgDocumentGroup,
@@ -35,25 +35,8 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
-import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
-import {
-  catchError,
-  distinctUntilChanged,
-  EMPTY,
-  expand,
-  filter,
-  map,
-  merge,
-  Observable,
-  of,
-  Subject,
-  switchMap,
-  takeUntil,
-  tap,
-  throwError,
-  timer,
-  withLatestFrom,
-} from 'rxjs';
+import { createVisibilityPoll, pollBackoffDelayMs } from '@shared/utils/visibility-poll.util';
+import { catchError, distinctUntilChanged, EMPTY, expand, filter, map, Observable, of, switchMap, tap, throwError, timer } from 'rxjs';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
 import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-header.component';
@@ -95,7 +78,6 @@ export class MktgDocumentsComponent {
   private readonly injector = inject(Injector);
   private readonly documentPanel = viewChild<ElementRef<HTMLElement>>('documentPanel');
   private readonly documentContainer = viewChild<ElementRef<HTMLElement>>('documentContainer');
-  private readonly listRefresh = new Subject<void>();
   private readonly userService = inject(UserService);
 
   // === Signals ===
@@ -103,7 +85,11 @@ export class MktgDocumentsComponent {
   // Once occupied, this slot stays mounted for this scope's page visit.
   protected readonly startedRunsVisible = signal(false);
   protected readonly errorText = signal('');
-  protected readonly refreshWarning = signal('');
+  // One failing flag per reader, so a good read from one never clears the other's still-failing line (law 5: no flicker).
+  protected readonly listFailing = signal(false);
+  protected readonly detailFailing = signal(false);
+  /** The one quiet connection-state line while either reader is failing transiently; it clears itself on the next good read. */
+  protected readonly refreshWarning = computed(() => (this.listFailing() || this.detailFailing() ? MKTG_POLL_RETRYING_TEXT : ''));
   // The documents list could not be read: nothing is known about what the
   // project has stored, so neither the empty states nor the nav badges may
   // assert an absence while this is set.
@@ -115,7 +101,6 @@ export class MktgDocumentsComponent {
   private readonly detailCache = new Map<string, MktgDocumentDetailResponse>();
   private listedType: string | null = null;
   private pendingSelectionScroll = false;
-  private readonly reloads = signal(0);
   private listedScope = '';
   private detailedScope = '';
 
@@ -208,7 +193,7 @@ export class MktgDocumentsComponent {
 
   protected readonly emptyAction = this.initEmptyAction();
 
-  // Type navigation follows main; identity/reload changes cancel scoped reads and timers.
+  // Type navigation follows main; identity changes cancel scoped reads and timers.
   private readonly listRequest$ = toObservable(
     computed(() => ({
       project: this.projectContext.activeContextUid(),
@@ -226,7 +211,6 @@ export class MktgDocumentsComponent {
         documentId: living?.document?.documentId ?? '',
         latestRevisionId: living?.document?.latestRevisionId ?? '',
         revisionCount: living?.document?.revisionCount ?? 0,
-        reload: this.reloads(),
       };
     })
   );
@@ -255,21 +239,44 @@ export class MktgDocumentsComponent {
             }
           }),
           switchMap((request) => {
+            // Nothing is read for a deselected document, so nothing is retrying: the one line must not outlive its reader.
+            this.detailFailing.set(false);
             if (!request.project || !request.userSub || !request.documentId) {
               return of(null);
             }
             this.detailLoading.set(true);
             const known = this.detail();
-            return this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(
-              takeUntil(this.listRefresh),
-              catchError((error: HttpErrorResponse) => {
-                this.errorText.set(this.actionErrorText(error));
-                if (known && isTransientHttpError(error)) {
-                  this.refreshWarning.set('Could not refresh revisions. The last loaded revisions are kept; refresh to check again.');
-                  return of(known);
-                }
-                return of(null);
-              })
+            let denied = false;
+            const read = () => {
+              // A refused read is latched for this document (RFC 9110 §15.5.4): no wake sends the same credentials again.
+              if (denied) return EMPTY;
+              return this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(
+                // Clears only this reader's flag; the list's own line is the list's.
+                tap(() => this.detailFailing.set(false)),
+                catchError((error: HttpErrorResponse) => {
+                  // Status only: no upstream payload enters diagnostics.
+                  console.error('Marketing OS document detail read failed', { status: error.status });
+                  // A transient failure keeps the last loaded revisions behind the one plain line and the poller re-reads on its backoff.
+                  if (isTransientHttpError(error)) {
+                    this.detailFailing.set(true);
+                    if (known) this.detailLoading.set(false);
+                    return throwError(() => error);
+                  }
+                  this.detailFailing.set(false);
+                  denied = error.status === 401 || error.status === 403;
+                  this.errorText.set(this.actionErrorText(error));
+                  return of(null);
+                })
+              );
+            };
+            return createVisibilityPoll(this.document, read, {
+              intervalMs: MKTG_RUN_POLL.intervalMs,
+              backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+              backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+              shouldContinue: () => false,
+            }).pipe(
+              filter((event) => event.kind === 'ok'),
+              map((event) => (event.kind === 'ok' ? event.value : null))
             );
           }),
           takeUntilDestroyed()
@@ -282,13 +289,6 @@ export class MktgDocumentsComponent {
           this.scrollToSelection();
         });
     }
-  }
-
-  // === Protected methods ===
-  protected onRefreshProgress(): void {
-    this.errorText.set('');
-    this.reloads.update((value) => value + 1);
-    this.listRefresh.next();
   }
 
   // === Private initializers ===
@@ -319,13 +319,7 @@ export class MktgDocumentsComponent {
   }
 
   private initLists(): Observable<MktgDocumentsResponse | null> {
-    return merge(
-      this.listRequest$,
-      this.listRefresh.pipe(
-        withLatestFrom(this.listRequest$),
-        map(([, request]) => request)
-      )
-    ).pipe(
+    return this.listRequest$.pipe(
       tap((request) => {
         const scope = JSON.stringify([request.project, request.userSub]);
         const typeChanged = request.type !== this.listedType;
@@ -340,7 +334,7 @@ export class MktgDocumentsComponent {
           this.documents.set(null);
           this.startedRunsVisible.set(false);
           this.errorText.set('');
-          this.refreshWarning.set('');
+          this.listFailing.set(false);
           this.listFailed.set(false);
         }
       }),
@@ -349,14 +343,13 @@ export class MktgDocumentsComponent {
         const scope = JSON.stringify([request.project, request.userSub]);
         const currentScope = () => JSON.stringify([this.projectContext.activeContextUid(), this.userService.user()?.sub]);
         let known = this.documents();
-        let unavailableSince: number | null = null;
         let failures = 0;
+        let denied = false;
+        // One plain connection-state line while a check fails; it clears on the next good read and the loaded list stays.
         const unavailable = () => {
-          unavailableSince ??= Date.now();
           failures++;
+          this.listFailing.set(true);
         };
-        const expired = () => unavailableSince !== null && Date.now() - unavailableSince >= MKTG_RUN_POLL.timeoutMs;
-        const pause = () => this.refreshWarning.set('Automatic progress checks paused. Refresh progress to try again; the last loaded documents are kept.');
         const read = (poll = false) =>
           (poll ? this.documentStore.listDocuments(request.project, true) : this.documentStore.listDocuments(request.project)).pipe(
             filter(() => scope === currentScope()),
@@ -374,57 +367,55 @@ export class MktgDocumentsComponent {
               known = data;
               if (data.progressUnavailable) unavailable();
               else {
-                unavailableSince = null;
                 failures = 0;
+                this.listFailing.set(false);
               }
-              this.refreshWarning.set(data.progressUnavailable ? 'Run progress could not be fully refreshed. Retrying.' : '');
             }),
             catchError((error: unknown) => {
               if (scope !== currentScope()) return EMPTY;
               if (!known || !isTransientHttpError(error)) return throwError(() => error);
               unavailable();
-              this.refreshWarning.set('Could not refresh. Showing the last loaded documents; retrying.');
               return of(known);
             })
           );
-        const observe = () =>
-          read().pipe(
+        const observe = () => {
+          // A refused list is latched for this scope (RFC 9110 §15.5.4): no wake sends the same credentials again.
+          if (denied) return EMPTY;
+          return read().pipe(
             expand(() => {
-              if (expired()) {
-                pause();
-                return EMPTY;
-              }
-              let delay: number = MKTG_RUN_POLL.intervalMs;
-              if (failures) delay = Math.min(MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs, delay * 2 ** (failures - 1));
-              if (unavailableSince !== null) delay = Math.min(delay, Math.max(0, MKTG_RUN_POLL.timeoutMs - (Date.now() - unavailableSince)));
-              return timer(delay).pipe(
-                switchMap(() => {
-                  if (expired()) {
-                    pause();
-                    return EMPTY;
-                  }
-                  return read(true);
-                })
-              );
+              // After a failed or partial read: capped jittered backoff floored at the healthy interval, never a stop.
+              const delay = failures
+                ? pollBackoffDelayMs(failures, MKTG_RUN_POLL.intervalMs, MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs)
+                : MKTG_RUN_POLL.intervalMs;
+              return timer(delay).pipe(switchMap(() => read(true)));
             }),
-            takeUntil(this.listRefresh),
             catchError((error: HttpErrorResponse) => {
-              this.refreshWarning.set('');
+              console.error('Marketing OS documents list read failed', { status: error.status });
+              // A transient first read fails quietly behind the one line and the poller retries it (RFC 9110: 408, 429, 5xx, no
+              // response); only a final failure marks the list as failed.
+              if (isTransientHttpError(error)) {
+                unavailable();
+                return throwError(() => error);
+              }
+              this.listFailing.set(false);
               this.listFailed.set(true);
-              this.errorText.set(
-                error.status === 403 || error.status === 401
-                  ? 'You need write access to this project to see its Marketing OS documents.'
-                  : 'The documents could not be loaded. Try again in a moment.'
-              );
+              denied = error.status === 403 || error.status === 401;
+              this.errorText.set(denied ? 'You need write access to this project to see its Marketing OS documents.' : 'The documents could not be loaded.');
               return of(null);
             })
           );
+        };
+        // The shared poller retries a failed first read on its capped backoff and re-reads on tab return, focus or reconnect.
         return createVisibilityPoll(this.document, observe, {
           intervalMs: MKTG_RUN_POLL.intervalMs,
           backoffBaseMs: MKTG_RUN_POLL.intervalMs,
           backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
           shouldContinue: () => false,
-        }).pipe(switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error))));
+        }).pipe(
+          // A transient failure before any list is known keeps the loading state behind the one line: nothing may claim an absence.
+          filter((event) => event.kind === 'ok'),
+          map((event) => (event.kind === 'ok' ? event.value : null))
+        );
       })
     );
   }

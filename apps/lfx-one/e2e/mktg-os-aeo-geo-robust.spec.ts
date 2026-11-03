@@ -3,6 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { AUDIT_MARKDOWN, PAGE_LOAD_TIMEOUT, setupAudit } from './helpers/mktg-os-aeo-geo.helper';
+import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
 test('the Kit Website & web family opens the audit form from Create', async ({ page }, testInfo) => {
   const app = await setupAudit(page, { previous: true });
@@ -71,7 +72,7 @@ test('a missing document is an explicit error, not an invented scorecard', async
   await page.screenshot({ path: testInfo.outputPath('missing-document.png'), fullPage: true });
 });
 
-test('a stored revision read outage offers Check again and then reopens the report', async ({ page }, testInfo) => {
+test('a stored revision read outage shows the one plain line with no Check again button, then reopens the report on its own', async ({ page }, testInfo) => {
   const app = await setupAudit(page);
   app.state.reportReady = true;
   await app.go('/aeo-geo');
@@ -80,13 +81,15 @@ test('a stored revision read outage offers Check again and then reopens the repo
   await expect(page.getByTestId('mktg-document-view-generating')).toBeVisible();
   app.state.revisionReadError = true;
   app.state.persisted = true;
-  await expect(page.getByTestId('mktg-document-view-error')).toContainText('not been stored yet', { timeout: PAGE_LOAD_TIMEOUT });
-  await expect(page.getByTestId('mktg-document-view-retry')).toBeVisible();
+  // The outage is one quiet status line beside the page, never the error box; no Check again button.
+  await expect(page.getByTestId('mktg-document-view-refresh-warning')).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: PAGE_LOAD_TIMEOUT });
+  await expect(page.getByTestId('mktg-document-view-refresh-warning')).toHaveAttribute('role', 'status');
+  await expect(page.getByTestId('mktg-document-view-error')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
   expect(app.state.revisionReadFailures).toBeGreaterThan(0);
   await page.screenshot({ path: testInfo.outputPath('stored-revision-read-outage.png'), fullPage: true });
   app.state.revisionReadError = false;
-  await page.getByTestId('mktg-document-view-retry').click();
-  await expect(page.getByTestId('mktg-document-view-verdict')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-verdict')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
   await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('stored-revision-read-recovered.png'), fullPage: true });
 });

@@ -4,6 +4,7 @@
 import { expect, test } from '@playwright/test';
 
 import { MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
+import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
 test.use({ storageState: { cookies: [], origins: [] } });
 test.describe.configure({ timeout: 60000 });
@@ -151,7 +152,7 @@ test('non-writer sees an access message, never a run form', async ({ page }, inf
   await page.screenshot({ path: info.outputPath('no-access.png'), fullPage: true });
 });
 
-test('the document has a loading state, then a recoverable read error', async ({ page }, info) => {
+test('the document has a loading state, then keeps checking a transient read failure on its own with no Retry button', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   let release: (() => void) | undefined;
   const pending = new Promise<void>((resolve) => {
@@ -165,8 +166,9 @@ test('the document has a loading state, then a recoverable read error', async ({
   await expect(page.getByTestId('mktg-document-view-loading')).toContainText('Loading the document');
   await expect(page.getByTestId('member-360-download')).toHaveCount(0);
   release?.();
-  await expect(page.getByTestId('mktg-document-view-error')).toContainText('could not be loaded');
-  await expect(page.getByTestId('mktg-document-view-retry')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-refresh-warning')).toContainText(MKTG_POLL_RETRYING_TEXT);
+  await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-document-view-loading')).toBeVisible();
   await expect(page.getByTestId('member-360-download')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('document-error.png'), fullPage: true });
 });

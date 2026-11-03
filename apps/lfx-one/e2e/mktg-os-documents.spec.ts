@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
 import { MKTG_LAST_INTAKE_API } from '@lfx-one/shared/constants/mktg-last-intake.constants';
+import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
 import {
   DOCUMENTS_URL,
@@ -119,7 +120,7 @@ test.describe('Marketing OS current revisions', () => {
     });
   }
 
-  test('recovers an initial list failure with a same-scope Refresh progress', async ({ page }) => {
+  test('recovers an initial list failure on its own, behind the one plain line and no Refresh progress button', async ({ page }) => {
     await setupDocuments(page);
     let reads = 0;
     await page.route('**/api/mktg-agents/documents?*', (route) => {
@@ -128,12 +129,16 @@ test.describe('Marketing OS current revisions', () => {
       return route.fallback();
     });
     await openDocuments(page);
-    await expect(page.getByTestId('mktg-documents-list-failed')).toBeVisible();
-    await page.getByTestId('mktg-documents-refresh-progress').getByRole('button').click();
+    // A transient first read is not a failed list: the loading state stays behind the one plain line, and nothing claims an absence.
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText(MKTG_POLL_RETRYING_TEXT);
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveAttribute('role', 'status');
     await expect(page.getByTestId('mktg-documents-list-failed')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-refresh-progress')).toHaveCount(0);
     await expect(page.getByTestId('mktg-documents-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
     await expect(page.getByTestId('mktg-documents-revisions')).toBeVisible();
-    expect(reads).toBe(2);
+    expect(reads).toBeGreaterThanOrEqual(2);
   });
 
   test('Retry checks the recorded run without a Generate POST and keeps current selection', async ({ page }) => {
@@ -182,7 +187,7 @@ test.describe('Marketing OS current revisions', () => {
       return route.fallback();
     });
     await openDocuments(page);
-    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('last loaded', { timeout: progressReadTimeout });
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: progressReadTimeout });
     await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
     await expect(page.getByTestId('mktg-documents-started-runs')).toContainText('No runs in progress', { timeout: progressReadTimeout });
     await expect(page.getByTestId('mktg-documents-started-slot')).not.toHaveClass(/min-h-40/);
@@ -194,7 +199,7 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`)).toContainText('v2 · current');
   });
 
-  test('retains current selection on a transient type refetch and offers manual refresh', async ({ page }) => {
+  test('retains current selection on a transient type refetch and re-reads on its own, with no Refresh button', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page);
     await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
@@ -207,9 +212,9 @@ test.describe('Marketing OS current revisions', () => {
       return route.fallback();
     });
     await page.getByTestId('mktg-documents-nav-faq').click();
-    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('last loaded');
-    await page.getByTestId('mktg-documents-refresh-progress').getByRole('button').click();
-    await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText(MKTG_POLL_RETRYING_TEXT);
+    await expect(page.getByTestId('mktg-documents-refresh-progress')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0, { timeout: progressReadTimeout });
     await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
     await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
     await expect(page.getByTestId('mktg-documents-revisions').locator('tbody tr')).toHaveCount(3);
@@ -223,12 +228,14 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId(`mktg-documents-started-run-${run.runId}`)).toBeVisible();
     options.runs = [];
     options.progressUnavailable = true;
-    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('Retrying', { timeout: progressReadTimeout });
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: progressReadTimeout });
     await expect(page.getByTestId(`mktg-documents-started-run-${run.runId}`)).toBeVisible();
     await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-documents-pending-document')).toContainText('unavailable');
+    // The one connection-state line is the only answer: no second, explanatory line in the document slot.
+    await expect(page.getByTestId('mktg-documents-pending-document')).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-pending-document')).not.toContainText(/unavailable|checking/);
     await expect(page.getByTestId('mktg-documents-nav')).not.toContainText(/Not generated yet|No runs yet/);
-    await expect(page.getByTestId('mktg-documents-refresh-progress').getByRole('button')).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-refresh-progress')).toHaveCount(0);
   });
 
   for (const state of ['unavailable', 'started']) {
@@ -244,7 +251,13 @@ test.describe('Marketing OS current revisions', () => {
       url.searchParams.set('type', type.agentKey);
       await openDocuments(page, url.pathname + url.search);
       await expect(page.getByTestId('mktg-documents-empty-runs')).toHaveCount(0);
-      await expect(page.getByTestId('mktg-documents-pending-run')).toContainText(state === 'unavailable' ? 'unavailable' : 'recorded run');
+      if (state === 'unavailable') {
+        // The one connection-state line is the only answer; the runs slot adds no explanatory line.
+        await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText(MKTG_POLL_RETRYING_TEXT);
+        await expect(page.getByTestId('mktg-documents-pending-run')).toHaveCount(0);
+      } else {
+        await expect(page.getByTestId('mktg-documents-pending-run')).toContainText('recorded run');
+      }
     });
   }
 

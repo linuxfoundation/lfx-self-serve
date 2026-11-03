@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 import { ASSET_PROJECT, ASSET_REVISION } from './helpers/mktg-os-assets.helper';
 import { setupComments } from './helpers/mktg-os-comments.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+
+/** Long enough for the shared poller's first retry (the 5 s healthy interval, jittered up to twice that) plus the read itself. */
+const POLL_RECOVERY_TIMEOUT = 20_000;
 
 test.describe('asset field comments', () => {
   test.beforeEach(async ({ page }) => {
@@ -114,16 +118,20 @@ test.describe('asset field comments', () => {
     await expect(page.getByTestId('mktg-comments-empty')).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('comments-empty.png'), fullPage: true });
   });
-  test('shows a read failure without inventing an empty list and recovers on Retry', async ({ page }) => {
+  test('shows a read failure as one quiet line without inventing an empty list, and recovers on its own with no Retry button', async ({ page }) => {
     const fixture = await setupComments(page);
     fixture.state.failRead = true;
     await fixture.open();
     const panel = page.getByTestId('mktg-comments-panel');
-    await expect(panel.getByRole('alert')).toBeVisible();
+    await expect(panel.getByTestId('mktg-comments-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT);
+    await expect(panel.getByTestId('mktg-comments-retrying')).toHaveAttribute('role', 'status');
+    await expect(panel.getByRole('alert')).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Retry comments' })).toHaveCount(0);
     await expect(panel.getByTestId('mktg-comments-empty')).toHaveCount(0);
     fixture.state.failRead = false;
-    await panel.getByRole('button', { name: 'Retry comments' }).click();
-    await expect(panel.getByTestId('mktg-comments-empty')).toBeVisible();
+    // The shared poller's next check (capped backoff with jitter, never below the 5 s interval) reads the list again by itself.
+    await expect(panel.getByTestId('mktg-comments-empty')).toBeVisible({ timeout: POLL_RECOVERY_TIMEOUT });
+    await expect(panel.getByTestId('mktg-comments-retrying')).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('comments-read-recovered.png'), fullPage: true });
   });
 });

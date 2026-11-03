@@ -99,9 +99,10 @@ describe('MktgCommentsPanelComponent', () => {
     await fixture.whenStable();
     loadError.set('Synthetic refresh failure');
     await fixture.whenStable();
-    el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-retry"] button')?.click();
-    await fixture.whenStable();
-    expect(refresh).toHaveBeenCalledTimes(1);
+    // A failed read shows its line only: the service re-reads on its own, so the panel offers no Retry button.
+    expect(el.querySelector('[data-testid="mktg-comments-retry"]')).toBeNull();
+    expect(el.textContent).toContain('Synthetic refresh failure');
+    expect(refresh).not.toHaveBeenCalled();
     expect(el.querySelector('[data-testid="mktg-comments-loading"]')).toBeNull();
     expect(button?.getAttribute('aria-expanded')).toBe('true');
     threads.set([mktgCommentFixture({ text: 'Preview\nUpdated details', status: 'resolved', resolution: 'Agent explanation' })]);
@@ -407,8 +408,9 @@ describe('MktgCommentsPanelComponent', () => {
     loadError.set('Writer access required.');
     fixture.detectChanges();
     expect(element.querySelector('[role="alert"]')?.textContent).toContain('Writer access required.');
-    element.querySelector('button')?.click();
-    expect(refresh).toHaveBeenCalledTimes(1);
+    // The failed read is a plain line: no Retry button, and the service re-reads on its own.
+    expect(element.querySelector('[data-testid="mktg-comments-retry"]')).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
     loadError.set('');
     loaded.set(true);
     threads.set([]);
@@ -430,7 +432,7 @@ describe('MktgCommentsPanelComponent', () => {
     loadError.set(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
     fixture.detectChanges();
     expect(element.querySelector('[role="alert"]')?.textContent).toContain('write access');
-    expect(element.querySelector('[data-testid="mktg-comments-retry"]')).not.toBeNull();
+    expect(element.querySelector('[data-testid="mktg-comments-retry"]')).toBeNull();
     expect(element.querySelector('textarea')).toBeNull();
   });
 });

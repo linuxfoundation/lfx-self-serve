@@ -6,7 +6,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import { MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES, MKTG_POLL_RETRYING_TEXT, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import type { MktgDocumentComment, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFieldCommentsComponent } from '../../modules/mktg-os-agents/components/mktg-field-comments/mktg-field-comments.component';
@@ -267,12 +267,33 @@ describe('MktgDocumentCommentsService', () => {
     http.expectOne((request) => request.method === 'GET').flush({ error: 'private reply' }, { status: 503, statusText: 'Unavailable' });
     expect(service.loaded()).toBe(false);
     expect(service.loading()).toBe(false);
-    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.load);
+    expect(service.loadError()).toBe(MKTG_POLL_RETRYING_TEXT);
     expect(consoleError).toHaveBeenCalledWith('Asset comments read failed', { status: 503 });
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain('private reply');
   });
 
-  it('retains previously measured comments during a transient same-scope read failure and recovers manually', () => {
+  it('keeps a final read failure as its own line, not retried', () => {
+    service.select(SCOPE);
+    http.expectOne((request) => request.method === 'GET').flush('', { status: 404, statusText: 'Not found' });
+    expect(service.loaded()).toBe(false);
+    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.load);
+  });
+
+  it('retries a transient read on its own after the backoff, behind the one plain line, and clears it on the good read', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    service.select(SCOPE);
+    http.expectOne((request) => request.method === 'GET').flush('', { status: 503, statusText: 'Unavailable' });
+    expect(service.loadError()).toBe(MKTG_POLL_RETRYING_TEXT);
+    http.expectNone((request) => request.method === 'GET');
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    finishRead([thread()]);
+    expect(service.loadError()).toBe('');
+    expect(service.threads()).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it('retains previously measured comments during a transient same-scope read failure and recovers on the next read', () => {
     service.select(SCOPE);
     finishRead([thread()]);
     service.refresh();
@@ -286,17 +307,36 @@ describe('MktgDocumentCommentsService', () => {
     expect(service.threads()).toHaveLength(2);
   });
 
-  it.each([401, 403])('clears inaccessible comment data on read status %s', (status) => {
-    service.select(SCOPE);
-    finishRead([thread()]);
-    service.refresh();
-    http.expectOne((request) => request.method === 'GET').flush('', { status, statusText: 'Denied' });
-    expect(service.threads()).toEqual([]);
-    expect(service.loaded()).toBe(false);
-    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
-  });
+  it.each([401, 403])(
+    'clears inaccessible comment data on read status %s, never re-reads that scope on a wake, and reads it once more after another scope was selected',
+    (status) => {
+      service.select(SCOPE);
+      finishRead([thread()]);
+      service.refresh();
+      http.expectOne((request) => request.method === 'GET').flush('', { status, statusText: 'Denied' });
+      expect(service.threads()).toEqual([]);
+      expect(service.loaded()).toBe(false);
+      expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+      // RFC 9110 §15.5.4: the same credentials are refused again, so the denied scope is latched, not retried.
+      window.dispatchEvent(new Event('focus'));
+      service.refresh();
+      http.expectNone(() => true);
+      expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+      // Another scope reads normally.
+      service.select({ ...SCOPE, revisionId: `${SCOPE.revisionId}-next` });
+      TestBed.tick();
+      http.expectOne((request) => request.method === 'GET').flush({ revisionId: `${SCOPE.revisionId}-next`, threads: [] });
+      expect(service.loadError()).toBe('');
+      expect(service.loaded()).toBe(true);
+      // Back to the refused scope: the latch was cleared by the change of scope, so it is read once more (A → B → A).
+      service.select(SCOPE);
+      TestBed.tick();
+      http.expectOne((request) => request.method === 'GET').flush({ revisionId: SCOPE.revisionId, threads: [] });
+      expect(service.loadError()).toBe('');
+    }
+  );
 
-  it.each([401, 403])('shows a recoverable access-read failure after save status %s without an automatic POST retry', (status) => {
+  it.each([401, 403])('turns save status %s into a terminal access line: no automatic POST retry and no re-read of the refused scope', (status) => {
     service.select(SCOPE);
     finishRead([thread()]);
     service.add({ kind: 'field', key: 'mf.tagline' }, 'Change it.', 'request').subscribe({ error: vi.fn() });
@@ -307,9 +347,10 @@ describe('MktgDocumentCommentsService', () => {
     expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
     http.expectNone(() => true);
     service.refresh();
-    finishRead([]);
-    expect(service.loadError()).toBe('');
-    expect(service.loaded()).toBe(true);
+    window.dispatchEvent(new Event('focus'));
+    http.expectNone(() => true);
+    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+    expect(service.loaded()).toBe(false);
   });
 
   it('cancels a pending read after a denied save so stale data cannot reappear', () => {

@@ -7,7 +7,14 @@ import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_STARTED_RUN_POLL_WINDOW_MS } from '@lfx-one/shared/constants';
+import {
+  MKTG_AGENT_INTAKES,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
+  MKTG_STARTED_RUN_POLL_WINDOW_MS,
+} from '@lfx-one/shared/constants';
 import {
   MktgDocumentDetailResponse,
   MktgDocumentsResponse,
@@ -93,7 +100,10 @@ describe('MktgDocumentsComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
-  async function render(url = '/?type=brand-kit'): Promise<void> {
+  async function render(url = '/?type=brand-kit', jitter = 0): Promise<void> {
+    // The retry backoff carries jitter at or above the healthy interval; pinned at 0 every retry waits exactly that interval,
+    // pinned at 1 the ceilings double from twice the interval (10 s, 20 s, 30 s cap).
+    vi.spyOn(Math, 'random').mockReturnValue(jitter);
     await TestBed.inject(Router).navigateByUrl(url);
     fixture = TestBed.createComponent(MktgDocumentsComponent);
     await fixture.whenStable();
@@ -391,10 +401,13 @@ describe('MktgDocumentsComponent', () => {
     store.listDocuments.mockReturnValue(of(data));
     await render('/?type=' + type.agentKey);
     expect(query('mktg-documents-empty-runs')).toBeNull();
-    expect(query('mktg-documents-pending-run')).not.toBeNull();
-    expect(query('mktg-documents-pending-run')?.textContent).toContain(
-      state === 'unavailable' ? 'unavailable' : 'use its Started runs link to follow progress, answer its questions or retry it.'
-    );
+    if (state === 'unavailable') {
+      // The one connection-state line is the only answer; the runs slot adds no explanatory line.
+      expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-documents-pending-run')).toBeNull();
+    } else {
+      expect(query('mktg-documents-pending-run')?.textContent).toContain('use its Started runs link to follow progress, answer its questions or retry it.');
+    }
   });
 
   it('shows a run type’s runs, or says there are none yet', async () => {
@@ -581,7 +594,7 @@ describe('MktgDocumentsComponent', () => {
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('last loaded');
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
     expect(query('mktg-documents-document-subtitle')).not.toBeNull();
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
@@ -591,42 +604,52 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
   });
 
-  it.each(['unavailable', 'transient'])('backs off and bounds consecutive %s reads, then manual refresh resets the budget', async (kind) => {
-    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
-    if (kind === 'unavailable') store.listDocuments.mockReturnValue(of({ ...documentsResponse(), progressUnavailable: true }));
-    else
-      store.listDocuments
-        .mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun()] }))
-        .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
-    await render();
-    if (kind === 'transient') {
+  it.each(['unavailable', 'transient'])(
+    'backs off consecutive %s reads with a cap and never stops: no deadline, no button, the line clears on a good read',
+    async (kind) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      if (kind === 'unavailable') store.listDocuments.mockReturnValue(of({ ...documentsResponse(), progressUnavailable: true }));
+      else
+        store.listDocuments
+          .mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun()] }))
+          .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      await render('/?type=brand-kit', 1);
+      if (kind === 'transient') {
+        vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+        await fixture.whenStable();
+      }
+      const first = store.listDocuments.mock.calls.length;
       vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
       await fixture.whenStable();
+      expect(store.listDocuments).toHaveBeenCalledTimes(first);
+      vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+      expect(store.listDocuments).toHaveBeenCalledTimes(first + 1);
+      vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+      expect(store.listDocuments).toHaveBeenCalledTimes(first + 1);
+      vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+      expect(store.listDocuments).toHaveBeenCalledTimes(first + 2);
+      fixture.detectChanges();
+      expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-documents-refresh-progress')).toBeNull();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-documents-refresh-warning')?.textContent).not.toContain('paused');
+      // Past the run deadline the checks go on at the capped backoff.
+      const count = store.listDocuments.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
+      expect(store.listDocuments).toHaveBeenCalledTimes(count + 1);
+      store.listDocuments.mockReturnValue(of(documentsResponse()));
+      await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(query('mktg-documents-refresh-warning')).toBeNull();
     }
-    const first = store.listDocuments.mock.calls.length;
-    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
-    await fixture.whenStable();
-    expect(store.listDocuments).toHaveBeenCalledTimes(first + 1);
-    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
-    await fixture.whenStable();
-    expect(store.listDocuments).toHaveBeenCalledTimes(first + 1);
-    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
-    await fixture.whenStable();
-    expect(store.listDocuments).toHaveBeenCalledTimes(first + 2);
-    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('paused');
-    const stopped = store.listDocuments.mock.calls.length;
-    vi.advanceTimersByTime(2 * MKTG_RUN_POLL.timeoutMs);
-    expect(store.listDocuments).toHaveBeenCalledTimes(stopped);
-    store.listDocuments.mockReturnValue(of(documentsResponse()));
-    query('mktg-documents-refresh-progress')?.querySelector('button')?.click();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(store.listDocuments).toHaveBeenCalledTimes(stopped + 1);
-    expect(query('mktg-documents-refresh-warning')).toBeNull();
-  });
+  );
 
   it.each(['writing', 'storing'] as const)('keeps healthy %s polling live while the server remains authoritative', async (state) => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
@@ -652,41 +675,99 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-started-slot')?.classList.contains('min-h-40')).toBe(false);
   });
 
-  it.each([401, 403, 500])('shows recovered list content after initial %s and successful same-scope refresh', async (status) => {
-    store.listDocuments.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status }))).mockReturnValue(of(documentsResponse()));
+  it('retries a failed first list read on the capped backoff behind the one plain line, then shows the list; no button', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.listDocuments.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 }))).mockReturnValue(of(documentsResponse()));
     await render();
-    expect(query('mktg-documents-list-failed')).not.toBeNull();
-    expect(query('mktg-documents-error')).not.toBeNull();
-    const refresh = query('mktg-documents-refresh-progress')?.querySelector('button');
-    if (!refresh) throw new Error('Missing list refresh control');
-    refresh.click();
+    // A transient first read is not a failed list: the loading state stays behind the one plain line; nothing claims an absence.
+    expect(query('mktg-documents-list-failed')).toBeNull();
+    expect(query('mktg-documents-loading')).not.toBeNull();
+    expect(query('mktg-documents-empty-living')).toBeNull();
+    expect(query('mktg-documents-error')).toBeNull();
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-documents-refresh-warning')?.getAttribute('role')).toBe('status');
+    expect(query('mktg-documents-refresh-progress')).toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     fixture.detectChanges();
     expect(store.listDocuments).toHaveBeenCalledTimes(2);
     expect(query('mktg-documents-list-failed')).toBeNull();
-    expect(query('mktg-documents-error')).toBeNull();
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
     expect(query('mktg-documents-revisions')).not.toBeNull();
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
   });
 
-  it('retains same-scope revisions on a detail 503 and allows explicit recheck', async () => {
-    store.getDocument
-      .mockReturnValueOnce(of(detail))
-      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
-      .mockReturnValue(of(detail));
+  it.each([401, 403])('keeps a denied list read terminal: a plain line, no retry and no button (%s)', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
     await render();
-    fixture.componentInstance['onRefreshProgress']();
+    expect(query('mktg-documents-list-failed')).not.toBeNull();
+    expect(query('mktg-documents-error')?.textContent).toContain('write access');
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
+    expect(query('mktg-documents-refresh-progress')).toBeNull();
+    await vi.advanceTimersByTimeAsync(2 * MKTG_POLL_MAX_BACKOFF_MS);
+    // RFC 9110 §15.5.4: the refused scope is latched; a wake does not send the same credentials again.
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(store.listDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains same-scope revisions on a detail 503 behind the plain line, with no recheck button', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const updated = documentsResponse();
+    const current = updated.groups.find((group) => group.type.agentKey === BRAND_KIT.agentKey)?.documents[0];
+    if (!current) throw new Error('Missing synthetic document');
+    current.revisionCount = 3;
+    store.listDocuments.mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun()] })).mockReturnValue(of(updated));
+    store.getDocument.mockReturnValueOnce(of(detail)).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await render();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     fixture.detectChanges();
+    expect(store.getDocument).toHaveBeenCalledTimes(2);
     expect(query('mktg-documents-revision-2')).not.toBeNull();
     expect(query('mktg-documents-revisions')).not.toBeNull();
-    expect(query('mktg-documents-refresh-progress')).not.toBeNull();
-    fixture.componentInstance['onRefreshProgress']();
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-documents-refresh-progress')).toBeNull();
+  });
+
+  it('keeps the one line while the list is still failing, even after a good detail read, and clears it on the next good list read', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const updated = documentsResponse();
+    const current = updated.groups.find((group) => group.type.agentKey === BRAND_KIT.agentKey)?.documents[0];
+    if (!current) throw new Error('Missing synthetic document');
+    current.revisionCount = 3;
+    store.listDocuments
+      .mockReturnValueOnce(of({ ...updated, runs: [startedRun()] }))
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockReturnValue(of(updated));
+    store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 }))).mockReturnValue(of(detail));
+    await render();
+    // Both readers failed once: one line, not two.
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="mktg-documents-refresh-warning"]').length).toBe(1);
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(store.getDocument).toHaveBeenCalledTimes(3);
-    expect(query('mktg-documents-revision-2')).not.toBeNull();
-    expect(query('mktg-documents-error')).toBeNull();
+    // The detail read succeeded while the list read failed again: the list's line stays (no flicker, law 5).
+    expect(store.getDocument.mock.results.length).toBeGreaterThanOrEqual(2);
+    expect(query('mktg-documents-revisions')).not.toBeNull();
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
+  });
+
+  it('drops the detail line when the document is deselected: nothing is read for the overview, so nothing is retrying', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await render();
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    await TestBed.inject(Router).navigateByUrl('/');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
   });
 
   it('refetches detail when revisionCount grows without changing the acknowledged current id', async () => {
@@ -820,10 +901,13 @@ describe('MktgDocumentsComponent', () => {
       fixture.detectChanges();
     }
     expect(query('mktg-documents-empty-living')).toBeNull();
-    expect(query('mktg-documents-pending-document')?.textContent).toContain('unavailable');
+    expect(query('mktg-documents-pending-document')).not.toBeNull();
+    // The one connection-state line is the only answer: no second, explanatory line in the document slot.
+    expect(query('mktg-documents-pending-document')?.textContent).not.toMatch(/unavailable|checking|Refresh/);
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
     expect(query('mktg-documents-nav')?.textContent).not.toMatch(/Not generated yet|No runs yet/);
     expect(!!query('mktg-documents-open-started-' + startedRun().runId)).toBe(hasKnownRun);
-    expect(query('mktg-documents-refresh-progress')?.tagName).toBe('LFX-BUTTON');
+    expect(query('mktg-documents-refresh-progress')).toBeNull();
   });
 
   it('lets new server rows replace known rows while keeping missing same-scope rows', async () => {
@@ -841,26 +925,26 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-nav-brand-kit')?.textContent).not.toContain('Not generated yet');
   });
 
-  it('stops polling a repeatedly returned stale writing snapshot flagged unavailable by the server', async () => {
+  it('keeps checking a repeatedly returned stale writing snapshot flagged unavailable by the server, at the capped backoff', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     const stale = { ...startedRun(), startedAt: new Date(Date.now() - MKTG_STARTED_RUN_POLL_WINDOW_MS - 1).toISOString() };
     store.listDocuments
       .mockReturnValueOnce(of({ ...documentsResponse(), runs: [stale] }))
       .mockReturnValue(of({ ...documentsResponse(), runs: [stale], progressUnavailable: true }));
-    await render();
+    // Jitter pinned at the ceiling so the cap is reached and each capped wait is exactly 30 s.
+    await render('/?type=brand-kit', 1);
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('paused');
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
     expect(query('mktg-documents-started-run-' + stale.runId)).not.toBeNull();
-    const stopped = store.listDocuments.mock.calls.length;
-    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
-    expect(store.listDocuments).toHaveBeenCalledTimes(stopped);
+    const count = store.listDocuments.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
+    expect(store.listDocuments).toHaveBeenCalledTimes(count + 1);
     store.listDocuments.mockReturnValue(of(documentsResponse()));
-    query('mktg-documents-refresh-progress')?.querySelector('button')?.click();
+    await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(store.listDocuments).toHaveBeenCalledTimes(stopped + 1);
     expect(query('mktg-documents-refresh-warning')).toBeNull();
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
   });
@@ -870,7 +954,7 @@ describe('MktgDocumentsComponent', () => {
     store.listDocuments.mockReturnValueOnce(of({ ...documentsResponse(), runs: [], progressUnavailable: true })).mockReturnValueOnce(of(documentsResponse()));
     await render();
     expect(query('mktg-documents-started-runs')).toBeNull();
-    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('Retrying');
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
@@ -919,10 +1003,11 @@ describe('MktgDocumentsComponent', () => {
   });
 
   it('shows only the error when the documents list cannot be read, never an empty state', async () => {
-    store.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    store.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400 })));
     await render();
 
     expect(query('mktg-documents-error')?.textContent).toContain('The documents could not be loaded');
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
     expect(query('mktg-documents-list-failed')).not.toBeNull();
     expect(query('mktg-documents-empty-living')).toBeNull();
     expect(query('mktg-documents-empty-runs')).toBeNull();

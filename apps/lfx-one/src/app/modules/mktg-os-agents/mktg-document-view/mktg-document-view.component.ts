@@ -42,6 +42,7 @@ import {
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
   MKTG_AGENTS,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_PROGRESS_POLL,
   MKTG_STARTED_RUN_ID_REGEX,
@@ -66,6 +67,7 @@ import {
   MktgDocumentLocalProgress,
   MktgDocumentRunProgress,
   MktgGenerateProgress,
+  MktgPendingDocumentRun,
   MktgPendingGeneration,
   MktgDocumentCommentScope,
   MktgRedraftLanding,
@@ -152,7 +154,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
-import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
+import { createVisibilityPoll, pollBackoffDelayMs } from '@shared/utils/visibility-poll.util';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -236,7 +238,6 @@ export class MktgDocumentViewComponent {
   protected readonly failureDetails = signal('');
   protected readonly runHistory = signal<MktgDocumentListItem[]>([]);
   protected readonly historyError = signal('');
-  protected readonly reload = signal(0);
   protected readonly errorText = signal('');
   protected readonly notice = signal('');
   protected readonly downloadingWorkbook = signal(false);
@@ -271,12 +272,13 @@ export class MktgDocumentViewComponent {
   private redirectedRun = '';
   protected readonly projectUid = computed(() => this.projectContext.activeContextUid());
   protected readonly publicProgressPolling = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.kind === 'living');
+  /** The progress reader renders no line of its own while headless; then this view's one status line is the only one. */
+  protected readonly progressHeadless = computed(() => this.loading() || !!this.closedRun() || (this.publicProgressPolling() && this.runState() !== 'failed'));
   protected readonly progressRefreshKey = signal('0');
   private readonly refreshedFailures = new Set<string>();
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
   private loadedScope = '';
-  private progressReadUnavailable = false;
   private readonly concurrentAnswers = inject(MktgRunAnswersService);
   protected readonly answeredNotice = computed(() => this.concurrentAnswers.notice(this.projectUid(), this.params().agentKey, this.params().documentId));
 
@@ -466,7 +468,7 @@ export class MktgDocumentViewComponent {
       revisionId: this.revisionParam(),
       runId: this.runParam(),
       generation: this.generationParam(),
-      reload: this.reloads() + this.reload(),
+      reload: this.reloads(),
     }))
   );
 
@@ -537,7 +539,6 @@ export class MktgDocumentViewComponent {
   protected readonly aeoPrintOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   protected readonly activity = signal<MktgRunActivity[]>([]);
   protected readonly aeoActivityStartedAt = signal(0);
-  protected readonly retryGenerating = signal(false);
   protected readonly isAeoDocument = computed(() => this.isPendingReportAgent(this.params().agentKey));
   protected readonly aeoHeaderTitle = computed(() => {
     const site = this.view()?.aeoGeoReport?.domain;
@@ -619,7 +620,6 @@ export class MktgDocumentViewComponent {
             this.progressRefreshKey.update((value) => String(Number(value) + 1));
             // 145: a refresh is not a new reader selection. Keep the mounted body, choices and announcements.
             if (selectionChanged) {
-              this.progressReadUnavailable = false;
               if (request.runId) {
                 this.loading.set(true);
                 this.view.set(null);
@@ -773,13 +773,12 @@ export class MktgDocumentViewComponent {
                 view: null,
               };
             }
-            let unavailableSince: number | null = null;
             let unavailableCount = 0;
             let observedRun = false;
+            // One plain connection-state line while a check fails; it clears on the next good read and the loaded asset stays.
             const unavailable = () => {
-              unavailableSince ??= Date.now();
               unavailableCount++;
-              this.refreshWarning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
+              this.refreshWarning.set(MKTG_POLL_RETRYING_TEXT);
             };
             const read = (poll: boolean) => {
               const readerSubject = this.userService.user()?.sub ?? '';
@@ -841,7 +840,6 @@ export class MktgDocumentViewComponent {
                   known = cycle;
                   if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) unavailable();
                   else {
-                    unavailableSince = null;
                     unavailableCount = 0;
                     this.refreshWarning.set('');
                   }
@@ -870,7 +868,7 @@ export class MktgDocumentViewComponent {
                 })
               );
             };
-            // Living reads (metadata AND body) have one availability budget in the shared component.
+            // Living reads (metadata AND body) share the progress component's one reader and its retry policy.
             const detail$ = (
               type?.kind === 'living'
                 ? this.publicReads.pipe(
@@ -900,14 +898,9 @@ export class MktgDocumentViewComponent {
                       read(false).pipe(
                         expand(() => {
                           if (readMktgRetiredRunHint(this.selectedRun())) return EMPTY;
-                          const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
-                          if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
-                            this.refreshWarning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
-                            return EMPTY;
-                          }
-                          let delay: number = this.selectedRun()?.state === 'questions' ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
-                          if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
-                          if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
+                          const base: number = this.selectedRun()?.state === 'questions' ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
+                          // After a failed or partial read: capped jittered backoff floored at the healthy interval, never a stop.
+                          const delay = unavailableCount ? pollBackoffDelayMs(unavailableCount, base, MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs) : base;
                           return timer(delay).pipe(switchMap(() => read(true)));
                         })
                       ),
@@ -917,7 +910,15 @@ export class MktgDocumentViewComponent {
                       backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
                       shouldContinue: () => false,
                     }
-                  ).pipe(switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error))))
+                  ).pipe(
+                    switchMap((event) => {
+                      if (event.kind === 'ok') return of(event.value);
+                      // A transient first read fails quietly and the poller retries it; anything else is terminal.
+                      if (!isTransientHttpError(event.error)) return throwError(() => event.error);
+                      unavailable();
+                      return EMPTY;
+                    })
+                  )
             ).pipe(
               map((cycle) => cycle.view),
               catchError((error: HttpErrorResponse) => {
@@ -985,20 +986,15 @@ export class MktgDocumentViewComponent {
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
     if (this.publicProgressPolling() && cycle.detail.progressUnavailable) {
       this.runDetail.set(cycle.detail);
-      this.refreshWarning.set('Run progress could not be checked. Showing available content; checking again.');
-      if (selectedRunId || !cycle.view) {
-        this.progressReadUnavailable = true;
-        this.errorText.set('This run could not be verified. Refresh to check its saved state.');
-      }
+      // One quiet status line, with or without a body to show; the progress reader keeps checking on its own.
+      this.refreshWarning.set(MKTG_POLL_RETRYING_TEXT);
       // A plain URL may show its verified revision; a selected unverified run must not expose an older body.
       this.publicReads.next({ ...cycle, view: selectedRunId ? null : cycle.view });
       this.loading.set(false);
       return;
     }
-    if (this.progressReadUnavailable) {
-      this.progressReadUnavailable = false;
-      this.errorText.set('');
-    }
+    // A good public cycle clears the line a partial one put up.
+    if (this.publicProgressPolling()) this.refreshWarning.set('');
     if (
       !this.publicProgressPolling() ||
       cycle.detail.progressUnavailable ||
@@ -1351,11 +1347,6 @@ export class MktgDocumentViewComponent {
     });
   }
 
-  protected retryLoad(): void {
-    if (this.submittingGeneration()) return;
-    this.reload.update((value) => value + 1);
-  }
-
   protected onRestore(revision: MktgRevisionSummary): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
@@ -1590,7 +1581,7 @@ export class MktgDocumentViewComponent {
     if (status === 404) {
       return code === 'MKTG_DOCUMENT_NOT_FOUND' ? 'This document could not be found.' : 'This document has no such revision.';
     }
-    return 'This revision could not be loaded. Try again in a moment.';
+    return 'This revision could not be loaded.';
   }
 
   // === Private helpers ===
@@ -1688,7 +1679,6 @@ export class MktgDocumentViewComponent {
   private loadAeoReport(project: string, agentKey: string, documentId: string, revisionId: string, user: string | undefined) {
     this.generating.set(false);
     this.activity.set([]);
-    this.retryGenerating.set(false);
     this.view.set(null);
     if (!project || !documentId || !user) return EMPTY;
     const pending = this.pendingDocuments.load(project, documentId);
@@ -1712,34 +1702,58 @@ export class MktgDocumentViewComponent {
               return id ? this.documentStore.getRevision(project, agentKey, documentId, id) : throwError(() => new HttpErrorResponse({ status: 404 }));
             })
           );
-    return read().pipe(
-      catchError((error: HttpErrorResponse) => {
-        if (error.status !== 404 || !canResume || !pending || !intake) throw error;
-        this.generating.set(true);
-        return this.pendingDocuments.waitForStorage(pending, intake, (activity) => this.activity.set(activity)).pipe(switchMap(() => read()));
+    // The storage wait's budget is absolute from the moment this view first began waiting (persisted with the pending
+    // record, so a tab return, a focus or a reload never moves it); research and answering time are not spent from it.
+    // Only a record that cannot be anchored falls back to the run's savedAt.
+    const deadlineFor = (run: MktgPendingDocumentRun): number => {
+      const anchor = Date.parse(run.waitStartedAt ?? run.savedAt);
+      return (Number.isFinite(anchor) ? anchor : Date.now()) + MKTG_RUN_POLL.timeoutMs;
+    };
+    let denied = false;
+    const attempt = () => {
+      // A refused read is latched for this report (RFC 9110 §15.5.4): no wake sends the same credentials again.
+      if (denied) return EMPTY;
+      return read().pipe(
+        catchError((error: HttpErrorResponse) => {
+          if (error.status !== 404 || !canResume || !pending || !intake) throw error;
+          this.generating.set(true);
+          const anchored = this.pendingDocuments.markWaitStarted(pending);
+          return this.pendingDocuments
+            .waitForStorage(anchored, intake, (activity) => this.activity.set(activity), deadlineFor(anchored))
+            .pipe(switchMap(() => read()));
+        }),
+        tap(() => this.pendingDocuments.clear(project, documentId)),
+        catchError((error: unknown) => {
+          console.error('Failed to load the audit document', error);
+          const status = error instanceof HttpErrorResponse ? error.status : 0;
+          const refused = error instanceof MktgRunRefusalError;
+          // A transient HTTP failure (RFC 9110: 408, 429, 5xx, no response) is retried by the poller below; a refusal, the
+          // audit's own deadline and everything else, HTTP or not, is final.
+          if (!refused && !(error instanceof TimeoutError) && isTransientHttpError(error)) throw error;
+          denied = status === 401 || status === 403;
+          if (refused) this.errorText.set(error.message);
+          else if (error instanceof TimeoutError) this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
+          else this.errorText.set(this.loadErrorText(status, error instanceof HttpErrorResponse ? error.error?.code : undefined));
+          return of(null);
+        })
+      );
+    };
+    // One read that retries itself on the shared poller's capped backoff and again on tab return, focus or reconnect; no button.
+    return createVisibilityPoll(this.document, attempt, {
+      intervalMs: 0,
+      backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+      backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+      shouldContinue: () => false,
+    }).pipe(
+      tap((event) => {
+        this.generating.set(false);
+        // A transient failure is one quiet status line; a report that arrives, or a final failure's own text, clears it.
+        this.refreshWarning.set(event.kind === 'error' ? MKTG_POLL_RETRYING_TEXT : '');
+        if (event.kind === 'ok' && event.value) this.errorText.set('');
       }),
-      tap(() => this.pendingDocuments.clear(project, documentId)),
-      catchError((error: unknown) => {
-        console.error('Failed to load the audit document', error);
-        const status = error instanceof HttpErrorResponse ? error.status : undefined;
-        const refused = error instanceof MktgRunRefusalError;
-        this.retryGenerating.set(!refused && (status === undefined || isTransientHttpError(error)));
-        if (refused) {
-          this.errorText.set(error.message);
-        } else if (error instanceof TimeoutError) {
-          this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
-        } else if (this.retryGenerating()) {
-          this.errorText.set(
-            !this.generating() && !canResume
-              ? 'The report could not be loaded. Check again.'
-              : 'The report has not been stored yet. Try checking again; starting a new audit creates a separate report.'
-          );
-        } else {
-          this.errorText.set(this.loadErrorText(status ?? 0, error instanceof HttpErrorResponse ? error.error?.code : undefined));
-        }
-        return of(null);
-      }),
-      tap(() => this.generating.set(false))
+      // A loaded report stays through a failed re-read (last loaded content stays): only a result replaces it.
+      filter((event) => event.kind === 'ok' || !this.view()),
+      map((event) => (event.kind === 'ok' ? event.value : null))
     );
   }
 }

@@ -188,23 +188,16 @@
         [runAgentId]="runAgentId()"
         [externalActivity]="visibleRunActivity()"
         [suppressCard]="runFailed() || !!closedRun() || (memberQuestionsCreator() && selectedRun()?.state === 'questions')"
-        [headless]="loading() || !!closedRun() || (publicProgressPolling() && runState() !== 'failed')"
+        [headless]="progressHeadless()"
         (observed)="onPublicProgress($event)"
         (readError)="onPublicProgressError($event)"
         (retry)="onRetryRun()"
         (openIntake)="onOpenIntake()"
         (refresh)="onRefreshProgress()" />
     }
-    @if (!publicProgressPolling() && refreshWarning()) {
-      <div class="flex flex-wrap items-center gap-2" data-testid="mktg-document-view-refresh-warning">
-        <p class="text-xs text-gray-500">{{ refreshWarning() }}</p>
-        <lfx-button
-          label="Refresh"
-          [text]="true"
-          [disabled]="submittingGeneration()"
-          (onClick)="onRefreshProgress()"
-          data-testid="mktg-document-view-refresh-progress" />
-      </div>
+    <!-- One quiet connection-state line: this view's while the progress reader is headless, the reader's own otherwise. -->
+    @if (refreshWarning() && (!publicProgressPolling() || progressHeadless())) {
+      <p class="text-xs text-gray-500" role="status" data-testid="mktg-document-view-refresh-warning">{{ refreshWarning() }}</p>
     }
 
     @if (answeredNotice(); as concurrent) {
@@ -229,8 +222,6 @@
             <p class="mt-3 whitespace-pre-wrap break-words text-sm text-gray-600" data-testid="member-360-failure-message">{{ failureDetails() }}</p>
           </details>
         }
-      } @else if (!isAeoDocument()) {
-        <lfx-button label="Retry" [text]="true" [disabled]="submittingGeneration()" (onClick)="retryLoad()" data-testid="mktg-document-view-retry" />
       }
     }
     @if (profileWarning()) {
@@ -255,15 +246,6 @@
           data-testid="mktg-document-view-run-again"
           >Run again</a
         >
-      }
-      @if (retryGenerating()) {
-        <button
-          type="button"
-          class="self-start min-h-10 rounded-lg border border-gray-300 px-4 text-blue-600"
-          data-testid="mktg-document-view-retry"
-          (click)="reload.set(reload() + 1)">
-          Check again
-        </button>
       }
       @if (loading()) {
         @if (generating() && activity().length > 0) {

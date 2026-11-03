@@ -6,7 +6,7 @@ import { _IdGenerator } from '@angular/cdk/a11y';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
-import { MKTG_DOCUMENT_COMMENT_LIMITS } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_COMMENT_LIMITS, MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 import type { MktgDocumentCommentScope, MktgRedraftLanding, MktgRedraftProgress, MktgRunActivity } from '@lfx-one/shared/interfaces';
 import { mktgDocumentCommentTab } from '@lfx-one/shared/utils';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
@@ -24,6 +24,7 @@ import { MktgCommentThreadComponent } from '../mktg-comment-thread/mktg-comment-
 export class MktgCommentsPanelComponent {
   private readonly destroyRef = inject(DestroyRef);
   protected readonly comments = inject(MktgDocumentCommentsService);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   private readonly redrafts = inject(MktgDocumentRedraftClientService);
   private readonly ids = inject(_IdGenerator);
 
@@ -93,9 +94,6 @@ export class MktgCommentsPanelComponent {
       return next;
     });
   }
-  protected refresh(): void {
-    this.comments.refresh();
-  }
   protected send(): void {
     if (!this.maySend()) return;
     if (!this.retrySend()) {
@@ -143,7 +141,7 @@ export class MktgCommentsPanelComponent {
   }
   private initDisabledReason(): Signal<string> {
     return computed(() => {
-      if (this.comments.loadError()) return 'Retry comments before sending.';
+      if (this.comments.loadError()) return this.comments.loadError();
       if (!this.comments.loaded() || this.comments.loading()) return 'Loading comments…';
       if (this.comments.saving()) return 'Saving your comment…';
       if (this.runPending()) return 'Waiting for this redraft…';
