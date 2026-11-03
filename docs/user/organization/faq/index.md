@@ -10,7 +10,7 @@ intercom_collection: Organization
 
 ## How do I switch to a different organization?
 
-You switch organizations from the organization switcher at the top of the sidebar in the Organization lens. Select it, then select another organization from the list. You stay on the same page, now showing the organization you picked, unless your only role on that organization is CLA Manager, in which case you land on its **EasyCLA** page. The browser's Back button usually returns you to the previous one. If you can open only one organization, the switcher has no list to open. See [How do I switch to a different organization?](../choose-an-organization/#how-do-i-switch-to-a-different-organization).
+You switch organizations from the organization switcher at the top of the sidebar in the Organization lens. Select it, then select another organization from the list. You stay on the same page, now showing the organization you picked, unless your only role on that organization is CLA Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), in which case you land on its **EasyCLA** page. The browser's Back button usually returns you to the previous one. If you can open only one organization, the switcher has no list to open. See [How do I switch to a different organization?](../choose-an-organization/#how-do-i-switch-to-a-different-organization).
 
 ## What does the Org Overview dashboard show?
 
@@ -22,7 +22,7 @@ You can change a corporate CLA (CCLA) only when you are a CLA Manager named on t
 
 ## Why can't I see my company in the Organization lens?
 
-You see EasyCLA for an organization you can open in the Organization lens. If you are a CLA Manager for a company that does not appear there, manage that company's agreements in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself hide a company: Linux Foundation staff can open organizations that are not members. A CLA Manager with no other Organization lens role sees **EasyCLA** and nothing else in the sidebar. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+You see EasyCLA for an organization you can open in the Organization lens. If you are a CLA Manager for a company that does not appear there, manage that company's agreements in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself hide a company: Linux Foundation staff can open organizations that are not members. A CLA Manager, or an initial CLA Manager designee, with no other Organization lens role sees **EasyCLA** and nothing else in the sidebar. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
 ## What does "View only" mean on a corporate CLA?
 

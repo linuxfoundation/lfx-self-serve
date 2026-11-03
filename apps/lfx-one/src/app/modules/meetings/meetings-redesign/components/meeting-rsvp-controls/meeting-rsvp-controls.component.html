@@ -14,7 +14,8 @@
         [disabled]="busy()"
         [attr.aria-label]="'Your RSVP: ' + answer.label + '. Change'"
         data-testid="meetings-home-rsvp-status">
-        <lfx-ui-badge [tone]="answer.tone">
+        <!-- 112px wide per the design, so the chip keeps its size across answers. -->
+        <lfx-ui-badge class="w-[112px] justify-center" [tone]="answer.tone">
           @if (saving()) {
             <lfx-ui-spinner tone="current" [size]="12" label="Saving RSVP" />
           } @else {
