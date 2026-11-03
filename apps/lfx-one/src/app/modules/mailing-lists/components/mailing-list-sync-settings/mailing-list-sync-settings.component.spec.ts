@@ -8,7 +8,7 @@ import type { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { asapScheduler, delay, dematerialize, materialize, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MailingListSyncSettingsComponent } from './mailing-list-sync-settings.component';
@@ -45,7 +45,17 @@ describe('MailingListSyncSettingsComponent', () => {
   ): Promise<void> => {
     TestBed.resetTestingModule();
     updateMailingList = vi.fn(() =>
-      options.updateResult === 'error' ? throwError(() => new Error('upstream rejected')) : of(options.updateResult ?? mailingList)
+      // materialize/delay(0, asapScheduler)/dematerialize so a failed save's catchError revert
+      // lands asynchronously, matching the real network round-trip — letting tests observe the
+      // optimistic toggle state before it reverts (#4880 review regression test). A bare delay(0)
+      // does NOT delay error notifications (RxJS passes errors through `delay` immediately, only
+      // `next`/`complete` are queued), so the error is materialized into a `next` notification
+      // first to force it through the delay queue. asapScheduler (microtask-based) rather than
+      // the default async (real-timer) scheduler so `await fixture.whenStable()` — which only
+      // flushes microtasks/the Angular zone, not real timers — actually observes the revert.
+      options.updateResult === 'error'
+        ? throwError(() => new Error('upstream rejected')).pipe(materialize(), delay(0, asapScheduler), dematerialize())
+        : of(options.updateResult ?? mailingList)
     );
     getMailingListsByCommittee = vi.fn(() => of(options.siblingLists ?? []));
     messageAdd = vi.fn();
@@ -117,5 +127,49 @@ describe('MailingListSyncSettingsComponent', () => {
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
     consoleErrorSpy.mockRestore();
+  });
+
+  it('reverts the toggle to the persisted state when a sync-settings save fails', async () => {
+    await render(baseList, { updateResult: 'error' });
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    // baseList has no sync_mode, so the persisted (pre-click) state is off.
+    fixture.componentInstance['onToggleChange'](true);
+    expect(fixture.componentInstance['syncOn']()).toBe(true);
+
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance['syncOn']()).toBe(false);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('looks up sibling mailing lists once the feature flag flips on after initial render', async () => {
+    TestBed.resetTestingModule();
+    const flagEnabled = signal(false);
+    updateMailingList = vi.fn(() => of(baseList));
+    getMailingListsByCommittee = vi.fn(() => of([]));
+    messageAdd = vi.fn();
+
+    await TestBed.configureTestingModule({
+      imports: [MailingListSyncSettingsComponent],
+      providers: [
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => flagEnabled) } },
+        { provide: MailingListService, useValue: { updateMailingList, getMailingListsByCommittee } },
+        { provide: MessageService, useValue: { add: messageAdd } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MailingListSyncSettingsComponent);
+    fixture.componentRef.setInput('mailingList', baseList);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getMailingListsByCommittee).not.toHaveBeenCalled();
+
+    flagEnabled.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getMailingListsByCommittee).toHaveBeenCalledWith('committee-1');
   });
 });

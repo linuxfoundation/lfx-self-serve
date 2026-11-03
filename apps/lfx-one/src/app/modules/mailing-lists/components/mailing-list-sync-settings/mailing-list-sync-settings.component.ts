@@ -59,9 +59,14 @@ export class MailingListSyncSettingsComponent {
   protected readonly isWriter = computed(() => this.mailingList().writer === true);
 
   protected readonly saving = signal(false);
+  // Writable rather than a computed off mailingList() — the toggle needs to reflect an optimistic
+  // click immediately and then be explicitly reverted on a failed save. A computed re-evaluates to
+  // the *same* value it had before the click (mailingList() never changes on failure), so Angular's
+  // [ngModel] binding on lfx-toggle's underlying p-toggleSwitch sees no input change and never calls
+  // writeValue — the switch visually sticks in the clicked position (#4880 review).
+  protected readonly syncOn = signal(false);
 
   protected readonly committee = computed(() => this.mailingList().committees?.[0] ?? null);
-  protected readonly syncOn = computed(() => !!this.mailingList().sync_mode && this.mailingList().sync_mode !== MailingListSyncMode.MANUAL);
 
   // Other mailing lists linked to the same committee, used to resolve whether a sync direction is
   // already active elsewhere (only one direction is allowed per committee at a time).
@@ -81,6 +86,16 @@ export class MailingListSyncSettingsComponent {
     });
     this.form.controls.direction.valueChanges.pipe(takeUntilDestroyed()).subscribe((direction) => this.save(direction));
 
+    // Keep the toggle in sync with the persisted sync_mode whenever mailingList() actually changes
+    // (initial load, a successful save's updated() round-trip, or a refresh from elsewhere) — mirrors
+    // the direction-selector effect above. onToggleChange()/the catchError handler below set this
+    // signal directly for the optimistic-click and revert-on-failure cases, which don't change
+    // mailingList() at all.
+    effect(() => {
+      const syncMode = this.mailingList().sync_mode;
+      this.syncOn.set(!!syncMode && syncMode !== MailingListSyncMode.MANUAL);
+    });
+
     // Only one direction is allowed per committee at a time — lock the selector whenever another
     // linked mailing list already has one configured. Also lock it while a save is in flight so a
     // second direction change can't fire an overlapping PUT that races the first (#4880 review).
@@ -94,6 +109,8 @@ export class MailingListSyncSettingsComponent {
   }
 
   protected onToggleChange(checked: boolean): void {
+    // Optimistic — reverted explicitly in save()'s catchError if the write fails (#4880 review).
+    this.syncOn.set(checked);
     if (!checked) {
       this.save(MailingListSyncMode.MANUAL);
       return;
@@ -125,6 +142,10 @@ export class MailingListSyncSettingsComponent {
           // the attempted value via valueChanges, but the server never accepted it (#4880 review).
           const persisted = ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL ? ml.sync_mode : MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
           this.form.controls.direction.setValue(persisted, { emitEvent: false });
+          // Revert the toggle to the last-persisted state — the optimistic set() in onToggleChange
+          // already changed it, so this is guaranteed to be an actual signal change even when
+          // reverting to the mailing list's pre-click value (#4880 review).
+          this.syncOn.set(!!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL);
           return of(null);
         }),
         // Mailing-list writes are fire-and-forget in this codebase (take(1), not
