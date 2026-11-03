@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingHomeRow, PastMeeting, PastMeetingRecording, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
@@ -10,6 +11,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeArtifactsComponent } from './meeting-home-artifacts.component';
 
 const row = (overrides: Partial<PastMeeting> = {}): MeetingHomeRow => {
@@ -34,6 +36,8 @@ describe('MeetingHomeArtifactsComponent', () => {
   let openRecording: ReturnType<typeof vi.fn>;
   let openSummary: ReturnType<typeof vi.fn>;
   let toastShow: ReturnType<typeof vi.fn>;
+  let lastMeeting: WritableSignal<MeetingHomeRow | null>;
+  let setLastMeetingSummary: ReturnType<typeof vi.fn>;
 
   const render = async (value: MeetingHomeRow): Promise<void> => {
     fixture = TestBed.createComponent(MeetingHomeArtifactsComponent);
@@ -59,12 +63,15 @@ describe('MeetingHomeArtifactsComponent', () => {
     openRecording = vi.fn();
     openSummary = vi.fn();
     toastShow = vi.fn();
+    lastMeeting = signal(null);
+    setLastMeetingSummary = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
         { provide: MeetingService, useValue: { getPastMeetingRecording, getPastMeetingSummary } },
         { provide: MeetingsHomeDialogsService, useValue: { openRecording, openSummary } },
         { provide: UiToastService, useValue: { show: toastShow } },
+        { provide: MeetingsHomeStore, useValue: { lastMeeting, setLastMeetingSummary } },
       ],
     });
   });
@@ -134,7 +141,19 @@ describe('MeetingHomeArtifactsComponent', () => {
     await click('meetings-home-row-summary');
 
     expect(getPastMeetingSummary).toHaveBeenCalledWith('synthetic-past-key');
-    expect(openSummary).toHaveBeenCalledWith(value, summary());
+    expect(openSummary).toHaveBeenCalledWith(value, summary(), undefined);
+  });
+
+  it('keeps the Last meeting card in step with a summary edited from its row', async () => {
+    const value = row({ has_ai_summary: true });
+    lastMeeting.set(value);
+    await render(value);
+
+    await click('meetings-home-row-summary');
+    const onChange = openSummary.mock.calls[0][2] as (change: PastMeetingSummary) => void;
+    onChange(summary({ summary_data: { content: 'Edited' } } as Partial<PastMeetingSummary>));
+
+    expect(setLastMeetingSummary).toHaveBeenCalledWith(expect.objectContaining({ summary_data: { content: 'Edited' } }));
   });
 
   it('keeps a summary awaiting approval from an invitee', async () => {

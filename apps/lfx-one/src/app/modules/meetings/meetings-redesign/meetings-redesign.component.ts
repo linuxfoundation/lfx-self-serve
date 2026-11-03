@@ -91,6 +91,7 @@ export class MeetingsRedesignComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly createArtifactDialog = inject(CreateArtifactDialogService);
   private readonly composer = inject(MeetingComposerService);
+  private readonly projectContext = inject(ProjectContextService);
   protected readonly store = inject(MeetingsHomeStore);
 
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
@@ -107,8 +108,8 @@ export class MeetingsRedesignComponent {
   protected readonly idPrefix = 'meetings-redesign';
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
   protected readonly personaLoaded = this.personaService.personaLoaded;
-  /** Same gate as the legacy page's Create Meeting; the create dialog then picks the project and the v2 composer or the old route. */
-  protected readonly canWriteMeetings: Signal<boolean> = inject(ProjectContextService).canWriteMeetings;
+  // shortcut: gated on meeting write access in the active project context. revisit: when Me-lens create gating is settled
+  protected readonly canWriteMeetings: Signal<boolean> = this.projectContext.canWriteMeetings;
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
   /** Page height on desktop, where the columns scroll on their own; `null` when the window scrolls (1024px and below). */

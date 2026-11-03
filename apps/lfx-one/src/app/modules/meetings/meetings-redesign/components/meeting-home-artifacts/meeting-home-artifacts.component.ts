@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Meeting, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { getLargestSessionShareUrl, getPastMeetingSummaryContent } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -12,6 +12,7 @@ import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { finalize, Observable, take } from 'rxjs';
 
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
 
 /**
  * Recording and AI Summary buttons of a past meetings home row, each shown only when the past feed flags it.
@@ -30,9 +31,12 @@ export class MeetingHomeArtifactsComponent {
   private readonly dialogs = inject(MeetingsHomeDialogsService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly store = inject(MeetingsHomeStore);
 
   public readonly row = input.required<MeetingHomeRow>();
 
+  protected readonly loadingRecording: WritableSignal<boolean> = signal(false);
+  protected readonly loadingSummary: WritableSignal<boolean> = signal(false);
   // Undefined (the lookup failed) hides the button like false.
   protected readonly hasRecording: Signal<boolean> = computed(() => {
     const meeting: Meeting | PastMeeting = this.row().meeting;
@@ -42,8 +46,6 @@ export class MeetingHomeArtifactsComponent {
     const meeting: Meeting | PastMeeting = this.row().meeting;
     return 'has_ai_summary' in meeting && meeting.has_ai_summary === true;
   });
-  protected readonly loadingRecording: WritableSignal<boolean> = signal(false);
-  protected readonly loadingSummary: WritableSignal<boolean> = signal(false);
 
   protected openRecording(): void {
     const row = this.row();
@@ -59,7 +61,9 @@ export class MeetingHomeArtifactsComponent {
     this.load(this.loadingSummary, this.meetingService.getPastMeetingSummary(row.key), 'summary', (summary) => {
       // The dialog leaves the visibility check to its caller.
       const visible = getPastMeetingSummaryContent(row.meeting, summary) !== null;
-      if (visible) this.dialogs.openSummary(row, summary);
+      // The Last meeting card shows this summary too when the row is the last meeting.
+      const onChange = row.key === this.store.lastMeeting()?.key ? (change: PastMeetingSummary) => this.store.setLastMeetingSummary(change) : undefined;
+      if (visible) this.dialogs.openSummary(row, summary, onChange);
       return visible;
     });
   }
