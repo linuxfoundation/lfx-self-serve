@@ -85,6 +85,21 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
 ] as const;
 
 /**
+ * The campaign status campaign-service gives a soft-deleted row. A deleted campaign frees its slot
+ * and no longer exists on the ad platform, so the Implement tab's "Already created for this event"
+ * list leaves it out (#4983).
+ */
+export const CAMPAIGN_STATUS_DELETED = 'deleted';
+
+/**
+ * Statuses of a row campaign-service does NOT hand back on a repeat create. Its `isReusableCampaign`
+ * (`internal/service/orchestrator.go`) reuses only a row with a platform id that is past `pending` and
+ * not a partial orphan: a `pending` claim is reported as skipped, and `group_created` / `unconfirmed`
+ * come back as an error asking for reconciliation. The Create Another notice leaves these out (#4983).
+ */
+export const CAMPAIGN_STATUSES_NOT_REUSED: readonly string[] = ['pending', 'group_created', 'unconfirmed'];
+
+/**
  * Whether the Monitoring tab offers this platform's monitor.
  *
  * Deliberately separate from `disabled`, which gates the CREATE flow only. X is the case that splits
@@ -4065,6 +4080,81 @@ export const MAX_SPONSOR_NAME_LENGTH = 100;
  * to spare.
  */
 export const MAX_HUBSPOT_BODY_HTML_LENGTH = 128 * 1024;
+
+/**
+ * The domains the Linux Foundation owns, for links in a generated email body (#3306).
+ *
+ * A link the event page itself published (CFP, agenda, venue, sponsorship) keeps its `href` when its
+ * host is the call-to-action's host or one of these, or a subdomain of either: the event's own site,
+ * or LF's. Every other host keeps the link text and loses the `href`, as an unknown host always has.
+ */
+export const LF_OWNED_EMAIL_LINK_DOMAINS: readonly string[] = ['linuxfoundation.org'];
+
+/** At most this many event-page links are vouched for in one email body: all a brief carries (CFP, agenda, venue, sponsorship). */
+export const EMAIL_SECONDARY_LINK_LIMIT = 4;
+
+/**
+ * The inline-style properties a generated email body may keep (#3306). campaign-service styles every
+ * generated section inline (`internal/service/email_body_style.go`), because mail clients drop most
+ * other CSS, so stripping `style` previewed and staged the email unstyled. Only typography, colour,
+ * alignment, spacing, borders and widths are kept. THIS LIST is the control: none of these properties
+ * takes a `<url>` or `<image>`, so none can load a resource, and none positions an element.
+ * `EMAIL_BODY_STYLE_VALUE_PATTERN` is defence in depth on top, and the margins are further held to
+ * non-negative values (`EMAIL_BODY_MARGIN_VALUE_PATTERN`) so a block cannot be pulled up over the copy
+ * above it.
+ */
+export const EMAIL_BODY_ALLOWED_STYLE_PROPERTIES: readonly string[] = [
+  'color',
+  'background-color',
+  'font',
+  'font-family',
+  'font-size',
+  'font-style',
+  'font-variant',
+  'font-weight',
+  'text-align',
+  'text-decoration',
+  'line-height',
+  'padding',
+  'padding-top',
+  'padding-right',
+  'padding-bottom',
+  'padding-left',
+  'margin',
+  'margin-top',
+  'margin-right',
+  'margin-bottom',
+  'margin-left',
+  'border',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
+  'border-color',
+  'border-style',
+  'border-width',
+  'border-radius',
+  'border-collapse',
+  'width',
+  'max-width',
+];
+
+/**
+ * A kept style declaration's VALUE must not contain any of these (#3306). Defence in depth behind the
+ * property allow-list, which is the actual control: `url(`, `image(`, `image-set(` load a resource,
+ * `expression(` and `behavior` run code in old engines, `javascript:` is a script URL, `@import` pulls in
+ * a stylesheet, `position` is refused in a value as well as a property, and a backslash is refused
+ * outright because a CSS escape (`u\72 l(`) would spell any of the others past a substring match.
+ */
+export const EMAIL_BODY_STYLE_VALUE_PATTERN = /^(?!.*(?:url\s*\(|image(?:-set)?\s*\(|expression\s*\(|@import|behavior|javascript:|position|\\)).*$/i;
+
+/**
+ * The margins additionally refuse any `-` and any `(` (#3306), so a block cannot be pulled up or
+ * sideways over the copy around it. Refusing the characters, not particular forms, is what closes it:
+ * a negative length (`-20px`) and every CSS math function (`calc(`, `min(`, `max(`, `clamp(`, which can
+ * compute a negative from `0px - (100vh)`) both need one of them, and a legitimate margin needs neither.
+ */
+export const EMAIL_BODY_MARGIN_VALUE_PATTERN = /^[^()-]*$/;
 
 /**
  * The exact hosts whose hero image the email preview may LOAD in the operator's browser. Every

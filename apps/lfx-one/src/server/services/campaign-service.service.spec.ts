@@ -3362,6 +3362,34 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy?.body).not.toContain('second.example');
   });
 
+  /**
+   * #3306. This first pass has only the brief id, so it cannot tell an event page's own link from an
+   * invented one. It keeps any link on an LF-owned domain (and the button's host), because a stripped
+   * href cannot be restored by the narrower passes after it, and strips every other host.
+   */
+  it('keeps an LF-owned secondary link even with no button, and strips an off-host one', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 'S',
+        preheader: 'P',
+        sections: [
+          {
+            type: 'rich_text',
+            html: '<p style="color: #0f172a; position: absolute"><a href="https://events.linuxfoundation.org/kubecon/cfp">CFP</a> <a href="https://evil.example/cfp">fake</a></p>',
+          },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.body).toContain('href="https://events.linuxfoundation.org/kubecon/cfp"');
+    expect(result.copy?.body).not.toContain('evil.example');
+    expect(result.copy?.body).toContain('fake');
+    // The safe inline style survives this pass too; the unsafe declaration does not.
+    expect(result.copy?.body).toContain('style="color:#0f172a"');
+  });
+
   it('does not refill an empty sections field from a leftover flat field', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({

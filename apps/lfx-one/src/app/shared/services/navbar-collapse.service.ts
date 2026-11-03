@@ -14,7 +14,7 @@ import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_NARROW_MAX_WIDTH_PX, NAVBAR_PEEK_O
  * - `narrow` (a non-touch viewport under {@link NAVBAR_NARROW_MAX_WIDTH_PX}) forces the rail without
  *   touching the preference, which returns once the viewport widens again.
  * - A non-touch device keeps the navbar (as the rail) at every width; the hamburger + drawer below `lg`
- *   are for touch devices only. Touch devices are never narrow and never peek on hover.
+ *   are for touch devices only. Touch devices are never narrow, and pin the peeks they open.
  *
  * Browser-only state starts at its server defaults (docked open) and is read once the desktop navbar
  * has rendered ({@link init}), so SSR and the first client render agree.
@@ -39,11 +39,11 @@ export class NavbarCollapseService {
   public readonly collapsed = this.collapsedPreference.asReadonly();
   /** Non-touch viewport too narrow to dock the navbar open. */
   public readonly narrow = this.narrowViewport.asReadonly();
-  /** Coarse-pointer device without hover: no auto-collapse, no hover peek. */
+  /** Coarse-pointer device without hover: no auto-collapse, and a peek is pinned (there is no pointer to leave it). */
   public readonly touch = this.touchDevice.asReadonly();
   /** The panel is open over the page from the rail. */
   public readonly peek = this.peeking.asReadonly();
-  /** The peek was opened by a click (narrow viewports): it ignores the pointer leaving and closes on an outside click. */
+  /** The peek is pinned (a narrow viewport's toggle, or a touch device): it ignores the pointer leaving and closes on an outside click. */
   public readonly peekPinned = this.peekPinnedState.asReadonly();
   /** The rail shrinks back from a peek: the panel keeps its overlay positioning until the morph ends. */
   public readonly peekOut = this.peekClosing.asReadonly();
@@ -118,7 +118,7 @@ export class NavbarCollapseService {
     this.writePreference(collapsed);
   }
 
-  /** Opens the panel over the page from the rail; `pinned` when a click (not hover) opened it. */
+  /** Opens the panel over the page from the rail; `pinned` keeps it open as the pointer leaves (see {@link peekPinned}). */
   public openPeek(pinned = false): void {
     if (!this.effectiveCollapsed()) return;
     this.clearPeekOut();

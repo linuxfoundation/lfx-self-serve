@@ -11,7 +11,14 @@
  */
 
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { CampaignBriefLoadResult, CampaignBriefOutput, HubSpotUtmLookupResult, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignBriefLoadResult,
+  CampaignBriefOutput,
+  CampaignListResult,
+  HubSpotUtmLookupResult,
+  PersistedPersonaState,
+  PersonaType,
+} from '@lfx-one/shared/interfaces';
 import { expect, Frame, Locator, Page, test } from '@playwright/test';
 
 export const DATA_LOAD_TIMEOUT = 30_000;
@@ -103,6 +110,8 @@ export interface PlanningMockOptions {
    * sent. Omit to leave the save route unmocked.
    */
   persisted?: { query: Record<string, string>; brief: CampaignBriefOutput }[];
+  /** The brief's campaign list (`/api/campaigns/list`), for the Implement tab (#4983). Omit to leave it unmocked. */
+  briefCampaigns?: CampaignListResult;
 }
 
 /**
@@ -117,6 +126,13 @@ export async function mockPlanningApis(page: Page, opts: PlanningMockOptions = {
   await page.route('**/api/campaigns/brief?**', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.savedBrief ?? { status: 'not_found' }) })
   );
+
+  const briefCampaigns = opts.briefCampaigns;
+  if (briefCampaigns) {
+    await page.route('**/api/campaigns/list?**', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(briefCampaigns) })
+    );
+  }
 
   const persisted = opts.persisted;
   if (persisted) {
