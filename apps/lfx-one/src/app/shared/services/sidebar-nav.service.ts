@@ -21,6 +21,7 @@ import {
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
   ORG_SCOPE_QUERY_PARAM,
+  ORG_TEAM_MEMBERS_QUERY_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -917,7 +918,8 @@ export class SidebarNavService {
     return [
       // The organization scope carries between the pages with a scope picker — Projects, People, Code Contributions, and
       // Project Detail through Projects (lfx-self-serve-ops#1219) — so a pick of All related organizations survives the
-      // sidebar. The Dashboard always counts the default scope, so its link carries none.
+      // sidebar. The team members pick carries between the pages with a team members picker — Projects, People and Code
+      // Contributions (lfx-self-serve-ops#1246). The Dashboard always counts the defaults, so its link carries neither.
       {
         label: 'Dashboard',
         icon: 'fa-light fa-grid-2',
@@ -932,7 +934,7 @@ export class SidebarNavService {
         label: 'Projects',
         icon: 'fa-light fa-folders',
         routerLink: org('projects'),
-        carryQueryParams: [ORG_SCOPE_QUERY_PARAM],
+        carryQueryParams: [ORG_SCOPE_QUERY_PARAM, ORG_TEAM_MEMBERS_QUERY_PARAM],
       },
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
@@ -945,15 +947,15 @@ export class SidebarNavService {
             label: 'People',
             icon: 'fa-light fa-people-group',
             routerLink: org('people'),
-            // The time range carries between People and Code Contributions (lfx-self-serve#4159); only the range and the
-            // organization scope, not page-specific params.
-            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM],
+            // The time range carries between People and Code Contributions (lfx-self-serve#4159); only the range, the
+            // organization scope and the team members pick, not page-specific params.
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM, ORG_TEAM_MEMBERS_QUERY_PARAM],
           },
           {
             label: 'Code Contributions',
             icon: 'fa-light fa-code',
             routerLink: org('contributions'),
-            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM],
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM, ORG_TEAM_MEMBERS_QUERY_PARAM],
           },
           {
             label: 'Events',

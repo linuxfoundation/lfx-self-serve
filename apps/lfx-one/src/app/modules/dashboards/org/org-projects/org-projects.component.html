@@ -118,6 +118,18 @@
         <div class="w-full sm:w-60">
           <lfx-org-scope-select [form]="scopeForm" control="orgScope" [note]="orgScopeNote" dataTest="org-projects-org-scope-filter" />
         </div>
+        <div class="w-full sm:w-52">
+          <lfx-select
+            [form]="scopeForm"
+            control="teamMembers"
+            size="small"
+            [options]="teamMembersOptions"
+            styleClass="w-full"
+            [ariaLabel]="teamMembersLabel"
+            [tooltip]="teamMembersTooltip"
+            tooltipPosition="top"
+            dataTest="org-projects-team-members-filter" />
+        </div>
       </div>
 
       <div class="p-5">
@@ -125,6 +137,9 @@
           <p class="mb-3 text-xs text-gray-500" data-testid="org-projects-maintainer-roles-unavailable">
             Maintainer data is currently unavailable — the Employees filter matches contributors and participants only.
           </p>
+        }
+        @if (teamMembersUnavailable()) {
+          <p class="mb-3 text-xs text-gray-500" role="status" data-testid="org-projects-team-members-unavailable">{{ teamMembersUnavailableNote }}</p>
         }
         @if (workspaceError()) {
           <div class="flex flex-col items-center gap-3 py-10 text-center" data-testid="org-projects-table-error">
@@ -237,7 +252,7 @@
                     type="button"
                     class="flex items-center gap-1 whitespace-nowrap font-semibold"
                     (click)="toggleSort('contributors')"
-                    [pTooltip]="'Our <strong>Contributors</strong> are our employees who have contributed code to this project.'"
+                    [pTooltip]="contributorsTooltip"
                     [escape]="false"
                     tooltipPosition="top"
                     tooltipStyleClass="lfx-tooltip-wide">
