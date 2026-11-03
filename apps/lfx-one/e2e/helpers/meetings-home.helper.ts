@@ -4,10 +4,21 @@
 /** Navigation and BFF stubs for the Me lens meetings home page specs (#4883), flag on, synthetic feeds only. */
 
 import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { CreateMeetingRsvpRequest, MeetingRsvp, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import type { CancelMeetingOccurrenceRequest, CreateMeetingRsvpRequest, MeetingRsvp, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, Route, test } from '@playwright/test';
 
-import { buildMeetingsHomePast, buildMeetingsHomeUpcoming, MEETINGS_HOME_NOW, MEETINGS_HOME_PROJECT, meetingsHomeRsvp } from '../fixtures/mock-data';
+import {
+  buildMeetingsHomePast,
+  buildMeetingsHomeUpcoming,
+  MEETINGS_HOME_IDS,
+  MEETINGS_HOME_JOIN_URL,
+  MEETINGS_HOME_NOW,
+  MEETINGS_HOME_PROJECT,
+  meetingsHomeRecording,
+  meetingsHomeRsvp,
+  meetingsHomeSummary,
+  MeetingsHomeFeedOptions,
+} from '../fixtures/mock-data';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { stubMeetingsRedesignFlag } from './meetings-v2-flag.helper';
 
@@ -16,28 +27,36 @@ export const MEETINGS_HOME_LOAD_TIMEOUT = 30_000;
 /** Desktop layout (right column beside the list) in a fixed zone, so day buckets and countdowns never drift. */
 export const MEETINGS_HOME_TEST_OPTIONS = { timezoneId: 'UTC', locale: 'en-US', viewport: { width: 1440, height: 900 } };
 
-export interface MeetingsHomeStubOptions {
+export interface MeetingsHomeStubOptions extends MeetingsHomeFeedOptions {
   /** Serve an empty upcoming feed. */
   emptyUpcoming?: boolean;
   /** Meeting write access in the synthetic project context; gates Create Meeting. */
   canWrite?: boolean;
   /** Query string appended to `/meetings`, e.g. `?time=past`. */
   query?: string;
+  /** Viewer personas; a board persona shows the Foundation filter. Defaults to contributor. */
+  personas?: PersonaType[];
 }
 
 export interface MeetingsHomeMocks {
   /** RSVP writes the page sent, in order. */
   rsvpPosts: CreateMeetingRsvpRequest[];
+  /** Meeting deletes as `<meeting id>?<query>`, in order. */
+  deletes: string[];
+  /** Occurrence cancellations, in order. */
+  cancellations: { meetingId: string; occurrenceId: string; body: CancelMeetingOccurrenceRequest | null }[];
+  /** Meetings the viewer removed themselves from, in order. */
+  selfRemovals: string[];
 }
 
 function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-/** Me lens, contributor persona and a synthetic project context, so the Create gate never depends on the test account. */
-async function seedCookies(page: Page): Promise<void> {
+/** Me lens, the given personas and a synthetic project context, so the Create gate never depends on the test account. */
+async function seedCookies(page: Page, personas: PersonaType[]): Promise<void> {
   const url = new URL(test.info().project.use.baseURL ?? 'http://localhost:4200').origin;
-  const persona: PersistedPersonaState = { primary: 'contributor' as PersonaType, all: ['contributor'] as PersonaType[] };
+  const persona: PersistedPersonaState = { primary: personas[0], all: personas };
   await page.context().addCookies([
     { name: LENS_COOKIE_KEY, value: 'me', url, sameSite: 'Lax' },
     { name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(persona)), url, sameSite: 'Lax' },
@@ -45,22 +64,23 @@ async function seedCookies(page: Page): Promise<void> {
   ]);
 }
 
-/** Feeds, RSVP writes and per-meeting lookups; no synthetic id reaches the deployed meeting services. */
+/** Feeds, artifacts, join links, recorded writes and per-meeting lookups; no synthetic id reaches the deployed meeting services. */
 async function stubMeetingsHome(page: Page, options: MeetingsHomeStubOptions): Promise<MeetingsHomeMocks> {
-  const mocks: MeetingsHomeMocks = { rsvpPosts: [] };
+  const mocks: MeetingsHomeMocks = { rsvpPosts: [], deletes: [], cancellations: [], selfRemovals: [] };
   const answers = new Map<string, MeetingRsvp>();
   const past = buildMeetingsHomePast();
+  const upcoming = (): ReturnType<typeof buildMeetingsHomeUpcoming> => (options.emptyUpcoming ? [] : buildMeetingsHomeUpcoming(answers, options));
 
   // Registered first so the specific routes below take precedence (Playwright matches the newest route first).
   await page.route(/\/api\/(past-)?meetings\/home-e2e-[^/?]+([/?]|$)/, (route) => fulfillJson(route, {}, 404));
 
   await page.route('**/api/user/personas*', (route) =>
-    fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
+    fulfillJson(route, { personas: options.personas ?? ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
   );
   await page.route(`**/api/projects/${MEETINGS_HOME_PROJECT.slug}*`, (route) =>
     fulfillJson(route, { ...MEETINGS_HOME_PROJECT, parent_uid: '', writer: options.canWrite === true, meetingCoordinator: false })
   );
-  await page.route('**/api/user/meetings*', (route) => fulfillJson(route, options.emptyUpcoming ? [] : buildMeetingsHomeUpcoming(answers)));
+  await page.route('**/api/user/meetings*', (route) => fulfillJson(route, upcoming()));
   await page.route('**/api/user/past-meetings*', (route) => fulfillJson(route, past));
   await page.route('**/api/user/latest-past-meetings*', (route) => fulfillJson(route, past.slice(0, 1)));
   await page.route('**/api/meetings/home-e2e-*/rsvp', (route) => {
@@ -72,6 +92,36 @@ async function stubMeetingsHome(page: Page, options: MeetingsHomeStubOptions): P
     answers.set(meetingId, rsvp);
     return fulfillJson(route, rsvp);
   });
+  // Edit re-reads the meeting; delete answers 204 and the feed keeps listing it, as upstream may for a moment.
+  await page.route(/\/api\/meetings\/home-e2e-[^/?]+(\?|$)/, (route) => {
+    const url = new URL(route.request().url());
+    const meetingId = url.pathname.split('/')[3];
+    if (route.request().method() === 'DELETE') {
+      mocks.deletes.push(`${meetingId}${url.search}`);
+      return route.fulfill({ status: 204 });
+    }
+    if (route.request().method() !== 'GET') return route.fallback();
+    const meeting = upcoming().find((item) => item.id === meetingId);
+    return meeting ? fulfillJson(route, meeting) : fulfillJson(route, {}, 404);
+  });
+  await page.route('**/api/meetings/home-e2e-*/occurrences/*', (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    const [, , , meetingId, , occurrenceId] = new URL(route.request().url()).pathname.split('/');
+    mocks.cancellations.push({ meetingId, occurrenceId, body: route.request().postDataJSON() as CancelMeetingOccurrenceRequest | null });
+    return route.fulfill({ status: 204 });
+  });
+  await page.route('**/api/meetings/home-e2e-*/registrants/self', (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    mocks.selfRemovals.push(new URL(route.request().url()).pathname.split('/')[3]);
+    return fulfillJson(route, { removed_registrant_ids: ['reg'], remaining_registrant_ids: [] });
+  });
+  await page.route('**/public/api/meetings/home-e2e-*/join-url', (route) => fulfillJson(route, { link: MEETINGS_HOME_JOIN_URL }));
+  await page.route(`**/api/past-meetings/${MEETINGS_HOME_IDS.pastRecent}/recording`, (route) =>
+    fulfillJson(route, meetingsHomeRecording(MEETINGS_HOME_IDS.pastRecent))
+  );
+  await page.route(`**/api/past-meetings/${MEETINGS_HOME_IDS.pastRecent}/summary`, (route) =>
+    fulfillJson(route, meetingsHomeSummary(MEETINGS_HOME_IDS.pastRecent))
+  );
 
   return mocks;
 }
@@ -87,7 +137,7 @@ export async function gotoMeetingsHome(page: Page, options: MeetingsHomeStubOpti
   await suppressCookieBanner(page);
   await stubMeetingsRedesignFlag(page, true);
   await page.clock.setFixedTime(MEETINGS_HOME_NOW);
-  await seedCookies(page);
+  await seedCookies(page, options.personas ?? ['contributor']);
   const mocks = await stubMeetingsHome(page, options);
 
   await page.goto(`/meetings${options.query ?? ''}`, { waitUntil: 'domcontentloaded' });
