@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
@@ -19,6 +19,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   formatDuration,
+  formatMeetingDateTime,
   getMeetingHomeRowLink,
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
@@ -137,8 +138,7 @@ export class MeetingHomeRowComponent {
   private initWhen(): Signal<string[]> {
     return computed(() => {
       const { startTime, durationMinutes } = this.row();
-      const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(startTime));
-      return [formatDate(startTime, 'EEE, MMM d', 'en-US'), time, formatDuration(durationMinutes * 60)];
+      return [formatMeetingDateTime(startTime), formatDuration(durationMinutes * 60)];
     });
   }
 }
