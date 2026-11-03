@@ -713,6 +713,10 @@ describe('MeetingService project-lens meeting fetchers (#4964)', () => {
     service = TestBed.inject(MeetingService);
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('getUpcomingMeetingsByProject emits the page data scoped by project tag', async () => {
     get.mockReturnValue(of({ data: [{ id: 'm-1' }], page_token: undefined }));
 
@@ -731,12 +735,14 @@ describe('MeetingService project-lens meeting fetchers (#4964)', () => {
   });
 
   it.each([
-    ['getUpcomingMeetingsByProject', '/api/meetings'],
-    ['getPastMeetingsByProject', '/api/past-meetings'],
-  ] as const)('%s propagates an HTTP failure instead of emitting an empty list', async (method, url) => {
+    ['getUpcomingMeetingsByProject', '/api/meetings', 'Failed to load project meetings:'],
+    ['getPastMeetingsByProject', '/api/past-meetings', 'Failed to load past project meetings:'],
+  ] as const)('%s logs and propagates an HTTP failure instead of emitting an empty list', async (method, url, message) => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const failure = new HttpErrorResponse({ status: 502, url });
     get.mockReturnValue(throwError(() => failure));
 
     await expect(firstValueFrom(service[method]('project-1'))).rejects.toBe(failure);
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith(message, failure);
   });
 });
