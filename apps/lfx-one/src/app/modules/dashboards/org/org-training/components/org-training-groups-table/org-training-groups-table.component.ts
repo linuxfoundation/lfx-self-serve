@@ -13,6 +13,7 @@ import {
   DESCENDING_DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELDS,
   ENROLL_AGAIN_URL,
   ORG_TRAINING_GROUP_BY_OPTIONS,
+  ORG_TRAINING_GROUPS_SCOPE_NOTES,
 } from '@lfx-one/shared/constants';
 import type {
   OrgTrainingGroupBy,
@@ -96,6 +97,7 @@ export class OrgTrainingGroupsTableComponent {
     () =>
       `Totals cover every row of this tab, not only this page or the search. ${this.completedLabel()} equals the “${this.completedTileLabel()}” tile for the same range and filters; People is distinct people, not the sum of the rows.`
   );
+  protected readonly scopeNote = computed(() => ORG_TRAINING_GROUPS_SCOPE_NOTES[this.tab()]);
   protected readonly totalCompletedAriaLabel = computed(
     () => `${this.completedLabel()} total ${this.groups().totals.completed.toLocaleString('en-US')}, equals the ${this.completedTileLabel()} tile`
   );

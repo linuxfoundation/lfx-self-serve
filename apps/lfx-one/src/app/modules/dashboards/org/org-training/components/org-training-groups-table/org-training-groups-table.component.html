@@ -155,6 +155,11 @@
             </td>
             <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-in-progress">{{ groups().totals.inProgress | number }}</td>
           </tr>
+          <tr>
+            <td colspan="5" class="text-xs text-gray-500">
+              <p class="m-0" data-testid="org-training-groups-scope-note">{{ scopeNote() }}</p>
+            </td>
+          </tr>
         }
       </ng-template>
 

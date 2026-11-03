@@ -32,6 +32,8 @@ export class MetricCardComponent {
   public readonly chartHeightClass = input<string>('');
   // Line under the chart stating its window, e.g. which months the bars cover.
   public readonly chartCaption = input<string>();
+  /** Stat-only card: no chart area, skeleton or caption. */
+  public readonly hideChart = input<boolean>(false);
 
   // Footer inputs
   public readonly value = input<string>();

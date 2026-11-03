@@ -16,11 +16,9 @@ import {
   ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
-  ORG_OVERVIEW_CERTIFICATIONS_TREND_LABEL,
-  ORG_OVERVIEW_TRAINING_TREND_LABEL,
   ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
-import { buildOrgTrainingStatTiles, hexToRgba, orgTrainingStatsQuery, parseOrgTrainingViewState, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { buildOrgTrainingStatTiles, hexToRgba, orgTrainingStatsQuery, parseOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
@@ -32,11 +30,9 @@ import type {
   DashboardMetricCard,
   FilterPillOption,
   OrgFoundationCoverageResponse,
-  OrgInvolvementCertifiedEmployeesMonthlyResponse,
   OrgInvolvementContributorsMonthlyResponse,
   OrgInvolvementEventAttendanceMonthlyResponse,
   OrgInvolvementMaintainersMonthlyResponse,
-  OrgTrainingEnrollmentsResponse,
   OrgTrainingStats,
   OrgTrainingStatsQuery,
 } from '@lfx-one/shared/interfaces';
@@ -65,8 +61,6 @@ export class OrgOverviewInvolvementComponent {
 
   private readonly maintainersLoading = signal(true);
   private readonly contributorsLoading = signal(true);
-  private readonly certifiedEmployeesLoading = signal(true);
-  private readonly trainingEnrollmentsLoading = signal(true);
   private readonly trainingStatsLoading = signal(true);
   private readonly eventsLoading = signal(true);
   private readonly coverageLoading = signal(true);
@@ -87,8 +81,6 @@ export class OrgOverviewInvolvementComponent {
   private readonly coverageData = this.initializeCoverageData();
   private readonly maintainersData = this.initializeMaintainersData();
   private readonly contributorsData = this.initializeContributorsData();
-  private readonly certifiedEmployeesData = this.initializeCertifiedEmployeesData();
-  private readonly trainingEnrollmentsData = this.initializeTrainingEnrollmentsData();
   private readonly trainingStats = this.initializeTrainingStats();
   private readonly eventAttendanceMonthlyData = this.initializeEventAttendanceMonthlyData();
 
@@ -135,22 +127,6 @@ export class OrgOverviewInvolvementComponent {
       (id) => this.analyticsService.getContributorsMonthly(id),
       (accountId) => ({ accountId, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] }),
       this.contributorsLoading
-    );
-  }
-
-  private initializeCertifiedEmployeesData(): Signal<OrgInvolvementCertifiedEmployeesMonthlyResponse> {
-    return this.buildOrgDataSignal(
-      (id) => this.analyticsService.getCertifiedEmployeesMonthly(id),
-      (accountId) => ({ accountId, totalCertifications: 0, totalCertifiedEmployees: 0, monthlyData: [], monthlyLabels: [] }),
-      this.certifiedEmployeesLoading
-    );
-  }
-
-  private initializeTrainingEnrollmentsData(): Signal<OrgTrainingEnrollmentsResponse> {
-    return this.buildOrgDataSignal(
-      (id) => this.analyticsService.getTrainingEnrollments(id),
-      (accountId) => ({ accountId, totalEnrollments: 0, dailyData: [] }),
-      this.trainingEnrollmentsLoading
     );
   }
 
@@ -214,23 +190,11 @@ export class OrgOverviewInvolvementComponent {
   }
 
   private initializeCertifiedEmployeesCard(): Signal<DashboardMetricCard> {
-    return computed(() =>
-      this.transformCertifiedEmployees(
-        this.certifiedEmployeesData(),
-        this.trainingStats(),
-        this.getMetricConfig(ORG_TRAINING_STAT_DEFINITIONS.certifiedPeople.label)
-      )
-    );
+    return computed(() => this.transformCertifiedEmployees(this.trainingStats(), this.getMetricConfig(ORG_TRAINING_STAT_DEFINITIONS.certifiedPeople.label)));
   }
 
   private initializeTrainingEnrollmentsCard(): Signal<DashboardMetricCard> {
-    return computed(() =>
-      this.transformTrainingEnrollments(
-        this.trainingEnrollmentsData(),
-        this.trainingStats(),
-        this.getMetricConfig(ORG_TRAINING_STAT_DEFINITIONS.coursesTaken.label)
-      )
-    );
+    return computed(() => this.transformTrainingEnrollments(this.trainingStats(), this.getMetricConfig(ORG_TRAINING_STAT_DEFINITIONS.coursesTaken.label)));
   }
 
   private initializePrimaryMetrics(): Signal<DashboardMetricCard[]> {
@@ -396,83 +360,33 @@ export class OrgOverviewInvolvementComponent {
 
   /**
    * Headline: certified people for the Training page's default range, subtitle the certifications (person-course
-   * pairs) with the window and as-of date. The chart is the monthly certification table, captioned with its own span.
+   * pairs) with the window and as-of date. Stat-only: no chart.
    */
-  private transformCertifiedEmployees(
-    data: OrgInvolvementCertifiedEmployeesMonthlyResponse,
-    stats: OrgTrainingStats | null,
-    metric: DashboardMetricCard
-  ): DashboardMetricCard {
+  private transformCertifiedEmployees(stats: OrgTrainingStats | null, metric: DashboardMetricCard): DashboardMetricCard {
     const tiles = buildOrgTrainingStatTiles(stats, OVERVIEW_TRAINING_STATS_QUERY.range);
     const people = tiles.find((tile) => tile.key === 'certifiedPeople')!;
     const certifications = tiles.find((tile) => tile.key === 'certifications')!;
-    const span = this.chartSpan(data.monthlyLabels);
     return {
       ...metric,
-      loading: this.certifiedEmployeesLoading() || this.trainingStatsLoading(),
+      loading: this.trainingStatsLoading(),
       value: people.display,
       // A failed or pending stats read shows a dash, never a zero that reads as "nobody certified", and no as-of date.
       subtitle: stats === null ? people.caption : `${certifications.display} certifications · ${people.caption.split(' · ').slice(1).join(' · ')}`,
       tooltipText: `${people.tooltip} ${certifications.tooltip}`,
-      chartCaption: span ? `${ORG_OVERVIEW_CERTIFICATIONS_TREND_LABEL}, ${span}` : undefined,
-      chartOptions: this.createLineChartOptions('Certifications'),
-      chartData:
-        data.monthlyData.length > 0
-          ? {
-              labels: data.monthlyLabels,
-              datasets: [
-                {
-                  data: data.monthlyData,
-                  borderColor: lfxColors.violet[500],
-                  backgroundColor: hexToRgba(lfxColors.violet[500], 0.1),
-                  fill: true,
-                  tension: 0,
-                  borderWidth: 2,
-                  pointRadius: 0,
-                },
-              ],
-            }
-          : metric.chartData,
     };
   }
 
-  /** Headline: courses taken for the Training page's default range (unit, window and as-of in the subtitle). The chart is the cumulative enrollment table, captioned with its own span. */
-  private transformTrainingEnrollments(data: OrgTrainingEnrollmentsResponse, stats: OrgTrainingStats | null, metric: DashboardMetricCard): DashboardMetricCard {
+  /** Headline: courses taken for the Training page's default range (unit, window and as-of in the subtitle). Stat-only: no chart. */
+  private transformTrainingEnrollments(stats: OrgTrainingStats | null, metric: DashboardMetricCard): DashboardMetricCard {
     // A failed or pending stats read shows a dash, never a zero that reads as "nobody trained", and no as-of date.
     const coursesTaken = buildOrgTrainingStatTiles(stats, OVERVIEW_TRAINING_STATS_QUERY.range).find((tile) => tile.key === 'coursesTaken')!;
-    const labels = data.dailyData.map(
-      (row) => tryParseLocalDateString(row.date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) ?? row.date
-    );
-    const span = this.chartSpan(labels);
     return {
       ...metric,
-      loading: this.trainingEnrollmentsLoading() || this.trainingStatsLoading(),
+      loading: this.trainingStatsLoading(),
       value: coursesTaken.display,
       subtitle: coursesTaken.caption,
       tooltipText: coursesTaken.tooltip,
-      chartCaption: span ? `${ORG_OVERVIEW_TRAINING_TREND_LABEL}, ${span}` : undefined,
-      chartOptions: this.createLineChartOptions('Training enrollments'),
-      chartData: {
-        labels,
-        datasets: [
-          {
-            data: data.dailyData.map((row) => row.cumulativeCount),
-            borderColor: lfxColors.blue[500],
-            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
-            fill: true,
-            tension: 0,
-            borderWidth: 2,
-            pointRadius: 0,
-          },
-        ],
-      },
     };
-  }
-
-  /** `Jan 2025 to Oct 2026`: the span a chart actually shows, from its first and last label; null with no points. */
-  private chartSpan(labels: readonly string[]): string | null {
-    if (labels.length === 0) return null;
-    return labels.length === 1 ? labels[0] : `${labels[0]} to ${labels[labels.length - 1]}`;
   }
 
   /** Title-keyed lookup into ORG_INVOLVEMENT_METRICS; throws on missing card so renames surface as a clear error. */

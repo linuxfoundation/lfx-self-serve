@@ -404,9 +404,6 @@ describe('Overview Education tiles vs the Training page in its default state', (
           speakersMonthlyData: [],
           monthlyLabels: [],
         }),
-      getCertifiedEmployeesMonthly: () =>
-        of({ accountId: ACME.accountId, totalCertifications: 99, totalCertifiedEmployees: 98, monthlyData: [1], monthlyLabels: ['Jan 2030'] }),
-      getTrainingEnrollments: () => of({ accountId: ACME.accountId, totalEnrollments: 97, dailyData: [] }),
     };
     TestBed.configureTestingModule({
       imports: [OrgOverviewInvolvementComponent],

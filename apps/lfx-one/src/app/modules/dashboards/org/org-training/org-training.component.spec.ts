@@ -11,6 +11,7 @@ import { OrgLensTrainingService } from '@shared/services/org-lens-training.servi
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
+import { HttpErrorResponse } from '@angular/common/http';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -304,6 +305,66 @@ describe('OrgTrainingComponent — view state from the URL', () => {
 
     expect(trainingService.getTrainingStats).toHaveBeenCalledTimes(1);
     expect(el.querySelector('[data-testid="org-training-panel-trainings"]')).not.toBeNull();
+  });
+});
+
+describe('OrgTrainingComponent — a URL filter with no rows in the selected range', () => {
+  const ZERO_STATS: OrgTrainingStats = {
+    ...STATS,
+    range: '30d',
+    peopleWithTrainingActivity: 0,
+    learnersOutsidePeopleList: 0,
+    coursesTaken: 0,
+    certifications: 0,
+    certifiedPeople: 0,
+    trainingsCompleted: 0,
+    completionRatePct: 0,
+    coursesInProgress: 0,
+    peopleInTraining: 0,
+  };
+  const value = (el: HTMLElement, tile: string) => el.querySelector(`[data-testid="org-training-stat-${tile}-value"]`)?.textContent?.trim();
+
+  it('stays applied and renders the zeros the stats call returns, not an error state', async () => {
+    // The mocked filter options for this range list nothing, so the picked foundation is a valid value with no rows.
+    const { el, trainingService } = await render(null, { stats: ZERO_STATS, params: { range: '30d', foundation: 'no-rows-in-range' } });
+
+    expect(trainingService.getTrainingStats).toHaveBeenCalledTimes(1);
+    expect(trainingService.getTrainingStats).toHaveBeenCalledWith('org-uid-1', {
+      range: '30d',
+      foundation: 'no-rows-in-range',
+      project: null,
+      course: null,
+      level: null,
+      format: null,
+    });
+    expect(el.querySelector('[data-testid="org-training-stats-error"]')).toBeNull();
+    expect(el.querySelector('lfx-org-training-stats')).not.toBeNull();
+    for (const tile of ['courses-taken', 'certifications', 'certified-people', 'trainings-completed', 'courses-in-progress'])
+      expect(value(el, tile), tile).toBe('0');
+  });
+
+  it('still shows the error state when the stats call fails with HTTP 400', async () => {
+    const { el } = await render(null, {
+      params: { range: '30d', foundation: 'no-rows-in-range' },
+      statsFor: () => throwError(() => new HttpErrorResponse({ status: 400, statusText: 'Bad Request' })),
+    });
+
+    expect(el.querySelector('[data-testid="org-training-stats-error"]')).not.toBeNull();
+    expect(el.querySelector('lfx-org-training-stats')).toBeNull();
+  });
+
+  it('never writes the name search to the URL', async () => {
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    const { el, fixture } = await render(null, { stats: ZERO_STATS, params: { range: '30d' } });
+    const input = el.querySelector('[data-testid="org-training-search-input"] input') as HTMLInputElement;
+
+    input.value = 'kube';
+    input.dispatchEvent(new Event('input'));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await fixture.whenStable();
+
+    expect(navigate).not.toHaveBeenCalled();
+    navigate.mockRestore();
   });
 });
 

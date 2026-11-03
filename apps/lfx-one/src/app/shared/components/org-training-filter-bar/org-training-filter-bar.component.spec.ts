@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting, type TestRequest } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import type { OrgLensTimeRange, OrgTrainingFilterOptions } from '@lfx-one/shared/interfaces';
-import { parseOrgTrainingViewState, serializeOrgTrainingViewState } from '@lfx-one/shared/utils';
+import { ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_TRAINING_VIEW_QUERY_PARAMS } from '@lfx-one/shared/constants';
+import type { OrgLensTimeRange, OrgTrainingFilterOptions, OrgTrainingViewState } from '@lfx-one/shared/interfaces';
+import { orgTrainingStatsQuery, parseOrgTrainingViewState, serializeOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
 import { Observable, of, Subject } from 'rxjs';
@@ -266,5 +269,221 @@ describe('OrgTrainingFilterBarComponent', () => {
 
       expect(toggle()?.textContent?.trim()).toBe('More filters');
     });
+  });
+});
+
+/**
+ * Every key of the view state, with the form control that edits it, the URL param it lives in and the HTTP param the
+ * real service sends. Literal names on purpose: renaming a param in the constants must fail here, not follow silently.
+ * `Record<keyof OrgTrainingViewState, …>` makes a key added to the view state without a row here a compile error.
+ */
+interface KeyMapping {
+  /** Form control name (`project` is the form's name for the `trainingProject` param). */
+  control: string;
+  urlParam: string;
+  apiParam: string;
+  /** A non-default value to pick; the ones with reserved characters pin the HTTP encoding. */
+  value: string;
+  /** The value whose pick clears the param (a filter's "All", the default range, the default group-by). */
+  cleared: string;
+  /** What the API call carries once cleared (the default range is always sent); null = the param is absent. */
+  apiAfterClear: string | null;
+  /** Whether the stats call carries the key (the group-by only goes to the groups call). */
+  inStats: boolean;
+}
+
+const KEY_MAP: Record<keyof OrgTrainingViewState, KeyMapping> = {
+  range: { control: 'range', urlParam: 'range', apiParam: 'range', value: '90d', cleared: '730d', apiAfterClear: '730d', inStats: true },
+  foundation: { control: 'foundation', urlParam: 'foundation', apiParam: 'foundation', value: 'fa', cleared: '', apiAfterClear: null, inStats: true },
+  project: { control: 'project', urlParam: 'trainingProject', apiParam: 'trainingProject', value: 'pk', cleared: '', apiAfterClear: null, inStats: true },
+  course: { control: 'course', urlParam: 'course', apiParam: 'course', value: 'C++ & Linux/Intro', cleared: '', apiAfterClear: null, inStats: true },
+  level: { control: 'level', urlParam: 'level', apiParam: 'level', value: 'Beginner', cleared: '', apiAfterClear: null, inStats: true },
+  format: { control: 'format', urlParam: 'format', apiParam: 'format', value: 'E-Learning', cleared: '', apiAfterClear: null, inStats: true },
+  groupBy: { control: 'groupBy', urlParam: 'groupBy', apiParam: 'groupBy', value: 'format', cleared: 'course', apiAfterClear: 'course', inStats: false },
+};
+const KEYS = Object.keys(KEY_MAP) as (keyof OrgTrainingViewState)[];
+
+/** A value for every key but different from the one under test, so a pick that touches another param shows. */
+const BASELINE_URL_PARAMS: Record<keyof OrgTrainingViewState, string> = {
+  range: '365d',
+  foundation: 'fb',
+  project: 'pl',
+  course: 'Linux Intro',
+  level: 'Intermediate',
+  format: 'Instructor Led',
+  groupBy: 'level',
+};
+
+describe('OrgTrainingFilterBarComponent — every key from form to URL to API call', () => {
+  const ORG_UID = 'org-uid-1';
+  let fixture: ComponentFixture<OrgTrainingFilterBarComponent>;
+  let http: HttpTestingController;
+
+  const router = (): Router => TestBed.inject(Router);
+  const urlParams = (): Record<string, string> => router().parseUrl(router().url).queryParams;
+
+  /** The filter-options reads the bar makes on its own; answered so they never mask a request under test. */
+  function answerOptions(): void {
+    for (const req of http.match((r) => r.url.endsWith('/filter-options'))) req.flush(ALL_TIME_OPTIONS);
+  }
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    answerOptions();
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  async function mount(params: Record<string, string>): Promise<void> {
+    await TestBed.configureTestingModule({
+      imports: [OrgTrainingFilterBarComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG_UID, accountName: 'Synthetic Org' }) } },
+      ],
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    await router().navigateByUrl(`/?${new URLSearchParams(params).toString()}`);
+    fixture = TestBed.createComponent(OrgTrainingFilterBarComponent);
+    fixture.componentRef.setInput('showGroupBy', true);
+    await settle();
+  }
+
+  async function pick(control: string, value: string): Promise<void> {
+    fixture.componentInstance.form.get(control)!.setValue(value);
+    await settle();
+  }
+
+  /** What the Training page does: parse the URL, build the query, call the real service; returns the stats and groups requests it made. */
+  function pageCalls(): { stats: TestRequest; groups: TestRequest } {
+    const state = parseOrgTrainingViewState((key) => new URLSearchParams(router().url.split('?')[1] ?? '').get(key));
+    const service = TestBed.inject(OrgLensTrainingService);
+    service.getTrainingStats(ORG_UID, orgTrainingStatsQuery(state)).subscribe();
+    service.getGroups(ORG_UID, orgTrainingStatsQuery(state), { groupBy: state.groupBy, tab: 'certifications' }).subscribe();
+    return {
+      stats: http.expectOne((r) => r.url.endsWith('/lens/training/stats')),
+      groups: http.expectOne((r) => r.url.endsWith('/lens/training/groups')),
+    };
+  }
+
+  /** The HTTP params the stats call must carry for the URL params in effect: the range always, each filter that is set. */
+  function expectedStatsParams(inUrl: Record<string, string>): Record<string, string> {
+    const expected: Record<string, string> = { range: inUrl['range'] ?? '730d' };
+    for (const key of KEYS) {
+      const mapping = KEY_MAP[key];
+      if (mapping.inStats && key !== 'range' && inUrl[mapping.urlParam] !== undefined) expected[mapping.apiParam] = inUrl[mapping.urlParam];
+    }
+    return expected;
+  }
+
+  const paramsOf = (req: TestRequest, names: string[]): Record<string, string | null> =>
+    Object.fromEntries(names.map((name) => [name, req.request.params.get(name)]));
+
+  it('has a mapping row for every key of the view state, and every param name is the one the constants and the serializer use', () => {
+    const state = parseOrgTrainingViewState(() => null);
+    expect([...KEYS].sort()).toEqual(Object.keys(state).sort());
+    expect(Object.fromEntries(KEYS.map((key) => [key, KEY_MAP[key].urlParam]))).toEqual({
+      range: ORG_LENS_TIME_RANGE_QUERY_PARAM,
+      foundation: ORG_TRAINING_VIEW_QUERY_PARAMS.foundation,
+      project: ORG_TRAINING_VIEW_QUERY_PARAMS.project,
+      course: ORG_TRAINING_VIEW_QUERY_PARAMS.course,
+      level: ORG_TRAINING_VIEW_QUERY_PARAMS.level,
+      format: ORG_TRAINING_VIEW_QUERY_PARAMS.format,
+      groupBy: ORG_TRAINING_VIEW_QUERY_PARAMS.groupBy,
+    });
+    // The serializer writes exactly the mapped URL params, and nothing else.
+    expect(Object.keys(serializeOrgTrainingViewState(state)).sort()).toEqual(KEYS.map((key) => KEY_MAP[key].urlParam).sort());
+  });
+
+  it('has a form control for every key of the view state', async () => {
+    await mount({});
+
+    expect(Object.keys(fixture.componentInstance.form.controls).sort()).toEqual(KEYS.map((key) => KEY_MAP[key].control).sort());
+  });
+
+  it.each(KEYS)('%s: round-trips through serializeOrgTrainingViewState and parseOrgTrainingViewState under its own URL param only', (key) => {
+    const mapping = KEY_MAP[key];
+    const state: OrgTrainingViewState = { ...parseOrgTrainingViewState(() => null), [key]: mapping.value };
+
+    const serialized = serializeOrgTrainingViewState(state);
+
+    const written = Object.entries(serialized).filter(([, value]) => value !== null);
+    expect(written).toEqual([[mapping.urlParam, mapping.value]]);
+    expect(parseOrgTrainingViewState((param) => serialized[param])).toEqual(state);
+    // The default of the key is dropped from the URL.
+    expect(serializeOrgTrainingViewState(parseOrgTrainingViewState(() => null))[mapping.urlParam]).toBeNull();
+  });
+
+  describe.each(KEYS)('%s', (key) => {
+    const mapping = KEY_MAP[key];
+    const others = KEYS.filter((other) => other !== key);
+    const baseline = Object.fromEntries(others.map((other) => [KEY_MAP[other].urlParam, BASELINE_URL_PARAMS[other]]));
+    const mountBaseline = () => mount({ tab: 'training', ...baseline });
+
+    it('writes exactly its URL param when picked, and no other', async () => {
+      await mountBaseline();
+
+      await pick(mapping.control, mapping.value);
+
+      expect(urlParams()).toEqual({ tab: 'training', ...baseline, [mapping.urlParam]: mapping.value });
+    });
+
+    it('sends exactly its HTTP param to the API with the picked value, percent-encoded', async () => {
+      await mountBaseline();
+      await pick(mapping.control, mapping.value);
+
+      const { stats, groups } = pageCalls();
+
+      const inUrl = { ...baseline, [mapping.urlParam]: mapping.value };
+      const expectedStats = expectedStatsParams(inUrl);
+      expect(Object.fromEntries(stats.request.params.keys().map((name) => [name, stats.request.params.get(name)]))).toEqual(expectedStats);
+      if (mapping.inStats) {
+        expect(stats.request.params.get(mapping.apiParam)).toBe(mapping.value);
+        expect(stats.request.urlWithParams).toContain(`${mapping.apiParam}=${encodeURIComponent(mapping.value)}`);
+      } else {
+        expect(stats.request.params.has(mapping.apiParam)).toBe(false);
+      }
+      // The groups call carries the same range and filters, plus the group-by and tab.
+      expect(paramsOf(groups, [...Object.keys(expectedStats), 'groupBy', 'tab'])).toEqual({
+        ...expectedStats,
+        groupBy: key === 'groupBy' ? mapping.value : BASELINE_URL_PARAMS.groupBy,
+        tab: 'certifications',
+      });
+      expect(groups.request.urlWithParams).toContain(`${mapping.apiParam}=${encodeURIComponent(mapping.value)}`);
+      stats.flush({});
+      groups.flush({});
+      http.verify();
+    });
+
+    it('removes its param from the URL and the API call when cleared, leaving the others', async () => {
+      await mount({ tab: 'training', ...baseline, [mapping.urlParam]: mapping.value });
+      expect(urlParams()[mapping.urlParam]).toBe(mapping.value);
+
+      await pick(mapping.control, mapping.cleared);
+
+      expect(urlParams()).toEqual({ tab: 'training', ...baseline });
+      const { stats, groups } = pageCalls();
+      expect(stats.request.params.get(mapping.apiParam)).toBe(mapping.inStats ? mapping.apiAfterClear : null);
+      expect(groups.request.params.get(mapping.apiParam)).toBe(mapping.apiAfterClear);
+      expect(stats.request.params.keys().sort()).toEqual(Object.keys(expectedStatsParams(baseline)).sort());
+      stats.flush({});
+      groups.flush({});
+      http.verify();
+    });
+  });
+
+  it('never puts the name search in the URL or the serialized state: it is table-local, not URL-bound', async () => {
+    await mount({});
+    for (const key of KEYS) await pick(KEY_MAP[key].control, KEY_MAP[key].value);
+
+    const allowed = new Set(KEYS.map((key) => KEY_MAP[key].urlParam));
+    expect(Object.keys(urlParams()).filter((name) => !allowed.has(name))).toEqual([]);
+    for (const name of ['search', 'q', 'query', 'searchQuery']) {
+      expect(urlParams()[name]).toBeUndefined();
+      expect(Object.keys(serializeOrgTrainingViewState(parseOrgTrainingViewState(() => null)))).not.toContain(name);
+    }
   });
 });

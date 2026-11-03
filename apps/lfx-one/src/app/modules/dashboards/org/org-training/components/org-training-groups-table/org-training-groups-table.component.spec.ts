@@ -210,6 +210,28 @@ describe('OrgTrainingGroupsTableComponent', () => {
     expect(trainingService.getGroupEmployees).toHaveBeenCalledWith('org-1', QUERY, expect.objectContaining({ tab: 'trainings', status: 'in-progress' }));
   });
 
+  it('states under the totals row what the Certifications tab counts and how it adds up to the in-progress tile', async () => {
+    await render('certifications');
+
+    expect(text('org-training-groups-scope-note')).toBe(
+      'This tab counts Certification products only, so its In progress total can differ from the Courses in progress tile; the Trainings tab holds the rest, and the two tabs add up to the tile.'
+    );
+  });
+
+  it('states under the totals row what the Trainings tab counts and how it adds up to the in-progress tile', async () => {
+    await render('trainings');
+
+    expect(text('org-training-groups-scope-note')).toBe(
+      'This tab counts all non-Certification products, so its In progress total can differ from the Courses in progress tile; the Certifications tab holds the rest, and the two tabs add up to the tile.'
+    );
+  });
+
+  it('shows no scope note when there is no totals row', async () => {
+    await render('certifications', 'course', { data: [ROW], total: 1, totals: { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 } });
+
+    expect(byTestId('org-training-groups-scope-note')).toBeNull();
+  });
+
   it('gates the totals footer on the response totals, not on the searched row total', async () => {
     await render('certifications', 'course', { data: [], total: 0, totals: { people: 11, coursesTaken: 20, completed: 9, inProgress: 3 } });
     expect(byTestId('org-training-groups-totals')).not.toBeNull();

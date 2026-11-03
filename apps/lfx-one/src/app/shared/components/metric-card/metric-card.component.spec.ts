@@ -27,6 +27,15 @@ class HostComponent {
   public readonly caption = signal<string | undefined>(undefined);
 }
 
+@Component({
+  selector: 'lfx-metric-card-stat-only-host',
+  imports: [MetricCardComponent],
+  template: `<lfx-metric-card title="Courses taken" chartType="line" [hideChart]="true" chartCaption="x" value="400" subtitle="Pairs" [loading]="loading()" />`,
+})
+class StatOnlyHostComponent {
+  public readonly loading = signal(false);
+}
+
 const infoButton = (root: HTMLElement): HTMLButtonElement | null => root.querySelector('[data-testid="metric-card-info"]');
 const tooltipText = (): string => document.body.querySelector('.p-tooltip')?.textContent?.trim() ?? '';
 
@@ -87,5 +96,34 @@ describe('MetricCardComponent chart caption', () => {
     await fixture.whenStable();
 
     expect(caption(fixture.nativeElement)).toBeNull();
+  });
+});
+
+describe('MetricCardComponent stat-only card', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({ imports: [StatOnlyHostComponent] });
+    TestBed.overrideComponent(MetricCardComponent, { remove: { imports: [ChartComponent] }, add: { imports: [ChartStubComponent] } });
+  });
+
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('renders the value and subtitle without a chart area or caption', async () => {
+    const fixture = TestBed.createComponent(StatOnlyHostComponent);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.textContent).toContain('400');
+    expect(root.textContent).toContain('Pairs');
+    expect(root.querySelector('lfx-chart')).toBeNull();
+    expect(root.querySelector('.h-16')).toBeNull();
+    expect(root.querySelector('[data-testid="metric-card-chart-caption"]')).toBeNull();
+  });
+
+  it('shows no chart skeleton while loading', async () => {
+    const fixture = TestBed.createComponent(StatOnlyHostComponent);
+    fixture.componentInstance.loading.set(true);
+    await fixture.whenStable();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('.h-16')).toBeNull();
   });
 });

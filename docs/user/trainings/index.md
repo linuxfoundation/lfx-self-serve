@@ -28,7 +28,7 @@ All authenticated users can view their training enrollments.
 
 ### Overview Education tiles
 
-On the Org Overview, the **Certified people** and **Courses taken** tiles show the same numbers as the Training & Certification page when it opens with its defaults (Past 2 years, no filters), with their unit, window and as-of date. Select a tile to open that page. The small charts on those tiles are monthly and cumulative history; each states the span it shows and is not the headline number.
+On the Org Overview, the **Certified people** and **Courses taken** tiles show the same numbers as the Training & Certification page when it opens with its defaults (Past 2 years, no filters), with their unit, window and as-of date. The tiles show only that headline and its sub-line; they have no chart. Select a tile to open that page.
 
 ### Navigation
 
@@ -79,6 +79,7 @@ The two tabs split the same table by product type. **Certifications** lists cert
 - The **Total** row at the bottom covers every row of the tab, not only the page or the search, and matches the tiles: on the Certifications tab Certified equals the **Certifications** tile, on the Trainings tab Completed equals the **Trainings completed** tile. People in the total is distinct people, not the sum of the rows.
 - The search box in the filter row narrows the rows only. It never changes the numbers at the top.
 - A note under the card states what Certified, Completed and In progress count in the selected range.
+- Under the totals row, a line states which products the tab counts: the Certifications tab counts Certification products only and the Trainings tab counts all the others, so each tab's **In progress** total can differ from the **Courses in progress** tile, and the two tabs add up to the tile.
 - Sorting and paging happen on the full result, not only on the rows shown.
 - Switching tabs keeps the time range, filters and group by.
 - Select a **Certified**, **Completed** or **In progress** count to open the list of people behind it. The count is person-course pairs, and the list shows **current employees only**, so it can be shorter than the count.

@@ -8,12 +8,10 @@ import {
   ORG_DEFAULT_PROJECT_SCOPE_LABEL,
   ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
-  ORG_OVERVIEW_CERTIFICATIONS_TREND_LABEL,
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
-  ORG_OVERVIEW_TRAINING_TREND_LABEL,
   ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
-import type { Account, DashboardMetricCard, OrgTrainingEnrollmentsResponse, OrgTrainingStats } from '@lfx-one/shared/interfaces';
+import type { Account, DashboardMetricCard, OrgTrainingStats } from '@lfx-one/shared/interfaces';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
@@ -42,7 +40,6 @@ const TRAINING_STATS: OrgTrainingStats = {
 };
 
 async function buildMetrics(
-  training: OrgTrainingEnrollmentsResponse,
   maintainers: object = { accountId: ACCOUNT_ID, maintainerRoles: 20, monthlyData: [12, 15], monthlyLabels: ['Jan 2030', 'Feb 2030'] },
   trainingStats: Observable<OrgTrainingStats> = of(TRAINING_STATS)
 ): Promise<DashboardMetricCard[]> {
@@ -61,9 +58,6 @@ async function buildMetrics(
         speakersMonthlyData: [10],
         monthlyLabels: ['Jan 2030'],
       }),
-    getCertifiedEmployeesMonthly: () =>
-      of({ accountId: ACCOUNT_ID, totalCertifications: 60, totalCertifiedEmployees: 50, monthlyData: [10], monthlyLabels: ['Jan 2030'] }),
-    getTrainingEnrollments: () => of(training),
   };
 
   TestBed.configureTestingModule({
@@ -100,29 +94,9 @@ function trainingCard(metrics: DashboardMetricCard[]): DashboardMetricCard {
 }
 
 describe('OrgOverviewInvolvementComponent training tile', () => {
-  it('formats YYYY-MM-DD enrollment dates as chart labels', async () => {
-    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [{ date: '2030-03-04', count: 7, cumulativeCount: 7 }] });
-
-    expect(trainingCard(metrics).chartData?.labels).toEqual(['Mar 4, 2030']);
-    expect(trainingCard(metrics).chartCaption).toContain('Mar 4, 2030');
-  });
-
-  // #4223: a cache entry written before the date-only fix carries an ISO timestamp. Throwing here froze
-  // every card in the carousel on its skeleton, so the label falls back to the raw value instead.
-  it('keeps every card building when an enrollment date is not YYYY-MM-DD', async () => {
-    const metrics = await buildMetrics({
-      accountId: ACCOUNT_ID,
-      totalEnrollments: 7,
-      dailyData: [{ date: '2030-03-04T00:00:00.000Z', count: 7, cumulativeCount: 7 }],
-    });
-
-    expect(trainingCard(metrics).chartData?.labels).toEqual(['2030-03-04T00:00:00.000Z']);
-    expect(metrics.map((metric) => metric.loading)).toEqual([false, false, false, false, false, false]);
-  });
-
   // lfx-self-serve#4290: both Education tiles show the Training page's numbers for its default state (Past 2 years, no filters).
   it('headlines courses taken for Past 2 years, as the shared stat tile does, with unit, window and the as-of date, instead of the year-to-date enrollment total', async () => {
-    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [{ date: '2030-03-04', count: 7, cumulativeCount: 7 }] });
+    const metrics = await buildMetrics();
     const card = trainingCard(metrics);
 
     expect(card.value).toBe('400');
@@ -133,7 +107,7 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
   });
 
   it('headlines certified people for Past 2 years with the certifications (person-course pairs) in the subtitle, instead of the monthly table totals', async () => {
-    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [] });
+    const metrics = await buildMetrics();
     const card = certifiedCard(metrics);
 
     expect(card.value).toBe('140');
@@ -143,24 +117,21 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
     expect(card.value).not.toContain('employees');
   });
 
-  it('captions each chart with the span it actually shows, and states no unit-less "this year"', async () => {
-    const metrics = await buildMetrics({
-      accountId: ACCOUNT_ID,
-      totalEnrollments: 7,
-      dailyData: [
-        { date: '2029-11-04', count: 3, cumulativeCount: 3 },
-        { date: '2030-03-04', count: 4, cumulativeCount: 7 },
-      ],
-    });
+  it('renders both Education tiles as stat-only cards: no chart, no chart caption, no chart data', async () => {
+    const metrics = await buildMetrics();
 
-    expect(trainingCard(metrics).chartCaption).toBe(`${ORG_OVERVIEW_TRAINING_TREND_LABEL}, Nov 4, 2029 to Mar 4, 2030`);
-    expect(certifiedCard(metrics).chartCaption).toBe(`${ORG_OVERVIEW_CERTIFICATIONS_TREND_LABEL}, Jan 2030`);
-    for (const card of [trainingCard(metrics), certifiedCard(metrics)]) expect(card.chartCaption).not.toMatch(/this (calendar )?year/i);
+    for (const card of [trainingCard(metrics), certifiedCard(metrics)]) {
+      expect(card.hideChart).toBe(true);
+      expect(card.chartData).toBeUndefined();
+      expect(card.chartCaption).toBeUndefined();
+    }
+    // The other cards keep their charts.
+    expect(metrics.filter((metric) => metric.hideChart)).toHaveLength(2);
   });
 
   it('opens Training & Certification with no query when an Education tile is clicked', async () => {
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
-    await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [] });
+    await buildMetrics();
     const fixture = TestBed.createComponent(OrgOverviewInvolvementComponent);
     fixture.componentInstance.openTraining();
 
@@ -170,7 +141,6 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
 
   it('shows a dash, not zero, when the training stats cannot load', async () => {
     const metrics = await buildMetrics(
-      { accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [] },
       undefined,
       throwError(() => new Error('boom'))
     );
@@ -187,7 +157,6 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
     const selectedAccount = signal<Account>({ accountId: ACCOUNT_ID, accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
     const pending = new Subject<OrgTrainingStats>();
     const getTrainingStats = vi.fn((uid: string) => (uid === 'org-uid-1' ? of(TRAINING_STATS) : pending));
-    const empty = () => of({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] });
     TestBed.configureTestingModule({
       imports: [OrgOverviewInvolvementComponent],
       providers: [
@@ -208,9 +177,6 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
                 speakersMonthlyData: [],
                 monthlyLabels: [],
               }),
-            getCertifiedEmployeesMonthly: () =>
-              of({ accountId: ACCOUNT_ID, totalCertifications: 0, totalCertifiedEmployees: 0, monthlyData: [], monthlyLabels: [] }),
-            getTrainingEnrollments: empty,
           },
         },
         { provide: OrgLensTrainingService, useValue: { getTrainingStats } },
@@ -241,7 +207,7 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
 
 describe('OrgOverviewInvolvementComponent maintainer roles', () => {
   it('names the default view under the headline and shows the roles held per month as the trend', async () => {
-    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] });
+    const metrics = await buildMetrics();
     const card = metrics.find((metric) => metric.title === 'Maintainer roles');
 
     expect(card).toMatchObject({
@@ -258,28 +224,19 @@ describe('OrgOverviewInvolvementComponent maintainer roles', () => {
   });
 
   it('shows a dash, not zero, when the maintainer roles are unavailable', async () => {
-    const metrics = await buildMetrics(
-      { accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] },
-      { accountId: ACCOUNT_ID, maintainerRoles: null, monthlyData: [], monthlyLabels: [] }
-    );
+    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, maintainerRoles: null, monthlyData: [], monthlyLabels: [] });
 
     expect(metrics.find((metric) => metric.title === 'Maintainer roles')?.value).toBe('—');
   });
 
   it('shows zero when the account holds no maintainer roles', async () => {
-    const metrics = await buildMetrics(
-      { accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] },
-      { accountId: ACCOUNT_ID, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] }
-    );
+    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] });
 
     expect(metrics.find((metric) => metric.title === 'Maintainer roles')?.value).toBe('0');
   });
 
   it('states no chart window when there is no trend', async () => {
-    const metrics = await buildMetrics(
-      { accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] },
-      { accountId: ACCOUNT_ID, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] }
-    );
+    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] });
 
     expect(metrics.find((metric) => metric.title === 'Maintainer roles')?.chartCaption).toBeUndefined();
   });
@@ -287,7 +244,7 @@ describe('OrgOverviewInvolvementComponent maintainer roles', () => {
 
 describe('OrgOverviewInvolvementComponent active contributors', () => {
   it('names the default view and the company under the headline and states the trend window under the chart', async () => {
-    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] });
+    const metrics = await buildMetrics();
     const card = metrics.find((metric) => metric.title === 'Active Contributors');
 
     expect(card).toMatchObject({ value: '100', tooltipText: ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION, loading: false });
@@ -323,9 +280,6 @@ describe('OrgOverviewInvolvementComponent organization scope', () => {
                 speakersMonthlyData: [],
                 monthlyLabels: [],
               }),
-            getCertifiedEmployeesMonthly: () =>
-              of({ accountId: ACCOUNT_ID, totalCertifications: 0, totalCertifiedEmployees: 0, monthlyData: [], monthlyLabels: [] }),
-            getTrainingEnrollments: () => of({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] }),
           },
         },
         { provide: OrgLensTrainingService, useValue: { getTrainingStats: () => of(TRAINING_STATS) } },

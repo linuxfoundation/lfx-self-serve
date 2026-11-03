@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
@@ -17,7 +18,7 @@ import type {
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensTrainingService } from '@services/org-lens-training.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { firstValueFrom, Observable, of, timer } from 'rxjs';
+import { firstValueFrom, Observable, of, throwError, timer } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../../../../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
@@ -250,6 +251,37 @@ describe('TraineesComponent', () => {
 
       expect(el().querySelector('[data-testid="org-people-trainees-stats-error"]')).toBeNull();
       expect(stat('courses-taken')).toBe('4');
+      error.mockRestore();
+    });
+
+    it('keeps a URL filter with no rows in the range applied and shows the zeros the stats call returns, not an error', async () => {
+      getTrainingStats.mockImplementation((_orgUid: string, query: OrgTrainingStatsQuery) =>
+        of({
+          ...statsFor(query),
+          peopleWithTrainingActivity: 0,
+          coursesTaken: 0,
+          certifications: 0,
+          certifiedPeople: 0,
+          trainingsCompleted: 0,
+          completionRatePct: 0,
+          coursesInProgress: 0,
+          peopleInTraining: 0,
+        })
+      );
+      await mount('/?tab=training&range=30d&foundation=no-rows-in-range');
+
+      expect(getTrainingStats).toHaveBeenLastCalledWith(ORG, expect.objectContaining({ range: '30d', foundation: 'no-rows-in-range' }));
+      expect(el().querySelector('[data-testid="org-people-trainees-stats-error"]')).toBeNull();
+      for (const name of ['courses-taken', 'certifications', 'certified-people', 'trainings-completed', 'courses-in-progress'])
+        expect(stat(name), name).toBe('0');
+    });
+
+    it('still shows the error state when the stats call fails with HTTP 400', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getTrainingStats.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, statusText: 'Bad Request' })));
+      await mount('/?tab=training&range=30d&foundation=no-rows-in-range');
+
+      expect(el().querySelector('[data-testid="org-people-trainees-stats-error"]')).not.toBeNull();
       error.mockRestore();
     });
 
