@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
@@ -62,6 +63,7 @@ import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
+import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -95,6 +97,7 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
     ConfirmDialogModule,
     EmptyStateComponent,
     NgTemplateOutlet,
+    UiSpinnerComponent,
   ],
   // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
   providers: [ConfirmationService, DialogService],
@@ -112,6 +115,8 @@ export class VotesTableComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
+  /** Announces a summary send starting and settling; the row indicator's spinner is aria-hidden so this is the only channel. */
+  private readonly liveAnnouncer = inject(LiveAnnouncer);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
@@ -183,13 +188,16 @@ export class VotesTableComponent {
 
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
-  protected readonly isSendingSummary = signal(false);
   /** Items for the shared row "More" (⋮) menu, rebuilt for the clicked row before it opens. */
   protected readonly rowActionMenuItems = signal<MenuItem[]>([]);
   protected readonly rowActionMenuVoteUid = signal<string | null>(null);
   protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
   private readonly isResolvingMailingList = signal(false);
+  /** Vote uids with a summary send in flight (#4831), so each row shows its own progress and a second send of the same vote can't start. */
+  protected readonly sendingSummaryUids = signal<ReadonlySet<string>>(new Set());
+  /** Messages not yet written by LiveAnnouncer; a burst must retain every vote's lifecycle update. */
+  private pendingSummaryAnnouncements: readonly string[] = [];
   /**
    * Overlays a just-closed vote onto its row as `ended`, for the same reason as `extendedDeadlines`: the index refetch can
    * still report `active`. Evicted once the incoming `votes()` row reports a non-active status.
@@ -340,10 +348,10 @@ export class VotesTableComponent {
     }
     // Summary can only be sent once the vote has closed (#3662) — upstream rejects it otherwise.
     if (vote.writer === true && vote.status === PollStatus.ENDED) {
+      // Only this vote's own send locks the item; other votes and the other row actions stay available (#4831).
       items.push({
-        label: 'Send summary',
-        icon: 'fa-light fa-chart-simple',
-        disabled: this.isSendingSummary(),
+        id: `send-summary-${vote.uid}`,
+        ...this.summarySendMenuState(this.sendingSummaryUids().has(vote.uid)),
         tooltipOptions: { tooltipLabel: 'Sends the results summary to every invited voter', tooltipPosition: 'left' },
         command: () => this.onSendSummary(vote),
       });
@@ -461,6 +469,7 @@ export class VotesTableComponent {
 
   /** Sends the on-demand close summary to every invited voter, once confirmed (#3662). On demand only — never scheduled. */
   protected onSendSummary(vote: VoteTableRow): void {
+    if (this.sendingSummaryUids().has(vote.uid)) return;
     this.confirmationService.confirm({
       message: `Send the results summary for "${vote.name}" to every invited voter? This cannot be undone.`,
       header: 'Send summary',
@@ -469,18 +478,26 @@ export class VotesTableComponent {
       acceptButtonStyleClass: 'p-button-info p-button-sm',
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => {
-        this.isSendingSummary.set(true);
+        // A stale or double-accepted confirm must not start a second send for the same vote.
+        if (this.sendingSummaryUids().has(vote.uid)) return;
+        this.setSendingSummary(vote.uid, true);
+        this.announceSummaryState(`Sending the summary for "${vote.name}"…`);
         this.voteService
           .sendVoteSummary(vote.uid)
           .pipe(
             take(1),
-            finalize(() => this.isSendingSummary.set(false))
+            // Neutral on purpose: the outcome may be a failure or unconfirmed, and the toast reports it.
+            finalize(() => {
+              this.setSendingSummary(vote.uid, false);
+              this.announceSummaryState(`The summary send for "${vote.name}" has finished. See the notification for the result.`);
+            })
           )
           .subscribe({
             next: (result) => {
-              this.messageService.add(buildVoteSummarySendNotice(result));
+              const notice = buildVoteSummarySendNotice(result);
+              this.messageService.add({ ...notice, summary: this.summaryNoticeTitle(notice.summary, vote.name) });
             },
-            error: (error: unknown) => this.onSendSummaryFailed(error),
+            error: (error: unknown) => this.onSendSummaryFailed(error, vote.name),
           });
       },
     });
@@ -755,16 +772,24 @@ export class VotesTableComponent {
     }
   }
 
+  private summaryNoticeTitle(title: string, voteName: string): string {
+    return `${title}: "${voteName}"`;
+  }
+
   /**
    * Reports a failed summary send (#4689). Only a clear rejection or a pre-send failure invites an
    * immediate retry; a transport failure, timeout, gateway error or unknown 5xx can leave summaries
    * already delivered, so those warn about duplicates instead of saying nothing was sent.
    */
-  private onSendSummaryFailed(error: unknown): void {
+  private onSendSummaryFailed(error: unknown, voteName: string): void {
     const code = error instanceof HttpErrorResponse ? (error.error?.code as string | undefined) : undefined;
 
     if (error instanceof HttpErrorResponse && error.status === 409 && code === VOTE_SUMMARY_NOT_ENDED) {
-      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'This vote has not closed yet.' });
+      this.messageService.add({
+        severity: 'error',
+        summary: this.summaryNoticeTitle("Couldn't send summary", voteName),
+        detail: 'This vote has not closed yet.',
+      });
       return;
     }
 
@@ -775,7 +800,7 @@ export class VotesTableComponent {
       } else if (error.status === 404) {
         detail = 'Nothing was sent. This vote is no longer available.';
       }
-      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail });
+      this.messageService.add({ severity: 'error', summary: this.summaryNoticeTitle("Couldn't send summary", voteName), detail });
       return;
     }
 
@@ -789,23 +814,65 @@ export class VotesTableComponent {
         counts.failed_count > 0 &&
         [counts.failed_count, counts.skipped_count].every((count) => Number.isInteger(count) && count >= 0)
       ) {
-        this.messageService.add({ ...buildVoteSummarySendNotice(counts), severity: 'error', summary: "Couldn't send summary" });
+        this.messageService.add({
+          ...buildVoteSummarySendNotice(counts),
+          severity: 'error',
+          summary: this.summaryNoticeTitle("Couldn't send summary", voteName),
+        });
         return;
       }
     }
 
     const rejected = error instanceof HttpErrorResponse && !isBffTransportFailure(error) && [400, 401, 403, 429].includes(error.status);
     if (rejected) {
-      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'No summaries were sent. Please try again.' });
+      this.messageService.add({
+        severity: 'error',
+        summary: this.summaryNoticeTitle("Couldn't send summary", voteName),
+        detail: 'No summaries were sent. Please try again.',
+      });
       return;
     }
 
     this.messageService.add({
       severity: 'warn',
-      summary: 'Summary delivery unconfirmed',
+      summary: this.summaryNoticeTitle('Summary delivery unconfirmed', voteName),
       detail: "We couldn't confirm whether the summary was sent. Check with voters before retrying, since retrying may send duplicate summaries.",
       life: VOTE_SUMMARY_NOTICE_LIFE_MS,
     });
+  }
+
+  /** CDK coalesces calls before its live-region write; carry every pending message into that write. */
+  private announceSummaryState(message: string): void {
+    const pending = [...this.pendingSummaryAnnouncements, message];
+    this.pendingSummaryAnnouncements = pending;
+    void this.liveAnnouncer.announce(pending.join(' '), 'polite').then(() => {
+      if (this.pendingSummaryAnnouncements === pending) this.pendingSummaryAnnouncements = [];
+    });
+  }
+
+  private setSendingSummary(uid: string, sending: boolean): void {
+    this.sendingSummaryUids.update((current) => {
+      const next = new Set(current);
+      if (sending) {
+        next.add(uid);
+      } else {
+        next.delete(uid);
+      }
+      return next;
+    });
+    // The popup model is a snapshot from when ⋮ opened; keep its summary item current without rebuilding vote rows.
+    if (this.rowActionMenuVoteUid() !== uid) return;
+    this.rowActionMenuItems.update((items) =>
+      items.map((item) => (item.id === `send-summary-${uid}` ? { ...item, ...this.summarySendMenuState(sending) } : item))
+    );
+  }
+
+  private summarySendMenuState(sending: boolean): Pick<MenuItem, 'label' | 'icon' | 'disabled'> {
+    return {
+      label: sending ? 'Sending summary…' : 'Send summary',
+      icon: sending ? 'fa-light fa-spinner-third motion-safe:animate-spin' : 'fa-light fa-chart-simple',
+      disabled: sending,
+    };
   }
 
   private showNoMailingListToast(): void {
