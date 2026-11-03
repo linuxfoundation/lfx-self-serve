@@ -267,12 +267,20 @@ export function deriveSurveySlug(url: string, sourceText: string): string {
   if (pageSegment !== '' && !CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS.has(pageSegment)) {
     return pageSegment;
   }
+  return slugifyForBrief(surveySourceTitle(sourceText));
+}
+
+/**
+ * A survey source document's title: its first non-empty line, at most 120 characters. ONE copy,
+ * shared by the slug above and the campaign name the BFF stores, so the two cannot drift.
+ */
+export function surveySourceTitle(sourceText: string): string {
   const title =
     sourceText
       .split('\n')
       .map((line) => line.trim())
       .find((line) => line !== '') ?? '';
-  return slugifyForBrief(title.slice(0, 120));
+  return title.slice(0, 120);
 }
 
 const CALENDAR_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;

@@ -40,7 +40,7 @@ import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywo
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
-import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LENGTH } from '@lfx-one/shared/constants';
+import { CAMPAIGN_SURVEY_TYPES, EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LENGTH } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -8603,6 +8603,9 @@ describe('CampaignsComponent — email delivery channel', () => {
       onStageEmailSend(): Promise<void>;
       canGenerateEmailCopy: Signal<boolean>;
       onEmailProceedFromPlanning(brief: unknown): void;
+      sequenceNeedsRestart: Signal<boolean>;
+      sendWorkflowUnconfirmed: Signal<boolean>;
+      selectedEmailTypeId: Signal<string>;
     }
     const seq = (): SequenceInternals => fixture.componentInstance as unknown as SequenceInternals;
 
@@ -9031,6 +9034,8 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
 
     const stageable = (sends: number): void => {
+      // A foundation of its own, so a series test never depends on what an earlier test left behind.
+      TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-t', slug: 'tlf', name: 'TLF' } as ProjectContext, false);
       selectSurvey();
       seq().onSurveyEmailCountChange(sends === 3 ? 3 : 1);
       seq().emailBriefOutput.set(surveyBrief);
@@ -9263,6 +9268,110 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().selectedEmailTemplateId(), 'the event picker only suggests (#2057)').toBe('');
     });
 
+    it('offers Start the series over when Write all meets a send saved in an earlier session', async () => {
+      stageable(3);
+      seq().surveySequenceSends.set([]);
+      let call = 0;
+      persistBrief.mockImplementation(() => {
+        call++;
+        // The first send is the page's own brief; the reminder was saved by an earlier session.
+        return of(
+          call === 1
+            ? { enabled: true, briefId: 'brief-1', etag: '"1"', approved: true, created: true }
+            : { enabled: true, briefId: 'old-reminder', approved: false, created: false, conflict: 'unowned-brief-exists' }
+        ) as never;
+      });
+
+      await seq().onGenerateSurveySequence();
+
+      expect(seq().sequenceNeedsRestart()).toBe(true);
+      expect(seq().canGenerateSurveySequence(), 'writing again would meet the same refusal').toBe(false);
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-sequence-start-over"]')).not.toBeNull();
+
+      seq().onStartSeriesOver();
+
+      expect(seq().surveySeriesRestarted(), 'the next write uses new briefs').toBe(true);
+      expect(seq().sequenceNeedsRestart()).toBe(false);
+      expect(seq().canGenerateSurveySequence()).toBe(true);
+    });
+
+    it('builds the workflow once, and holds Build after an unconfirmed create', async () => {
+      const ready = (): void => {
+        stageable(3);
+        const dates = (fixture.componentInstance as unknown as { sequenceDatesForm: FormGroup }).sequenceDatesForm;
+        [0, 1, 2].forEach((index) => {
+          if (!dates.contains(`date-${index}`)) {
+            dates.addControl(`date-${index}`, new FormControl('', { nonNullable: true }));
+          }
+          dates.controls[`date-${index}`].setValue(`2026-12-0${index + 1}`);
+        });
+        seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2', 'brief-3']);
+      };
+      ready();
+      const build = vi
+        .spyOn(service, 'createSendWorkflow')
+        .mockReturnValue(of({ flowId: '9', name: 'w', editUrl: 'https://app.hubspot.com/workflows/1/platform/flow/9/edit' }) as never);
+      expect(seq().canBuildSequenceWorkflow(), 'fixture precondition').toBe(true);
+
+      await seq().onBuildSequenceWorkflow();
+
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(seq().canBuildSequenceWorkflow(), 'a second click would build a second workflow').toBe(false);
+
+      seq().onStartSeriesOver();
+      ready();
+      build.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })) as never);
+      await seq().onBuildSequenceWorkflow();
+
+      expect(seq().sendWorkflowUnconfirmed()).toBe(true);
+      expect(seq().canBuildSequenceWorkflow(), 'the workflow may exist').toBe(false);
+    });
+
+    it('names the validation reason, not the field prefix, when the workflow is refused', async () => {
+      stageable(3);
+      const dates = (fixture.componentInstance as unknown as { sequenceDatesForm: FormGroup }).sequenceDatesForm;
+      [0, 1, 2].forEach((index) => dates.addControl(`date-${index}`, new FormControl(`2026-12-0${index + 1}`, { nonNullable: true })));
+      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2', 'brief-3']);
+      vi.spyOn(service, 'createSendWorkflow').mockReturnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: {
+                error: 'Validation failed for name',
+                code: 'VALIDATION_ERROR',
+                errors: [{ field: 'name', message: 'name must be at most 200 characters' }],
+              },
+            })
+        ) as never
+      );
+
+      await seq().onBuildSequenceWorkflow();
+
+      expect(seq().sendWorkflowError()).toBe('name must be at most 200 characters');
+      expect(seq().sendWorkflowUnconfirmed(), 'a 400 created nothing').toBe(false);
+    });
+
+    it('moves the next write to new briefs when an asset switch drops a staged series', async () => {
+      stageable(3);
+      await seq().onGenerateSurveySequence();
+      expect(persistBrief, 'fixture precondition: the series was written').toHaveBeenCalled();
+      seq().sequenceStagedBriefIds.set([seq().surveySequenceSends()[0].briefId]);
+      const surveyType = seq().selectedEmailTypeId();
+      const reportType = CAMPAIGN_SURVEY_TYPES.find((type) => type.stage === 'Report Promo')?.id ?? '';
+      expect(reportType, 'fixture precondition').not.toBe('');
+
+      seq().onSelectEmailType(reportType);
+      seq().onSelectEmailType(surveyType);
+      // The stage change cleared the brief; the planner restores the same survey's brief on return.
+      seq().emailBriefOutput.set(surveyBrief);
+
+      expect(seq().sequenceStagedBriefIds()).toEqual([]);
+      expect(seq().surveySeriesRestarted(), 'the old briefs hold drafts').toBe(true);
+    });
+
     it('locks Regenerate once the single Stage button staged the brief', () => {
       stageable(1);
       seq().emailBriefId.set('brief-primary');
@@ -9309,7 +9418,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       fixture.detectChanges();
 
       const host = fixture.nativeElement as HTMLElement;
-      expect(host.querySelector('[data-testid="campaigns-survey-sequence-hint"]')?.textContent).toContain('Wait for this email to finish staging');
+      expect(host.querySelector('[data-testid="campaigns-survey-sequence-hint"]')?.textContent).toContain('Wait for HubSpot to finish');
       expect(host.querySelector('[data-testid="campaigns-sequence-start-over"]')).toBeNull();
     });
 

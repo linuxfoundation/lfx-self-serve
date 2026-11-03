@@ -289,7 +289,7 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly isEditingEmailBrief = signal<boolean>(false);
 
-  /** Why an edit could not be saved -- the survey source over campaign-service's limit. */
+  /** Why the survey brief edit could not be saved: an empty or over-limit source, an unusable link, or no title to name it by. */
   protected readonly emailEditError = signal<string>('');
 
   /**
@@ -1654,14 +1654,14 @@ export class PlanningTabComponent implements OnInit {
     if (d === null) {
       return;
     }
-    // The same limit campaign-service enforces at save: a longer source would be refused there,
-    // after the operator had moved on believing the edit was kept.
     // A survey's copy is written from its source text alone, so an emptied one is refused here
     // rather than saved and refused by campaign-service later.
     if (this.isSurvey() && (this.emailEditForm.controls.sourceText.value ?? '').trim() === '') {
       this.emailEditError.set('Paste the survey or report text the emails are written from.');
       return;
     }
+    // The same limit campaign-service enforces at save: a longer source would be refused there,
+    // after the operator had moved on believing the edit was kept.
     const sourceLength = campaignSurveySourceTextLength(this.emailEditForm.controls.sourceText.value ?? '');
     if (this.isSurvey() && sourceLength > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS) {
       this.emailEditError.set(`The source text is ${sourceLength} characters; shorten it to ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS} or fewer.`);
@@ -1672,13 +1672,18 @@ export class PlanningTabComponent implements OnInit {
       this.emailEditError.set('Enter the full survey or report link, starting with https://.');
       return;
     }
-    this.emailEditError.set('');
     const editedSource = (this.emailEditForm.controls.sourceText.value ?? '').trim();
     const editedUrl = (this.emailEditForm.controls.registrationUrl.value ?? '').trim();
     // A survey's slug follows its title when the link names only a page (a Google Form): the
     // lookup derives it from the source text, so an edited title has to move the stored slug with
     // it, or the brief is saved under a name its own lookup can never find again.
     const surveySlug = this.isSurvey() ? deriveSurveySlug(editedUrl || d.registrationUrl, editedSource) : '';
+    // No slug means no identity to save or find the brief under, as brief generation refuses.
+    if (this.isSurvey() && surveySlug === '') {
+      this.emailEditError.set('Start the source text with a title in Latin letters or digits, so this brief has a name to be saved under.');
+      return;
+    }
+    this.emailEditError.set('');
     this.eventDetails.set({
       ...d,
       ...(surveySlug !== '' ? { slug: surveySlug } : {}),

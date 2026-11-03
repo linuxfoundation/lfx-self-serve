@@ -9777,18 +9777,15 @@ describe('CampaignController survey surface', () => {
     'ftp://surveys.example.com/r/x',
     'https://surveys.example.com:8443/r/cloud',
     'http://localhost/r/cloud',
-  ])(
-    'refuses %s as a survey link before generating anything',
-    async (url) => {
-      const req = { body: { deliveryType: 'survey', url, sourceText: 'Survey' }, query: {}, path: '/api/campaigns/brief/generate' } as unknown as Request;
+  ])('refuses %s as a survey link before generating anything', async (url) => {
+    const req = { body: { deliveryType: 'survey', url, sourceText: 'Survey' }, query: {}, path: '/api/campaigns/brief/generate' } as unknown as Request;
 
-      await controller.generateBrief(req, res, next);
+    await controller.generateBrief(req, res, next);
 
-      const error = vi.mocked(next).mock.calls[0][0];
-      expect(error).toBeInstanceOf(ServiceValidationError);
-      expect(fieldOf(error)).toBe('url');
-    }
-  );
+    const error = vi.mocked(next).mock.calls[0][0];
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(fieldOf(error)).toBe('url');
+  });
 
   describe('createSendWorkflow', () => {
     function buildWorkflowReq(body: unknown, query: Record<string, unknown> = { project: 'tlf' }): Request {
@@ -9830,14 +9827,19 @@ describe('CampaignController survey surface', () => {
       svcCreateSendWorkflow.mockResolvedValue(created);
 
       await controller.createSendWorkflow(
-        buildWorkflowReq({ name: ' Survey - Workflow ', briefIds: [' a', 'b '], sendDates: ['2026-11-02', ' 2026-11-09'] }),
+        // A caller-chosen source workflow is not forwarded: the UI never sends one.
+        buildWorkflowReq({
+          name: ' Survey - Workflow ',
+          briefIds: [' a', 'b '],
+          sendDates: ['2026-11-02', ' 2026-11-09'],
+          sourceWorkflowUrl: 'https://app.hubspot.com/workflows/1/platform/flow/77/edit',
+        }),
         res,
         next
       );
 
       expect(next).not.toHaveBeenCalled();
       expect(svcCreateSendWorkflow).toHaveBeenCalledWith(expect.anything(), 'tlf', {
-        sourceWorkflowUrl: '',
         name: 'Survey - Workflow',
         briefIds: ['a', 'b'],
         sendDates: ['2026-11-02', '2026-11-09'],

@@ -19,7 +19,7 @@ import {
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
-import { campaignSurveySourceTextTooLong, deriveSurveySlug, parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignSurveySourceTextTooLong, deriveSurveySlug, parseNegativeKeywordInput, surveySourceTitle } from '@lfx-one/shared/utils/campaign.utils';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -1516,17 +1516,17 @@ export class CampaignProxyService {
     // same class of falsehood as a silent skip.
     // Every SEND surface. Email and survey both skip ad-copy, keyword and targeting generation --
     // upstream writes their copy from the brief instead -- so the gate asks "is this not paid?".
-    const isEmail = body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing';
+    const isEmailLike = body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing';
 
     // `/brief/generate` has its OWN refinement mode — `refineFeedback` + `previousCopy` — and it is
     // a second door onto the same refusal. Left open, an email refinement here skipped the scrape
-    // and extraction (because `isRefinement`) AND every generator (because `isEmail`), then
+    // and extraction (because `isRefinement`) AND every generator (because `isEmailLike`), then
     // emitted `done`: a successful no-op, which is worse than the error it should be, because the
     // caller is told the work happened.
     //
     // Same message as `streamRefinedBrief`, deliberately — one refusal reached two ways should not
     // read as two different problems.
-    if (isEmail && isRefinement) {
+    if (isEmailLike && isRefinement) {
       yield { type: 'error', data: 'Refining email copy is not supported yet.' };
       return;
     }
@@ -1562,12 +1562,7 @@ export class CampaignProxyService {
       // on `(project, slug, delivery, stage)` and the Implement tab titles campaigns from it --
       // and a document's own opening line is what its author called it. Bounded because this
       // becomes a campaign name, and a pasted document can open with a paragraph.
-      const firstLine =
-        sourceText
-          .split('\n')
-          .map((line) => line.trim())
-          .find((line) => line !== '') ?? '';
-      const name = firstLine.slice(0, 120);
+      const name = surveySourceTitle(sourceText);
 
       // The SAME derivation the planner looks the brief up with (`deriveSurveySlug`), so a saved
       // survey -- a Google Form named after its title rather than `viewform` -- is found again.
@@ -1711,7 +1706,7 @@ export class CampaignProxyService {
         logger.warning(req, 'campaign_brief_extract', `${isEducation ? 'Course' : 'Event'} extraction failed, continuing with URL only`, { err: error });
         yield {
           type: 'status',
-          data: isEmail
+          data: isEmailLike
             ? `Could not extract structured ${extractLabel}; continuing with the URL only.`
             : `Could not extract structured ${extractLabel}, generating copy from URL...`,
         };
@@ -1762,7 +1757,7 @@ export class CampaignProxyService {
     // cheap one. The scrape, event details and HubSpot UTM above are what an email brief needs
     // from this stream today; generated subject/preview/sender copy arrives with the `email-copy`
     // endpoint (LFXV2-3198), which this path deliberately does not try to stand in for.
-    // `someContributesCopy` and not merely `!isEmail`: a Microsoft-ONLY selection reaches here with
+    // `someContributesCopy` and not merely `!isEmailLike`: a Microsoft-ONLY selection reaches here with
     // no copy keys to request. See `contributesAdCopy` for why skipping beats calling with an empty
     // schema — the failure mode is not a wasted call but a dead-ended brief.
     const someContributesCopy = selectedPlatforms.some(contributesAdCopy);
@@ -1774,10 +1769,10 @@ export class CampaignProxyService {
     // the honest value: this brief genuinely has no ad copy, and it is distinguishable from
     // `null`, which means "no brief was generated". Email deliberately keeps `null`, because its
     // copy comes from a different endpoint entirely.
-    if (!isEmail && !someContributesCopy) {
+    if (!isEmailLike && !someContributesCopy) {
       yield { type: 'copy_structured', data: {} };
     }
-    if (!isEmail && someContributesCopy) {
+    if (!isEmailLike && someContributesCopy) {
       const platformList = selectedPlatforms.filter(contributesAdCopy).join(', ');
       yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
@@ -1852,7 +1847,7 @@ export class CampaignProxyService {
     // no platform still gets the google-ads default above, so it still wants keywords. Email is the
     // one case where absence does not mean the default, and it is excluded first rather than by
     // adding another arm to that condition.
-    if (!isEmail && (body.platforms?.some((p) => p === 'google-ads' || p === 'microsoft-ads') || !body.platforms || body.platforms.length === 0)) {
+    if (!isEmailLike && (body.platforms?.some((p) => p === 'google-ads' || p === 'microsoft-ads') || !body.platforms || body.platforms.length === 0)) {
       yield { type: 'status', data: 'Generating keyword list...' };
 
       try {
@@ -1917,7 +1912,7 @@ export class CampaignProxyService {
     // a silent wipe, not a no-op, since absent and empty are the same value on this wire.
     // Callouts are excluded on the matching rule rather than a different one: a refinement that
     // regenerated them would discard the operator's edits the same way.
-    if (!isEmail && !isRefinement && selectedPlatforms.includes('google-ads')) {
+    if (!isEmailLike && !isRefinement && selectedPlatforms.includes('google-ads')) {
       // Deterministic and free — no model call, so no try/catch and no status line of its own.
       // An empty result is the honest answer for a page that carries none of the four links.
       const sitelinks = buildSitelinksFromPage(eventDetails, pageLinks, pageBaseUrl, body.programType);
@@ -1948,12 +1943,12 @@ export class CampaignProxyService {
       }
     }
 
-    // `!isEmail` is not redundant with the platform check. Today's client never sends
+    // `!isEmailLike` is not redundant with the platform check. Today's client never sends
     // `linkedin-ads` alongside `deliveryType: 'email'`, but that is a CLIENT guarantee and this is
     // a server the client does not own — `{deliveryType:'email', platforms:['linkedin-ads']}` is
     // accepted by the type and would otherwise spend an AI call on a LinkedIn targeting strategy
     // for a brief that has no ad channels.
-    if (!isEmail && selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
+    if (!isEmailLike && selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
       yield { type: 'status', data: 'Generating LinkedIn targeting strategy...' };
       try {
         const strategyPrompt = buildLinkedInStrategyPrompt(body, eventDetails);

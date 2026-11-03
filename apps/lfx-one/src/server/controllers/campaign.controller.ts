@@ -3268,7 +3268,6 @@ export class CampaignController {
       return;
     }
     const briefIds = (body?.briefIds ?? []).map((id) => id.trim());
-    const sourceWorkflowUrl = typeof body?.sourceWorkflowUrl === 'string' ? body.sourceWorkflowUrl.trim() : '';
     const name = typeof body?.name === 'string' ? body.name.trim() : '';
 
     // The source workflow is NOT required here. It is optional upstream -- a series is normally
@@ -3292,8 +3291,10 @@ export class CampaignController {
 
     const startTime = logger.startOperation(req, 'send_workflow_create', { projectSlug, sends: briefIds.length });
     try {
+      // No `sourceWorkflowUrl` from the caller: the UI never sends one, and campaign-service then
+      // copies the deployment's own survey workflow. Forwarding a client-chosen one only widens
+      // what a request can ask for.
       const created = await this.campaignServiceClient.createSendWorkflow(req, projectSlug, {
-        sourceWorkflowUrl,
         name,
         briefIds,
         sendDates: body?.sendDates?.map((date) => date.trim()),

@@ -19,6 +19,7 @@ import {
   campaignSurveySourceTextLength,
   campaignSurveySourceTextTooLong,
   deriveSurveySlug,
+  surveySourceTitle,
   campaignFlightDays,
   dailyBudgetFromTotal,
   describeCampaignDispatchFailure,
@@ -381,6 +382,14 @@ describe('deriveSurveySlug', () => {
   it('is empty when neither the link nor the text names the asset', () => {
     expect(deriveSurveySlug('https://docs.google.com/forms/d/e/1FAIpQ/viewform', '   ')).toBe('');
     expect(deriveSurveySlug('not a url', '')).toBe('');
+  });
+});
+
+describe('surveySourceTitle', () => {
+  it('is the first non-empty line, trimmed and capped at 120 characters', () => {
+    expect(surveySourceTitle('\n   2026 Cloud Native Survey  \nTwelve questions.')).toBe('2026 Cloud Native Survey');
+    expect(surveySourceTitle('x'.repeat(130))).toHaveLength(120);
+    expect(surveySourceTitle('  \n ')).toBe('');
   });
 });
 

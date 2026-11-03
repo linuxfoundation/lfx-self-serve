@@ -595,6 +595,14 @@ export interface CampaignSequenceSend {
   draftId?: string;
 }
 
+/** One written send as the series panel renders it: the send, its staged body, button and state. */
+export interface CampaignSequenceSendRow {
+  send: CampaignSequenceSend;
+  bodyHtml: string;
+  button: { text: string; url: string } | null;
+  staged: boolean;
+}
+
 /**
  * What a send workflow is built from: the series' briefs, in SEND ORDER, and the workflow whose
  * schedule and enrollment it copies.

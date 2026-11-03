@@ -1904,6 +1904,19 @@ describe('PlanningTabComponent email brief editing', () => {
     expect(internals().eventDetails()?.registrationUrl).toBe('https://surveys.example.com/s/one');
   });
 
+  it('refuses a Google Form title edit that leaves the survey with no slug', async () => {
+    await buildWithScrape('survey');
+    const formUrl = 'https://docs.google.com/forms/d/e/1FAIpQ/viewform';
+    internals().eventDetails.set({ ...scraped, sourceText: 'Developer Survey', registrationUrl: formUrl, slug: 'developer-survey' } as never);
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('開発者調査');
+
+    internals().saveEmailEdit();
+
+    expect(internals().isEditingEmailBrief()).toBe(true);
+    expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('Developer Survey');
+  });
+
   it('clears a refused edit when the editor is cancelled and reopened', async () => {
     await buildWithScrape('survey');
     internals().eventDetails.set({ ...scraped, sourceText: 'short' });
