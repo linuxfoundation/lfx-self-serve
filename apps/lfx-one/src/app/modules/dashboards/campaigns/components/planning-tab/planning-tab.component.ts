@@ -15,8 +15,16 @@ import {
   CAMPAIGN_GOALS,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
+  CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS,
 } from '@lfx-one/shared/constants';
-import { campaignSurveySourceTextLength, canonicalHttpUrl, coerceCampaignEventDetails, deriveSurveySlug, normaliseForMatch } from '@lfx-one/shared/utils';
+import {
+  campaignSurveySourceTextLength,
+  campaignSurveySourceTextTooLong,
+  canonicalHttpUrl,
+  coerceCampaignEventDetails,
+  deriveSurveySlug,
+  normaliseForMatch,
+} from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import {
@@ -723,7 +731,11 @@ export class PlanningTabComponent implements OnInit {
   /** Its length as campaign-service counts it, so the counter and the server's 400 agree. */
   protected readonly sourceTextLength = computed(() => campaignSurveySourceTextLength(this.sourceTextValue() ?? ''));
 
-  protected readonly sourceTextTooLong = computed(() => this.sourceTextLength() > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS);
+  /** Over the limit by either measure the BFF applies: the counted length or the raw paste size. */
+  protected readonly sourceTextTooLong = computed(() => campaignSurveySourceTextTooLong(this.sourceTextValue() ?? ''));
+
+  /** Past the raw-size ceiling, which the counter cannot show: whitespace there collapses. */
+  protected readonly sourceTextRawTooLong = computed(() => (this.sourceTextValue() ?? '').length > CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS);
 
   /**
    * Email has no ad-channel requirement, and that asymmetry is the point of LFXV2-3201.

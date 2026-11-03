@@ -379,6 +379,11 @@ describe('deriveSurveySlug', () => {
     expect(deriveSurveySlug(url, '\n  2026 Cloud Native Survey\nTwelve questions.')).toBe('2026-cloud-native-survey');
   });
 
+  it('names two Microsoft Forms apart by their titles, not their shared page name', () => {
+    expect(deriveSurveySlug('https://forms.office.com/Pages/ResponsePage.aspx?id=A', 'Developer Survey')).toBe('developer-survey');
+    expect(deriveSurveySlug('https://forms.office.com/Pages/ResponsePage.aspx?id=B', 'Maintainer Survey')).toBe('maintainer-survey');
+  });
+
   it('is empty when neither the link nor the text names the asset', () => {
     expect(deriveSurveySlug('https://docs.google.com/forms/d/e/1FAIpQ/viewform', '   ')).toBe('');
     expect(deriveSurveySlug('not a url', '')).toBe('');

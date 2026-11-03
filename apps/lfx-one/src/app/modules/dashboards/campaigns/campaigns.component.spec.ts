@@ -4247,6 +4247,21 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(byTestId('campaigns-email-planning-panel')?.style.display).not.toBe('none');
   });
 
+  it('gives the Survey surface a fresh planner, so the Email brief cannot be proceeded onto it', () => {
+    selectEmail();
+    // The component host itself: a tab button shares the planner's test id.
+    const planner = (): Element | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email"] lfx-planning-tab');
+    const before = planner();
+    expect(before).not.toBeNull();
+
+    internals().selectorForm.controls.deliveryType.setValue('survey');
+    fixture.detectChanges();
+
+    const after = planner();
+    expect(after).not.toBeNull();
+    expect(after, 'a surface switch recreates the planner').not.toBe(before);
+  });
+
   it('still mounts the fetch-on-init tabs lazily', () => {
     // The counterpart constraint, and the reason only Planning was hoisted out of the @switch.
     // Implementation, Insights and Optimization all fetch in `ngOnInit` — metrics reads and
@@ -9604,6 +9619,50 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       expect(seq().sequenceStagedBriefIds()).toEqual([]);
       expect(seq().surveySeriesRestarted(), 'the old briefs hold drafts').toBe(true);
+    });
+
+    it('turns off a variant B left armed on Email when the surface switches to Survey', () => {
+      seq().selectorForm.controls.deliveryType.setValue('email');
+      fixture.detectChanges();
+      const ab = (fixture.componentInstance as unknown as { abTestForm: { controls: { enabled: { setValue(v: boolean): void; value: boolean } } } }).abTestForm;
+      ab.controls.enabled.setValue(true);
+
+      selectSurvey();
+
+      expect(ab.controls.enabled.value, 'survey has no A/B control to turn it off').toBe(false);
+    });
+
+    it('ignores a late unowned answer for a series a reset already replaced', async () => {
+      stageable(3);
+      seq().surveySequenceSends.set([]);
+      const late = new Subject<unknown>();
+      let call = 0;
+      persistBrief.mockImplementation(() => {
+        call++;
+        return (call === 1 ? of({ enabled: true, briefId: 'brief-1', etag: '"1"', approved: true, created: true }) : late) as never;
+      });
+
+      const writing = seq().onGenerateSurveySequence();
+      await Promise.resolve();
+      seq().onSurveyEmailCountChange(1);
+      late.next({ enabled: true, briefId: 'old', approved: false, created: false, conflict: 'unowned-brief-exists' });
+      late.complete();
+      await writing;
+
+      expect(seq().sequenceNeedsRestart(), 'the reset series must stay writable').toBe(false);
+    });
+
+    it('explains the restart for sends saved in an earlier session, not as staged drafts', () => {
+      stageable(3);
+      // Write all refused before any send landed, so there are no rows (and no date controls).
+      seq().surveySequenceSends.set([]);
+      (seq().sequenceNeedsRestart as unknown as WritableSignal<boolean>).set(true);
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      const card = fixture.nativeElement.querySelector('[data-testid="campaigns-sequence-start-over"]') as HTMLElement | null;
+      expect(card?.textContent).toContain('saved in an earlier session');
+      expect(card?.textContent).not.toContain('audience is locked');
     });
 
     it('locks Regenerate once the single Stage button staged the brief', () => {

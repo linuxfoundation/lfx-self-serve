@@ -3137,6 +3137,10 @@ export class CampaignsComponent {
       // discarded a chosen stage's brief, audience and copy.
       if ((value === 'survey' || value === 'email') && value !== this.sendSurface()) {
         this.sendSurface.set(value);
+        // Survey has no A/B control, so a variant B left armed on Email would stage invisibly.
+        if (value === 'survey' && this.abTestForm.controls.enabled.value) {
+          this.abTestForm.controls.enabled.setValue(false);
+        }
         const defaultTypeId = value === 'survey' ? DEFAULT_CAMPAIGN_SURVEY_TYPE_ID : DEFAULT_CAMPAIGN_EMAIL_TYPE_ID;
         this.onSelectEmailType(defaultTypeId);
         this.selectorForm.controls.emailType.setValue(defaultTypeId, { emitEvent: false });
@@ -4199,7 +4203,7 @@ export class CampaignsComponent {
           // while HubSpot kept the old drafts.
           eventDetails: { ...brief.eventDetails, slug: seriesSlug },
         };
-        const briefId = await this.persistSequenceBrief(staged, projectSlug);
+        const briefId = await this.persistSequenceBrief(staged, projectSlug, isCurrent);
         if (!isCurrent()) {
           return;
         }
@@ -7917,7 +7921,7 @@ export class CampaignsComponent {
    * Ownership is keyed on the brief's full identity, stage included, so re-running the generator
    * REPLACES each send's row rather than being refused as a duplicate create.
    */
-  private async persistSequenceBrief(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
+  private async persistSequenceBrief(brief: CampaignBriefOutput, projectSlug: string, isCurrent: () => boolean): Promise<string> {
     // The FIRST send is the page's own brief, which `warmEmailBriefId` may be saving right now.
     // Joined through `ensureEmailBriefId` rather than saved again beside it: two creates of one
     // identity race, and the loser is refused as a duplicate, aborting the series.
@@ -7949,7 +7953,10 @@ export class CampaignsComponent {
       // stage, so reloading could never clear this; new briefs can, and they never adopt a row
       // whose draft this page knows nothing about.
       if (persisted.conflict === 'unowned-brief-exists') {
-        this.sequenceNeedsRestart.set(true);
+        // Only for the series still on screen: a late answer must not lock a series a reset replaced.
+        if (isCurrent()) {
+          this.sequenceNeedsRestart.set(true);
+        }
         throw new Error(
           'This survey already has emails saved from an earlier session. Check HubSpot for their drafts, then start the series over to write new ones.'
         );

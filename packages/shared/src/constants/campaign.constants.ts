@@ -3710,7 +3710,17 @@ export const CAMPAIGN_SEND_STAGES = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVE
  * every form in `viewform`). A survey brief is keyed on its slug, so these fall back to the asset's
  * own name instead of making every form in a project one brief.
  */
-export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Set(['viewform', 'formresponse', 'edit', 'index', 'form', 'survey', 's', 'r']);
+export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Set([
+  'viewform',
+  'formresponse',
+  'responsepage',
+  'edit',
+  'index',
+  'form',
+  'survey',
+  's',
+  'r',
+]);
 
 /**
  * The longest survey source document campaign-service accepts, in characters, counted as

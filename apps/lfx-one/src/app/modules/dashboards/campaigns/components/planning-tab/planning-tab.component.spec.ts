@@ -233,6 +233,13 @@ describe('PlanningTabComponent brief read-back', () => {
     fixture.detectChanges();
     expect(component.canGenerate()).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="planning-source-text-too-long"]')).not.toBeNull();
+
+    // Within the counted limit but past the raw ceiling the BFF also refuses: mostly whitespace.
+    component.briefForm.controls.sourceText.setValue('a' + ' '.repeat(24_000) + 'b');
+    fixture.detectChanges();
+    expect(component.sourceTextLength()).toBe(3);
+    expect(component.canGenerate(), 'the BFF refuses the raw size').toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-source-text-too-long"]')?.textContent).toContain('mostly blank space');
   });
 
   it('offers a saved brief for restore when the lookup returns status=loaded', async () => {

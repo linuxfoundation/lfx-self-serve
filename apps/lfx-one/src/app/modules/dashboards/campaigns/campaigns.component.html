@@ -165,7 +165,10 @@
             those selectors under the host anyway rather than relying on that, since which cards
             each mode renders is exactly the thing this ticket changes.
           -->
-        @for (program of [selectedProgramType()]; track program) {
+        <!-- Keyed on the surface too, in the item itself (a memoised literal is only re-diffed when an
+             item changes): Email and Survey are separate briefs, so a switch must not leave the other
+             surface's brief in this planner to be proceeded back onto the page. -->
+        @for (planner of [selectedProgramType() + '|' + sendSurface()]; track planner) {
           <!--
             The email TYPE selector sits above the planner rather than on Implement, because the
             stage it resolves to is part of a brief's IDENTITY: one event holds a CFP Launch and a
@@ -1420,7 +1423,13 @@
                   ) {
                     <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" data-testid="campaigns-sequence-start-over">
                       <p class="text-xs text-amber-900">
-                        The audience is locked because this series has staged drafts. Start the series over to change it. Drafts already created stay in HubSpot
+                        @if (sequenceNeedsRestart() && !surveySeriesStarted()) {
+                          Emails for this survey were saved in an earlier session. Start the series over to write them as new campaigns. Any drafts from that
+                          session stay in HubSpot
+                        } @else {
+                          The audience is locked because this series has staged drafts. Start the series over to change it. Drafts already created stay in
+                          HubSpot
+                        }
                         &mdash; check or delete them there.
                       </p>
                       <div>

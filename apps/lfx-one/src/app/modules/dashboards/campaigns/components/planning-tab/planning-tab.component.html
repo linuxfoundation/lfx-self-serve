@@ -38,7 +38,11 @@
                 >{{ sourceTextLength() }} / {{ sourceTextMaxChars }}</span
               >
             </div>
-            @if (sourceTextTooLong()) {
+            @if (sourceTextRawTooLong()) {
+              <p class="text-xs text-red-700" role="alert" data-testid="planning-source-text-too-long">
+                The pasted text is too large, mostly blank space. Remove the extra spacing or shorten it, then generate again.
+              </p>
+            } @else if (sourceTextTooLong()) {
               <p class="text-xs text-red-700" role="alert" data-testid="planning-source-text-too-long">
                 Shorten the text to {{ sourceTextMaxChars }} characters or fewer. Longer text is refused rather than cut, so no finding, date or incentive goes
                 missing from the email.
