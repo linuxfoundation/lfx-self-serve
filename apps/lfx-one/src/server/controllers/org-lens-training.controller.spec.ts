@@ -177,15 +177,18 @@ describe('OrgLensTrainingController', () => {
       expect(getGroupEmployees).toHaveBeenCalledTimes(1);
     });
 
-    it('rejects a groupValue with a control character or that is not one string', async () => {
+    it('rejects a groupValue that is not one string or is over the cap, and leaves any other string to the service, which accepts only a real group key', async () => {
       const next = vi.fn();
 
-      await controller.getGroupEmployees(buildReq({ groupValue: 'a\u0000b', status: 'completed' }), buildRes(), next);
       await controller.getGroupEmployees(buildReq({ groupValue: ['a', 'b'], status: 'completed' }), buildRes(), next);
+      await controller.getGroupEmployees(buildReq({ groupValue: 'x'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH + 1), status: 'completed' }), buildRes(), next);
 
       expect(next).toHaveBeenCalledTimes(2);
       expect(next.mock.calls.every(([e]) => e instanceof ServiceValidationError)).toBe(true);
       expect(getGroupEmployees).not.toHaveBeenCalled();
+
+      await controller.getGroupEmployees(buildReq({ groupValue: '\tTabbed', status: 'completed' }), buildRes(), vi.fn());
+      expect(getGroupEmployees).toHaveBeenCalledTimes(1);
     });
 
     it.each([
@@ -221,6 +224,17 @@ describe('OrgLensTrainingController', () => {
       expect(getTrainingStats).not.toHaveBeenCalled();
       expect(getGroups).not.toHaveBeenCalled();
       expect(getGroupEmployees).not.toHaveBeenCalled();
+    });
+
+    it('accepts a tab-prefixed filter value on stats, groups and the drawer, as the dropdown offers it', async () => {
+      const next = vi.fn();
+
+      await controller.getTrainingStats(buildReq({ course: '\tTabbed' }), buildRes(), next);
+      await controller.getGroups(buildReq({ course: '\tTabbed' }), buildRes(), next);
+      await controller.getGroupEmployees(buildReq({ course: '\tTabbed', groupValue: '\tTabbed', status: 'completed' }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(getTrainingStats).toHaveBeenCalledWith(ORG_UID, expect.objectContaining({ course: '\tTabbed' }), 'org-grant');
     });
 
     it('accepts a value at the cap, and trims surrounding whitespace before measuring it', async () => {

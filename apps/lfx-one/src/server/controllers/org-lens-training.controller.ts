@@ -34,14 +34,14 @@ import { OrgLensTrainingService } from '../services/org-lens-training.service';
 
 /**
  * Range, filters and groupBy of the shared Training / Trainees view; the same allow-list rules as the URL. A filter value that
- * can only be malformed (not one string, over the length cap, or holding a control character) is a 400 here, before the URL
+ * can only be malformed (not one string, over the length cap, or holding a control character other than a tab) is a 400 here, before the URL
  * rules would silently cut it; any other value is the service's to compare with the organization's own values.
  */
 function parseViewState(req: Request, operation: string): OrgTrainingViewState {
   for (const filter of ORG_TRAINING_FILTER_KEYS) {
     const param = ORG_TRAINING_VIEW_QUERY_PARAMS[filter];
     const raw = req.query[param];
-    if (raw !== undefined) assertWellFormedOrgTrainingFilterValue(raw, param, operation, true);
+    if (raw !== undefined) assertWellFormedOrgTrainingFilterValue(raw, param, operation, 'filter');
   }
   return parseOrgTrainingViewState((param) => getStringQueryParam(req, param));
 }
@@ -189,7 +189,7 @@ export class OrgLensTrainingController {
       const status: OrgTrainingGroupStatus = rawStatus;
 
       // Malformed is a 400; the service then accepts only a group of the table, so no other string reaches a cache key or SQL.
-      assertWellFormedOrgTrainingFilterValue(groupValue, 'groupValue', operation, false);
+      assertWellFormedOrgTrainingFilterValue(groupValue, 'groupValue', operation, 'groupKey');
       const response = await this.service.getGroupEmployees(
         req,
         orgUid,

@@ -496,6 +496,67 @@ describe('OrgLensTrainingService — a filter value the organization never carri
     expect(stats).toMatchObject({ range: '30d', peopleWithTrainingActivity: 2, coursesTaken: 3 });
   });
 
+  describe('a tab-prefixed value is one legal value on every path', () => {
+    const TABBED = '\tTabbed';
+    const TABBED_GROUP = { GROUP_KEY: TABBED, GROUP_LABEL: TABBED, PEOPLE: 2, COURSES_TAKEN: 3, COMPLETED: 1, IN_PROGRESS: 2, LEVEL: null, FOUNDATION: null };
+    const STATS_ROW = {
+      PEOPLE: 2,
+      COURSES_TAKEN: 3,
+      CERTIFICATIONS: 1,
+      CERTIFIED_PEOPLE: 1,
+      TRAININGS_COMPLETED: 0,
+      COURSES_IN_PROGRESS: 2,
+      PEOPLE_IN_TRAINING: 2,
+    };
+
+    function mockTabbedWarehouse(): void {
+      execute.mockImplementation(async (sql: string) => {
+        if (isKnownValuesSql(sql)) return { rows: [{ FILTER_KEY: 'course', FILTER_VALUE: TABBED }] };
+        if (sql.includes('AS COURSES_IN_PROGRESS')) return { rows: [STATS_ROW] };
+        if (sql.includes('AS GROUP_KEY')) return { rows: [TABBED_GROUP] };
+        if (sql.includes('COUNT(*) AS TOTAL')) return { rows: [{ TOTAL: 1, GROUP_LABEL: TABBED }] };
+        if (sql.includes('CONTACT_ID')) return { rows: [{ CONTACT_ID: 'k-1', NAME: 'Person One', JOB_TITLE: null }] };
+        return { rows: [TOTALS] };
+      });
+    }
+    const query = { ...QUERY, course: TABBED };
+
+    it('serves stats, groups and the drawer for it, not zero payloads', async () => {
+      mockTabbedWarehouse();
+
+      const stats = await service.getTrainingStats(ACCOUNT, query, 'org-grant');
+      const groups = await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
+      const drawer = await service.getGroupEmployees(
+        REQ,
+        ACCOUNT,
+        query,
+        { groupBy: 'course', groupValue: TABBED, tab: 'certifications', status: 'completed' },
+        'org-grant'
+      );
+
+      expect(stats).toMatchObject({ coursesTaken: 3, peopleWithTrainingActivity: 2 });
+      expect(groups.data.map((row) => row.key)).toEqual([TABBED]);
+      expect(drawer).toMatchObject({ groupValue: TABBED, total: 1 });
+      expect(drawer.data).toHaveLength(1);
+    });
+
+    it('never offers a value holding another control character, so every offered option can be requested', async () => {
+      const rows = [
+        { FILTER_KEY: 'course', FILTER_VALUE: TABBED },
+        { FILTER_KEY: 'course', FILTER_VALUE: 'Line\nBreak' },
+      ];
+      execute.mockImplementation(async (sql: string) =>
+        isKnownValuesSql(sql) ? { rows } : { rows: sql.includes('AS COURSES_IN_PROGRESS') ? [STATS_ROW] : [TOTALS] }
+      );
+
+      const tabbed = await service.getTrainingStats(ACCOUNT, query, 'org-grant');
+      const broken = await service.getTrainingStats(ACCOUNT, { ...QUERY, course: 'Line\nBreak' }, 'org-grant');
+
+      expect(tabbed.coursesTaken).toBe(3);
+      expect(broken.coursesTaken).toBe(0);
+    });
+  });
+
   it('reads no known values when no filter is set', async () => {
     mockGroups();
 

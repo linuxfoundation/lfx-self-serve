@@ -47,6 +47,7 @@ import {
   orgTrainingStatusPredicate,
   orgTrainingTabPredicate,
 } from '../helpers/org-training-pairs.sql';
+import { isWellFormedOrgTrainingFilterValue } from '../helpers/org-training-filter.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
@@ -544,6 +545,16 @@ export class OrgLensTrainingService {
 }
 
 /**
+ * A warehouse value as a request names it: normalized (trimmed, capped), and null when blank or when it holds a control
+ * character other than a tab, which no request may carry. Such a value is therefore never offered as an option, so every
+ * option the dropdown shows can be selected.
+ */
+function wellFormedFilterValue(value: string | null | undefined): string | null {
+  const normalized = normalizeOrgTrainingFilterValue(value);
+  return normalized !== null && isWellFormedOrgTrainingFilterValue(normalized) ? normalized : null;
+}
+
+/**
  * The five dropdowns; an option exists only when a pair of the range carries it. Course options are names (versions merge).
  * Option values are normalized like a URL value (trimmed, capped), so every option can be named by a request and compares equal to it.
  */
@@ -554,11 +565,11 @@ function buildFilterOptions(rows: readonly OrgTrainingOptionRow[]): OrgTrainingF
   const levels = new Map<string, string>();
   const formats = new Map<string, string>();
   for (const row of rows) {
-    const foundationId = normalizeOrgTrainingFilterValue(row.FOUNDATION_ID);
-    const projectId = normalizeOrgTrainingFilterValue(row.PROJECT_ID);
-    const course = normalizeOrgTrainingFilterValue(row.COURSE_NAME);
-    const level = normalizeOrgTrainingFilterValue(row.COURSE_LEVEL);
-    const format = normalizeOrgTrainingFilterValue(row.COURSE_FORMAT);
+    const foundationId = wellFormedFilterValue(row.FOUNDATION_ID);
+    const projectId = wellFormedFilterValue(row.PROJECT_ID);
+    const course = wellFormedFilterValue(row.COURSE_NAME);
+    const level = wellFormedFilterValue(row.COURSE_LEVEL);
+    const format = wellFormedFilterValue(row.COURSE_FORMAT);
     if (foundationId && row.FOUNDATION_NAME) foundations.set(foundationId, row.FOUNDATION_NAME);
     if (projectId && row.PROJECT_NAME) projects.set(projectId, row.PROJECT_NAME);
     if (course) courses.set(course, course);
@@ -586,7 +597,7 @@ function buildKnownFilterValues(rows: readonly OrgTrainingKnownValueRow[]): OrgT
     format: new Set(),
   };
   for (const row of rows) {
-    const value = normalizeOrgTrainingFilterValue(row.FILTER_VALUE);
+    const value = wellFormedFilterValue(row.FILTER_VALUE);
     if (value !== null && row.FILTER_KEY in known) known[row.FILTER_KEY].add(value);
   }
   return {
