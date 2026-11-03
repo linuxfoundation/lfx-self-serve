@@ -18,7 +18,7 @@ import {
   PastMeeting,
 } from '@lfx-one/shared/interfaces';
 import {
-  formatMeetingTimeRange,
+  formatDuration,
   getMeetingHomeRowLink,
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
@@ -28,9 +28,12 @@ import {
 } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
+import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
 import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.service';
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeActionsComponent } from '../meeting-home-actions/meeting-home-actions.component';
 import { MeetingHomeArtifactsComponent } from '../meeting-home-artifacts/meeting-home-artifacts.component';
 import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
@@ -41,7 +44,15 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
  */
 @Component({
   selector: 'lfx-meeting-home-row',
-  imports: [DatePipe, MeetingHomeActionsComponent, MeetingHomeArtifactsComponent, MeetingRsvpControlsComponent, UiAvatarComponent, UiTooltipDirective],
+  imports: [
+    DatePipe,
+    MeetingHomeActionsComponent,
+    MeetingHomeArtifactsComponent,
+    MeetingRsvpControlsComponent,
+    UiAvatarComponent,
+    UiButtonComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './meeting-home-row.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
@@ -51,6 +62,8 @@ export class MeetingHomeRowComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly userService = inject(UserService);
   private readonly resize = inject(MeetingsHomeResizeService);
+  private readonly store = inject(MeetingsHomeStore);
+  private readonly joinService = inject(MeetingsHomeJoinService);
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
   private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
 
@@ -73,6 +86,10 @@ export class MeetingHomeRowComponent {
   protected readonly organizers: Signal<MeetingHomeRowOrganizer[]> = computed(() =>
     getMeetingHomeRowOrganizers(this.row().meeting, this.userService.viewerUsername())
   );
+  private readonly upcomingRow: Signal<MeetingHomeRow | null> = computed(() => (this.past() ? null : this.row()));
+  /** Upcoming dates inside their join window get a Join button, as the Next meeting card does. */
+  protected readonly joinable: Signal<boolean> = this.joinService.joinable(this.upcomingRow, this.store.now);
+  protected readonly joinUrl: Signal<string | null> = this.joinService.joinUrl(this.upcomingRow, this.joinable);
   protected readonly visibilityBg = MEETING_VISIBILITY_BG_CLASSES;
 
   public constructor() {
@@ -98,6 +115,10 @@ export class MeetingHomeRowComponent {
     }
   }
 
+  protected join(): void {
+    if (this.joinable()) this.joinService.join(this.row().meeting, this.joinUrl());
+  }
+
   /** Keeps a link click from also opening the row; a plain same-tab click navigates in-app. */
   protected onLinkClick(event: MouseEvent, url: string, newTab: boolean): void {
     event.stopPropagation();
@@ -116,7 +137,8 @@ export class MeetingHomeRowComponent {
   private initWhen(): Signal<string[]> {
     return computed(() => {
       const { startTime, durationMinutes } = this.row();
-      return [formatDate(startTime, 'EEE, MMM d', 'en-US'), formatMeetingTimeRange(startTime, durationMinutes), `${durationMinutes} min`];
+      const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(startTime));
+      return [formatDate(startTime, 'EEE, MMM d', 'en-US'), time, formatDuration(durationMinutes * 60)];
     });
   }
 }

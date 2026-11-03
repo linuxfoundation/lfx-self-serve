@@ -6,6 +6,8 @@ import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow } from '@lfx-one/shared/interfaces';
 import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
+import { MeetingService } from '@services/meeting.service';
+import { UserService } from '@services/user.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NextMeetingCardComponent } from './next-meeting-card.component';
@@ -82,7 +84,13 @@ describe('NextMeetingCardComponent', () => {
     navigate = vi.fn().mockResolvedValue(true);
     open = vi.fn();
     vi.stubGlobal('open', open);
-    TestBed.configureTestingModule({ providers: [{ provide: Router, useValue: { navigate, navigateByUrl: vi.fn() } }] });
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Router, useValue: { navigate, navigateByUrl: vi.fn() } },
+        { provide: UserService, useValue: {} },
+        { provide: MeetingService, useValue: {} },
+      ],
+    });
   });
 
   afterEach(() => {
