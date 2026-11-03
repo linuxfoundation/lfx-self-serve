@@ -552,7 +552,7 @@ describe('MeetingsHomeStore', () => {
       expect(store.lastMeeting()?.key).toBe('m-past-a');
     });
 
-    it('drops only the cancelled date of a series', () => {
+    it('drops only the cancelled date of a series and marks it cancelled for the pickers', () => {
       const store = create();
       const [first, second] = [inDays(1), inDays(8)];
       upcoming$.next([weeklyMeeting([first, second])]);
@@ -560,6 +560,7 @@ describe('MeetingsHomeStore', () => {
       store.removeOccurrence('m-1', seconds(first));
 
       expect(store.upcomingRows().map((row) => row.occurrenceId)).toEqual([seconds(second)]);
+      expect(store.upcomingRows()[0].meeting.cancelled_occurrences).toEqual([seconds(first)]);
     });
   });
 

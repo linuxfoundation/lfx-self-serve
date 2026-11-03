@@ -121,6 +121,14 @@ describe('MeetingsHomeDeleteService', () => {
       });
     });
 
+    it('reports a picked date that no longer resolves instead of cancelling another one', () => {
+      service.delete(row(SERIES, SECOND));
+      scopeResult.next({ deleteType: 'occurrence', occurrenceId: '2599999999' });
+
+      expect(openedWith(MeetingDeleteModalComponent)).toBeUndefined();
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'No upcoming occurrence found to cancel.' }));
+    });
+
     it('reports when no upcoming date is left to cancel', () => {
       service.delete(row({ ...SERIES, occurrences: [] }));
       scopeResult.next({ deleteType: 'occurrence' });

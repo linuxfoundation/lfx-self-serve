@@ -39,7 +39,10 @@ export class MeetingDeleteModalComponent {
   protected readonly title = this.occurrence?.title || this.data.row.meeting.title || 'Untitled Meeting';
   protected readonly start = this.occurrence?.start_time ?? this.data.row.startTime;
   protected readonly date = formatDate(this.start, 'EEE, MMM d, y', 'en-US');
-  protected readonly time = formatMeetingTimeRange(this.start, this.occurrence?.duration || this.data.row.durationMinutes);
+  protected readonly time = formatMeetingTimeRange(
+    this.start,
+    this.occurrence ? this.occurrence.duration || this.data.row.meeting.duration || 0 : this.data.row.durationMinutes
+  );
   protected readonly guestCount = resolveMeetingBaseCount(this.data.row.meeting) ?? 0;
   protected readonly reasonMaxLength = MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH;
   protected readonly reason = signal('');

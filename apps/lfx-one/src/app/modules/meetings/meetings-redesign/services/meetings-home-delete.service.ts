@@ -43,7 +43,8 @@ export class MeetingsHomeDeleteService {
           this.confirm(row, null);
           return;
         }
-        const occurrence = (result.occurrenceId ? this.findOccurrence(row, result.occurrenceId) : null) ?? opening;
+        // A picked date that no longer resolves is reported, never swapped for another one.
+        const occurrence = result.occurrenceId ? this.findOccurrence(row, result.occurrenceId) : opening;
         if (!occurrence) {
           this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Error', description: 'No upcoming occurrence found to cancel.' });
           return;

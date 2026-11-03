@@ -6,6 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDeleteDialogData, MeetingOccurrence, PastMeeting } from '@lfx-one/shared/interfaces';
+import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject, throwError } from 'rxjs';
@@ -127,6 +128,12 @@ describe('MeetingDeleteModalComponent', () => {
       expect(cancelOccurrence).toHaveBeenCalledWith('synthetic-meeting', OCCURRENCE.occurrence_id, 'Holiday');
       expect(deleteMeeting).not.toHaveBeenCalled();
       expect(close).toHaveBeenCalledWith(true);
+    });
+
+    it("times a picked date by its own duration, else the series', not the clicked row's", async () => {
+      await render(buildData({ ...SERIES, duration: 60 } as Meeting, { ...OCCURRENCE, duration: 0 }));
+
+      expect(query('meetings-home-delete-details')?.textContent).toContain(formatMeetingTimeRange(OCCURRENCE.start_time, 60));
     });
 
     it('sends no reason when it is left empty', async () => {

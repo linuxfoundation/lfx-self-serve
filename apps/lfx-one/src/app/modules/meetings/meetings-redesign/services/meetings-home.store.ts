@@ -30,7 +30,6 @@ import {
   getRsvpTimestampMs,
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
-  isSameOccurrenceId,
   selectApplicableRsvp,
   sortPastMeetingsDescending,
   toPastMeetingHomeRow,
@@ -296,13 +295,13 @@ export class MeetingsHomeStore {
     return computed(() => {
       const removed = this.meetingService.removedRegistrationMeetingIds();
       // Organizers keep their meetings after removing their own registration, without the registration.
+      const deleted = this.deletedMeetingIds();
       const meetings = this.upcomingMeetings()
-        .filter((meeting) => meeting.organizer || !removed.has(meeting.id))
+        .filter((meeting) => !deleted.has(meeting.id) && (meeting.organizer || !removed.has(meeting.id)))
+        .map((meeting) => this.withLocalCancellations(meeting))
         .map((meeting) => (removed.has(meeting.id) ? { ...meeting, invited: false, my_registrant_ids: [], my_rsvp: null, my_rsvps: [] } : meeting))
         .map((meeting) => this.withCurrentRsvps(meeting));
-      return expandMeetingOccurrences(meetings, this.now())
-        .filter((row) => !this.isRemoved(row))
-        .map((row) => this.withConfirmedRowRsvp(row));
+      return expandMeetingOccurrences(meetings, this.now()).map((row) => this.withConfirmedRowRsvp(row));
     });
   }
 
@@ -322,10 +321,12 @@ export class MeetingsHomeStore {
     );
   }
 
-  private isRemoved(row: MeetingHomeRow): boolean {
-    const meetingId = getMeetingSeriesUid(row.meeting);
-    if (this.deletedMeetingIds().has(meetingId)) return true;
-    return this.cancelledOccurrences().some((cancelled) => cancelled.meetingId === meetingId && isSameOccurrenceId(cancelled.occurrenceId, row.occurrenceId));
+  /** Marks dates cancelled here as cancelled on the meeting, so its rows and the occurrence pickers leave them out. */
+  private withLocalCancellations(meeting: Meeting): Meeting {
+    const ids = this.cancelledOccurrences()
+      .filter((cancelled) => cancelled.meetingId === meeting.id)
+      .map((cancelled) => cancelled.occurrenceId);
+    return ids.length ? { ...meeting, cancelled_occurrences: [...(meeting.cancelled_occurrences ?? []), ...ids] } : meeting;
   }
 
   /** Loads one artifact of the last meeting, again whenever it changes; a missing or failed lookup reads as null. */
