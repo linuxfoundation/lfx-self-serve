@@ -12,6 +12,29 @@ import {
 import type { OrgTrainingFilters, OrgTrainingGroupBy, OrgTrainingStatsQuery, OrgTrainingViewState } from '../interfaces/org-training-view.interface';
 import { orgLensTimeRangeUrlParam, parseOrgLensTimeRange } from './org-lens-time-range.utils';
 
+/**
+ * Strips leading and trailing U+0020 only (what Snowflake `TRIM` strips by default; a tab or other whitespace stays).
+ * An index scan, not a regular expression: a `/^ +| +$/` trim backtracks quadratically on long runs of spaces.
+ */
+export function trimOrgTrainingSpaces(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value.charCodeAt(start) === 32) start++;
+  while (end > start && value.charCodeAt(end - 1) === 32) end--;
+  return value.slice(start, end);
+}
+
+/**
+ * A course name, level or format (or an option value) as the pairs SQL reads it, `NULLIF(LEFT(TRIM(col), 200), '')`:
+ * spaces trimmed, cut to {@link MAX_ORG_TRAINING_FILTER_VALUE_LENGTH}, null when blank. The one rule the BFF, the
+ * dropdown options and the Trainees client share, so an option the dropdown offers is the string the pairs carry.
+ */
+export function normalizeOrgTrainingFilterValue(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = trimOrgTrainingSpaces(value).slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH);
+  return normalized === '' ? null : normalized;
+}
+
 function parseFilterValue(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -53,10 +76,12 @@ export function orgTrainingStatsQuery(state: OrgTrainingStatsQuery): OrgTraining
 /** Key-safe cache/sub-resource signature of range + filters (base64url JSON, only `[A-Za-z0-9_-]`). */
 export function orgTrainingFiltersSignature(query: OrgTrainingStatsQuery): string {
   const json = JSON.stringify([query.range, ...ORG_TRAINING_FILTER_KEYS.map((key) => query[key])]);
-  return btoa(String.fromCharCode(...new TextEncoder().encode(json)))
+  const base64 = btoa(String.fromCharCode(...new TextEncoder().encode(json)))
     .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+    .replace(/\//g, '_');
+  let end = base64.length;
+  while (end > 0 && base64.charCodeAt(end - 1) === 61) end--;
+  return base64.slice(0, end);
 }
 
 /** Whether any filter narrows the pairs. */

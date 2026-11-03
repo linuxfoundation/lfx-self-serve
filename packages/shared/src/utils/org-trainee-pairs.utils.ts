@@ -1,16 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MAX_ORG_TRAINING_FILTER_VALUE_LENGTH } from '../constants/org-training-view.constants';
 import { CERTIFICATION_PRODUCT_TYPE } from '../constants/training.constants';
 import type { OrgTraineeDetailRow, OrgTraineePair, OrgTraineePairCounts } from '../interfaces/org-people-trainees.interface';
-
-/** The SQL's `NULLIF(LEFT(TRIM(col), 200), '')`: spaces-only trim (a tab stays), capped at the filter value length, blank → null. Applied per row before resolving. */
-function normalizeAttribute(value: string | null): string | null {
-  if (value === null) return null;
-  const normalized = value.replace(/^ +| +$/g, '').slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH);
-  return normalized === '' ? null : normalized;
-}
+import { normalizeOrgTrainingFilterValue } from './org-training-view-state.utils';
 
 /** Greatest non-null string (`MAX` semantics: nulls ignored, plain string comparison). */
 function maxString(current: string | null, next: string | null): string | null {
@@ -36,9 +29,9 @@ export function resolveOrgTraineePairs(details: readonly OrgTraineeDetailRow[]):
   for (const source of details) {
     const row = {
       ...source,
-      courseName: normalizeAttribute(source.courseName),
-      courseLevel: normalizeAttribute(source.courseLevel),
-      courseFormat: normalizeAttribute(source.courseFormat),
+      courseName: normalizeOrgTrainingFilterValue(source.courseName),
+      courseLevel: normalizeOrgTrainingFilterValue(source.courseLevel),
+      courseFormat: normalizeOrgTrainingFilterValue(source.courseFormat),
     };
     const key = `${row.personKey}|${row.courseId}`;
     const pair = pairs.get(key);

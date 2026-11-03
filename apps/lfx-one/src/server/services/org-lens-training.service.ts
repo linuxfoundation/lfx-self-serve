@@ -27,12 +27,17 @@ import type {
   OrgTrainingStats,
   OrgTrainingStatsQuery,
 } from '@lfx-one/shared/interfaces';
-import { hasOrgTrainingCourseFilter, isOrgLensTimeRange, orgTrainingCompletionRatePct, orgTrainingFiltersSignature } from '@lfx-one/shared/utils';
+import {
+  hasOrgTrainingCourseFilter,
+  isOrgLensTimeRange,
+  normalizeOrgTrainingFilterValue,
+  orgTrainingCompletionRatePct,
+  orgTrainingFiltersSignature,
+} from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { toIsoTimestamp } from '../helpers/date-format.helper';
-import { normalizeOrgTrainingFilterValue } from '../helpers/org-training-filter.helper';
 import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
 import {
   buildOrgTrainingPairsCte,

@@ -11,7 +11,7 @@ const PEOPLE_TRAINING_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING';
 
 /**
  * A free-text attribute as a request value names it: leading and trailing spaces trimmed (Snowflake `TRIM` takes spaces only, as
- * `normalizeOrgTrainingFilterValue`), cut to the filter value length, and blank as NULL. The pairs read the course name, level
+ * `normalizeOrgTrainingFilterValue` in shared utils), cut to the filter value length, and blank as NULL. The pairs read the course name, level
  * and format this way, so a pair's attribute, its filter, its group key and its dropdown option are one string.
  */
 function normalizedAttribute(column: string): string {

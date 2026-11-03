@@ -5,19 +5,9 @@ import { MAX_ORG_TRAINING_FILTER_VALUE_LENGTH } from '@lfx-one/shared/constants'
 import { describe, expect, it } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
-import { assertWellFormedOrgTrainingFilterValue, normalizeOrgTrainingFilterValue } from './org-training-filter.helper';
+import { assertWellFormedOrgTrainingFilterValue } from './org-training-filter.helper';
 
 const MAX = MAX_ORG_TRAINING_FILTER_VALUE_LENGTH;
-
-describe('normalizeOrgTrainingFilterValue', () => {
-  it('trims, caps and maps blank or non-string values to null', () => {
-    expect(normalizeOrgTrainingFilterValue('  Course A  ')).toBe('Course A');
-    expect(normalizeOrgTrainingFilterValue('x'.repeat(MAX + 10))).toBe('x'.repeat(MAX));
-    expect(normalizeOrgTrainingFilterValue('   ')).toBeNull();
-    expect(normalizeOrgTrainingFilterValue(null)).toBeNull();
-    expect(normalizeOrgTrainingFilterValue(undefined)).toBeNull();
-  });
-});
 
 describe('assertWellFormedOrgTrainingFilterValue', () => {
   const check = (value: unknown, trim: boolean): void => assertWellFormedOrgTrainingFilterValue(value, 'course', 'test_operation', trim);

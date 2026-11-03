@@ -7,10 +7,12 @@ import type { OrgTrainingViewState } from '../interfaces/org-training-view.inter
 import {
   hasOrgTrainingCourseFilter,
   matchesOrgTrainingFilters,
+  normalizeOrgTrainingFilterValue,
   orgTrainingCompletionRatePct,
   orgTrainingFiltersSignature,
   parseOrgTrainingViewState,
   serializeOrgTrainingViewState,
+  trimOrgTrainingSpaces,
 } from './org-training-view-state.utils';
 
 const fromQuery = (query: Record<string, string>) => parseOrgTrainingViewState((name) => query[name] ?? null);
@@ -91,5 +93,56 @@ describe('filter helpers', () => {
   it('computes the completion rate over courses taken', () => {
     expect(orgTrainingCompletionRatePct({ coursesTaken: 0, certifications: 0, trainingsCompleted: 0 })).toBe(0);
     expect(orgTrainingCompletionRatePct({ coursesTaken: 9660, certifications: 1134, trainingsCompleted: 2373 })).toBe(36);
+  });
+});
+
+describe('trimOrgTrainingSpaces / normalizeOrgTrainingFilterValue', () => {
+  // The regular expression the index scan replaced (quadratic on long space runs, hence CodeQL js/polynomial-redos).
+  const legacyTrim = (value: string): string => value.replace(/^ +| +$/g, '');
+  const legacyNormalize = (value: string): string | null => {
+    const normalized = legacyTrim(value).slice(0, 200);
+    return normalized === '' ? null : normalized;
+  };
+
+  const inputs: [string, string][] = [
+    ['empty', ''],
+    ['spaces only', '     '],
+    ['leading and trailing spaces', '  Course A  '],
+    ['trailing spaces', 'Course A   '],
+    ['internal spaces kept', ' Intro  to   Linux '],
+    ['a tab stays at the ends', '\tCourse\t'],
+    ['spaces around a tab', ' \t Course \t '],
+    ['a non-breaking space stays', '\u00a0Course\u00a0'],
+    ['no spaces', 'Course'],
+  ];
+
+  it.each(inputs)('matches the old regular expression: %s', (_label, input) => {
+    expect(trimOrgTrainingSpaces(input)).toBe(legacyTrim(input));
+    expect(normalizeOrgTrainingFilterValue(input)).toBe(legacyNormalize(input));
+  });
+
+  it('strips only U+0020: a tab stays, and internal spaces are kept', () => {
+    expect(trimOrgTrainingSpaces('\t a  b \t')).toBe('\t a  b \t');
+    expect(trimOrgTrainingSpaces('  a  b  ')).toBe('a  b');
+  });
+
+  it('is linear on 100k spaces: spaces only, spaces then text, text then spaces', () => {
+    const spaces = ' '.repeat(100_000);
+    const started = Date.now();
+    expect(trimOrgTrainingSpaces(spaces)).toBe('');
+    expect(trimOrgTrainingSpaces(`${spaces}x`)).toBe('x');
+    expect(trimOrgTrainingSpaces(`x${spaces}`)).toBe('x');
+    expect(trimOrgTrainingSpaces(`${spaces}x${spaces}`)).toBe('x');
+    expect(trimOrgTrainingSpaces(`${spaces}x${spaces}y`)).toBe(`x${spaces}y`);
+    expect(normalizeOrgTrainingFilterValue(spaces)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('caps at 200 characters after the trim, and maps blank and non-strings to null', () => {
+    expect(normalizeOrgTrainingFilterValue(`  ${'x'.repeat(250)}  `)).toBe('x'.repeat(200));
+    expect(normalizeOrgTrainingFilterValue(`${' '.repeat(10)}${'y'.repeat(200)}`)).toBe('y'.repeat(200));
+    expect(normalizeOrgTrainingFilterValue('   ')).toBeNull();
+    expect(normalizeOrgTrainingFilterValue(null)).toBeNull();
+    expect(normalizeOrgTrainingFilterValue(undefined)).toBeNull();
   });
 });
