@@ -115,6 +115,12 @@ export class CommitteeSettingsTabComponent {
   // pass their own "no active sync elsewhere" check and fire conflicting PUTs before either save's
   // round-trip lands (#4899 review).
   public savingMlUids = signal<ReadonlySet<string>>(new Set());
+  // True from the moment a card's save succeeds (onSyncSettingsUpdated) until the resulting
+  // getMailingListsByCommittee refresh lands — savingMlUids alone unlocks sibling cards as soon as
+  // the saving card's own PUT completes, before associatedMailingLists() (and each sibling's
+  // activeSync()) reflects the new sync_mode, leaving a window where a second card can still submit
+  // an automatic mode against stale sibling data (#4899 review, prior item partially addressed).
+  public refreshingMl = signal(false);
 
   // Form
   public form = new FormGroup({
@@ -299,6 +305,7 @@ export class CommitteeSettingsTabComponent {
   // "only one auto direction per committee" notice updates across all open instances, not just the
   // one that was just saved (#4025).
   public onSyncSettingsUpdated(): void {
+    this.refreshingMl.set(true);
     this.refreshMl$.next();
   }
 
@@ -640,8 +647,12 @@ export class CommitteeSettingsTabComponent {
     const refresh$ = this.refreshMl$.pipe(map(() => this.committee()));
     // Preserve the last successfully-loaded list on a failed refresh instead of wiping it to [] —
     // a transient fetch error (e.g. a flaky refreshMl$ re-fetch) would otherwise make every open
-    // Auto Sync drawer card vanish rather than just leaving the data stale (#4899 review).
-    let lastGoodLists: GroupsIOMailingList[] = [];
+    // Auto Sync drawer card vanish rather than just leaving the data stale (#4899 review). Keyed by
+    // committee uid, not a bare array: this component instance is reused across /groups/:id ->
+    // /groups/:id2 navigation, so a failed fetch for committee B must not resurface committee A's
+    // lists — the fallback is only valid when it matches the committee currently being requested
+    // (#4899 review).
+    let lastGoodLists: { uid: string; lists: GroupsIOMailingList[] } | null = null;
 
     return toSignal(
       merge(committee$, refresh$).pipe(
@@ -649,11 +660,14 @@ export class CommitteeSettingsTabComponent {
         switchMap((c) => {
           this.mlLoadingInternal.set(true);
           return this.mailingListService.getMailingListsByCommittee(c!.uid).pipe(
-            finalize(() => this.mlLoadingInternal.set(false)),
-            tap((lists) => (lastGoodLists = lists)),
+            finalize(() => {
+              this.mlLoadingInternal.set(false);
+              this.refreshingMl.set(false);
+            }),
+            tap((lists) => (lastGoodLists = { uid: c!.uid, lists })),
             catchError((error) => {
               console.error('Failed to refresh associated mailing lists', error);
-              return of(lastGoodLists);
+              return of(lastGoodLists?.uid === c!.uid ? lastGoodLists.lists : []);
             })
           );
         })
@@ -663,8 +677,13 @@ export class CommitteeSettingsTabComponent {
   }
 
   private initProjectMailingLists(): Signal<GroupsIOMailingList[]> {
+    // Also refreshes on refreshMl$, not just on committee() changing — buildMlUpdatePayload's
+    // "keep sync_mode from the same committee" branch reads this snapshot, so a stale pre-save copy
+    // (e.g. one still showing auto_c_to_ml after a drawer save turned it off) can resurrect an
+    // automatic sync mode the admin just disabled the next time the picker re-associates that list
+    // (#4899 review).
     return toSignal(
-      toObservable(this.committee).pipe(
+      merge(toObservable(this.committee), this.refreshMl$.pipe(map(() => this.committee()))).pipe(
         filter((c) => !!c?.project_uid),
         switchMap((c) => {
           return this.mailingListService.getMailingListsByProject(c!.project_uid!).pipe(catchError(() => of([] as GroupsIOMailingList[])));

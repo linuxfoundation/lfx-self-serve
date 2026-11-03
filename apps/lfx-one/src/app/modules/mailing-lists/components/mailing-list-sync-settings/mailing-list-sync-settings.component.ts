@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -97,11 +97,11 @@ export class MailingListSyncSettingsComponent {
     // through onToggleChange()/save() below, never through this input-driven effect.
     effect(() => {
       const ml = this.mailingList();
-      // Skip while a save is in flight — onToggleChange() already set syncOn optimistically, and an
-      // unrelated mailingList() refresh landing mid-save (e.g. a sibling drawer card's own save
-      // triggering the shared refetch) must not clobber that optimistic value before save()'s own
-      // subscribe/catchError settles it (#4899 review).
-      if (this.saving()) return;
+      // Read `saving` untracked so this effect depends only on `mailingList()` — a tracked read also
+      // re-runs this effect the instant a successful save flips `saving` back to false, which still
+      // observes the pre-save `mailingList()` input (the parent's refresh hasn't landed yet) and
+      // would snap the toggle back to the old value until that refresh arrives (#4899 review).
+      if (untracked(this.saving)) return;
       this.syncOn.set(!!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL);
     });
 

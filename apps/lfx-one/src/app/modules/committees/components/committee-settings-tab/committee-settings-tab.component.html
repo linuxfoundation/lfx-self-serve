@@ -184,7 +184,7 @@
           <lfx-mailing-list-sync-settings
             [mailingList]="ml"
             [siblingCandidates]="associatedMailingLists()"
-            [lockedBySibling]="drawerSavingCount() > 0 && !savingMlUids().has(ml.uid)"
+            [lockedBySibling]="refreshingMl() || (drawerSavingCount() > 0 && !savingMlUids().has(ml.uid))"
             (updated)="onSyncSettingsUpdated()"
             (savingChange)="onSyncSettingsSavingChange(ml.uid, $event)" />
         </div>
