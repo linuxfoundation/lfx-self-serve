@@ -694,10 +694,10 @@ export function canVoterFetchVoteResults(
 }
 
 /**
- * Copy for the vote detail page's "Visibility at a glance" card — describes who sees what today (managers see live
- * totals and comments on a named vote, and participation only on a pseudo-anonymous one until close; voters see their
- * own response, and totals and comments only after close), never a new rule. Ballot privacy itself is shown by the page header's
- * privacy tag, so it is not repeated here.
+ * Visibility explanation for the vote detail header's ballot privacy badge tooltip — describes who sees what today
+ * (managers see live totals and comments on a named vote, and participation only on a pseudo-anonymous one until close;
+ * voters see their own response, and totals and comments only after close), never a new rule. The badge itself labels
+ * ballot privacy, so the tooltip does not repeat that label.
  * @param audience - `creator` for a project or committee writer, `voter` for everyone else
  * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting; missing metadata never promises access to individual ballots
  * @param isClosed - Whether the vote has ended. A draft is not closed.
