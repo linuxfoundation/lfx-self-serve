@@ -177,6 +177,7 @@ describe('UiTabsComponent', () => {
     expect(tab('drafts').className).toContain('aria-disabled:text-ui-neutral-400');
     expect(tab('drafts').className).toContain('aria-disabled:cursor-not-allowed');
     expect(tab('upcoming').getAttribute('aria-disabled')).toBeNull();
+    expect(tab('upcoming').className).toContain('cursor-pointer');
   });
 
   it('explains a disabled tab in a tooltip on hover, and shows none on enabled tabs', async () => {

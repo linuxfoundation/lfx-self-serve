@@ -32,7 +32,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
  * `lfxUiTooltipDisabled`) on `<lfx-ui-button>` and the button forwards them to its inner `<button>`, where the spoken description belongs.
  * `UiTooltipDirective` never attaches to `<lfx-ui-button>` itself, so importing it for other elements in the same template is safe.
- * A disabled button gets no pointer events, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
+ * A disabled button takes no clicks or focus, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
  *
  * Menu: pass an `lfx-ui-menu` template to `menu` and the inner `<button>` becomes its trigger (`aria-haspopup`, `aria-expanded`, focus returns
  * to the button on close). A button rendered as a link (`link`) does not open a menu.
@@ -60,7 +60,7 @@ export class UiButtonComponent {
   public readonly variant = input<UiButtonVariant>('primary');
   /** `small` is 24px tall, `default` 32px and `large` 40px. Pair `large` with a 40px input, `default` with a 32px one and `small` with a 24px one. */
   public readonly size = input<UiButtonSize>('default');
-  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-plus`. Replaced by a spinner while `loading`. */
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-plus`. Use the Light weight unless another weight shows a state. Replaced by a spinner while `loading`. */
   public readonly icon = input<string>('');
   /** Font Awesome class string for a trailing icon, e.g. `fa-light fa-chevron-right`. Independent of `icon`. */
   public readonly trailingIcon = input<string>('');
@@ -108,7 +108,7 @@ export class UiButtonComponent {
 
   /* eslint-enable @angular-eslint/no-input-rename */
 
-  /** Icon and spinner size in px: 12 on a small button, 14 on a default one and 16 on a large one. */
+  /** Icon and spinner size in px: 12 on a small button, 14 on a default one and 18 on a large one. */
   protected readonly iconSize: Signal<number> = this.initIconSize();
   protected readonly classes: Signal<string> = this.initClasses();
   /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
@@ -148,7 +148,7 @@ export class UiButtonComponent {
   }
 
   private initIconSize(): Signal<number> {
-    return computed(() => ({ small: 12, default: 14, large: 16 })[this.size()]);
+    return computed(() => ({ small: 12, default: 14, large: 18 })[this.size()]);
   }
 
   private initLinkTabIndex(): Signal<number | null> {
@@ -169,10 +169,9 @@ export class UiButtonComponent {
           'border-transparent bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
         secondary: 'border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
         'secondary-accent':
-          'border-ui-accent-500 bg-ui-background-100 text-ui-accent-500 hover:border-ui-accent-700 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:border-ui-accent-800 active:bg-ui-accent-100 active:text-ui-accent-800',
+          'border-ui-accent-300 bg-ui-background-100 text-ui-accent-500 hover:border-ui-accent-500 hover:bg-ui-accent-100 active:border-ui-accent-500 active:bg-ui-accent-200',
         tertiary: 'border-transparent bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
-        'tertiary-accent':
-          'border-transparent bg-transparent text-ui-accent-500 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100 active:text-ui-accent-800',
+        'tertiary-accent': 'border-transparent bg-transparent text-ui-accent-500 hover:bg-ui-accent-100 active:bg-ui-accent-200',
         danger:
           'border-transparent bg-ui-danger-600 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-danger-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-danger-600)_76%,var(--ui-slate-900))]',
         'danger-tertiary': 'border-transparent bg-transparent text-ui-danger-700 hover:bg-ui-danger-50 active:bg-ui-danger-100',
@@ -183,22 +182,38 @@ export class UiButtonComponent {
       // Disabled looks the same for every variant; the tertiary family stays transparent and borderless.
       const flat = ['tertiary', 'tertiary-accent', 'danger-tertiary'].includes(this.variant());
       const disabled = flat ? 'border-transparent bg-transparent text-ui-neutral-500' : 'border-ui-neutral-alpha-200 bg-ui-neutral-50 text-ui-neutral-500';
-      // Exact px: the 8px and 10px radii, the 4/6/8px gaps, the 8/10/16px padding and the 12/14/16px icons are library steps with no ui-* utility at the 14px root.
+      // Exact px: the 10px and 14px radii, the 4/6/8px gaps, the 8/10/16px padding and the 12/14/18px icons are library steps with no ui-* utility at the 14px root.
       const sizes = {
-        small: { box: 'h-ui-tiny gap-[4px] button-12 [&>i]:text-[12px]', radius: 'rounded-[8px]', pad: 'px-[8px]' },
-        default: { box: 'h-ui-small gap-[6px] button-14 [&>i]:text-[14px]', radius: 'rounded-[10px]', pad: 'px-[10px]' },
-        large: { box: 'h-ui-medium gap-[8px] button-14 [&>i]:text-[16px]', radius: 'rounded-ui-sm', pad: 'px-[16px]' },
+        small: { box: 'h-ui-tiny gap-[4px] button-12 [&>i]:text-[12px]', radius: 'rounded-[10px]', pad: 'px-[8px]' },
+        default: { box: 'h-ui-small gap-[6px] button-14 [&>i]:text-[14px]', radius: 'rounded-ui-sm', pad: 'px-[10px]' },
+        large: { box: 'h-ui-medium gap-[8px] button-14 [&>i]:text-[18px]', radius: 'rounded-[14px]', pad: 'px-[16px]' },
       };
       const size = sizes[this.size()];
       // Icon-only is a circle: square from the height, no padding.
       const shape = this.iconOnly() ? 'aspect-square rounded-ui-full' : `${size.radius} ${size.pad}`;
+      // A link keeps its label colour in every state and is never underlined; important beats page link styles outside the utilities layer.
+      const linkInks = {
+        primary: '!text-ui-white',
+        secondary: '!text-ui-neutral-900',
+        'secondary-accent': '!text-ui-accent-500',
+        tertiary: '!text-ui-neutral-900',
+        'tertiary-accent': '!text-ui-accent-500',
+        danger: '!text-ui-white',
+        'danger-tertiary': '!text-ui-danger-700',
+        recording: '!text-ui-white',
+      };
+      const linkInk = this.disabled() ? '!text-ui-neutral-500' : linkInks[this.variant()];
+      // Disabled: only the inner element takes the pointer, for the cursor; a click on the native disabled button is never dispatched.
+      let pointer = this.loading() ? 'pointer-events-none' : 'cursor-pointer';
+      if (this.disabled()) pointer = 'pointer-events-auto cursor-not-allowed [&_*]:pointer-events-none';
       return [
         base,
         this.disabled() ? disabled : variants[this.variant()],
         size.box,
         shape,
         this.fullWidth() ? 'w-full' : '',
-        this.disabled() || this.loading() ? 'pointer-events-none' : 'cursor-pointer',
+        this.link() !== null ? `!no-underline ${linkInk}` : '',
+        pointer,
       ]
         .filter(Boolean)
         .join(' ');

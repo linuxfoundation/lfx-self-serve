@@ -93,6 +93,7 @@ describe('UiSearchInputComponent', () => {
     expect(clear()).not.toBeNull();
     expect(clear()?.getAttribute('aria-label')).toBe('Clear search');
     expect(clear()?.type).toBe('button');
+    expect(clear()?.classList).toContain('cursor-pointer');
   });
 
   it('clears the text, hides the button and returns focus to the field', async () => {
