@@ -17,7 +17,12 @@ import {
   ValidationError,
 } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility, MailingListSyncMode } from '@lfx-one/shared/enums';
-import { MAILING_LIST_ACCESS_DENIED_MESSAGE, SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
+import {
+  MAILING_LIST_ACCESS_DENIED_MESSAGE,
+  MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG,
+  SLACK_INCOMING_WEBHOOK_URL_PATTERN,
+  WG_WEEKLY_BRIEF_SLACK_FLAG,
+} from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -139,6 +144,12 @@ export class CommitteeSettingsTabComponent {
   // actually succeed; this flag alone controls whether the card renders at all, so it stays off
   // until the feature is ready to roll out to users, independent of when the server flag flips.
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
+
+  // Dark-launch gate for the "Sync Now" preview/apply entry point on each associated mailing list
+  // card — same flag as the Mailing List Settings sync toggle (#4024) and the committee detail Auto
+  // Sync drawer (#4025), so all three committee/mailing-list sync surfaces roll out together.
+  // Default false: unflagged, "Sync Now" stays hidden even for editors.
+  public syncPreviewEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
 
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
   // control renders visible-but-disabled instead of accepting an edit that will 403, matching the
