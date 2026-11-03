@@ -87,7 +87,7 @@
         @if (!tabEmpty()) {
           <!-- Above 1024px the bar stays on one line: search narrows from 300px instead of wrapping under the tabs. -->
           <div class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto min-[1025px]:min-w-0 min-[1025px]:flex-nowrap">
-            <!-- A fixed min width above 640px: the library's min(300px, 100%) sizes the row too narrow and wraps Filters. -->
+            <!-- A fixed min width at 641-1024px: the library's min(300px, 100%) sizes the row too narrow and wraps Filters. -->
             <lfx-ui-search-input
               class="w-full min-[641px]:w-auto min-[641px]:min-w-[300px] min-[1025px]:w-[300px] min-[1025px]:min-w-0"
               placeholder="Search meetings"

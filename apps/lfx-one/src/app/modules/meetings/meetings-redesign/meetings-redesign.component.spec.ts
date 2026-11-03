@@ -311,12 +311,15 @@ describe('MeetingsRedesignComponent', () => {
     });
   });
 
-  it('keeps the tabs bar on one line above 1024px, and lets it wrap at 1024px and below', async () => {
+  it('stops the tabs bar wrapping above 1024px and lets the search narrow instead', async () => {
     const fixture = render();
     await fixture.whenStable();
 
+    const search = query(fixture, 'meetings-redesign-search');
     expect(query(fixture, 'meetings-redesign-tabs-bar')?.className).toContain('flex-wrap');
     expect(query(fixture, 'meetings-redesign-tabs-bar')?.className).toContain('min-[1025px]:flex-nowrap');
+    expect(search?.parentElement?.className).toContain('min-[1025px]:min-w-0 min-[1025px]:flex-nowrap');
+    expect(search?.className).toContain('min-[1025px]:w-[300px] min-[1025px]:min-w-0');
   });
 
   it('folds the right column into a two-column grid and hides the description at 1024px and below', async () => {

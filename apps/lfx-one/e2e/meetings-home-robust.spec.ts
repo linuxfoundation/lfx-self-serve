@@ -166,8 +166,8 @@ test.describe('Meetings home page - Robust Tests', () => {
     });
   });
 
-  // The narrowest centres beside the right column: 1025-1059px on the navbar rail, 1280px docked open.
-  for (const width of [1025, 1059, 1280]) {
+  // The narrowest centres beside the right column: 1025-1059px on the navbar rail, 1200px docked open.
+  for (const width of [1025, 1059, 1200, 1280]) {
     test.describe(`Tabs bar at ${width}px`, () => {
       test.use({ viewport: { width, height: 900 } });
 
