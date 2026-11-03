@@ -8,11 +8,11 @@
 
 A Group (Self Serve's term for what the backend calls a "committee" — see [Terminology](#terminology)) can be linked to one or more Groups.io mailing lists. Once linked, a manager can turn on automatic membership sync in one direction:
 
-| Mode                 | Direction                        | Behavior                                                                                                       |
-| -------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Group → Mailing List | `AUTO_COMMITTEE_TO_MAILING_LIST` | When someone joins/leaves the Group, they're automatically subscribed/unsubscribed on the linked mailing list. |
-| Mailing List → Group | `AUTO_MAILING_LIST_TO_COMMITTEE` | When someone joins/leaves the mailing list, they're automatically added/removed as a Group member.             |
-| Manual               | `MANUAL`                         | No automatic sync. The manager uses **Sync Now** to review and apply differences on demand.                    |
+| Mode                 | `sync_mode` wire value | Behavior                                                                                                       |
+| -------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Group → Mailing List | `auto_c_to_ml`         | When someone joins/leaves the Group, they're automatically subscribed/unsubscribed on the linked mailing list. |
+| Mailing List → Group | `auto_ml_to_c`         | When someone joins/leaves the mailing list, they're automatically added/removed as a Group member.             |
+| Manual               | `manual`               | No automatic sync. The manager uses **Sync Now** to review and apply differences on demand.                    |
 
 Only one linked list per Group can run an auto direction at a time — see [Limitations](#limitations-and-known-constraints).
 
@@ -23,7 +23,7 @@ Self Serve always displays "committee" as **Group** / **Groups** in the UI (`COM
 ## Where to Find the Feature
 
 **1. Mailing List view page → Sync Settings card**
-Open a mailing list (`apps/lfx-one/.../mailing-list-view`). If the list is linked to a Group, a **Sync Settings** card shows an "Automatic membership sync" toggle (`sync-settings-toggle`). Turning it on reveals a direction picker (`sync-settings-direction`) and a **Sync Now** button (`sync-now-button`). If another linked list for the same Group already has an active direction, a green "Active Group sync" notice (`active-committee-sync-notice`) appears and blocks setting a second one.
+Open a mailing list (`apps/lfx-one/.../mailing-list-view`). If the list is linked to a Group, a **Sync Settings** card shows an "Automatic membership sync" toggle (`sync-settings-toggle`). Turning it on reveals a direction picker (`sync-settings-direction`) and a **Sync Now** button (`sync-now-button`) — this button is currently a stub (shows a "Coming soon" toast); the real working Sync Now entry point is item 4 below. If another linked list for the same Group already has an active direction, a green "Active Group sync" notice (`active-committee-sync-notice`) appears and blocks setting a second one.
 
 **2. Group detail page → Settings tab → Auto Sync button**
 On a Group's **Settings** tab, next to the mailing list list, an **Auto Sync** button (`settings-auto-sync-btn`) opens a drawer titled "Auto Sync" (subtitled with the Group's name). The drawer hosts one Sync Settings card (same component as above) per mailing list associated with the Group, so a manager can review/change every linked list's sync mode from one place.
@@ -32,24 +32,23 @@ On a Group's **Settings** tab, next to the mailing list list, an **Auto Sync** b
 The **+ Add List** button next to the mailing lists section opens a dialog titled **"Associated Mailing Lists"** (not "Configure Mailing Lists" — the button and the dialog header differ from PCC's naming). This dialog only links/unlinks mailing lists to the Group; it does **not** set sync direction or committee filters — those aren't available here yet (see [Limitations](#limitations-and-known-constraints)). To remove a linked list, use the per-row "Remove mailing list" action on the Settings tab itself, outside this dialog.
 
 **4. Sync Now preview/apply dialog**
-Triggered from the Sync Settings card's "Sync Now" button. Shows three tabs: **Adds**, **Removes**, **Conflicts** (mismatched-email rows that are informational only — nothing in Conflicts is auto-applied). Each row in Adds/Removes has a checkbox so the manager can skip specific entries. Applying can take minutes; the dialog shows an elapsed-seconds counter, not a progress bar, while ITX computes and applies the diff.
+The working entry point is the per-list **Sync Now** button (`settings-sync-now-ml-<uid>`) on the Group's **Settings** tab (added in PR #4911), not the Sync Settings card's own button in item 1 (currently a stub). Shows three tabs: **Adds**, **Removes**, **Conflicts** (mismatched-email rows that are informational only — nothing in Conflicts is auto-applied). Each row in Adds/Removes has a checkbox so the manager can skip specific entries. Applying can take minutes; the dialog shows an elapsed-seconds counter, not a progress bar, while ITX computes and applies the diff.
 
 ## Common User Scenarios
 
 1. **"I turned on sync but nothing happened."**
-   Auto sync only reacts to new join/leave events going forward — it does not backfill existing membership gaps (see Limitations). Tell the user to use **Sync Now** to reconcile the current state once, then auto sync will keep it current.
+   Auto sync is event-driven — it only fires when the _next_ join/leave event occurs, and that event triggers a full roster diff (not just the one member who joined/left), so it does end up reconciling existing gaps once something happens. If genuinely nothing has happened yet (no joins/leaves since the toggle was flipped), tell the user **Sync Now** can reconcile immediately instead of waiting — but only if the list already has an auto direction configured; Sync Now currently rejects `manual`/unset `sync_mode` (see scenario 2 and [Limitations](#limitations-and-known-constraints)).
 
 2. **"The direction picker won't let me pick a direction."**
    Check for the "Active Group sync" notice — only one mailing list per Group may run an auto direction. The manager must turn off sync on the other list first.
 
 3. **"People are being removed from the mailing list unexpectedly."**
-   Removal propagation only runs for mailing lists marked **private** in Groups.io. If the list is public, removals never auto-propagate — only adds do. If the list genuinely is private, check `internal/service/realtime_auto_sync.go`'s cross-list guard: two private lists set to the same Group with the same auto direction will not remove a member who is still independently subscribed on the sibling list.
+   Removal propagation only runs for mailing lists marked **private** in Groups.io. If the list is public, removals never auto-propagate — only adds do. Note this can only happen with Group→Mailing List auto sync, since only one list per Group can run an auto direction at a time (see [Limitations](#limitations-and-known-constraints)) — there's no sibling private list on the same Group to compare against. If the removal still looks wrong, escalate to the `lfx-v2-mailing-list-service` / ITX maintainers rather than reading the sync code directly — don't point the user or support staff at backend source files.
 
 4. **"Sync toggle / Auto Sync button isn't showing up at all."**
-   Two independent gates, both must be on:
-   - Frontend: `MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG` (LaunchDarkly) — controls whether the UI shows the Sync Settings section at all.
-   - Backend: `AUTO_SYNC_ENABLED` env var on `lfx-v2-mailing-list-service` — the kill switch for issue #4878. Fails **open** (enabled) unless explicitly set to `false`; check this before assuming a deploy issue.
-     These are independent — the UI can be visible while the backend execution path is killed, or vice versa. Confirm both before escalating as a bug.
+   - Frontend: `MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG` (LaunchDarkly key: `mailing-list-committee-sync-enabled`) — controls whether the UI shows the Sync Settings section at all. Check this flag first for a visibility complaint.
+   - Backend: `AUTO_SYNC_ENABLED` env var on `lfx-v2-mailing-list-service` — the kill switch for issue #4878. This does **not** control UI visibility at all; it only gates whether backend `TriggerAutoSync` actually executes for the V2 Group→Mailing List webhook path. Manual **Sync Now** and ITX's reverse (Mailing List→Group) execution are unaffected by this flag. Fails **open** (enabled) unless explicitly set to `false`.
+     If the UI is visible but auto sync silently isn't firing for Group→Mailing List, check this backend flag — but it is never the explanation for a missing toggle/button.
 
 5. **"Sync Now says Conflicts but didn't fix anything."**
    This is expected — the Conflicts tab lists mismatched-email rows for the manager's awareness; it is never auto-applied. There's no action needed unless the user wants to manually reconcile those accounts.
@@ -65,29 +64,27 @@ Triggered from the Sync Settings card's "Sync Now" button. Shows three tabs: **A
 
 ## Sync Modes Reference
 
-| `sync_mode` value                | UI label             | Who triggers membership changes                          |
-| -------------------------------- | -------------------- | -------------------------------------------------------- |
-| `MANUAL`                         | Manual (sync off)    | Nobody — manager must use Sync Now                       |
-| `AUTO_COMMITTEE_TO_MAILING_LIST` | Group → Mailing List | Group membership changes drive mailing list subscription |
-| `AUTO_MAILING_LIST_TO_COMMITTEE` | Mailing List → Group | Mailing list subscription changes drive Group membership |
+| `sync_mode` wire value | UI label             | Who triggers membership changes                                                                                                                |
+| ---------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `manual`               | Manual (sync off)    | Nobody automatically — Sync Now currently requires an auto direction to already be set and will reject a `manual`/unset list (see scenario 1). |
+| `auto_c_to_ml`         | Group → Mailing List | Group membership changes drive mailing list subscription                                                                                       |
+| `auto_ml_to_c`         | Mailing List → Group | Mailing list subscription changes drive Group membership                                                                                       |
 
 ## Limitations and Known Constraints
 
-- **One auto direction per Group.** Only one linked mailing list can have an active `AUTO_*` direction per Group at a time (enforced via `MailingListService.getMailingListsByCommittee`). Other linked lists must stay `MANUAL` or use Sync Now.
-- **No backfill.** Enabling auto sync does not reconcile existing membership gaps — it only reacts to events going forward. Sync Now is the only way to reconcile history.
+- **One auto direction per Group.** Only one linked mailing list can have an active `auto_*` direction per Group at a time (enforced via `MailingListService.getMailingListsByCommittee`). Other linked lists must stay `manual` or use Sync Now.
+- **No idle reconciliation.** Auto sync only runs its full roster diff when a join/leave event fires — it does not reconcile on a schedule or on toggle. If no event has happened since enabling, nothing has synced yet; **Sync Now** reconciles immediately instead of waiting for the next event, but only on a list that already has an auto direction set (it rejects `manual`/unset `sync_mode`; see scenario 1).
 - **No committee filters (role-scoped sync).** Unlike PCC, Self Serve cannot yet restrict Group→Mailing List sync to members with a specific committee role. Tracked under #4026/#4904, not implemented as of this writing.
-- **Removal propagation is private-list-only.** Removing someone from a public mailing list never auto-propagates to or from the Group; only private lists support auto-removal, and a cross-list guard prevents removal when a sibling private list with the same direction still independently subscribes that member.
+- **Removal propagation is private-list-only.** Removing someone from a public mailing list never auto-propagates to or from the Group; only private lists support auto-removal. This can only apply to Group→Mailing List auto sync, since only one list per Group may run an auto direction at a time — there is no same-direction sibling to guard against.
 - **Conflicts are informational only.** The Sync Now dialog's Conflicts tab surfaces mismatched-email rows but never applies changes for them automatically.
 
 ## Implementation Status
 
-As of 2026-11-03, this feature's PRs are **open and in review**, not yet merged to `main`:
+For current status, check epic [#4022](https://github.com/linuxfoundation/lfx-self-serve/issues/4022) and its linked PRs rather than relying on a snapshot here — in-review UI, flag names, and dialog copy can still change before merge.
 
-- Backend: `lfx-v2-mailing-list-service` PR #101 (sync mode & job model, #4029), PR #104 (auto-sync execution, #4023), PR #106 (kill switch, #4878).
-- Frontend: `lfx-self-serve` PR #4880 (Sync Settings card, #4024), PR #4899 (Auto Sync drawer, #4025), PR #4911 (Sync Now dialog, #4027).
-- The "Associated Mailing Lists" link/unlink dialog (#4026, item 3 above) is the only piece already on `main` — it predates this epic.
+The link/unlink part of the Associated Mailing Lists dialog (item 3 above) is already on `main` — it predates this epic. The committee-filter acceptance criterion of #4026 (role-scoped Group→Mailing List sync) is still open.
 
-Re-verify button labels, flag names, and dialog copy against `main` once these PRs merge, since in-review UI can still change during review.
+Re-verify button labels, flag names, and dialog copy against `main` once the epic's PRs merge.
 
 ## Escalation Path
 
