@@ -3,10 +3,10 @@
 
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DialogRef } from '@angular/cdk/dialog';
-import { formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, TemplateRef, viewChild } from '@angular/core';
 import { MeetingDashboardView, MeetingHomeRow, MeetingHomeRowProject, MeetingHomeRowType } from '@lfx-one/shared/interfaces';
 import {
+  formatMeetingDateTime,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingRecurrenceTooltip,
@@ -75,7 +75,7 @@ export class MeetingHomeActionsComponent {
     getMeetingSelfRemovalMessage(this.row().title, { viaCommittee: this.row().meeting.invited_via_committee, organizer: this.row().meeting.organizer })
   );
   /** "Thu, Oct 1 · 6:30 AM PDT" for the dialog's meeting card. */
-  protected readonly when: Signal<string> = this.initWhen();
+  protected readonly when: Signal<string> = computed(() => formatMeetingDateTime(this.row().startTime));
   protected readonly recurring: Signal<boolean> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence) !== null);
   protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => getMeetingHomeRowProject(this.row().meeting));
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
@@ -174,14 +174,6 @@ export class MeetingHomeActionsComponent {
     return computed(
       () => this.view() === 'upcoming' && this.userService.authenticated() && this.invited() && (!this.row().meeting.organizer || this.hasOwnRegistration())
     );
-  }
-
-  private initWhen(): Signal<string> {
-    return computed(() => {
-      const start = new Date(this.row().startTime);
-      const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(start);
-      return `${formatDate(start, 'EEE, MMM d', 'en-US')} · ${time}`;
-    });
   }
 
   private showError(message: string, description: string): void {

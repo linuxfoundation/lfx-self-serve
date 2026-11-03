@@ -95,6 +95,7 @@ describe('MeetingHomeRowComponent', () => {
       'ResizeObserver',
       class {
         public observe = vi.fn();
+        public unobserve = vi.fn();
         public disconnect = vi.fn();
       }
     );

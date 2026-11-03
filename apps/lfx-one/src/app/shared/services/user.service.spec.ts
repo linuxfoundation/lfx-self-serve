@@ -257,6 +257,29 @@ describe('UserService', () => {
     }
   });
 
+  it("never replays the previous viewer's past feeds before the identity effect runs", async () => {
+    const feeds = [
+      () => service.getUserPastMeetings(),
+      () => service.getUserPastMeetings({ includeArtifacts: true }),
+      () => service.getUserLatestPastMeetings(),
+    ];
+    httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-a-meeting' }] : { profile: {} }));
+    service.user.set({ sub: 'synthetic-a' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    feeds.forEach((getFeed) => getFeed().subscribe().unsubscribe());
+
+    httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-b-meeting' }] : { profile: {} }));
+    service.user.set({ sub: 'synthetic-b' } as User);
+
+    for (const getFeed of feeds) {
+      let rows: string[] = [];
+      getFeed()
+        .subscribe((meetings) => (rows = meetings.map((meeting) => meeting.id)))
+        .unsubscribe();
+      expect(rows).toEqual(['synthetic-b-meeting']);
+    }
+  });
+
   describe('retry after a failed personal-meeting fetch (GH-4780)', () => {
     // The dashboard's Retry control re-calls these getters after an error. shareReplay
     // otherwise caches and replays a failure forever, so a real retry must issue a fresh

@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibilityKind } from '../enums';
-import type { MeetingResponseFilterOption, MeetingRsvpChoice, MeetingsHomeFilters, MeetingVisibilityInfo } from '../interfaces';
+import type { MeetingHomeArtifact, MeetingResponseFilterOption, MeetingRsvpChoice, MeetingsHomeFilters, MeetingVisibilityInfo } from '../interfaces';
+
+/** The recording of a past meetings home row. */
+export const MEETINGS_HOME_RECORDING_ARTIFACT: MeetingHomeArtifact = { noun: 'recording', title: 'Recording' };
+
+/** The AI summary of a past meetings home row. */
+export const MEETINGS_HOME_SUMMARY_ARTIFACT: MeetingHomeArtifact = { noun: 'summary', title: 'AI Summary' };
 
 /** Rows the meetings home list loads per page. */
 export const MEETINGS_HOME_PAGE_SIZE = 20;

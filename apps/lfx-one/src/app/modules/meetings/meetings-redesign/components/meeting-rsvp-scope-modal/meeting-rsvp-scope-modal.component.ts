@@ -6,7 +6,7 @@ import { formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { MEETINGS_HOME_RSVP_CHOICES } from '@lfx-one/shared/constants';
 import { MeetingHomeRowProject, MeetingHomeRowType, MeetingRsvpScopeDialogData, MeetingRsvpScopeOption, RsvpScope } from '@lfx-one/shared/interfaces';
-import { formatMeetingTimeRange, getMeetingHomeRowProject, getMeetingHomeRowType } from '@lfx-one/shared/utils';
+import { formatMeetingDateTime, getMeetingHomeRowProject, getMeetingHomeRowType } from '@lfx-one/shared/utils';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
@@ -29,7 +29,7 @@ export class MeetingRsvpScopeModalComponent {
 
   protected readonly row = this.data.row;
   protected readonly project: MeetingHomeRowProject | null = getMeetingHomeRowProject(this.row.meeting);
-  protected readonly when = `${formatDate(this.row.startTime, 'EEE, MMM d', 'en-US')} · ${formatMeetingTimeRange(this.row.startTime, this.row.durationMinutes)}`;
+  protected readonly when = formatMeetingDateTime(this.row.startTime, this.row.durationMinutes);
   protected readonly meetingType: MeetingHomeRowType | null = getMeetingHomeRowType(this.row.meeting);
   protected readonly responseLabel = MEETINGS_HOME_RSVP_CHOICES.find((choice) => choice.response === this.data.response)?.label ?? '';
   protected readonly canSelectOccurrence = !!this.row.occurrenceId;

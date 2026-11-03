@@ -1,22 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
-import {
-  afterNextRender,
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  DestroyRef,
-  ElementRef,
-  inject,
-  input,
-  PLATFORM_ID,
-  Signal,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { DatePipe, formatDate } from '@angular/common';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
+import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
   Meeting,
@@ -42,6 +30,7 @@ import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
+import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.service';
 import { MeetingHomeActionsComponent } from '../meeting-home-actions/meeting-home-actions.component';
 import { MeetingHomeArtifactsComponent } from '../meeting-home-artifacts/meeting-home-artifacts.component';
 import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
@@ -60,8 +49,8 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
 export class MeetingHomeRowComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly platformId = inject(PLATFORM_ID);
   private readonly userService = inject(UserService);
+  private readonly resize = inject(MeetingsHomeResizeService);
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
   private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
 
@@ -84,23 +73,17 @@ export class MeetingHomeRowComponent {
   protected readonly organizers: Signal<MeetingHomeRowOrganizer[]> = computed(() =>
     getMeetingHomeRowOrganizers(this.row().meeting, this.userService.viewerUsername())
   );
-  protected readonly visibilityBg: Partial<Record<MeetingVisibilityKind, string>> = {
-    [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
-    [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
-  };
+  protected readonly visibilityBg = MEETING_VISIBILITY_BG_CLASSES;
 
   public constructor() {
     afterNextRender(() => {
-      if (!isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
       const title = this.titleElement().nativeElement;
       const projectName = this.projectNameElement()?.nativeElement;
-      const observer = new ResizeObserver(() => {
+      const stop = this.resize.observe(projectName ? [title, projectName] : [title], () => {
         this.titleTruncated.set(title.scrollWidth > title.clientWidth);
         this.projectTruncated.set(!!projectName && projectName.scrollWidth > projectName.clientWidth);
       });
-      observer.observe(title);
-      if (projectName) observer.observe(projectName);
-      this.destroyRef.onDestroy(() => observer.disconnect());
+      this.destroyRef.onDestroy(stop);
     });
   }
 

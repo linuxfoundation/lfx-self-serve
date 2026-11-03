@@ -173,3 +173,11 @@ export interface MeetingDeleteDialogData {
   /** Picker: the date it opens on. Confirmation: the date to cancel; null deletes the whole meeting. */
   occurrence: MeetingOccurrence | null;
 }
+
+/** A past meeting artifact a meetings home row loads on click, named for its error copy. */
+export interface MeetingHomeArtifact {
+  /** Lower-case name in messages, e.g. "recording". */
+  noun: string;
+  /** Name in a toast title, e.g. "AI Summary". */
+  title: string;
+}
