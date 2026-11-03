@@ -1083,7 +1083,7 @@ export function buildVoteSummarySendNotice(result: SendVoteSummaryResponse): Vot
   if (sent === 0) {
     const reasons: string[] = [];
     if (skipped > 0) reasons.push(`${skipped} invited voter(s) have no email address`);
-    if (failed > 0) reasons.push(`${failed} send(s) failed`);
+    if (failed > 0) reasons.push(`${failed} voter(s) not sent`);
     return {
       severity: 'info',
       summary: 'No summaries sent',

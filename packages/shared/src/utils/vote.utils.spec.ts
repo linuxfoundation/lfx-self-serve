@@ -2343,6 +2343,14 @@ describe('buildVoteSummarySendNotice', () => {
     expect(notice.summary).toBe('No summaries sent');
     expect(notice.detail).toContain('no invited voters have an email address');
   });
+
+  it('describes total failures in voters rather than email send attempts', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, failed_count: 2, skipped_count: 1 });
+    expect(notice.summary).toBe('No summaries sent');
+    expect(notice.detail).toContain('2 voter(s) not sent');
+    expect(notice.detail).toContain('1 invited voter(s) have no email address');
+    expect(notice.detail).not.toContain('send(s) failed');
+  });
 });
 
 describe('partitionVoteSummaryRecipients (#4830)', () => {

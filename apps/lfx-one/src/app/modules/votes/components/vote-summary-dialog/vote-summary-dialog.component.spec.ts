@@ -101,6 +101,22 @@ describe('VoteSummaryDialogComponent', () => {
     expect(button(fixture, 'vote-summary-dialog-send').disabled).toBe(true);
   });
 
+  it('announces initial recipient loading in the persistent status region and clears it when ready', async () => {
+    const pending = new Subject<VoteSummaryPreviewResponse>();
+    const { fixture } = await mount(pending);
+    current = fixture;
+    const status = byTestId(fixture, 'vote-summary-dialog-send-status')!;
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.getAttribute('aria-atomic')).toBe('true');
+    expect(status.textContent).toContain('Loading recipients.');
+    expect(status.textContent).toContain('Send is unavailable until the review is ready.');
+    pending.next(PREVIEW);
+    pending.complete();
+    await render(fixture);
+    expect(byTestId(fixture, 'vote-summary-dialog-send-status')).toBe(status);
+    expect(status.textContent!.trim()).toBe('');
+  });
+
   it('shows the vote name, the ready and missing-email lists, and the voter vs. address counts', async () => {
     const { fixture, getVoteSummaryPreview } = await mount(of(PREVIEW));
     current = fixture;
@@ -191,6 +207,7 @@ describe('VoteSummaryDialogComponent', () => {
     await render(fixture);
     expect(byTestId(fixture, 'vote-summary-dialog-loading')).not.toBeNull();
     expect(document.activeElement).toBe(button(fixture, 'vote-summary-dialog-cancel'));
+    expect(byTestId(fixture, 'vote-summary-dialog-send-status')!.textContent).toContain('Loading recipients.');
 
     if (outcome === 'error') pending.error(new HttpErrorResponse({ status: 500 }));
     else {
@@ -202,6 +219,7 @@ describe('VoteSummaryDialogComponent', () => {
     if (outcome === 'ready') action = 'send';
     else if (outcome === 'error') action = 'retry';
     expect(document.activeElement).toBe(button(fixture, `vote-summary-dialog-${action}`));
+    expect(byTestId(fixture, 'vote-summary-dialog-send-status')!.textContent!.trim()).toBe('');
   });
 
   it.each([false, true])('identifies username-only voters in review and results (review-based fallback: %s)', async (fallback) => {
@@ -293,6 +311,7 @@ describe('VoteSummaryDialogComponent', () => {
     expect(summary.getAttribute('tabindex')).toBe('-1');
     expect(document.activeElement).toBe(summary);
     expect(byTestId(fixture, 'vote-summary-dialog-result-heading')!.textContent).toContain('Summary delivery unconfirmed');
+    expect(byTestId(fixture, 'vote-summary-dialog-vote-name')!.textContent).toContain('Spring Election');
 
     // Results offer only Close: no resend, retry or send action.
     expect(byTestId(fixture, 'vote-summary-dialog-send')).toBeNull();
@@ -390,7 +409,7 @@ describe('VoteSummaryDialogComponent', () => {
     await sendNow(fixture);
 
     expect(status.textContent).toContain('Sending the summary.');
-    expect(status.textContent).toContain('The dialog cannot be closed until results are available.');
+    expect(status.textContent).toContain('Hide while sending to use other actions; this does not cancel the send.');
     expect(escape().defaultPrevented).toBe(true);
     expect(config.closable).toBe(false);
     expect(button(fixture, 'vote-summary-dialog-back').disabled).toBe(true);
@@ -405,6 +424,109 @@ describe('VoteSummaryDialogComponent', () => {
     expect(config.closable).toBe(true);
     expect(escape().defaultPrevented).toBe(false);
     expect(status.textContent!.trim()).toBe('');
+  });
+
+  it('hides a pending send, permits another vote send, and reopens without duplicate requests', async () => {
+    const first = new Subject<SendVoteSummaryResponse>();
+    const second = new Subject<SendVoteSummaryResponse>();
+    const { fixture, config, close, getVoteSummaryPreview, sendVoteSummary } = await mount(of(PREVIEW), first);
+    current = fixture;
+    await sendNow(fixture);
+    const service = TestBed.inject(VoteSummarySendService);
+    const attempt = service.getAttempt('vote-1');
+    expect(button(fixture, 'vote-summary-dialog-hide').disabled).toBe(false);
+    button(fixture, 'vote-summary-dialog-hide').click();
+    expect(close).toHaveBeenCalledWith(false);
+    expect(service.getAttempt('vote-1')).toBe(attempt);
+    expect(first.observed).toBe(true);
+    fixture.destroy();
+
+    config.data.vote = { uid: 'vote-2', name: 'Summer Election' };
+    sendVoteSummary.mockReturnValue(second);
+    const other = TestBed.createComponent(VoteSummaryDialogComponent);
+    current = other;
+    await render(other);
+    await sendNow(other);
+    expect(service.getAttempt('vote-2')?.status).toBe('sending');
+    expect(service.getAttempt('vote-1')).toBe(attempt);
+    button(other, 'vote-summary-dialog-hide').click();
+    other.destroy();
+
+    config.data.vote = { uid: 'vote-1', name: 'Spring Election' };
+    const reopened = TestBed.createComponent(VoteSummaryDialogComponent);
+    current = reopened;
+    await render(reopened);
+    expect(button(reopened, 'vote-summary-dialog-send-now').disabled).toBe(true);
+    expect(getVoteSummaryPreview).toHaveBeenCalledTimes(2);
+    expect(sendVoteSummary.mock.calls).toEqual([['vote-1'], ['vote-2']]);
+    expect(service.send('vote-1', PREVIEW)).toBe(false);
+    first.next(SENT);
+    second.next(SENT);
+    await render(reopened);
+    expect(byTestId(reopened, 'vote-summary-dialog-vote-name')!.textContent).toContain('Spring Election');
+    expect(byTestId(reopened, 'vote-summary-dialog-group-failed')).not.toBeNull();
+    expect(sendVoteSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains a result that settles immediately before the sending view is hidden', async () => {
+    const pending = new Subject<SendVoteSummaryResponse>();
+    const { fixture, getVoteSummaryPreview, sendVoteSummary } = await mount(of(PREVIEW), pending);
+    current = fixture;
+    await sendNow(fixture);
+    const service = TestBed.inject(VoteSummarySendService);
+    pending.next(SENT);
+    // The service has settled, but Angular has not updated the sending view yet.
+    expect(service.getAttempt('vote-1')?.status).toBe('success');
+    button(fixture, 'vote-summary-dialog-hide').click();
+    expect(service.getAttempt('vote-1')?.status).toBe('success');
+    fixture.destroy();
+    const reopened = TestBed.createComponent(VoteSummaryDialogComponent);
+    current = reopened;
+    await render(reopened);
+    expect(byTestId(reopened, 'vote-summary-dialog-group-failed')).not.toBeNull();
+    expect(getVoteSummaryPreview).toHaveBeenCalledTimes(1);
+    expect(sendVoteSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['success', 'unconfirmed'] as const)('keeps focus in %s results when another vote starts and settles', async (outcome) => {
+    const send = outcome === 'success' ? of(SENT) : throwError(() => new HttpErrorResponse({ status: 504 }));
+    const { fixture, sendVoteSummary } = await mount(of(PREVIEW), send);
+    current = fixture;
+    await sendNow(fixture);
+    const list = byTestId(fixture, `vote-summary-dialog-group-${outcome === 'success' ? 'failed' : 'uncertain'}`)!.querySelector('ul')!;
+    list.focus();
+    expect(document.activeElement).toBe(list);
+    const result = fixture.componentInstance['result']();
+    const other = new Subject<SendVoteSummaryResponse>();
+    sendVoteSummary.mockReturnValue(other);
+    const service = TestBed.inject(VoteSummarySendService);
+    service.send('vote-2', PREVIEW);
+    await render(fixture);
+    expect(document.activeElement).toBe(list);
+    other.next(SENT);
+    await render(fixture);
+    expect(document.activeElement).toBe(list);
+    expect(fixture.componentInstance['result']()).toBe(result);
+  });
+
+  it('reports failed voters rather than email attempts when a shared address fails', async () => {
+    const result: SendVoteSummaryResponse = {
+      recipient_count: 0,
+      failed_count: 1,
+      skipped_count: 0,
+      uncertain_count: 0,
+      recipients: [
+        { ...BLAKE, outcome: 'failed' },
+        { ...CASEY, outcome: 'failed' },
+      ],
+    };
+    const { fixture } = await mount(of({ ready: [BLAKE, CASEY], missing_email: [], unique_email_count: 1, shared_email_voter_count: 2 }), of(result));
+    current = fixture;
+    await sendNow(fixture);
+    expect(byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent).toContain('2 voter(s) not sent');
+    expect(byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent).not.toContain('send(s) failed');
+    expect(byTestId(fixture, 'vote-summary-dialog-group-failed')!.querySelectorAll('li')).toHaveLength(2);
+    expect(result.failed_count).toBe(1);
   });
 
   it.each(['success', 'unconfirmed'] as const)('clears %s results on host header closure and loads a fresh review when reopened', async (outcome) => {
@@ -435,6 +557,7 @@ describe('VoteSummaryDialogComponent', () => {
     current = reopened;
     await render(reopened);
     expect(byTestId(reopened, 'vote-summary-dialog-group-failed')!.textContent).toContain('Blake Example');
+    expect(byTestId(reopened, 'vote-summary-dialog-vote-name')!.textContent).toContain('Spring Election');
     expect(getVoteSummaryPreview).toHaveBeenCalledTimes(1);
     expect(sendVoteSummary).toHaveBeenCalledTimes(1);
   });

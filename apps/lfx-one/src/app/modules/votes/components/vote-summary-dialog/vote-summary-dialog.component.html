@@ -6,6 +6,7 @@
   @if (phase() === 'results') {
     @if (resultNotice(); as notice) {
       <div #resultSummary tabindex="-1" class="flex flex-col gap-1 outline-none" aria-live="polite" data-testid="vote-summary-dialog-result-summary">
+        <p class="text-sm font-semibold text-gray-900 break-words" data-testid="vote-summary-dialog-vote-name">{{ vote.name }}</p>
         <h3 class="text-sm font-semibold text-gray-900" data-testid="vote-summary-dialog-result-heading">{{ notice.summary }}</h3>
         <p class="text-[12.5px] text-gray-600" data-testid="vote-summary-dialog-result-detail">{{ notice.detail }}</p>
       </div>
@@ -145,7 +146,9 @@
 <div class="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-3" data-testid="vote-summary-dialog-footer">
   <p role="status" aria-atomic="true" class="sr-only" data-testid="vote-summary-dialog-send-status">
     @if (sending()) {
-      Sending the summary. The dialog cannot be closed until results are available.
+      Sending the summary. Hide while sending to use other actions; this does not cancel the send.
+    } @else if (loading()) {
+      Loading recipients. Send is unavailable until the review is ready.
     }
   </p>
   @if (phase() === 'confirm' || phase() === 'sending') {
@@ -179,6 +182,15 @@
           data-testid="vote-summary-dialog-send"></lfx-button>
       }
       @default {
+        @if (sending()) {
+          <lfx-button
+            label="Hide while sending"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            (onClick)="hideWhileSending()"
+            data-testid="vote-summary-dialog-hide"></lfx-button>
+        }
         <lfx-button
           label="Cancel"
           severity="secondary"

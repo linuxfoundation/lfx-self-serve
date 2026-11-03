@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Injectable, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { VOTE_SUMMARY_SEND_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { VoteSummaryPreviewResponse, VoteSummarySendAttempt } from '@lfx-one/shared/interfaces';
 import { take, timeout } from 'rxjs';
@@ -20,10 +21,12 @@ export class VoteSummarySendService {
   public readonly viewerSubject = computed(() => this.userService.user()?.sub ?? null);
 
   public constructor() {
-    effect(() => this.synchronizeOwner(this.viewerSubject()));
+    toObservable(this.viewerSubject)
+      .pipe(takeUntilDestroyed())
+      .subscribe((owner) => this.synchronizeOwner(owner));
   }
 
-  /** A different effective subject cannot read the previous subject's identities, even before the cleanup effect runs. */
+  /** A different observed subject cannot read the previous subject's identities, even before the cleanup subscription runs. */
   public getAttempt(voteUid: string): VoteSummarySendAttempt | undefined {
     const attempts = this.attempts();
     if (!this.viewerSubject() || this.owner !== this.viewerSubject()) return undefined;

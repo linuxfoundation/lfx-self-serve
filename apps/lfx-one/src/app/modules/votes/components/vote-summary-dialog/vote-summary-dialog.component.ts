@@ -3,22 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import {
-  afterNextRender,
-  Component,
-  computed,
-  DestroyRef,
-  effect,
-  ElementRef,
-  inject,
-  Injector,
-  PLATFORM_ID,
-  Signal,
-  signal,
-  untracked,
-  viewChild,
-} from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -93,31 +79,34 @@ export class VoteSummaryDialogComponent {
   protected readonly canSend = computed(() => !this.loading() && !this.loadError() && (this.preview()?.ready.length ?? 0) > 0);
   protected readonly resultNotice: Signal<VoteSummarySendNotice | null> = this.initResultNotice();
   protected readonly resultGroups: Signal<VoteSummaryResultGroup[]> = this.initResultGroups();
+  private readonly attempt = computed(() => this.summarySendService.getAttempt(this.vote.uid));
 
   public constructor() {
     lockDynamicDialogWhile(this.sending);
     // Host Close (including the header X) is explicit dismissal; route destruction is not.
     this.ref.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      if (this.viewerSubject === this.summarySendService.viewerSubject()) this.summarySendService.dismiss(this.vote.uid);
+      // Hiding must retain results even if the response settled before the sending view updated.
+      if (!this.sending() && this.viewerSubject === this.summarySendService.viewerSubject()) this.summarySendService.dismiss(this.vote.uid);
     });
-    if (!this.summarySendService.getAttempt(this.vote.uid)) this.loadPreview();
-    effect(() => {
-      if (this.viewerSubject !== this.summarySendService.viewerSubject()) {
+    if (!this.attempt()) this.loadPreview();
+    toObservable(this.summarySendService.viewerSubject)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((subject) => {
+        if (this.viewerSubject === subject) return;
         this.preview.set(null);
         this.result.set(null);
         this.ref.close(false);
-        return;
-      }
-      const attempt = this.summarySendService.getAttempt(this.vote.uid);
-      if (!attempt) return;
-      untracked(() => {
+      });
+    toObservable(this.attempt)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((attempt) => {
+        if (!attempt || this.viewerSubject !== this.summarySendService.viewerSubject()) return;
         this.preview.set(attempt.preview);
         this.loading.set(false);
         if (attempt.status === 'sending') this.phase.set('sending');
         else if (attempt.status === 'success') this.showResults(attempt.response);
         else this.onSendFailed(attempt.error);
       });
-    });
   }
 
   protected retry(): void {
@@ -138,8 +127,14 @@ export class VoteSummaryDialogComponent {
   }
 
   protected cancel(): void {
-    // Closing mid-send would drop the outcome while the emails still go out.
+    // Cancel is a pre-send action, not cancellation of an initiated email request.
     if (this.sending()) return;
+    this.ref.close(false);
+  }
+
+  protected hideWhileSending(): void {
+    if (!this.sending()) return;
+    // The host close event cannot dismiss a pending service-owned attempt.
     this.ref.close(false);
   }
 

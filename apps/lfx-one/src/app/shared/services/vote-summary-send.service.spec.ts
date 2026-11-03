@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { effect, signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { TestBed } from '@angular/core/testing';
 import { VOTE_SUMMARY_SEND_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { SendVoteSummaryResponse, VoteSummaryPreviewResponse } from '@lfx-one/shared/interfaces';
@@ -112,7 +113,11 @@ describe('VoteSummarySendService', () => {
 
   it('reactively exposes an attempt created after an initial empty lookup', () => {
     const statuses: (string | undefined)[] = [];
-    TestBed.runInInjectionContext(() => effect(() => statuses.push(service.getAttempt('vote-1')?.status)));
+    TestBed.runInInjectionContext(() => {
+      toObservable(computed(() => service.getAttempt('vote-1')))
+        .pipe(takeUntilDestroyed())
+        .subscribe((attempt) => statuses.push(attempt?.status));
+    });
     TestBed.tick();
     service.send('vote-1', PREVIEW);
     TestBed.tick();
@@ -124,7 +129,7 @@ describe('VoteSummarySendService', () => {
   it.each([null, { sub: 'another-synthetic-manager' }])('isolates identities immediately after an effective-user change to %s', (nextUser) => {
     service.send('vote-1', PREVIEW);
     user.set(nextUser);
-    // Do not wait for the cleanup effect: the read must fail closed synchronously.
+    // Do not wait for the cleanup subscription: the read must fail closed synchronously.
     expect(service.getAttempt('vote-1')).toBeUndefined();
     pending.next(RESULT);
     TestBed.tick();
