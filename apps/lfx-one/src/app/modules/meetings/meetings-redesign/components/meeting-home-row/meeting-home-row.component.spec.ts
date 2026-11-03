@@ -241,6 +241,17 @@ describe('MeetingHomeRowComponent', () => {
       expect(query(fixture, 'meetings-home-row-attended')).toBeNull();
     });
 
+    it('shows Recording and AI Summary in place of the RSVP controls, and never on upcoming rows', async () => {
+      const meeting = buildMeeting({ has_recording: true, has_ai_summary: true });
+      const past = await render(buildRow(meeting), 'past');
+      const upcoming = await render(buildRow(meeting));
+
+      expect(query(past, 'meetings-home-row-recording')).toBeTruthy();
+      expect(query(past, 'meetings-home-row-summary')).toBeTruthy();
+      expect(query(past, 'meetings-home-rsvp')).toBeNull();
+      expect(query(upcoming, 'meetings-home-row-artifacts')).toBeNull();
+    });
+
     it('opens the meeting page in place for invitees', async () => {
       const fixture = await render(buildRow(buildMeeting({ meeting_and_occurrence_id: '123-1759334400000' })), 'past');
 

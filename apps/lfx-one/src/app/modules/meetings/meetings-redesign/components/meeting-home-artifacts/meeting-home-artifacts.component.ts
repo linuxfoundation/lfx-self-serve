@@ -1,0 +1,97 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { HttpErrorResponse } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Meeting, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
+import { getLargestSessionShareUrl, getPastMeetingSummaryContent } from '@lfx-one/shared/utils';
+import { MeetingService } from '@services/meeting.service';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
+import { finalize, Observable, take } from 'rxjs';
+
+import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
+
+/**
+ * Recording and AI Summary buttons of a past meetings home row, each shown only when the past feed flags it.
+ * @description Fetches the recording or summary on click and opens its meetings home dialog. In a centre column of
+ * 900px or less they collapse to icon-only buttons with tooltips.
+ */
+@Component({
+  selector: 'lfx-meeting-home-artifacts',
+  imports: [UiButtonComponent],
+  templateUrl: './meeting-home-artifacts.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { class: 'contents' },
+})
+export class MeetingHomeArtifactsComponent {
+  private readonly meetingService = inject(MeetingService);
+  private readonly dialogs = inject(MeetingsHomeDialogsService);
+  private readonly toast = inject(UiToastService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  public readonly row = input.required<MeetingHomeRow>();
+
+  // Undefined (the lookup failed) hides the button like false.
+  protected readonly hasRecording: Signal<boolean> = computed(() => {
+    const meeting: Meeting | PastMeeting = this.row().meeting;
+    return 'has_recording' in meeting && meeting.has_recording === true;
+  });
+  protected readonly hasSummary: Signal<boolean> = computed(() => {
+    const meeting: Meeting | PastMeeting = this.row().meeting;
+    return 'has_ai_summary' in meeting && meeting.has_ai_summary === true;
+  });
+  protected readonly loadingRecording: WritableSignal<boolean> = signal(false);
+  protected readonly loadingSummary: WritableSignal<boolean> = signal(false);
+
+  protected openRecording(): void {
+    const row = this.row();
+    this.load(this.loadingRecording, this.meetingService.getPastMeetingRecording(row.key), 'recording', (recording) => {
+      const shareUrl = getLargestSessionShareUrl(recording);
+      if (shareUrl) this.dialogs.openRecording(row, shareUrl);
+      return !!shareUrl;
+    });
+  }
+
+  protected openSummary(): void {
+    const row = this.row();
+    this.load(this.loadingSummary, this.meetingService.getPastMeetingSummary(row.key), 'summary', (summary) => {
+      // The dialog leaves the visibility check to its caller.
+      const visible = getPastMeetingSummaryContent(row.meeting, summary) !== null;
+      if (visible) this.dialogs.openSummary(row, summary);
+      return visible;
+    });
+  }
+
+  /** Runs one artifact request; `open` returns false when the artifact turns out to be missing. */
+  private load<T>(loading: WritableSignal<boolean>, request$: Observable<T>, kind: 'recording' | 'summary', open: (value: T) => boolean): void {
+    if (loading()) return;
+    loading.set(true);
+    request$
+      .pipe(
+        take(1),
+        finalize(() => loading.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (value) => {
+          if (!open(value)) this.showUnavailable(kind);
+        },
+        error: (error: unknown) => {
+          // A 404 just means the meeting has no such artifact.
+          if (!(error instanceof HttpErrorResponse && error.status === 404)) console.error(`Failed to load a past meeting ${kind}:`, error);
+          this.showUnavailable(kind);
+        },
+      });
+  }
+
+  private showUnavailable(kind: 'recording' | 'summary'): void {
+    this.toast.show({
+      variant: 'error',
+      position: 'bottom-center',
+      message: kind === 'recording' ? 'Recording unavailable' : 'AI Summary unavailable',
+      description: `We couldn't load this ${kind}. Please try again.`,
+    });
+  }
+}
