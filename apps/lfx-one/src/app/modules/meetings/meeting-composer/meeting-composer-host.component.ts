@@ -170,7 +170,7 @@ export class MeetingComposerHostComponent {
     return this.sections().some((section) => this.formService.sectionNeedsAttention(section, visited));
   });
   /**
-   * Why the toast's Edit action can't act, or `null` when it can.
+   * Why the toast's Edit action can't act, or `null` when it can. Defensive only: opening the composer retires the toast.
    * @description One question only: reopening while another meeting is part-way through the composer
    * would discard that draft. Permission is deliberately not asked here — see
    * {@link initEditFromToastBlockedReason}.
@@ -426,8 +426,7 @@ export class MeetingComposerHostComponent {
    * has since switched context is judged against a project their meeting was never in. The
    * meeting-scoped check that is actually authoritative lives on the path this action opens — a
    * revoked reopen comes back 200 with `organizer: false`, which the composer's own load path treats
-   * as `denied` and lands on its "you don't have permission" panel, which says more than a disabled
-   * button with a tooltip ever did.
+   * as `denied` and lands on its "you don't have permission" panel.
    */
   private initEditFromToastBlockedReason(): Signal<string | null> {
     return computed(() => (this.composer.isOpen() ? 'Close the open composer first' : null));
