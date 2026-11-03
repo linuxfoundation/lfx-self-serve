@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Committees
 ---
 
@@ -53,7 +53,7 @@ To change only the name, type, parent, join mode, features, or chat channel, you
 2. Select **Add Member**, search for the person by name or email (or paste emails), and confirm. Members who can only send invitations see **Invite Someone** instead.
 3. Each row has an actions menu with **Send Message** (opens an email to the member), **Edit** (change role, voting status, or permission), and **Remove** (asks you to confirm).
 
-The roster shows **Name**, **Email** (hidden from visitors), **Organization**, and, when the group has voting, **Role** and **Voting Status**. When engagement metrics are turned on for your account, **Meetings** and **Engagement** columns appear for people with access to them. The last column is **Permission**.
+The roster shows **Name**, **Email** (hidden from visitors), **Company**, and, when the group has voting, **Role** and **Voting Status**. When engagement metrics are turned on for your account, **Meetings** and **Engagement** columns appear for people with access to them. The last column is **Permission**.
 
 ### Pending invitations
 
@@ -87,7 +87,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 
 1. When creating a group, select **Create Group** on the **Settings** step to reach **Add Members**. When editing, open **Edit Group** and go to the **Add Members** step.
 2. Select **Import Members** alongside **Invite by email** and **Add with details**.
-3. Download the template or choose a CSV file, then review the preview. Required organization and voting fields reflect the group's current settings in the form.
+3. Download the template or choose a CSV file, then review the preview. Required company and voting fields reflect the group's current settings in the form.
 4. Optionally select **Send notification emails to added members**. Notifications are off by default; this choice is retained when you edit staged members or move between steps.
 5. Select **Import _N_ members**. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.
 6. Select **Done** (when creating) or **Update Group** (when editing) to save the pending member additions along with your other changes. Cancelling the CSV preview, selecting **Skip For Now**, or leaving without saving does not add those members or revoke their invitations. When creating, the group itself has already been saved; only the pending members are discarded.

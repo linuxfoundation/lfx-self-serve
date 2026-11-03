@@ -4,7 +4,7 @@ description: What the Zoom host key is, who can see it, when it is available, an
 audience: [all]
 product_area: Meetings
 tags: [meetings, host, host key, zoom, recording, host controls]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Meetings
 ---
 
@@ -14,8 +14,8 @@ The **host key** is a 6-digit code that lets a person claim host in a Zoom meeti
 
 Only meeting hosts can see the key, and you need to be signed in. There are two kinds of host:
 
-- **Organizers** are the people who manage the meeting: its owner, and people with write access to the meeting's project or committee, including users granted **Meeting Coordinator** access. An organizer is always a host too.
-- **Meeting Hosts** are guests (participants) who an organizer marked as a **Meeting Host**. They don't need to be organizers. Being a Meeting Host gives them enough access to run the meeting, including the host key, but not to edit it.
+- **Organizers** are the people who manage the meeting: its owner, and people with write access to the meeting's project or committee, including users granted **Meeting Coordinator** access. A organizer is always a host too.
+- **Meeting Hosts** are guests (participants) who a organizer marked as a **Meeting Host**. They don't need to be organizers. Being a Meeting Host gives them enough access to run the meeting, including the host key, but not to edit it.
 
 Everyone else, including guests and attendees who aren't hosts, never sees the key.
 
@@ -26,7 +26,7 @@ Everyone else, including guests and attendees who aren't hosts, never sees the k
 | Edit, cancel, or delete the meeting     | Yes       | No                   | No           |
 | Mark a guest as a Meeting Host          | Yes       | No                   | No           |
 
-If you're a Meeting Host and don't see a card button, open the meeting's join page instead. If you need to make someone a host, ask an organizer.
+If you're a Meeting Host and don't see a card button, open the meeting's join page instead. If you need to make someone a host, ask a organizer.
 
 ## When the host key is available
 
@@ -91,8 +91,8 @@ A guest marked as a host shows a **Host** label in the guest list. For the rest 
 
 ## Troubleshooting
 
-- **I don't see the Host Key button on the meeting card.** The button is only for organizers, and only for upcoming meetings inside the availability window. If you're a Meeting Host rather than an organizer, open the meeting's join page instead.
-- **I'm a host but the key isn't on the join page.** Make sure you are signed in, and that the meeting is within 70 minutes of its start and not yet 40 minutes past its end. If you're still missing it, ask an organizer to confirm you're marked as a **Meeting Host**.
+- **I don't see the Host Key button on the meeting card.** The button is only for organizers, and only for upcoming meetings inside the availability window. If you're a Meeting Host rather than a organizer, open the meeting's join page instead.
+- **I'm a host but the key isn't on the join page.** Make sure you are signed in, and that the meeting is within 70 minutes of its start and not yet 40 minutes past its end. If you're still missing it, ask a organizer to confirm you're marked as a **Meeting Host**.
 - **The key doesn't work in Zoom.** Reopen the key from the meeting card or join page and copy it again. The key can change between occurrences.
 - **I can't find the key after the meeting.** Past meetings never show the host key.
 

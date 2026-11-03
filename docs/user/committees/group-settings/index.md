@@ -4,7 +4,7 @@ description: How managers change a group's name, type, join mode, visibility, ma
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, settings, join-mode, mailing-lists, delete]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Committees
 ---
 
@@ -74,7 +74,7 @@ Toggle each feature, then **Save Changes**:
 - **Enable SSO Group**: syncs membership with a Single Sign-On provider.
 - **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board and restricted meetings never share their guest list.
 
-With **Business Email Required** or **Enable Voting** on, members who join must give an organization name and website.
+With **Business Email Required** or **Enable Voting** on, members who join must give a company name and website.
 
 ## Delete a group
 

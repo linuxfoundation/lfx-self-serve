@@ -4,7 +4,7 @@ description: View your Linux Foundation training enrollments and certifications 
 audience: [all]
 product_area: Trainings
 tags: [trainings, courses, enrollments, certifications, learning]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Trainings
 ---
 
@@ -36,13 +36,13 @@ Completing certain training programs qualifies you for LFX badges. After you com
 
 ## Your company's activity
 
-The **Training & Certification** page in Org Lens (route: `/org/training`) gives you visibility into training and certification activity across your organization. Rather than showing your individual enrollments, this view aggregates data for all members associated with your company.
+The **Training & Certification** page in Company Lens (route: `/company/training`) gives you visibility into training and certification activity across your company. Rather than showing your individual enrollments, this view aggregates data for all members associated with your company.
 
 ### What you can see
 
-- Training enrollments and completions across your organization's members
+- Training enrollments and completions across your company's members
 - Certification achievements earned by people affiliated with your company
-- An overview of your organization's investment in Linux Foundation learning programs
+- An overview of your company's investment in Linux Foundation learning programs
 
 ### Which enrollments and certificates are counted
 
@@ -50,11 +50,11 @@ On the Certifications tab, **In Progress** counts people enrolled in the last 12
 
 ### Navigation
 
-Switch to the **Org** lens from the lens selector at the top of LFX Self Serve, then select **Training & Certification** from the left navigation sidebar (route: `/org/training`).
+Switch to the **Company** lens from the lens selector at the top of LFX Self Serve, then select **Training & Certification** from the left navigation sidebar (route: `/company/training`).
 
 ### Who can access this
 
-Viewing your company's training activity in Org Lens requires **admin access** to your organization. If you are not yet an admin, another admin at your organization can invite you to accept an admin role. Once you accept, you will be able to access this and other Org Lens pages for your company.
+Viewing your company's training activity in Company Lens requires **admin access** to your company. If you are not yet an admin, another admin at your company can invite you to accept an admin role. Once you accept, you will be able to access this and other Company Lens pages for your company.
 
 ## Related sections
 

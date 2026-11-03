@@ -4,13 +4,13 @@ description: How organizers match the people in a meeting's Zoom attendance reco
 audience: [all]
 product_area: Meetings
 tags: [meetings, past meetings, attendance, reconcile, participants, organizer, zoom]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Meetings
 ---
 
-Zoom records attendees by the name they joined with, such as "Sam's iPhone" or "Guest 2". **Reconcile Attendance** lets an organizer match those names to the real people who were in the meeting, so the **Participants** table and the attendance totals on a past meeting are accurate.
+Zoom records attendees by the name they joined with, such as "Sam's iPhone" or "Guest 2". **Reconcile Attendance** lets a organizer match those names to the real people who were in the meeting, so the **Participants** table and the attendance totals on a past meeting are accurate.
 
-This is for **organizers** of the meeting. If you don't see the button, you're not an organizer of that meeting.
+This is for **organizers** of the meeting. If you don't see the button, you're not a organizer of that meeting.
 
 ## Open Reconcile Attendance
 
@@ -43,7 +43,7 @@ The panel groups results into three tabs. Each tab name shows how many attendees
 - **Unmatched**: no good match was found.
 - **Auto-matched**: matches that were applied automatically. These are listed so you can check them. No actions are offered here.
 
-Each row shows the attendee's Zoom name, how confident the match is, and how it was found: **deterministic** (an exact email or username match) or **ai**. If there's a suggestion, the row shows it as **Suggested** with the person's name, email, and organization. In **Auto-matched**, it shows **Matched** instead.
+Each row shows the attendee's Zoom name, how confident the match is, and how it was found: **deterministic** (an exact email or username match) or **ai**. If there's a suggestion, the row shows it as **Suggested** with the person's name, email, and company. In **Auto-matched**, it shows **Matched** instead.
 
 ## Review a result
 

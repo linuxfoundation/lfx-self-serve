@@ -4,7 +4,7 @@ description: How to create a project meeting in LFX Self Serve, from a quick sta
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, create, recurring, zoom, recording, ai summary, agenda]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Meetings
 ---
 
@@ -74,7 +74,7 @@ To make the meeting recurring, turn on the repeat option ("This meeting repeats 
 
 - **Platform**: Zoom.
 - **Recording**: record the meeting for people who can't attend live.
-- **AI meeting summary**: generate key takeaways and action items automatically. When this is on, you can also select **Requires host approval before sharing with guests**, so a summary stays hidden until an organizer approves it. See [Past Meetings](../past-meetings/).
+- **AI meeting summary**: generate key takeaways and action items automatically. When this is on, you can also select **Requires host approval before sharing with guests**, so a summary stays hidden until a organizer approves it. See [Past Meetings](../past-meetings/).
 - **Transcript**: automatically create searchable text transcripts. This needs **Recording** to be on.
 - **Auto-upload to YouTube**: automatically publish recordings to your project's YouTube channel. This needs **Recording** to be on. The meeting date is added to the video's title when it uploads, so the title can be at most 87 characters. If it's longer, you'll see a "Meeting title too long for YouTube" warning with a link back to **Details & Access** to shorten it.
 - **Reminder email**: automatically send a reminder email to all participants before the meeting starts. Set how long before the start it goes out, from 2 to 24 hours (plus 0 to 59 minutes). It defaults to 24 hours.

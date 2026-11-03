@@ -4,7 +4,7 @@ description: How to see participation, the Net Promoter Score, comments, and ind
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, results, nps, responses, comments, delivery status]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Surveys
 ---
 
@@ -66,7 +66,7 @@ The **Responses** tab lists each recipient and what they did. The heading shows 
 Each row shows:
 
 - **Recipient**: name and email address (select the email to write to them)
-- **Organization**: their organization and job title
+- **Company**: their company and job title
 - **Delivery Status**: the latest status of the email, with the time it happened
 - **Response Date**: when they responded
 - **NPS Score**: the score they gave, colored by promoter, passive, or detractor
@@ -81,7 +81,7 @@ Use the controls above the list to narrow it down:
 - **NPS Score**: **All**, **Promoters (9-10)**, **Passives (7-8)**, or **Detractors (0-6)**
 - **Comment**: **All**, **With comment**, or **Without comment**
 - **Delivery Status**: **All**, **Responded**, **Clicked**, **Opened**, **Delivered**, **Failed**, or **Pending**
-- **Search Respondents**: find someone by name, email address, or organization
+- **Search Respondents**: find someone by name, email address, or company
 
 Filters and search only look at the responses that are already loaded. If the list is long, select **Load more responses** until it is fully loaded before you rely on a filter or a search. Otherwise a person on a later page won't appear, and you may see "No respondents match your filters." even though a match exists.
 

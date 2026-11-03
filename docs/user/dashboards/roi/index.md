@@ -1,20 +1,20 @@
 ---
 title: ROI metrics
-description: What the Org Lens ROI Metrics page shows, and where to find the full documentation of how the figures are estimated.
+description: What the Company Lens ROI Metrics page shows, and where to find the full documentation of how the figures are estimated.
 audience: [all]
 product_area: Dashboards
-tags: [org, org lens, roi, return on investment, investment, return, estimation method, markup]
-last_updated: 2026-10-30
+tags: [company lens, roi, return on investment, investment, return, estimation method, markup]
+last_updated: 2026-11-03
 intercom_collection: Dashboards
 ---
 
-The **ROI Metrics** page in Org Lens estimates what your organization invests in Linux Foundation projects through its public contribution activity, and the economic return associated with those projects.
+The **ROI Metrics** page in Company Lens estimates what your company invests in Linux Foundation projects through its public contribution activity, and the economic return associated with those projects.
 
-Find the page in the **LF Staff Only** section at the bottom of the Org Lens menu. Only Linux Foundation staff can see that section or open the page.
+Find the page in the **LF Staff Only** section at the bottom of the Company Lens menu. Only Linux Foundation staff can see that section or open the page.
 
 ## What the page shows
 
-- **Total investment** — public contribution activity (commits, community participation, meetings, events, memberships, and training), priced at standard rates that are the same for every organization. Direct spending comes from LF records, and staff time is priced at flat benchmark rates, not anyone's actual or reported compensation.
+- **Total investment** — public contribution activity (commits, community participation, meetings, events, memberships, and training), priced at standard rates that are the same for every company. Direct spending comes from LF records, and staff time is priced at flat benchmark rates, not anyone's actual or reported compensation.
 - **Total return** — the estimated economic value received back from the projects you contributed to
 - **Net return**, **ROI**, and **BCR** — return less investment, that difference as a share of investment, and return per dollar invested (always exactly one more than ROI)
 

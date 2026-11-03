@@ -4,17 +4,17 @@ description: Frequently asked questions about the LFX contribution ROI model —
 audience: [all]
 product_area: Dashboards
 tags: [roi, faq, revealed preference, cocomo, markup]
-last_updated: 2026-10-16
+last_updated: 2026-11-03
 intercom_collection: Dashboards
 ---
 
 ## How can the model quantify the "value" of open source contribution?
 
-The model uses _revealed preference_. Organizations take actions to maximize the benefit they receive from OSS contributions, so their contribution behavior and prioritization indicate how large those benefits must be to justify the decisions. Combined with real contribution history, this lets us recover estimates of contribution value and ROI. See [How the model works](../how-it-works/).
+The model uses _revealed preference_. Companies take actions to maximize the benefit they receive from OSS contributions, so their contribution behavior and prioritization indicate how large those benefits must be to justify the decisions. Combined with real contribution history, this lets us recover estimates of contribution value and ROI. See [How the model works](../how-it-works/).
 
-## My organization is not a profit-maximizing company. Can the model still be applied?
+## My company is not a profit-maximizing company. Can the model still be applied?
 
-Yes. The model is agnostic to the type of organization. It assumes only that the organization behaves in a way that furthers its objectives. It applies to non-profits, foundations, public sector organizations, and companies alike. If an organization contributes to open source, the model assumes it perceives value from doing so, even if that value is not directly financial or related to the bottom line. The requirement is a consistent contribution history that can be observed and quantified in monetary terms.
+Yes. The model is agnostic to the type of company. It assumes only that the company behaves in a way that furthers its objectives. It applies to non-profits, foundations, public sector companies, and companies alike. If a company contributes to open source, the model assumes it perceives value from doing so, even if that value is not directly financial or related to the bottom line. The requirement is a consistent contribution history that can be observed and quantified in monetary terms.
 
 ## What types of contribution value does the model capture?
 
@@ -22,7 +22,7 @@ The model does not specify the form value takes, as long as it can be expressed 
 
 ## Does the model use COCOMO to derive value for open source projects?
 
-No. The model measures the _input_ side: what an organization spends, either directly (fees, tickets, sponsorships) or as the cost of staff time converted from observed activity. See [Data overview](../data-overview/).
+No. The model measures the _input_ side: what a company spends, either directly (fees, tickets, sponsorships) or as the cost of staff time converted from observed activity. See [Data overview](../data-overview/).
 
 ## Does the model imply that we should just contribute to the project with the greatest ROI?
 

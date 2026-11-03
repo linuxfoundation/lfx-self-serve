@@ -4,7 +4,7 @@ description: How to edit, cancel, and delete project meetings in LFX Self Serve.
 audience: [all]
 product_area: Meetings
 tags: [meetings, manage, edit, cancel, delete, recurring, occurrence]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Meetings
 ---
 
@@ -22,7 +22,7 @@ Select the edit (pencil) icon on a meeting you organize. The **Edit meeting** dr
 
 - **Save changes** stays disabled until you change something.
 - You can only edit upcoming meetings. A meeting that has already run is a past meeting. See [Past Meetings](../past-meetings/).
-- If you see "You don't have permission to edit this meeting," ask an organizer to grant you access. The meeting is still there, but your access to change it isn't.
+- If you see "You don't have permission to edit this meeting," ask a organizer to grant you access. The meeting is still there, but your access to change it isn't.
 
 ### Edit a recurring meeting
 

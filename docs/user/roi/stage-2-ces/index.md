@@ -1,14 +1,14 @@
 ---
 title: 'Stage 2: CES allocation'
-description: How the ROI model estimates, for each organization-project pair, how contribution types substitute for one another — moment conditions, estimator, closed-form elasticity, share recovery, and the pooled prior.
+description: How the ROI model estimates, for each company-project pair, how contribution types substitute for one another — moment conditions, estimator, closed-form elasticity, share recovery, and the pooled prior.
 audience: [all]
 product_area: Dashboards
 tags: [roi, ces, elasticity of substitution, gmm, moment conditions, technical]
-last_updated: 2026-10-30
+last_updated: 2026-11-03
 intercom_collection: Dashboards
 ---
 
-Stage 2 estimates, for each organization-project pair, the CES share of each contribution type `α(k)` and the elasticity of substitution `σ`. It uses the yearly quantities and prices of each type from the [contribution levels](../data-overview/#contribution-levels-stage-2-and-inference-input) data and runs for the pairs that received a markup in [stage 1](../stage-1-markups/).
+Stage 2 estimates, for each company-project pair, the CES share of each contribution type `α(k)` and the elasticity of substitution `σ`. It uses the yearly quantities and prices of each type from the [contribution levels](../data-overview/#contribution-levels-stage-2-and-inference-input) data and runs for the pairs that received a markup in [stage 1](../stage-1-markups/).
 
 ## Moment conditions
 

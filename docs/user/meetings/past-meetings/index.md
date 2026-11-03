@@ -4,7 +4,7 @@ description: How to find a past meeting, read its attendance, and watch its reco
 audience: [all]
 product_area: Meetings
 tags: [meetings, past meetings, attendance, participants, recording, transcript, ai summary]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Meetings
 ---
 
@@ -44,8 +44,8 @@ The page also shows the meeting's **Agenda** and its **Resources**, which are th
 
 The **Participants** table lists everyone who was invited or attended. For each person, it shows:
 
-- **Name**, with an **Organizer** tag on guests an organizer marked as a Meeting Host. The tag marks hosts. It doesn't mean the person can manage the meeting
-- **Email**, **Organization**, and **Title**
+- **Name**, with an **Organizer** tag on guests a organizer marked as a Meeting Host. The tag marks hosts. It doesn't mean the person can manage the meeting
+- **Email**, **Company**, and **Title**
 - **Voting Status**, when the meeting was linked to a group that uses voting
 - **Attendance**: **Attended** or **Absent**
 - **Invitation**: **Invited** or **Not invited** (someone who joined without being on the guest list)
@@ -89,10 +89,10 @@ The details page shows a **Transcripts** tag when a transcript exists. To read i
 
 ### AI summary approval
 
-When an organizer turns on the AI meeting summary, they can also select **Requires host approval before sharing with guests**. This is off by default.
+When a organizer turns on the AI meeting summary, they can also select **Requires host approval before sharing with guests**. This is off by default.
 
 - **If approval isn't required**, the summary is available to people with access as soon as it's ready.
-- **If approval is required**, the summary stays hidden from everyone except organizers until an organizer approves it. Then it shows an **Approved** badge. Until then, organizers see **Pending**.
+- **If approval is required**, the summary stays hidden from everyone except organizers until a organizer approves it. Then it shows an **Approved** badge. Until then, organizers see **Pending**.
 
 To review a summary, organizers use the meeting's card on the **Past** tab:
 

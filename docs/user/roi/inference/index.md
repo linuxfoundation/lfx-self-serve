@@ -4,11 +4,11 @@ description: How the ROI model combines markups, CES parameters, and observed sp
 audience: [all]
 product_area: Dashboards
 tags: [roi, inference, bcr, break-even, annualization, technical]
-last_updated: 2026-10-30
+last_updated: 2026-11-03
 intercom_collection: Dashboards
 ---
 
-The inference layer combines the stage 1 markups, the stage 2 CES parameters, and observed quantities and prices into ROI metrics. Results are produced for each organization-project pair and each markup method, with a yearly breakdown.
+The inference layer combines the stage 1 markups, the stage 2 CES parameters, and observed quantities and prices into ROI metrics. Results are produced for each company-project pair and each markup method, with a yearly breakdown.
 
 ## Metrics
 
@@ -81,7 +81,7 @@ Value and investment are therefore both sums over the same years, so ROI is comp
 
 ## Participation floor
 
-An organization that keeps contributing values participation at least at its cost: `μ(i,j) · PY(i,j) ≥ I(i,j)`. The calibrated markup `μ_raw` comes from ranking pairs by participation and does not condition on allocative efficiency, so it can fall below the break-even markup `I / PY`. Inference enforces the constraint:
+A company that keeps contributing values participation at least at its cost: `μ(i,j) · PY(i,j) ≥ I(i,j)`. The calibrated markup `μ_raw` comes from ranking pairs by participation and does not condition on allocative efficiency, so it can fall below the break-even markup `I / PY`. Inference enforces the constraint:
 
 ```text
 μ(i,j)  = max( μ_raw(i,j),  I(i,j) / PY(i,j) )
@@ -128,7 +128,7 @@ The following appear in the research methodology and are **not** in the product.
 
 ### Mechanism analysis
 
-Once ROI is computed, associations with external characteristics (industry, project category and maturity, organization size, geography) can be explored with a model of the form `ROI = f(drivers)`, for example with a Shapley decomposition. This is correlational: organizations select into projects, and some mechanisms are unobserved.
+Once ROI is computed, associations with external characteristics (industry, project category and maturity, company size, geography) can be explored with a model of the form `ROI = f(drivers)`, for example with a Shapley decomposition. This is correlational: companies select into projects, and some mechanisms are unobserved.
 
 ### Counterfactual analysis
 

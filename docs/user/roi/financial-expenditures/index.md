@@ -4,11 +4,11 @@ description: How the ROI model counts direct spending — memberships, event att
 audience: [all]
 product_area: Dashboards
 tags: [roi, expenditures, memberships, events, sponsorships, training, fixed unit]
-last_updated: 2026-10-30
+last_updated: 2026-11-03
 intercom_collection: Dashboards
 ---
 
-Direct spending is recorded in dollars and used as observed. Each source is aggregated by organization account, project, and calendar year, then mapped to the organization through the account mapping.
+Direct spending is recorded in dollars and used as observed. Each source is aggregated by company account, project, and calendar year, then mapped to the company through the account mapping.
 
 ## Memberships
 
@@ -26,7 +26,7 @@ amount(y) = price × (days of the term falling in year y) / (days in the term)
 Money is credited once, to the project that sold it. A foundation's own membership belongs to the foundation, and its sub-projects are separate. See [Counting each resource once](../data-overview/#counting-each-resource-once).
 
 - **Project membership:** every membership except the Linux Foundation one, attributed to the project it belongs to. Quantity is 1 and price is the apportioned amount.
-- **Linux Foundation membership:** the organization's foundation-wide fee is divided equally among its **key projects** and assigned to each, so it sums to the fee and is not copied. Organizations with no key projects get no Linux Foundation membership cost. Quantity is 1 and price is the share per project.
+- **Linux Foundation membership:** the company's foundation-wide fee is divided equally among its **key projects** and assigned to each, so it sums to the fee and is not copied. Companies with no key projects get no Linux Foundation membership cost. Quantity is 1 and price is the share per project.
 
 ## Event attendance
 

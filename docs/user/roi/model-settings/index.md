@@ -4,11 +4,11 @@ description: The default settings of the ROI model — observation window, cost 
 audience: [all]
 product_area: Dashboards
 tags: [roi, parameters, defaults, settings, assumptions]
-last_updated: 2026-10-30
+last_updated: 2026-11-03
 intercom_collection: Dashboards
 ---
 
-These are the fixed settings the ROI model currently runs with. They apply identically to every organization, and the ROI page cannot recalculate figures with different values. They are listed so you can see exactly what each assumption is.
+These are the fixed settings the ROI model currently runs with. They apply identically to every company, and the ROI page cannot recalculate figures with different values. They are listed so you can see exactly what each assumption is.
 
 ## Observation window
 
