@@ -69,7 +69,9 @@ The row shows the new deadline right away. You can only extend a vote that is st
 
 1. Select **⋮ → Send summary** on an ended vote.
 2. Confirm. The message warns that sending can't be undone.
-3. Wait for the result. Until LFX reports it, the vote's row shows a spinner and **Sending summary…** under the vote's name (on a phone, below the name and status at the top of the vote's card). While that vote is sending, its **⋮ → Sending summary…** item is unavailable so the same summary can't be sent twice at once. The vote's other menu actions, and the summaries of other ended votes, stay available. Screen readers announce when sending starts and when it finishes; the result itself appears in the message described below. The indicator only shows that LFX is still working on the request. It does not mean the emails have been delivered.
+3. Wait for the result. While you stay on this page, the vote's row shows a spinner and **Sending summary…** under the vote's name until LFX reports the result (on a phone, below the name and status at the top of the vote's card). Its **⋮ → Sending summary…** item is unavailable, preventing another send for that vote from this page while the request is in progress. The vote's other menu actions, and the summaries of other ended votes, stay available. Screen readers announce when sending starts and when it finishes; the result itself appears in the message described below. The indicator only shows that LFX is still working on the request. It does not mean the emails have been delivered.
+
+The indicator and duplicate-click protection apply only while you stay on this page. Reloading, leaving and returning, or opening another tab does not preserve this state or confirm that sending stopped. Check with voters before sending again, since another send may duplicate summaries already sent.
 
 Each result message names the vote so you can distinguish summaries sent at the same time. After you send, LFX reports what it knows about each invited voter:
 
