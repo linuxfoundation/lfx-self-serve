@@ -47,7 +47,7 @@
         }
         <!-- Hidden, not removed, while empty: no wrapped row on narrow screens, and Pending RSVPs still moves focus once emptied. -->
         <div
-          class="flex flex-none items-center gap-[12px]"
+          class="flex max-w-full flex-none flex-wrap items-center gap-[12px]"
           [class.hidden]="!store.pendingRsvpRows().length && !canWriteMeetings()"
           data-testid="meetings-redesign-header-actions">
           <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="createButton() ?? heading()?.nativeElement ?? null" />
@@ -141,9 +141,10 @@
 </div>
 
 <ng-template #railTemplate let-scope>
+  <!-- A lone card (the other's feed failed) spans both folded columns. -->
   <!-- A failed feed hides the card rather than claiming an empty calendar; the list shows that error with a retry. -->
   @if (!store.upcomingFailed()) {
-    <section class="flex min-w-0 flex-col gap-[8px]" [attr.data-testid]="'meetings-redesign-' + scope + '-next-meeting'">
+    <section class="flex min-w-0 flex-col gap-[8px] @[621px]:only:col-span-2" [attr.data-testid]="'meetings-redesign-' + scope + '-next-meeting'">
       <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">Next meeting</h2>
       <lfx-next-meeting-card
         [row]="store.nextRow()"
@@ -161,7 +162,7 @@
   }
   <!-- A failed feed hides the card rather than claiming the viewer has no past meetings. -->
   @if (!store.lastMeetingFailed()) {
-    <section class="flex min-w-0 flex-col gap-[8px]" [attr.data-testid]="'meetings-redesign-' + scope + '-last-meeting'">
+    <section class="flex min-w-0 flex-col gap-[8px] @[621px]:only:col-span-2" [attr.data-testid]="'meetings-redesign-' + scope + '-last-meeting'">
       <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">Last meeting</h2>
       <lfx-last-meeting-card
         [row]="store.lastMeeting()"

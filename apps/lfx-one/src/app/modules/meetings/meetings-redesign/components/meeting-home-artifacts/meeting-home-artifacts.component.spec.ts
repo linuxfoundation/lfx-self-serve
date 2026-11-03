@@ -163,7 +163,9 @@ describe('MeetingHomeArtifactsComponent', () => {
     await click('meetings-home-row-summary');
 
     expect(openSummary).not.toHaveBeenCalled();
-    expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: 'AI Summary unavailable' }));
+    expect(toastShow).toHaveBeenCalledWith(
+      expect.objectContaining({ variant: 'error', message: 'AI Summary unavailable', description: "This summary isn't available yet." })
+    );
   });
 
   it('shows an error toast when the recording is missing or fails to load', async () => {
@@ -178,6 +180,10 @@ describe('MeetingHomeArtifactsComponent', () => {
 
     expect(openRecording).not.toHaveBeenCalled();
     expect(toastShow).toHaveBeenCalledTimes(2);
+    expect(toastShow.mock.calls.map(([config]) => config.description)).toEqual([
+      "This recording isn't available yet.",
+      "We couldn't load this recording. Please try again.",
+    ]);
     expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ message: 'Recording unavailable', position: 'bottom-center' }));
     expect(console.error).toHaveBeenCalledOnce();
   });

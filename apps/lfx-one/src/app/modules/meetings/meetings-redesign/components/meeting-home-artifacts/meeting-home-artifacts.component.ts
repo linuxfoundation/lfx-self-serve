@@ -80,22 +80,24 @@ export class MeetingHomeArtifactsComponent {
       )
       .subscribe({
         next: (value) => {
-          if (!open(value)) this.showUnavailable(kind);
+          if (!open(value)) this.showUnavailable(kind, false);
         },
         error: (error: unknown) => {
           // A 404 just means the meeting has no such artifact.
-          if (!(error instanceof HttpErrorResponse && error.status === 404)) console.error(`Failed to load a past meeting ${kind}:`, error);
-          this.showUnavailable(kind);
+          const missing = error instanceof HttpErrorResponse && error.status === 404;
+          if (!missing) console.error(`Failed to load a past meeting ${kind}:`, error);
+          this.showUnavailable(kind, !missing);
         },
       });
   }
 
-  private showUnavailable(kind: 'recording' | 'summary'): void {
+  /** Only a failed request is worth retrying; a missing or not-yet-visible artifact is not. */
+  private showUnavailable(kind: 'recording' | 'summary', retryable: boolean): void {
     this.toast.show({
       variant: 'error',
       position: 'bottom-center',
       message: kind === 'recording' ? 'Recording unavailable' : 'AI Summary unavailable',
-      description: `We couldn't load this ${kind}. Please try again.`,
+      description: retryable ? `We couldn't load this ${kind}. Please try again.` : `This ${kind} isn't available yet.`,
     });
   }
 }

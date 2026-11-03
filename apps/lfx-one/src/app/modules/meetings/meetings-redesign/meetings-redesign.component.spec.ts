@@ -223,6 +223,10 @@ describe('MeetingsRedesignComponent', () => {
     expect(query(fixture, 'meetings-redesign-rail-last-meeting')).toBeNull();
     expect(query(fixture, 'meetings-redesign-folded-last-meeting')).toBeNull();
     expect(query(fixture, 'meetings-redesign-rail-next-meeting')).toBeTruthy();
+    // The lone folded card spans both columns.
+    const folded = query(fixture, 'meetings-redesign-folded-next-meeting');
+    expect(folded?.className).toContain('@[621px]:only:col-span-2');
+    expect(folded?.parentElement?.querySelectorAll(':scope > section')).toHaveLength(1);
   });
 
   describe('Create Meeting', () => {
@@ -245,6 +249,8 @@ describe('MeetingsRedesignComponent', () => {
 
       expect(query(fixture, 'meetings-home-create')).toBeNull();
       expect(query(fixture, 'meetings-redesign-header-actions')?.classList).toContain('hidden');
+      // Capped to the header and wrapping, so both buttons fit on a 320px phone.
+      expect(query(fixture, 'meetings-redesign-header-actions')?.className).toContain('max-w-full flex-none flex-wrap');
     });
 
     it('takes focus once the last pending RSVP is answered, else the heading does', async () => {
