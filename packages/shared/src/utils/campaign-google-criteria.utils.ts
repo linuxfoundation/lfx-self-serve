@@ -47,8 +47,11 @@ import type { GoogleCampaignChannel, NormalizedGoogleAdSchedule, NormalizedGoogl
  * Not exported, unlike the `googleAds*` helpers in `@lfx-one/shared/constants`. Those reproduce a
  * Go SEMANTIC the form and the BFF must agree on — `TrimSpace`'s NEL handling, Go's lowercasing,
  * `url.Parse`'s flaw — so they are separately specced. This one reproduces nothing upstream does; it
- * formats a refusal string, and nothing outside this file has a reason to render an ad schedule
- * window.
+ * formats a refusal string. The Implementation tab's time pickers print the same `HH:MM` labels
+ * from `GOOGLE_ADS_SCHEDULE_TIME_OPTIONS` in `campaign.constants.ts`, which builds them inline
+ * rather than importing this: a constants file holds values and does not import from `utils/`,
+ * and this file already imports from that one. The two agree because both zero-pad hour and minute
+ * to two digits and both print 24:00 as written.
  */
 function googleAdsClockTime(hour: number, minute: number): string {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
@@ -151,7 +154,7 @@ export function googleAdScheduleRefusal(schedules: NormalizedGoogleAdSchedule[])
     }
     const start = schedule.startHour * 60 + schedule.startMinute;
     const end = schedule.endHour * 60 + schedule.endMinute;
-    const window = `${googleAdsClockTime(schedule.startHour, schedule.startMinute)}-${googleAdsClockTime(schedule.endHour, schedule.endMinute)}`;
+    const span = `${googleAdsClockTime(schedule.startHour, schedule.startMinute)}-${googleAdsClockTime(schedule.endHour, schedule.endMinute)}`;
     // An end at or before the start is an empty or inverted window: the campaign would serve for
     // no time at all that day, which is never what a caller who wrote a schedule meant.
     if (end <= start) {
@@ -172,7 +175,7 @@ export function googleAdScheduleRefusal(schedules: NormalizedGoogleAdSchedule[])
       // Google accepts one criterion per interval, so the second value would be the one silently
       // dropped. A collapsed repeat does not reach the per-day count below, exactly as upstream.
       if (seen.get(key) !== schedule.bidModifier) {
-        return `The Google Ads ${shown} repeats ${day} ${window} with a different bid modifier. Google accepts one entry per interval, so remove one and create again.`;
+        return `The Google Ads ${shown} repeats ${day} ${span} with a different bid modifier. Google accepts one entry per interval, so remove one and create again.`;
       }
       continue;
     }
@@ -181,7 +184,7 @@ export function googleAdScheduleRefusal(schedules: NormalizedGoogleAdSchedule[])
     for (const other of accepted) {
       if (start < other.end && other.start < end) {
         const clash = `${googleAdsClockTime(Math.floor(other.start / 60), other.start % 60)}-${googleAdsClockTime(Math.floor(other.end / 60), other.end % 60)}`;
-        return `The Google Ads ${shown} (${day} ${window}) overlaps ${day} ${clash}. Google rejects overlapping ad schedules on the same day, so merge them and create again.`;
+        return `The Google Ads ${shown} (${day} ${span}) overlaps ${day} ${clash}. Google rejects overlapping ad schedules on the same day, so merge them and create again.`;
       }
     }
     if (accepted.length >= GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY) {

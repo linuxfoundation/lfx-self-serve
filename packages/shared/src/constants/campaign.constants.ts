@@ -1911,9 +1911,11 @@ export const GOOGLE_ADS_SCHEDULE_DAY_LABELS = {
 
 /**
  * Every quarter-hour of the day as minutes since midnight, 00:00 through 24:00, for the ad-schedule
- * editor's time pickers. A pick can only land on a {@link GOOGLE_ADS_SCHEDULE_MINUTES} value, so the
- * editor cannot write a minute Google refuses. 24:00 is listed because it is the only way to end a
- * window at midnight; the editor offers it as an end time only.
+ * editor's time pickers. Every entry's minute is a {@link GOOGLE_ADS_SCHEDULE_MINUTES} value, so a
+ * pick never writes a minute Google refuses. Not every entry is a valid time at both ends, though:
+ * 24:00 is only an end (the only way to end a window at midnight), and 00:00 through 00:45 are only
+ * starts, since an end hour of 0 is refused. The editor offers starts up to 23:45 and ends from
+ * 01:00. A pick can still make an empty or inverted window, which `googleAdScheduleRefusal` reports.
  */
 export const GOOGLE_ADS_SCHEDULE_TIME_OPTIONS = Array.from({ length: 24 * 4 + 1 }, (_, i) => ({
   value: i * 15,

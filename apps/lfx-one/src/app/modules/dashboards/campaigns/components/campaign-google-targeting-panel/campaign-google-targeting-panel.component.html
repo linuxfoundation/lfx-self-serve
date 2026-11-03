@@ -24,42 +24,48 @@
 
       @for (row of scheduleRows(); track $index; let i = $index) {
         <div class="flex flex-wrap items-end gap-2" [attr.data-testid]="'implementation-google-ad-schedule-row-' + i">
-          <div class="flex flex-col gap-1">
-            <label class="text-xs text-gray-700" [for]="'google-ad-schedule-day-' + i">Day</label>
-            <select
-              [id]="'google-ad-schedule-day-' + i"
-              (change)="onScheduleDay(i, $event)"
-              class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              [attr.data-testid]="'implementation-google-ad-schedule-day-' + i">
-              @for (day of dayOptions; track day.value) {
-                <option [value]="day.value" [selected]="day.value === row.dayOfWeek">{{ day.label }}</option>
-              }
-            </select>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs text-gray-700" [for]="'google-ad-schedule-start-' + i">From</label>
-            <select
-              [id]="'google-ad-schedule-start-' + i"
-              (change)="onScheduleTime(i, 'start', $event)"
-              class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              [attr.data-testid]="'implementation-google-ad-schedule-start-' + i">
-              @for (time of startTimeOptions; track time.value) {
-                <option [value]="time.value" [selected]="time.value === row.start">{{ time.label }}</option>
-              }
-            </select>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs text-gray-700" [for]="'google-ad-schedule-end-' + i">To</label>
-            <select
-              [id]="'google-ad-schedule-end-' + i"
-              (change)="onScheduleTime(i, 'end', $event)"
-              class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              [attr.data-testid]="'implementation-google-ad-schedule-end-' + i">
-              @for (time of endTimeOptions; track time.value) {
-                <option [value]="time.value" [selected]="time.value === row.end">{{ time.label }}</option>
-              }
-            </select>
-          </div>
+          <lfx-ui-select
+            class="w-32"
+            label="Day"
+            size="small"
+            [value]="row.dayOfWeek"
+            (valueChange)="onScheduleDay(i, $event)"
+            [attr.data-testid]="'implementation-google-ad-schedule-day-' + i">
+            @for (day of dayOptions; track day.value) {
+              <lfx-ui-option [value]="day.value" [label]="day.label" />
+            }
+          </lfx-ui-select>
+          <lfx-ui-select
+            class="w-24"
+            label="From"
+            size="small"
+            [value]="row.start.toString()"
+            (valueChange)="onScheduleTime(i, 'start', $event)"
+            [attr.data-testid]="'implementation-google-ad-schedule-start-' + i">
+            @for (time of startTimeOptions; track time.value) {
+              <lfx-ui-option [value]="time.value" [label]="time.label" />
+            }
+          </lfx-ui-select>
+          <lfx-ui-select
+            class="w-24"
+            label="To"
+            size="small"
+            [value]="row.end.toString()"
+            (valueChange)="onScheduleTime(i, 'end', $event)"
+            [attr.data-testid]="'implementation-google-ad-schedule-end-' + i">
+            @for (time of endTimeOptions; track time.value) {
+              <lfx-ui-option [value]="time.value" [label]="time.label" />
+            }
+          </lfx-ui-select>
+          <!--
+            Raw <input type="number"> by exception to docs/reviews/frontend-checklist.md §14.1, for this box
+            and the device one below. lfx-ui-input has no number type (UiInputType is text, email, url, tel,
+            password or search), and its numeric/decimal inputmode keypads have no minus key on iOS, which
+            a mostly negative bid adjustment needs. It also emits valueChange on every keystroke and has no
+            change or blur output, so the typed percentage could not be rounded and written back once, on
+            commit, without rewriting the box under the cursor. lfx-input-text binds a FormGroup, which this
+            list-driven panel deliberately does not hold (see the class JSDoc).
+          -->
           <div class="flex flex-col gap-1">
             <label class="text-xs text-gray-700" [for]="'google-ad-schedule-adjustment-' + i">Bid adjustment (%)</label>
             <input
@@ -83,16 +89,22 @@
         </div>
       }
 
-      <div>
-        <lfx-button
-          label="Add window"
-          icon="fa-light fa-plus"
-          size="small"
-          severity="secondary"
-          [outlined]="true"
-          [disabled]="scheduleFull()"
-          (onClick)="addAdSchedule()"
-          data-testid="implementation-google-ad-schedule-add" />
+      <div class="flex flex-col gap-1">
+        <div>
+          <lfx-button
+            label="Add window"
+            icon="fa-light fa-plus"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="addBlockedReason() !== null"
+            [ariaDescribedBy]="addBlockedReason() === null ? undefined : 'google-ad-schedule-add-reason'"
+            (onClick)="addAdSchedule()"
+            data-testid="implementation-google-ad-schedule-add" />
+        </div>
+        @if (addBlockedReason(); as reason) {
+          <p id="google-ad-schedule-add-reason" class="text-xs text-gray-500" data-testid="implementation-google-ad-schedule-add-reason">{{ reason }}</p>
+        }
       </div>
       @if (adSchedulesError(); as message) {
         <p id="google-ad-schedule-error" class="text-xs text-red-600" data-testid="implementation-google-ad-schedule-error">{{ message }}</p>
@@ -112,19 +124,19 @@
       </p>
       @for (row of deviceRows(); track row.device) {
         <div class="flex flex-wrap items-end gap-2" [attr.data-testid]="'implementation-google-device-' + row.device">
-          <div class="flex flex-col gap-1">
-            <label class="text-xs text-gray-700" [for]="'google-device-mode-' + row.device">{{ row.label }}</label>
-            <select
-              [id]="'google-device-mode-' + row.device"
-              (change)="onDeviceMode(row.device, $event)"
-              class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              [attr.data-testid]="'implementation-google-device-mode-' + row.device">
-              <option value="default" [selected]="row.mode === 'default'">Default bid</option>
-              <option value="adjust" [selected]="row.mode === 'adjust'">Adjust bid</option>
-              <option value="exclude" [selected]="row.mode === 'exclude'">Exclude</option>
-            </select>
-          </div>
+          <lfx-ui-select
+            class="w-36"
+            size="small"
+            [label]="row.label"
+            [value]="row.mode"
+            (valueChange)="onDeviceMode(row.device, $event)"
+            [attr.data-testid]="'implementation-google-device-mode-' + row.device">
+            @for (mode of deviceModeOptions; track mode.value) {
+              <lfx-ui-option [value]="mode.value" [label]="mode.label" />
+            }
+          </lfx-ui-select>
           @if (row.mode === 'adjust') {
+            <!-- Raw <input type="number">: the §14.1 exception explained on the ad-schedule adjustment box above. -->
             <div class="flex flex-col gap-1">
               <label class="text-xs text-gray-700" [for]="'google-device-adjustment-' + row.device">{{ row.label }} bid adjustment (%)</label>
               <input

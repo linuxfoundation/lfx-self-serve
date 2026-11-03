@@ -19,11 +19,14 @@ import {
 
 /**
  * The criteria refusals are the ONE judge both the Implementation tab and the BFF refuse by. The
- * BFF's controller spec pins every message end to end through `createCampaign`; these pin the
- * branches the tab relies on directly, so a change here is caught without the controller in the loop.
+ * BFF's controller spec drives each of these messages through `createCampaign` and asserts its text,
+ * with one exception: "needs a finite bid modifier" cannot arrive in a JSON request body, since JSON
+ * has no Infinity or NaN, so the controller spec reaches it only with an in-memory
+ * `Number.POSITIVE_INFINITY` and this file pins it directly. These pin the branches the tab relies on
+ * directly, so a change here is caught without the controller in the loop.
  */
 
-const window = (overrides: Partial<NormalizedGoogleAdSchedule> = {}): NormalizedGoogleAdSchedule => ({
+const adSchedule = (overrides: Partial<NormalizedGoogleAdSchedule> = {}): NormalizedGoogleAdSchedule => ({
   dayOfWeek: 'MONDAY',
   startHour: 9,
   startMinute: 0,
@@ -48,36 +51,36 @@ describe('googleBidModifierRefusal', () => {
 
 describe('googleAdScheduleRefusal', () => {
   it('accepts a day split at noon, because touching windows do not overlap', () => {
-    expect(googleAdScheduleRefusal([window({ endHour: 12 }), window({ startHour: 12 })])).toBeNull();
+    expect(googleAdScheduleRefusal([adSchedule({ endHour: 12 }), adSchedule({ startHour: 12 })])).toBeNull();
   });
 
   it('accepts a whole day ending at hour 24', () => {
-    expect(googleAdScheduleRefusal([window({ startHour: 0, endHour: 24 })])).toBeNull();
+    expect(googleAdScheduleRefusal([adSchedule({ startHour: 0, endHour: 24 })])).toBeNull();
   });
 
   it.each([
-    ['an unknown day', window({ dayOfWeek: 'FUNDAY' }), 'needs a day of week'],
-    ['an end at or before the start', window({ endHour: 9 }), 'is not after its start of 09:00'],
-    ['an end past midnight', window({ endHour: 24, endMinute: 15 }), 'past the end of the day'],
-    ['a minute Google cannot represent', window({ startMinute: 10 }), 'start minute of 10'],
-    ['a bid modifier out of range', window({ bidModifier: 20 }), 'bid modifier of 20'],
+    ['an unknown day', adSchedule({ dayOfWeek: 'FUNDAY' }), 'needs a day of week'],
+    ['an end at or before the start', adSchedule({ endHour: 9 }), 'is not after its start of 09:00'],
+    ['an end past midnight', adSchedule({ endHour: 24, endMinute: 15 }), 'past the end of the day'],
+    ['a minute Google cannot represent', adSchedule({ startMinute: 10 }), 'start minute of 10'],
+    ['a bid modifier out of range', adSchedule({ bidModifier: 20 }), 'bid modifier of 20'],
   ])('refuses %s', (_label, schedule, message) => {
     expect(googleAdScheduleRefusal([schedule])).toContain(message);
   });
 
   it('names an overlap with the window it clashes with', () => {
-    expect(googleAdScheduleRefusal([window(), window({ startHour: 16, endHour: 18 })])).toBe(
+    expect(googleAdScheduleRefusal([adSchedule(), adSchedule({ startHour: 16, endHour: 18 })])).toBe(
       'The Google Ads ad schedule 2 (MONDAY 16:00-18:00) overlaps MONDAY 09:00-17:00. Google rejects overlapping ad schedules on the same day, so merge them and create again.'
     );
   });
 
   it('collapses an exact repeat and refuses one with a different bid modifier', () => {
-    expect(googleAdScheduleRefusal([window({ bidModifier: 0.8 }), window({ bidModifier: 0.8 })])).toBeNull();
-    expect(googleAdScheduleRefusal([window({ bidModifier: 0.8 }), window({ bidModifier: 0.5 })])).toContain('with a different bid modifier');
+    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 0.8 }), adSchedule({ bidModifier: 0.8 })])).toBeNull();
+    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 0.8 }), adSchedule({ bidModifier: 0.5 })])).toContain('with a different bid modifier');
   });
 
   it('refuses one interval past the per-day limit', () => {
-    const hourly = Array.from({ length: GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY + 1 }, (_, h) => window({ startHour: h, endHour: h + 1 }));
+    const hourly = Array.from({ length: GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY + 1 }, (_, h) => adSchedule({ startHour: h, endHour: h + 1 }));
     expect(googleAdScheduleRefusal(hourly.slice(0, -1))).toBeNull();
     expect(googleAdScheduleRefusal(hourly)).toContain(`accepts at most ${GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} per day`);
   });

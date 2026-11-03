@@ -27,8 +27,8 @@ When you create a Google Ads campaign from the **Campaigns** page in the Foundat
 
 Add a window for each day and time range the campaign should run. Each window has a day, a **From** time, a **To** time and an optional **Bid adjustment (%)**.
 
-- Times are in quarter hours, in the Google Ads account's time zone. Choose **24:00** as the **To** time to run until midnight.
-- **Add window** adds an all-day window on the first day of the week (from Monday) that has none yet, so seven clicks give you every day of the week.
+- Times are in quarter hours, in the Google Ads account's time zone. **From** runs from 00:00 to 23:45 and **To** from 01:00 to 24:00. Choose **24:00** as the **To** time to run until midnight.
+- **Add window** adds an all-day window on the first day of the week (from Monday) that has none yet, so seven clicks give you every day of the week. Once every day has a window, it fills the first free time left in the week, for example the morning of a day you set to start at 09:00. It never adds a window that overlaps one you already have: when there is no free time left, it is unavailable and says why.
 - A bid adjustment runs from -90% to +900%. Enter -100% to stop the campaign serving in that window. Leave the box blank for no adjustment.
 - You can add up to 42 windows, and at most 6 on any one day.
 - Windows on the same day cannot overlap. Windows that only touch are fine, so 09:00–12:00 and 12:00–17:00 can both be listed.

@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { CampaignAdSchedule, CampaignDeviceBidModifier } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CampaignGoogleTargetingPanelComponent } from './campaign-google-targeting-panel.component';
 
@@ -16,10 +16,41 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
-  function change(testId: string, value: string): void {
-    const control = query<HTMLInputElement | HTMLSelectElement>(testId) as HTMLInputElement | HTMLSelectElement;
-    control.value = value;
-    control.dispatchEvent(new Event('change'));
+  /** Types into one of the two native percentage boxes and commits it, as leaving the box does. */
+  function type(testId: string, value: string): void {
+    const box = query<HTMLInputElement>(testId) as HTMLInputElement;
+    box.value = value;
+    box.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+  }
+
+  async function settle(): Promise<void> {
+    await fixture.whenStable();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fixture.whenStable();
+  }
+
+  /** The labels an `lfx-ui-select` offers, read from its open list and closed again. */
+  async function optionLabels(testId: string): Promise<string[]> {
+    const trigger = query(testId)?.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement;
+    trigger.click();
+    await settle();
+    const labels = Array.from(document.querySelectorAll('[data-testid="ui-option"]')).map((option) => option.textContent?.trim() ?? '');
+    trigger.click();
+    await settle();
+    return labels;
+  }
+
+  /** Opens an `lfx-ui-select` and clicks the option with this label, as a user picks one. */
+  async function pick(testId: string, label: string): Promise<void> {
+    (query(testId)?.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement).click();
+    await settle();
+    (Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ui-option"]')).find((option) => option.textContent?.trim() === label) as HTMLElement).click();
+    await settle();
+  }
+
+  function clickAdd(): void {
+    (query('implementation-google-ad-schedule-add')?.querySelector('button') as HTMLButtonElement).click();
     fixture.detectChanges();
   }
 
@@ -35,37 +66,106 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [CampaignGoogleTargetingPanelComponent] }).compileComponents();
     fixture = TestBed.createComponent(CampaignGoogleTargetingPanelComponent);
+    document.body.appendChild(fixture.nativeElement);
     schedules = [];
     devices = [];
     fixture.componentInstance.adSchedules.subscribe((list) => schedules.push(list));
     fixture.componentInstance.deviceBidModifiers.subscribe((list) => devices.push(list));
   });
 
+  afterEach(() => {
+    fixture.destroy();
+  });
+
   it('adds an all-day window on the first day without one', () => {
     render({ adSchedules: [{ dayOfWeek: 'MONDAY', startHour: 9, startMinute: 0, endHour: 17, endMinute: 0 }] });
 
-    (query('implementation-google-ad-schedule-add')?.querySelector('button') as HTMLButtonElement).click();
+    clickAdd();
 
     expect(schedules.at(-1)?.[1]).toEqual({ dayOfWeek: 'TUESDAY', startHour: 0, startMinute: 0, endHour: 24, endMinute: 0 });
   });
 
-  it('writes the day, the times and a percentage adjustment as Google bid modifiers', () => {
+  it('never adds an overlapping window: the eighth click fills the first gap, and Add is disabled with a reason when none is left', () => {
+    render({});
+    for (let click = 0; click < 7; click++) {
+      clickAdd();
+      fixture.componentRef.setInput('adSchedules', schedules.at(-1));
+      fixture.detectChanges();
+    }
+    expect(schedules.at(-1)?.map((s) => s.dayOfWeek)).toEqual(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']);
+
+    // Every day all day: no gap anywhere, so the eighth click has nothing to add.
+    const writes = schedules.length;
+    expect((query('implementation-google-ad-schedule-add')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    expect(query('implementation-google-ad-schedule-add-reason')?.textContent).toContain('a new window would overlap one');
+    expect(query('implementation-google-ad-schedule-add')?.querySelector('button')?.getAttribute('aria-describedby')).toBe('google-ad-schedule-add-reason');
+    clickAdd();
+    expect(schedules).toHaveLength(writes);
+
+    // Shorten Wednesday to start at 09:00: the eighth click fills 00:00-09:00 there, not Monday again.
+    const shortened = (schedules.at(-1) ?? []).map((s) => (s.dayOfWeek === 'WEDNESDAY' ? { ...s, startHour: 9 } : s));
+    fixture.componentRef.setInput('adSchedules', shortened);
+    fixture.detectChanges();
+    expect(query('implementation-google-ad-schedule-add-reason')).toBeNull();
+    clickAdd();
+    expect(schedules.at(-1)?.[7]).toEqual({ dayOfWeek: 'WEDNESDAY', startHour: 0, startMinute: 0, endHour: 9, endMinute: 0 });
+  });
+
+  it('skips a gap that would end before 01:00, since an end hour of 0 is refused', () => {
+    const allDay = { startHour: 0, startMinute: 0 as const, endHour: 24, endMinute: 0 as const };
+    render({
+      adSchedules: [
+        { dayOfWeek: 'MONDAY', startHour: 0, startMinute: 30, endHour: 24, endMinute: 0 },
+        ...(['TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const).map((dayOfWeek) => ({ dayOfWeek, ...allDay })),
+      ],
+    });
+
+    expect(query('implementation-google-ad-schedule-add-reason')).not.toBeNull();
+  });
+
+  it('offers end times from 01:00, never an end hour of 0, and start times up to 23:45', async () => {
     render({ adSchedules: [{ dayOfWeek: 'MONDAY', startHour: 0, startMinute: 0, endHour: 24, endMinute: 0 }] });
 
-    change('implementation-google-ad-schedule-day-0', 'SATURDAY');
+    const ends = await optionLabels('implementation-google-ad-schedule-end-0');
+    expect(ends[0]).toBe('01:00');
+    expect(ends.at(-1)).toBe('24:00');
+    const starts = await optionLabels('implementation-google-ad-schedule-start-0');
+    expect(starts[0]).toBe('00:00');
+    expect(starts.at(-1)).toBe('23:45');
+  });
+
+  it('writes the day, the times and a percentage adjustment as Google bid modifiers', async () => {
+    render({ adSchedules: [{ dayOfWeek: 'MONDAY', startHour: 0, startMinute: 0, endHour: 24, endMinute: 0 }] });
+
+    await pick('implementation-google-ad-schedule-day-0', 'Saturday');
     expect(schedules.at(-1)?.[0].dayOfWeek).toBe('SATURDAY');
 
     fixture.componentRef.setInput('adSchedules', schedules.at(-1));
-    change('implementation-google-ad-schedule-start-0', '570');
+    await pick('implementation-google-ad-schedule-start-0', '09:30');
     expect(schedules.at(-1)?.[0]).toMatchObject({ startHour: 9, startMinute: 30 });
 
     fixture.componentRef.setInput('adSchedules', schedules.at(-1));
-    change('implementation-google-ad-schedule-adjustment-0', '-50');
+    await pick('implementation-google-ad-schedule-end-0', '17:45');
+    expect(schedules.at(-1)?.[0]).toMatchObject({ endHour: 17, endMinute: 45 });
+
+    fixture.componentRef.setInput('adSchedules', schedules.at(-1));
+    type('implementation-google-ad-schedule-adjustment-0', '-50');
     expect(schedules.at(-1)?.[0].bidModifier).toBe(0.5);
 
     fixture.componentRef.setInput('adSchedules', schedules.at(-1));
-    change('implementation-google-ad-schedule-adjustment-0', '');
+    type('implementation-google-ad-schedule-adjustment-0', '');
     expect(schedules.at(-1)?.[0]).not.toHaveProperty('bidModifier');
+  });
+
+  it('shows each picker with the value of the list it is given', () => {
+    render({ adSchedules: [{ dayOfWeek: 'FRIDAY', startHour: 9, startMinute: 15, endHour: 24, endMinute: 0 }], devices: [{ device: 'TABLET', bidModifier: 0 }] });
+    const shown = (testId: string) => query(testId)?.querySelector('[data-testid="ui-select-value"]')?.textContent?.trim();
+
+    expect(shown('implementation-google-ad-schedule-day-0')).toBe('Friday');
+    expect(shown('implementation-google-ad-schedule-start-0')).toBe('09:15');
+    expect(shown('implementation-google-ad-schedule-end-0')).toBe('24:00');
+    expect(shown('implementation-google-device-mode-TABLET')).toBe('Exclude');
+    expect(shown('implementation-google-device-mode-MOBILE')).toBe('Default bid');
   });
 
   it('removes a window by index', () => {
@@ -87,32 +187,40 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
       scheduleError: 'The Google Ads ad schedule 1 overlaps.',
     });
 
-    for (const id of ['day', 'start', 'end', 'adjustment']) {
-      expect(fixture.nativeElement.querySelector(`label[for="google-ad-schedule-${id}-0"]`)).not.toBeNull();
+    // The pickers carry their own visible label, which names the combobox; the box keeps its <label for>.
+    for (const [id, label] of [
+      ['day', 'Day'],
+      ['start', 'From'],
+      ['end', 'To'],
+    ]) {
+      const select = query(`implementation-google-ad-schedule-${id}-0`) as HTMLElement;
+      const labelledBy = select.querySelector('[data-testid="ui-select-trigger"]')?.getAttribute('aria-labelledby') ?? '';
+      expect(document.getElementById(labelledBy)?.textContent?.trim()).toBe(label);
     }
+    expect(fixture.nativeElement.querySelector('label[for="google-ad-schedule-adjustment-0"]')).not.toBeNull();
     expect(query('implementation-google-ad-schedule')?.getAttribute('aria-describedby')).toBe('google-ad-schedule-hint google-ad-schedule-error');
     expect(query('implementation-google-ad-schedule-error')?.textContent).toContain('overlaps');
     expect(query('implementation-google-targeting-live')?.textContent).toContain('overlaps');
   });
 
-  it('turns each device choice into its modifier, in Google order, and drops a device set back to default', () => {
+  it('turns each device choice into its modifier, in Google order, and drops a device set back to default', async () => {
     render({});
 
-    change('implementation-google-device-mode-TABLET', 'exclude');
+    await pick('implementation-google-device-mode-TABLET', 'Exclude');
     expect(devices.at(-1)).toEqual([{ device: 'TABLET', bidModifier: 0 }]);
 
     fixture.componentRef.setInput('deviceBidModifiers', devices.at(-1));
-    change('implementation-google-device-mode-MOBILE', 'adjust');
+    await pick('implementation-google-device-mode-MOBILE', 'Adjust bid');
     fixture.componentRef.setInput('deviceBidModifiers', devices.at(-1));
     fixture.detectChanges();
-    change('implementation-google-device-adjustment-MOBILE', '25');
+    type('implementation-google-device-adjustment-MOBILE', '25');
     expect(devices.at(-1)).toEqual([
       { device: 'MOBILE', bidModifier: 1.25 },
       { device: 'TABLET', bidModifier: 0 },
     ]);
 
     fixture.componentRef.setInput('deviceBidModifiers', devices.at(-1));
-    change('implementation-google-device-mode-TABLET', 'default');
+    await pick('implementation-google-device-mode-TABLET', 'Default bid');
     expect(devices.at(-1)).toEqual([{ device: 'MOBILE', bidModifier: 1.25 }]);
   });
 

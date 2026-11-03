@@ -3418,7 +3418,9 @@ describe('CampaignController.createCampaign cutover', () => {
     );
 
     expect(createCampaigns).not.toHaveBeenCalled();
-    expect(refusalFrom().field).toBe('excludedGeoTargets');
+    const error = refusalFrom();
+    expect(error.field).toBe('excludedGeoTargets');
+    expect(error.message).toContain('Google Ads cannot both target and exclude 9031945');
   });
 
   /**
@@ -3593,7 +3595,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.field).toBe('excludedGeoTargets');
-    expect(error.message).toContain('US');
+    expect(error.message).toContain('Google Ads cannot both target and exclude US');
     // Only the clashing half is named — `CA` is targeted and not excluded, and naming it would
     // send the operator looking at the wrong chip.
     expect(error.message).not.toContain('CA');
@@ -4457,8 +4459,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
-    expect(error.message).toContain('CONNECTED_TV');
-    expect(error.message).toContain('MOBILE, DESKTOP, TABLET');
+    expect(error.message).toContain('names CONNECTED_TV, which is not one of MOBILE, DESKTOP, TABLET');
   });
 
   it('refuses a repeated device rather than collapsing it, because the second adjustment is the one Google drops', async () => {
