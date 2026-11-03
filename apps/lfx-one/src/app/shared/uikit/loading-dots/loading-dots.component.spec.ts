@@ -59,4 +59,8 @@ describe('UiLoadingDotsComponent', () => {
   it('follows the parent text colour', () => {
     expect((host.querySelector('i') as HTMLElement).className).toContain('bg-current');
   });
+
+  it('paints the dots CanvasText in forced colours', () => {
+    host.querySelectorAll('i').forEach((dot) => expect(dot.className).toContain('forced-colors:bg-[color:CanvasText]'));
+  });
 });

@@ -33,7 +33,8 @@ export class UiSkeletonComponent {
       const base =
         'block bg-gradient-to-r from-ui-neutral-50 from-25% via-ui-neutral-100 via-[37%] to-ui-neutral-50 to-[63%] bg-[length:400%_100%] bg-[position:100%_50%]';
       const shapes = { line: 'rounded-ui-xs', pill: 'rounded-ui-full', circle: 'rounded-ui-full' };
-      return `${base} ${shapes[this.shape()]}`;
+      // Forced colours drop the gradient, so the placeholder shows as a GrayText outline.
+      return `${base} forced-colors:border forced-colors:border-[color:GrayText] ${shapes[this.shape()]}`;
     });
   }
 }

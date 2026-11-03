@@ -100,6 +100,14 @@ describe('UiProgressComponent', () => {
       await set('tone', tone);
       expect(fill().className).toContain(cls);
       expect(fill().className).not.toContain('bg-ui-accent-500');
+      expect(fill().className).toContain('forced-colors:bg-[color:Highlight]');
     }
+  });
+
+  it('outlines the track and fills with Highlight in forced colours', () => {
+    const bar = host.querySelector('[role="progressbar"]') as HTMLElement;
+    expect(bar.className).toContain('forced-colors:border');
+    expect(bar.className).toContain('forced-colors:border-[color:CanvasText]');
+    expect(fill().className).toContain('forced-colors:bg-[color:Highlight]');
   });
 });
