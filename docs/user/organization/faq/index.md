@@ -4,13 +4,13 @@ description: Short answers about the Organization lens — how to switch organiz
 audience: [all]
 product_area: Organization
 tags: [organization, faq, switch-organization, easycla, cla, ccla, cla-manager, access, remove, invite]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Organization
 ---
 
 ## How do I switch to a different organization?
 
-You switch organizations from the organization switcher at the top of the sidebar in the Organization lens. Select it, then select another organization from the list. You stay on the same page, now showing the organization you picked, and the browser's Back button returns you to the previous one. If you can open only one organization, the switcher has no list to open. See [How do I switch to a different organization?](../choose-an-organization/#how-do-i-switch-to-a-different-organization).
+You switch organizations from the organization switcher at the top of the sidebar in the Organization lens. Select it, then select another organization from the list. You stay on the same page, now showing the organization you picked, unless your only role on that organization is CLA Manager, in which case you land on its **EasyCLA** page. The browser's Back button returns you to the previous one. If you can open only one organization, the switcher has no list to open. See [How do I switch to a different organization?](../choose-an-organization/#how-do-i-switch-to-a-different-organization).
 
 ## Why can't I edit this corporate CLA?
 
