@@ -451,7 +451,8 @@ describe('NewsletterController.recordPageView', () => {
   const NEWSLETTER = '22222222-2222-2222-2222-222222222222';
   const req = (params = { projectUid: PROJECT, newsletterUid: NEWSLETTER }) => ({ params, body: {}, path: '/x' }) as any;
 
-  it('proxies the view and answers 204', async () => {
+  it('proxies the view and answers 204 once the reader ladder allows the issue', async () => {
+    getReadableNewsletter.mockResolvedValue({ id: NEWSLETTER, status: 'sent' });
     recordPageView.mockResolvedValue(undefined);
     const res = buildRes();
     const next = vi.fn();
@@ -459,6 +460,7 @@ describe('NewsletterController.recordPageView', () => {
     await new NewsletterController().recordPageView(req(), res, next);
 
     expect(next).not.toHaveBeenCalled();
+    expect(getReadableNewsletter).toHaveBeenCalledWith(expect.anything(), PROJECT, NEWSLETTER);
     expect(recordPageView).toHaveBeenCalledWith(expect.anything(), PROJECT, NEWSLETTER);
     expect(res.status).toHaveBeenCalledWith(204);
     expect(res.end).toHaveBeenCalled();
@@ -473,8 +475,20 @@ describe('NewsletterController.recordPageView', () => {
     expect(recordPageView).not.toHaveBeenCalled();
   });
 
+  it('never records a view for a caller the reader ladder denies', async () => {
+    const denied = new Error('members only');
+    getReadableNewsletter.mockRejectedValue(denied);
+    const next = vi.fn();
+
+    await new NewsletterController().recordPageView(req(), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(denied);
+    expect(recordPageView).not.toHaveBeenCalled();
+  });
+
   it('forwards an upstream failure to the error handler', async () => {
     const failure = new Error('upstream down');
+    getReadableNewsletter.mockResolvedValue({ id: NEWSLETTER, status: 'sent' });
     recordPageView.mockRejectedValue(failure);
     const next = vi.fn();
 

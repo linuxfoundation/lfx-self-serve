@@ -380,7 +380,9 @@ export class NewsletterController {
   /**
    * POST /api/newsletters/:projectUid/:newsletterUid/page-view
    * Records a unique web page view. newsletter-service counts one view per user per issue and rejects
-   * drafts; the reader fires and forgets, so this only answers 204 or an error.
+   * drafts; the reader fires and forgets, so this only answers 204 or an error. Upstream only gates on
+   * project viewer (every signed-in user), so the reader ladder runs first: a caller who is denied the
+   * issue body gets 403 `NEWSLETTER_MEMBERS_ONLY` and is never counted.
    */
   public async recordPageView(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Validation must run inside the try: Express 4 doesn't forward async
@@ -396,6 +398,7 @@ export class NewsletterController {
         });
       }
       const startTime = logger.startOperation(req, 'newsletter_page_view', { project_uid: projectUid, newsletter_id: newsletterUid });
+      await this.memberBenefitService.getReadableNewsletter(req, projectUid, newsletterUid);
       await this.newsletterService.recordPageView(req, projectUid, newsletterUid);
       logger.success(req, 'newsletter_page_view', startTime, { newsletter_id: newsletterUid });
       res.status(204).end();
