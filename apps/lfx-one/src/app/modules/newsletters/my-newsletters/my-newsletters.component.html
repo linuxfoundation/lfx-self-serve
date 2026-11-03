@@ -8,10 +8,14 @@
       <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
   } @else {
-    <!-- Back to the foundation cards -->
-    <a routerLink="/newsletters/my" class="inline-flex items-center gap-1.5 mb-3 text-sm text-blue-500 hover:underline" data-testid="my-newsletters-back">
-      <i class="fa-light fa-arrow-left text-xs" aria-hidden="true"></i>Newsletters
-    </a>
+    <!-- Breadcrumb: back to the foundation cards; matches the reader page's trail (#4979) -->
+    <nav aria-label="Breadcrumb" class="flex items-center gap-2 mb-3 text-sm text-gray-600" data-testid="my-newsletters-breadcrumb">
+      <a routerLink="/newsletters/my" class="hover:text-gray-900" data-testid="my-newsletters-back">Newsletters</a>
+      <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+      <span class="text-gray-900 min-w-0 break-words" aria-current="page" data-testid="my-newsletters-breadcrumb-current">{{
+        foundation()?.name ?? 'Newsletters'
+      }}</span>
+    </nav>
 
     <!-- Page Header -->
     <div class="flex items-center gap-4 mb-6">
@@ -135,54 +139,58 @@
               data-testid="my-newsletters-table">
               <ng-template #header>
                 <tr>
-                  <th class="w-[55%]">Title</th>
-                  <th class="w-[20%]">Sent</th>
-                  <th class="w-[25%]">Project</th>
+                  <th class="w-[50%]">Title</th>
+                  <th class="w-[18%]">Sent</th>
+                  <th class="w-[12%]">Shares</th>
+                  <th class="w-[20%]">Project</th>
                 </tr>
               </ng-template>
 
               <ng-template #body let-newsletter>
-                <!-- The subject anchor is the accessible control (real link role, native
-                     Enter/Space, right-click "Open in new tab"); the row click is a
-                     supplementary pointer convenience. -->
-                <tr class="cursor-pointer" (click)="onRowClick($event, newsletter)" [attr.data-testid]="'my-newsletters-row-' + newsletter.id">
+                <!-- The subject link is the accessible control (real link role, native Enter,
+                     Cmd-click/right-click "Open in new tab"); the row click is a supplementary
+                     pointer convenience. Both open the issue's reader page (#4979). -->
+                <tr
+                  [class.cursor-pointer]="!!newsletter.issuePath"
+                  (click)="onRowClick($event, newsletter)"
+                  [attr.data-testid]="'my-newsletters-row-' + newsletter.id">
                   <td>
                     <div class="flex items-center gap-2 min-w-0">
-                      <!-- Real anchor when a permalink resolves (native new-tab/right-click);
-                           otherwise a button, so the href-less case stays keyboard-focusable
-                           and Enter/Space-activatable instead of a non-interactive <a>. -->
                       @if (newsletter.issuePath) {
                         <a
-                          [attr.href]="newsletter.issuePath"
+                          [routerLink]="newsletter.issuePath"
                           class="lfx-table-name-link text-sm text-gray-900 font-medium truncate min-w-0"
                           [attr.aria-label]="'Open newsletter ' + newsletter.subject"
                           [pTooltip]="newsletter.subject"
                           tooltipEvent="both"
                           tooltipPosition="top"
-                          (click)="onOpenSubject($event, newsletter)"
+                          (click)="$event.stopPropagation()"
                           [attr.data-testid]="'my-newsletters-open-' + newsletter.id">
                           {{ newsletter.subject }}
                         </a>
                       } @else {
-                        <button
-                          type="button"
-                          class="lfx-table-name-link text-sm text-gray-900 font-medium truncate min-w-0 text-left"
-                          [attr.aria-label]="'Open newsletter ' + newsletter.subject"
-                          [pTooltip]="newsletter.subject"
-                          tooltipEvent="both"
-                          tooltipPosition="top"
-                          (click)="onOpenSubject($event, newsletter)"
-                          [attr.data-testid]="'my-newsletters-open-' + newsletter.id">
+                        <!-- No resolvable permalink (project slug missing upstream): nothing to open.
+                             Wraps rather than truncating, so the full subject needs no tooltip. -->
+                        <span class="text-sm text-gray-900 font-medium min-w-0 break-words" [attr.data-testid]="'my-newsletters-open-' + newsletter.id">
                           {{ newsletter.subject }}
-                        </button>
-                      }
-                      @if (openingId() === newsletter.id) {
-                        <i class="fa-light fa-spinner-third fa-spin text-sm text-gray-400 flex-none" aria-hidden="true"></i>
+                        </span>
                       }
                     </div>
                   </td>
                   <td>
                     <span class="text-sm text-gray-700">{{ newsletter.sent_at | date: 'MMM d, y' }}</span>
+                  </td>
+                  <td>
+                    @if (newsletter.shareCount) {
+                      <span
+                        class="inline-flex items-center gap-1.5 text-sm text-gray-700 tabular-nums"
+                        [attr.aria-label]="newsletter.shareCount === 1 ? 'Shared 1 time' : 'Shared ' + newsletter.shareCount + ' times'"
+                        [attr.data-testid]="'my-newsletters-shares-' + newsletter.id">
+                        <i class="fa-light fa-share-nodes text-xs text-gray-400" aria-hidden="true"></i>{{ newsletter.shareCount | number }}
+                      </span>
+                    } @else {
+                      <span class="text-sm text-gray-400" [attr.data-testid]="'my-newsletters-shares-' + newsletter.id">—</span>
+                    }
                   </td>
                   <td>
                     <span class="text-sm text-gray-700">{{ newsletter.project_name || '—' }}</span>
@@ -196,18 +204,3 @@
     }
   }
 </div>
-
-<!-- Reader drawer: renders the newsletter as recipients saw it. Opened once
-     the body fetch resolves in onOpenNewsletter. Header is reader-framed
-     (project + sent date) rather than the sender-side "Preview" default.
-     Share button shows the absolute permalink URL. -->
-<lfx-newsletter-preview-drawer
-  [(visible)]="previewVisible"
-  [subject]="selected()?.subject ?? ''"
-  [bodyHtml]="previewBody()"
-  [displayName]="selected()?.project_name || 'Newsletter'"
-  [headerTitle]="selected()?.project_name || 'Newsletter'"
-  [headerSubtitle]="drawerSubtitle()"
-  [shareUrl]="selectedShareUrl()"
-  (visibleChange)="onDrawerVisibleChange($event)"
-  data-testid="my-newsletters-preview-drawer"></lfx-newsletter-preview-drawer>

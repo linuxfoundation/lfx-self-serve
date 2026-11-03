@@ -1,13 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
 import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
+import { MeetingService } from '@services/meeting.service';
+import { MeetingRsvpService } from '@services/meeting-rsvp.service';
+import { UserService } from '@services/user.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
 
 const START = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -83,7 +90,17 @@ describe('MeetingHomeRowComponent', () => {
       }
     );
     vi.stubGlobal('open', open);
-    TestBed.configureTestingModule({ providers: [{ provide: Router, useValue: { navigateByUrl } }] });
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Router, useValue: { navigateByUrl } },
+        { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null) } },
+        { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
+        { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
+        { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
+        { provide: UserService, useValue: { authenticated: signal(true) } },
+        { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -158,6 +175,15 @@ describe('MeetingHomeRowComponent', () => {
       expect(open).not.toHaveBeenCalled();
     });
 
+    it('opens the row menu without opening the row', async () => {
+      const fixture = await render(buildRow(buildMeeting()));
+
+      query(fixture, 'meetings-home-row-actions-trigger')?.querySelector('button')?.click();
+
+      expect(open).not.toHaveBeenCalled();
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
     it('jumps to a foundation overview for foundation meetings', async () => {
       const fixture = await render(buildRow(buildMeeting({ project_name: 'CNCF', project_slug: 'cncf', is_foundation: true })));
 
@@ -188,6 +214,23 @@ describe('MeetingHomeRowComponent', () => {
     });
   });
 
+  describe('RSVP', () => {
+    it('shows the RSVP controls on upcoming rows without opening the row on a click', async () => {
+      const fixture = await render(buildRow(buildMeeting({ is_invite_responses_enabled: true }), { myRsvp: null }));
+
+      expect(query(fixture, 'meetings-home-rsvp')).not.toBeNull();
+      query(fixture, 'meetings-home-rsvp')?.click();
+      expect(open).not.toHaveBeenCalled();
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('has no RSVP controls on past rows', async () => {
+      const fixture = await render(buildRow(buildMeeting({ is_invite_responses_enabled: true })), 'past');
+
+      expect(query(fixture, 'meetings-home-rsvp')).toBeNull();
+    });
+  });
+
   describe('past', () => {
     it('uses the grey band and marks a meeting I attended', async () => {
       const fixture = await render(buildRow(buildMeeting({ user_attended: true })), 'past');
@@ -200,6 +243,17 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(buildMeeting({ user_attended: false })), 'past');
 
       expect(query(fixture, 'meetings-home-row-attended')).toBeNull();
+    });
+
+    it('shows Recording and AI Summary in place of the RSVP controls, and never on upcoming rows', async () => {
+      const meeting = buildMeeting({ has_recording: true, has_ai_summary: true });
+      const past = await render(buildRow(meeting), 'past');
+      const upcoming = await render(buildRow(meeting));
+
+      expect(query(past, 'meetings-home-row-recording')).toBeTruthy();
+      expect(query(past, 'meetings-home-row-summary')).toBeTruthy();
+      expect(query(past, 'meetings-home-rsvp')).toBeNull();
+      expect(query(upcoming, 'meetings-home-row-artifacts')).toBeNull();
     });
 
     it('opens the meeting page in place for invitees', async () => {

@@ -13,7 +13,7 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD
  */
 
-import type { Project } from '@lfx-one/shared/interfaces';
+import type { MyNewsletterFoundationsResponse, Project } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(60_000);
@@ -88,6 +88,8 @@ async function stubNewsletterApi(
           project_uid: projectUid,
           ed_reply_email: 'ed@example.com',
           total_recipients: 12,
+          total_opens: 1248,
+          share_count: 4,
           created_by: 'sender',
           version: 1,
           created_at: '2026-08-13T10:00:00Z',
@@ -107,7 +109,7 @@ function skipWhenAuthMissing(): void {
 }
 
 test.describe('Newsletter Reader Page', () => {
-  test('renders sent newsletter with breadcrumb and share button', async ({ page }) => {
+  test('renders sent newsletter with breadcrumb, views and share button', async ({ page }) => {
     skipWhenAuthMissing();
     await stubProjectApi(page, MOCK_PROJECT_SENT);
     await stubNewsletterApi(page, PROJECT_UID, 'news-456', 'sent', true);
@@ -120,11 +122,65 @@ test.describe('Newsletter Reader Page', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('K8s Weekly #42', { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('newsletter-reader-received')).toContainText('Received Aug 13, 2026');
 
-    // Share button present
+    // Engagement rail: views (total_opens) and the share button with its count
+    await expect(page.getByTestId('newsletter-reader-views-count')).toHaveText('1,248');
     await expect(page.getByTestId('newsletter-reader-share')).toBeVisible();
+    await expect(page.getByTestId('newsletter-reader-share-count')).toHaveText('4');
 
     // Newsletter preview renders
     await expect(page.getByTestId('newsletter-reader-preview').getByText('K8s Weekly #42 update.')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
+  test("breadcrumb links back to the issue's foundation newsletter list (#4979)", async ({ page }) => {
+    skipWhenAuthMissing();
+    const foundationUid = 'f0000000-0000-0000-0000-000000000002';
+    const feed: MyNewsletterFoundationsResponse = {
+      foundations: [
+        {
+          uid: foundationUid,
+          slug: 'test-foundation',
+          name: 'Test Foundation',
+          logo_url: null,
+          received_count: 1,
+          last_sent_at: '2026-08-13T10:00:00Z',
+          newsletter_group: null,
+          can_invite: false,
+          membership_name: null,
+        },
+      ],
+      newsletters: [
+        {
+          id: 'news-456',
+          project_uid: PROJECT_UID,
+          subject: 'K8s Weekly #42',
+          sent_at: '2026-08-13T10:00:00Z',
+          project_name: 'Kubernetes',
+          project_slug: PROJECT_SLUG,
+          is_foundation: false,
+          foundation_uid: foundationUid,
+          foundation_slug: 'test-foundation',
+          foundation_name: 'Test Foundation',
+        },
+      ],
+      complete: true,
+      inviter: { eligible: false, company_name: null },
+    };
+    await page.route(/\/api\/newsletters\/my-foundations(?:\?.*)?$/, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(feed) })
+    );
+    await stubProjectApi(page, MOCK_PROJECT_SENT);
+    await stubNewsletterApi(page, PROJECT_UID, 'news-456', 'sent', true);
+
+    await page.goto(`/newsletters/${PROJECT_SLUG}/news-456`, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    const crumb = page.getByTestId('newsletter-reader-foundation-link');
+    await expect(crumb).toHaveText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(crumb).toHaveAttribute('href', '/newsletters/my/test-foundation');
+    await expect(page.getByTestId('newsletter-reader-newsletters-link')).toHaveAttribute('href', '/newsletters/my');
+
+    await crumb.click();
+    await expect(page).toHaveURL(/\/newsletters\/my\/test-foundation$/, { timeout: ELEMENT_TIMEOUT });
   });
 
   test('renders in-place 404 for draft newsletter when user is not a writer', async ({ page }) => {

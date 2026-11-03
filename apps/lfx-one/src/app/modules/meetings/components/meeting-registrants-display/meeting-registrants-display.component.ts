@@ -8,6 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
@@ -24,6 +25,7 @@ import {
   PastMeetingParticipant,
   PastParticipantAttendanceFilter,
   PastParticipantInvitationFilter,
+  RegistrantStatusLabel,
 } from '@lfx-one/shared/interfaces';
 import {
   avatarInitials,
@@ -31,6 +33,8 @@ import {
   compareMeetingPeopleByHostThenName,
   filterPastMeetingParticipants,
   getRegistrantAttendanceStatus,
+  getRegistrantStatusLabel,
+  registrantDisplayName,
   getPastMeetingResourceId,
   isMeetingInviteResponsesEnabled,
   markFormControlsAsTouched,
@@ -44,14 +48,23 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
 
 import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
-type RegistrantWithAttendance = MeetingRegistrant & { attendanceStatus: RegistrantAttendanceStatus };
+type RegistrantWithAttendance = MeetingRegistrant & {
+  attendanceStatus: RegistrantAttendanceStatus;
+  statusLabel: RegistrantStatusLabel;
+  statusClass: string;
+  displayName: string;
+  canResend: boolean;
+  canToggleHost: boolean;
+  canRemove: boolean;
+  hasActions: boolean;
+};
 
 @Component({
   selector: 'lfx-meeting-registrants-display',
@@ -60,6 +73,7 @@ type RegistrantWithAttendance = MeetingRegistrant & { attendanceStatus: Registra
     BadgeComponent,
     ButtonComponent,
     ConfirmDialogModule,
+    MenuComponent,
     TooltipModule,
     ReactiveFormsModule,
     RadioButtonComponent,
@@ -108,6 +122,7 @@ export class MeetingRegistrantsDisplayComponent {
   // update at once. A refetch is also requested, but the list can lag the write, so the override is kept
   // until the drawer closes rather than dropped when a fetch lands (a lagging fetch would flip the badge back).
   private readonly hostOverrides = signal<Map<string, boolean>>(new Map());
+  private rowActionMenuUid: string | null = null;
   protected readonly hostUpdatingUids = signal<Set<string>>(new Set());
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
@@ -115,6 +130,13 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
   // Each guest's host-toggle accessible name, by uid, so the template reads a lookup instead of building a string per render.
   protected readonly hostToggleLabels: Signal<Map<string, string>> = this.initHostToggleLabels();
+  protected readonly statusLabelClasses: Record<RegistrantAttendanceStatus, string> = {
+    accepted: 'text-emerald-600',
+    maybe: 'text-amber-600',
+    declined: 'text-red-600',
+    pending: 'text-gray-500',
+  };
+  protected rowActionMenuItems: MenuItem[] = [];
   // Whether each guest is a listed organizer or just a Meeting Host, by uid. An organizer is a host already, so
   // the two never overlap: the badge, the toggle and the role filter all read this instead of the raw host flag.
   protected readonly guestRoles: Signal<Map<string, MeetingGuestRole>> = this.initGuestRoles();
@@ -415,6 +437,73 @@ export class MeetingRegistrantsDisplayComponent {
   }
 
   // === Protected Methods (template helpers) ===
+  protected statusLabelClass(status: RegistrantAttendanceStatus): string {
+    return this.statusLabelClasses[status];
+  }
+  // Per-row action availability; shared by the desktop buttons and the mobile overflow menu so the two never drift.
+  protected canResendInvite(registrant: MeetingRegistrant): boolean {
+    return !this.pastMeeting() && this.showAddRegistrant() && this.inviteResend.canResend(registrant);
+  }
+  protected canToggleHost(registrant: MeetingRegistrant): boolean {
+    return (
+      !this.pastMeeting() &&
+      this.showAddRegistrant() &&
+      !this.unconfirmedGuestUids().has(registrant.uid) &&
+      this.guestRoles().get(registrant.uid) !== 'organizer'
+    );
+  }
+  protected canRemoveGuest(registrant: MeetingRegistrant): boolean {
+    return !this.pastMeeting() && this.showAddRegistrant() && registrant.type !== 'committee';
+  }
+  protected hasRowActions(registrant: MeetingRegistrant): boolean {
+    return this.canResendInvite(registrant) || this.canToggleHost(registrant) || this.canRemoveGuest(registrant);
+  }
+
+  // Mobile overflow menu: same actions, handlers and disabled rules as the desktop buttons.
+  protected toggleRowActionMenu(event: Event, registrant: MeetingRegistrant, menu: MenuComponent): void {
+    event.stopPropagation();
+    const sameRow = this.rowActionMenuUid === registrant.uid;
+    this.rowActionMenuUid = registrant.uid;
+    if (sameRow) {
+      this.rowActionMenuItems = this.buildRowActionMenuItems(registrant);
+      menu.toggle(event);
+      return;
+    }
+    // Another row's trigger: close the open menu first so the new row's items never swap in under it.
+    menu.hide();
+    this.rowActionMenuItems = this.buildRowActionMenuItems(registrant);
+    menu.show(event);
+  }
+  protected buildRowActionMenuItems(registrant: MeetingRegistrant): MenuItem[] {
+    const items: MenuItem[] = [];
+    if (this.canResendInvite(registrant)) {
+      items.push({
+        label: 'Resend invite',
+        icon: 'fa-light fa-paper-plane',
+        disabled: this.inviteResend.isResending(registrant.uid),
+        command: () => this.onRequestResendInvite(registrant),
+      });
+    }
+    if (this.canToggleHost(registrant)) {
+      items.push({
+        label: registrant.host ? 'Remove host' : 'Make host',
+        icon: 'fa-light fa-user-shield',
+        disabled: this.hostUpdatingUids().has(registrant.uid),
+        command: () => this.onToggleHost(registrant),
+      });
+    }
+    if (this.canRemoveGuest(registrant)) {
+      items.push({
+        label: 'Remove',
+        icon: 'fa-light fa-trash-can',
+        disabled: this.deleting(),
+        styleClass: 'text-red-600',
+        command: () => this.onRequestRemoveGuest(registrant),
+      });
+    }
+    return items;
+  }
+
   protected isGuestSubmitting(id: string): boolean {
     return this.submittingGuestIds().has(id);
   }
@@ -767,12 +856,21 @@ export class MeetingRegistrantsDisplayComponent {
       const roles = this.guestRoles();
 
       return registrants
-        .map((registrant) => ({
-          ...registrant,
-          attendanceStatus: getRegistrantAttendanceStatus(registrant, {
-            inviteResponsesEnabled: this.inviteResponsesEnabled(),
-          }),
-        }))
+        .map((registrant) => {
+          const options = { inviteResponsesEnabled: this.inviteResponsesEnabled() };
+          const attendanceStatus = getRegistrantAttendanceStatus(registrant, options);
+          return {
+            ...registrant,
+            attendanceStatus,
+            statusLabel: getRegistrantStatusLabel(registrant, options),
+            statusClass: this.statusLabelClass(attendanceStatus),
+            displayName: registrantDisplayName(registrant),
+            canResend: this.canResendInvite(registrant),
+            canToggleHost: this.canToggleHost(registrant),
+            canRemove: this.canRemoveGuest(registrant),
+            hasActions: this.hasRowActions(registrant),
+          };
+        })
         .filter((registrant) => {
           // Search filter
           const matchesSearch =

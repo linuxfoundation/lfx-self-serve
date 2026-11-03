@@ -17,8 +17,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
-import { MeetingType, MeetingVisibilityKind } from '@lfx-one/shared/enums';
+import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
   Meeting,
   MeetingDashboardView,
@@ -32,12 +31,17 @@ import {
 import {
   formatMeetingTimeRange,
   getMeetingHomeRowLink,
-  getMeetingProjectUrl,
+  getMeetingHomeRowProject,
+  getMeetingHomeRowType,
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
 } from '@lfx-one/shared/utils';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
+
+import { MeetingHomeActionsComponent } from '../meeting-home-actions/meeting-home-actions.component';
+import { MeetingHomeArtifactsComponent } from '../meeting-home-artifacts/meeting-home-artifacts.component';
+import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
 
 /**
  * One row of the meetings home list: date tile with visibility badges, project eyebrow, title and meta line.
@@ -45,7 +49,7 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
  */
 @Component({
   selector: 'lfx-meeting-home-row',
-  imports: [DatePipe, UiAvatarComponent, UiTooltipDirective],
+  imports: [DatePipe, MeetingHomeActionsComponent, MeetingHomeArtifactsComponent, MeetingRsvpControlsComponent, UiAvatarComponent, UiTooltipDirective],
   templateUrl: './meeting-home-row.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
@@ -65,9 +69,9 @@ export class MeetingHomeRowComponent {
   protected readonly past: Signal<boolean> = computed(() => this.view() === 'past');
   protected readonly link: Signal<MeetingHomeRowLink> = computed(() => getMeetingHomeRowLink(this.row(), this.view()));
   protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = computed(() => getMeetingVisibilityBadges(this.row().meeting));
-  protected readonly project: Signal<MeetingHomeRowProject | null> = this.initProject();
+  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => getMeetingHomeRowProject(this.row().meeting));
   protected readonly when: Signal<string> = this.initWhen();
-  protected readonly meetingType: Signal<MeetingHomeRowType | null> = this.initMeetingType();
+  protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
   protected readonly recurrenceTooltip: Signal<string | null> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence));
   protected readonly attended: Signal<boolean> = this.initAttended();
   protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
@@ -117,34 +121,10 @@ export class MeetingHomeRowComponent {
     });
   }
 
-  private initProject(): Signal<MeetingHomeRowProject | null> {
-    return computed(() => {
-      const meeting = this.row().meeting;
-      const name = meeting.project_name?.trim();
-      if (!name) return null;
-      return {
-        name,
-        initial: Array.from(name)[0].toUpperCase(),
-        logo: meeting.project_logo_url ?? '',
-        url: getMeetingProjectUrl(meeting),
-        label: `${meeting.is_foundation ? 'Jump to foundation' : 'Jump to project'}: ${name}`,
-      };
-    });
-  }
-
   private initWhen(): Signal<string> {
     return computed(() => {
       const { startTime, durationMinutes } = this.row();
       return [formatDate(startTime, 'EEE, MMM d', 'en-US'), formatMeetingTimeRange(startTime, durationMinutes), `${durationMinutes} min`].join(' · ');
-    });
-  }
-
-  private initMeetingType(): Signal<MeetingHomeRowType | null> {
-    return computed(() => {
-      const type = this.row().meeting.meeting_type?.trim();
-      if (!type || type === MeetingType.NONE) return null;
-      const config = MEETING_TYPE_CONFIGS[type.toLowerCase()];
-      return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
     });
   }
 }

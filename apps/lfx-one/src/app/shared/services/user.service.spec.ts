@@ -313,6 +313,22 @@ describe('UserService', () => {
       expect(rows).toEqual([{ id: 'synthetic-past-meeting' }]);
     });
 
+    it('getUserPastMeetings caches the artifacts feed apart from the plain feed', () => {
+      httpGet.mockImplementation((url: string, options?: { params?: Record<string, string> }) =>
+        url === '/api/user/past-meetings' ? of([{ id: options?.params?.['include'] ?? 'plain' } as PastMeeting]) : of({ profile: {} })
+      );
+
+      let plain: string[] = [];
+      let withArtifacts: string[] = [];
+      service.getUserPastMeetings().subscribe((meetings) => (plain = meetings.map((meeting) => meeting.id)));
+      service.getUserPastMeetings({ includeArtifacts: true }).subscribe((meetings) => (withArtifacts = meetings.map((meeting) => meeting.id)));
+
+      expect(plain).toEqual(['plain']);
+      expect(withArtifacts).toEqual(['artifacts']);
+      expect(service.getUserPastMeetings({ includeArtifacts: true })).toBe(service.getUserPastMeetings({ includeArtifacts: true }));
+      expect(service.getUserPastMeetings()).not.toBe(service.getUserPastMeetings({ includeArtifacts: true }));
+    });
+
     it('getUserLatestPastMeetings does not cache a failed request', () => {
       let subscriptions = 0;
       let response$ = new Subject<PastMeeting[]>();

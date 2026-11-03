@@ -1,9 +1,9 @@
 ---
 title: Organization
-description: Guides for the Organization lens in LFX Self Serve, including the People page, managing Org Lens access and EasyCLA for corporate CLAs.
+description: Guides for the Organization lens in LFX Self Serve, including the Org Overview dashboard, the People page, managing Org Lens access and EasyCLA for corporate CLAs.
 audience: [all]
 product_area: Organization
-tags: [organization, org, people, easycla, cla, access]
+tags: [organization, org, switch-organization, people, easycla, cla, access]
 last_updated: 2026-11-02
 intercom_collection: Organization
 ---
@@ -12,6 +12,7 @@ The Organization section covers pages in the Organization lens. These steps appl
 
 ## What you can do
 
+- Open **Dashboard**, the Org Overview, to see the organization's involvement and its foundations and projects
 - Open **People** to see everyone associated with the organization and what each of them does across projects
 - Open **People** → **Org Lens Access** to see who can open the organization and, as an Admin, add, change or remove their access
 - Open **EasyCLA** to view and manage the corporate CLAs (Contributor License Agreements) that organization holds
@@ -28,8 +29,10 @@ Go to **app.lfx.dev**, switch to the **Organization** lens, and select the organ
 
 ## Related sections
 
+- [Choose and switch an organization](./choose-an-organization/) — pick the organization you are viewing, switch to another, and read the organization in a page address
 - [People](./people/) — employees and contributors, their board and committee seats, key-contact roles, contributions, events and training
 - [Manage Org Lens Access](./manage-org-lens-access/) — add, change or remove who can open the organization
+- [Org Overview dashboard](./org-overview/) — what each card on the Organization lens Dashboard shows and where its links go
 - [EasyCLA](./easycla/) — corporate CLAs for the selected organization
-- [Organization FAQ](./faq/) — short answers about Org Lens access, who can edit a corporate CLA, who can see a company, and CLA Manager changes
+- [Organization FAQ](./faq/) — short answers about switching organizations, Org Lens access, the Org Overview dashboard, who can edit a corporate CLA, who can see a company, and CLA Manager changes
 - [CLAs](../account/my-clas/) — your own Individual CLAs and your coverage under an employer's corporate CLA

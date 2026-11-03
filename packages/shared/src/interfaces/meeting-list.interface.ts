@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { MeetingVisibilityKind } from '../enums';
-import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp } from './meeting.interface';
+import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp, PastMeetingSummary, RsvpResponse, RsvpScope } from './meeting.interface';
+import type { UiBadgeTone } from './uikit.interface';
 
 /** One row of the meetings home list: a single date of a meeting. */
 export interface MeetingHomeRow {
@@ -92,4 +93,64 @@ export interface MeetingHomeRowProject {
 export interface MeetingHomeRowType {
   label: string;
   icon: string;
+}
+
+/** One date in the Pending RSVPs popover of the meetings home page, with what its row shows. */
+export interface MeetingPendingRsvpItem {
+  row: MeetingHomeRow;
+  project: MeetingHomeRowProject | null;
+  link: MeetingHomeRowLink;
+  visibilityBadges: MeetingVisibilityInfo[];
+  /** Day and start time in the viewer's zone, e.g. "Thu, Oct 1 · 6:30 AM PDT". */
+  when: string;
+  type: MeetingHomeRowType | null;
+  /** Recurring tooltip; null for a one-time meeting. */
+  recurrenceTooltip: string | null;
+}
+
+/** One RSVP answer on a meetings home row: its button label, its status label and look. */
+export interface MeetingRsvpChoice {
+  response: RsvpResponse;
+  /** Button label before answering, e.g. "Yes". */
+  action: string;
+  /** Status label once answered, e.g. "Going". */
+  label: string;
+  icon: string;
+  tone: UiBadgeTone;
+}
+
+/** What the recurring RSVP dialog opens with. */
+export interface MeetingRsvpScopeDialogData {
+  row: MeetingHomeRow;
+  response: RsvpResponse;
+}
+
+/** One choice of the recurring RSVP dialog. */
+export interface MeetingRsvpScopeOption {
+  value: RsvpScope;
+  label: string;
+  description: string;
+}
+
+/** What the meetings home AI summary dialog opens with. */
+export interface MeetingSummaryDialogData {
+  row: MeetingHomeRow;
+  summary: PastMeetingSummary;
+  /** Gets the summary after each saved edit or approval. */
+  onChange?: (summary: PastMeetingSummary) => void;
+}
+
+/** What the meetings home recording dialog opens with. */
+export interface MeetingRecordingDialogData {
+  row: MeetingHomeRow;
+  shareUrl: string;
+}
+
+/** What the meetings home edit scope dialog opens with. */
+export interface MeetingEditScopeDialogData {
+  row: MeetingHomeRow;
+  /** The meeting as just re-read; the occurrence picker lists its dates. */
+  meeting: Meeting;
+  /** The date the dialog opens on. */
+  occurrence: MeetingOccurrence;
 }

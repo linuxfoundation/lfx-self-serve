@@ -19,6 +19,7 @@ import {
   VOTE_VOTER_NOT_VOTED_LABELS,
   VOTE_VOTER_STATUS_FILTER_LABELS,
   VOTE_PRESENTER_TITLE_MAX_CHARS,
+  VOTE_SUMMARY_NOTICE_LIFE_MS,
   VOTES_STATS_WINDOW_DAYS,
 } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
@@ -47,6 +48,7 @@ import type {
   PollCommentResult,
   PollQuestion,
   QuestionFormValue,
+  SendVoteSummaryResponse,
   UpdateVoteRequest,
   UserChoice,
   Vote,
@@ -64,6 +66,7 @@ import type {
   VoteVoterChoiceSummary,
   VoteVoterRowView,
   VoteVoterStatusCounts,
+  VoteSummarySendNotice,
 } from '../interfaces/poll.interface';
 
 // Node-safe participation and result shaping live in their own files; re-exported so every existing import path is unchanged.
@@ -73,6 +76,7 @@ export {
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
   computeResultPercentage,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   isRankedPollType,
   votePermalinkPath,
@@ -1048,4 +1052,52 @@ export function buildVoteAnswerSummary(questions: PollQuestion[], submission: Vo
         : (answer?.choice_ids ?? []).map((id) => textById.get(id) ?? id).join(', ');
     return { question_id: question.question_id, prompt: question.prompt, answer: text };
   });
+}
+
+/**
+ * Builds the toast that reports the outcome of a vote summary send (#4689).
+ * @description Never presents an incomplete distribution as a clean success: an uncertain outcome warns that retrying may send
+ * duplicates, nothing sent is reported as such, and a partial send names every known count.
+ * @param result - The counts returned by POST /api/votes/:uid/summary
+ */
+export function buildVoteSummarySendNotice(result: SendVoteSummaryResponse): VoteSummarySendNotice {
+  const { recipient_count: sent, failed_count: failed, skipped_count: skipped, uncertain_count: uncertain } = result;
+
+  const counts = [`sent to ${sent} voter(s)`];
+  if (skipped > 0) counts.push(`${skipped} skipped (no email address)`);
+  if (failed > 0) counts.push(`${failed} failed`);
+  if (uncertain > 0) counts.push(`${uncertain} unconfirmed`);
+  const countsText = `${counts[0].charAt(0).toUpperCase()}${counts[0].slice(1)}${counts.length > 1 ? `; ${counts.slice(1).join('; ')}` : ''}.`;
+
+  if (uncertain > 0) {
+    return {
+      severity: 'warn',
+      summary: 'Summary delivery unconfirmed',
+      detail: `${countsText} Unconfirmed summaries may already have been delivered, so retrying may send duplicate summaries. Check with voters before retrying.`,
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    };
+  }
+
+  if (sent === 0) {
+    const reasons: string[] = [];
+    if (skipped > 0) reasons.push(`${skipped} invited voter(s) have no email address`);
+    if (failed > 0) reasons.push(`${failed} send(s) failed`);
+    return {
+      severity: 'info',
+      summary: 'No summaries sent',
+      detail: reasons.length > 0 ? `No summaries were sent: ${reasons.join('; ')}.` : 'No summaries were sent because no invited voters have an email address.',
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    };
+  }
+
+  if (failed > 0 || skipped > 0) {
+    return {
+      severity: 'warn',
+      summary: 'Summary partially sent',
+      detail: `${countsText} Not every invited voter received the summary.`,
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    };
+  }
+
+  return { severity: 'success', summary: 'Summary sent', detail: `Summary sent to ${sent} voter(s).` };
 }

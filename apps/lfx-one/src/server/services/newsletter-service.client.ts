@@ -18,6 +18,7 @@ import {
   NewsletterRecipientsResponse,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterShareRequest,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -240,6 +241,23 @@ export class NewsletterServiceClient {
 
   public async listOptOuts(req: Request, projectUid: string): Promise<NewsletterOptOutListResponse> {
     return this.microserviceProxy.proxyRequest<NewsletterOptOutListResponse>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletter-opt-outs`, 'GET');
+  }
+
+  /**
+   * Records an in-app share. newsletter-service counts one share per user per channel (repeats are
+   * no-ops) and only accepts sent newsletters. Always the user's bearer token: the share is attributed
+   * to the caller's principal, and the gateway gates it on project viewer.
+   */
+  public async recordShare(req: Request, projectUid: string, newsletterUid: string, payload: NewsletterShareRequest): Promise<void> {
+    // The controller already restricts both IDs to UUIDs; encoding keeps the path safe if a future caller skips that.
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${encodeURIComponent(projectUid)}/newsletters/${encodeURIComponent(newsletterUid)}/shares`,
+      'POST',
+      undefined,
+      payload
+    );
   }
 
   public async deleteOptOut(req: Request, projectUid: string, optOutId: string): Promise<void> {

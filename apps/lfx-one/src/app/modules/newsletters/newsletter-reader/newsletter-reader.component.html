@@ -35,10 +35,22 @@
     <!-- Page header with breadcrumb -->
     <div class="flex items-center justify-between mb-8 mt-6">
       <div class="flex-1">
-        <nav class="flex items-center gap-2 text-sm text-gray-600 mb-4">
-          <a href="/newsletters/my" (click)="goToMyNewsletters($event)" class="hover:text-gray-900">Newsletters</a>
-          <i class="fa-light fa-chevron-right text-xs"></i>
-          <span class="text-gray-900" data-testid="newsletter-reader-title">{{ pageTitle() }}</span>
+        <!-- Newsletters › <Foundation>: the middle crumb returns to the foundation's newsletter list
+             (the parent foundation for a child-project issue). Until that foundation resolves — or when
+             the reader doesn't receive it — it shows the project and links to the foundation cards. -->
+        <nav aria-label="Breadcrumb" class="flex items-center gap-2 text-sm text-gray-600 mb-4" data-testid="newsletter-reader-breadcrumb">
+          <a href="/newsletters/my" (click)="goToMyNewsletters($event)" class="hover:text-gray-900" data-testid="newsletter-reader-newsletters-link"
+            >Newsletters</a
+          >
+          <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+          @let crumb = foundationCrumb();
+          <a
+            [attr.href]="crumb.href"
+            (click)="goToMyNewsletters($event, crumb.commands)"
+            class="text-gray-900 hover:underline"
+            data-testid="newsletter-reader-foundation-link"
+            ><span data-testid="newsletter-reader-title">{{ crumb.label }}</span></a
+          >
         </nav>
         <h1 class="font-display font-light text-2xl text-gray-900">{{ newsletter()?.subject }}</h1>
         <p class="mt-2 text-sm text-gray-600" data-testid="newsletter-reader-received">{{ pageSubtitle() }}</p>
@@ -52,16 +64,6 @@
             size="small"
             (onClick)="onInvite()"
             data-testid="newsletter-reader-invite" />
-        }
-        @if (shareUrl()) {
-          <button
-            type="button"
-            (click)="openShare()"
-            class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
-            data-testid="newsletter-reader-share">
-            <i class="fa-light fa-share-nodes text-lg" aria-hidden="true"></i>
-            Share
-          </button>
         }
       </div>
     </div>
@@ -78,11 +80,22 @@
       </div>
     }
 
-    <!-- Newsletter preview inline (not a drawer) -->
-    <lfx-newsletter-preview
-      [subject]="newsletter()?.subject ?? ''"
-      [bodyHtml]="newsletter()?.body_html ?? ''"
-      [displayName]="project()?.name ?? ''"
-      data-testid="newsletter-reader-preview"></lfx-newsletter-preview>
+    <!-- Engagement rail (views + share) beside the issue on large screens, a row above it on smaller ones -->
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-center lg:gap-8">
+      <lfx-newsletter-engagement-rail
+        class="lg:sticky lg:top-24"
+        [views]="viewCount()"
+        [shares]="shareTally().count"
+        (share)="openShare()"
+        testId="newsletter-reader" />
+
+      <!-- Newsletter preview inline (not a drawer). 600px: matches the email body width in newsletter-preview.component.scss -->
+      <lfx-newsletter-preview
+        class="w-full lg:max-w-[600px]"
+        [subject]="newsletter()?.subject ?? ''"
+        [bodyHtml]="newsletter()?.body_html ?? ''"
+        [displayName]="project()?.name ?? ''"
+        data-testid="newsletter-reader-preview"></lfx-newsletter-preview>
+    </div>
   }
 </div>

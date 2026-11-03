@@ -18,14 +18,16 @@ import {
   PastMeetingSummary,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildJoinUrlWithParams,
   buildMeetingFilterChips,
+  canJoinMeeting,
   countAppliedMeetingFilters,
   expandMeetingOccurrences,
   filterMeetingsHome,
   getLargestSessionShareUrl,
-  getPastMeetingTranscriptUrl,
   getRsvpTimestampMs,
   groupMeetingsByDayBucket,
+  isMeetingHomeRowPendingRsvp,
   selectApplicableRsvp,
   sortPastMeetingsDescending,
   toPastMeetingHomeRow,
@@ -56,7 +58,7 @@ export class MeetingsHomeStore {
   private readonly lastMeetingFailedState: WritableSignal<boolean> = signal(false);
   private readonly retry$ = new Subject<void>();
   /** Current time, ticking every minute so ended dates drop out and day buckets roll over. */
-  private readonly now: Signal<Date> = this.initClock();
+  public readonly now: Signal<Date> = this.initClock();
 
   public readonly tab: Signal<MeetingDashboardView> = this.tabState.asReadonly();
   public readonly search: Signal<string> = this.searchState.asReadonly();
@@ -73,9 +75,9 @@ export class MeetingsHomeStore {
     this.upcomingLoadingState,
     this.upcomingFailedState
   );
-  // shortcut: past feed loads without include=artifacts. revisit: when past rows show Recording / AI Summary buttons
+  // Carries `has_recording` / `has_ai_summary` for the past rows' Recording and AI Summary buttons.
   private readonly pastMeetings: Signal<PastMeeting[]> = this.initFeed(
-    () => this.userService.getUserPastMeetings(),
+    () => this.userService.getUserPastMeetings({ includeArtifacts: true }),
     this.pastLoadingState,
     this.pastFailedState
   );
@@ -94,14 +96,25 @@ export class MeetingsHomeStore {
   public readonly upcomingRows: Signal<MeetingHomeRow[]> = this.initUpcomingRows();
   /** One row per past meeting, most recent first. */
   public readonly pastRows: Signal<MeetingHomeRow[]> = this.initPastRows();
+  /** Upcoming dates the viewer can still answer, soonest first, whatever the search and filters. */
+  public readonly pendingRsvpRows: Signal<MeetingHomeRow[]> = this.initPendingRsvpRows();
   public readonly loading: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastLoading() : this.upcomingLoading()));
   /** The active tab's feed failed to load; its rows are empty but not confirmed empty. */
   public readonly failed: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastFailed() : this.upcomingFailed()));
   /** The active tab's rows before search and filters. */
   public readonly tabRows: Signal<MeetingHomeRow[]> = computed(() => (this.tab() === 'past' ? this.pastRows() : this.upcomingRows()));
-  public readonly filteredRows: Signal<MeetingHomeRow[]> = computed(() =>
+  /** The Next meeting card's date, whatever the search and filters: the soonest one not yet over, else the soonest one. */
+  public readonly nextRow: Signal<MeetingHomeRow | null> = this.initNextRow();
+  /** The next date is inside its join window, and is not a restricted meeting the viewer is not invited to. */
+  public readonly nextRowJoinable: Signal<boolean> = this.initNextRowJoinable();
+  /** Join link for the next date, built for the real viewer while impersonating; null until joinable or when unavailable. */
+  public readonly nextRowJoinUrl: Signal<string | null> = this.initNextRowJoinUrl();
+  /** The active tab's rows that match the search and filters, the Next meeting card's date included. */
+  public readonly matchingRows: Signal<MeetingHomeRow[]> = computed(() =>
     filterMeetingsHome(this.tabRows(), this.filters(), this.search(), this.userService.viewerUsername())
   );
+  /** The list's rows: the matching rows, with the Upcoming list leaving out the Next meeting card's date. */
+  public readonly filteredRows: Signal<MeetingHomeRow[]> = this.initFilteredRows();
   /** Rows shown so far; back to one page whenever the tab, search or filters change. */
   public readonly visibleCount: Signal<number> = this.visibleCountState.asReadonly();
   public readonly groups: Signal<MeetingDayGroup[]> = computed(() =>
@@ -121,10 +134,6 @@ export class MeetingsHomeStore {
   private readonly lastMeetingSummaryState: WritableSignal<PastMeetingSummary | null | undefined> = linkedSignal(() => this.fetchedLastMeetingSummary());
   /** Last meeting's AI summary: undefined while loading, null when there is none or the lookup failed. */
   public readonly lastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = this.lastMeetingSummaryState.asReadonly();
-  /** Whether the last meeting has a transcript file: undefined while loading, null when the lookup failed. */
-  public readonly lastMeetingHasTranscript: Signal<boolean | null | undefined> = this.initLastMeetingArtifact((id) =>
-    this.meetingService.getPastMeetingTranscript(id).pipe(map((transcript) => getPastMeetingTranscriptUrl(transcript) !== null))
-  );
   /** Share URL of the last meeting's recording: undefined while loading, null when there is none or the lookup failed. */
   public readonly lastMeetingRecordingUrl: Signal<string | null | undefined> = this.initLastMeetingArtifact((id) =>
     this.meetingService.getPastMeetingRecording(id).pipe(map((recording) => getLargestSessionShareUrl(recording)))
@@ -206,14 +215,75 @@ export class MeetingsHomeStore {
     );
   }
 
+  private initNextRow(): Signal<MeetingHomeRow | null> {
+    return computed(() => {
+      const rows = this.upcomingRows();
+      const nowMs = this.now().getTime();
+      return rows.find((row) => Date.parse(row.startTime) + row.durationMinutes * 60_000 > nowMs) ?? rows[0] ?? null;
+    });
+  }
+
+  private initNextRowJoinable(): Signal<boolean> {
+    return computed(() => {
+      this.now();
+      const row = this.nextRow();
+      if (!row || (row.meeting.restricted && !row.meeting.invited)) return false;
+      return canJoinMeeting(row.meeting, { occurrence_id: row.occurrenceId ?? '', start_time: row.startTime, duration: row.durationMinutes });
+    });
+  }
+
+  private initNextRowJoinUrl(): Signal<string | null> {
+    const request = computed(
+      () => {
+        const meeting = this.nextRow()?.meeting;
+        const user = this.userService.meetingJoinIdentity();
+        if (!meeting || !this.nextRowJoinable() || !this.userService.authenticated() || !user?.email) return null;
+        return { id: meeting.id, password: meeting.password, user };
+      },
+      { equal: (a, b) => a?.id === b?.id && a?.password === b?.password && a?.user.email === b?.user.email && a?.user.name === b?.user.name }
+    );
+    return toSignal(
+      toObservable(request).pipe(
+        switchMap((target) =>
+          target
+            ? this.meetingService.getPublicMeetingJoinUrl(target.id, target.password, { email: target.user.email }).pipe(
+                map((response) => buildJoinUrlWithParams(response.link, target.user)),
+                catchError(() => of(null)),
+                // Never offer the previous meeting's link while this one loads.
+                startWith(null)
+              )
+            : of(null)
+        )
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initFilteredRows(): Signal<MeetingHomeRow[]> {
+    return computed(() => {
+      const rows = this.matchingRows();
+      const nextKey = this.tab() === 'upcoming' ? this.nextRow()?.key : undefined;
+      return nextKey ? rows.filter((row) => row.key !== nextKey) : rows;
+    });
+  }
+
   private initUpcomingRows(): Signal<MeetingHomeRow[]> {
     return computed(() => {
       const removed = this.meetingService.removedRegistrationMeetingIds();
-      // Organizers keep their meetings after removing their own registration.
+      // Organizers keep their meetings after removing their own registration, without the registration.
       const meetings = this.upcomingMeetings()
         .filter((meeting) => meeting.organizer || !removed.has(meeting.id))
+        .map((meeting) => (removed.has(meeting.id) ? { ...meeting, invited: false, my_registrant_ids: [], my_rsvp: null, my_rsvps: [] } : meeting))
         .map((meeting) => this.withCurrentRsvps(meeting));
       return expandMeetingOccurrences(meetings, this.now()).map((row) => this.withConfirmedRowRsvp(row));
+    });
+  }
+
+  private initPendingRsvpRows(): Signal<MeetingHomeRow[]> {
+    return computed(() => {
+      const removed = this.meetingService.removedRegistrationMeetingIds();
+      // Only dates the RSVP controls can answer: invited, with a registration still in place.
+      return this.upcomingRows().filter((row) => row.meeting.invited && !removed.has(row.meeting.id) && isMeetingHomeRowPendingRsvp(row));
     });
   }
 

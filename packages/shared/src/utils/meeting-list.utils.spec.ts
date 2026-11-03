@@ -6,7 +6,7 @@ import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
 
-import { MEETING_VISIBILITY_INFO, MEETINGS_HOME_DEFAULT_FILTERS } from '../constants';
+import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS, MEETING_VISIBILITY_INFO, MEETINGS_HOME_DEFAULT_FILTERS } from '../constants';
 import { MeetingVisibility, MeetingVisibilityKind, RecurrenceType } from '../enums';
 import type { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, MeetingsHomeFilters, PastMeeting } from '../interfaces';
 import {
@@ -17,8 +17,11 @@ import {
   formatMeetingTimeRange,
   getMeetingDayBucket,
   getMeetingHomeRowLink,
+  getMeetingHomeRowProject,
+  getMeetingHomeRowType,
   getMeetingProjectUrl,
   getMeetingRecurrenceTooltip,
+  getMeetingRsvpScopeLabel,
   getMeetingStartsInLabel,
   getMeetingVisibilityBadges,
   groupMeetingsByDayBucket,
@@ -610,5 +613,51 @@ describe('getMeetingProjectUrl', () => {
 
   it('has no link without a slug', () => {
     expect(getMeetingProjectUrl({ project_slug: undefined, is_foundation: true })).toBeNull();
+  });
+});
+
+describe('getMeetingHomeRowProject', () => {
+  it('names the project with its initial, logo, link and accessible label', () => {
+    expect(getMeetingHomeRowProject({ project_name: ' cncf ', project_logo_url: 'logo.svg', project_slug: 'cncf', is_foundation: true })).toEqual({
+      name: 'cncf',
+      initial: 'C',
+      logo: 'logo.svg',
+      url: '/foundation/overview?project=cncf',
+      label: 'Jump to foundation: cncf',
+    });
+  });
+
+  it('is null without a project name', () => {
+    expect(getMeetingHomeRowProject({ project_name: ' ' })).toBeNull();
+  });
+});
+
+describe('getMeetingHomeRowType', () => {
+  it.each<[string | null, { label: string; icon: string } | null]>([
+    ['Technical', { label: 'Technical', icon: MEETING_TYPE_CONFIGS['technical'].icon }],
+    ['Custom', { label: 'Custom', icon: DEFAULT_MEETING_TYPE_CONFIG.icon }],
+    ['None', null],
+    [null, null],
+  ])('%s → %j', (type, expected) => {
+    expect(getMeetingHomeRowType({ meeting_type: type })).toEqual(expected);
+  });
+});
+
+describe('getMeetingRsvpScopeLabel', () => {
+  const seconds = String(NOW.getTime() / 1000);
+
+  it('names the date a single or following answer starts from', () => {
+    expect(getMeetingRsvpScopeLabel({ scope: 'single', occurrence_id: seconds })).toBe('Oct 1 only');
+    expect(getMeetingRsvpScopeLabel({ scope: 'this_and_following', occurrence_id: seconds })).toBe('Oct 1 and following');
+  });
+
+  it('reads the date from the composite id when the direct one is missing', () => {
+    expect(getMeetingRsvpScopeLabel({ scope: 'single', meeting_and_occurrence_id: `123-${seconds}` })).toBe('Oct 1 only');
+  });
+
+  it('says all dates for an all-dates answer and falls back without a date', () => {
+    expect(getMeetingRsvpScopeLabel({ scope: 'all', occurrence_id: seconds })).toBe('All dates');
+    expect(getMeetingRsvpScopeLabel({ scope: 'single' })).toBe('This date only');
+    expect(getMeetingRsvpScopeLabel({ scope: 'this_and_following' })).toBe('This date and following');
   });
 });

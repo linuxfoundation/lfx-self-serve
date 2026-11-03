@@ -121,5 +121,13 @@
     </span>
   </div>
 
-  <!-- Right-side actions (RSVP, row menu, Join, past Recording / AI Summary) go here, after a margin-left:auto wrapper. -->
+  <!-- Right-side actions (RSVP, row menu, Join, past Recording / AI Summary); clicks here never open the row. -->
+  <div class="ml-auto flex flex-wrap items-center justify-end gap-[18px]" (click)="$event.stopPropagation()" data-testid="meetings-home-row-actions">
+    @if (past()) {
+      <lfx-meeting-home-artifacts [row]="row()" />
+    } @else {
+      <lfx-meeting-rsvp-controls [row]="row()" />
+    }
+    <lfx-meeting-home-actions [row]="row()" [view]="view()" />
+  </div>
 </div>

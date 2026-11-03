@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   sanitizeDisplayText,
   decodeHtmlEntities,
+  emailLinkDestinations,
   escapeHtml,
   hasVisibleHtmlText,
   hasVisibleText,
@@ -889,5 +890,156 @@ describe('hasVisibleHtmlText', () => {
     // An image-only body has no words. Callers that want to accept one check for it separately;
     // this predicate answers "is there anything to read".
     expect(hasVisibleHtmlText('<p><img src="https://cdn.example.com/x.png"></p>')).toBe(false);
+  });
+});
+
+describe('stripResourceLoadingHtml — inline styles (#3306)', () => {
+  it('keeps the safe typography, colour, spacing, border and width declarations', () => {
+    const html =
+      '<p style="color: #0f172a; background-color: #ffffff; font-family: Arial, sans-serif; font-size: 16px; font-weight: 700; ' +
+      'line-height: 1.5; text-align: center; text-decoration: underline; padding: 8px 12px; margin: 0 0 16px; ' +
+      'border: 1px solid #e2e8f0; border-radius: 4px; width: 100%; max-width: 600px">Hello</p>';
+
+    const out = stripResourceLoadingHtml(html);
+
+    for (const declaration of [
+      'color:#0f172a',
+      'background-color:#ffffff',
+      'font-family:Arial, sans-serif',
+      'font-size:16px',
+      'font-weight:700',
+      'line-height:1.5',
+      'text-align:center',
+      'text-decoration:underline',
+      'padding:8px 12px',
+      'margin:0 0 16px',
+      'border:1px solid #e2e8f0',
+      'border-radius:4px',
+      'width:100%',
+      'max-width:600px',
+    ]) {
+      expect(out, `${declaration} was stripped`).toContain(declaration);
+    }
+    expect(out).toContain('Hello');
+  });
+
+  it.each([
+    ['a url() value', '<p style="background-color: url(https://evil.test/x)">t</p>', 'evil.test'],
+    ['an expression() value', '<p style="color: expression(alert(1))">t</p>', 'expression'],
+    ['the position property', '<p style="position: absolute">t</p>', 'position'],
+    ['position smuggled in a value', '<p style="font: position fixed">t</p>', 'position'],
+    ['a behavior declaration', '<p style="behavior: url(x.htc)">t</p>', 'behavior'],
+    ['an @import', '<p style="@import url(https://evil.test/x.css)">t</p>', 'import'],
+    ['a javascript: value', '<p style="color: javascript:alert(1)">t</p>', 'javascript'],
+    ['a property outside the allow-list', '<p style="background-image: linear-gradient(red, blue)">t</p>', 'background-image'],
+  ])('strips %s, keeping the text', (_label, html, gone) => {
+    const out = stripResourceLoadingHtml(html);
+
+    expect(out).not.toContain(gone);
+    // Nothing safe was left in it, so the attribute goes whole.
+    expect(out).not.toMatch(/style\s*=/i);
+    expect(out).toContain('t');
+  });
+
+  it('drops only the dangerous declaration from a mixed style', () => {
+    const out = stripResourceLoadingHtml('<span style="color: red; position: absolute; padding: 4px; behavior: url(x.htc)">s</span>');
+
+    expect(out).toBe('<span style="color:red;padding:4px">s</span>');
+  });
+});
+
+describe('emailLinkDestinations — event-page links (#3306)', () => {
+  const CTA = 'https://events.linuxfoundation.org/kubecon/register';
+
+  it('vouches for an extracted link on the call-to-action host, so its href survives the sanitizer', () => {
+    const destinations = emailLinkDestinations(CTA, ['https://events.linuxfoundation.org/kubecon/cfp']);
+    const html = '<p><a href="https://events.linuxfoundation.org/kubecon/cfp">Submit a talk</a></p>';
+
+    expect(destinations).toEqual([CTA, 'https://events.linuxfoundation.org/kubecon/cfp']);
+    expect(stripResourceLoadingHtml(html, destinations)).toContain('href="https://events.linuxfoundation.org/kubecon/cfp"');
+  });
+
+  it('vouches for an extracted link on an LF-owned domain even when the event site is elsewhere', () => {
+    const destinations = emailLinkDestinations('https://kubecon.example/register', ['https://training.linuxfoundation.org/agenda']);
+
+    expect(destinations).toContain('https://training.linuxfoundation.org/agenda');
+  });
+
+  it('strips an injected off-host link, keeping its text', () => {
+    const destinations = emailLinkDestinations(CTA, ['https://evil.example/cfp']);
+    const html = '<p><a href="https://evil.example/cfp">Submit a talk</a></p>';
+
+    expect(destinations).toEqual([CTA]);
+    expect(stripResourceLoadingHtml(html, destinations)).toBe('<p><a>Submit a talk</a></p>');
+  });
+
+  it.each([
+    ['a javascript: url', 'javascript:alert(1)'],
+    ['a data: url', 'data:text/html,<script>alert(1)</script>'],
+  ])('refuses %s as a destination, and the sanitizer strips it from the body', (_label, href) => {
+    const destinations = emailLinkDestinations(CTA, [href]);
+
+    expect(destinations).toEqual([CTA]);
+    expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, destinations)).toBe('<p><a>x</a></p>');
+  });
+
+  it('with no call-to-action vouches only for LF-owned links', () => {
+    expect(emailLinkDestinations('', ['https://kubecon.example/cfp', 'https://events.linuxfoundation.org/x/cfp'])).toEqual([
+      'https://events.linuxfoundation.org/x/cfp',
+    ]);
+  });
+});
+
+describe('stripResourceLoadingHtml — review round (#3306)', () => {
+  it('resolves no relative href when there is no call-to-action, even with LF links vouched for', () => {
+    const destinations = emailLinkDestinations('', ['https://events.linuxfoundation.org/x/cfp']);
+
+    expect(stripResourceLoadingHtml('<p><a href="/register">Register</a></p>', destinations, '')).toBe('<p><a>Register</a></p>');
+  });
+
+  it('resolves a relative href against the call-to-action, never against a secondary link', () => {
+    const destinations = emailLinkDestinations('https://kubecon.example/eu/register', ['https://training.linuxfoundation.org/venue']);
+
+    const out = stripResourceLoadingHtml('<p><a href="/eu/agenda">Agenda</a></p>', destinations, 'https://kubecon.example/eu/register');
+
+    expect(out).toContain('href="https://kubecon.example/eu/agenda"');
+  });
+
+  it('keeps a non-negative margin and drops a negative one or a calc()', () => {
+    expect(stripResourceLoadingHtml('<p style="margin: 0 0 16px">t</p>')).toBe('<p style="margin:0 0 16px">t</p>');
+    expect(stripResourceLoadingHtml('<p style="margin-top: -2000px">t</p>')).toBe('<p>t</p>');
+    expect(stripResourceLoadingHtml('<p style="margin: calc(0px - 100vh) 0">t</p>')).toBe('<p>t</p>');
+  });
+
+  it.each([
+    ['behavior in a value', 'font-family: behavior'],
+    ['@import in a value', "font-family: 'Arial' @import"],
+    ['a CSS-escaped url(', 'color: u\\72 l(https://evil.test/x)'],
+    ['image-set(', "color: image-set('https://evil.test/a.png' 1x)"],
+    ['image(', "color: image('https://evil.test/a.png')"],
+  ])('drops a declaration whose value carries %s', (_label, declaration) => {
+    expect(stripResourceLoadingHtml(`<p style="${declaration}">t</p>`)).toBe('<p>t</p>');
+  });
+});
+
+describe('stripResourceLoadingHtml — review round 2 (#3306)', () => {
+  it.each([
+    ['min()', 'margin-top: min(0px, 0px - (100vh))'],
+    ['max()', 'margin-top: max(-100vh, -2000px)'],
+    ['clamp()', 'margin: clamp(-2000px, -50vh, 0px) 0'],
+  ])('drops a margin computed by %s, which can be negative', (_label, declaration) => {
+    expect(stripResourceLoadingHtml(`<p style="${declaration}">t</p>`)).toBe('<p>t</p>');
+  });
+
+  it("drops a refused link's styling with its href, so it does not look clickable", () => {
+    const html = '<p><a href="https://evil.example/cfp" style="color: #0094ff; font-weight: 700; text-decoration: underline">Submit a talk</a></p>';
+
+    expect(stripResourceLoadingHtml(html, ['https://events.linuxfoundation.org/kubecon'])).toBe('<p><a>Submit a talk</a></p>');
+  });
+
+  it("keeps a vouched link's styling", () => {
+    const html = '<p><a href="https://events.linuxfoundation.org/kubecon/cfp" style="color: #0094ff">Submit a talk</a></p>';
+
+    expect(stripResourceLoadingHtml(html, ['https://events.linuxfoundation.org/kubecon'])).toContain('style="color:#0094ff"');
   });
 });

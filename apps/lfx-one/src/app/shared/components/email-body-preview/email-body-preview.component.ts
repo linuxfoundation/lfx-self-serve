@@ -18,7 +18,11 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
  *
  * The campaign service now applies the Linux Foundation's own palette and type scale to every
  * generated `rich_text` section as inline styles (`internal/service/email_body_style.go`), so there
- * is real styling to show. This component shows it.
+ * is real styling to show. This component shows it, and those styles reach it: the body sanitizer
+ * (`stripResourceLoadingHtml`) keeps `style` through an allow-list of safe properties
+ * (`EMAIL_BODY_ALLOWED_STYLE_PROPERTIES`) and drops any declaration that could load, run or position
+ * anything (#3306). It used to drop every `style`, so this paragraph described styling the preview
+ * never received.
  *
  * ## What keeps it safe
  *
@@ -129,8 +133,9 @@ export class EmailBodyPreviewComponent {
      interpolated raw below, so anything that stripper misses reached the frame.
 
      \`default-src 'none'\` is exact rather than cautious: the stripper's allow-list carries no
-     \`img\`, no \`src\` on any element and no \`style\` attribute, so a legitimate preview loads
-     NOTHING external and has nothing to lose here. \`style-src 'unsafe-inline'\` is the one opening,
+     \`img\` and no \`src\` on any element, and the \`style\` it keeps is filtered to properties that
+     take no url (#3306), so a legitimate preview loads NOTHING external and has nothing to lose here.
+     If that filter ever missed a value, this policy is what still stops the load. \`style-src 'unsafe-inline'\` is the one opening,
      for the \`<style>\` reset below and the inline styles an email carries; it cannot fetch.
      \`form-action 'none'\` and the \`frame-src\`/\`child-src\` omissions fall out of \`default-src\`.
 

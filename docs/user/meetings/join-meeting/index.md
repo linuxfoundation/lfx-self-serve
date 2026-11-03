@@ -4,7 +4,7 @@ description: How to join a project meeting from its LFX Self Serve link, respond
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, attendee, rsvp, register, guest, zoom]
-last_updated: 2026-10-28
+last_updated: 2026-11-02
 intercom_collection: Meetings
 ---
 
@@ -26,6 +26,16 @@ Select **Join Meeting**. When the meeting opens, you're taken to Zoom automatica
 
 If you see an error about your email address, such as that you aren't on the guest list for a restricted meeting, select **Click here** to join using a different email address, and use the email the organizer invited.
 
+### On a phone
+
+When you're signed in and the meeting hasn't ended, a bar stays at the bottom of the screen with a calendar action and a **Join Meeting** button.
+
+- If you're invited, the calendar action is **Resend Invite**. It emails the invitation to your own address again, so the calendar entry stays the one the invitation created and keeps receiving updates.
+- If you aren't invited and the meeting is public, it's **Subscribe to calendar**. It opens the subscribe dialog for the project's calendar feed, so you can add it to your calendar app. The feed lists the project's public meetings and keeps itself up to date.
+- **Join Meeting** is greyed out and reads "Join opens" followed by the time in your own time zone, until the join window opens (10 minutes before the start, or earlier if the organizer set a longer early join time). It turns on by itself, with no need to reload the page.
+
+The bar hides while the guest list is open, and it doesn't appear if you aren't signed in, if you joined a private meeting with only its password link, or once the meeting has ended. Larger screens keep the join button and message at the top of the page.
+
 ### If you're not signed in
 
 You don't need an LFX account to join a Public or Private meeting. For a Private meeting, open the link the organizer shared, because it includes the meeting's password. Fill in the **Enter your information** form with your **Full Name**, **Email**, and **Organization**, then select **Join Meeting**.
@@ -43,7 +53,7 @@ What the page shows depends on the meeting's access settings and on who you are:
 
 The organizer's name and contact link are only shown to signed-in visitors, even on a public meeting.
 
-If the organizer turned on **Show attendees to guests**, invited people can open **Show Members** to see who else is invited. Without it, they see how many people are invited but not who. A Restricted or Board meeting never shows its list to guests, even with that setting on.
+If the organizer turned on **Show attendees to guests**, invited people can open **Show Members**, or select the **invited** count, to see who else is invited. Without it, they see how many people are invited but not who. A Restricted or Board meeting never shows its list to guests, even with that setting on.
 
 ## Register for a meeting
 

@@ -10,6 +10,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
+import { environment } from '@environments/environment';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   Meeting,
@@ -26,11 +27,12 @@ import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/me
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
+import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
 import { OverlayStateService } from '@services/overlay-state.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
+import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
 import { getTimezoneAbbreviation, getUserTimezone } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
@@ -317,6 +319,34 @@ describe('MeetingJoinComponent', () => {
       expect(page.querySelector('[data-testid="total-invitees"]')?.textContent).toContain('7 invited');
     });
 
+    it('makes the invited count a button that opens the guest drawer when the viewer can see the guests (#4864)', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: true }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const count = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="total-invitees"]') as HTMLElement;
+      expect(count.tagName).toBe('BUTTON');
+      count.click();
+
+      expect(fixture.componentInstance.showRegistrants()).toBe(true);
+    });
+
+    it('leaves the invited count as plain text when the guest list is hidden from the viewer (#4864)', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false, registrant_count: 7 }), project: buildProject() })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const count = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="total-invitees"]') as HTMLElement;
+      expect(count.tagName).not.toBe('BUTTON');
+    });
+
     it('fetches and offers the guest list when the meeting shares its attendees', async () => {
       const page = await renderInvitee(true);
 
@@ -388,6 +418,33 @@ describe('MeetingJoinComponent', () => {
       fixture.destroy();
 
       expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('closes the guests drawer and releases the launcher when the route moves in place to another meeting (#4857)', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(true);
+
+      paramMap$.next(convertToParamMap({ id: 'another-meeting-id' }));
+      await settle();
+
+      expect(fixture.componentInstance.showRegistrants()).toBe(false);
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('gives the guests drawer a full-height class on mobile only, leaving the desktop width chain untouched (#4857)', async () => {
+      const fixture = await renderWithRoster();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+
+      const panel = document.querySelector('.p-drawer') as HTMLElement | null;
+      expect(panel).not.toBeNull();
+      expect(panel?.classList.contains('max-sm:!h-[100dvh]')).toBe(true);
+      expect(panel?.classList.contains('xl:w-[45%]')).toBe(true);
+      expect(panel?.classList.contains('h-[100dvh]')).toBe(false);
     });
   });
 
@@ -2049,6 +2106,328 @@ describe('MeetingJoinComponent', () => {
         const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
 
         expect(page.querySelector('[data-testid="meeting-meta-mobile-organizer"]')).toBeNull();
+      });
+    });
+  });
+  describe('sticky actions bar (#4862)', () => {
+    // The guests-drawer test opens the real PrimeNG drawer, whose template needs the animation providers.
+    beforeEach(() => TestBed.configureTestingModule({ providers: [provideNoopAnimations()] }));
+
+    const settle = (): Promise<void> => TestBed.inject(ApplicationRef).whenStable();
+    const bar = (fixture: ComponentFixture<MeetingJoinComponent>) =>
+      fixture.nativeElement.querySelector('[data-testid="meeting-join-sticky-bar"]') as HTMLElement | null;
+    const part = (fixture: ComponentFixture<MeetingJoinComponent>, id: string) =>
+      fixture.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+
+    const render = async (
+      overrides: Partial<Meeting> = {},
+      access: { full_access: boolean } = { full_access: true }
+    ): Promise<ComponentFixture<MeetingJoinComponent>> => {
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, title: 'Board Sync', ...overrides }),
+          project: buildProject(),
+          ...access,
+          can_join: false,
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await settle();
+      return fixture;
+    };
+
+    it('shows Resend Invite first and a disabled Join with the unlock time to an invitee of a future meeting', async () => {
+      const fixture = await render();
+
+      expect(bar(fixture)).not.toBeNull();
+      const resend = part(fixture, 'sticky-resend-invite') as HTMLElement;
+      const join = part(fixture, 'sticky-join') as HTMLElement;
+      expect(resend).not.toBeNull();
+      expect(resend.textContent).toContain('Resend Invite');
+      expect(resend.compareDocumentPosition(join) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(join.textContent).toContain('Join opens');
+      expect(join.querySelector('button')?.disabled ?? join.hasAttribute('disabled')).toBe(true);
+      expect(part(fixture, 'sticky-subscribe-calendar')).toBeNull();
+    });
+
+    it('is phone chrome: hidden from sm up', async () => {
+      const fixture = await render();
+
+      expect(bar(fixture)?.classList.contains('sm:hidden')).toBe(true);
+    });
+
+    describe('primary action', () => {
+      it("reuses the page's own self-resend (same handler, same toast), for the occurrence shown", async () => {
+        const fixture = await render();
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+        await settle();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, undefined);
+        expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it.each([
+        ['an invitee', { organizer: false, invited: true }, 'resend-invite-button'],
+        ['an invited organizer', { organizer: true, invited: true }, 'resend-invite-organizer-button'],
+      ])("hides the page's own Resend Invite below sm for %s, since the bar carries it", async (_label, overrides, testId) => {
+        const fixture = await render(overrides);
+
+        const inline = part(fixture, testId);
+        expect(inline).not.toBeNull();
+        expect(inline?.classList.contains('max-sm:hidden')).toBe(true);
+        expect(part(fixture, 'sticky-resend-invite')).not.toBeNull();
+      });
+
+      it("keeps the page's own Resend Invite visible when there is no bar (a password-only guest)", async () => {
+        const fixture = await render({ organizer: false, invited: true }, { full_access: false });
+
+        expect(part(fixture, 'sticky-resend-invite')).toBeNull();
+        const inline = part(fixture, 'resend-invite-button');
+        expect(inline?.classList.contains('max-sm:hidden') ?? false).toBe(false);
+      });
+
+      it('shows the same in-flight state as the page button while the resend is pending', async () => {
+        resendMyMeetingInvitation.mockReturnValue(new Subject());
+        const fixture = await render();
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+        await settle();
+
+        expect(fixture.componentInstance.resendingInvite()).toBe(true);
+        expect(part(fixture, 'sticky-resend-invite')?.querySelector('button')?.disabled).toBe(true);
+      });
+
+      it('offers a non-registrant Subscribe, which opens the iCal subscribe dialog for the project feed (no link, no new tab)', async () => {
+        const fixture = await render({ invited: false, organizer: false });
+        const open = vi
+          .spyOn(fixture.debugElement.injector.get(DialogService), 'open')
+          .mockReturnValue({ onClose: new Subject() } as unknown as DynamicDialogRef);
+
+        const subscribe = part(fixture, 'sticky-subscribe-calendar') as HTMLElement;
+        expect(part(fixture, 'sticky-resend-invite')).toBeNull();
+        expect(subscribe.textContent).toContain('Subscribe to calendar');
+        expect(subscribe.querySelector('a')).toBeNull();
+        expect(subscribe.getAttribute('target')).toBeNull();
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-subscribe-calendar"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+
+        expect(open).toHaveBeenCalledTimes(1);
+        expect(open).toHaveBeenCalledWith(
+          IcalSubscribeDialogComponent,
+          expect.objectContaining({ data: { feedUrl: `${environment.urls.home}/public/api/projects/project-1/calendar.ics`, name: 'Test Project' } })
+        );
+      });
+
+      it('offers Subscribe for a restricted public meeting too, since the project feed lists it', async () => {
+        const fixture = await render({ invited: false, organizer: false, restricted: true });
+
+        expect(part(fixture, 'sticky-subscribe-calendar')).not.toBeNull();
+      });
+
+      it('offers no calendar action when the meeting is not in the project feed (private) and the viewer is not invited', async () => {
+        const fixture = await render({ invited: false, organizer: false, visibility: MeetingVisibility.PRIVATE });
+
+        expect(bar(fixture)).not.toBeNull();
+        expect(part(fixture, 'sticky-resend-invite')).toBeNull();
+        expect(part(fixture, 'sticky-subscribe-calendar')).toBeNull();
+        expect(part(fixture, 'sticky-join')).not.toBeNull();
+      });
+
+      it('never offers a calendar file or a Google Calendar link', async () => {
+        const fixture = await render();
+
+        expect(bar(fixture)?.innerHTML).not.toMatch(/calendar\.google\.com|\.ics|download/i);
+      });
+    });
+
+    it.each([
+      ['an anonymous viewer', () => authenticated.set(false), { full_access: true }],
+      ['a password-only guest without full access', () => undefined, { full_access: false }],
+    ])('renders no bar for %s', async (_label, arrange, access) => {
+      arrange();
+
+      const fixture = await render({}, access);
+
+      expect(bar(fixture)).toBeNull();
+    });
+
+    it('renders no bar once the meeting has ended', async () => {
+      const fixture = await render({ start_time: '2020-01-01T00:00:00.000Z' });
+
+      expect(bar(fixture)).toBeNull();
+    });
+
+    it('keeps the bar, with Join no longer waiting for an unlock time, while the meeting is in progress', async () => {
+      const fixture = await render({ start_time: new Date(Date.now() - 5 * 60_000).toISOString() });
+
+      expect(bar(fixture)).not.toBeNull();
+      expect(part(fixture, 'sticky-resend-invite')).not.toBeNull();
+      expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+      expect(part(fixture, 'sticky-join')?.textContent).not.toContain('Join opens');
+    });
+
+    it('does not leave the bar spinning when the join URL cannot be resolved (the inline error explains why)', async () => {
+      getPublicMeetingJoinUrl.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { message: 'Not on the guest list' } })));
+      const fixture = await render({ start_time: new Date(Date.now() - 5 * 60_000).toISOString() });
+
+      const join = part(fixture, 'sticky-join');
+      expect(join?.querySelector('button')?.disabled).toBe(true);
+      expect(join?.querySelector('[class*="spin"]')).toBeNull();
+    });
+
+    it('hides the inline Join button on phones while the bar offers it, so there is one Join', async () => {
+      const fixture = await render({ start_time: new Date(Date.now() - 5 * 60_000).toISOString() });
+
+      const inline = fixture.nativeElement.querySelector(
+        '[data-testid="join-meeting-button-loading"], [data-testid="join-meeting-button-immediate"]'
+      ) as HTMLElement;
+      expect(inline.closest('div')?.classList.contains('max-sm:hidden')).toBe(true);
+    });
+
+    it('keeps the support launcher hidden while the materials drawer is open, and releases it on close', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await render();
+
+      fixture.componentInstance.materialsDrawerVisible.set(true);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(true);
+      expect(bar(fixture)).toBeNull();
+
+      fixture.componentInstance.materialsDrawerVisible.set(false);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('yields to the guests drawer and returns when it closes', async () => {
+      const fixture = await render();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+      expect(bar(fixture)).toBeNull();
+
+      fixture.componentInstance.showRegistrants.set(false);
+      await settle();
+      expect(bar(fixture)).not.toBeNull();
+    });
+
+    describe('Join at T-10 without a reload', () => {
+      // Only the clock is faked: the page's data pipeline uses RxJS schedulers, which would stall under a faked setInterval.
+      beforeEach(() => vi.useFakeTimers({ toFake: ['Date'] }));
+      afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+      });
+
+      const T0 = new Date('2030-06-01T10:00:00Z');
+      const renderEleven = () => {
+        vi.setSystemTime(T0);
+        return render({ start_time: '2030-06-01T10:11:00Z', early_join_time_minutes: 10 });
+      };
+      const advance = (ms: number) => vi.setSystemTime(new Date(Date.now() + ms));
+
+      it('enables Join once the early-join window opens, driven by the interval tick alone', async () => {
+        const intervals: { callback: () => void; delay: number | undefined }[] = [];
+        const realSetInterval = globalThis.setInterval;
+        vi.spyOn(globalThis, 'setInterval').mockImplementation(((callback: () => void, delay?: number) => {
+          intervals.push({ callback, delay });
+          return realSetInterval(callback, delay);
+        }) as typeof setInterval);
+        const fixture = await renderEleven();
+        const tick = intervals.find((i) => i.delay === MEETING_CLOCK_TICK_MS)?.callback;
+        expect(tick).toBeDefined();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+        expect(part(fixture, 'sticky-join')?.textContent).toContain('Join opens');
+
+        advance(30_000);
+        tick?.();
+        await settle();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+
+        advance(40_000);
+        tick?.();
+        await settle();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+        expect(part(fixture, 'sticky-join')?.textContent).not.toContain('Join opens');
+      });
+
+      it('only enables Join at T-10 and never opens Zoom on its own for a page that loaded before the window', async () => {
+        getPublicMeetingJoinUrl.mockReturnValue(of({ link: 'https://zoom.us/j/1234567890' }));
+        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+        const fixture = await renderEleven();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+
+        advance(2 * 60_000);
+        window.dispatchEvent(new Event('focus'));
+        await settle();
+        // Let the effects that feed the auto-join stream run, so a regression would have had its chance to open Zoom.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        await settle();
+
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+        expect(fixture.componentInstance.fetchedJoinUrl()).toContain('https://zoom.us/j/1234567890');
+        expect(part(fixture, 'sticky-join')?.querySelector('a')?.getAttribute('href')).toContain('https://zoom.us/j/1234567890');
+        expect(open).not.toHaveBeenCalled();
+      });
+
+      it('still opens Zoom on its own when the window was already open at load', async () => {
+        getPublicMeetingJoinUrl.mockReturnValue(of({ link: 'https://zoom.us/j/1234567890' }));
+        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+        vi.setSystemTime(T0);
+
+        await render({ start_time: '2030-06-01T10:05:00Z', early_join_time_minutes: 10 });
+
+        expect(open).toHaveBeenCalledTimes(1);
+      });
+
+      it('catches up when the tab regains focus (mobile browsers freeze background timers)', async () => {
+        const fixture = await renderEleven();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+
+        advance(2 * 60_000);
+        window.dispatchEvent(new Event('focus'));
+        await settle();
+
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+      });
+
+      it('flips the page to ended without moving to the next occurrence or refetching the RSVP and roster', async () => {
+        vi.setSystemTime(new Date('2030-06-01T10:00:00Z'));
+        const fixture = await render({
+          start_time: '2030-06-01T10:00:00Z',
+          duration: 30,
+          occurrences: [
+            { occurrence_id: 'a', start_time: '2030-06-01T10:00:00Z', duration: 30 },
+            { occurrence_id: 'b', start_time: '2030-06-08T10:00:00Z', duration: 30 },
+          ] as Meeting['occurrences'],
+        });
+        const component = fixture.componentInstance;
+        expect(component.currentOccurrence()?.occurrence_id).toBe('a');
+        const rsvpFetches = getMeetingRsvpForCurrentUser.mock.calls.length;
+        const rosterFetches = getMyMeetingRegistrants.mock.calls.length;
+
+        advance(2 * 60 * 60_000);
+        window.dispatchEvent(new Event('focus'));
+        await settle();
+
+        expect(component.currentOccurrence()?.occurrence_id).toBe('a');
+        expect(bar(fixture)).toBeNull();
+        expect(getMeetingRsvpForCurrentUser.mock.calls.length).toBe(rsvpFetches);
+        expect(getMyMeetingRegistrants.mock.calls.length).toBe(rosterFetches);
+      });
+
+      it('stops ticking and listening when the page is destroyed', async () => {
+        const clearSpy = vi.spyOn(globalThis, 'clearInterval');
+        const fixture = await renderEleven();
+
+        fixture.destroy();
+
+        expect(clearSpy).toHaveBeenCalled();
+        advance(2 * 60_000);
+        window.dispatchEvent(new Event('focus'));
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
       });
     });
   });

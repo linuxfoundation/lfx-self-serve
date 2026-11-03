@@ -12,6 +12,8 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **Overlays** build on `@angular/cdk`.
 - **Modal** deliberately omits `aria-modal` (CDK default): overlays stay exposed to assistive technology, while the page behind still gets `aria-hidden`.
 - **Stacking:** CDK overlays sit at z-index 10000, above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. A PrimeNG overlay panel opened from inside a uikit modal renders below it unless it is appended to its own element.
+- **Cursor:** every interactive control (buttons, tabs, menu items, toggles, checkboxes, radios, labels that wrap an input) shows a pointer, and `not-allowed` when disabled. A disabled `lfx-ui-button` shows it without taking the click.
+- **Icon weight:** uikit components and stories follow the LFX UI Library: Font Awesome Light (`fa-light`) by default, another weight only to show a state, such as a filled star for "starred".
 - **Types:** shared interfaces such as `UiTabItem` live in `@lfx-one/shared/interfaces`.
 - **Compound components** (a menu and its items, groups and separators) share one spec and one stories file, named after the parent.
 - **Form controls:** register with `NG_VALUE_ACCESSOR` and `forwardRef`, as in `lfx-ui-checkbox`; that is the standard for new controls. The `NgControl`-based controls (input, textarea, slider, calendar, select, combobox, multi-select) convert in a dedicated follow-up PR (tracked on #4661), not in unrelated fixes.
@@ -57,7 +59,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-switch`         | `UiSwitchComponent`        | Segmented control, 2 to 4 views: radiogroup of `lfx-ui-switch-option` radios, three sizes, icon-only with tooltip; `[(value)]`, forms                                  |
 | `lfx-ui-choicebox`      | `UiChoiceboxComponent`     | Large radio or checkbox tile with title, description and badge; `lfx-ui-choicebox-group` holds them: `[(value)]` or `[(values)]`, forms                                |
 | `lfx-ui-textarea`       | `UiTextareaComponent`      | Multi-line field: label, hint, error, 80px minimum, vertical resize, `maxlength`; `[(value)]` and forms                                                                |
-| `lfx-ui-empty-state`    | `UiEmptyStateComponent`    | Icon tile or your own art, title and one sentence, with `empty-state-action` buttons below; title is a heading at a level you set                                      |
+| `lfx-ui-empty-state`    | `UiEmptyStateComponent`    | Icon tile or your own art, title and one sentence, `empty-state-action` buttons below; heading level you set; `default` or `small` size                                |
 | `lfx-ui-toast`          | `UiToastComponent`         | Toast: default, success, warning, error, dark (bottom-centre, 3s); `description`; up to two actions, dismiss; 5s, 8s with actions, never on errors; hover/focus pauses |
 | `lfx-ui-split-button`   | `UiSplitButtonComponent`   | Main action joined to a chevron that opens an `lfx-ui-menu`: primary or secondary, three sizes; named, `aria-haspopup`, `aria-expanded`                                |
 | `UiToastService`        | `UiToastService`           | Bottom-right stack, bottom-centre for `dark` or `position`, in CDK overlays kept as polite live regions; newest on top; `show()` returns a handle, `dismissAll()`      |
@@ -79,7 +81,7 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
 - **Tailwind utilities** (v3, `tailwind.config.js`) read those variables, so they follow the theme. Existing classes (`bg-blue-500`, `text-gray-700`, `rounded-md`, `shadow-md`, `text-sm`) are unchanged.
 - **White and black:** on-colour ink is `text-ui-white` (also `bg-ui-white`, `stroke-ui-white` and the `ui-black` equivalents), which read `--ui-white` / `--ui-black`. The bare `text-white` is the app's `lfxColors.white`, not a library token.
 - **Exact px:** the app root font is 14px, so rem would scale. Library sizes are px values, not Tailwind's rem scale (`h-10` is 35px here; `h-ui-medium` is 40px).
-- **Icons:** `ui-icon` gives a Font Awesome `<i>` the library's 1em box (Font Awesome 7 makes glyphs 1.25em wide). Put it on every icon a uikit component renders.
+- **Icon box:** `ui-icon` gives a Font Awesome `<i>` the library's 1em box (Font Awesome 7 makes glyphs 1.25em wide). Put it on every icon a uikit component renders.
 - **No opacity modifier:** colours are CSS variables, so `bg-ui-accent-500/50` does not work. Use the matching `ui-*-alpha` or lower step (`bg-ui-accent-100`).
 - **Primitives** other than white and black (`azure`, `slate`, ...) are variables only. Components use the `ui-*` roles, except the hover and active colour mixes on `--ui-slate-900` in Button, SplitButton and Toast, which copy the library's `bundle.css` until it ships mix tokens. The primitives are for charts, avatars and illustrations (`var(--ui-azure-500)`).
 - **Colour literals:** a few shadows and masks use literal colours, because the library ships no token for them yet:

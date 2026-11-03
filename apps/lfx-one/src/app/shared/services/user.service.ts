@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
+import { USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
 import {
   CdpProjectAffiliation,
   ChangePasswordRequest,
@@ -138,6 +139,7 @@ export class UserService {
   private userMeetingsDirty = false;
   private userMeetingsSubject: string | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
+  private userPastMeetingsWithArtifacts$: Observable<PastMeeting[]> | null = null;
   private userLatestPastMeetings$: Observable<PastMeeting[]> | null = null;
 
   public constructor() {
@@ -166,6 +168,7 @@ export class UserService {
         this.userMeetings$ = null;
         this.userMeetingsDirty = false;
         this.userPastMeetings$ = null;
+        this.userPastMeetingsWithArtifacts$ = null;
         this.userLatestPastMeetings$ = null;
         this.userIdentities$ = null;
       });
@@ -496,29 +499,33 @@ export class UserService {
   /**
    * Gets past meetings for the current authenticated user.
    * Call refreshUserPastMeetings() to re-fetch.
+   * @param options - `includeArtifacts` adds `has_recording` / `has_ai_summary`, cached apart from the plain feed
    */
-  public getUserPastMeetings(): Observable<PastMeeting[]> {
-    if (!this.userPastMeetings$) {
-      const destroy$ = this.userPastMeetingsDestroy$;
-      const dropIfCurrent = (): void => {
-        if (this.userPastMeetings$ === pastMeetings$) {
-          this.userPastMeetings$ = null;
-        }
-      };
-      const pastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
-        startWith(undefined),
-        switchMap(() => this.http.get<PastMeeting[]>('/api/user/past-meetings')),
-        takeUntil(destroy$),
-        // Never cache a failure — see getUserMeetings() for why.
-        catchError((error: unknown) => {
-          dropIfCurrent();
-          return throwError(() => error);
-        }),
-        shareReplay({ bufferSize: 1, refCount: false })
-      );
-      this.userPastMeetings$ = pastMeetings$;
-    }
-    return this.userPastMeetings$;
+  public getUserPastMeetings(options?: { includeArtifacts?: boolean }): Observable<PastMeeting[]> {
+    const includeArtifacts = options?.includeArtifacts === true;
+    const cached = includeArtifacts ? this.userPastMeetingsWithArtifacts$ : this.userPastMeetings$;
+    if (cached) return cached;
+
+    // Both caches share the destroy signal, so a viewer change tears down either chain.
+    const destroy$ = this.userPastMeetingsDestroy$;
+    const params = includeArtifacts ? { include: USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } : undefined;
+    const setCache = (value: Observable<PastMeeting[]> | null): void => {
+      if (includeArtifacts) this.userPastMeetingsWithArtifacts$ = value;
+      else this.userPastMeetings$ = value;
+    };
+    const pastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
+      startWith(undefined),
+      switchMap(() => this.http.get<PastMeeting[]>('/api/user/past-meetings', { params })),
+      takeUntil(destroy$),
+      // Never cache a failure — see getUserMeetings() for why.
+      catchError((error: unknown) => {
+        if ((includeArtifacts ? this.userPastMeetingsWithArtifacts$ : this.userPastMeetings$) === pastMeetings$) setCache(null);
+        return throwError(() => error);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    setCache(pastMeetings$);
+    return pastMeetings$;
   }
 
   /**

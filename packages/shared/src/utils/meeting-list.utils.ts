@@ -1,8 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEETING_VISIBILITY_INFO, MEETINGS_HOME_FILTER_CHIP_LABELS, MEETINGS_HOME_RSVP_FILTER_OPTIONS, RECURRENCE_DAYS_OF_WEEK } from '../constants';
-import { MeetingVisibility, MeetingVisibilityKind } from '../enums';
+import {
+  DEFAULT_MEETING_TYPE_CONFIG,
+  MEETING_TYPE_CONFIGS,
+  MEETING_VISIBILITY_INFO,
+  MEETINGS_HOME_FILTER_CHIP_LABELS,
+  MEETINGS_HOME_RSVP_FILTER_OPTIONS,
+  RECURRENCE_DAYS_OF_WEEK,
+} from '../constants';
+import { MeetingType, MeetingVisibility, MeetingVisibilityKind } from '../enums';
 import type {
   Meeting,
   MeetingDashboardView,
@@ -10,6 +17,8 @@ import type {
   MeetingFilterChip,
   MeetingHomeRow,
   MeetingHomeRowLink,
+  MeetingHomeRowProject,
+  MeetingHomeRowType,
   MeetingOccurrence,
   MeetingResponseFilter,
   MeetingRsvp,
@@ -33,7 +42,7 @@ import {
   resolveUpcomingMeetingDurationMinutes,
 } from './meeting.utils';
 import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
-import { getRsvpTimestampMs, isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
+import { getRsvpOccurrenceId, getRsvpTimestampMs, isSameOccurrenceId, occurrenceIdToMs, selectApplicableRsvp } from './rsvp-calculator.util';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -281,10 +290,41 @@ export function getMeetingHomeRowLink(row: MeetingHomeRow, view: MeetingDashboar
   return { url: toAppUrl(route.path, route.queryParams), newTab: true };
 }
 
+/** Which dates a recurring RSVP covers, in the viewer's zone: "Oct 1 only", "Oct 1 and following" or "All dates". */
+export function getMeetingRsvpScopeLabel(rsvp: Pick<MeetingRsvp, 'scope' | 'occurrence_id' | 'meeting_and_occurrence_id'>): string {
+  if (rsvp.scope === 'all') return 'All dates';
+  const startMs = occurrenceIdToMs(getRsvpOccurrenceId(rsvp));
+  const date = startMs === null ? 'This date' : new Date(startMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return rsvp.scope === 'this_and_following' ? `${date} and following` : `${date} only`;
+}
+
 /** The meeting's project or foundation overview, or null without a project slug. */
 export function getMeetingProjectUrl(meeting: Pick<Meeting, 'project_slug' | 'is_foundation'>): string | null {
   if (!meeting.project_slug) return null;
   return toAppUrl([meeting.is_foundation ? 'foundation' : 'project', 'overview'], { project: meeting.project_slug });
+}
+
+/** Project eyebrow of a meetings home row or card, or null when the meeting names no project. */
+export function getMeetingHomeRowProject(
+  meeting: Pick<Meeting, 'project_name' | 'project_logo_url' | 'project_slug' | 'is_foundation'>
+): MeetingHomeRowProject | null {
+  const name = meeting.project_name?.trim();
+  if (!name) return null;
+  return {
+    name,
+    initial: Array.from(name)[0].toUpperCase(),
+    logo: meeting.project_logo_url ?? '',
+    url: getMeetingProjectUrl(meeting),
+    label: `${meeting.is_foundation ? 'Jump to foundation' : 'Jump to project'}: ${name}`,
+  };
+}
+
+/** Meeting type label and icon, or null when the meeting has no type. */
+export function getMeetingHomeRowType(meeting: Pick<Meeting, 'meeting_type'>): MeetingHomeRowType | null {
+  const type = meeting.meeting_type?.trim();
+  if (!type || type === MeetingType.NONE) return null;
+  const config = MEETING_TYPE_CONFIGS[type.toLowerCase()];
+  return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
 }
 
 function isRsvpPending(meeting: Meeting, rsvp: MeetingRsvp | null | undefined): boolean {

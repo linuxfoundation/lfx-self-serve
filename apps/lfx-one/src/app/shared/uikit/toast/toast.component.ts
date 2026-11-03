@@ -169,8 +169,8 @@ export class UiToastComponent {
       this.actions()
         .slice(0, 2)
         .map((action) => {
-          // 10px radius, 10px padding and 6px gap are the default-size button steps.
-          const shape = `${this.buttonBase()} gap-[6px] rounded-[10px] px-[10px] button-14`;
+          // 12px radius, 10px padding and 6px gap are the default-size button steps.
+          const shape = `${this.buttonBase()} gap-[6px] rounded-ui-sm px-[10px] button-14`;
           // shortcut: hover/active mixes spelled out with var(). revisit: when the library ships hover/active mix tokens
           const primary =
             'bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]';
