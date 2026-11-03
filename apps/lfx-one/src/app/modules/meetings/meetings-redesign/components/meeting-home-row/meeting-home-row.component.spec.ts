@@ -13,6 +13,7 @@ import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
 
 const START = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -91,6 +92,7 @@ describe('MeetingHomeRowComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
+        { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null) } },
         { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
@@ -239,6 +241,17 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(buildMeeting({ user_attended: false })), 'past');
 
       expect(query(fixture, 'meetings-home-row-attended')).toBeNull();
+    });
+
+    it('shows Recording and AI Summary in place of the RSVP controls, and never on upcoming rows', async () => {
+      const meeting = buildMeeting({ has_recording: true, has_ai_summary: true });
+      const past = await render(buildRow(meeting), 'past');
+      const upcoming = await render(buildRow(meeting));
+
+      expect(query(past, 'meetings-home-row-recording')).toBeTruthy();
+      expect(query(past, 'meetings-home-row-summary')).toBeTruthy();
+      expect(query(past, 'meetings-home-rsvp')).toBeNull();
+      expect(query(upcoming, 'meetings-home-row-artifacts')).toBeNull();
     });
 
     it('opens the meeting page in place for invitees', async () => {

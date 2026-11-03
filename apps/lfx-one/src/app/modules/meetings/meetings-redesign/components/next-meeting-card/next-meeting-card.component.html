@@ -2,7 +2,21 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
-@if (row(); as row) {
+@if (loading()) {
+  <div
+    class="flex flex-col gap-[20px] rounded-ui-md bg-gradient-to-b from-blue-100 to-white to-75% p-[20px] shadow-small"
+    role="status"
+    aria-label="Loading next meeting"
+    data-testid="meetings-home-next-card-loading">
+    <lfx-ui-skeleton width="52px" height="54px" />
+    <div class="flex flex-col gap-[8px]">
+      <lfx-ui-skeleton width="40%" height="10px" />
+      <lfx-ui-skeleton width="80%" height="16px" />
+      <lfx-ui-skeleton width="50%" height="10px" />
+    </div>
+    <lfx-ui-skeleton height="40px" />
+  </div>
+} @else if (row(); as row) {
   <div
     class="flex min-w-0 cursor-pointer flex-col gap-[20px] rounded-ui-md bg-gradient-to-b from-blue-100 to-white to-75% p-[20px] shadow-small transition-shadow duration-150 hover:shadow-medium motion-reduce:transition-none"
     (click)="open()"

@@ -31,6 +31,7 @@ import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
+import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 /**
@@ -41,7 +42,16 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
  */
 @Component({
   selector: 'lfx-next-meeting-card',
-  imports: [DatePipe, UiAvatarComponent, UiAvatarGroupComponent, UiBadgeComponent, UiButtonComponent, UiEmptyStateComponent, UiTooltipDirective],
+  imports: [
+    DatePipe,
+    UiAvatarComponent,
+    UiAvatarGroupComponent,
+    UiBadgeComponent,
+    UiButtonComponent,
+    UiEmptyStateComponent,
+    UiSkeletonComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './next-meeting-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
@@ -51,6 +61,8 @@ export class NextMeetingCardComponent {
 
   /** The soonest upcoming date; null shows the empty card. */
   public readonly row = input.required<MeetingHomeRow | null>();
+  /** The upcoming feed is still loading; shows a skeleton card. */
+  public readonly loading = input(false);
   /** Page clock, so the countdown follows the time. */
   public readonly now = input.required<Date>();
   /** Responses on the meeting; empty when the roster is hidden from the viewer, null while loading. */

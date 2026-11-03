@@ -76,9 +76,9 @@ export class MeetingsHomeStore {
     this.upcomingLoadingState,
     this.upcomingFailedState
   );
-  // shortcut: past feed loads without include=artifacts. revisit: when past rows show Recording / AI Summary buttons
+  // Carries `has_recording` / `has_ai_summary` for the past rows' Recording and AI Summary buttons.
   private readonly pastMeetings: Signal<PastMeeting[]> = this.initFeed(
-    () => this.userService.getUserPastMeetings(),
+    () => this.userService.getUserPastMeetings({ includeArtifacts: true }),
     this.pastLoadingState,
     this.pastFailedState
   );
