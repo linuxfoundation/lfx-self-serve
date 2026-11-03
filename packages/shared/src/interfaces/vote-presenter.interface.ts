@@ -23,7 +23,7 @@ export interface VisibilityPollOptions<T> {
   backoffBaseMs: number;
   /** Ceiling for the retry delay; equal to `backoffBaseMs` for a constant retry interval (no spread). */
   backoffMaxMs: number;
-  /** Returning false after a successful poll stops the loop until the tab next becomes visible. */
+  /** Returning false after a successful poll stops the loop until the next wake while visible (tab return, window focus or reconnect). */
   shouldContinue?: (value: T) => boolean;
   /** Source of the retry delay's jitter, in [0, 1); tests pin it, production leaves `Math.random`. */
   random?: () => number;

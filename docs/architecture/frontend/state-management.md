@@ -452,7 +452,8 @@ resending. Identifier-like names are not echoed. A genuinely new server question
 block remains answerable; other 409/412 responses refresh the current row. The waiting state
 checks on its own (`MKTG_RUN_POLL.questionsIntervalMs`), on the run page and on the document card
 alike, and keeps a held block through polls that omit it. The run page, the document card and view, the Documents
-list and the comments panel offer no Refresh or Retry button; the re-read buttons that remain on other Marketing OS
+list and the comments panel offer no Refresh button and no re-read Retry (the run-again Retry, which starts a new
+attempt, stays); the re-read buttons that remain on other Marketing OS
 surfaces (the run page's dependency "Try again", the Kit, family, downstream and family-details pages, the LinkedIn
 load retry, and the slides, family-export, AEO/GEO and Member 360 lookups) are tracked as follow-up work under
 lfx-self-serve issue #5058. On the button-free surfaces a failed

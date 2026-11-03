@@ -207,6 +207,7 @@ export class MktgDocumentCommentsService {
           this.data.set(response.threads);
           this.measured.set(true);
           this.readError.set('');
+          this.refresh(); // Revalidate after the mutation: wakes stay armed, so another writer's comments keep appearing (law 3).
         }),
         catchError((error: unknown) => {
           if (this.current(owner)) {

@@ -772,10 +772,9 @@ export class MktgAgentRunComponent {
         this.receiptRecoveryRunId = runId;
         this.resumeAcceptedAttempt({ ...owned, state: 'writing', pendingQuestions: undefined }, projectUid);
       } else if ((!this.generationSub || this.generationSub.closed) && !this.navigation()?.revisionId) {
-        // The progress reader stops at a completed run (the shared poller re-reads it on tab return, window focus or
-        // reconnect; a retired run or a read recovery clears this line) and the private receipt watch, when this browser
-        // holds one, lands the exact revision. Until then this is the plain waiting state (not an error, no instruction
-        // to refresh), and the document link below it is the way on (law 3).
+        // The plain waiting state (not an error, no instruction to refresh). Only a retired run, a final read error, a
+        // context reset or a new start clears this line; a continuous read that lets it leave on its own is follow-up work
+        // (#5058). The document link below is the way on.
         this.publicWaitingText.set('The produced revision is not confirmed yet.');
       }
       return;

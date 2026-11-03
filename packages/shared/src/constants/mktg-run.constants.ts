@@ -933,8 +933,9 @@ export const MKTG_RUN_POLL = {
 export const MKTG_POLL_MAX_BACKOFF_MS = 30_000;
 
 /**
- * The one plain connection-state line every Marketing OS screen shows while a check is failing; it clears by itself
- * on the next good read and the last loaded content stays. A 401/403 is a terminal line instead, and the readers that
+ * The one plain connection-state line the button-free surfaces (comments panel, run progress reader, run page, document
+ * view, Documents list) show while a check is failing; it clears by itself on the next good read and the last loaded
+ * content stays. A 401/403 is a terminal line instead, and the readers that
  * poll on their own latch the refused scope so that neither a scheduled poll nor a tab-return, focus or reconnect wake
  * sends it again (RFC 9110 §15.5.4): the run progress reader, the agent-run persistence watch, the comments service, the
  * Documents list and detail and the document view's stored-report read. The Kit and Family pages keep polling at

@@ -96,8 +96,6 @@ export class MktgRunProgressComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
   private readonly router = inject(Router);
-  /** Last `readRetrying` value emitted; the output fires on transitions only. */
-  private readRetryingOn = false;
 
   public readonly project = input.required<string>();
   public readonly projectName = input('your project');
@@ -151,6 +149,8 @@ export class MktgRunProgressComponent {
 
   private readonly loaded = signal<MktgDocumentDetailResponse | null>(null);
   private readonly loadedSubject = signal('');
+  /** Last `readRetrying` value emitted; the output fires on transitions only. */
+  private readRetryingOn = false;
   private readonly loadedSelector = signal('');
   private readonly lastSelectedRunId = signal('');
   private readonly lastSelectedStartedAt = signal('');
@@ -500,7 +500,7 @@ export class MktgRunProgressComponent {
               })
             );
           };
-          /** The surface's own interval while healthy; after a failed or partial read, capped jittered backoff floored at that interval — never a stop. */
+          /** The surface's own interval while healthy; after a partial read, capped jittered backoff floored at that interval — never a stop. (A thrown read is the shared poller's retry, floored at `MKTG_RUN_POLL.intervalMs`.) */
           const nextDelay = (base: number) => (unavailableCount ? pollBackoffDelayMs(unavailableCount, base, MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs) : base);
           const observe = (poll = false): Observable<MktgDocumentReadCycle> => {
             if (denied) return EMPTY;

@@ -899,7 +899,8 @@ export class MktgDocumentViewComponent {
                         expand(() => {
                           if (readMktgRetiredRunHint(this.selectedRun())) return EMPTY;
                           const base: number = this.selectedRun()?.state === 'questions' ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
-                          // After a failed or partial read: capped jittered backoff floored at the healthy interval, never a stop.
+                          // After a partial read: capped jittered backoff floored at the state's interval, never a stop (a thrown read
+                          // retries on the shared poller, floored at `MKTG_RUN_POLL.intervalMs`).
                           const delay = unavailableCount ? pollBackoffDelayMs(unavailableCount, base, MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs) : base;
                           return timer(delay).pipe(switchMap(() => read(true)));
                         })

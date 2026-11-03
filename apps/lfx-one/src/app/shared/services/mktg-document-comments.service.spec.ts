@@ -228,6 +228,7 @@ describe('MktgDocumentCommentsService', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(service.saving()).toBe(false);
     expect(service.threads()).toEqual([thread()]);
+    finishRead([thread()]); // The revalidation after the save.
     http.expectNone(() => true);
   });
 
@@ -239,6 +240,7 @@ describe('MktgDocumentCommentsService', () => {
     expect(oldRead.cancelled).toBe(true);
     expect(service.threads()).toEqual([thread()]);
     expect(service.loading()).toBe(false);
+    finishRead([thread()]);
   });
 
   it('retains the list and allows an explicit same-ID retry after a failed save, never automatically retries', () => {
@@ -261,6 +263,7 @@ describe('MktgDocumentCommentsService', () => {
     retry.flush({ revisionId: SCOPE.revisionId, threads: [thread(), thread('second')] });
     expect(service.saveError()).toBe('');
     expect(service.threads()).toHaveLength(2);
+    finishRead([thread(), thread('second')]);
   });
 
   it('keeps read failure distinct from a measured empty result and logs only status', () => {
@@ -383,10 +386,29 @@ describe('MktgDocumentCommentsService', () => {
     expect(service.retrying()).toBe(false);
     expect(service.loadError()).toBe('');
     expect(service.threads()).toEqual([thread()]);
+    finishRead([thread()]); // The revalidation after the save.
     // The cancelled read's retry never fires: nothing is retrying behind the saved list.
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     http.expectNone((request) => request.method === 'GET');
     vi.useRealTimers();
+  });
+
+  it('keeps re-reading on wakes after a save lands: the POST snapshot is the list now, and a focus sends exactly one GET (law 3)', () => {
+    service.select(SCOPE);
+    finishRead([thread()]);
+    service.add({ kind: 'field', key: 'mf.tagline' }, 'Shorten it.', 'stable-request').subscribe();
+    http.expectOne(PATH).flush({ revisionId: SCOPE.revisionId, threads: [thread(), thread('second')] });
+    expect(service.threads()).toHaveLength(2);
+    // Invalidate after the mutation: one re-read now, with no loading flicker over the snapshot (law 5)...
+    expect(service.loading()).toBe(false);
+    finishRead([thread(), thread('second')]);
+    http.expectNone((request) => request.method === 'GET');
+    // ...and another writer's comment appears on tab return: one GET per wake.
+    window.dispatchEvent(new Event('focus'));
+    finishRead([thread(), thread('second'), thread('third')]);
+    http.expectNone((request) => request.method === 'GET');
+    expect(service.threads()).toHaveLength(3);
+    expect(service.loading()).toBe(false);
   });
 
   it('drops the retrying line when a save is refused during a failing read: the access line shows, not the retrying one', () => {
@@ -456,6 +478,7 @@ describe('MktgDocumentCommentsService', () => {
     service.add({ kind: 'field', key: 'mf.tagline' }, 'Second', 'second').subscribe();
     http.expectNone(() => true);
     first.flush({ revisionId: SCOPE.revisionId, threads: [thread()] });
+    finishRead([thread()]);
   });
 
   it('does not accept a response that belongs to a different revision', () => {
