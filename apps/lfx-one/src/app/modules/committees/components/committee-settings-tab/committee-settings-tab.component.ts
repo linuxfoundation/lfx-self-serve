@@ -256,9 +256,12 @@ export class CommitteeSettingsTabComponent {
   }
 
   public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
-    // closable: false — the dialog's own close() (wired to its Close/Cancel buttons) is the only
-    // dismissal path, so a native header-X can't bypass it and drop an { applied: true } result (#4911 review).
-    const ref: DynamicDialogRef | undefined = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
+    // closable: false is only the initial state — lockDynamicDialogWhile (inside the dialog) flips
+    // config.closable back to true as soon as loading/applying finishes, so the header X and Escape
+    // remain live dismissal paths once the diff or the apply result is showing. Refresh unconditionally
+    // on close rather than gating on `{ applied: true }`: reloading an unchanged list is cheap, and this
+    // way a native dismiss after a successful apply can't skip the subscriber-count refresh (#4911 review).
+    const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
       header: `Sync Now — ${ml.group_name}`,
       width: '800px',
       modal: true,
@@ -269,10 +272,7 @@ export class CommitteeSettingsTabComponent {
 
     if (!ref) return;
 
-    ref.onClose.pipe(take(1)).subscribe((result: { applied: boolean } | null) => {
-      if (!result?.applied) return;
-      this.refreshMl$.next();
-    });
+    ref.onClose.pipe(take(1)).subscribe(() => this.refreshMl$.next());
   }
 
   public removeMailingList(ml: GroupsIOMailingList): void {
