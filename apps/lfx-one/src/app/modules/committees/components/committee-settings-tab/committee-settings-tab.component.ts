@@ -30,7 +30,7 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take, tap } from 'rxjs';
 
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiDrawerComponent } from '@shared/uikit/drawer/drawer.component';
@@ -110,7 +110,11 @@ export class CommitteeSettingsTabComponent {
   // the drawer's canClose (Escape/backdrop/close button) and the Done button, since DialogRef.close()
   // — what Done calls — does not consult canClose.
   public drawerSavingCount = signal(0);
-  private readonly savingMlUids = new Set<string>();
+  // Signal (not a plain Set) so the drawer template can reactively lock sibling cards' toggles while
+  // one card saves — two cards both reading a stale associatedMailingLists() snapshot could otherwise
+  // pass their own "no active sync elsewhere" check and fire conflicting PUTs before either save's
+  // round-trip lands (#4899 review).
+  public savingMlUids = signal<ReadonlySet<string>>(new Set());
 
   // Form
   public form = new FormGroup({
@@ -279,13 +283,14 @@ export class CommitteeSettingsTabComponent {
   // since a misordered pair of emissions from the same instance must not leave the count permanently
   // off by one).
   public onSyncSettingsSavingChange(mlUid: string, saving: boolean): void {
-    const current = this.savingMlUids;
+    const next = new Set(this.savingMlUids());
     if (saving) {
-      current.add(mlUid);
+      next.add(mlUid);
     } else {
-      current.delete(mlUid);
+      next.delete(mlUid);
     }
-    this.drawerSavingCount.set(current.size);
+    this.savingMlUids.set(next);
+    this.drawerSavingCount.set(next.size);
   }
 
   // Refreshes associatedMailingLists (shared by this card and the drawer). The @for loop rebinds
@@ -633,6 +638,10 @@ export class CommitteeSettingsTabComponent {
   private initAssociatedMailingLists(): Signal<GroupsIOMailingList[]> {
     const committee$ = toObservable(this.committee);
     const refresh$ = this.refreshMl$.pipe(map(() => this.committee()));
+    // Preserve the last successfully-loaded list on a failed refresh instead of wiping it to [] —
+    // a transient fetch error (e.g. a flaky refreshMl$ re-fetch) would otherwise make every open
+    // Auto Sync drawer card vanish rather than just leaving the data stale (#4899 review).
+    let lastGoodLists: GroupsIOMailingList[] = [];
 
     return toSignal(
       merge(committee$, refresh$).pipe(
@@ -641,7 +650,11 @@ export class CommitteeSettingsTabComponent {
           this.mlLoadingInternal.set(true);
           return this.mailingListService.getMailingListsByCommittee(c!.uid).pipe(
             finalize(() => this.mlLoadingInternal.set(false)),
-            catchError(() => of([] as GroupsIOMailingList[]))
+            tap((lists) => (lastGoodLists = lists)),
+            catchError((error) => {
+              console.error('Failed to refresh associated mailing lists', error);
+              return of(lastGoodLists);
+            })
           );
         })
       ),

@@ -129,7 +129,11 @@ describe('MailingListSyncSettingsComponent', () => {
   });
 
   it('flips the toggle immediately on click, then reverts it if the save fails (#4899 review)', async () => {
-    await render(baseList, { updateResult: 'error' });
+    // baseList needs sync_mode already set so the attempted "off" click actually moves syncOn — with
+    // no sync_mode set, the pre-click and post-revert states are both false and a broken revert
+    // (e.g. reverting to the wrong value, or not reverting at all) couldn't fail this test.
+    const syncedList = { ...baseList, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST };
+    await render(syncedList, { updateResult: 'error' });
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     fixture.componentInstance['onToggleChange'](false);
@@ -137,8 +141,9 @@ describe('MailingListSyncSettingsComponent', () => {
 
     await fixture.whenStable();
 
-    // baseList has no sync_mode, so the persisted state is "off" — the revert should land back there.
-    expect(fixture.componentInstance['syncOn']()).toBe(false);
+    // The persisted state is "on" — the revert should land back there, not stay stuck at the
+    // optimistically-set "off" value from the failed click.
+    expect(fixture.componentInstance['syncOn']()).toBe(true);
     consoleErrorSpy.mockRestore();
   });
 
