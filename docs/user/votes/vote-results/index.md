@@ -25,6 +25,7 @@ Managers and invited voters also see a **Vote details** card beside the tab cont
 - **Voting method**, for example **Plurality vote**.
 - **Close date**, when the vote closes or closed. Hover or focus it to see the full time zone name; screen readers announce the full time zone too.
 - **Time remaining**, on an active vote, for example **Closes in 4 days**.
+- **Ended early**, on a vote that was closed before its deadline, with the early-close date.
 - **Voters**, how many voters were invited, when that number is known.
 - **Vote questions**, how many questions voters answer on the ballot.
 - **Comments**, which reads **Active** when the vote collects written comments, and **Comment prompts**, how many comment questions it asks. **Comments** reflects whether comments are turned on, not whether the vote is still open, so it still reads **Active** after the vote closes. Both rows are hidden when the vote has no comment questions.
