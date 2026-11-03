@@ -7,7 +7,7 @@ import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
 import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
-import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
@@ -94,7 +94,7 @@ describe('MeetingHomeRowComponent', () => {
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
         { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null) } },
-        { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
+        { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: UserService, useValue: { authenticated: signal(true) } },
