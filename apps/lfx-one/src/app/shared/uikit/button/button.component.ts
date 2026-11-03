@@ -32,7 +32,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
  * `lfxUiTooltipDisabled`) on `<lfx-ui-button>` and the button forwards them to its inner `<button>`, where the spoken description belongs.
  * `UiTooltipDirective` never attaches to `<lfx-ui-button>` itself, so importing it for other elements in the same template is safe.
- * A disabled button takes no clicks or focus, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
+ * A disabled button takes no clicks or focus and drops its forwarded tooltip, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
  *
  * Menu: pass an `lfx-ui-menu` template to `menu` and the inner `<button>` becomes its trigger (`aria-haspopup`, `aria-expanded`, focus returns
  * to the button on close). A button rendered as a link (`link`) does not open a menu.
@@ -145,6 +145,11 @@ export class UiButtonComponent {
     if (!this.loading() && !(this.link() !== null && this.disabled())) return;
     event.preventDefault();
     event.stopPropagation();
+  }
+
+  // `tabindex="-1"` keeps a disabled link mouse-focusable, so the press is stopped from focusing it.
+  protected onMouseDown(event: MouseEvent): void {
+    if (this.disabled()) event.preventDefault();
   }
 
   private initIconSize(): Signal<number> {
