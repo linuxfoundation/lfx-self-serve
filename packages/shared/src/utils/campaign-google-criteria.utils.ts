@@ -11,6 +11,7 @@ import {
   GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY,
   GOOGLE_ADS_MAX_BID_MODIFIER,
   GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
   GOOGLE_ADS_MIN_BID_MODIFIER,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
@@ -345,6 +346,20 @@ export function googleDemographicExclusionRefusal(
 }
 
 /**
+ * Why upstream would refuse the excluded age range list, or `null`: {@link googleDemographicExclusionRefusal}
+ * with the age-range nouns and vocabulary. One call for the BFF and the Implementation tab, so the
+ * message text is written once.
+ */
+export function googleExcludedAgeRangesRefusal(raw: unknown, channel: unknown): string | null {
+  return googleDemographicExclusionRefusal(raw, 'excluded age ranges', 'age range names', channel, googleExcludedAgeRangeRefusal);
+}
+
+/** Why upstream would refuse the excluded gender list, or `null`: the gender half of {@link googleExcludedAgeRangesRefusal}. */
+export function googleExcludedGendersRefusal(raw: unknown, channel: unknown): string | null {
+  return googleDemographicExclusionRefusal(raw, 'excluded genders', 'gender names', channel, googleExcludedGenderRefusal);
+}
+
+/**
  * Why upstream would refuse one normalized excluded age range, or `null` when it would not.
  *
  * Mirrors `validateExcludedAgeRanges`' single per-entry branch: membership in
@@ -431,6 +446,24 @@ export function googleExcludedGeoClashRefusal(targeted: readonly string[], exclu
   });
   if (clash === undefined) return null;
   return `Google Ads cannot both target and exclude ${googleAdsEchoed(clash)} — the exclusion would win and the campaign would not serve there at all. Remove it from one of the two lists and create again.`;
+}
+
+/**
+ * Why upstream would refuse a normalized EXCLUDED geo list sent beside a normalized TARGETED one, or
+ * `null`. `validateGeoPlan`'s exclusion steps in its order: the cap on the submitted length (per list,
+ * and before any repeat is collapsed — see {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}), then each
+ * entry with the first bad one winning ({@link googleExcludedGeoRefusal}), then the clash
+ * ({@link googleExcludedGeoClashRefusal}). No channel fence: upstream applies none to exclusions.
+ */
+export function googleExcludedGeoListRefusal(excluded: readonly string[], targeted: readonly string[]): string | null {
+  if (excluded.length > GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS) {
+    return `Google Ads accepts at most ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} excluded locations on one campaign, and this one has ${excluded.length}. Remove some and create again.`;
+  }
+  for (const entry of excluded) {
+    const refusal = googleExcludedGeoRefusal(entry);
+    if (refusal) return refusal;
+  }
+  return googleExcludedGeoClashRefusal(targeted, excluded);
 }
 
 /**

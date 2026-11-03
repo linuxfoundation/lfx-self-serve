@@ -3,7 +3,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY, GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS, GOOGLE_BIDDING_STRATEGY_LABELS } from '../constants/campaign.constants';
+import {
+  GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY,
+  GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
+  GOOGLE_BIDDING_STRATEGY_LABELS,
+} from '../constants/campaign.constants';
 import type { NormalizedGoogleAdSchedule } from '../interfaces/campaign.interface';
 import {
   googleAdScheduleRefusal,
@@ -13,8 +18,11 @@ import {
   googleDeviceBidModifierRefusal,
   googleEffectiveBiddingStrategy,
   googleExcludedAgeRangeRefusal,
+  googleExcludedAgeRangesRefusal,
   googleExcludedGenderRefusal,
+  googleExcludedGendersRefusal,
   googleExcludedGeoClashRefusal,
+  googleExcludedGeoListRefusal,
   googleExcludedGeoRefusal,
   googleUpperCodeList,
 } from './campaign-google-criteria.utils';
@@ -227,6 +235,14 @@ describe('googleDemographicExclusionRefusal', () => {
     expect(googleExcludedGenderRefusal('UNDETERMINED')).toBeNull();
     expect(googleExcludedGenderRefusal('OTHER')).toContain('cannot exclude the gender OTHER');
   });
+
+  it('names each list in its own words through the per-list wrappers', () => {
+    expect(googleExcludedAgeRangesRefusal(['18-24', '65+'], 'search')).toBeNull();
+    expect(googleExcludedAgeRangesRefusal('18-24', 'search')).toBe('Google Ads excluded age ranges must be a list of age range names.');
+    expect(googleExcludedGendersRefusal(['FEMALE'], 'display')).toBeNull();
+    expect(googleExcludedGendersRefusal('FEMALE', 'search')).toBe('Google Ads excluded genders must be a list of gender names.');
+    expect(googleExcludedGendersRefusal(['FEMALE'], 'demand-gen')).toContain('Remove the excluded genders or pick a different channel');
+  });
 });
 
 describe('excluded locations', () => {
@@ -245,5 +261,23 @@ describe('excluded locations', () => {
   it('refuses a location both targeted and excluded, however each half is spelled', () => {
     expect(googleExcludedGeoClashRefusal(['US'], ['2840'])).toContain('cannot both target and exclude US');
     expect(googleExcludedGeoClashRefusal(['GB'], ['US'])).toBeNull();
+  });
+
+  it('judges the whole exclusion list in upstream order: cap, then each entry, then the clash', () => {
+    expect(googleExcludedGeoListRefusal(['DE', '1023191'], ['US'])).toBeNull();
+    expect(
+      googleExcludedGeoListRefusal(
+        Array.from({ length: GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS }, () => 'DE'),
+        []
+      )
+    ).toBeNull();
+    // Over the cap AND carrying a bad entry and a clash: the cap is named, as upstream checks it first.
+    const overCap = ['ZZ', 'US', ...Array.from({ length: GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS - 1 }, () => 'DE')];
+    expect(googleExcludedGeoListRefusal(overCap, ['US'])).toBe(
+      `Google Ads accepts at most ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} excluded locations on one campaign, and this one has ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS + 1}. Remove some and create again.`
+    );
+    // A bad entry is named before a clash later in the list.
+    expect(googleExcludedGeoListRefusal(['US', 'ZZ'], ['US'])).toContain('cannot exclude ZZ on this path');
+    expect(googleExcludedGeoListRefusal(['2840'], ['US'])).toContain('cannot both target and exclude US');
   });
 });

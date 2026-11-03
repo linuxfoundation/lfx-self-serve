@@ -11,13 +11,11 @@ import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import {
   googleAdScheduleRefusal,
-  googleDemographicExclusionRefusal,
   googleDeviceBidModifierRefusal,
   googleEffectiveBiddingStrategy,
-  googleExcludedAgeRangeRefusal,
-  googleExcludedGenderRefusal,
-  googleExcludedGeoClashRefusal,
-  googleExcludedGeoRefusal,
+  googleExcludedAgeRangesRefusal,
+  googleExcludedGendersRefusal,
+  googleExcludedGeoListRefusal,
   googleUpperCodeList,
 } from '@lfx-one/shared/utils/campaign-google-criteria.utils';
 import {
@@ -112,7 +110,6 @@ import {
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS,
-  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
@@ -1129,36 +1126,15 @@ export class CampaignController {
           // exclusion list, so exclusions reach every channel including Demand Gen. Gating them the
           // way languages and proximity are gated would refuse creates upstream accepts.
           //
-          // Upstream's cap, checked BEFORE the per-entry tests and before de-duplication, exactly
-          // where `resolveGeoList` checks its own. It is PER LIST, not per campaign: upstream calls
-          // `resolveGeoList` once for the targeted list and once for this one, each with its own
-          // counter, so a full exclusion list alongside a full targeted list is accepted and must
-          // not be refused here.
-          if (excluded.length > GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS) {
-            refuseExcluded(
-              `Google Ads accepts at most ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} excluded locations on one campaign, and this one has ${excluded.length}. Remove some and create again.`
-            );
-            return;
-          }
-
-          // Entry by entry, refusing on the FIRST bad one, as `resolveGeoList` does.
-          for (const entry of excluded) {
-            const refusal = googleExcludedGeoRefusal(entry);
-            if (refusal) {
-              refuseExcluded(refusal);
-              return;
-            }
-          }
-
-          // A location that is both targeted and excluded is REFUSED rather than resolved: Google
-          // lets the exclusion win, so the campaign would silently not serve where the operator
-          // plainly asked it to. Compared by RESOLVED id, as upstream compares it, so `US` and
-          // `2840` clash however each half is spelled. Judged on the DISPATCHED targeted list —
-          // the same value the guard above judged and the builder sends.
+          // Then the shared judge, in `validateGeoPlan`'s order: the cap on the SUBMITTED length (per
+          // list, so a full exclusion list beside a full targeted list is accepted), each entry with
+          // the first bad one winning, then the targeted-and-excluded clash. The clash is judged on
+          // the DISPATCHED targeted list — the same value the guard above judged and the builder
+          // sends — and by RESOLVED id, so `US` and `2840` clash however each half is spelled.
           const dispatchedGeoTargets = Array.isArray(googleGeoTargets) ? googleUpperCodeList(googleGeoTargets) : [];
-          const clashRefusal = googleExcludedGeoClashRefusal(dispatchedGeoTargets, excluded);
-          if (clashRefusal) {
-            refuseExcluded(clashRefusal);
+          const excludedRefusal = googleExcludedGeoListRefusal(excluded, dispatchedGeoTargets);
+          if (excludedRefusal) {
+            refuseExcluded(excludedRefusal);
             return;
           }
         }
@@ -1406,9 +1382,7 @@ export class CampaignController {
         // takes demographics as asset-group signals, which this client does not create, so a
         // campaign-level exclusion there is refused rather than created somewhere the operator
         // cannot see it.
-        const ageRangeRefusal = googleDemographicExclusionRefusal(body?.excludedAgeRanges, 'excluded age ranges', 'age range names', googleChannel, (entry) =>
-          googleExcludedAgeRangeRefusal(entry)
-        );
+        const ageRangeRefusal = googleExcludedAgeRangesRefusal(body?.excludedAgeRanges, googleChannel);
         if (ageRangeRefusal) {
           next(ServiceValidationError.forField('excludedAgeRanges', ageRangeRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
           return;
@@ -1418,9 +1392,7 @@ export class CampaignController {
         // age ranges: `validateExcludedGenders` checks `maxDemographicExclusions` against its own
         // length, so a request at the cap on BOTH lists is accepted — which is why this is a second
         // call and not a second field folded into the first.
-        const genderRefusal = googleDemographicExclusionRefusal(body?.excludedGenders, 'excluded genders', 'gender names', googleChannel, (entry) =>
-          googleExcludedGenderRefusal(entry)
-        );
+        const genderRefusal = googleExcludedGendersRefusal(body?.excludedGenders, googleChannel);
         if (genderRefusal) {
           next(ServiceValidationError.forField('excludedGenders', genderRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
           return;
