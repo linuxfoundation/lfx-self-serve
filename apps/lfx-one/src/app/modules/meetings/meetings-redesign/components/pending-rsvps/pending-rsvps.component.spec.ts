@@ -130,14 +130,17 @@ describe('PendingRsvpsComponent', () => {
     expect(rows[0].querySelector('[data-testid="meetings-home-rsvp-accepted"] button')?.className).toContain('h-ui-tiny');
   });
 
-  it('puts the RSVP buttons in the top-right corner of each row', async () => {
+  it('puts the RSVP buttons in the top-right corner of each row, wrapping right-aligned on phones', async () => {
     await render([buildRow('a')]);
     await open();
 
     const row = all('meetings-home-pending-rsvps-row')[0];
-    expect(row.className).toContain('flex items-start');
-    expect(row.className).not.toContain('flex-wrap');
-    expect(row.lastElementChild?.querySelector('[data-testid="meetings-home-rsvp"]')).not.toBeNull();
+    const rsvp = row.querySelector('[data-testid="meetings-home-pending-rsvps-row-rsvp"]');
+    expect(row.classList).toContain('items-start');
+    expect(row.classList).toContain('flex-wrap');
+    expect(row.lastElementChild).toBe(rsvp);
+    expect(rsvp?.classList).toContain('ml-auto');
+    expect(rsvp?.querySelector('[data-testid="meetings-home-rsvp"]')).not.toBeNull();
   });
 
   it('badges only Private and Restricted meetings', async () => {
