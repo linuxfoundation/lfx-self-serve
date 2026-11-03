@@ -13,7 +13,7 @@
 <ng-template #actionsMenu>
   <lfx-ui-menu ariaLabel="Meeting actions" data-testid="meetings-home-row-actions-menu">
     @if (canEdit()) {
-      <lfx-ui-menu-item icon="fa-light fa-pen" (triggered)="editMeeting()" data-testid="meetings-home-edit-meeting">Edit Meeting</lfx-ui-menu-item>
+      <lfx-ui-menu-item icon="fa-light fa-pen" (triggered)="editMeeting()" data-testid="meetings-home-row-actions-edit">Edit Meeting</lfx-ui-menu-item>
     }
     <!-- Organizer items: a separator and Delete Meeting go last. -->
     <lfx-ui-menu-item icon="fa-light fa-link" (triggered)="copyLink()" data-testid="meetings-home-row-actions-copy-link">Copy Link</lfx-ui-menu-item>

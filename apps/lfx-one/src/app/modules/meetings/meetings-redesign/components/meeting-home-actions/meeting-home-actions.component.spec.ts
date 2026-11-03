@@ -185,7 +185,7 @@ describe('MeetingHomeActionsComponent', () => {
     it('hands the row to the edit flow', async () => {
       const value = row(ORGANIZER);
       await render(value);
-      await choose('meetings-home-edit-meeting');
+      await choose('meetings-home-row-actions-edit');
 
       expect(edit).toHaveBeenCalledWith(value);
     });

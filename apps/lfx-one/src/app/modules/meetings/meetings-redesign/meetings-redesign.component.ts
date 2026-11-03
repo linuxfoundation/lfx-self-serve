@@ -40,6 +40,7 @@ import { MeetingsDayGroupComponent } from './components/meetings-day-group/meeti
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { NextMeetingCardComponent } from './components/next-meeting-card/next-meeting-card.component';
 import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
+import { MeetingsHomeEditService } from './services/meetings-home-edit.service';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
 /**
@@ -73,7 +74,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     PendingRsvpsComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
-  providers: [MeetingsHomeStore],
+  providers: [MeetingsHomeStore, MeetingsHomeEditService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'block -mx-5 -mt-6 md:-mx-8',

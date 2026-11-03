@@ -57,6 +57,7 @@ describe('MeetingsHomeEditService', () => {
     getMeetingDetail = vi.fn().mockReturnValue(detail);
     TestBed.configureTestingModule({
       providers: [
+        MeetingsHomeEditService,
         { provide: MeetingService, useValue: { getMeetingDetail } },
         { provide: UserService, useValue: { refreshUserMeetings } },
         { provide: MeetingComposerService, useValue: { open: composerOpen } },
@@ -127,7 +128,7 @@ describe('MeetingsHomeEditService', () => {
 
       service.edit(row(SERIES, FIRST));
 
-      expect(lastToast()).toMatchObject({ variant: 'dark', message: 'Occurrence changed' });
+      expect(lastToast()).toMatchObject({ variant: 'warning', message: 'Occurrence changed' });
       expect(refreshUserMeetings).toHaveBeenCalledWith();
       expect(modalOpen).not.toHaveBeenCalled();
     });

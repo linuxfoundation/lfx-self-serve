@@ -27,14 +27,10 @@
   <lfx-ui-radio-group ariaLabel="What to edit" [(value)]="scope" data-testid="meetings-home-edit-scope-options">
     <span class="flex flex-col gap-[4px] self-stretch">
       <lfx-ui-radio value="occurrence" label="A single occurrence" data-testid="meetings-home-edit-scope-occurrence" />
-      <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600" data-testid="meetings-home-edit-scope-occurrence-text">
-        @if (occurrenceOptions.length > 0) {
-          Change the time, title, or agenda of one occurrence without changing the rest of the series.
-        } @else {
-          There are no upcoming occurrences left to edit on their own.
-        }
-      </span>
-      @if (scope() === 'occurrence' && occurrenceOptions.length > 0) {
+      <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600"
+        >Change the time, title, or agenda of one occurrence without changing the rest of the series.</span
+      >
+      @if (scope() === 'occurrence') {
         <div class="mt-[6px] pl-[24px]">
           <lfx-ui-select
             label="Occurrence"

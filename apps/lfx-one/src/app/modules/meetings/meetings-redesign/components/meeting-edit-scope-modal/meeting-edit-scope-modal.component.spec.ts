@@ -11,7 +11,6 @@ import { MeetingEditScopeModalComponent } from './meeting-edit-scope-modal.compo
 
 const FIRST = { occurrence_id: '2524640400', start_time: '2050-01-01T09:00:00.000Z', duration: 30 } as MeetingOccurrence;
 const SECOND = { occurrence_id: '2525245200', start_time: '2050-01-08T09:00:00.000Z', duration: 30 } as MeetingOccurrence;
-const ENDED = { occurrence_id: '946717200', start_time: '2000-01-01T09:00:00.000Z', duration: 30 } as MeetingOccurrence;
 const MEETING = {
   id: 'synthetic-meeting',
   title: 'Synthetic sync',
@@ -82,20 +81,6 @@ describe('MeetingEditScopeModalComponent', () => {
     button(fixture, 'meetings-home-edit-scope-continue').click();
 
     expect(close).toHaveBeenCalledWith({ scope: 'series', proceed: true });
-  });
-
-  it('opens on the series when no date is left to edit on its own', async () => {
-    const meeting = { ...MEETING, occurrences: [ENDED] } as Meeting;
-    const fixture = await render(buildData(meeting, { ...ENDED, occurrence_id: 'synthetic-other' }));
-
-    expect(radio(fixture, 'series').checked).toBe(true);
-    expect(query(fixture, 'meetings-home-edit-scope-occurrence-text')?.textContent?.trim()).toBe(
-      'There are no upcoming occurrences left to edit on their own.'
-    );
-    radio(fixture, 'occurrence').click();
-    await fixture.whenStable();
-
-    expect(button(fixture, 'meetings-home-edit-scope-continue').disabled).toBe(true);
   });
 
   it('closes with nothing on Cancel', async () => {

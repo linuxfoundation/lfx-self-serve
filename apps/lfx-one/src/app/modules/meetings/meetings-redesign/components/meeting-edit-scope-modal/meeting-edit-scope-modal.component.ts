@@ -45,14 +45,12 @@ export class MeetingEditScopeModalComponent {
   protected readonly when = `${formatDate(this.row.startTime, 'EEE, MMM d', 'en-US')} · ${formatMeetingTimeRange(this.row.startTime, this.row.durationMinutes)}`;
   protected readonly meetingType: MeetingHomeRowType | null = getMeetingHomeRowType(this.row.meeting);
   protected readonly occurrenceOptions: MeetingOccurrenceOption[] = buildMeetingOccurrenceOptions(this.data.meeting, this.data.occurrence.occurrence_id);
+  // The options always list the opening date: it is active and passed as the date to keep.
   protected readonly occurrenceId = signal<string | null>(
-    this.occurrenceOptions.find((option) => isSameOccurrenceId(option.value, this.data.occurrence.occurrence_id))?.value ??
-      this.occurrenceOptions[0]?.value ??
-      null
+    this.occurrenceOptions.find((option) => isSameOccurrenceId(option.value, this.data.occurrence.occurrence_id))?.value ?? null
   );
-  // With no date left to edit on its own, the series is the only scope that can go on.
-  protected readonly scope = signal<string | null>(this.occurrenceId() ? 'occurrence' : 'series');
-  protected readonly canContinue: Signal<boolean> = computed(() => this.scope() === 'series' || (this.scope() === 'occurrence' && !!this.occurrenceId()));
+  protected readonly scope = signal<string | null>('occurrence');
+  protected readonly canContinue: Signal<boolean> = computed(() => this.scope() === 'series' || !!this.occurrenceId());
 
   protected cancel(): void {
     this.dialogRef.close();

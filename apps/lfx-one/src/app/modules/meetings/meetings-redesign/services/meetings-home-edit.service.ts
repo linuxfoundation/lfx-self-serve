@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { inject, Injectable, Signal, signal } from '@angular/core';
+import { DestroyRef, inject, Injectable, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
@@ -21,9 +22,9 @@ import { MeetingEditScopeModalComponent } from '../components/meeting-edit-scope
  * Edit Meeting on the meetings home page, following the legacy meeting card's flow.
  * @description Re-reads the meeting first, since the feed's `organizer` may be stale, then asks a recurring meeting's
  * scope and opens the composer, or with `MEETING_V2_ENABLED_FLAG` off the pre-v2 editor for the series and the
- * meeting page, which has the reschedule dialog, for one date.
+ * meeting page, which has the reschedule dialog, for one date. Provided by the page, so leaving it drops a pending check.
  */
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class MeetingsHomeEditService {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
@@ -31,6 +32,7 @@ export class MeetingsHomeEditService {
   private readonly router = inject(Router);
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
   private readonly checkingIds = signal<ReadonlySet<string>>(new Set());
 
@@ -48,7 +50,8 @@ export class MeetingsHomeEditService {
       .getMeetingDetail(meeting.id, { skipCache: true })
       .pipe(
         take(1),
-        finalize(() => this.setChecking(meeting.id, false))
+        finalize(() => this.setChecking(meeting.id, false)),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: (fresh) => this.openEditor(row, fresh),
@@ -65,7 +68,12 @@ export class MeetingsHomeEditService {
     // The row's date decides which one is meant; a fallback to the next one would retarget the edit once it is gone.
     const shownGone = !!row.occurrenceId && !this.findOccurrence(fresh, row.occurrenceId);
     if (fresh.recurrence && shownGone) {
-      this.toast.show({ variant: 'dark', message: 'Occurrence changed', description: 'This occurrence was moved or cancelled. The list has been refreshed.' });
+      this.toast.show({
+        variant: 'warning',
+        position: 'bottom-center',
+        message: 'Occurrence changed',
+        description: 'This occurrence was moved or cancelled. The list has been refreshed.',
+      });
       this.userService.refreshUserMeetings();
       return;
     }
@@ -79,7 +87,7 @@ export class MeetingsHomeEditService {
     const data: MeetingEditScopeDialogData = { row, meeting: fresh, occurrence };
     this.modal
       .open<RecurringMeetingEditScopeResult, MeetingEditScopeDialogData>(MeetingEditScopeModalComponent, { data })
-      .closed.pipe(take(1))
+      .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((result) => {
         if (!result?.proceed) return;
         if (result.scope === 'series') {
