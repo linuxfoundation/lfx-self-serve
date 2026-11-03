@@ -8,11 +8,11 @@
 
 A Group (Self Serve's term for what the backend calls a "committee" — see [Terminology](#terminology)) can be linked to one or more Groups.io mailing lists. Once linked, a manager can turn on automatic membership sync in one direction:
 
-| Mode | Direction | Behavior |
-|------|-----------|----------|
+| Mode                 | Direction                        | Behavior                                                                                                       |
+| -------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Group → Mailing List | `AUTO_COMMITTEE_TO_MAILING_LIST` | When someone joins/leaves the Group, they're automatically subscribed/unsubscribed on the linked mailing list. |
-| Mailing List → Group | `AUTO_MAILING_LIST_TO_COMMITTEE` | When someone joins/leaves the mailing list, they're automatically added/removed as a Group member. |
-| Manual | `MANUAL` | No automatic sync. The manager uses **Sync Now** to review and apply differences on demand. |
+| Mailing List → Group | `AUTO_MAILING_LIST_TO_COMMITTEE` | When someone joins/leaves the mailing list, they're automatically added/removed as a Group member.             |
+| Manual               | `MANUAL`                         | No automatic sync. The manager uses **Sync Now** to review and apply differences on demand.                    |
 
 Only one linked list per Group can run an auto direction at a time — see [Limitations](#limitations-and-known-constraints).
 
@@ -49,7 +49,7 @@ Triggered from the Sync Settings card's "Sync Now" button. Shows three tabs: **A
    Two independent gates, both must be on:
    - Frontend: `MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG` (LaunchDarkly) — controls whether the UI shows the Sync Settings section at all.
    - Backend: `AUTO_SYNC_ENABLED` env var on `lfx-v2-mailing-list-service` — the kill switch for issue #4878. Fails **open** (enabled) unless explicitly set to `false`; check this before assuming a deploy issue.
-   These are independent — the UI can be visible while the backend execution path is killed, or vice versa. Confirm both before escalating as a bug.
+     These are independent — the UI can be visible while the backend execution path is killed, or vice versa. Confirm both before escalating as a bug.
 
 5. **"Sync Now says Conflicts but didn't fix anything."**
    This is expected — the Conflicts tab lists mismatched-email rows for the manager's awareness; it is never auto-applied. There's no action needed unless the user wants to manually reconcile those accounts.
@@ -65,9 +65,9 @@ Triggered from the Sync Settings card's "Sync Now" button. Shows three tabs: **A
 
 ## Sync Modes Reference
 
-| `sync_mode` value | UI label | Who triggers membership changes |
-|---|---|---|
-| `MANUAL` | Manual (sync off) | Nobody — manager must use Sync Now |
+| `sync_mode` value                | UI label             | Who triggers membership changes                          |
+| -------------------------------- | -------------------- | -------------------------------------------------------- |
+| `MANUAL`                         | Manual (sync off)    | Nobody — manager must use Sync Now                       |
 | `AUTO_COMMITTEE_TO_MAILING_LIST` | Group → Mailing List | Group membership changes drive mailing list subscription |
 | `AUTO_MAILING_LIST_TO_COMMITTEE` | Mailing List → Group | Mailing list subscription changes drive Group membership |
 
