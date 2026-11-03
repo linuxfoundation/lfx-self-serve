@@ -2892,6 +2892,105 @@ describe('VoteDetailComponent', () => {
       expect(voteService.getVoteResults).toHaveBeenCalledTimes(calls);
     });
   });
+
+  describe('stable result choice order (#5021)', () => {
+    const ballotOrder: [string, number, number][] = [
+      ['choice-yes', 88, 87],
+      ['choice-no', 7, 7],
+    ];
+    const reversed = [...ballotOrder].reverse();
+
+    /** The reported card — 101 responses of 120 invited with 6 abstentions — with tally rows in the given order. */
+    function reportedResults(tallies: [string, number, number][]): VoteResultsResponse {
+      const results = { ...makeMethodResults(), num_recipients: 120, num_votes_cast: 101, num_abstained: 6 };
+      results.poll_results[0].generic_choice_votes = tallies.map(([choiceId, voteCount, percentage]) => ({
+        choice_id: choiceId,
+        vote_count: voteCount,
+        percentage,
+      }));
+      return results;
+    }
+
+    /** Option and abstain rows inside a results region, in DOM order: [test id, text, leader-highlighted]. */
+    const renderedRows = (fixture: ComponentFixture<VoteDetailComponent>, region: string, prefix: string, abstainId: string): [string, string, boolean][] =>
+      Array.from(testId(fixture, region)?.querySelectorAll<HTMLElement>(`[data-testid^="${prefix}"], [data-testid="${abstainId}"]`) ?? [])
+        .filter((row) => !row.dataset['testid']?.endsWith('-view-voters'))
+        .map((row) => [row.dataset['testid'] ?? '', row.textContent?.replace(/\s+/g, ' ').trim() ?? '', row.querySelector('.bg-blue-500') !== null]);
+    const overviewRows = (fixture: ComponentFixture<VoteDetailComponent>) =>
+      renderedRows(fixture, 'vote-detail-overview-results', 'vote-detail-overview-option-', 'vote-detail-overview-abstain');
+
+    const refresh = async (fixture: ComponentFixture<VoteDetailComponent>, pending: Subject<VoteResultsResponse>, next: VoteResultsResponse): Promise<void> => {
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      pending.next(next);
+      pending.complete();
+      TestBed.tick();
+      fixture.detectChanges();
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ allow_abstain: true })));
+    });
+
+    afterEach(() => {
+      TestBed.resetTestingModule();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('keeps Overview options in ballot order with Abstain last when a refresh reorders the tallies', async () => {
+      const reorderedRefresh = new Subject<VoteResultsResponse>();
+      const countRefresh = new Subject<VoteResultsResponse>();
+      voteService.getVoteResults
+        .mockReturnValueOnce(of(reportedResults(ballotOrder)))
+        .mockReturnValueOnce(reorderedRefresh)
+        .mockReturnValueOnce(countRefresh);
+      const fixture = await setup('browser', [VoteOptionResultsComponent, VoteAbstainResultComponent]);
+      const reported: [string, string, boolean][] = [
+        ['vote-detail-overview-option-choice-yes', 'Yes 88 votes · 87%', true],
+        ['vote-detail-overview-option-choice-no', 'No 7 votes · 7%', false],
+        ['vote-detail-overview-abstain', 'Abstain 6 abstentions · 6%', false],
+      ];
+      expect(overviewRows(fixture)).toEqual(reported);
+
+      // Same figures, only the tally rows reversed — the card must not swap Yes and No.
+      await refresh(fixture, reorderedRefresh, reportedResults(reversed));
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(2);
+      expect(overviewRows(fixture)).toEqual(reported);
+
+      // New counts in reversed tally order: rows stay put while the figures and highlight follow their choices.
+      await refresh(
+        fixture,
+        countRefresh,
+        reportedResults([
+          ['choice-no', 54, 53],
+          ['choice-yes', 41, 41],
+        ])
+      );
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(3);
+      expect(overviewRows(fixture)).toEqual([
+        ['vote-detail-overview-option-choice-yes', 'Yes 41 votes · 41%', false],
+        ['vote-detail-overview-option-choice-no', 'No 54 votes · 53%', true],
+        ['vote-detail-overview-abstain', 'Abstain 6 abstentions · 6%', false],
+      ]);
+    });
+
+    it('lists the full Results options in ballot order with Abstain last', async () => {
+      voteService.getVoteResults.mockReturnValue(of(reportedResults(reversed)));
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      const fixture = await setup('browser', [VoteOptionResultsComponent, VoteAbstainResultComponent]);
+
+      expect(read(fixture, 'activeTab')).toBe('results');
+      expect(renderedRows(fixture, 'vote-detail-results', 'vote-detail-option-', 'vote-detail-option-abstain')).toEqual([
+        ['vote-detail-option-choice-yes', 'Yes 88 votes · 87%', true],
+        ['vote-detail-option-choice-no', 'No 7 votes · 7%', false],
+        ['vote-detail-option-abstain', 'Abstain 6 abstentions · 6%', false],
+      ]);
+    });
+  });
+
   describe('overview results summary (#4450)', () => {
     // Render the real option and abstain rows so the bars are asserted, not stubbed.
     const setupOverview = (): Promise<ComponentFixture<VoteDetailComponent>> => setup('browser', [VoteOptionResultsComponent, VoteAbstainResultComponent]);
