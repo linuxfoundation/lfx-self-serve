@@ -28,14 +28,7 @@
             data-testid="newsletter-preview-drawer-open-new-tab">
             <i class="fa-light fa-arrow-up-right-from-square text-xl"></i>
           </a>
-          <button
-            type="button"
-            (click)="onShare()"
-            class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
-            data-testid="newsletter-preview-drawer-share">
-            <i class="fa-light fa-share-nodes text-lg" aria-hidden="true"></i>
-            Share
-          </button>
+          <lfx-newsletter-share-button [count]="shareCount()" (share)="onShare()" testId="newsletter-preview-drawer-share" />
         }
         <button
           type="button"

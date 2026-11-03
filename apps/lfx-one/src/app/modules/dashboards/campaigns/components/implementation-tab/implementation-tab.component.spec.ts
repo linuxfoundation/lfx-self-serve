@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Component, EnvironmentProviders, input, output, Provider } from '@angular/core';
+import { Component, DestroyRef, EnvironmentProviders, input, output, Provider, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -41,12 +41,15 @@ import {
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
   REDDIT_CALL_TO_ACTIONS,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
+  CampaignIndexDoc,
+  CampaignJobOutcome,
   CampaignBriefPersistenceState,
   CampaignCreateResult,
   CampaignImplementationDraft,
@@ -63,7 +66,7 @@ import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { AutoComplete } from 'primeng/autocomplete';
-import { of, Subject, throwError } from 'rxjs';
+import { EMPTY, NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
@@ -14254,6 +14257,102 @@ describe('ImplementationTabComponent replace saved brief', () => {
     setPersistence(refused, true);
     expect(replaceButton()).toBeNull();
   });
+
+  /** #4983: the other way out of the same refusal — keep the saved brief and edit it. */
+  it('offers Open to edit beside Replace, and asks the parent to open the saved brief', () => {
+    setPersistence(refused);
+    const open = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-brief-open-saved-btn"]');
+    expect(open, 'no Open to edit on the unowned refusal').not.toBeNull();
+    const emitted = vi.fn();
+    fixture.componentInstance.openSavedBriefRequested.subscribe(emitted);
+
+    open?.querySelector('button')?.click();
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * #4983. Edit brief reopens this tab's brief in the Plan editor, except while a create job is being
+ * polled: saving from the editor resets the brief to `draft` under a job already running from it.
+ */
+describe('ImplementationTabComponent edit brief', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const brief = {
+    eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US' },
+    selectedPlatforms: ['google-ads'],
+  } as unknown as CampaignBriefOutput;
+
+  const button = (): HTMLButtonElement | null =>
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="implementation-edit-brief-btn"] button');
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.componentRef.setInput('briefData', brief);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('asks the parent to reopen the brief in the Plan editor', () => {
+    const emitted = vi.fn();
+    fixture.componentInstance.editBriefRequested.subscribe(emitted);
+
+    expect(button()?.disabled).toBe(false);
+    button()?.click();
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not offered on the unowned-brief refusal, where Open to edit and Replace are the ways out', () => {
+    fixture.componentRef.setInput('briefPersistence', {
+      status: 'error',
+      briefId: '',
+      message: 'refused',
+      approved: false,
+      conflict: 'unowned-brief-exists',
+    } as CampaignBriefPersistenceState);
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-btn"]')).toBeNull();
+  });
+
+  it('says why the last Edit brief opened nothing', () => {
+    fixture.componentRef.setInput('editBriefError', 'The saved brief could not be read, so nothing was opened. Try Edit brief again.');
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-error"]')?.textContent).toContain('could not be read');
+  });
+
+  it('tells the parent a create job is starting', () => {
+    const started = vi.fn();
+    fixture.componentInstance.createStarted.subscribe(started);
+    vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(NEVER);
+    vi.spyOn(fixture.componentInstance as unknown as { canSubmit(): boolean }, 'canSubmit').mockReturnValue(true);
+
+    (fixture.componentInstance as unknown as { submit(): void }).submit();
+
+    expect(started).toHaveBeenCalledTimes(1);
+  });
+
+  it('is disabled, with the reason beside it, while a create job is polling', () => {
+    (fixture.componentInstance as unknown as { step: WritableSignal<string> }).step.set('creating');
+    fixture.detectChanges();
+
+    expect(button()?.disabled, 'Edit brief stayed enabled under a running create job').toBe(true);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-hint"]')?.textContent).toContain(
+      'Available once campaign creation finishes'
+    );
+  });
 });
 
 /**
@@ -14470,6 +14569,303 @@ describe('ImplementationTabComponent performance max prefill', () => {
 
     const notice = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-prefill-notice-performance-max"]');
     expect(notice?.textContent).toContain('filled in from the brief');
+  });
+});
+
+/**
+ * Pasted Google image URLs are checked in the browser when the operator leaves the field: an
+ * advisory line only, since campaign-service downloads and checks every pasted URL before anything
+ * is created. jsdom never loads an image, so `Image` is a controllable fake.
+ */
+describe('ImplementationTabComponent pasted Google image URL check', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let images: FakeImage[];
+
+  class FakeImage {
+    public onload: (() => void) | null = null;
+    public onerror: (() => void) | null = null;
+    public naturalWidth = 0;
+    public naturalHeight = 0;
+    public src = '';
+    public referrerPolicy = '';
+    public constructor() {
+      images.push(this);
+    }
+    public load(width: number, height: number): void {
+      this.naturalWidth = width;
+      this.naturalHeight = height;
+      this.onload?.();
+    }
+    public fail(): void {
+      this.onerror?.();
+    }
+    /** What the component calls to cancel a download; a real browser stops fetching when `src` goes. */
+    public removeAttribute(name: string): void {
+      if (name === 'src') this.src = '';
+    }
+  }
+
+  const group = GOOGLE_CREATIVE_REQUEST_KEYS.display;
+  const key = `${group}.marketingImages`;
+  const marketingField = (): Record<string, unknown> =>
+    GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'marketingImages') as Record<string, unknown>;
+
+  function setUrls(c: Record<string, any>, value: string): void {
+    c['campaignForm'].controls[group].controls['marketingImages'].setValue(value);
+  }
+
+  function warning(c: Record<string, any>): string | undefined {
+    return (c['googleTypedImageWarnings']() as Record<string, string>)[key];
+  }
+
+  beforeEach(async () => {
+    images = [];
+    vi.stubGlobal('Image', FakeImage);
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('names a pasted image that misses the slot shape, with its measured size', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images.map((i) => i.src)).toEqual(['https://cdn.example.com/square.png']);
+    expect(warning(c)).toBeUndefined();
+
+    images[0].load(300, 300);
+
+    // Only the pixel size is measured here; the requirement, byte cap included, is what the slot needs.
+    expect(warning(c)).toContain('Measured here: https://cdn.example.com/square.png (300x300) does not fit. This slot needs 1.91:1');
+    // "Likely": a browser applies EXIF rotation that campaign-service's decoder does not.
+    expect(warning(c)).toContain('Create will likely be refused for it;');
+    expect(images[0]).toMatchObject({ referrerPolicy: 'no-referrer' });
+  });
+
+  it('says nothing about a pasted image that fits', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/wide.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(1200, 628);
+
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('reports an image that will not load as unchecked, not as wrong', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/hotlinked.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].fail();
+
+    expect(warning(c)).toBe('Could not be loaded here, so not checked: https://cdn.example.com/hotlinked.png. campaign-service checks it again at Create.');
+  });
+
+  it('gives up on a slow host after the timeout, as unchecked', () => {
+    vi.useFakeTimers();
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://slow.example.com/a.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    vi.advanceTimersByTime(GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS - 1);
+    expect(warning(c)).toBeUndefined();
+    vi.advanceTimersByTime(1);
+    expect(warning(c)).toContain('Could not be loaded here');
+    // The timeout cancels the download, so a slow host is not left sending an image nothing reads.
+    expect(images[0].src).toBe('');
+    // A late load after the timeout changes nothing.
+    images[0].load(300, 300);
+    expect(warning(c)).not.toContain('does not fit');
+  });
+
+  it('stops a probe still loading when the tab is destroyed, and records nothing after', () => {
+    vi.useFakeTimers();
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://slow.example.com/a.png');
+    const timersBefore = vi.getTimerCount();
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(vi.getTimerCount()).toBe(timersBefore + 1);
+    const probes = c['googleTypedImageProbes'] as () => Record<string, { state: string }>;
+    expect(probes()['https://slow.example.com/a.png']).toEqual({ state: 'checking' });
+
+    fixture.destroy();
+
+    // Only the probe's own timer is counted: the tab's other timers are not this probe's to clear.
+    expect(vi.getTimerCount()).toBe(timersBefore);
+    expect(images[0].onload).toBeNull();
+    expect(images[0].onerror).toBeNull();
+    expect(images[0].src).toBe('');
+    vi.advanceTimersByTime(GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS);
+    expect(probes()['https://slow.example.com/a.png']).toEqual({ state: 'checking' });
+  });
+
+  it('releases its destroy callback once the answer is in', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const destroyRef = c['destroyRef'] as DestroyRef;
+    const register = destroyRef.onDestroy.bind(destroyRef);
+    const releases: ReturnType<typeof vi.fn>[] = [];
+    vi.spyOn(destroyRef, 'onDestroy').mockImplementation((callback: () => void) => {
+      const release = vi.fn(register(callback));
+      releases.push(release);
+      return release;
+    });
+    setUrls(c, 'https://cdn.example.com/wide.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(releases).toHaveLength(1);
+    expect(releases[0]).not.toHaveBeenCalled();
+
+    images[0].load(1200, 628);
+
+    // One callback per probe would otherwise pile up for the life of the tab.
+    expect(releases[0]).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the warning when the URL is removed', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    expect(warning(c)).toBeDefined();
+
+    setUrls(c, '');
+    expect(warning(c)).toBeUndefined();
+  });
+
+  /**
+   * A settled URL is probed again, so a host that answers differently now is heard. In a real browser a
+   * same-URL replacement may still come back from the cache, which is why this is best effort; here the
+   * fake answers whatever the test loads.
+   */
+  it('probes a settled URL again on the next blur and shows the newer answer', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/hero.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    expect(warning(c)).toContain('(300x300)');
+
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images).toHaveLength(2);
+    // The last answer stays up while the URL is checked again, rather than blanking until it settles.
+    expect(warning(c)).toContain('(300x300)');
+    // Still in flight, so leaving the field again starts no third probe.
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images).toHaveLength(2);
+    images[1].load(1200, 628);
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('retries a URL that could not be loaded', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://flaky.example.com/a.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].fail();
+    expect(warning(c)).toContain('Could not be loaded here');
+
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[1].load(1200, 628);
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('starts one probe for a URL pasted on two lines', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/twice.png\nhttps://cdn.example.com/twice.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+  });
+
+  /** The line appears after focus has left the field, so an always-mounted region announces it. */
+  it('announces the line in a live region that is mounted empty, naming the section and field', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    fixture.detectChanges();
+    const region = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-google-image-url-check-live"]');
+    expect(region()).not.toBeNull();
+    expect(region()?.textContent?.trim()).toBe('');
+    expect(region()?.getAttribute('role')).toBe('status');
+
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    fixture.detectChanges();
+
+    const marketingLabel = (marketingField() as { label: string }).label;
+    expect(region()?.textContent?.trim()).toContain(
+      `${GOOGLE_CREATIVE_SECTION_TITLES.display} ${marketingLabel}: Measured here: https://cdn.example.com/square.png (300x300) does not fit.`
+    );
+    // The visible line carries no role, so the text is read once.
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-url-check-display-marketingImages"]')?.getAttribute('role')
+    ).toBeNull();
+  });
+
+  it('does not start a second probe while one for the same URL is still loading', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/slow.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+  });
+
+  it('names every misfit and every unchecked URL in one line, in the plural', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/a.png\nhttps://cdn.example.com/b.png\nhttps://down.example.com/c.png\nhttps://down.example.com/d.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    images[1].load(100, 52);
+    images[2].fail();
+    images[3].fail();
+
+    const line = warning(c) ?? '';
+    expect(line).toContain('https://cdn.example.com/a.png (300x300), https://cdn.example.com/b.png (100x52) do not fit.');
+    expect(line).toContain('Create will likely be refused for them;');
+    expect(line).toContain('not checked: https://down.example.com/c.png, https://down.example.com/d.png. campaign-service checks them again at Create.');
+  });
+
+  it('probes nothing for a non-image field or a value that is not an http(s) URL', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls[group].controls['headlines'].setValue('https://cdn.example.com/a.png');
+    c['onGoogleImageFieldBlur'](
+      group,
+      GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'headlines')
+    );
+    setUrls(c, 'not a url\nftp://files.example.com/a.png\nlfx-asset:1234');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(0);
+  });
+
+  /** The browser would send the operator's session cookie with it, so a route such as `/logout` would act on the session. */
+  it("never probes a URL on the application's own host, whatever its scheme, port or trailing dot", () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const host = window.location.hostname;
+    setUrls(
+      c,
+      `${window.location.origin}/logout\nhttp://${host}/logout\nhttps://${host}:8443/logout\nhttps://${host.toUpperCase()}./logout\nhttps://cdn.example.com/hero.png`
+    );
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+    expect(images[0].src).toBe('https://cdn.example.com/hero.png');
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('probes on leaving the textarea and renders the line under the field', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    fixture.detectChanges();
+    const textarea = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="implementation-creative-display-marketingImages"]'
+    ) as HTMLTextAreaElement;
+    textarea.dispatchEvent(new Event('blur'));
+    images[0].load(300, 300);
+    fixture.detectChanges();
+
+    const line = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-url-check-display-marketingImages"]');
+    expect(line?.textContent).toContain('(300x300)');
   });
 });
 
@@ -14729,5 +15125,154 @@ describe('ImplementationTabComponent google flight and keywords', () => {
 
     expect(createCampaign).toHaveBeenCalledTimes(1);
     expect(createCampaign.mock.calls[0][0]).toMatchObject({ keywords: [SEED_KEYWORD] });
+  });
+});
+
+/**
+ * #4983. The Implement tab names the campaigns already created for this event, keeps a failed or
+ * lagging read from reading as "none", and says before Create Another what a repeat create on a
+ * platform that already has a campaign really does.
+ */
+describe('ImplementationTabComponent already created for this event', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const brief = {
+    eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US' },
+    selectedPlatforms: ['google-ads'],
+  } as unknown as CampaignBriefOutput;
+
+  const doc = (id: string, platform: string, status: string, slot?: number): CampaignIndexDoc =>
+    ({
+      id,
+      project_id: 'tlf',
+      brief_id: 'b-1',
+      platform,
+      campaign_name: `KubeCon EU 2026 | ${platform} | ${id}`,
+      status,
+      version: 1,
+      platform_campaign_id: `pc-${id}`,
+      ...(slot === undefined ? {} : { slot_version: slot }),
+    }) as CampaignIndexDoc;
+
+  const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+  function setList(campaigns: CampaignIndexDoc[] | null, stale = false, unavailable = false, loading = false): void {
+    fixture.componentRef.setInput('briefCampaigns', campaigns);
+    fixture.componentRef.setInput('briefCampaignsStale', stale);
+    fixture.componentRef.setInput('briefCampaignsUnavailable', unavailable);
+    fixture.componentRef.setInput('briefCampaignsLoading', loading);
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.componentRef.setInput('briefData', brief);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('lists the live campaigns with platform, name, status and slot, and counts them per platform', () => {
+    setList([
+      doc('g1', 'google-ads', 'active', 1),
+      doc('g2', 'google-ads', 'paused'),
+      doc('r1', 'reddit-ads', 'created_degraded', 2),
+      doc('gone', 'google-ads', 'deleted', 3),
+    ]);
+
+    expect(q('implementation-existing-campaigns')).not.toBeNull();
+    const rows = (fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid^="implementation-existing-row-"]');
+    expect(rows).toHaveLength(3);
+    expect(q('implementation-existing-row-gone'), 'a deleted campaign was listed as already created').toBeNull();
+    const cells = (id: string): string[] =>
+      [...(q(`implementation-existing-row-${id}`)?.querySelectorAll('td') ?? [])].map((td) => td.textContent?.trim() ?? '');
+    expect(cells('g1')).toEqual(['Google Ads', 'KubeCon EU 2026 | google-ads | g1', 'active', '1']);
+    // No slot recorded (indexed before the field existed) reads as unknown, not as slot 1.
+    expect(cells('g2')[3]).toBe('—');
+    expect(cells('r1')).toEqual(['Reddit Ads', 'KubeCon EU 2026 | reddit-ads | r1', 'created degraded', '2']);
+
+    expect(q('implementation-existing-notice-google-ads')?.textContent?.trim()).toBe('You already have 2 Google Ads campaigns for this event.');
+    expect(q('implementation-existing-notice-reddit-ads')?.textContent?.trim()).toBe('You already have 1 Reddit Ads campaign for this event.');
+  });
+
+  it('says a failed read failed, with Retry, instead of rendering as "nothing created"', () => {
+    setList(null, false, true);
+    const retry = vi.fn();
+    fixture.componentInstance.retryBriefCampaigns.subscribe(retry);
+
+    expect(q('implementation-existing-unavailable')?.textContent).toContain('could not be loaded');
+    expect(q('implementation-existing-campaigns')).toBeNull();
+    q('implementation-existing-retry')?.querySelector('button')?.click();
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('says an empty but possibly stale answer may be missing recent campaigns, and shows nothing for a fresh empty one', () => {
+    setList([], true);
+    expect(q('implementation-existing-stale')?.textContent).toContain('may not be listed yet');
+
+    setList([], false);
+    expect(q('implementation-existing-stale')).toBeNull();
+    expect(q('implementation-existing-campaigns')).toBeNull();
+
+    // Not loaded and not loading: nothing to say, so no panel and no caveat.
+    setList(null, false);
+    expect(q('implementation-existing-campaigns')).toBeNull();
+    expect(q('implementation-existing-stale')).toBeNull();
+    expect(q('implementation-existing-loading')).toBeNull();
+  });
+
+  it('says it is checking while the list is being read, rather than showing nothing', () => {
+    setList(null, false, false, true);
+    expect(q('implementation-existing-loading')?.textContent).toContain('Checking for campaigns already created');
+    expect(q('implementation-existing-campaigns')).toBeNull();
+  });
+
+  it('says before Create Another that a platform with a campaign returns it rather than making a second', () => {
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('results');
+    setList([doc('g1', 'google-ads', 'active', 1), doc('gone', 'reddit-ads', 'deleted', 1), doc('claim', 'meta-ads', 'pending', 1)]);
+
+    const notice = q('implementation-create-another-notice')?.textContent ?? '';
+    expect(notice).toContain('Creating the same campaign again on Google Ads returns the one already created there');
+    expect(notice, 'a deleted campaign was counted as one campaign-service returns').not.toContain('Reddit');
+    expect(notice, 'a pending claim was counted as one campaign-service returns').not.toContain('Meta');
+
+    setList([]);
+    expect(q('implementation-create-another-notice')).toBeNull();
+  });
+
+  it('names the platforms the job just created, before the list has caught up', () => {
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('results');
+    (fixture.componentInstance as unknown as { platformResults: { set(v: unknown): void } }).platformResults.set([
+      { platform: 'microsoft-ads', ok: true },
+      { platform: 'reddit-ads', ok: false, error: 'refused' },
+    ]);
+    setList(null, false, false, true);
+
+    const notice = q('implementation-create-another-notice')?.textContent ?? '';
+    expect(notice).toContain('Microsoft Ads');
+    expect(notice, 'a failed platform was named as created').not.toContain('Reddit');
+  });
+
+  it.each([
+    ['an outcome', (): Observable<CampaignJobOutcome | null> => of({ campaigns: [], platformResults: [], errors: [] } as unknown as CampaignJobOutcome)],
+    ['a lost poll', (): Observable<CampaignJobOutcome | null> => throwError(() => new Error('lost'))],
+    ['a poll that runs out', (): Observable<CampaignJobOutcome | null> => EMPTY],
+  ])('asks the parent to re-read the list once when a create job settles with %s', (_label, answer) => {
+    vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(answer());
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('creating');
+    const settled = vi.fn();
+    fixture.componentInstance.createJobSettled.subscribe(settled);
+
+    (fixture.componentInstance as unknown as { pollJob(jobId: string, projectSlug: string): void }).pollJob('job-1', 'tlf');
+
+    expect(settled).toHaveBeenCalledTimes(1);
   });
 });

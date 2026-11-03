@@ -1,14 +1,33 @@
 ---
 title: Join, Apply to, and Leave a Group
-description: How to join an open group, apply to join, accept or decline an invitation, and leave a group in LFX Self Serve.
+description: How to find a project's groups, join an open group, apply to join, accept or decline an invitation, and leave a group in LFX Self Serve.
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
-tags: [committees, groups, join, apply, invitation, leave, membership]
-last_updated: 2026-10-28
+tags: [committees, groups, join, apply, invitation, leave, membership, find, browse, public, calendar]
+last_updated: 2026-11-02
 intercom_collection: Committees
 ---
 
 How you become a member of a group depends on the group's **join mode**. This article covers what you see on the group's page for each mode, how to respond to an invitation, and how to leave. Managers choose the join mode in [Group Settings](../group-settings/).
+
+## Find a group to join
+
+You don't need a role on a project to see its groups. Any signed-in user can open a project and browse its groups.
+
+1. Sign in to [app.lfx.dev](https://app.lfx.dev) and open the **Projects** tab in the sidebar.
+2. Search for the project and select it.
+3. Select **Groups** in the sidebar. The page lists the project's groups.
+4. Select a group to open its page. The button in the header depends on the group's join mode, described below.
+
+You see the project's **public** groups, plus any **private** groups you are a member of or manage. Private groups you don't have access to are not listed. If you open a link to one, the page says "We couldn't load this group", without confirming whether the group exists. To join a private group, you need an invitation, or a group manager has to add you.
+
+If you don't see a **Projects** tab, or you want to browse without signing in, open the project's public groups list at `app.lfx.dev/projects/<project-slug>/groups`. It lists the project's public groups; select one to open its page, then sign in to join. If someone shared a link to a group, you can open it directly.
+
+After you join, the group appears under **Groups** in the **Me** lens. Pending invitations and applications are listed there too, until you accept or an admin approves you.
+
+### See a project's meetings without joining
+
+In the **Projects** tab, select the project, open **Meetings**, and select **Public Calendar**. It opens the project's public calendar, which anyone can view without signing in. Meetings that aren't public don't appear on it. On a group's page, the **Meetings** tab shows to people who aren't members only when the group's calendar is public.
 
 ## Join modes
 
@@ -23,7 +42,7 @@ Managers pick **Apply & Review** in Settings, and the group itself shows that mo
 
 ## Join an open group
 
-1. Open the group from **Groups**, or from a link someone shared.
+1. Open the group from **Groups**, or from a link someone shared. See [Find a group to join](#find-a-group-to-join).
 2. Select **Join Group**.
 3. If the group has voting or requires a business email, a **Confirm Organization** dialog asks for your organization name and website. It starts with your current employer from your profile when LFX can find one. Confirm or correct it.
 4. A "Joined" message confirms, and the page refreshes with your membership badge.

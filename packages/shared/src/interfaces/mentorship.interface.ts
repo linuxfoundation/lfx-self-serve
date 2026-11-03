@@ -265,6 +265,8 @@ export interface MentorshipRowAction {
   value: string;
   label: string;
   icon: string;
+  /** When set, the entry is a link to this URL (e.g. a `mailto:`) and is not handed back on pick. */
+  url?: string;
 }
 
 /** Display fields for a row's reviewer-note line, resolved from the session's drafts. */

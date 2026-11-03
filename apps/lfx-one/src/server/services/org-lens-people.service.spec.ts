@@ -33,6 +33,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/org-cache-compact.constants')),
   ...(await import('../../../../../packages/shared/src/constants/org-commit-filters.constants')),
   ...(await import('../../../../../packages/shared/src/constants/org-maintainer-roles.constants')),
+  ...(await import('../../../../../packages/shared/src/constants/training.constants')),
 }));
 
 vi.mock('./snowflake.service', () => ({

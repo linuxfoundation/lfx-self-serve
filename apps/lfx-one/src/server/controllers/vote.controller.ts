@@ -751,6 +751,8 @@ export class VoteController {
         vote_uid: uid,
         recipient_count: result.recipient_count,
         failed_count: result.failed_count,
+        skipped_count: result.skipped_count,
+        uncertain_count: result.uncertain_count,
       });
 
       res.json(result);

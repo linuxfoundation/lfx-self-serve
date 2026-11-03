@@ -94,8 +94,14 @@ export const VOTE_REMINDER_PRECHECK_FAILED = 'VOTE_REMINDER_PRECHECK_FAILED';
 /** The on-demand close summary (#3662) refuses a vote that has not ended yet with this state-conflict code. */
 export const VOTE_SUMMARY_NOT_ENDED = 'VOTE_SUMMARY_NOT_ENDED';
 
-/** The on-demand close summary (#3662) failed to send to every recipient; none were emailed. */
+/** The on-demand close summary (#3662) was confirmed not sent to any recipient: every attempt was rejected, none was uncertain. */
 export const VOTE_SUMMARY_SEND_FAILED = 'VOTE_SUMMARY_SEND_FAILED';
+
+/** Toast lifetime (ms) for a summary send outcome the user needs time to read (partial, unconfirmed, nothing sent). */
+export const VOTE_SUMMARY_NOTICE_LIFE_MS = 8000;
+
+/** Pre-send checks failed before any summary email was attempted; nothing was sent and retrying cannot duplicate this attempt. */
+export const VOTE_SUMMARY_PRECHECK_FAILED = 'VOTE_SUMMARY_PRECHECK_FAILED';
 
 /** Code-point cap on the vote title in the mailing-list reminder draft (#3658), so a long title can't crowd the body. */
 export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_CHARS = 120;
@@ -105,6 +111,16 @@ export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS = 400;
 
 /** Upper bound for the reminder `mailto:` href; the caller reports an error when the draft exceeds it. */
 export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;
+
+/** Active manager results: non-overlapping visible-tab reads, with capped retry backoff (#4769). */
+export const VOTE_DETAIL_RESULTS_POLL_OPTIONS = {
+  intervalMs: 5000,
+  backoffBaseMs: 5000,
+  backoffMaxMs: 30000,
+} as const;
+
+/** Detail managers: total final-results reads after closure, including held payloads and failed attempts. */
+export const VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS = 12;
 
 /** Vote detail page (#3913) tab shown when `?tab=` is absent or invalid; omitted from the URL. */
 export const VOTE_DETAIL_DEFAULT_TAB: VoteDetailTab = 'overview';
@@ -160,8 +176,11 @@ export const VOTE_VOTER_MAX_CHOICE_CHIPS = 2;
 /** `voters_choice` value the results' abstain row links with — it selects the Abstained status pill, not a choice. */
 export const VOTE_VOTERS_ABSTAINED_CHOICE_KEY = 'status:abstained';
 
-/** Action keys on the vote detail page's clickable summary cards (#4447): Voters tab, Comments tab and the reminder dialog. */
+/** Action keys emitted by the vote detail summary cards and their buttons (#4447, #4770): Voters tab, Comments tab and the reminder dialog. */
 export const VOTE_DETAIL_SUMMARY_CARD_ACTIONS = { RESPONSES: 'responses', COMMENTS: 'comments', NOT_VOTED: 'not-voted' } as const;
+
+/** Caption color for the vote detail summary tiles — darker than the grid's default `text-gray-400` to meet text contrast. */
+export const VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS = 'text-gray-600';
 
 /** Display label per voting method — read by the vote detail page's header. A missing `poll_type` reads as {@link PollType.GENERIC}. */
 export const VOTE_METHOD_LABELS: Record<PollType, string> = {

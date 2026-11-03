@@ -3,6 +3,13 @@
 
 import sanitizeHtml from 'sanitize-html';
 
+import {
+  EMAIL_BODY_ALLOWED_STYLE_PROPERTIES,
+  EMAIL_BODY_MARGIN_VALUE_PATTERN,
+  EMAIL_BODY_STYLE_VALUE_PATTERN,
+  EMAIL_SECONDARY_LINK_LIMIT,
+  LF_OWNED_EMAIL_LINK_DOMAINS,
+} from '../constants/campaign.constants';
 import { canonicalHttpUrl } from './url.utils';
 
 const NAMED_HTML_ENTITIES: Record<string, string> = {
@@ -360,7 +367,10 @@ function normalizeHrefForJudgement(href: string): string {
 
 /** `attribs` without its `href`, so an anchor keeps its words and loses only the promise. */
 function omitHref(attribs: Record<string, string>): Record<string, string> {
-  const { href: _dropped, ...rest } = attribs;
+  // `style` goes with the href (#3306): campaign-service colours, bolds and underlines its links, and a
+  // refused link that kept that styling would look clickable while doing nothing. Plain text is the
+  // honest rendering of a link we cannot back.
+  const { href: _dropped, style: _linkStyle, ...rest } = attribs;
   return rest;
 }
 
@@ -399,8 +409,9 @@ function buildAllowedHosts(destinations: readonly string[] | undefined): Set<str
   // `undefined` means "no opinion" -- the legacy behaviour, every http(s) anchor kept. An EMPTY
   // ARRAY is the opposite and is the case that matters: the caller looked for a destination and
   // found none, so nothing is vouched for and every link is dropped. The stages that withhold a
-  // button (CFP Launch, Post-Event, Final Countdown) arrive exactly this way, and they are the
-  // ones a model is most likely to invent an address for.
+  // button (CFP Launch, Post-Event, Final Countdown) are the ones a model is most likely to invent
+  // an address for; for them `emailLinkDestinations` now vouches only for LF-owned links (#3306),
+  // and a relative href is never resolved, since there is no call-to-action to resolve it against.
   if (destinations === undefined) return null;
 
   const hosts = new Set<string>();
@@ -489,20 +500,21 @@ function allowedDestinationHref(href: string, allowedHosts: Set<string>): string
  * Omitting `allowedDestinations` keeps every `http(s)` anchor -- the prior behaviour, for callers
  * that have no destination to vouch against. Pass it wherever one is known.
  */
-export function stripResourceLoadingHtml(html: string | null | undefined, allowedDestinations?: readonly string[]): string {
+export function stripResourceLoadingHtml(html: string | null | undefined, allowedDestinations?: readonly string[], relativeBase?: string): string {
   if (!html) return '';
 
   const allowedHosts = buildAllowedHosts(allowedDestinations);
-  // The base a relative href resolves against: the first destination the caller vouched for.
-  // '' when none was, which is the same "nothing is vouched for" state an empty list expresses.
+  // The base a relative href resolves against. '' resolves nothing: a relative href then loses its
+  // href, which is the same "nothing is vouched for" answer an empty list gives.
   //
-  // FIRST, not "all": a relative href has exactly one base, so a list with two hosts would have
-  // to guess which the author meant. Every caller today passes at most ONE destination -- the
-  // generator's CTA url (service), `buttonUrl` (controller), `emailCtaDestination()` (client) --
-  // so the ambiguity is not reachable. The parameter stays a list because the HOST allow-list
-  // genuinely takes several; if a caller ever vouches for two, relative resolution needs an
-  // explicit base rather than this fallback.
-  const firstAllowedBase = (allowedDestinations ?? []).map((d) => canonicalHttpUrl(d)).find((d) => d !== '') ?? '';
+  // `relativeBase` names it EXPLICITLY, and every email-body caller passes its call-to-action (or '')
+  // (#3306). Those callers vouch for several destinations now -- the CTA plus the event page's own
+  // links -- and a relative href has exactly one base, so falling back to "the first destination"
+  // would resolve `/register` against a CFP or venue page nobody meant, or against an LF root when
+  // there is no button. Omitted, the first vouched destination is the base, as before, for callers
+  // that vouch for at most one.
+  const firstAllowedBase =
+    relativeBase !== undefined ? canonicalHttpUrl(relativeBase) : ((allowedDestinations ?? []).map((d) => canonicalHttpUrl(d)).find((d) => d !== '') ?? '');
 
   return sanitizeHtml(html, {
     // Formatting only. Every resource-loading element is absent by omission rather than by
@@ -537,8 +549,31 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
       'td',
       'th',
     ],
-    // `src`, `srcset`, `background`, `style` and `poster` are all absent for the same reason.
-    allowedAttributes: { a: ['href'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
+    // `src`, `srcset`, `background` and `poster` are all absent for the same reason.
+    //
+    // `style` is KEPT, on every allowed tag, but only through `allowedStyles` below (#3306).
+    // campaign-service writes the email's palette and type scale as inline styles, because mail
+    // clients drop most other CSS, so stripping the attribute previewed and staged every generated
+    // email unstyled.
+    allowedAttributes: { '*': ['style'], a: ['href'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
+    // Only the declarations on `EMAIL_BODY_ALLOWED_STYLE_PROPERTIES` survive, and only with a value
+    // free of the forms `EMAIL_BODY_STYLE_VALUE_PATTERN` refuses, and a margin must not be negative.
+    // The property list is the control (none takes a url or positions anything); the value checks are
+    // defence in depth. A `style` left with no declarations is removed whole.
+    // sanitize-html keeps a declaration when ANY of its patterns matches, so the margins get one
+    // combined pattern (both conditions) rather than two alternatives.
+    allowedStyles: {
+      '*': Object.fromEntries(
+        EMAIL_BODY_ALLOWED_STYLE_PROPERTIES.map((property) => [
+          property,
+          [
+            property.startsWith('margin')
+              ? new RegExp(`(?=${EMAIL_BODY_MARGIN_VALUE_PATTERN.source})${EMAIL_BODY_STYLE_VALUE_PATTERN.source}`, 'i')
+              : EMAIL_BODY_STYLE_VALUE_PATTERN,
+          ],
+        ])
+      ),
+    },
     transformTags: {
       // Runs BEFORE `allowedSchemes` / `allowProtocolRelative`, which sanitize-html applies in
       // the attribute loop after `transformTags` has been dispatched. So `href` arrives RAW here
@@ -604,4 +639,38 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
     //                              left to explain where it came from
     nonTextTags: ['script', 'style', 'iframe', 'object', 'embed', 'noscript', 'textarea', 'title', 'svg', 'math'],
   });
+}
+
+/**
+ * The destinations a generated email body may link to: the call-to-action, plus the links the event
+ * page itself published (`eventDetails.cfpUrl`, `agendaUrl`, `venueUrl`, `sponsorshipUrl`) whose host is
+ * the call-to-action's host or an LF-owned domain (`LF_OWNED_EMAIL_LINK_DOMAINS`), or a subdomain of
+ * either (#3306).
+ *
+ * Feed the result to `stripResourceLoadingHtml`. A secondary link on any other host is not vouched for,
+ * so the sanitizer keeps its text and drops its `href`, exactly as it does for an invented address. The
+ * host rule is the boundary, not where the list came from: a caller that passed an off-host url here
+ * would still have it refused.
+ *
+ * With no call-to-action (the stages that withhold a button), only LF-owned links can be vouched for.
+ */
+export function emailLinkDestinations(ctaDestination: string, extractedLinks: readonly (string | null | undefined)[]): string[] {
+  const cta = canonicalHttpUrl(ctaDestination);
+  const hostOf = (url: string): string => {
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  };
+  const trustedRoots = [...(cta === '' ? [] : [hostOf(cta)]), ...LF_OWNED_EMAIL_LINK_DOMAINS].filter((root) => root !== '');
+  const isTrusted = (host: string): boolean => trustedRoots.some((root) => host === root || host.endsWith(`.${root}`));
+  // Bounded BEFORE the per-entry parsing, so a long list (the controller's comes from the client)
+  // costs at most a few parses; then bounded again after filtering.
+  const secondary = extractedLinks
+    .slice(0, EMAIL_SECONDARY_LINK_LIMIT * 2)
+    .map((link) => canonicalHttpUrl(link))
+    .filter((link) => link !== '' && isTrusted(hostOf(link)))
+    .slice(0, EMAIL_SECONDARY_LINK_LIMIT);
+  return [...new Set([...(cta === '' ? [] : [cta]), ...secondary])];
 }

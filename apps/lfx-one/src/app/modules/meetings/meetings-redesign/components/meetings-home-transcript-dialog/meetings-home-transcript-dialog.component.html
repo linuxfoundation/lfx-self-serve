@@ -1,0 +1,41 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] values: rem undershoots at the 14px root. -->
+<lfx-ui-modal heading="Transcript" [subtitle]="title" sticky data-testid="meetings-home-dialog-transcript">
+  @if (loading()) {
+    <span
+      class="flex items-center justify-center gap-[8px] py-[16px] text-[14px] leading-[20px] text-gray-500"
+      role="status"
+      data-testid="meetings-home-dialog-transcript-loading">
+      <lfx-ui-spinner [size]="16" aria-hidden="true" />Loading transcript…
+    </span>
+  } @else if (cues().length) {
+    <div class="flex flex-col gap-[12px]" data-testid="meetings-home-dialog-transcript-content">
+      @for (cue of cues(); track $index) {
+        <div class="flex flex-col gap-[2px]">
+          <span class="flex items-center gap-[8px]">
+            @if (cue.speaker) {
+              <span class="text-[13px] font-semibold leading-[18px] text-gray-900">{{ cue.speaker }}</span>
+            }
+            <span class="text-[12px] leading-[16px] text-gray-500">{{ cue.timestamp }}</span>
+          </span>
+          <p class="text-[14px] leading-[21px] text-gray-700">{{ cue.text }}</p>
+        </div>
+      }
+    </div>
+  } @else {
+    <p class="py-[16px] text-center text-[14px] leading-[20px] text-gray-500" data-testid="meetings-home-dialog-transcript-empty">
+      No transcript content available.
+    </p>
+  }
+
+  <ng-container modalActions>
+    @if (cues().length) {
+      <lfx-ui-button class="mr-auto" variant="secondary" icon="fa-light fa-download" (click)="download()" data-testid="meetings-home-dialog-transcript-download"
+        >Download</lfx-ui-button
+      >
+    }
+    <lfx-ui-button variant="secondary" (click)="close()" data-testid="meetings-home-dialog-transcript-close">Close</lfx-ui-button>
+  </ng-container>
+</lfx-ui-modal>

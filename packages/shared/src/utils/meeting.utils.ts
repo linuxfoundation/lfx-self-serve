@@ -1358,6 +1358,20 @@ export function getMeetingOrganizerDisplayName(organizer: MeetingUserInfo | null
   return organizer.name?.trim() || organizer.username?.trim() || organizer.email?.trim() || '';
 }
 
+/**
+ * Single display name for a meeting's organizer; never blank. Resolution order:
+ * `owner.name`, `created_by.name`, the local part of `owner.email`, then "Linux Foundation".
+ * Service-account and zero-valued identities are skipped (see {@link resolveMeetingOwner}), so a
+ * webhook-created meeting reads as "Linux Foundation" rather than `zoom.webhooks`.
+ */
+export function organizerDisplayName(meeting: Pick<Meeting, 'created_by' | 'owner'> | null | undefined): string {
+  const owner = resolveMeetingOwner(meeting);
+  const createdBy = resolveMeetingOrganizer({ created_by: meeting?.created_by });
+  const emailLocalPart = owner?.email?.split('@')[0]?.trim();
+
+  return owner?.name?.trim() || createdBy?.name?.trim() || emailLocalPart || 'Linux Foundation';
+}
+
 /** Maps a host registrant/participant candidate to the organizer display shape. */
 function hostToOrganizer(host: MeetingHostCandidate): MeetingUserInfo {
   const name = `${host.first_name ?? ''} ${host.last_name ?? ''}`.trim();

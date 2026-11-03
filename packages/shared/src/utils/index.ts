@@ -3,6 +3,7 @@
 
 export * from './ai.utils';
 export * from './avatar.utils';
+export * from './chunk-load.utils';
 export * from './color.utils';
 export * from './date-time.utils';
 export * from './docs.utils';

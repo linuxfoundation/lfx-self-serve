@@ -508,16 +508,12 @@
                   -->
                     <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-render-capped">{{ emailTemplatesRenderCapMessage() }}</p>
                   }
-                  @if (emailTemplateSelectionIsSuggested() && emailTemplateSuggestionId() !== '') {
+                  @if (emailTemplateSuggestionId() !== '' && selectedEmailTemplateId() === '') {
                     <!--
-                    Gated on PROVENANCE, not on id equality. Keying it on the suggestion merely
-                    existing meant that after an operator picked a different row the banner still
-                    read "pre-selected ... for this event" beside a template the derivation never
-                    chose. Keying it on `suggestionId === selectedId` fixed that case and kept a
-                    subtler one: after suggestion A, an operator can pick B and then deliberately
-                    pick A again -- the ids coincide, so the banner claimed the system chose what
-                    the operator chose. Only the setter knows how the value was set, which is what
-                    `emailTemplateSelectionIsSuggested` records.
+                    A RECOMMENDATION, shown only before the operator has chosen (#2057). Nothing is
+                    selected on their behalf: the matching row carries a "Suggested" badge, and
+                    Stage stays disabled until a row is clicked. Once a choice is made the banner
+                    goes, because repeating it would argue with a decision already taken.
                     The matched terms are shown because a suggestion whose reasoning is invisible
                     cannot be judged: "matched on kubecon" can be checked at a glance.
                   -->
@@ -526,15 +522,18 @@
                       <!--
                       One text node, not a text-@if-text sandwich. Angular collapses the leading
                       whitespace of the trailing fragment to a single space, so the sentence
-                      rendered as "... event . Pick a different one" with a space before the stop.
+                      rendered as "... event . Select" with a space before the stop.
                     -->
                       @if (emailTemplateSuggestionTerms().length > 0) {
                         <span
-                          >Pre-selected the template this portal appears to use for this event — matched on {{ emailTemplateSuggestionTermsLabel() }}. Pick a
-                          different one to override it.</span
+                          >The template marked Suggested appears to be the one this portal uses for this event — matched on
+                          {{ emailTemplateSuggestionTermsLabel() }}. Nothing is selected until you choose a template.</span
                         >
                       } @else {
-                        <span>Pre-selected the template this portal appears to use for this event. Pick a different one to override it.</span>
+                        <span
+                          >The template marked Suggested appears to be the one this portal uses for this event. Nothing is selected until you choose a
+                          template.</span
+                        >
                       }
                     </p>
                   }
@@ -554,7 +553,7 @@
                           type="button"
                           (click)="onSelectEmailTemplate(template.id)"
                           [attr.aria-pressed]="selectedEmailTemplateId() === template.id"
-                          [attr.aria-label]="template | hubspotTemplateLabel"
+                          [attr.aria-label]="template | hubspotTemplateLabel: template.id === emailTemplateSuggestionId()"
                           [class]="
                             selectedEmailTemplateId() === template.id
                               ? 'flex w-full flex-col gap-0.5 rounded-md border border-blue-500 bg-blue-50 px-3 py-2 text-left'
@@ -563,6 +562,23 @@
                           [attr.data-testid]="'campaigns-email-template-' + template.id">
                           <span class="flex w-full items-center gap-2">
                             <span class="min-w-0 flex-1 text-sm font-medium text-gray-900">{{ template.name || template.subject || template.id }}</span>
+                            <!--
+                            A visible TEXT badge, not colour alone (WCAG 1.4.1). It marks the
+                            recommendation without selecting it (#2057); the accessible name
+                            carries the same fact via the label pipe, since aria-label replaces
+                            this text for assistive tech.
+
+                            Always mounted and toggled with `invisible` (frontend-checklist 8), like
+                            the check beside it: an @if gave the badge's width back to the name, so
+                            a long name rewrapped and the row shifted whenever the suggestion moved.
+                          -->
+                            <span
+                              class="shrink-0 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-800"
+                              [class.invisible]="template.id !== emailTemplateSuggestionId()"
+                              aria-hidden="true"
+                              [attr.data-testid]="'campaigns-email-template-suggested-' + template.id"
+                              >Suggested</span
+                            >
                             <!--
                             The non-colour half of the selected state (WCAG 1.4.1): the border and
                             background above are colour ONLY, so a colour-blind user, or anyone on
@@ -1443,6 +1459,8 @@
             (proceedToImplementation)="onProceedToImplementation($event)"
             (briefDiscarded)="onPlanningBriefDiscarded()"
             (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved, $event.readAt)"
+            [editRequest]="planningEditRequest()"
+            (openSavedBriefRequested)="onOpenSavedBriefToEdit($event)"
             data-testid="campaigns-planning-tab" />
         }
       </div>
@@ -1487,6 +1505,16 @@
               [createCapabilityRead]="briefCampaignsCapabilityRead()"
               (retryCreateCapabilities)="retryCreateCapabilities()"
               (replaceSavedBriefRequested)="onReplaceSavedBrief()"
+              [editBriefError]="editBriefError()"
+              [briefCampaigns]="briefCampaigns()"
+              [briefCampaignsStale]="briefCampaignsStale()"
+              [briefCampaignsUnavailable]="briefCampaignsUnavailable()"
+              [briefCampaignsLoading]="briefCampaignsLoading()"
+              (retryBriefCampaigns)="refreshImplementCampaigns()"
+              (createJobSettled)="refreshImplementCampaigns()"
+              (openSavedBriefRequested)="onOpenSavedBriefFromImplement()"
+              (editBriefRequested)="onEditBriefFromImplement()"
+              (createStarted)="onCreateStarted()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>

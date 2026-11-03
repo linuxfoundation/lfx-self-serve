@@ -373,14 +373,27 @@ describe('CurrentMenteesTabComponent', () => {
   });
 
   it('offers the row actions each status allows', () => {
-    expect(labelsFor('app_1')).toEqual(['Accept', 'Decline', 'Withdraw']);
-    expect(labelsFor('app_3')).toEqual(['Re-open']);
-    expect(labelsFor('app_4')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
-    expect(labelsFor('app_5')).toEqual(['Undo graduation']);
+    expect(labelsFor('app_1')).toEqual(['Contact Mentee', 'Accept', 'Decline', 'Withdraw']);
+    expect(labelsFor('app_3')).toEqual(['Contact Mentee', 'Re-open']);
+    expect(labelsFor('app_4')).toEqual(['Create task', 'Contact Mentee', 'Graduate', 'Decline', 'Withdraw']);
+    expect(labelsFor('app_5')).toEqual(['Contact Mentee', 'Undo graduation']);
   });
 
-  it('keeps the Note link on an ended application', () => {
-    expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_3"]')).not.toBeNull();
+  it('makes Contact Mentee a mailto: link to the mentee, and leaves the other actions handled', () => {
+    const actions = rowFor('app_4')?.actions ?? [];
+    expect(actions.find((action) => action.value === 'contact-mentee')?.url).toBe('mailto:ifeoma.adeyemi@example.com');
+    expect(actions.filter((action) => action.value !== 'contact-mentee').every((action) => action.url === undefined)).toBe(true);
+  });
+
+  it('drops Contact Mentee when the address is not safe to put in a mailto: link', () => {
+    getProgramMentees.mockReturnValue(of({ data: [mentee({ email: 'ifeoma@example.com%0D%0ABcc:other@example.com' })], total: 1 }));
+    fixture.componentInstance['onRetry']();
+    settle();
+
+    expect(labelsFor('app_1')).toEqual(['Accept', 'Decline', 'Withdraw']);
+  });
+
+  it('keeps the Note link on a graduated row', () => {
     expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_5"]')).not.toBeNull();
   });
 

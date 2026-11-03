@@ -24,6 +24,7 @@ import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meet
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
 import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
+import { MeetingJoinStickyBarComponent } from '@app/modules/meetings/components/meeting-join-sticky-bar/meeting-join-sticky-bar.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
@@ -36,6 +37,7 @@ import {
   buildJoinUrlWithParams,
   buildOccurrenceNavTimeline,
   canJoinMeeting,
+  DEFAULT_EARLY_JOIN_TIME,
   DEFAULT_MEETING_TYPE_CONFIG,
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
@@ -48,6 +50,7 @@ import {
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   MaterialsChangedEvent,
+  MEETING_CLOCK_TICK_MS,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
   MeetingHostCandidate,
@@ -82,6 +85,10 @@ import {
   getAttachmentScope,
   getMeetingSelfRemovalMessage,
   getUserTimezone,
+  getTimezoneAbbreviation,
+  collectMeetingOrganizers,
+  getMeetingOrganizerDisplayName,
+  organizerDisplayName,
   isHostKeyVisible,
   isMeetingAttendeeListShared,
   isMeetingInviteResponsesEnabled,
@@ -98,12 +105,14 @@ import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-er
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
+import { OverlayStateService } from '@services/overlay-state.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
+import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -150,6 +159,7 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     CardComponent,
     TagComponent,
     RsvpButtonGroupComponent,
+    MeetingJoinStickyBarComponent,
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
     MeetingOrganizerComponent,
@@ -194,6 +204,9 @@ export class MeetingJoinComponent implements OnInit {
    */
   private readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly overlayState = inject(OverlayStateService);
+  private readonly registrantsOverlayId = 'meeting-join-registrants-drawer';
+  private readonly materialsOverlayId = 'meeting-join-materials-drawer';
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
 
@@ -248,10 +261,41 @@ export class MeetingJoinComponent implements OnInit {
   public messageIcon: Signal<string>;
   public alertMessage: Signal<string>;
   private hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
+  // True only when the join window was already open when the page first loaded the meeting. Set once in initializeMeeting. The 5s clock
+  // can open the window later, which enables the Join button but must never open Zoom on its own (no user gesture).
+  private joinWindowOpenAtLoad = false;
+  private joinWindowChecked = false;
   /** True when `zoom_redirect=false` is on the URL — suppresses automatic Zoom open. */
   private readonly zoomRedirectDisabled: Signal<boolean>;
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
   public showGuestForm: WritableSignal<boolean> = signal<boolean>(false);
+  // Wall clock for the time-gated UI: the join window (canJoinMeeting) and "has ended" (isPastMeeting). Nothing else makes
+  // those re-run as time passes, so a page left open across T-10 kept a disabled Join until reload. Deliberately NOT read by
+  // currentOccurrence: the shown occurrence never rolls over in place, because that would refetch the RSVP and roster.
+  // Browser-only, see startClock().
+  private readonly clock = signal<number>(Date.now());
+  // Start of the occurrence the page shows (the same source as its own date and time), or null when there is none.
+  private readonly shownStart: Signal<string | null> = computed(() => {
+    const start = this.currentOccurrence()?.start_time || this.meeting()?.start_time;
+    return start && !Number.isNaN(Date.parse(start)) ? start : null;
+  });
+  // Sticky bar (#4862), signed-in viewers with full access to an upcoming or in-progress meeting only: anonymous and
+  // password-only guests never learn the start time (the public projection strips it), so nothing time-related may be shown.
+  protected readonly showStickyBar: Signal<boolean> = this.initShowStickyBar();
+  // Primary action in the bar: Resend Invite for an invitee (the page's own self-resend), else Subscribe to the project feed.
+  protected readonly stickyBarAction: Signal<'resend' | 'subscribe' | null> = this.initStickyBarAction();
+  // The phone bar carries Resend Invite, so the page's own copy is hidden below `sm:` (like the inline Join) to avoid two.
+  protected readonly stickyBarOffersResend: Signal<boolean> = computed(() => this.showStickyBar() && this.stickyBarAction() === 'resend');
+  // The project's public calendar feed, built the way the meetings dashboard's iCal Subscribe does.
+  protected readonly projectCalendarFeedUrl: Signal<string> = computed(() => {
+    const projectUid = this.project()?.uid || this.meeting()?.project_uid;
+    return projectUid ? `${environment.urls.home}/public/api/projects/${encodeURIComponent(projectUid)}/calendar.ics` : '';
+  });
+  // The bar yields to full-screen overlays (the guests drawer covers the viewport) and the materials drawer.
+  protected readonly stickyBarSuppressed: Signal<boolean> = computed(() => this.showRegistrants() || this.materialsDrawerVisible());
+  // "Join opens 11:50 AM", in the viewer's zone; the date is added when the window opens on a different day. Waits for the zone
+  // (resolved after first render) so server and client markup agree.
+  protected readonly joinUnlockLabel: Signal<string> = this.initJoinUnlockLabel();
   // Bumped immediately when a guest is added so the count in the RSVP card doesn't lag the
   // async query-service indexing. Floored back to 0 once the registrants refetch absorbs the
   // newly-added rows (see additionalRegistrantsCount computed below).
@@ -320,6 +364,11 @@ export class MeetingJoinComponent implements OnInit {
   public meetingTitle: Signal<string>;
   public meetingDescription: Signal<string>;
   public hasAiCompanion: Signal<boolean>;
+  public showAiSummaryBadge: Signal<boolean>;
+  public mobileTimezoneAbbreviation: Signal<string>;
+  public mobileScheduledTimezoneLabel: Signal<string>;
+  public mobileContextLabel: Signal<string>;
+  public mobileOrganizerLabel: Signal<string>;
   protected isPastMeeting: Signal<boolean>;
   // Gates agenda, materials, and date/time rendering for both the past-meeting and live-meeting
   // paths — picks whichever full-access flag matches how the current meeting() was loaded.
@@ -467,6 +516,11 @@ export class MeetingJoinComponent implements OnInit {
   public formValues: Signal<{ name: string; email: string; organization: string }>;
 
   public constructor() {
+    // Navigating away destroys the page with the drawer possibly still open; never strand the launcher hidden.
+    this.destroyRef.onDestroy(() => {
+      this.overlayState.unregister(this.registrantsOverlayId);
+      this.overlayState.unregister(this.materialsOverlayId);
+    });
     // Initialize all class variables
     this.authenticated = this.userService.authenticated;
 
@@ -521,6 +575,11 @@ export class MeetingJoinComponent implements OnInit {
     bindLfxDocumentTitle(this.meetingTitle);
     this.meetingDescription = this.initializeMeetingDescription();
     this.hasAiCompanion = this.initializeHasAiCompanion();
+    this.showAiSummaryBadge = this.initializeShowAiSummaryBadge();
+    this.mobileTimezoneAbbreviation = this.initializeMobileTimezoneAbbreviation();
+    this.mobileScheduledTimezoneLabel = this.initializeMobileScheduledTimezoneLabel();
+    this.mobileContextLabel = this.initializeMobileContextLabel();
+    this.mobileOrganizerLabel = this.initializeMobileOrganizerLabel();
     this.isPastMeeting = this.initializeIsPastMeeting();
     this.pastMeetingSummary = this.initializePastMeetingSummary();
     this.hasSummaryContent = this.initializeHasSummaryContent();
@@ -601,6 +660,32 @@ export class MeetingJoinComponent implements OnInit {
     afterNextRender(() => {
       this.userTimezone.set(getUserTimezone());
     });
+
+    // Drive the launcher from the same signal the drawer's [(visible)] binds to, so every close path
+    // (header X, Esc, mask click, programmatic set(false)) unregisters. PrimeNG's onHide is not
+    // reliable here: it fires after the leave animation, which never completes when the drawer is
+    // removed first, and that left the launcher hidden for good. Declared last in the constructor:
+    // toObservable() schedules an effect, and creating it before the data pipeline above reorders the
+    // effects the page depends on (33 existing specs fail).
+    toObservable(this.showRegistrants)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((open) => {
+        if (open) {
+          this.overlayState.register(this.registrantsOverlayId);
+        } else {
+          this.overlayState.unregister(this.registrantsOverlayId);
+        }
+      });
+    // Same for the materials drawer: it is bottom-anchored on phones, where the launcher would otherwise sit on top of it.
+    toObservable(this.materialsDrawerVisible)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((open) => {
+        if (open) {
+          this.overlayState.register(this.materialsOverlayId);
+        } else {
+          this.overlayState.unregister(this.materialsOverlayId);
+        }
+      });
   }
 
   public ngOnInit(): void {
@@ -611,6 +696,26 @@ export class MeetingJoinComponent implements OnInit {
       mql.addEventListener('change', handler);
       this.destroyRef.onDestroy(() => mql.removeEventListener('change', handler));
     }
+    if (isPlatformBrowser(this.platformId)) {
+      this.startClock();
+    }
+  }
+
+  /** Opens the same iCal subscribe dialog the meetings dashboard uses, so the calendar stays in sync (webcal) instead of importing a snapshot. */
+  public onSubscribeCalendar(): void {
+    const feedUrl = this.projectCalendarFeedUrl();
+    if (!feedUrl) {
+      return;
+    }
+    const name = this.project()?.name || 'Project';
+    this.dialogService.open(IcalSubscribeDialogComponent, {
+      header: `Subscribe — ${name}`,
+      width: '480px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { feedUrl, name },
+    });
   }
 
   public handleCopyLink(): void {
@@ -901,7 +1006,17 @@ export class MeetingJoinComponent implements OnInit {
           const alreadyJoined = this.hasAutoJoined();
           const usingGuestForm = this.showGuestForm();
 
-          return !!url && authenticated && !!user && !!user.email && canJoin && !alreadyJoined && !usingGuestForm && !zoomRedirectDisabled;
+          return (
+            !!url &&
+            authenticated &&
+            !!user &&
+            !!user.email &&
+            canJoin &&
+            !alreadyJoined &&
+            !usingGuestForm &&
+            !zoomRedirectDisabled &&
+            this.joinWindowOpenAtLoad
+          );
         }),
         // Take only the first valid URL
         take(1)
@@ -956,6 +1071,9 @@ export class MeetingJoinComponent implements OnInit {
         // error branch immediately, before this attempt's fetch even starts (cursor review on #2046).
         if (meetingId !== previousRouteId) {
           this.meetingLoadFailed.set(false);
+          // An in-place /meetings/:id -> /meetings/:other keeps this component alive but unmounts the
+          // drawer, so close it here or its overlay registration keeps the support launcher hidden.
+          this.showRegistrants.set(false);
         }
       }),
       debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled
@@ -1057,6 +1175,7 @@ export class MeetingJoinComponent implements OnInit {
         // follow-up). Only a settled success should clear it.
         this.meetingLoadFailed.set(false);
         this.meetingResolvedRouteId.set(this.meetingRouteId());
+        this.recordJoinWindowAtLoad(res as Meeting);
         // Persist the resolved state during SSR so the client can hydrate to the same branch.
         // Angular defers serialization until this tracked HTTP call settles.
         if (isPlatformServer(this.platformId)) {
@@ -1144,19 +1263,88 @@ export class MeetingJoinComponent implements OnInit {
     return typeof stated === 'string' && stated ? stated : null;
   }
 
-  private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
+  private initShowStickyBar(): Signal<boolean> {
+    return computed(
+      () => this.authenticated() && this.liveMeetingFullAccess() && !this.loadedViaPastMeetingId() && !!this.shownStart() && !this.isPastMeeting()
+    );
+  }
+
+  private initStickyBarAction(): Signal<'resend' | 'subscribe' | null> {
     return computed(() => {
-      const meeting = this.meeting();
-      // Check if a specific occurrence was requested via query param
-      const requestedOccurrence = this.activatedRoute.snapshot.queryParamMap.get('occurrence');
-      if (requestedOccurrence && meeting?.occurrences?.length) {
-        const requestedTime = parseInt(requestedOccurrence, 10);
-        const active = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences);
-        const match = active.find((o: MeetingOccurrence) => new Date(o.start_time).getTime() === requestedTime);
-        if (match) return match;
+      if (this.canResendInvite()) {
+        return 'resend';
       }
-      return getCurrentOrNextOccurrence(meeting);
+      // The project feed lists public meetings only (private ones are not in it), restricted or not, so it is offered for those alone.
+      const inPublicFeed = this.meeting()?.visibility === 'public';
+      return inPublicFeed && this.projectCalendarFeedUrl() ? 'subscribe' : null;
     });
+  }
+
+  // "Join opens 11:50 AM", in the viewer's zone; the date is added when the window opens on a different day. Waits for the
+  // zone (resolved after first render) so server and client markup agree.
+  private initJoinUnlockLabel(): Signal<string> {
+    return computed(() => {
+      const start = this.shownStart();
+      const timezone = this.userTimezone();
+      if (!start || !timezone) {
+        return 'Join Meeting';
+      }
+      const unlockMs = Date.parse(start) - (this.meeting()?.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME) * 60_000;
+      const day = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: timezone, year: 'numeric', month: 'numeric', day: 'numeric' }).format(ms);
+      const time = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(unlockMs);
+      if (day(unlockMs) === day(this.clock())) {
+        return `Join opens ${time}`;
+      }
+      const date = new Intl.DateTimeFormat('en-US', { timeZone: timezone, month: 'short', day: 'numeric' }).format(unlockMs);
+      return `Join opens ${date}, ${time}`;
+    });
+  }
+
+  // Ticks the wall-clock signal. Also on tab focus/visibility: mobile browsers freeze timers in the background, so the
+  // join state must catch up the moment the viewer returns. Cleaned up with the page; never started on the server.
+  private startClock(): void {
+    const tick = (): void => this.clock.set(Date.now());
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') {
+        tick();
+      }
+    };
+    const intervalId = setInterval(tick, MEETING_CLOCK_TICK_MS);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', tick);
+    this.destroyRef.onDestroy(() => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', tick);
+    });
+  }
+
+  private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
+    return computed(() => this.resolveOccurrence(this.meeting()));
+  }
+
+  private resolveOccurrence(meeting: Meeting): MeetingOccurrence | null {
+    // Check if a specific occurrence was requested via query param
+    const requestedOccurrence = this.activatedRoute.snapshot.queryParamMap.get('occurrence');
+    if (requestedOccurrence && meeting?.occurrences?.length) {
+      const requestedTime = parseInt(requestedOccurrence, 10);
+      const active = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences);
+      const match = active.find((o: MeetingOccurrence) => new Date(o.start_time).getTime() === requestedTime);
+      if (match) return match;
+    }
+    return getCurrentOrNextOccurrence(meeting);
+  }
+
+  // Remembers, once, whether the join window was already open when the meeting first loaded. Only then may the page open Zoom by itself.
+  private recordJoinWindowAtLoad(meeting: Meeting): void {
+    if (this.joinWindowChecked) {
+      return;
+    }
+    this.joinWindowChecked = true;
+    if (this.loadedViaPastMeetingId()) {
+      return;
+    }
+    this.joinWindowOpenAtLoad = this.liveMeetingFullAccess() ? canJoinMeeting(meeting, this.resolveOccurrence(meeting)) : this.liveMeetingCanJoin();
   }
 
   /**
@@ -1376,6 +1564,7 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeCanJoinMeeting(): Signal<boolean> {
     return computed(() => {
+      this.clock(); // re-evaluate as time passes (the util reads the real clock)
       // Hyphenated occurrence-ID URL expresses "view as past" intent — never show Join UI.
       if (this.loadedViaPastMeetingId()) return false;
       // Anonymous/guest responses strip the timing fields canJoinMeeting() needs — use the
@@ -1545,6 +1734,53 @@ export class MeetingJoinComponent implements OnInit {
     return computed(() => this.meeting()?.ai_summary_enabled || false);
   }
 
+  // The chip advertises a summary that only exists after the meeting; before the end there is nothing to show (#4863).
+  private initializeShowAiSummaryBadge(): Signal<boolean> {
+    return computed(() => this.hasAiCompanion() && this.isPastMeeting());
+  }
+
+  // Compact mobile meta summary (#4861): viewer-local zone abbreviation next to the time.
+  private initializeMobileTimezoneAbbreviation(): Signal<string> {
+    return computed(() => {
+      const startTime = this.currentOccurrence()?.start_time || this.meeting()?.start_time;
+      const timezone = this.userTimezone();
+      return startTime && timezone ? getTimezoneAbbreviation(startTime, timezone) : '';
+    });
+  }
+
+  // Visible line naming the zone the meeting was scheduled in, shown only when it differs from the viewer's
+  // zone (title tooltips are unreachable on touch and by keyboard).
+  private initializeMobileScheduledTimezoneLabel(): Signal<string> {
+    return computed(() => {
+      const startTime = this.currentOccurrence()?.start_time || this.meeting()?.start_time;
+      const scheduledZone = this.meeting()?.timezone;
+      if (!startTime || !scheduledZone || scheduledZone === this.userTimezone()) {
+        return '';
+      }
+      return `Scheduled in ${scheduledZone} (${getTimezoneAbbreviation(startTime, scheduledZone)})`;
+    });
+  }
+
+  private initializeMobileContextLabel(): Signal<string> {
+    return computed(() => {
+      const foundation = this.parentProject()?.name;
+      const project = this.project()?.name || this.meeting()?.project_name;
+      return [foundation, project].filter(Boolean).join(' · ');
+    });
+  }
+
+  // Full organizer name(s) from the same organizer set as the desktop chip (every name comma-joined, no "you"/"+N" collapsing);
+  // when none resolves, organizerDisplayName supplies a never-blank fallback.
+  private initializeMobileOrganizerLabel(): Signal<string> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const names = collectMeetingOrganizers(meeting, this.organizerChipHosts())
+        .map((organizer) => getMeetingOrganizerDisplayName(organizer))
+        .filter((name) => !!name);
+      return names.length > 0 ? names.join(', ') : organizerDisplayName(meeting);
+    });
+  }
+
   private initializeIsInvited(): Signal<boolean> {
     return computed(() => this.meeting()?.invited ?? false);
   }
@@ -1641,6 +1877,7 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeIsPastMeeting(): Signal<boolean> {
     return computed(() => {
+      this.clock(); // re-evaluate as time passes (the util reads the real clock)
       // Hyphenated occurrence-ID URL expresses "view as past" intent — trust it over the clock.
       if (this.loadedViaPastMeetingId()) return true;
       const meeting = this.meeting();

@@ -3,7 +3,7 @@ title: Get Help with Training and Certifications
 description: Where to get help with Linux Foundation training, certification exams, vouchers, refunds, and invoices, and which questions LFX support handles.
 audience: [all]
 product_area: Trainings
-tags: [trainings, certifications, exams, vouchers, refunds, invoices, support, lf education]
+tags: [trainings, certifications, exams, vouchers, refunds, invoices, support, lf education, certificate name]
 last_updated: 2026-11-02
 intercom_collection: Trainings
 ---
@@ -25,7 +25,7 @@ Contact the LF Education support team for any of these:
 - **Exam vouchers** — whether a voucher is still valid, when it expires, extending a voucher, and vouchers bought in a bundle or received through a program or partner.
 - **Refunds, invoices, and receipts** — for training courses, certification exams, bundles, and subscriptions, including a charge you don't recognize.
 - **Payment at checkout** — payment methods accepted on the Linux Foundation training checkout.
-- **Certifications** — renewals, expiry dates, and corrections to a certificate.
+- **Certifications** — renewals, expiry dates, and corrections to a certificate, including the name printed on it. Changing your name in LFX Self Serve does not update a certificate that has already been issued.
 - **LF Education programs and subscriptions** — for example THRIVE, CARE, and Kubestronaut benefits.
 - **Credly badges** — a badge for a Linux Foundation certification that Credly hasn't issued, or that shows the wrong details. If the badge is in Credly but doesn't appear on the LFX **Badges** page, see the [Badges FAQ](../../badges/faq/).
 

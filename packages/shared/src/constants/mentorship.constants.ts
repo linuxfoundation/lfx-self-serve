@@ -521,14 +521,25 @@ export const MENTORSHIP_ACTIVE_APPLICATION_STATUSES: readonly MentorshipMenteeSt
 
 /**
  * Row actions on the admin Current Mentees tab. Source of the
- * `MentorshipCurrentMenteeAction` union; declaration order is the menu order.
+ * `MentorshipCurrentMenteeAction` union; each status's menu order is set by
+ * `MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS`.
  */
-export const MENTORSHIP_CURRENT_MENTEE_ACTIONS = ['accept', 'create-task', 'graduate', 'undo-graduation', 'reopen', 'decline', 'withdraw'] as const;
+export const MENTORSHIP_CURRENT_MENTEE_ACTIONS = [
+  'accept',
+  'create-task',
+  'graduate',
+  'undo-graduation',
+  'reopen',
+  'decline',
+  'withdraw',
+  'contact-mentee',
+] as const;
 
 /** Menu labels for the Current Mentees row actions — imperative, unlike the status labels. */
 export const MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS: Record<MentorshipCurrentMenteeAction, string> = {
   accept: 'Accept',
   'create-task': 'Create task',
+  'contact-mentee': 'Contact Mentee',
   graduate: 'Graduate',
   'undo-graduation': 'Undo graduation',
   reopen: 'Re-open',
@@ -539,6 +550,7 @@ export const MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS: Record<MentorshipCurrentMe
 export const MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS: Record<MentorshipCurrentMenteeAction, string> = {
   accept: 'fa-light fa-circle-check',
   'create-task': 'fa-light fa-list-check',
+  'contact-mentee': 'fa-light fa-envelope',
   graduate: 'fa-light fa-graduation-cap',
   'undo-graduation': 'fa-light fa-arrow-rotate-left',
   reopen: 'fa-light fa-arrow-rotate-left',
@@ -550,14 +562,15 @@ export const MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS: Record<MentorshipCurrentMen
  * Row actions each status offers on the Current Mentees tab. An application under
  * review can be decided; an accepted mentee can be given tasks and graduated. The
  * end states can be walked back: a graduation is undone back to accepted, and a
- * declined or withdrawn application is re-opened back to review.
+ * declined or withdrawn application is re-opened back to review. The mentee can be
+ * contacted at every status.
  */
 export const MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS: Record<MentorshipMenteeStatus, readonly MentorshipCurrentMenteeAction[]> = {
-  pending: ['accept', 'decline', 'withdraw'],
-  accepted: ['create-task', 'graduate', 'decline', 'withdraw'],
-  declined: ['reopen'],
-  withdrawn: ['reopen'],
-  graduated: ['undo-graduation'],
+  pending: ['contact-mentee', 'accept', 'decline', 'withdraw'],
+  accepted: ['create-task', 'contact-mentee', 'graduate', 'decline', 'withdraw'],
+  declined: ['contact-mentee', 'reopen'],
+  withdrawn: ['contact-mentee', 'reopen'],
+  graduated: ['contact-mentee', 'undo-graduation'],
 };
 
 /**

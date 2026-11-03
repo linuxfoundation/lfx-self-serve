@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibilityKind } from '../enums';
-import type { MeetingResponseFilterOption, MeetingsHomeFilters, MeetingVisibilityInfo } from '../interfaces';
+import type { MeetingResponseFilterOption, MeetingRsvpChoice, MeetingsHomeFilters, MeetingVisibilityInfo } from '../interfaces';
 
 /** Rows the meetings home list loads per page. */
 export const MEETINGS_HOME_PAGE_SIZE = 20;
@@ -25,6 +25,13 @@ export const MEETINGS_HOME_RSVP_FILTER_OPTIONS: readonly MeetingResponseFilterOp
   { label: 'Maybe', value: 'maybe' },
 ];
 
+/** RSVP answers on a meetings home row, in button order. */
+export const MEETINGS_HOME_RSVP_CHOICES: readonly MeetingRsvpChoice[] = [
+  { response: 'accepted', action: 'Yes', label: 'Going', icon: 'fa-solid fa-circle-check', tone: 'accent' },
+  { response: 'declined', action: 'No', label: 'Not going', icon: 'fa-solid fa-circle-xmark', tone: 'danger' },
+  { response: 'maybe', action: 'Maybe', label: 'Maybe', icon: 'fa-solid fa-circle-question', tone: 'warning' },
+];
+
 /** Applied-filter chip copy. */
 export const MEETINGS_HOME_FILTER_CHIP_LABELS = {
   project: 'Project',
@@ -33,6 +40,13 @@ export const MEETINGS_HOME_FILTER_CHIP_LABELS = {
   organizedByMe: 'Organized by me',
   hideDeclined: 'Hiding declined series',
 } as const;
+
+/** Tailwind fill of a visibility badge per kind. */
+export const MEETING_VISIBILITY_BG_CLASSES: Record<MeetingVisibilityKind, string> = {
+  [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
+  [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
+  [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
+};
 
 /** Visibility badge icon and tooltip copy per kind. */
 export const MEETING_VISIBILITY_INFO: Record<MeetingVisibilityKind, MeetingVisibilityInfo> = {
