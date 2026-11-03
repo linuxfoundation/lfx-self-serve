@@ -132,14 +132,19 @@ describe('MailingListSyncSettingsComponent', () => {
   it('reverts the toggle to the persisted state when a sync-settings save fails', async () => {
     await render(baseList, { updateResult: 'error' });
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const toggle = (): boolean | undefined => fixture.debugElement.query((el) => el.name === 'lfx-toggle')?.componentInstance?.checked();
 
     // baseList has no sync_mode, so the persisted (pre-click) state is off.
     fixture.componentInstance['onToggleChange'](true);
+    fixture.detectChanges();
     expect(fixture.componentInstance['syncOn']()).toBe(true);
+    expect(toggle()).toBe(true);
 
     await fixture.whenStable();
+    fixture.detectChanges();
 
     expect(fixture.componentInstance['syncOn']()).toBe(false);
+    expect(toggle()).toBe(false);
     consoleErrorSpy.mockRestore();
   });
 
