@@ -16,7 +16,7 @@
         [disabled]="saving() || !!activeSync()"
         label="Automatic membership sync"
         [tooltip]="'When on, members are kept in sync in one direction between the ' + (committeeLabel.singular | lowercase) + ' and this mailing list.'"
-        id="sync-settings-toggle"
+        [id]="'sync-settings-toggle-' + mailingList().uid"
         dataTest="sync-settings-toggle"></lfx-toggle>
 
       @if (activeSync(); as active) {
