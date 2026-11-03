@@ -4024,10 +4024,12 @@ export const EMAIL_BODY_ALLOWED_STYLE_PROPERTIES: readonly string[] = [
 export const EMAIL_BODY_STYLE_VALUE_PATTERN = /^(?!.*(?:url\s*\(|image(?:-set)?\s*\(|expression\s*\(|@import|behavior|javascript:|position|\\)).*$/i;
 
 /**
- * The margins additionally refuse a negative length and `calc(`, so a block cannot be pulled up or
- * sideways over the copy around it (#3306).
+ * The margins additionally refuse any `-` and any `(` (#3306), so a block cannot be pulled up or
+ * sideways over the copy around it. Refusing the characters, not particular forms, is what closes it:
+ * a negative length (`-20px`) and every CSS math function (`calc(`, `min(`, `max(`, `clamp(`, which can
+ * compute a negative from `0px - (100vh)`) both need one of them, and a legitimate margin needs neither.
  */
-export const EMAIL_BODY_MARGIN_VALUE_PATTERN = /^(?!.*(?:-\s*[\d.]|calc\s*\()).*$/i;
+export const EMAIL_BODY_MARGIN_VALUE_PATTERN = /^[^()-]*$/;
 
 /**
  * The exact hosts whose hero image the email preview may LOAD in the operator's browser. Every

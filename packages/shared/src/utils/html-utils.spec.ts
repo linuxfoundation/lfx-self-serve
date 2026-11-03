@@ -1021,3 +1021,25 @@ describe('stripResourceLoadingHtml — review round (#3306)', () => {
     expect(stripResourceLoadingHtml(`<p style="${declaration}">t</p>`)).toBe('<p>t</p>');
   });
 });
+
+describe('stripResourceLoadingHtml — review round 2 (#3306)', () => {
+  it.each([
+    ['min()', 'margin-top: min(0px, 0px - (100vh))'],
+    ['max()', 'margin-top: max(-100vh, -2000px)'],
+    ['clamp()', 'margin: clamp(-2000px, -50vh, 0px) 0'],
+  ])('drops a margin computed by %s, which can be negative', (_label, declaration) => {
+    expect(stripResourceLoadingHtml(`<p style="${declaration}">t</p>`)).toBe('<p>t</p>');
+  });
+
+  it("drops a refused link's styling with its href, so it does not look clickable", () => {
+    const html = '<p><a href="https://evil.example/cfp" style="color: #0094ff; font-weight: 700; text-decoration: underline">Submit a talk</a></p>';
+
+    expect(stripResourceLoadingHtml(html, ['https://events.linuxfoundation.org/kubecon'])).toBe('<p><a>Submit a talk</a></p>');
+  });
+
+  it("keeps a vouched link's styling", () => {
+    const html = '<p><a href="https://events.linuxfoundation.org/kubecon/cfp" style="color: #0094ff">Submit a talk</a></p>';
+
+    expect(stripResourceLoadingHtml(html, ['https://events.linuxfoundation.org/kubecon'])).toContain('style="color:#0094ff"');
+  });
+});

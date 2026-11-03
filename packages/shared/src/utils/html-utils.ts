@@ -367,7 +367,10 @@ function normalizeHrefForJudgement(href: string): string {
 
 /** `attribs` without its `href`, so an anchor keeps its words and loses only the promise. */
 function omitHref(attribs: Record<string, string>): Record<string, string> {
-  const { href: _dropped, ...rest } = attribs;
+  // `style` goes with the href (#3306): campaign-service colours, bolds and underlines its links, and a
+  // refused link that kept that styling would look clickable while doing nothing. Plain text is the
+  // honest rendering of a link we cannot back.
+  const { href: _dropped, style: _linkStyle, ...rest } = attribs;
   return rest;
 }
 
