@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { PLATFORM_ID, type Provider } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
@@ -3709,7 +3710,8 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     ...over,
   });
 
-  beforeEach(async () => {
+  /** The module this suite renders in; `extraProviders` lets one spec render as a server would (#4983). */
+  async function setUp(extraProviders: Provider[] = []): Promise<void> {
     updateCampaignBid = vi.fn().mockReturnValue(of(bidResult()));
     updateCampaignBudget = vi
       .fn()
@@ -3720,6 +3722,7 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     await TestBed.configureTestingModule({
       imports: [OptimizationTabComponent],
       providers: [
+        ...extraProviders,
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: messageAdd } },
         ConfirmationService,
@@ -3755,6 +3758,10 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     fixture = TestBed.createComponent(OptimizationTabComponent);
     fixture.componentRef.setInput('projectSlug', 'tlf');
     fixture.componentRef.setInput('briefId', 'b-1');
+  }
+
+  beforeEach(async () => {
+    await setUp();
   });
 
   function render(campaigns: CampaignIndexDoc[] | null): void {
@@ -3786,8 +3793,9 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect(terms).toEqual(['Channel:', 'Stage:', 'Tactic:', 'Created:']);
   });
 
-  it("leaves the created date to the browser when the viewer's zone is not known (a server render)", () => {
-    (fixture.componentInstance as unknown as { labelTimeZone: null | undefined }).labelTimeZone = null;
+  it("leaves the created date to the browser during a server render, so the server's day is never shown", async () => {
+    TestBed.resetTestingModule();
+    await setUp([{ provide: PLATFORM_ID, useValue: 'server' }]);
     render([doc({ id: 'g-2', platform: 'google-ads', variant: 'default', created_at: '2026-11-02T12:00:00Z' })]);
 
     expect(q('optimization-campaign-created-g-2')?.textContent?.trim()).toBe('—');
