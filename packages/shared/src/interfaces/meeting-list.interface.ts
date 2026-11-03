@@ -150,3 +150,12 @@ export interface MeetingRecordingDialogData {
   row: MeetingHomeRow;
   shareUrl: string;
 }
+
+/** What the meetings home edit scope dialog opens with. */
+export interface MeetingEditScopeDialogData {
+  row: MeetingHomeRow;
+  /** The meeting as just re-read; the occurrence picker lists its dates. */
+  meeting: Meeting;
+  /** The date the dialog opens on. */
+  occurrence: MeetingOccurrence;
+}

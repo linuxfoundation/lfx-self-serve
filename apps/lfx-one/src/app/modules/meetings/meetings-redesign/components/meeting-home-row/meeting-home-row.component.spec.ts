@@ -13,6 +13,7 @@ import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
 
@@ -97,6 +98,7 @@ describe('MeetingHomeRowComponent', () => {
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: UserService, useValue: { authenticated: signal(true) } },
+        { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
       ],
     });
   });

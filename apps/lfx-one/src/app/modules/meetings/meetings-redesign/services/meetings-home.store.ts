@@ -5,6 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
   Meeting,
@@ -46,6 +47,7 @@ import { catchError, combineLatest, interval, map, Observable, of, startWith, Su
 export class MeetingsHomeStore {
   private readonly userService = inject(UserService);
   private readonly meetingService = inject(MeetingService);
+  private readonly composer = inject(MeetingComposerService);
   private readonly platformId = inject(PLATFORM_ID);
 
   private readonly tabState: WritableSignal<MeetingDashboardView> = signal<MeetingDashboardView>('upcoming');
@@ -233,8 +235,13 @@ export class MeetingsHomeStore {
   /** The roster as loaded, plus the viewer's answers saved since, which win as the newest; a hidden roster stays empty. */
   private initNextRowRsvps(): Signal<MeetingRsvp[] | null> {
     const loaded = toSignal(
-      toObservable(computed(() => this.nextRow()?.meeting.id ?? null)).pipe(
-        switchMap((id) =>
+      // A composer save can change the guests, so it reloads the responses too.
+      toObservable(
+        computed(() => ({ id: this.nextRow()?.meeting.id ?? null, saves: this.composer.saveCount() }), {
+          equal: (a, b) => a.id === b.id && a.saves === b.saves,
+        })
+      ).pipe(
+        switchMap(({ id }) =>
           id
             ? this.meetingService.getMeetingRsvps(id).pipe(
                 catchError((error: unknown) => {

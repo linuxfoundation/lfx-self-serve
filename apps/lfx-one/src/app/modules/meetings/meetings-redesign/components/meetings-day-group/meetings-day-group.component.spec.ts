@@ -10,6 +10,7 @@ import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsDayGroupComponent } from './meetings-day-group.component';
 
 const row = (key: string, title: string): MeetingHomeRow =>
@@ -23,6 +24,7 @@ describe('MeetingsDayGroupComponent', () => {
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: UserService, useValue: { authenticated: signal(true) } },
+        { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
       ],
     });
   });
