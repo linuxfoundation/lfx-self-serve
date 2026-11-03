@@ -1384,8 +1384,9 @@ export interface CampaignImplementationDraft {
   googleExcludedAgeRanges?: GoogleAdsAgeRange[];
   googleExcludedGenders?: GoogleAdsGender[];
   /**
-   * Google's excluded locations — country codes and numeric geo target constant ids, countries
-   * first. Absent and empty agree: the campaign excludes nowhere.
+   * Google's excluded locations — country codes and numeric geo target constant ids. Countries
+   * picked from the list come first; an entry typed into the geo id box is appended after them.
+   * Absent and empty agree: the campaign excludes nowhere.
    */
   googleExcludedGeoTargets?: string[];
   /**
