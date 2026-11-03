@@ -139,9 +139,10 @@
               data-testid="my-newsletters-table">
               <ng-template #header>
                 <tr>
-                  <th class="w-[50%]">Title</th>
-                  <th class="w-[18%]">Sent</th>
-                  <th class="w-[12%]">Shares</th>
+                  <th class="w-[42%]">Title</th>
+                  <th class="w-[16%]">Sent</th>
+                  <th class="w-[11%]">Views</th>
+                  <th class="w-[11%]">Shares</th>
                   <th class="w-[20%]">Project</th>
                 </tr>
               </ng-template>
@@ -179,6 +180,18 @@
                   </td>
                   <td>
                     <span class="text-sm text-gray-700">{{ newsletter.sent_at | date: 'MMM d, y' }}</span>
+                  </td>
+                  <td>
+                    @if (newsletter.viewCount !== null) {
+                      <span
+                        class="inline-flex items-center gap-1.5 text-sm text-gray-700 tabular-nums"
+                        [attr.aria-label]="newsletter.viewCount === 1 ? 'Viewed 1 time' : 'Viewed ' + newsletter.viewCount + ' times'"
+                        [attr.data-testid]="'my-newsletters-views-' + newsletter.id">
+                        <i class="fa-light fa-eye text-xs text-gray-400" aria-hidden="true"></i>{{ newsletter.viewCount | number }}
+                      </span>
+                    } @else {
+                      <span class="text-sm text-gray-400" [attr.data-testid]="'my-newsletters-views-' + newsletter.id">—</span>
+                    }
                   </td>
                   <td>
                     @if (newsletter.shareCount) {

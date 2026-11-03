@@ -156,6 +156,22 @@ export class NewsletterService {
   }
 
   /**
+   * Records a unique web page view of a sent issue (one per user per issue, counted server-side). Emits
+   * `true` when the server accepted it and `false` otherwise (the 403 while impersonating, a 404 for a
+   * draft, a network error). It never errors: reading must not fail because tracking did.
+   */
+  public recordPageView(projectUid: string, newsletterUid: string): Observable<boolean> {
+    return this.http.post<void>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/page-view`, {}).pipe(
+      take(1),
+      map(() => true),
+      catchError((error) => {
+        console.warn('[NewsletterService] Failed to record newsletter page view', error);
+        return of(false);
+      })
+    );
+  }
+
+  /**
    * Me-lens My Newsletters by foundation (#3483): one card per foundation plus the full feed (tagged
    * with its foundation) and whether the user may invite colleagues. Errors propagate to the page.
    */

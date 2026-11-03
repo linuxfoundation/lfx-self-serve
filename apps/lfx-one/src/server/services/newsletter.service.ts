@@ -290,6 +290,10 @@ export class NewsletterService {
     return this.newsletterClient.recordShare(req, projectUid, newsletterUid, payload);
   }
 
+  public recordPageView(req: Request, projectUid: string, newsletterUid: string): Promise<void> {
+    return this.newsletterClient.recordPageView(req, projectUid, newsletterUid);
+  }
+
   public deleteOptOut(req: Request, projectUid: string, optOutId: string): Promise<void> {
     return this.newsletterClient.deleteOptOut(req, projectUid, optOutId);
   }

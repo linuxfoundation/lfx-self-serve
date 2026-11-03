@@ -44,4 +44,8 @@ router.post('/:projectUid/:newsletterUid/join', blockDuringImpersonation, (req, 
 // must not inflate the count.
 router.post('/:projectUid/:newsletterUid/share', blockDuringImpersonation, (req, res, next) => newsletterController.recordShare(req, res, next));
 
+// Unique web page views: the reader records one view per signed-in user per issue (repeats are
+// no-ops upstream). Blocked while impersonating for the same reason as shares.
+router.post('/:projectUid/:newsletterUid/page-view', blockDuringImpersonation, (req, res, next) => newsletterController.recordPageView(req, res, next));
+
 export default router;

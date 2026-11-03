@@ -79,3 +79,35 @@ describe('NewsletterService.recordShare (#4958)', () => {
     expect(trackEvent).not.toHaveBeenCalled();
   });
 });
+
+describe('NewsletterService.recordPageView', () => {
+  let http: HttpTestingController;
+  let service: NewsletterService;
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting(), { provide: PlausibleService, useValue: { trackEvent: vi.fn() } }],
+    });
+    http = TestBed.inject(HttpTestingController);
+    service = TestBed.inject(NewsletterService);
+  });
+  afterEach(() => http.verify());
+
+  it('posts the view and reports acceptance', () => {
+    const accepted = vi.fn();
+    service.recordPageView('proj-1', 'news-1').subscribe(accepted);
+    const request = http.expectOne('/api/newsletters/proj-1/news-1/page-view');
+    expect(request.request.method).toBe('POST');
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    expect(accepted).toHaveBeenCalledWith(true);
+  });
+
+  it('reports a rejected recording as false instead of erroring', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const next = vi.fn();
+    const error = vi.fn();
+    service.recordPageView('proj-1', 'news-1').subscribe({ next, error });
+    http.expectOne('/api/newsletters/proj-1/news-1/page-view').flush('Forbidden', { status: 403, statusText: 'Forbidden' });
+    expect(next).toHaveBeenCalledWith(false);
+    expect(error).not.toHaveBeenCalled();
+  });
+});
