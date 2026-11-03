@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,5 +50,13 @@ describe('MeetingsHomeResizeService', () => {
     expect(first).toHaveBeenCalledTimes(1);
     expect(unobserve).toHaveBeenCalledWith(title);
     expect(unobserve).toHaveBeenCalledWith(project);
+  });
+
+  it('does nothing during server rendering', () => {
+    TestBed.configureTestingModule({ providers: [{ provide: PLATFORM_ID, useValue: 'server' }] });
+    const stop = TestBed.inject(MeetingsHomeResizeService).observe([document.createElement('a')], vi.fn());
+
+    expect(created).toBe(0);
+    expect(() => stop()).not.toThrow();
   });
 });
