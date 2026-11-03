@@ -3,7 +3,7 @@
 
 import {
   ORG_ACCOUNT_ID_PATTERN,
-  ORG_CLA_MANAGER_ROLE,
+  ORG_CLA_LENS_ENTRY_ROLES,
   ORG_CLA_MANAGER_SCOPE_TYPE,
   ORG_CLA_MANAGER_SCOPES_NAMESPACE,
   ORG_CLA_MANAGER_SCOPES_TTL_SECONDS,
@@ -53,20 +53,13 @@ function companyIdsOf(scope: UserServiceScopePermission): (string | null)[] {
   });
 }
 
-/**
- * The companies the caller manages CLAs for, from their own `cla-manager` scopes.
- *
- * Only `Role === 'cla-manager'` on a `project|organization` scope counts. The request already asks
- * for that role, but the role is re-checked on every scope: a signatory or designee scope must never
- * qualify, even if the filter is ignored upstream.
- */
 export function claManagerCompanies(payload: UserServiceMePermissions | null | undefined): ClaManagerCompanies {
   const companySfids = new Set<string>();
   const rejected: Record<ClaManagerScopeRejection, number> = { malformed_scope: 0, not_account_id: 0 };
 
   for (const permission of payload?.Permissions ?? []) {
     for (const scope of permission?.Scopes ?? []) {
-      if (scope?.Role !== ORG_CLA_MANAGER_ROLE || scope.Type !== ORG_CLA_MANAGER_SCOPE_TYPE) continue;
+      if (!scope?.Role || !ORG_CLA_LENS_ENTRY_ROLES.includes(scope.Role) || scope.Type !== ORG_CLA_MANAGER_SCOPE_TYPE) continue;
       const companyIds = companyIdsOf(scope);
       for (const companyId of companyIds) {
         if (!companyId) {
@@ -139,7 +132,7 @@ export class OrgClaManagerScopesService {
         path: '/me/permissions',
       });
     }
-    const url = `${getUserServiceBaseUrl(OPERATION, SERVICE)}/me/permissions?role=${encodeURIComponent(ORG_CLA_MANAGER_ROLE)}`;
+    const url = `${getUserServiceBaseUrl(OPERATION, SERVICE)}/me/permissions?role=${encodeURIComponent(ORG_CLA_LENS_ENTRY_ROLES.join(','))}`;
     const payload = await gatewayFetch<UserServiceMePermissions>(req, url, {
       operation: OPERATION,
       service: SERVICE,

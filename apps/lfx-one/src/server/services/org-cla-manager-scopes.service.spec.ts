@@ -84,19 +84,41 @@ describe('claManagerCompanies', () => {
     expect(rejected).toEqual({ malformed_scope: 0, not_account_id: 1 });
   });
 
-  it.each(['cla-signatory', 'cla-manager-designee', 'company-admin', undefined])(
-    'ignores a %s scope even if the role filter is not applied upstream',
-    (role) => {
-      const { companySfids } = claManagerCompanies(payload({ Role: role, Type: 'project|organization', ID: [PROJECT_1, COMPANY_A] }));
+  it('takes the company half of a project|organization cla-manager-designee scope', () => {
+    const { companySfids } = claManagerCompanies(payload(scope('cla-manager-designee', [PROJECT_1, COMPANY_A])));
 
-      expect(companySfids.size).toBe(0);
-    }
-  );
+    expect([...companySfids]).toEqual([COMPANY_A]);
+  });
 
-  it('ignores a cla-manager scope that is not project|organization', () => {
-    const { companySfids } = claManagerCompanies(payload(scope('cla-manager', [COMPANY_A], 'organization')));
+  it('lists the companies of both roles, each once', () => {
+    const { companySfids } = claManagerCompanies(
+      payload(
+        scope('cla-manager', [PROJECT_1, COMPANY_A]),
+        scope('cla-manager-designee', [PROJECT_2, COMPANY_B]),
+        scope('cla-manager-designee', [PROJECT_2, COMPANY_A])
+      )
+    );
+
+    expect([...companySfids].sort()).toEqual([COMPANY_A, COMPANY_B].sort());
+  });
+
+  it.each(['cla-signatory', 'company-admin', undefined])('ignores a %s scope even if the role filter is not applied upstream', (role) => {
+    const { companySfids } = claManagerCompanies(payload({ Role: role, Type: 'project|organization', ID: [PROJECT_1, COMPANY_A] }));
 
     expect(companySfids.size).toBe(0);
+  });
+
+  it.each(['cla-manager', 'cla-manager-designee'])('ignores a %s scope that is not project|organization', (role) => {
+    const { companySfids } = claManagerCompanies(payload(scope(role, [COMPANY_A], 'organization')));
+
+    expect(companySfids.size).toBe(0);
+  });
+
+  it('drops and counts a cla-manager-designee scope on an Org Service id', () => {
+    const { companySfids, rejected } = claManagerCompanies(payload(scope('cla-manager-designee', [PROJECT_1, 'lf0000000000000001'])));
+
+    expect(companySfids.size).toBe(0);
+    expect(rejected).toEqual({ malformed_scope: 0, not_account_id: 1 });
   });
 
   it.each([
@@ -148,13 +170,18 @@ describe('OrgClaManagerScopesService', () => {
     isImpersonating.mockReturnValue(false);
   });
 
-  it('reads the cla-manager role with the caller token', async () => {
+  it('reads the cla-manager and cla-manager-designee roles in one call with the caller token', async () => {
     gatewayFetch.mockResolvedValue(payload(scope('cla-manager', [PROJECT_1, COMPANY_A])));
 
     const sfids = await service.getCompanySfids(req());
 
     expect([...sfids]).toEqual([COMPANY_A]);
-    expect(gatewayFetch).toHaveBeenCalledWith(expect.anything(), 'https://gw.test/user-service/v1/me/permissions?role=cla-manager', expect.anything());
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      'https://gw.test/user-service/v1/me/permissions?role=cla-manager%2Ccla-manager-designee',
+      expect.anything()
+    );
     expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.not.objectContaining({ bearerToken: expect.anything() }));
   });
 

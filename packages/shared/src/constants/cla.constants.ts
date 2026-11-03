@@ -992,7 +992,11 @@ export const ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE = 3;
  * scope per CLA Group, and that scope is the only record of the role readable with their own token,
  * so it is how Self Serve finds the companies a CLA Manager without a `b2b_org` grant may open.
  */
-export const ORG_CLA_MANAGER_ROLE = 'cla-manager';
+const ORG_CLA_MANAGER_ROLE = 'cla-manager';
+
+const ORG_CLA_MANAGER_DESIGNEE_ROLE = 'cla-manager-designee';
+
+export const ORG_CLA_LENS_ENTRY_ROLES: readonly string[] = [ORG_CLA_MANAGER_ROLE, ORG_CLA_MANAGER_DESIGNEE_ROLE];
 
 /** The ACS scope type that pairs a project with a company; its `ID` is `[projectSfid, companySfid]`. */
 export const ORG_CLA_MANAGER_SCOPE_TYPE = 'project|organization';
