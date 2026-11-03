@@ -3,40 +3,59 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { CERTIFICATION_PRODUCT_TYPE, MAX_ORG_CERT_EMPLOYEES, MAX_ORG_TRAINING_EMPLOYEES, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_ORG_TRAINING_GROUPS_PAGE_SIZE,
+  DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD,
+  DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER,
+  MAX_ORG_CERT_EMPLOYEES,
+  ORG_TRAINING_GROUP_NONE_LABELS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
-  GetOrgCertificationsOptions,
-  GetOrgTrainingsOptions,
   OrgCertEmployee,
-  OrgCertEmployeesResponse,
-  OrgCertEmployeeStatus,
-  OrgCertification,
-  OrgCertificationsResponse,
-  OrgTraining,
-  OrgTrainingEmployeesResponse,
-  OrgTrainingEmployeeStatus,
-  OrgTrainingsResponse,
+  OrgDropdownOption,
+  OrgLensTimeRange,
+  OrgTrainingFilterOptions,
+  OrgTrainingGroupEmployeesParams,
+  OrgTrainingGroupEmployeesResponse,
+  OrgTrainingGroupRow,
+  OrgTrainingGroupsParams,
+  OrgTrainingGroupsResponse,
   OrgTrainingStats,
+  OrgTrainingStatsQuery,
 } from '@lfx-one/shared/interfaces';
+import { hasOrgTrainingCourseFilter, orgTrainingCompletionRatePct, orgTrainingFiltersSignature } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
-import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
+import {
+  buildOrgTrainingPairsCte,
+  ORG_TRAINING_GROUP_SQL,
+  orgTrainingParamSignature,
+  orgTrainingRangePredicate,
+  orgTrainingStatusPredicate,
+  orgTrainingTabPredicate,
+} from '../helpers/org-training-pairs.sql';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
-interface OrgTrainingStatsRow {
-  CERTIFIED_EMPLOYEES: number;
-  CERTIFICATIONS_EARNED: number;
-  EMPLOYEES_IN_TRAINING: number;
-  TRAINING_COURSES_ENROLLED: number;
-  IN_PROGRESS_AS_OF?: Date | string | null;
+interface OrgTrainingPairStatsRow {
+  PEOPLE: number;
+  COURSES_TAKEN: number;
+  CERTIFICATIONS: number;
+  CERTIFIED_PEOPLE: number;
+  TRAININGS_COMPLETED: number;
+  COURSES_IN_PROGRESS: number;
+  PEOPLE_IN_TRAINING: number;
 }
 
-interface OrgTrainingActivityRow {
-  PEOPLE_WITH_TRAINING_ACTIVITY: number;
-  TRAINING_ACTIVITY_AS_OF: Date | string | null;
+interface OrgTrainingCountRow {
+  PEOPLE: number;
+}
+
+interface OrgTrainingAsOfRow {
+  AS_OF: Date | string | null;
 }
 
 interface OrgTrainingRosterMembersRow {
@@ -44,533 +63,392 @@ interface OrgTrainingRosterMembersRow {
   AS_OF_TS: Date | string | null;
 }
 
-interface OrgTrainingStatsRaw {
-  certRows: OrgTrainingStatsRow[];
-  trainingRows: OrgTrainingStatsRow[];
-  activityRows: OrgTrainingActivityRow[];
-  rosterRows: OrgTrainingRosterMembersRow[];
-}
-
-interface OrgCertificationRow {
-  COURSE_ID: string;
-  COURSE_NAME: string | null;
+interface OrgTrainingOptionRow {
+  FOUNDATION_ID: string | null;
   FOUNDATION_NAME: string | null;
-  LEVEL: string | null;
-  LOGO_URL: string | null;
-  CERTIFIED_COUNT: number;
-  IN_PROGRESS_COUNT: number;
-}
-
-interface OrgTrainingRow {
-  COURSE_ID: string;
+  PROJECT_ID: string | null;
+  PROJECT_NAME: string | null;
   COURSE_NAME: string | null;
-  FOUNDATION_NAME: string | null;
-  LEVEL: string | null;
-  IN_PROGRESS_COUNT: number;
-  COMPLETED_COUNT: number;
+  COURSE_LEVEL: string | null;
+  COURSE_FORMAT: string | null;
 }
 
-interface OrgPagedCountRow {
-  TOTAL_RECORDS: number;
+interface OrgTrainingGroupSqlRow {
+  GROUP_KEY: string | null;
+  GROUP_LABEL: string | null;
+  PEOPLE: number;
+  COURSES_TAKEN: number;
+  COMPLETED: number;
+  IN_PROGRESS: number;
+  LEVEL: string | null;
+  FOUNDATION: string | null;
+}
+
+interface OrgTrainingGroupsRaw {
+  rows: OrgTrainingGroupRow[];
+  totals: OrgTrainingGroupsResponse['totals'];
+}
+
+interface OrgTrainingGroupEmployeesRaw {
+  label: string;
+  total: number;
+  data: OrgCertEmployee[];
 }
 
 interface OrgRosterEmployeeRow {
   CONTACT_ID: string;
   NAME: string | null;
   JOB_TITLE: string | null;
-  COURSE_NAME: string | null;
-  TOTAL_MATCHES: number;
 }
 
-/** TI catalog dimension scoped to an org's engaged course IDs (avoids full TI catalog scan). */
-const scopedCourseCatalogDimCte = (orgCourseIdsSql: string): string => `
-  org_course_ids AS (
-    ${orgCourseIdsSql}
-  ),
-  course_dim AS (
-    SELECT
-      COURSE_ID,
-      ANY_VALUE(LEVEL) AS LEVEL,
-      ANY_VALUE(LOGO_URL) AS LOGO_URL,
-      ANY_VALUE(PRODUCT_TYPE) AS PRODUCT_TYPE
-    FROM (
-      SELECT COURSE_ID, LEVEL, LOGO_URL, PRODUCT_TYPE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.USER_CERTIFICATES
-      WHERE COURSE_ID IS NOT NULL
-        AND COURSE_ID IN (SELECT COURSE_ID FROM org_course_ids)
-      UNION ALL
-      SELECT COURSE_ID, LEVEL, LOGO_URL, PRODUCT_TYPE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.USER_COURSE_ENROLLMENTS
-      WHERE COURSE_ID IS NOT NULL
-        AND COURSE_ID IN (SELECT COURSE_ID FROM org_course_ids)
-    )
-    GROUP BY COURSE_ID
-  )
-`;
+interface OrgTrainingGroupCountRow {
+  TOTAL: number;
+  GROUP_LABEL: string | null;
+}
 
-/** Aggregates training & certification counts for the Org Lens Training page stat strip and the Overview training tile. */
+/** Learner numbers of the shared Training / Trainees view: one pairs definition (see org-training-pairs.sql) behind stats, options, groups and drawers. */
 export class OrgLensTrainingService {
   private readonly snowflakeService = SnowflakeService.getInstance();
 
-  public async getTrainingStats(accountId: string): Promise<OrgTrainingStats> {
-    // v2: adds roster members, people with training activity and the as-of timestamps.
-    // v3: the two certification counts keep to people on the org's people list.
-    // v4: the people-list column is IS_ON_PEOPLE_LIST.
-    const raw = await withOrgCache(
+  /** The one stats function: both pages and the Overview tile call it, so equal queries always give equal numbers. */
+  public async getTrainingStats(accountId: string, query: OrgTrainingStatsQuery): Promise<OrgTrainingStats> {
+    return withOrgCache(
       accountId,
-      'training-stats:v4',
+      `training-stats:v5:${orgTrainingFiltersSignature(query)}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchTrainingStatsRows(accountId),
-      isTrainingStatsRaw
+      () => this.fetchTrainingStats(accountId, query),
+      isTrainingStats
     );
-
-    const cert = raw.certRows[0];
-    const training = raw.trainingRows[0];
-    const activity = raw.activityRows[0];
-    // No row: the org has no LF Education training client, so there is no roster to count (not zero members).
-    const roster = raw.rosterRows[0];
-
-    return {
-      rosterMembers: roster ? roster.ROSTER_MEMBERS : null,
-      rosterMembersAsOf: roster ? toIsoTimestamp(roster.AS_OF_TS) : null,
-      peopleWithTrainingActivity: activity?.PEOPLE_WITH_TRAINING_ACTIVITY ?? 0,
-      trainingActivityAsOf: toIsoTimestamp(activity?.TRAINING_ACTIVITY_AS_OF),
-      certifiedEmployees: cert?.CERTIFIED_EMPLOYEES ?? 0,
-      certificationsEarned: cert?.CERTIFICATIONS_EARNED ?? 0,
-      employeesInTraining: training?.EMPLOYEES_IN_TRAINING ?? 0,
-      trainingCoursesEnrolled: training?.TRAINING_COURSES_ENROLLED ?? 0,
-      inProgressAsOf: toIsoTimestamp(training?.IN_PROGRESS_AS_OF),
-    };
   }
 
-  public async getOrgCertifications(req: Request, accountId: string, options: GetOrgCertificationsOptions): Promise<OrgCertificationsResponse> {
-    const { searchQuery, level, pageSize, offset, sortField, sortOrder } = options;
+  /** Dropdown options: the people-list pairs in range, unfiltered. */
+  public async getFilterOptions(accountId: string, range: OrgLensTimeRange): Promise<OrgTrainingFilterOptions> {
+    return withOrgCache(
+      accountId,
+      `training-filter-options:v1:${range}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        const { cte, binds } = buildOrgTrainingPairsCte(accountId, { range, foundation: null, project: null, course: null, level: null, format: null });
+        const sql = `
+          WITH ${cte}
+          SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME, PROJECT_ID, PROJECT_NAME, COURSE_NAME, COURSE_LEVEL, COURSE_FORMAT
+          FROM f
+        `;
+        const result = await this.snowflakeService.execute<OrgTrainingOptionRow>(sql, binds);
+        return buildFilterOptions(result.rows);
+      },
+      isFilterOptions
+    );
+  }
 
-    logger.debug(req, 'get_org_certifications', 'Building org certifications query', {
+  /** Group-by table page of one tab. The full group set is cached; search, sort and paging run in memory. */
+  public async getGroups(req: Request, accountId: string, query: OrgTrainingStatsQuery, params: OrgTrainingGroupsParams): Promise<OrgTrainingGroupsResponse> {
+    const { groupBy, tab, searchQuery } = params;
+    const sortField = params.sortField ?? DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD;
+    const sortOrder = params.sortOrder ?? DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER;
+    const pageSize = params.pageSize ?? DEFAULT_ORG_TRAINING_GROUPS_PAGE_SIZE;
+    const offset = params.offset ?? 0;
+
+    logger.debug(req, 'get_org_training_groups', 'Reading org training groups', {
       account_id: accountId,
+      group_by: groupBy,
+      tab,
       has_search: !!searchQuery,
-      level,
       sort_field: sortField,
       sort_order: sortOrder,
       page_size: pageSize,
       offset,
     });
 
-    const searchFilter = searchQuery ? 'AND (b.COURSE_NAME ILIKE ? OR b.FOUNDATION_NAME ILIKE ?)' : '';
-    const levelFilter = level ? 'AND UPPER(d.LEVEL) = ?' : '';
+    const raw = await withOrgCache(
+      accountId,
+      `training-groups:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${tab}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchGroups(accountId, query, groupBy, tab),
+      isGroupsRaw
+    );
 
-    // One row per (person, course) with its status resolved in lf-dbt (Certified wins over a re-enrollment); certificates
-    // of any age, in progress only when enrolled in the last 12 months. ORG_PEOPLE_ALL is unique per (account, person),
-    // so each person counts once per course and only people on the org's people list count.
-    const filteredCte = `
-      WITH base AS (
-        SELECT
-          s.COURSE_ID,
-          MAX(s.COURSE_NAME)                AS COURSE_NAME,
-          MAX(s.FOUNDATION_NAME)            AS FOUNDATION_NAME,
-          COUNT_IF(s.STATUS = 'Certified')  AS CERTIFIED_COUNT,
-          COUNT_IF(s.STATUS = 'Enrolled')   AS IN_PROGRESS_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS s
-        INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
-          ON p.ACCOUNT_ID = s.ACCOUNT_ID AND p.PERSON_KEY = s.PERSON_KEY
-        WHERE s.ACCOUNT_ID = ?
-          AND (s.STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate('s.LAST_ENROLLED_TS')}))
-        GROUP BY s.COURSE_ID
-      ),
-      ${scopedCourseCatalogDimCte('SELECT DISTINCT b.COURSE_ID FROM base b')},
-      filtered AS (
-        SELECT
-          b.COURSE_ID,
-          b.COURSE_NAME,
-          b.FOUNDATION_NAME,
-          d.LEVEL     AS LEVEL,
-          d.LOGO_URL  AS LOGO_URL,
-          b.CERTIFIED_COUNT,
-          b.IN_PROGRESS_COUNT
-        FROM base b
-        INNER JOIN course_dim d ON b.COURSE_ID = d.COURSE_ID
-        WHERE d.PRODUCT_TYPE = '${CERTIFICATION_PRODUCT_TYPE}'
-          ${searchFilter}
-          ${levelFilter}
-      )
-    `;
+    const needle = searchQuery?.trim().toLowerCase();
+    const matching = needle ? raw.rows.filter((row) => row.label.toLowerCase().includes(needle)) : [...raw.rows];
+    const direction = sortOrder === 'ASC' ? 1 : -1;
+    matching.sort((a, b) => {
+      const primary = sortField === 'label' ? a.label.localeCompare(b.label) : a[sortField] - b[sortField];
+      return primary !== 0 ? primary * direction : a.label.localeCompare(b.label);
+    });
+
+    return { data: matching.slice(offset, offset + pageSize), total: matching.length, totals: raw.totals };
+  }
+
+  /** Drill-down of one group cell: `total` is the pair count; `data` lists current employees only. */
+  public async getGroupEmployees(
+    req: Request,
+    accountId: string,
+    query: OrgTrainingStatsQuery,
+    params: OrgTrainingGroupEmployeesParams
+  ): Promise<OrgTrainingGroupEmployeesResponse> {
+    const { groupBy, groupValue, tab, status } = params;
+
+    logger.debug(req, 'get_org_training_group_employees', 'Reading org training group employees', {
+      account_id: accountId,
+      group_by: groupBy,
+      tab,
+      status,
+    });
 
     const raw = await withOrgCache(
       accountId,
-      `certifications:v4:${paramSignature([searchQuery ?? null, level, pageSize, offset, sortField, sortOrder])}`,
+      `training-group-employees:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${orgTrainingParamSignature([groupValue])}:${tab}:${status}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () =>
-        this.fetchPagedCourseRows<OrgCertificationRow>(req, 'get_org_certifications', filteredCte, {
-          accountId,
-          searchQuery,
-          level,
-          pageSize,
-          offset,
-          sortField,
-          sortOrder,
-          selectColumns: 'COURSE_ID, COURSE_NAME, FOUNDATION_NAME, LEVEL, LOGO_URL, CERTIFIED_COUNT, IN_PROGRESS_COUNT',
-        }),
-      isPagedCourseRaw
+      () => this.fetchGroupEmployees(accountId, query, params),
+      isGroupEmployeesRaw
     );
 
-    return { data: raw.rows.map((row) => this.mapRowToOrgCertification(row)), total: raw.total, pageSize, offset };
+    return { groupBy, groupValue, label: raw.label || ORG_TRAINING_GROUP_NONE_LABELS[groupBy], tab, status, total: raw.total, data: raw.data };
   }
 
-  public async getOrgTrainings(req: Request, accountId: string, options: GetOrgTrainingsOptions): Promise<OrgTrainingsResponse> {
-    const { searchQuery, level, pageSize, offset, sortField, sortOrder } = options;
-
-    logger.debug(req, 'get_org_trainings', 'Building org trainings query', {
-      account_id: accountId,
-      has_search: !!searchQuery,
-      level,
-      sort_field: sortField,
-      sort_order: sortOrder,
-      page_size: pageSize,
-      offset,
-    });
-
-    const searchFilter = searchQuery ? 'AND (b.COURSE_NAME ILIKE ? OR b.FOUNDATION_NAME ILIKE ?)' : '';
-    const levelFilter = level ? 'AND UPPER(b.LEVEL) = ?' : '';
-
-    const filteredCte = `
-      WITH base AS (
-        SELECT
-          t.COURSE_ID,
-          MAX(t.COURSE_NAME)      AS COURSE_NAME,
-          MAX(t.FOUNDATION_NAME)  AS FOUNDATION_NAME,
-          MAX(t.LEVEL)            AS LEVEL,
-          COUNT(DISTINCT CASE WHEN t.TRAINING_STATUS = 'InProgress' THEN t.PERSON_KEY END) AS IN_PROGRESS_COUNT,
-          COUNT(DISTINCT CASE WHEN t.TRAINING_STATUS = 'Completed' THEN t.PERSON_KEY END)  AS COMPLETED_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSES t
-        WHERE t.ACCOUNT_ID = ?
-          AND t.COURSE_ID IS NOT NULL
-        GROUP BY t.COURSE_ID
-      ),
-      filtered AS (
-        SELECT
-          b.COURSE_ID,
-          b.COURSE_NAME,
-          b.FOUNDATION_NAME,
-          b.LEVEL,
-          b.IN_PROGRESS_COUNT,
-          b.COMPLETED_COUNT
-        FROM base b
-        WHERE 1=1
-          ${searchFilter}
-          ${levelFilter}
-      )
+  private async fetchTrainingStats(accountId: string, query: OrgTrainingStatsQuery): Promise<OrgTrainingStats> {
+    const { cte, binds } = buildOrgTrainingPairsCte(accountId, query);
+    const pairsSql = `
+      WITH ${cte}
+      SELECT
+        COUNT(DISTINCT PERSON_KEY)                                                                       AS PEOPLE,
+        COUNT(*)                                                                                         AS COURSES_TAKEN,
+        COUNT_IF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')})                          AS CERTIFICATIONS,
+        COUNT(DISTINCT IFF(IS_CERTIFIED AND ${orgTrainingTabPredicate('certifications')}, PERSON_KEY, NULL)) AS CERTIFIED_PEOPLE,
+        COUNT_IF(IS_CERTIFIED AND ${orgTrainingTabPredicate('trainings')})                               AS TRAININGS_COMPLETED,
+        COUNT_IF(NOT IS_CERTIFIED)                                                                       AS COURSES_IN_PROGRESS,
+        COUNT(DISTINCT IFF(NOT IS_CERTIFIED, PERSON_KEY, NULL))                                          AS PEOPLE_IN_TRAINING
+      FROM f
     `;
 
-    const raw = await withOrgCache(
-      accountId,
-      `trainings:${paramSignature([searchQuery ?? null, level, pageSize, offset, sortField, sortOrder])}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () =>
-        this.fetchPagedCourseRows<OrgTrainingRow>(req, 'get_org_trainings', filteredCte, {
-          accountId,
-          searchQuery,
-          level,
-          pageSize,
-          offset,
-          sortField,
-          sortOrder,
-          selectColumns: 'COURSE_ID, COURSE_NAME, FOUNDATION_NAME, LEVEL, IN_PROGRESS_COUNT, COMPLETED_COUNT',
-        }),
-      isPagedCourseRaw
-    );
-
-    return { data: raw.rows.map((row) => this.mapRowToOrgTraining(row)), total: raw.total, pageSize, offset };
-  }
-
-  public async getCertificationEmployees(
-    req: Request,
-    accountId: string,
-    courseId: string,
-    status: OrgCertEmployeeStatus,
-    searchQuery?: string
-  ): Promise<OrgCertEmployeesResponse> {
-    logger.debug(req, 'get_certification_employees', 'Fetching certification employees', {
-      account_id: accountId,
-      course_id: courseId,
-      status,
-    });
-
-    // Status resolved in lf-dbt: a certified person who re-enrolled is Certified only. Certificates are never windowed;
-    // in progress means status Enrolled with an enrollment in the last 12 months.
-    const statusCondition =
-      status === 'certified' ? "s.STATUS = 'Certified'" : `s.STATUS = 'Enrolled' AND (${orgTrainingEnrolledWindowPredicate('s.LAST_ENROLLED_TS')})`;
-    const searchFilter = searchQuery ? 'AND UPPER(p.NAME) LIKE UPPER(?)' : '';
-
-    // ORG_PEOPLE_ALL is unique per (account, person) and the status table per (account, person, course): one row each.
-    const sql = `
-      WITH ${scopedCourseCatalogDimCte('SELECT ? AS COURSE_ID')}
-      SELECT
-        p.PERSON_KEY        AS CONTACT_ID,
-        p.NAME              AS NAME,
-        p.TITLE             AS JOB_TITLE,
-        s.COURSE_NAME       AS COURSE_NAME,
-        COUNT(*) OVER ()    AS TOTAL_MATCHES
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS s
-      INNER JOIN course_dim d
-        ON d.COURSE_ID = s.COURSE_ID
-      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
-        ON p.ACCOUNT_ID = s.ACCOUNT_ID AND p.PERSON_KEY = s.PERSON_KEY
-      WHERE s.ACCOUNT_ID = ?
-        AND s.COURSE_ID = ?
-        AND d.PRODUCT_TYPE = '${CERTIFICATION_PRODUCT_TYPE}'
-        AND ${statusCondition}
-        ${searchFilter}
-      ORDER BY p.NAME ASC NULLS LAST
-      LIMIT ${MAX_ORG_CERT_EMPLOYEES}
-    `;
-
-    const rows = await withOrgCache(
-      accountId,
-      `certification-employees:v4:${paramSignature([courseId, status, searchQuery ?? null])}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchRosterRows(req, 'get_certification_employees', sql, [courseId, accountId, courseId], searchQuery, { courseId }),
-      isRosterRowArray
-    );
-
-    return {
-      courseId,
-      certificationName: rows[0]?.COURSE_NAME ?? '',
-      status,
-      total: rows[0]?.TOTAL_MATCHES ?? 0,
-      data: mapRosterRows(rows),
-    };
-  }
-
-  public async getTrainingEmployees(
-    req: Request,
-    accountId: string,
-    courseId: string,
-    status: OrgTrainingEmployeeStatus,
-    searchQuery?: string
-  ): Promise<OrgTrainingEmployeesResponse> {
-    logger.debug(req, 'get_training_employees', 'Fetching training employees', {
-      account_id: accountId,
-      course_id: courseId,
-      status,
-    });
-
-    const trainingStatus = status === 'completed' ? 'Completed' : 'InProgress';
-    const searchFilter = searchQuery ? 'AND UPPER(p.NAME) LIKE UPPER(?)' : '';
-
-    const sql = `
-      SELECT
-        p.PERSON_KEY        AS CONTACT_ID,
-        p.NAME              AS NAME,
-        p.TITLE             AS JOB_TITLE,
-        MAX(t.COURSE_NAME)  AS COURSE_NAME,
-        COUNT(*) OVER ()    AS TOTAL_MATCHES
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSES t
-      JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
-        ON p.ACCOUNT_ID = t.ACCOUNT_ID AND p.PERSON_KEY = t.PERSON_KEY
-      WHERE t.ACCOUNT_ID = ?
-        AND t.COURSE_ID = ?
-        AND t.TRAINING_STATUS = ?
-        ${searchFilter}
-      GROUP BY p.PERSON_KEY, p.NAME, p.TITLE
-      ORDER BY p.NAME ASC NULLS LAST
-      LIMIT ${MAX_ORG_TRAINING_EMPLOYEES}
-    `;
-
-    const rows = await withOrgCache(
-      accountId,
-      `training-employees:${paramSignature([courseId, status, searchQuery ?? null])}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchRosterRows(req, 'get_training_employees', sql, [accountId, courseId, trainingStatus], searchQuery, { courseId }),
-      isRosterRowArray
-    );
-
-    return {
-      courseId,
-      trainingName: rows[0]?.COURSE_NAME ?? '',
-      status,
-      total: rows[0]?.TOTAL_MATCHES ?? 0,
-      data: mapRosterRows(rows),
-    };
-  }
-
-  private async fetchTrainingStatsRows(accountId: string): Promise<OrgTrainingStatsRaw> {
-    // People-list rows only, like the Certifications tab both certification tiles open (its query joins ORG_PEOPLE_ALL).
-    const certSql = `
-      WITH ${scopedCourseCatalogDimCte(`
-        SELECT DISTINCT COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) AS COURSE_ID
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
-        WHERE t.ACCOUNT_ID = ?
-          AND t.IS_ON_PEOPLE_LIST
-          AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) IS NOT NULL
-      `)},
-      scoped AS (
-        SELECT
-          t.PERSON_KEY,
-          t.STATUS,
-          d.PRODUCT_TYPE
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
-        INNER JOIN course_dim d
-          ON d.COURSE_ID = COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
-        WHERE t.ACCOUNT_ID = ?
-          AND t.IS_ON_PEOPLE_LIST
-          AND d.PRODUCT_TYPE = '${CERTIFICATION_PRODUCT_TYPE}'
-      )
-      SELECT
-        COUNT(DISTINCT CASE WHEN STATUS = 'Certified' THEN PERSON_KEY END) AS CERTIFIED_EMPLOYEES,
-        COUNT_IF(STATUS = 'Certified')                                     AS CERTIFICATIONS_EARNED,
-        0                                                                  AS EMPLOYEES_IN_TRAINING,
-        0                                                                  AS TRAINING_COURSES_ENROLLED
-      FROM scoped
-    `;
-
-    const trainingSql = `
-      SELECT
-        0                                                                                    AS CERTIFIED_EMPLOYEES,
-        0                                                                                    AS CERTIFICATIONS_EARNED,
-        COUNT(DISTINCT CASE WHEN TRAINING_STATUS = 'InProgress' THEN PERSON_KEY END)         AS EMPLOYEES_IN_TRAINING,
-        COUNT(CASE WHEN TRAINING_STATUS = 'InProgress' THEN 1 END)                           AS TRAINING_COURSES_ENROLLED,
-        MAX(DBT_RUN_AT)                                                                      AS IN_PROGRESS_AS_OF
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSES
+    // Learners the warehouse attributes to the org outside its people list (lfx-self-serve#4287): they carry no course
+    // data, so they count toward people only while no filter is set; a key that also has people-list rows is that person.
+    const inRange = orgTrainingRangePredicate(query.range);
+    const outsideSql = `
+      SELECT COUNT(DISTINCT PERSON_KEY) AS PEOPLE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
       WHERE ACCOUNT_ID = ?
+        AND NOT IS_ON_PEOPLE_LIST
+        AND STATUS IN ('Enrolled', 'Certified')
+        AND ACTIVITY_TS IS NOT NULL
+        ${inRange}
+        AND PERSON_KEY NOT IN (
+          SELECT PERSON_KEY
+          FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+          WHERE ACCOUNT_ID = ?
+            AND IS_ON_PEOPLE_LIST
+            AND STATUS IN ('Enrolled', 'Certified')
+            AND ACTIVITY_TS IS NOT NULL
+            ${inRange}
+        )
     `;
 
-    // Every person with an in-scope enrollment or certificate, any status, at any time. No people-list join: learners the
-    // warehouse attributes to the org outside its people list count too (lfx-self-serve#4287).
-    const activitySql = `
-      SELECT
-        COUNT(DISTINCT PERSON_KEY) AS PEOPLE_WITH_TRAINING_ACTIVITY,
-        MAX(DBT_RUN_AT)            AS TRAINING_ACTIVITY_AS_OF
+    // One build time for every range of the account.
+    const asOfSql = `
+      SELECT MAX(DBT_RUN_AT) AS AS_OF
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
       WHERE ACCOUNT_ID = ?
     `;
 
-    // One row per account with an LF Education training client; none otherwise.
+    // One row per account with an LF Education training client; none otherwise. Live: not windowed, not filtered.
     const rosterSql = `
       SELECT ROSTER_MEMBERS, AS_OF_TS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_TRAINING_ROSTER_MEMBERS
       WHERE ACCOUNT_ID = ?
     `;
 
-    const [certResult, trainingResult, activityResult, rosterResult] = await Promise.all([
-      this.snowflakeService.execute<OrgTrainingStatsRow>(certSql, [accountId, accountId]),
-      this.snowflakeService.execute<OrgTrainingStatsRow>(trainingSql, [accountId]),
-      this.snowflakeService.execute<OrgTrainingActivityRow>(activitySql, [accountId]),
+    const includeOutside = !hasOrgTrainingCourseFilter(query);
+    const [pairsResult, outsideResult, asOfResult, rosterResult] = await Promise.all([
+      this.snowflakeService.execute<OrgTrainingPairStatsRow>(pairsSql, binds),
+      includeOutside
+        ? this.snowflakeService.execute<OrgTrainingCountRow>(outsideSql, [accountId, accountId])
+        : Promise.resolve({ rows: [] as OrgTrainingCountRow[] }),
+      this.snowflakeService.execute<OrgTrainingAsOfRow>(asOfSql, [accountId]),
       this.snowflakeService.execute<OrgTrainingRosterMembersRow>(rosterSql, [accountId]),
     ]);
 
-    return { certRows: certResult.rows, trainingRows: trainingResult.rows, activityRows: activityResult.rows, rosterRows: rosterResult.rows };
+    const pairs = pairsResult.rows[0];
+    const outside = outsideResult.rows[0]?.PEOPLE ?? 0;
+    const roster = rosterResult.rows[0];
+    const coursesTaken = pairs?.COURSES_TAKEN ?? 0;
+    const certifications = pairs?.CERTIFICATIONS ?? 0;
+    const trainingsCompleted = pairs?.TRAININGS_COMPLETED ?? 0;
+
+    return {
+      range: query.range,
+      asOf: toIsoTimestamp(asOfResult.rows[0]?.AS_OF),
+      // No row: the org has no LF Education training client, so there is no roster to count (not zero members).
+      rosterMembers: roster ? roster.ROSTER_MEMBERS : null,
+      rosterMembersAsOf: roster ? toIsoTimestamp(roster.AS_OF_TS) : null,
+      peopleWithTrainingActivity: (pairs?.PEOPLE ?? 0) + outside,
+      learnersOutsidePeopleList: outside,
+      coursesTaken,
+      certifications,
+      certifiedPeople: pairs?.CERTIFIED_PEOPLE ?? 0,
+      trainingsCompleted,
+      completionRatePct: orgTrainingCompletionRatePct({ coursesTaken, certifications, trainingsCompleted }),
+      coursesInProgress: pairs?.COURSES_IN_PROGRESS ?? 0,
+      peopleInTraining: pairs?.PEOPLE_IN_TRAINING ?? 0,
+    };
   }
 
-  private async fetchPagedCourseRows<TRow extends { COURSE_ID: string }>(
-    req: Request,
-    operation: string,
-    filteredCte: string,
-    options: {
-      accountId: string;
-      searchQuery?: string;
-      level: string | null;
-      pageSize: number;
-      offset: number;
-      sortField: string;
-      sortOrder: 'ASC' | 'DESC';
-      selectColumns: string;
-    }
-  ): Promise<{ rows: TRow[]; total: number }> {
-    const { accountId, searchQuery, level, pageSize, offset, sortField, sortOrder, selectColumns } = options;
+  private async fetchGroups(
+    accountId: string,
+    query: OrgTrainingStatsQuery,
+    groupBy: OrgTrainingGroupsParams['groupBy'],
+    tab: OrgTrainingGroupsParams['tab']
+  ): Promise<OrgTrainingGroupsRaw> {
+    const { cte, binds } = buildOrgTrainingPairsCte(accountId, query);
+    const group = ORG_TRAINING_GROUP_SQL[groupBy];
+    const tabPredicate = orgTrainingTabPredicate(tab);
 
-    const countSql = `${filteredCte} SELECT COUNT(*) AS TOTAL_RECORDS FROM filtered`;
-    // sortField/sortOrder are validated against allow-lists in the controller before reaching
-    // here, so they are safe to interpolate; user-supplied values are always passed as binds.
-    const pageSql = `
-      ${filteredCte}
-      SELECT ${selectColumns}
-      FROM filtered
-      ORDER BY ${sortField} ${sortOrder}, COURSE_NAME ASC
-      LIMIT ${Number(pageSize)} OFFSET ${Number(offset)}
+    const rowsSql = `
+      WITH ${cte}
+      SELECT
+        ${group.key}                    AS GROUP_KEY,
+        ${group.label}                  AS GROUP_LABEL,
+        COUNT(DISTINCT PERSON_KEY)      AS PEOPLE,
+        COUNT(*)                        AS COURSES_TAKEN,
+        COUNT_IF(IS_CERTIFIED)          AS COMPLETED,
+        COUNT_IF(NOT IS_CERTIFIED)      AS IN_PROGRESS,
+        MAX(COURSE_LEVEL)               AS LEVEL,
+        MAX(FOUNDATION_NAME)            AS FOUNDATION
+      FROM f
+      WHERE ${tabPredicate}
+      GROUP BY ${group.key}
+    `;
+    // Over the whole tab set (people are distinct across groups), so the footer equals the stat tiles.
+    const totalsSql = `
+      WITH ${cte}
+      SELECT
+        COUNT(DISTINCT PERSON_KEY)      AS PEOPLE,
+        COUNT(*)                        AS COURSES_TAKEN,
+        COUNT_IF(IS_CERTIFIED)          AS COMPLETED,
+        COUNT_IF(NOT IS_CERTIFIED)      AS IN_PROGRESS
+      FROM f
+      WHERE ${tabPredicate}
     `;
 
-    const binds: string[] = [accountId];
-    if (searchQuery) binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
-    if (level) binds.push(level.toUpperCase());
-
-    const [countResult, pageResult] = await Promise.all([
-      this.snowflakeService.execute<OrgPagedCountRow>(countSql, binds),
-      this.snowflakeService.execute<TRow>(pageSql, binds),
+    const [rowsResult, totalsResult] = await Promise.all([
+      this.snowflakeService.execute<OrgTrainingGroupSqlRow>(rowsSql, binds),
+      this.snowflakeService.execute<{ PEOPLE: number; COURSES_TAKEN: number; COMPLETED: number; IN_PROGRESS: number }>(totalsSql, binds),
     ]);
 
-    const total = countResult.rows[0]?.TOTAL_RECORDS ?? 0;
+    const rows: OrgTrainingGroupRow[] = rowsResult.rows.map((row) => {
+      const key = row.GROUP_KEY ?? '';
+      return {
+        key,
+        label: key === '' ? ORG_TRAINING_GROUP_NONE_LABELS[groupBy] : (row.GROUP_LABEL ?? key),
+        people: row.PEOPLE || 0,
+        coursesTaken: row.COURSES_TAKEN || 0,
+        completed: row.COMPLETED || 0,
+        inProgress: row.IN_PROGRESS || 0,
+        level: groupBy === 'course' ? (row.LEVEL ?? null) : null,
+        foundation: groupBy === 'course' || groupBy === 'project' ? (row.FOUNDATION ?? null) : null,
+        // ORG_PEOPLE_TRAINING carries no logo column.
+        logoUrl: null,
+      };
+    });
+    const totals = totalsResult.rows[0];
 
-    logger.debug(req, operation, 'Fetched paged course rows', { count: pageResult.rows.length, total });
-
-    return { rows: pageResult.rows, total };
-  }
-
-  private async fetchRosterRows(
-    req: Request,
-    operation: string,
-    sql: string,
-    binds: string[],
-    searchQuery: string | undefined,
-    meta: { courseId: string }
-  ): Promise<OrgRosterEmployeeRow[]> {
-    const queryBinds = [...binds];
-    if (searchQuery) queryBinds.push(`%${searchQuery}%`);
-
-    const result = await this.snowflakeService.execute<OrgRosterEmployeeRow>(sql, queryBinds);
-
-    logger.debug(req, operation, 'Fetched roster employees', { count: result.rows.length, course_id: meta.courseId });
-
-    return result.rows;
-  }
-
-  private mapRowToOrgCertification(row: OrgCertificationRow): OrgCertification {
     return {
-      courseId: row.COURSE_ID,
-      name: row.COURSE_NAME ?? row.COURSE_ID,
-      foundation: row.FOUNDATION_NAME ?? null,
-      level: row.LEVEL ?? null,
-      imageUrl: row.LOGO_URL ?? null,
-      certifiedCount: row.CERTIFIED_COUNT || 0,
-      inProgressCount: row.IN_PROGRESS_COUNT || 0,
+      rows,
+      totals: {
+        people: totals?.PEOPLE ?? 0,
+        coursesTaken: totals?.COURSES_TAKEN ?? 0,
+        completed: totals?.COMPLETED ?? 0,
+        inProgress: totals?.IN_PROGRESS ?? 0,
+      },
     };
   }
 
-  private mapRowToOrgTraining(row: OrgTrainingRow): OrgTraining {
+  private async fetchGroupEmployees(
+    accountId: string,
+    query: OrgTrainingStatsQuery,
+    params: OrgTrainingGroupEmployeesParams
+  ): Promise<OrgTrainingGroupEmployeesRaw> {
+    const { groupBy, groupValue, tab, status } = params;
+    const { cte, binds } = buildOrgTrainingPairsCte(accountId, query);
+    const group = ORG_TRAINING_GROUP_SQL[groupBy];
+    const where = `${group.key} = ? AND ${orgTrainingTabPredicate(tab)} AND ${orgTrainingStatusPredicate(status)}`;
+    const cellBinds = [...binds, groupValue];
+
+    const countSql = `
+      WITH ${cte}
+      SELECT COUNT(*) AS TOTAL, ${group.label} AS GROUP_LABEL
+      FROM f
+      WHERE ${where}
+    `;
+    // ORG_PEOPLE_ALL is unique per (account, person): current employees only; one row per person however many pairs.
+    const namesSql = `
+      WITH ${cte}
+      SELECT
+        p.PERSON_KEY AS CONTACT_ID,
+        p.NAME       AS NAME,
+        p.TITLE      AS JOB_TITLE
+      FROM f
+      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
+        ON p.ACCOUNT_ID = ? AND p.PERSON_KEY = f.PERSON_KEY
+      WHERE ${where}
+      GROUP BY p.PERSON_KEY, p.NAME, p.TITLE
+      ORDER BY p.NAME ASC NULLS LAST
+      LIMIT ${MAX_ORG_CERT_EMPLOYEES}
+    `;
+
+    const [countResult, namesResult] = await Promise.all([
+      this.snowflakeService.execute<OrgTrainingGroupCountRow>(countSql, cellBinds),
+      this.snowflakeService.execute<OrgRosterEmployeeRow>(namesSql, [...binds, accountId, groupValue]),
+    ]);
+
     return {
-      courseId: row.COURSE_ID,
-      name: row.COURSE_NAME ?? row.COURSE_ID,
-      foundation: row.FOUNDATION_NAME ?? null,
-      level: row.LEVEL ?? null,
-      imageUrl: null,
-      inProgressCount: row.IN_PROGRESS_COUNT || 0,
-      completedCount: row.COMPLETED_COUNT || 0,
+      label: countResult.rows[0]?.GROUP_LABEL ?? '',
+      total: countResult.rows[0]?.TOTAL ?? 0,
+      data: namesResult.rows.map((row) => ({ contactId: row.CONTACT_ID, name: row.NAME ?? row.CONTACT_ID, jobTitle: row.JOB_TITLE ?? null })),
     };
   }
 }
 
-/** Deterministic, key-safe sub-resource suffix for the result-changing query params (base64url → only `[A-Za-z0-9_-]`). */
-function paramSignature(parts: readonly (string | number | boolean | null)[]): string {
-  return Buffer.from(JSON.stringify(parts), 'utf8').toString('base64url');
+/** The five dropdowns; an option exists only when a pair of the range carries it. Course options are names (versions merge). */
+function buildFilterOptions(rows: readonly OrgTrainingOptionRow[]): OrgTrainingFilterOptions {
+  const foundations = new Map<string, string>();
+  const projects = new Map<string, string>();
+  const courses = new Map<string, string>();
+  const levels = new Map<string, string>();
+  const formats = new Map<string, string>();
+  for (const row of rows) {
+    if (row.FOUNDATION_ID && row.FOUNDATION_NAME) foundations.set(row.FOUNDATION_ID, row.FOUNDATION_NAME);
+    if (row.PROJECT_ID && row.PROJECT_NAME) projects.set(row.PROJECT_ID, row.PROJECT_NAME);
+    if (row.COURSE_NAME) courses.set(row.COURSE_NAME, row.COURSE_NAME);
+    if (row.COURSE_LEVEL) levels.set(row.COURSE_LEVEL, row.COURSE_LEVEL);
+    if (row.COURSE_FORMAT) formats.set(row.COURSE_FORMAT, row.COURSE_FORMAT);
+  }
+  const toOptions = (entries: Map<string, string>): OrgDropdownOption[] =>
+    [...entries].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label));
+  return {
+    foundations: toOptions(foundations),
+    projects: toOptions(projects),
+    courses: toOptions(courses),
+    levels: toOptions(levels),
+    formats: toOptions(formats),
+  };
 }
 
-function mapRosterRows(rows: readonly OrgRosterEmployeeRow[]): OrgCertEmployee[] {
-  return rows.map((row) => ({
-    contactId: row.CONTACT_ID,
-    name: row.NAME ?? row.CONTACT_ID,
-    jobTitle: row.JOB_TITLE ?? null,
-  }));
+function isTrainingStats(value: unknown): boolean {
+  const v = value as Partial<OrgTrainingStats> | null;
+  return !!v && typeof v === 'object' && typeof v.coursesTaken === 'number' && typeof v.coursesInProgress === 'number' && typeof v.range === 'string';
 }
 
-function isTrainingStatsRaw(value: unknown): boolean {
-  const v = value as Partial<Record<keyof OrgTrainingStatsRaw, unknown>> | null;
-  return !!v && Array.isArray(v.certRows) && Array.isArray(v.trainingRows) && Array.isArray(v.activityRows) && Array.isArray(v.rosterRows);
+function isFilterOptions(value: unknown): boolean {
+  const v = value as Partial<Record<keyof OrgTrainingFilterOptions, unknown>> | null;
+  return !!v && Array.isArray(v.foundations) && Array.isArray(v.projects) && Array.isArray(v.courses) && Array.isArray(v.levels) && Array.isArray(v.formats);
 }
 
-function isPagedCourseRaw(value: unknown): boolean {
-  const v = value as { rows?: unknown; total?: unknown } | null;
-  return !!v && Array.isArray(v.rows) && typeof v.total === 'number';
+function isGroupsRaw(value: unknown): boolean {
+  const v = value as Partial<OrgTrainingGroupsRaw> | null;
+  return !!v && Array.isArray(v.rows) && !!v.totals && typeof v.totals.completed === 'number';
 }
 
-function isRosterRowArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
+function isGroupEmployeesRaw(value: unknown): boolean {
+  const v = value as Partial<OrgTrainingGroupEmployeesRaw> | null;
+  return !!v && typeof v.total === 'number' && Array.isArray(v.data) && typeof v.label === 'string';
 }

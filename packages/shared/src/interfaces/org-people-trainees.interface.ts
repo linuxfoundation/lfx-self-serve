@@ -1,14 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgDropdownOption } from './org-memberships.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 
 /** Status badge on a per-(person, course) detail row — mirrors `STATUS` column on `PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING`. */
 export type OrgTraineeStatus = 'Certified' | 'Enrolled';
 
 /** Sortable column on the Trainees main table. */
-export type OrgTraineeSortColumn = 'name' | 'status' | 'courses' | 'certs' | 'recent';
+export type OrgTraineeSortColumn = 'name' | 'status' | 'courses' | 'certs' | 'trainings' | 'inProgress' | 'recent';
 
 /** Sort direction — `1` ascending, `-1` descending. */
 export type OrgTraineeSortDirection = 1 | -1;
@@ -38,7 +37,9 @@ export interface OrgTraineeDetailRow {
   projectName: string | null;
   /** Beginner, Intermediate, Advanced, Executive; null for courses without a level. */
   courseLevel: string | null;
-  /** Instruction type (E-Learning, Instructor Led, …). Set on Enrolled rows only: certificates carry no format upstream. */
+  /** Product type of the course: `Certification` or `Training`; splits certified pairs into the Certifications and Trainings-completed cards. */
+  productType: string | null;
+  /** Instruction type (E-Learning, Instructor Led, …); certified rows carry the course's format. */
   courseFormat: string | null;
   /** ISO timestamp — union of `enrollment_ts` (Enrolled rows) and `issued_ts` (Certified rows); the BFF windows on it and it breaks Most Recent Course ties. */
   activityTs: string;
@@ -68,28 +69,6 @@ export interface OrgTraineeOutsideLearner {
   status: OrgTraineeStatus;
 }
 
-/** Stats-card shape for the Trainees tab — recomputed client-side from filtered details on every filter change (not shipped on the wire). */
-export interface OrgTraineeStatsBaseline {
-  trainees: number;
-  coursesEnrolled: number;
-  certifications: number;
-  /** Integer percent (0-100). Math: `certifications ÷ coursesEnrolled × 100`; 0 when `coursesEnrolled === 0`. */
-  completionRate: number;
-}
-
-/**
- * Trainees dropdowns, each built from the detail rows the response ships, so every option has rows in the range. Values:
- * foundation and project ids; course name (several course ids can share a name, and one entry must cover them all);
- * level and format as stored.
- */
-export interface OrgTraineeFilterOptions {
-  foundations: OrgDropdownOption[];
-  projects: OrgDropdownOption[];
-  courses: OrgDropdownOption[];
-  levels: OrgDropdownOption[];
-  formats: OrgDropdownOption[];
-}
-
 /** GET response for `/api/orgs/:orgUid/lens/people/trainees?range=…` — only enrollments and certificates dated in the range. */
 export interface OrgTraineesResponse {
   accountId: string;
@@ -108,12 +87,29 @@ export interface OrgTraineesResponse {
    * learner whose warehouse key also has people-list rows in `details` is left out, so the people card counts them once.
    */
   outsideLearners: OrgTraineeOutsideLearner[];
-  filterOptions: OrgTraineeFilterOptions;
   /** ISO build time of `ORG_PEOPLE_TRAINING` (`MAX(DBT_RUN_AT)` over the account's rows, every range): the date the training data reflects. Null when the account has no rows. */
   asOf: string | null;
 }
 
 // Client-only view types (NOT on the wire).
+
+/** One person-course pair of the Trainees details in the selected range (the grain the stat cards count). */
+export interface OrgTraineePair {
+  personKey: string;
+  courseId: string;
+  /** Certified when any of the pair's rows in the range is a certificate. */
+  status: OrgTraineeStatus;
+  /** Product type of the course; `Certification` or `Training`. */
+  productType: string | null;
+}
+
+/** Counts over a set of pairs; courses taken = certifications + trainings completed + in progress. */
+export interface OrgTraineePairCounts {
+  coursesTaken: number;
+  certifications: number;
+  trainingsCompleted: number;
+  inProgress: number;
+}
 
 /** Pre-decorated trainee main row VM — initials, avatar colour, filter-aware status/courses/certs/recent. */
 export interface OrgTraineeRowVm {
@@ -124,8 +120,14 @@ export interface OrgTraineeRowVm {
   initials: string;
   avatarColorClass: string;
   status: OrgTraineeStatus;
+  /** Person-course pairs in the range. */
   coursesCount: number;
+  /** Certified pairs of `Certification` products. */
   certsCount: number;
+  /** Certified pairs of `Training` products. */
+  trainingsCompletedCount: number;
+  /** Enrolled pairs with no certificate in the range. */
+  inProgressCount: number;
   recentCourseName: string | null;
   recentFoundationName: string | null;
 }
@@ -134,7 +136,8 @@ export interface OrgTraineeRowVm {
 export interface OrgTraineeExpandedRowVm {
   courseId: string;
   courseName: string;
-  type: 'Course' | 'Certification';
+  /** Product type of the course. */
+  type: 'Training' | 'Certification';
   enrolledTs: string | null;
   completedTs: string | null;
   /** Pre-formatted `MMM YYYY` (e.g. `Apr 2026`) or em-dash. */
@@ -170,6 +173,8 @@ export interface OrgPeopleTrainingRow {
   PROJECT_NAME: string | null;
   COURSE_LEVEL: string | null;
   COURSE_FORMAT: string | null;
+  /** 'Certification' | 'Training' (every row). */
+  PRODUCT_TYPE: string | null;
 }
 
 /** `MAX(DBT_RUN_AT)` of the account's `ORG_PEOPLE_TRAINING` rows. */

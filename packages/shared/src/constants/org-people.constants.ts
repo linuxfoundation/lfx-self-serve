@@ -216,7 +216,6 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   trainees: [],
   details: [],
   outsideLearners: [],
-  filterOptions: { foundations: [], projects: [], courses: [], levels: [], formats: [] },
   asOf: null,
 };
 

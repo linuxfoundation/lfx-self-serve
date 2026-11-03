@@ -144,6 +144,7 @@ export const ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS = [
   'PROJECT_NAME',
   'COURSE_LEVEL',
   'COURSE_FORMAT',
+  'PRODUCT_TYPE',
 ] as const satisfies readonly (keyof OrgPeopleTrainingRow)[];
 
 /** `CompactOrgTraineesRawCache.details` — what genuinely varies per (person, course-or-cert) row. */

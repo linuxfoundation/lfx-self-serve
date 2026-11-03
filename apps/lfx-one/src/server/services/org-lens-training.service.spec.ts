@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MAX_ORG_CERT_EMPLOYEES } from '@lfx-one/shared/constants';
+import type { OrgTrainingStatsQuery } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,22 +11,41 @@ const { execute, withOrgCache } = vi.hoisted(() => ({
   withOrgCache: vi.fn(),
 }));
 
+// The service and this spec import `@lfx-one/shared/utils`, whose barrel pulls Angular; only the view-state and range utils are needed.
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-training-view-state.utils')),
+}));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./valkey.service', () => ({ withOrgCache }));
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn() } }));
 
+import { orgTrainingFiltersSignature } from '../../../../../packages/shared/src/utils/org-training-view-state.utils';
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgLensTrainingService } from './org-lens-training.service';
 
 const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 const REQ = {} as Request;
-const ENROLLED_WINDOW = "s.LAST_ENROLLED_TS::date >= DATEADD('MONTH', -12, CURRENT_DATE()) AND s.LAST_ENROLLED_TS::date < CURRENT_DATE()";
-const STATUS_TABLE = 'FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS s';
-// Only people on the org's people list count: learners outside it may have rows in the training models.
-const PEOPLE_LIST_JOIN = /INNER JOIN ANALYTICS\.PLATINUM_LFX_ONE\.ORG_PEOPLE_ALL p\s+ON p\.ACCOUNT_ID = s\.ACCOUNT_ID AND p\.PERSON_KEY = s\.PERSON_KEY/;
+const QUERY: OrgTrainingStatsQuery = { range: '730d', foundation: null, project: null, course: null, level: null, format: null };
 
-function sqls(): string[] {
-  return execute.mock.calls.map(([sql]) => sql as string);
+const GROUP_ROWS = [
+  {
+    GROUP_KEY: 'Course A',
+    GROUP_LABEL: 'Course A',
+    PEOPLE: 4,
+    COURSES_TAKEN: 6,
+    COMPLETED: 3,
+    IN_PROGRESS: 3,
+    LEVEL: 'Beginner',
+    FOUNDATION: 'Foundation One',
+  },
+  { GROUP_KEY: 'Course B', GROUP_LABEL: 'Course B', PEOPLE: 2, COURSES_TAKEN: 2, COMPLETED: 2, IN_PROGRESS: 0, LEVEL: null, FOUNDATION: null },
+  { GROUP_KEY: '', GROUP_LABEL: null, PEOPLE: 1, COURSES_TAKEN: 1, COMPLETED: 0, IN_PROGRESS: 1, LEVEL: null, FOUNDATION: null },
+];
+const TOTALS = { PEOPLE: 6, COURSES_TAKEN: 9, COMPLETED: 5, IN_PROGRESS: 4 };
+
+function mockGroups(): void {
+  execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('AS GROUP_KEY') ? GROUP_ROWS : [TOTALS] }));
 }
 
 let service: OrgLensTrainingService;
@@ -36,63 +57,154 @@ beforeEach(() => {
   service = new OrgLensTrainingService();
 });
 
-// The status table holds courses of any age (the window is the consumer's), so the Certifications tab keeps its own
-// 12-month enrollment window or old enrollments would inflate In Progress and list courses nobody at the org is
-// working on.
-describe('OrgLensTrainingService — Certifications tab window', () => {
-  it('counts certificates of any age and only enrollments from the last 12 months', async () => {
-    await service.getOrgCertifications(REQ, ACCOUNT, { level: null, pageSize: 10, offset: 0, sortField: 'COURSE_NAME', sortOrder: 'ASC' });
+describe('OrgLensTrainingService — filter options', () => {
+  it('builds sorted options from the unfiltered pairs of the range and caches per range', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        {
+          FOUNDATION_ID: 'f-2',
+          FOUNDATION_NAME: 'Zeta',
+          PROJECT_ID: 'p-1',
+          PROJECT_NAME: 'Proj',
+          COURSE_NAME: 'B course',
+          COURSE_LEVEL: 'Beginner',
+          COURSE_FORMAT: null,
+        },
+        {
+          FOUNDATION_ID: 'f-1',
+          FOUNDATION_NAME: 'Alpha',
+          PROJECT_ID: null,
+          PROJECT_NAME: null,
+          COURSE_NAME: 'A course',
+          COURSE_LEVEL: null,
+          COURSE_FORMAT: 'E-Learning',
+        },
+      ],
+    });
 
-    expect(execute).toHaveBeenCalledTimes(2);
-    for (const sql of sqls()) {
-      expect(sql).toContain(`AND (s.STATUS = 'Certified' OR (${ENROLLED_WINDOW}))`);
-    }
-  });
+    const options = await service.getFilterOptions(ACCOUNT, '90d');
 
-  it('lists in-progress employees from the same 12-month window', async () => {
-    await service.getCertificationEmployees(REQ, ACCOUNT, 'course-1', 'in-progress');
-
-    expect(sqls()[0]).toContain(`AND s.STATUS = 'Enrolled' AND (${ENROLLED_WINDOW})`);
-  });
-
-  it('lists certified employees without a window', async () => {
-    await service.getCertificationEmployees(REQ, ACCOUNT, 'course-1', 'certified');
-
-    expect(sqls()[0]).toContain("AND s.STATUS = 'Certified'");
-    expect(sqls()[0]).not.toContain('LAST_ENROLLED_TS');
+    expect(options.foundations).toEqual([
+      { label: 'Alpha', value: 'f-1' },
+      { label: 'Zeta', value: 'f-2' },
+    ]);
+    expect(options.courses.map((o) => o.value)).toEqual(['A course', 'B course']);
+    expect(options.levels).toEqual([{ label: 'Beginner', value: 'Beginner' }]);
+    expect(options.formats).toEqual([{ label: 'E-Learning', value: 'E-Learning' }]);
+    expect(withOrgCache.mock.calls[0][1]).toBe('training-filter-options:v1:90d');
+    expect(execute.mock.calls[0][1]).toEqual([ACCOUNT]);
+    expect(execute.mock.calls[0][0]).toContain('DATEADD(day, -90, CURRENT_DATE())');
   });
 });
 
-// lf-dbt resolves one status per (person, course), Certified winning over a re-enrollment (lfx-self-serve#4439); the
-// tab reads it instead of re-deriving it, so a certified person who re-enrolled counts, and is listed, as certified only.
-describe('OrgLensTrainingService — status resolved in lf-dbt', () => {
-  it('counts each status from ORG_PEOPLE_TRAINING_COURSE_STATUS, people on the people list only', async () => {
-    await service.getOrgCertifications(REQ, ACCOUNT, { level: null, pageSize: 10, offset: 0, sortField: 'COURSE_NAME', sortOrder: 'ASC' });
+describe('OrgLensTrainingService — group-by table', () => {
+  it('maps rows, labels the none group, and defaults to completed descending', async () => {
+    mockGroups();
 
-    for (const sql of sqls()) {
-      expect(sql).toContain(STATUS_TABLE);
-      expect(sql).toMatch(PEOPLE_LIST_JOIN);
-      expect(sql).toMatch(/COUNT_IF\(s\.STATUS = 'Certified'\)\s+AS CERTIFIED_COUNT/);
-      expect(sql).toMatch(/COUNT_IF\(s\.STATUS = 'Enrolled'\)\s+AS IN_PROGRESS_COUNT/);
-      expect(sql).not.toContain('ORG_PEOPLE_TRAINING t');
-    }
+    const response = await service.getGroups(REQ, ACCOUNT, QUERY, { groupBy: 'course', tab: 'certifications' });
+
+    expect(response.data.map((row) => row.key)).toEqual(['Course A', 'Course B', '']);
+    expect(response.data.find((row) => row.key === '')?.label).toBe('No course name');
+    expect(response.data.find((row) => row.key === 'Course A')).toMatchObject({
+      level: 'Beginner',
+      foundation: 'Foundation One',
+      logoUrl: null,
+      completed: 3,
+      inProgress: 3,
+    });
+    expect(response.total).toBe(3);
   });
 
-  it.each(['certified', 'in-progress'] as const)('lists %s employees by their resolved status, people on the people list only', async (status) => {
-    await service.getCertificationEmployees(REQ, ACCOUNT, 'course-1', status);
+  it('returns totals over the whole tab set that equal the stat tiles, whatever the search and page', async () => {
+    mockGroups();
 
-    expect(sqls()[0]).toContain(STATUS_TABLE);
-    expect(sqls()[0]).toMatch(PEOPLE_LIST_JOIN);
-    expect(sqls()[0]).not.toContain('HAVING');
-    expect(sqls()[0]).not.toContain('ORG_PEOPLE_TRAINING t');
+    const response = await service.getGroups(REQ, ACCOUNT, QUERY, {
+      groupBy: 'course',
+      tab: 'certifications',
+      searchQuery: 'course a',
+      pageSize: 1,
+      offset: 0,
+    });
+
+    expect(response.data.map((row) => row.key)).toEqual(['Course A']);
+    expect(response.total).toBe(1);
+    expect(response.totals).toEqual({ people: 6, coursesTaken: 9, completed: 5, inProgress: 4 });
+    // Totals and rows read the same filtered pairs and the same tab predicate as the stats' split.
+    const sqls = execute.mock.calls.map(([sql]) => sql as string);
+    expect(sqls).toHaveLength(2);
+    for (const sql of sqls) expect(sql).toContain("WHERE PRODUCT_TYPE = 'Certification'");
   });
 
-  it('caches under the v4 keys, so entries computed from ORG_PEOPLE_TRAINING miss', async () => {
-    await service.getOrgCertifications(REQ, ACCOUNT, { level: null, pageSize: 10, offset: 0, sortField: 'COURSE_NAME', sortOrder: 'ASC' });
-    await service.getCertificationEmployees(REQ, ACCOUNT, 'course-1', 'in-progress');
+  it('splits the trainings tab by the complement of the certification product type', async () => {
+    mockGroups();
 
-    const keys = withOrgCache.mock.calls.map(([, key]) => key as string);
-    expect(keys[0].startsWith('certifications:v4:')).toBe(true);
-    expect(keys[1].startsWith('certification-employees:v4:')).toBe(true);
+    await service.getGroups(REQ, ACCOUNT, QUERY, { groupBy: 'foundation', tab: 'trainings' });
+
+    for (const [sql] of execute.mock.calls as [string][]) expect(sql).toContain("WHERE COALESCE(PRODUCT_TYPE, '') <> 'Certification'");
+  });
+
+  it('sorts and pages in memory over the cached set', async () => {
+    mockGroups();
+
+    const response = await service.getGroups(REQ, ACCOUNT, QUERY, {
+      groupBy: 'course',
+      tab: 'certifications',
+      sortField: 'label',
+      sortOrder: 'ASC',
+      pageSize: 2,
+      offset: 1,
+    });
+
+    expect(response.data.map((row) => row.label)).toEqual(['Course B', 'No course name']);
+    expect(response.total).toBe(3);
+  });
+
+  it('binds filters, and caches the full set per filter signature, group-by and tab', async () => {
+    mockGroups();
+    const query = { ...QUERY, level: 'Beginner' };
+
+    await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'level', tab: 'trainings' });
+
+    expect(execute.mock.calls[0][1]).toEqual([ACCOUNT, 'Beginner']);
+    expect(withOrgCache.mock.calls[0][1]).toBe(`training-groups:v1:${orgTrainingFiltersSignature(query)}:level:trainings`);
+    expect(withOrgCache.mock.calls[0][1]).not.toBe(`training-groups:v1:${orgTrainingFiltersSignature(QUERY)}:level:trainings`);
+  });
+});
+
+describe('OrgLensTrainingService — group drawer', () => {
+  it('counts pairs and lists current employees of the cell, binding the group value', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('COUNT(*) AS TOTAL')) return { rows: [{ TOTAL: 7, GROUP_LABEL: 'Course A' }] };
+      return { rows: [{ CONTACT_ID: 'k-1', NAME: 'Person One', JOB_TITLE: null }] };
+    });
+
+    const response = await service.getGroupEmployees(REQ, ACCOUNT, QUERY, {
+      groupBy: 'course',
+      groupValue: 'Course A',
+      tab: 'certifications',
+      status: 'completed',
+    });
+
+    expect(response).toMatchObject({ groupBy: 'course', groupValue: 'Course A', label: 'Course A', total: 7, status: 'completed' });
+    expect(response.data).toEqual([{ contactId: 'k-1', name: 'Person One', jobTitle: null }]);
+    const [countSql, countBinds] = execute.mock.calls[0] as [string, string[]];
+    expect(countSql).toContain("COALESCE(COURSE_NAME, '') = ?");
+    expect(countSql).toContain('IS_CERTIFIED');
+    expect(countBinds).toEqual([ACCOUNT, 'Course A']);
+    const [namesSql, namesBinds] = execute.mock.calls[1] as [string, string[]];
+    expect(namesSql).toContain('ORG_PEOPLE_ALL');
+    expect(namesSql).toContain(`LIMIT ${MAX_ORG_CERT_EMPLOYEES}`);
+    expect(namesBinds).toEqual([ACCOUNT, ACCOUNT, 'Course A']);
+  });
+
+  it('reads in-progress cells as enrolled pairs and labels the none group', async () => {
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('COUNT(*) AS TOTAL') ? [{ TOTAL: 2, GROUP_LABEL: null }] : [] }));
+
+    const response = await service.getGroupEmployees(REQ, ACCOUNT, QUERY, { groupBy: 'format', groupValue: '', tab: 'trainings', status: 'in-progress' });
+
+    expect(response.label).toBe('No format');
+    expect(response.total).toBe(2);
+    expect((execute.mock.calls[0] as [string])[0]).toContain('NOT IS_CERTIFIED');
+    expect(withOrgCache.mock.calls[0][1]).toMatch(/^training-group-employees:v1:[A-Za-z0-9_-]+:format:[A-Za-z0-9_-]+:trainings:in-progress$/);
   });
 });

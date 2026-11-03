@@ -526,9 +526,6 @@ export class OrgLensPeopleController {
         trainee_count: response.trainees.length,
         outside_learner_count: response.outsideLearners.length,
         detail_count: response.details.length,
-        foundation_count: response.filterOptions.foundations.length,
-        project_count: response.filterOptions.projects.length,
-        course_count: response.filterOptions.courses.length,
       });
 
       res.setHeader('Cache-Control', 'no-store');

@@ -14,30 +14,20 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   CompactOrgTraineesRawCache,
-  OrgDropdownOption,
   OrgLensTimeRange,
   OrgPeopleAllTraineeRow,
   OrgPeopleTrainingRow,
   OrgTraineeDetailRow,
-  OrgTraineeFilterOptions,
   OrgTraineeOutsideLearner,
   OrgTraineeRow,
   OrgTraineesResponse,
   OrgTrainingOutsideLearnerRow,
   TraineeAsOfRow,
 } from '@lfx-one/shared/interfaces';
-import {
-  dedupeByKey,
-  fromColumnar,
-  hasExactColumns,
-  isColumnarAbsent,
-  isColumnarTable,
-  orgLensTimeRangeDays,
-  toColumnar,
-  tupleKey,
-} from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
+import { orgTrainingRangePredicate } from '../helpers/org-training-pairs.sql';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCompactCache } from './valkey.service';
 
@@ -50,9 +40,8 @@ export class OrgPeopleTraineesService {
   }
 
   /**
-   * The range's trainees, details and filter dropdowns: parallel Snowflake reads over enrollments and certificates dated
-   * in the range; the dropdowns are built from those details, and stats are recomputed client-side from the filtered
-   * details, so the server ships none.
+   * The range's trainees and details: parallel Snowflake reads over enrollments and certificates dated in the range.
+   * The cards come from the shared stats call and the dropdowns from /filter-options, so the server ships neither here.
    */
   public async getTrainees(accountId: string, range: OrgLensTimeRange): Promise<OrgTraineesResponse> {
     if (!accountId) {
@@ -64,10 +53,11 @@ export class OrgPeopleTraineesService {
     // table's build time, the project, level and format columns and the learners outside the people list (name and
     // certified flag, no detail rows), and dropped the two option reads; `v7` stops caching those learners' warehouse
     // key, so a `v6` entry, which still holds it, must miss, and reads the renamed `IS_ON_PEOPLE_LIST` column; `v8`
-    // drops a learner whose warehouse key also has people-list rows in the range, so a `v7` entry may count them twice.
+    // drops a learner whose warehouse key also has people-list rows in the range, so a `v7` entry may count them twice; `v9` adds the row's product type
+    // (Certification | Training), so a `v8` entry without it must miss, and the dropdowns moved to /filter-options.
     const { traineeRows, outsideLearnerRows, detailRows, asOf } = await withOrgCompactCache(
       accountId,
-      `people-trainees:v8:${range}`,
+      `people-trainees:v9:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTraineesRaw(accountId, range),
       { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
@@ -138,6 +128,7 @@ export class OrgPeopleTraineesService {
           projectName: row.PROJECT_NAME,
           courseLevel: row.COURSE_LEVEL,
           courseFormat: row.COURSE_FORMAT,
+          productType: row.PRODUCT_TYPE,
           activityTs,
         },
       ];
@@ -149,7 +140,6 @@ export class OrgPeopleTraineesService {
       trainees,
       details,
       outsideLearners,
-      filterOptions: buildFilterOptions(details.filter((row) => listedKeys.has(row.personKey))),
       asOf,
     };
   }
@@ -163,7 +153,7 @@ export class OrgPeopleTraineesService {
     detailRows: OrgPeopleTrainingRow[];
     asOf: string | null;
   }> {
-    const inRange = trainingRangePredicate(range);
+    const inRange = orgTrainingRangePredicate(range);
     const [traineeRows, keyedOutsideLearnerRows, detailRows, asOf] = await Promise.all([
       this.fetchTraineeRows(accountId, inRange),
       this.fetchOutsideLearnerRows(accountId, inRange),
@@ -264,7 +254,8 @@ export class OrgPeopleTraineesService {
         PROJECT_ID,
         PROJECT_NAME,
         COURSE_LEVEL,
-        COURSE_FORMAT
+        COURSE_FORMAT,
+        PRODUCT_TYPE
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
       WHERE ACCOUNT_ID = ?
         AND IS_ON_PEOPLE_LIST
@@ -285,44 +276,6 @@ export class OrgPeopleTraineesService {
     const result = await this.snowflakeService.execute<TraineeAsOfRow>(query, [accountId]);
     return toIsoTimestamp(result.rows[0]?.AS_OF);
   }
-}
-
-/**
- * The five Trainees dropdowns from the people-list members' details (the rows the table lists), so an option exists
- * only when a listed row of the range carries it and picking it on its own can never empty the table. Rows without the
- * field are reachable only through "All": a certified row has no format, a few courses have no level.
- */
-function buildFilterOptions(details: OrgTraineeDetailRow[]): OrgTraineeFilterOptions {
-  const foundations = new Map<string, string>();
-  const projects = new Map<string, string>();
-  const courses = new Map<string, string>();
-  const levels = new Map<string, string>();
-  const formats = new Map<string, string>();
-  for (const row of details) {
-    if (row.foundationId && row.foundationName) foundations.set(row.foundationId, row.foundationName);
-    if (row.projectId && row.projectName) projects.set(row.projectId, row.projectName);
-    // Keyed on the name: several course ids share one (course versions), and one entry has to cover all of their rows.
-    if (row.courseName) courses.set(row.courseName, row.courseName);
-    if (row.courseLevel) levels.set(row.courseLevel, row.courseLevel);
-    if (row.courseFormat) formats.set(row.courseFormat, row.courseFormat);
-  }
-  const toOptions = (entries: Map<string, string>): OrgDropdownOption[] =>
-    [...entries].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label));
-  return {
-    foundations: toOptions(foundations),
-    projects: toOptions(projects),
-    courses: toOptions(courses),
-    levels: toOptions(levels),
-    formats: toOptions(formats),
-  };
-}
-
-/**
- * `ACTIVITY_TS` (enrollment or certificate date) on or after N days before today; empty for all time. Inline, not bound —
- * the day count comes from the allow-listed range — so the planner can fold it.
- */
-function trainingRangePredicate(range: OrgLensTimeRange): string {
-  return range === 'all' ? '' : `AND ACTIVITY_TS >= DATEADD(day, -${orgLensTimeRangeDays(range)}, CURRENT_DATE())`;
 }
 
 /**

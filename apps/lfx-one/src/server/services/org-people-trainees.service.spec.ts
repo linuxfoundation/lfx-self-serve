@@ -85,6 +85,7 @@ function mockWarehouse(): void {
           PROJECT_NAME: 'Project One',
           COURSE_LEVEL: 'Beginner',
           COURSE_FORMAT: null,
+          PRODUCT_TYPE: 'Certification',
         },
         {
           PERSON_KEY: 'person-two',
@@ -99,6 +100,7 @@ function mockWarehouse(): void {
           PROJECT_NAME: 'Project One',
           COURSE_LEVEL: 'Beginner',
           COURSE_FORMAT: 'E-Learning',
+          PRODUCT_TYPE: 'Certification',
         },
         {
           PERSON_KEY: 'person-one',
@@ -113,6 +115,7 @@ function mockWarehouse(): void {
           PROJECT_NAME: 'Project One',
           COURSE_LEVEL: 'Beginner',
           COURSE_FORMAT: 'E-Learning',
+          PRODUCT_TYPE: 'Certification',
         },
         {
           PERSON_KEY: 'person-two',
@@ -127,6 +130,7 @@ function mockWarehouse(): void {
           PROJECT_NAME: null,
           COURSE_LEVEL: null,
           COURSE_FORMAT: 'Instructor Led',
+          PRODUCT_TYPE: 'Certification',
         },
       ],
     };
@@ -186,6 +190,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
       projectName: 'Project One',
       courseLevel: 'Beginner',
       courseFormat: null,
+      productType: 'Certification',
       activityTs: '2026-04-12T10:30:00.000Z',
     });
     expect(details[3]).toMatchObject({ courseId: 'enroll-two', projectId: null, courseLevel: null, courseFormat: 'Instructor Led' });
@@ -297,6 +302,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
             PROJECT_NAME: null,
             COURSE_LEVEL: null,
             COURSE_FORMAT: null,
+            PRODUCT_TYPE: 'Certification',
           },
         ],
       };
@@ -314,7 +320,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: reading `k`/`r` off plain row
     // arrays would serve an empty tab for the whole TTL.
     const legacy = { traineeRows: [], detailRows: [{ PERSON_KEY: 'stale' }], foundationRows: [], courseRows: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v8:365d')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v9:365d')!, JSON.stringify(legacy));
 
     const response = await service.getTrainees(ACCOUNT, '365d');
 
@@ -414,12 +420,12 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     await service.getTrainees(ACCOUNT, '30d');
 
     expect(execute).toHaveBeenCalledTimes(8);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v8:30d')!)).toBe(true);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v8:365d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v9:30d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v9:365d')!)).toBe(true);
   });
 });
 
-describe('OrgPeopleTraineesService filter options (lfx-self-serve#4916)', () => {
+describe('OrgPeopleTraineesService detail rows (lfx-self-serve#4916)', () => {
   /** A training row as the warehouse returns it; the fake honours the range predicate the way Snowflake would. */
   const trainingRow = (personKey: string, courseOrCertId: string, overrides: Record<string, string | null>, activityTs: string) => ({
     PERSON_KEY: personKey,
@@ -434,6 +440,7 @@ describe('OrgPeopleTraineesService filter options (lfx-self-serve#4916)', () => 
     PROJECT_NAME: 'Project One',
     COURSE_LEVEL: null,
     COURSE_FORMAT: null,
+    PRODUCT_TYPE: 'Certification',
     ...overrides,
   });
   const recent = new Date(Date.now() - 5 * 86_400_000).toISOString().slice(0, 19).replace('T', ' ');
@@ -453,6 +460,7 @@ describe('OrgPeopleTraineesService filter options (lfx-self-serve#4916)', () => 
         FOUNDATION_ID: 'foundation-two',
         FOUNDATION_NAME: 'Foundation Two',
         COURSE_FORMAT: 'MicroCourse',
+        PRODUCT_TYPE: 'Certification',
       },
       old
     ),
@@ -479,53 +487,25 @@ describe('OrgPeopleTraineesService filter options (lfx-self-serve#4916)', () => 
     }
   });
 
-  it('builds every dropdown from the rows it ships: one course entry per name, formats from enrollments, no empty values', async () => {
-    const { filterOptions } = await service.getTrainees(ACCOUNT, 'all');
+  it('ships the product type of every detail row, and no dropdown options (those come from /filter-options)', async () => {
+    const response = await service.getTrainees(ACCOUNT, 'all');
 
-    expect(filterOptions).toEqual({
-      foundations: [
-        { label: 'Foundation One', value: 'foundation-one' },
-        { label: 'Foundation Two', value: 'foundation-two' },
-      ],
-      projects: [
-        { label: 'Another Project', value: 'project-two' },
-        { label: 'Project One', value: 'project-one' },
-      ],
-      courses: [
-        { label: 'Cloud Basics', value: 'Cloud Basics' },
-        { label: 'course-x', value: 'course-x' },
-      ],
-      levels: [
-        { label: 'Advanced', value: 'Advanced' },
-        { label: 'Beginner', value: 'Beginner' },
-      ],
-      formats: [
-        { label: 'E-Learning', value: 'E-Learning' },
-        { label: 'Instructor Led', value: 'Instructor Led' },
-        { label: 'MicroCourse', value: 'MicroCourse' },
-      ],
-    });
+    expect(response.details.length).toBeGreaterThan(0);
+    expect(response.details.every((row) => row.productType === 'Certification')).toBe(true);
+    expect('filterOptions' in response).toBe(false);
   });
 
-  it('offers only what the range holds', async () => {
-    const { filterOptions, details } = await service.getTrainees(ACCOUNT, '30d');
+  it('reads the product type column in the detail read', async () => {
+    await service.getTrainees(ACCOUNT, 'all');
+
+    const detailRead = execute.mock.calls.map(([sql]) => sql as string).find((sql) => sql.includes('COURSE_OR_CERT_ID'))!;
+    expect(detailRead).toContain('PRODUCT_TYPE');
+  });
+
+  it('keeps only the rows of the range', async () => {
+    const { details } = await service.getTrainees(ACCOUNT, '30d');
 
     expect(details.map((row) => row.courseId)).toEqual(['course-v1']);
-    expect(filterOptions.projects.map((option) => option.value)).toEqual(['project-one']);
-    expect(filterOptions.levels.map((option) => option.value)).toEqual(['Beginner']);
-    expect(filterOptions.formats.map((option) => option.value)).toEqual(['E-Learning']);
-    expect(filterOptions.courses.map((option) => option.value)).toEqual(['Cloud Basics']);
-  });
-
-  it('lets each pick match exactly the rows that carry it, so the per-value counts add up to the rows with a value', async () => {
-    const { details, filterOptions } = await service.getTrainees(ACCOUNT, 'all');
-
-    const count = (options: { value: string }[], field: 'courseLevel' | 'courseFormat' | 'projectId' | 'courseName') =>
-      options.reduce((sum, option) => sum + details.filter((row) => row[field] === option.value).length, 0);
-    expect(count(filterOptions.levels, 'courseLevel')).toBe(details.filter((row) => row.courseLevel).length);
-    expect(count(filterOptions.formats, 'courseFormat')).toBe(details.filter((row) => row.status === 'Enrolled').length);
-    expect(count(filterOptions.projects, 'projectId')).toBe(details.length);
-    expect(count(filterOptions.courses, 'courseName')).toBe(details.length);
   });
 });
 
@@ -544,6 +524,7 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
     PROJECT_NAME: 'Project One',
     COURSE_LEVEL: 'Beginner',
     COURSE_FORMAT: status === 'Enrolled' ? 'E-Learning' : null,
+    PRODUCT_TYPE: 'Certification',
   });
   const recent = new Date(Date.now() - 5 * 86_400_000).toISOString().slice(0, 19).replace('T', ' ');
   const old = '2020-01-15 00:00:00';
@@ -661,9 +642,6 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
     const former = response.details.find((row) => row.personKey === 'outside:3')!;
     expect(former).toMatchObject({ courseId: 'course-unavailable:1', courseName: 'Course not available', courseOrCertId: '' });
     expect(JSON.stringify(response)).not.toContain('enrolled:former');
-    // Options come from the listed rows only, so a former-employee-only value never becomes a dropdown entry.
-    expect(response.filterOptions.projects.map((option) => option.value)).toEqual(['project-one']);
-    expect(response.filterOptions.courses.map((option) => option.value)).toEqual(['Course One']);
   });
 
   it('counts a learner who shares a warehouse key with people-list rows once, and never sends that key', async () => {
