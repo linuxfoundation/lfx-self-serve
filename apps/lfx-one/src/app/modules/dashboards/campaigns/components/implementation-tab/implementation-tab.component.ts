@@ -666,6 +666,12 @@ export class ImplementationTabComponent implements OnInit {
   /** Asks the parent to reopen this tab's brief in Planning's editor — Edit brief (#4983). */
   public readonly editBriefRequested = output<void>();
 
+  /**
+   * A create job is starting (#4983). The parent drops any Edit brief re-read still out: its answer
+   * would switch to Planning and destroy this tab, and with it the job's polling.
+   */
+  public readonly createStarted = output<void>();
+
   /** Why the last Edit brief opened nothing, from the parent, or `null` (#4983). */
   public readonly editBriefError = input<string | null>(null);
 
@@ -4959,6 +4965,7 @@ export class ImplementationTabComponent implements OnInit {
 
     const platforms = this.selectedPlatforms();
     this.step.set('creating');
+    this.createStarted.emit();
     this.creationProgress.set(['Submitting campaign...']);
     this.results.set([]);
     this.platformResults.set([]);

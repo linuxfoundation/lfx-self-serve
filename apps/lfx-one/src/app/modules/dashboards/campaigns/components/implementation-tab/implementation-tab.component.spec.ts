@@ -64,7 +64,7 @@ import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { AutoComplete } from 'primeng/autocomplete';
-import { of, Subject, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
@@ -14329,6 +14329,17 @@ describe('ImplementationTabComponent edit brief', () => {
     fixture.detectChanges();
 
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-error"]')?.textContent).toContain('could not be read');
+  });
+
+  it('tells the parent a create job is starting', () => {
+    const started = vi.fn();
+    fixture.componentInstance.createStarted.subscribe(started);
+    vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(NEVER);
+    vi.spyOn(fixture.componentInstance as unknown as { canSubmit(): boolean }, 'canSubmit').mockReturnValue(true);
+
+    (fixture.componentInstance as unknown as { submit(): void }).submit();
+
+    expect(started).toHaveBeenCalledTimes(1);
   });
 
   it('is disabled, with the reason beside it, while a create job is polling', () => {

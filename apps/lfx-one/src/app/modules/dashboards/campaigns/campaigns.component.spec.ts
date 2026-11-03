@@ -3633,6 +3633,45 @@ describe('CampaignsComponent brief persistence', () => {
       expect(editRequest()?.brief).toEqual(brief);
     });
 
+    it('drops a pending Edit brief re-read once a create job starts, so it cannot leave the running job', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (
+        fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void }; selectedTab: { set(v: string): void } }
+      ).planningEditRequest.set(null);
+      (fixture.componentInstance as unknown as { selectedTab: { set(v: string): void } }).selectedTab.set('implementation');
+      const read = new Subject<CampaignBriefLoadResult>();
+      vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockReturnValue(read);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      (fixture.componentInstance as unknown as { onCreateStarted(): void }).onCreateStarted();
+      read.next({ status: 'loaded', brief, briefId: 'stored-1', etag: 'W/"8"', approved: true });
+      read.complete();
+      await fixture.whenStable();
+
+      expect(editRequest(), 'the late read opened Planning over a running create').toBeNull();
+      expect(tab()).toBe('implementation');
+    });
+
+    it('says why Edit brief opened nothing when there is no foundation to read under', async () => {
+      // No foundation resolved for the whole flow: the handover and the Open to edit file under the same
+      // foundation-less key, so the epoch moves and Edit brief must re-read, which it cannot do.
+      vi.spyOn(fixture.componentInstance as unknown as { activeFoundationSlug(): string }, 'activeFoundationSlug').mockReturnValue('');
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void } }).planningEditRequest.set(null);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+
+      expect((fixture.componentInstance as unknown as { editBriefError(): string | null }).editBriefError()).not.toBeNull();
+    });
+
     it('drops the X fields typed on Implement, which belong to the brief that was there', () => {
       const flag = (): boolean => (fixture.componentInstance as unknown as { twitterCarryDiscarded: boolean }).twitterCarryDiscarded;
       persistBrief.mockReturnValueOnce(NEVER);

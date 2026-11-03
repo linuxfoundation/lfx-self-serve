@@ -607,8 +607,9 @@ export class CampaignsComponent {
 
   /**
    * Bumped whenever Planning moves on — a discard (New Brief, Cancel, a fresh Generate) or another open —
-   * so an Open to edit still waiting on its re-read (`readAndOpenSavedBrief`) can tell it is stale and
-   * drop its answer instead of replacing whatever Planning holds now (#4983).
+   * and when a create job starts on Implement, so an Open to edit still waiting on its re-read
+   * (`readAndOpenSavedBrief`) can tell it is stale and drop its answer instead of replacing whatever
+   * Planning holds now, or switching away from a running job (#4983).
    */
   private planningOpenGeneration = 0;
 
@@ -2860,6 +2861,14 @@ export class CampaignsComponent {
       return;
     }
     this.openInPlanningEditor(offer.brief);
+  }
+
+  /**
+   * A create job started on the Implement tab (#4983): drop any Open to edit / Edit brief re-read still
+   * waiting, whose answer would otherwise switch to Planning and tear down the tab polling that job.
+   */
+  protected onCreateStarted(): void {
+    this.planningOpenGeneration++;
   }
 
   /**
@@ -6809,7 +6818,12 @@ export class CampaignsComponent {
     onError: () => void = (): void => undefined
   ): void {
     const projectSlug = this.activeFoundationSlug();
-    if (projectSlug === '' || this.ownershipKey(projectSlug, seed) === null) return;
+    // Nothing to read without a foundation or an event: say so through `onUnavailable` rather than
+    // return silently, so every caller gives the user an answer (Edit brief shows why it opened nothing).
+    if (projectSlug === '' || this.ownershipKey(projectSlug, seed) === null) {
+      onUnavailable('off');
+      return;
+    }
     const generation = this.briefPersistenceGeneration;
     const ownershipAtSend = this.ownershipGeneration;
     const openGeneration = ++this.planningOpenGeneration;
