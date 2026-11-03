@@ -7,10 +7,9 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { filter, firstValueFrom, map, switchMap, take, tap } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
-import { CROWDFUNDING_ATTRIBUTION_STEP_FLAG, NAV_LENSES } from '@lfx-one/shared/constants';
+import { NAV_LENSES } from '@lfx-one/shared/constants';
 import { CrowdfundingInitiativeStatus, EditAttributionDialogData, InitiativeDetail, Lens, NavLens } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -41,7 +40,6 @@ export class InitiativeDetailComponent {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
-  private readonly featureFlagService = inject(FeatureFlagService);
 
   // ─── Route Fields ──────────────────────────────────────────────────────────
   // Opened from a lens Initiatives page — Project/Foundation (#347, keeping ?project=) or Org (#348, the selected
@@ -63,7 +61,6 @@ export class InitiativeDetailComponent {
   protected readonly initiativeSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('slug') ?? '')), { initialValue: '' });
   private readonly initiativeFetched: Signal<InitiativeDetail | null> = this.initInitiative();
   protected readonly initiative = computed(() => this.initiativeOverride() ?? this.initiativeFetched());
-  private readonly attributionEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false);
   protected readonly canEditAttribution: Signal<boolean> = this.initCanEditAttribution();
 
   protected onInitiativeSaved(updated: InitiativeDetail): void {
@@ -118,7 +115,7 @@ export class InitiativeDetailComponent {
   private initCanEditAttribution(): Signal<boolean> {
     return computed(() => {
       const initiative = this.initiative();
-      return this.attributionEnabled() && this.lens === 'me' && !!initiative?.isOwner && initiative.status === 'submitted';
+      return this.lens === 'me' && !!initiative?.isOwner && initiative.status === 'submitted';
     });
   }
 

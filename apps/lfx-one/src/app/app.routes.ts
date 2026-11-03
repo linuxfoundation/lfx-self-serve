@@ -37,7 +37,6 @@ import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
-import { crowdfundingAttributionEnabledGuard } from './shared/guards/crowdfunding-attribution-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
@@ -94,9 +93,8 @@ function orgLensPageRoutes(): Routes {
     },
     {
       // Initiatives attributed to the organization (#348): the My Initiatives page and detail scoped by `data.lens`.
-      // Componentless parent so the dark-launch guard covers both children.
+      // Componentless parent so both children share its data.
       path: 'initiatives',
-      canMatch: [crowdfundingAttributionEnabledGuard],
       data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your organization.', icon: 'fa-light fa-box-dollar' },
       children: [
         {
@@ -111,9 +109,8 @@ function orgLensPageRoutes(): Routes {
       ],
     },
     {
-      // Crowdfunding donations matched to the organization (#415), behind the same dark-launch guard as Initiatives.
+      // Crowdfunding donations matched to the organization (#415).
       path: 'donations',
-      canMatch: [crowdfundingAttributionEnabledGuard],
       data: {
         lens: 'org',
         title: 'Donations',
@@ -510,7 +507,6 @@ export const routes: Routes = [
         path: 'foundation/initiatives',
         title: 'Foundation Initiatives',
         data: { lens: 'foundation' },
-        canMatch: [crowdfundingAttributionEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
       },
@@ -518,7 +514,6 @@ export const routes: Routes = [
         path: 'foundation/initiatives/:slug',
         title: 'Initiative',
         data: { lens: 'foundation' },
-        canMatch: [crowdfundingAttributionEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
       },
@@ -644,7 +639,6 @@ export const routes: Routes = [
         path: 'project/initiatives',
         title: 'Project Initiatives',
         data: { lens: 'project' },
-        canMatch: [crowdfundingAttributionEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
       },
@@ -652,7 +646,6 @@ export const routes: Routes = [
         path: 'project/initiatives/:slug',
         title: 'Initiative',
         data: { lens: 'project' },
-        canMatch: [crowdfundingAttributionEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
       },

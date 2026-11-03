@@ -6,7 +6,6 @@ import { TestBed } from '@angular/core/testing';
 import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
-  CROWDFUNDING_ATTRIBUTION_STEP_FLAG,
   FORMATION_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
@@ -51,7 +50,6 @@ describe('SidebarNavService', () => {
   const currentPersona = signal('executive-director');
   const isAuditor = signal(false);
   const gatewazeEmbedEnabled = signal(false);
-  const crowdfundingAttributionEnabled = signal(false);
   const canWrite = signal(false);
   const selectedOrgUid = signal<string | null>(null);
   const orgWriterSet = signal(new Set<string>());
@@ -98,7 +96,6 @@ describe('SidebarNavService', () => {
     currentPersona.set('executive-director');
     isAuditor.set(false);
     gatewazeEmbedEnabled.set(false);
-    crowdfundingAttributionEnabled.set(false);
     canWrite.set(false);
     selectedOrgUid.set(null);
     orgWriterSet.set(new Set());
@@ -125,7 +122,6 @@ describe('SidebarNavService', () => {
               if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
               if (key === GATEWAZE_EMBED_ENABLED_FLAG) return gatewazeEmbedEnabled;
-              if (key === CROWDFUNDING_ATTRIBUTION_STEP_FLAG) return crowdfundingAttributionEnabled;
               if (key === MARKETING_OPS_FGA_ENABLED_FLAG) return marketingOpsEnabled;
               return signal(false);
             }),
@@ -265,17 +261,12 @@ describe('SidebarNavService', () => {
     expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
   });
 
-  it('shows Initiatives after the Documents-anchored entries on the project and foundation lenses only for writers with the flag on', () => {
+  it('shows Initiatives after the Documents-anchored entries on the project and foundation lenses only for writers', () => {
     const service = TestBed.inject(SidebarNavService);
 
     for (const lens of ['project', 'foundation'] as const) {
       activeLens.set(lens);
 
-      crowdfundingAttributionEnabled.set(false);
-      canWrite.set(true);
-      expect(findByLink(service.sidebarItems(), `/${lens}/initiatives`)).toBeUndefined();
-
-      crowdfundingAttributionEnabled.set(true);
       canWrite.set(false);
       expect(findByLink(service.sidebarItems(), `/${lens}/initiatives`)).toBeUndefined();
 
@@ -541,7 +532,6 @@ describe('SidebarNavService', () => {
 
     it('shows the EasyCLA item and nothing else', () => {
       orgEasyclaEnabled.set(true);
-      crowdfundingAttributionEnabled.set(true);
 
       const items = TestBed.inject(SidebarNavService).sidebarItems();
 
@@ -600,17 +590,13 @@ describe('SidebarNavService', () => {
     expect(findByLink(engagement, '/org/acme-inc/contributions')?.carryQueryParams).toEqual(['range', 'orgScope']);
   });
 
-  it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected organization with the flag on', () => {
+  it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected organization', () => {
     const orgUid = '001000000000000AAA';
     activeLens.set('org');
     orgSegment.set('acme-inc');
     selectedOrgUid.set(orgUid);
     const service = TestBed.inject(SidebarNavService);
 
-    orgWriterSet.set(new Set([orgUid]));
-    expect(findByLink(service.sidebarItems(), '/org/acme-inc/initiatives')).toBeUndefined();
-
-    crowdfundingAttributionEnabled.set(true);
     orgWriterSet.set(new Set(['001000000000000BBB']));
     expect(findByLink(service.sidebarItems(), '/org/acme-inc/initiatives')).toBeUndefined();
 
@@ -651,18 +637,15 @@ describe('SidebarNavService', () => {
     });
   });
 
-  it('shows Donations on the org lens with the flag on, without a writer grant (#415)', () => {
+  it('shows Donations right after Projects on the org lens, without a writer grant (#415)', () => {
     activeLens.set('org');
     orgSegment.set('acme-inc');
     selectedOrgUid.set('001000000000000AAA');
-    const service = TestBed.inject(SidebarNavService);
 
-    expect(findByLink(service.sidebarItems(), '/org/acme-inc/donations')).toBeUndefined();
-
-    crowdfundingAttributionEnabled.set(true);
-    const items = service.sidebarItems();
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
     expect(findByLink(items, '/org/acme-inc/donations')).toEqual(expect.objectContaining({ label: 'Crowdfunding Donations', testId: 'sidebar-org-donations' }));
     expect(findByLink(items, '/org/acme-inc/initiatives')).toBeUndefined();
+    expect(labels(items).indexOf('Crowdfunding Donations')).toBe(labels(items).indexOf('Projects') + 1);
   });
 
   it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {
