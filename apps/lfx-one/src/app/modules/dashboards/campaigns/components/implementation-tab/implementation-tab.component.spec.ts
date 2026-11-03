@@ -15482,6 +15482,19 @@ describe('ImplementationTabComponent create another campaign', () => {
     expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).not.toBe('Existing Campaigns Returned');
   });
 
+  it('heads a reused row beside a proven pre-create failure as both, not as unconfirmed', () => {
+    c().step.set('results');
+    c().platformResults.set([
+      { platform: 'google-ads', ok: true, campaignId: '9', reused: true },
+      { platform: 'reddit-ads', ok: false, error: 'reddit-ads refused the request (HTTP 400) before anything was created; nothing was created' },
+    ]);
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).toBe(
+      'Existing Campaigns Returned; Nothing Else Created'
+    );
+  });
+
   it('lists a campaign this tab just created in the confirmation, before the index shows it', () => {
     setLists([doc('g1', 1)], ['google-ads']);
     c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 2, variant: 'default' }]);

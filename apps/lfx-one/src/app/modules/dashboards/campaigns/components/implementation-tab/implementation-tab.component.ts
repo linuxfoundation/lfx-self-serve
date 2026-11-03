@@ -1229,11 +1229,15 @@ export class ImplementationTabComponent implements OnInit {
     if (this.anyPlatformCreated()) {
       // Every successful row came back `reused` (#4983): campaign-service returned campaigns that
       // already existed, so "Created" would contradict the line under each row.
-      // A reused row beside an unconfirmed or failed one is not "every campaign already existed": that
-      // mix falls through to the headings below, which never claim more than was verified.
+      // A reused row beside a proven pre-create failure is two confirmed outcomes, and says both. A reused
+      // row beside an unconfirmed one falls through to the headings below, which never claim more than
+      // was verified.
       const rows = this.platformOutcomes();
       if (rows.some((r) => (r.outcome === 'created' && r.reused !== true) || r.outcome === 'orphaned')) return 'Campaigns Created';
       if (rows.every((r) => r.outcome === 'created' && r.reused === true)) return 'Existing Campaigns Returned';
+      if (rows.every((r) => (r.outcome === 'created' && r.reused === true) || r.outcome === 'nothing-created')) {
+        return 'Existing Campaigns Returned; Nothing Else Created';
+      }
     }
     const rows = this.platformOutcomes();
     return rows.length > 0 && rows.every((r) => r.outcome === 'nothing-created') ? 'No Campaigns Created' : 'Campaign Status Unconfirmed';
