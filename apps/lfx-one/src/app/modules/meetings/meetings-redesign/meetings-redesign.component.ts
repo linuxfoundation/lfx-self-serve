@@ -4,6 +4,7 @@
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
+  afterRenderEffect,
   ChangeDetectionStrategy,
   Component,
   computed,
@@ -13,6 +14,7 @@ import {
   PLATFORM_ID,
   Signal,
   signal,
+  untracked,
   viewChild,
   WritableSignal,
 } from '@angular/core';
@@ -98,6 +100,7 @@ export class MeetingsRedesignComponent {
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
   private readonly tabsBar = viewChild<ElementRef<HTMLElement>>('tabsBar');
+  private readonly list = viewChild<ElementRef<HTMLElement>>('list');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
   /** Takes focus when the last pending RSVP is answered. */
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
@@ -113,6 +116,8 @@ export class MeetingsRedesignComponent {
   protected readonly canWriteMeetings: Signal<boolean> = this.projectContext.canWriteMeetings;
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
+  /** Measured tabs bar height; the day headings stick right below it. */
+  protected readonly tabsBarHeight: WritableSignal<number> = signal(0);
   /** Page height on desktop, where the columns scroll on their own; `null` when the window scrolls (1024px and below). */
   protected readonly columnHeight: WritableSignal<number | null> = signal(null);
   /** Where the sticky header stops: 0 inside the centre column, below the mobile menu bar and impersonation banner otherwise. */
@@ -121,6 +126,10 @@ export class MeetingsRedesignComponent {
   protected readonly scrolled: WritableSignal<boolean> = signal(false);
   /** True once the tabs bar has reached its sticky position; the fade then sits under it instead of the header. */
   protected readonly tabsStuck: WritableSignal<boolean> = signal(false);
+  /** True while the list runs under the tabs bar, so a day heading is stuck there; the fade then sits under the heading. */
+  protected readonly dayHeadingStuck: WritableSignal<boolean> = signal(false);
+  /** Where the day headings stick: below the sticky header and tabs bar. */
+  protected readonly dayHeadingTop: Signal<number> = computed(() => this.stickyTop() + this.headerHeight() + this.tabsBarHeight());
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
   /** The Next meeting as a one-item list, so its menu is keyed by row. */
   protected readonly nextRows: Signal<MeetingHomeRow[]> = computed(() => {
@@ -144,6 +153,11 @@ export class MeetingsRedesignComponent {
   public constructor() {
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.store.setTab(params.get('time') === 'past' ? 'past' : 'upcoming'));
     this.initLoadMore();
+    // The list comes and goes with the tab's state without a scroll, so re-check the stuck day heading then.
+    afterRenderEffect(() => {
+      this.list();
+      untracked(() => this.updateScroll());
+    });
     // The composer saves in place, so refetch to show the new or edited meeting; skip(1) drops the replayed count.
     toObservable(this.composer.saveCount)
       .pipe(skip(1), takeUntilDestroyed())
@@ -155,8 +169,10 @@ export class MeetingsRedesignComponent {
     afterNextRender(() => {
       const observer = new ResizeObserver(() => this.measure());
       const header = this.header()?.nativeElement;
+      const tabsBar = this.tabsBar()?.nativeElement;
       const footer = this.footer();
       if (header) observer.observe(header);
+      if (tabsBar) observer.observe(tabsBar);
       if (footer) observer.observe(footer);
       this.destroyRef.onDestroy(() => observer.disconnect());
       this.measure();
@@ -181,7 +197,9 @@ export class MeetingsRedesignComponent {
 
   protected measure(): void {
     const header = this.header()?.nativeElement;
+    const tabsBar = this.tabsBar()?.nativeElement;
     if (header) this.headerHeight.set(header.offsetHeight);
+    if (tabsBar) this.tabsBarHeight.set(tabsBar.offsetHeight);
 
     if (window.matchMedia('(min-width: 1025px)').matches) {
       const host = this.host.nativeElement;
@@ -208,6 +226,9 @@ export class MeetingsRedesignComponent {
     const stickyEdge = desktop ? centre.getBoundingClientRect().top : this.stickyTop();
     this.scrolled.set(scrolled);
     this.tabsStuck.set(scrolled && tabsBar.getBoundingClientRect().top - stickyEdge <= this.headerHeight() + 1);
+    const list = this.list()?.nativeElement.getBoundingClientRect();
+    const headingTop = stickyEdge + this.headerHeight() + this.tabsBarHeight();
+    this.dayHeadingStuck.set(!!list && list.top <= headingTop && list.bottom > headingTop);
   }
 
   private initTabs(): Signal<UiTabItem[]> {
