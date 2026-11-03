@@ -18,7 +18,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
+import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS, MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingType, MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
   MeetingHomeRow,
@@ -95,10 +95,7 @@ export class LastMeetingCardComponent {
   protected readonly summaryContent: Signal<string | null> = this.initSummaryContent();
   /** Only organizers see a summary that still needs approval; tell them invitees don't yet. */
   protected readonly summaryAwaitingReview: Signal<boolean> = computed(() => !!this.summaryContent() && isPastMeetingSummaryAwaitingApproval(this.summary()));
-  protected readonly visibilityBg: Partial<Record<MeetingVisibilityKind, string>> = {
-    [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
-    [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
-  };
+  protected readonly visibilityBg = MEETING_VISIBILITY_BG_CLASSES;
 
   public constructor() {
     afterNextRender(() => {

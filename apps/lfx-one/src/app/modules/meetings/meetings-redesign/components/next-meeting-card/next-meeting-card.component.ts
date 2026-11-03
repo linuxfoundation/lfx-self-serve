@@ -4,6 +4,7 @@
 import { DatePipe, formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import { MeetingHomeRow, MeetingHomeRowLink, MeetingHomeRowProject, MeetingHomeRowType, MeetingVisibilityInfo } from '@lfx-one/shared/interfaces';
 import {
@@ -60,10 +61,7 @@ export class NextMeetingCardComponent {
   protected readonly when: Signal<string> = this.initWhen();
   protected readonly recurrenceTooltip: Signal<string | null> = this.fromRow((row) => getMeetingRecurrenceTooltip(row.meeting, row.occurrence));
   protected readonly startsIn: Signal<string | null> = this.fromRow((row) => getMeetingStartsInLabel(row.startTime, this.now()));
-  protected readonly visibilityBg: Partial<Record<MeetingVisibilityKind, string>> = {
-    [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
-    [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
-  };
+  protected readonly visibilityBg = MEETING_VISIBILITY_BG_CLASSES;
 
   protected open(): void {
     const link = this.link();
