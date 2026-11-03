@@ -1,0 +1,54 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-it-os-agent-shell [engine]="agent" icon="fa-light fa-list" iconClass="bg-violet-50 text-violet-600" testId="it-os-mailing-lists" [(tab)]="tab">
+  <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="it-os-mailing-lists-details">
+    <div class="flex flex-col">
+      <h2 class="text-base font-semibold text-gray-900">Lists on {{ agent.host }}</h2>
+      <p class="text-sm text-gray-500">{{ agent.subLists().length }} sub-lists under main · {{ agent.status().text }}</p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead class="text-xs text-gray-500">
+          <tr>
+            <th class="py-2 pr-4 font-medium">List</th>
+            <th class="py-2 pr-4 font-medium">Permission</th>
+            <th class="py-2 pr-4 font-medium">Visibility</th>
+            <th class="py-2 pr-4 font-medium">Committee</th>
+            <th class="py-2 text-right font-medium">Subscribers</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (list of agent.ordered(); track list.name) {
+            <tr class="border-t border-gray-100" data-testid="it-os-mailing-lists-row">
+              <td class="py-2 pr-4" [class.pl-6]="list.parent">
+                <span class="flex flex-col">
+                  <code class="font-mono text-xs font-semibold">{{ list.parent ? '↳ ' : '' }}{{ list.name }}</code>
+                  <span class="text-xs text-gray-500">{{ list.description }}</span>
+                </span>
+              </td>
+              <td class="py-2 pr-4">{{ list.permission }}</td>
+              <td class="py-2 pr-4">
+                <lfx-tag [value]="list.visibility" [severity]="list.visibility === 'Private' ? 'warn' : 'secondary'" />
+              </td>
+              <td class="py-2 pr-4">
+                @if (agent.syncDiff(list); as diff) {
+                  <span class="flex flex-col gap-1">
+                    <span>{{ list.committee }}</span>
+                    <span class="text-xs text-gray-500">{{ agent.syncLabel(list.sync) }} · {{ agent.syncSummary(diff) }}</span>
+                    @if (!diff.inSync) {
+                      <lfx-tag value="Out of sync" severity="warn" />
+                    }
+                  </span>
+                } @else {
+                  <span class="text-gray-400">—</span>
+                }
+              </td>
+              <td class="py-2 text-right tabular-nums">{{ list.subscribers.toLocaleString() }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</lfx-it-os-agent-shell>

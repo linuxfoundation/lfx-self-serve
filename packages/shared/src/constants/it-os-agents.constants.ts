@@ -53,9 +53,9 @@ export const IT_OS_AGENTS: ItOsAgent[] = [
     name: 'Mailing List Agent',
     icon: 'fa-light fa-list',
     color: 'violet',
-    tags: ['Lists', 'Community'],
+    tags: ['Lists', 'Committees'],
     via: 'groups.io',
-    description: 'Creates groups.io lists, manages subscribers, and links lists to committees so membership stays in sync.',
+    description: 'Creates sub-lists on groups.io, adds subscribers in bulk, and keeps lists in sync with committees.',
   },
   {
     id: 'access-review',

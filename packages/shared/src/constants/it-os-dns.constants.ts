@@ -34,6 +34,7 @@ export const IT_OS_FEES = {
   githubBase: '$A.AA',
   githubPerOrg: '$B.BB',
   forwardingExtraDomain: '$C.CC',
+  groupsioCustomDomain: '$D.DD',
 } as const;
 export const IT_OS_COST_NOTE =
   "From LF IT's IT fee schedule. Amounts are placeholders in this prototype; real amounts are internal and shown to LF staff only.";

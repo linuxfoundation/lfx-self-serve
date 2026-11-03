@@ -111,6 +111,7 @@ export * from './it-os-agents.constants';
 export * from './it-os-dns.constants';
 export * from './it-os-forwarding.constants';
 export * from './it-os-github.constants';
+export * from './it-os-mailing-list.constants';
 export * from './mktg-intake.constants';
 export * from './mktg-run.constants';
 export * from './mktg-run-activity.constants';
