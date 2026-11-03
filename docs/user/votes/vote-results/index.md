@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, c
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, tallies, voters]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Votes
 ---
 
@@ -41,7 +41,7 @@ Summary cards below the tab strip show participation:
 
 - **Responded** shows how many invited people have responded, with a progress bar that shows abstentions as a separate segment. While results are held, the bar shows overall participation without an abstention breakdown. Select the card to open the **Voters** tab.
 - **Comments** shows how many written comments voters have left. This is a different count from **Responded**, because not every voter writes a comment. Select the card to open the **Comments** tab.
-- **Not voted yet** shows how many people haven't voted. On an active vote with people left to vote it has a **Send reminder** button, which opens the reminder dialog, and a **View voters** button, which opens the **Voters** tab. Once everyone has voted it says **Everyone has voted** and the reminder button is gone. If there are no eligible voters, it says **No eligible voters** and keeps **View voters** without a reminder button. On an ended vote, the card is called **Did not vote** and only has **View voters**.
+- **Not voted yet** shows how many people haven't voted. Its **View voters** button opens the **Voters** tab. Once everyone has voted it says **Everyone has voted**. If there are no eligible voters, it says **No eligible voters**. On an ended vote, the card is called **Did not vote**. The card itself does not send reminders; use **Send reminder** in the page header.
 
 Active-vote refreshes also check the vote's current status, so a vote ended elsewhere is marked closed without reloading the page. Final-result labels wait for a successful, non-held results refresh after closure. After closure, managers' visible tabs continue reading results while totals are held or a temporary connection or server failure prevents the final read. These reads stop once final results arrive or after 12 completed attempts; temporary failures use a longer retry delay. Returning to the tab does not reset that limit. If results are still unavailable, reload the page to try again.
 
