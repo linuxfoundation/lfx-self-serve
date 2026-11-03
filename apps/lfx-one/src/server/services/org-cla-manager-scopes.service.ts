@@ -61,8 +61,8 @@ function companyIdsOf(scope: UserServiceScopePermission): (string | null)[] {
  * The companies the caller may open through the bridge, from their own `cla-manager` and
  * `cla-manager-designee` scopes.
  *
- * Only a role in `ORG_CLA_LENS_ENTRY_ROLES` on a `project|organization` scope counts. The request
- * already asks for those roles, but the role is re-checked on every scope: a signatory or
+ * Only a role in `ORG_CLA_LENS_ENTRY_ROLES` on a `project|organization` scope counts. Each request
+ * already asks for one of those roles, but the role is re-checked on every scope: a signatory or
  * company-admin scope must never qualify, even if the filter is ignored upstream.
  */
 export function claManagerCompanies(payload: UserServiceMePermissions | null | undefined): ClaManagerCompanies {
@@ -144,17 +144,21 @@ export class OrgClaManagerScopesService {
         path: '/me/permissions',
       });
     }
-    const url = `${getUserServiceBaseUrl(OPERATION, SERVICE)}/me/permissions?role=${encodeURIComponent(ORG_CLA_LENS_ENTRY_ROLES.join(','))}`;
-    const payload = await gatewayFetch<UserServiceMePermissions>(req, url, {
-      operation: OPERATION,
-      service: SERVICE,
-      errorMessage: 'Failed to read CLA manager scopes',
-      errorCode: 'CLA_MANAGER_SCOPES_LOOKUP_FAILED',
-      redactResponseBody: true,
-      bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
-    });
+    const baseUrl = getUserServiceBaseUrl(OPERATION, SERVICE);
+    const payloads = await Promise.all(
+      ORG_CLA_LENS_ENTRY_ROLES.map((role) =>
+        gatewayFetch<UserServiceMePermissions>(req, `${baseUrl}/me/permissions?role=${encodeURIComponent(role)}`, {
+          operation: OPERATION,
+          service: SERVICE,
+          errorMessage: 'Failed to read CLA manager scopes',
+          errorCode: 'CLA_MANAGER_SCOPES_LOOKUP_FAILED',
+          redactResponseBody: true,
+          bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+        })
+      )
+    );
 
-    const { companySfids, rejected } = claManagerCompanies(payload);
+    const { companySfids, rejected } = claManagerCompanies({ Permissions: payloads.flatMap((payload) => payload?.Permissions ?? []) });
     if (rejected.malformed_scope > 0 || rejected.not_account_id > 0) {
       logger.warning(req, OPERATION, 'Dropped CLA manager scopes the lens cannot address', {
         malformed_scope: rejected.malformed_scope,

@@ -107,16 +107,15 @@ describe('requireOrgLensClaAccess', () => {
       expect(statusOf(await run(OWN))).toBe('allow');
     });
 
-    it('asks user-service for the cla-manager and cla-manager-designee roles only', async () => {
+    it('asks user-service for the cla-manager and cla-manager-designee roles only, one role per call', async () => {
       gatewayFetch.mockResolvedValue(permissions(scope('cla-manager', OWN)));
 
       await run(OWN);
 
-      expect(gatewayFetch).toHaveBeenCalledWith(
-        expect.anything(),
-        'https://gw.test/user-service/v1/me/permissions?role=cla-manager%2Ccla-manager-designee',
-        expect.anything()
-      );
+      expect(gatewayFetch.mock.calls.map((call) => call[1]).sort()).toEqual([
+        'https://gw.test/user-service/v1/me/permissions?role=cla-manager',
+        'https://gw.test/user-service/v1/me/permissions?role=cla-manager-designee',
+      ]);
     });
 
     it('is refused another company, holding the role somewhere is not enough', async () => {

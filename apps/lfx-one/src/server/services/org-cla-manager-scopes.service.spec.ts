@@ -170,28 +170,68 @@ describe('OrgClaManagerScopesService', () => {
     isImpersonating.mockReturnValue(false);
   });
 
-  it('reads the cla-manager and cla-manager-designee roles in one call with the caller token', async () => {
+  function roleOf(url: string): string | undefined {
+    return new URL(url).searchParams.get('role') ?? undefined;
+  }
+
+  function respondByRole(byRole: Record<string, unknown>) {
+    gatewayFetch.mockImplementation(async (_req: Request, url: string) => {
+      const answer = byRole[roleOf(url) ?? ''];
+      if (answer instanceof Error) throw answer;
+      return answer;
+    });
+  }
+
+  it('asks user-service once per entry role, one role per call, with the caller token', async () => {
     gatewayFetch.mockResolvedValue(payload(scope('cla-manager', [PROJECT_1, COMPANY_A])));
 
     const sfids = await service.getCompanySfids(req());
 
     expect([...sfids]).toEqual([COMPANY_A]);
-    expect(gatewayFetch).toHaveBeenCalledTimes(1);
-    expect(gatewayFetch).toHaveBeenCalledWith(
-      expect.anything(),
-      'https://gw.test/user-service/v1/me/permissions?role=cla-manager%2Ccla-manager-designee',
-      expect.anything()
-    );
-    expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.not.objectContaining({ bearerToken: expect.anything() }));
+    expect(gatewayFetch).toHaveBeenCalledTimes(2);
+    const urls = gatewayFetch.mock.calls.map((call) => call[1] as string);
+    for (const url of urls) {
+      expect(url).not.toMatch(/,|%2C/i);
+      expect(new URL(url).searchParams.getAll('role')).toHaveLength(1);
+      expect(url.startsWith('https://gw.test/user-service/v1/me/permissions?role=')).toBe(true);
+    }
+    expect(urls.map(roleOf).sort()).toEqual(['cla-manager', 'cla-manager-designee']);
+    for (const call of gatewayFetch.mock.calls) {
+      expect(call[2]).toEqual(expect.not.objectContaining({ bearerToken: expect.anything() }));
+    }
   });
 
-  it("forwards the target's token while impersonating", async () => {
+  it('lists a cla-manager scope from one answer and a cla-manager-designee scope from the other', async () => {
+    respondByRole({
+      'cla-manager': payload(scope('cla-manager', [PROJECT_1, COMPANY_A])),
+      'cla-manager-designee': payload(scope('cla-manager-designee', [PROJECT_1, COMPANY_B])),
+    });
+
+    const sfids = await service.getCompanySfids(req());
+
+    expect([...sfids].sort()).toEqual([COMPANY_A, COMPANY_B].sort());
+    expect(cacheStore.get('org-cla-manager-scopes:v1:contributor')).toEqual(expect.arrayContaining([COMPANY_A, COMPANY_B]));
+  });
+
+  it.each(['cla-manager', 'cla-manager-designee'])('fails the whole lookup, caching nothing, when the %s call fails', async (failing) => {
+    const failure = Object.assign(new Error('Failed to read CLA manager scopes'), { statusCode: 422, code: 'CLA_MANAGER_SCOPES_LOOKUP_FAILED' });
+    const other = failing === 'cla-manager' ? 'cla-manager-designee' : 'cla-manager';
+    respondByRole({ [failing]: failure, [other]: payload(scope(other, [PROJECT_1, COMPANY_A])) });
+
+    await expect(service.getCompanySfids(req())).rejects.toBe(failure);
+    expect(cacheStore.size).toBe(0);
+  });
+
+  it("forwards the target's token on both calls while impersonating", async () => {
     isImpersonating.mockReturnValue(true);
     gatewayFetch.mockResolvedValue(payload());
 
     await service.getCompanySfids(req({ bearerToken: 'target-user-token' }));
 
-    expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.objectContaining({ bearerToken: 'target-user-token' }));
+    expect(gatewayFetch).toHaveBeenCalledTimes(2);
+    for (const call of gatewayFetch.mock.calls) {
+      expect(call[2]).toEqual(expect.objectContaining({ bearerToken: 'target-user-token' }));
+    }
   });
 
   it("fails, caching nothing, while impersonating without the target's token", async () => {
@@ -215,7 +255,7 @@ describe('OrgClaManagerScopesService', () => {
 
     await Promise.all([service.getCompanySfids(one), service.getCompanySfids(one)]);
 
-    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).toHaveBeenCalledTimes(2);
   });
 
   it('reuses a non-empty answer for 60 seconds per user', async () => {
@@ -225,23 +265,24 @@ describe('OrgClaManagerScopesService', () => {
     const second = await service.getCompanySfids(req());
 
     expect([...second]).toEqual([COMPANY_A]);
-    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).toHaveBeenCalledTimes(2);
     expect(withCacheCalls[0]).toEqual({ key: 'org-cla-manager-scopes:v1:contributor', ttl: 60 });
   });
 
   it('never stores an empty answer, so a newly added CLA Manager is seen at once', async () => {
-    gatewayFetch.mockResolvedValueOnce(payload()).mockResolvedValueOnce(payload(scope('cla-manager', [PROJECT_1, COMPANY_A])));
+    gatewayFetch.mockResolvedValue(payload());
 
     await service.getCompanySfids(req());
     expect(cacheStore.size).toBe(0);
+    gatewayFetch.mockResolvedValue(payload(scope('cla-manager', [PROJECT_1, COMPANY_A])));
     const second = await service.getCompanySfids(req());
 
     expect([...second]).toEqual([COMPANY_A]);
-    expect(gatewayFetch).toHaveBeenCalledTimes(2);
+    expect(gatewayFetch).toHaveBeenCalledTimes(4);
   });
 
   it('never stores a failure', async () => {
-    gatewayFetch.mockRejectedValueOnce(new Error('timeout')).mockResolvedValueOnce(payload(scope('cla-manager', [PROJECT_1, COMPANY_A])));
+    gatewayFetch.mockResolvedValue(payload(scope('cla-manager', [PROJECT_1, COMPANY_A]))).mockRejectedValueOnce(new Error('timeout'));
 
     await expect(service.getCompanySfids(req())).rejects.toThrow();
     const second = await service.getCompanySfids(req());
