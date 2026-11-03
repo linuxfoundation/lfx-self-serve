@@ -669,3 +669,117 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
     expect(payload.sync_mode).toBeUndefined();
   });
 });
+
+// Covers showAutoSyncButton's three gates and the drawer's cross-card save tracking (#4899 review).
+describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', () => {
+  let fixture: ComponentFixture<CommitteeSettingsTabComponent>;
+  let component: CommitteeSettingsTabComponent;
+
+  const COMMITTEE: Committee = {
+    uid: 'committee-1',
+    name: 'Test Committee',
+    project_uid: 'project-1',
+    category: 'Board',
+    has_slack_webhook: false,
+  } as Committee;
+
+  const makeMl = (overrides: Partial<GroupsIOMailingList>): GroupsIOMailingList =>
+    ({
+      uid: 'ml-1',
+      group_name: 'test-list',
+      public: false,
+      type: 'discussion_open',
+      audience_access: 'public',
+      description: 'A test list',
+      title: 'Test List',
+      service_uid: 'service-1',
+      writer: true,
+      committees: [{ uid: 'committee-1' }],
+      ...overrides,
+    }) as GroupsIOMailingList;
+
+  async function createFixture(options: {
+    canEdit?: boolean;
+    flagEnabled?: boolean;
+    associatedMailingLists?: GroupsIOMailingList[];
+  }): Promise<void> {
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(options.flagEnabled ?? true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi.fn(() => of(options.associatedMailingLists ?? [])),
+            getMailingListsByProject: vi.fn(() => of([])),
+            updateMailingList: vi.fn(() => of({})),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', options.canEdit ?? true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  it('hides the Auto Sync button when the feature flag is off', async () => {
+    await createFixture({ flagEnabled: false, associatedMailingLists: [makeMl({})] });
+    expect(component.showAutoSyncButton()).toBe(false);
+  });
+
+  it('hides the Auto Sync button when the viewer cannot edit the committee', async () => {
+    await createFixture({ canEdit: false, associatedMailingLists: [makeMl({})] });
+    expect(component.showAutoSyncButton()).toBe(false);
+  });
+
+  it('hides the Auto Sync button when the committee has no linked mailing lists', async () => {
+    await createFixture({ associatedMailingLists: [] });
+    expect(component.showAutoSyncButton()).toBe(false);
+  });
+
+  it('shows the Auto Sync button when the flag is on, the viewer can edit, and a list is linked', async () => {
+    await createFixture({ associatedMailingLists: [makeMl({})] });
+    expect(component.showAutoSyncButton()).toBe(true);
+  });
+
+  it('tracks drawerSavingCount across multiple open cards, keyed by mailing list uid', async () => {
+    await createFixture({ associatedMailingLists: [makeMl({ uid: 'ml-1' }), makeMl({ uid: 'ml-2' })] });
+
+    component.onSyncSettingsSavingChange('ml-1', true);
+    component.onSyncSettingsSavingChange('ml-2', true);
+    expect(component.drawerSavingCount()).toBe(2);
+
+    component.onSyncSettingsSavingChange('ml-1', false);
+    expect(component.drawerSavingCount()).toBe(1);
+
+    component.onSyncSettingsSavingChange('ml-2', false);
+    expect(component.drawerSavingCount()).toBe(0);
+  });
+
+  it('refreshes associatedMailingLists when a drawer card reports an update, so sibling cards see the change', async () => {
+    await createFixture({ associatedMailingLists: [makeMl({ uid: 'ml-1' }), makeMl({ uid: 'ml-2' })] });
+    const mlService = TestBed.inject(MailingListService) as unknown as { getMailingListsByCommittee: ReturnType<typeof vi.fn> };
+
+    const callsBefore = mlService.getMailingListsByCommittee.mock.calls.length;
+    component.onSyncSettingsUpdated();
+    await fixture.whenStable();
+
+    expect(mlService.getMailingListsByCommittee.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+});

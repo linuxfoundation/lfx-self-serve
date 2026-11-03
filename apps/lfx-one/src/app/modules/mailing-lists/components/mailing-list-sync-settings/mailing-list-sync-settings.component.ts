@@ -35,7 +35,16 @@ export class MailingListSyncSettingsComponent {
   private readonly messageService = inject(MessageService);
 
   public readonly mailingList = input.required<GroupsIOMailingList>();
+  // When the caller already has every mailing list linked to the committee in hand (the Auto Sync
+  // drawer, which renders one instance per list — #4025 review), pass it here so each instance
+  // reuses that data instead of issuing its own getMailingListsByCommittee request. Left undefined
+  // on the standalone mailing-list view page (#4024), where no such list exists to share.
+  public readonly siblingCandidates = input<GroupsIOMailingList[] | undefined>(undefined);
   public readonly updated = output<GroupsIOMailingList>();
+  // Lets a host that can destroy this component mid-save (the Auto Sync drawer, which tears down
+  // every open instance's `(updated)` binding on close) know a save is in flight, so it can block
+  // closing until it settles instead of silently dropping the result (#4899 review).
+  public readonly savingChange = output<boolean>();
 
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly MailingListSyncMode = MailingListSyncMode;
@@ -61,7 +70,13 @@ export class MailingListSyncSettingsComponent {
   protected readonly saving = signal(false);
 
   protected readonly committee = computed(() => this.mailingList().committees?.[0] ?? null);
-  protected readonly syncOn = computed(() => !!this.mailingList().sync_mode && this.mailingList().sync_mode !== MailingListSyncMode.MANUAL);
+
+  // Writable, not a computed off mailingList().sync_mode: a failed save leaves mailingList()
+  // unchanged, so a computed would re-evaluate to the exact value it had before the click and
+  // lfx-toggle's [ngModel] binding would see no input change — the switch would stay stuck in the
+  // clicked position instead of snapping back (#4899 review). Set optimistically in
+  // onToggleChange() and explicitly reverted in save()'s catchError.
+  protected readonly syncOn = signal(false);
 
   // Other mailing lists linked to the same committee, used to resolve whether a sync direction is
   // already active elsewhere (only one direction is allowed per committee at a time).
@@ -69,6 +84,17 @@ export class MailingListSyncSettingsComponent {
   protected readonly activeSync: Signal<GroupsIOMailingList | null> = this.initActiveSync();
 
   public constructor() {
+    effect(() => this.savingChange.emit(this.saving()));
+
+    // Keep the toggle's displayed value in sync with the persisted sync_mode on initial load and on
+    // any refresh that brings in a value set from elsewhere (e.g. another drawer instance's save
+    // flowing back through the parent's refetch) — a save in flight only ever changes `syncOn`
+    // through onToggleChange()/save() below, never through this input-driven effect.
+    effect(() => {
+      const ml = this.mailingList();
+      this.syncOn.set(!!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL);
+    });
+
     // Keep the selector's displayed value in sync with the persisted sync_mode (e.g. on initial
     // load, or after a refresh brings in a value set from elsewhere), without re-triggering a save.
     // Guarded on an actual value change so a re-emission of `mailingList()` with the same sync_mode
@@ -94,6 +120,9 @@ export class MailingListSyncSettingsComponent {
   }
 
   protected onToggleChange(checked: boolean): void {
+    // Set immediately, before the save resolves, so the switch reflects the click right away
+    // instead of waiting on the round-trip — reverted in save()'s catchError on failure (#4899 review).
+    this.syncOn.set(checked);
     if (!checked) {
       this.save(MailingListSyncMode.MANUAL);
       return;
@@ -121,8 +150,10 @@ export class MailingListSyncSettingsComponent {
         catchError((error) => {
           console.error('Failed to update mailing list sync settings', error);
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update sync settings' });
-          // Restore the selector to the persisted direction — the form control already picked up
-          // the attempted value via valueChanges, but the server never accepted it (#4880 review).
+          // Restore the toggle and selector to the persisted state — both already picked up the
+          // attempted value optimistically (onToggleChange / valueChanges), but the server never
+          // accepted it (#4880 review, #4899 review).
+          this.syncOn.set(!!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL);
           const persisted = ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL ? ml.sync_mode : MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
           this.form.controls.direction.setValue(persisted, { emitEvent: false });
           return of(null);
@@ -162,17 +193,31 @@ export class MailingListSyncSettingsComponent {
   }
 
   private initSiblingLists(): Signal<GroupsIOMailingList[]> {
-    // Keyed on the whole `mailingList` input, not just the committee uid: when multiple instances
-    // of this component are open together (the committee-detail Auto Sync drawer, #4025), one
+    // Every reactive dependency folded into one computed, not read inside the switchMap callback —
+    // a signal read inside an RxJS operator body is untracked, so a later change to it would not
+    // trigger a refetch (#4899 review; this previously regressed a fix from 323dbfa78 the same way).
+    // Keyed on the whole `mailingList` input, not just the committee uid: when multiple instances of
+    // this component are open together (the committee-detail Auto Sync drawer, #4025), one
     // instance's save only updates the *parent's* mailing list array — every sibling instance must
-    // re-fetch to see the new sync_mode, even though its own committee uid never changed. Keying
-    // on uid with distinctUntilChanged (as a single-instance page can) would suppress that refetch
-    // and leave `activeSync` stale, breaking the "only one auto direction per committee" guarantee
-    // the moment two lists in the same drawer are toggled back to back.
+    // re-fetch to see the new sync_mode, even though its own committee uid never changed. Keying on
+    // uid with distinctUntilChanged (as a single-instance page can) would suppress that refetch and
+    // leave `activeSync` stale, breaking the "only one auto direction per committee" guarantee the
+    // moment two lists in the same drawer are toggled back to back.
+    const lookupKey = computed(() => ({
+      ml: this.mailingList(),
+      candidates: this.siblingCandidates(),
+      committeeUid: this.syncEnabled() && this.isWriter() ? (this.committee()?.uid ?? null) : null,
+    }));
+
     return toSignal(
-      toObservable(this.mailingList).pipe(
-        switchMap(() => {
-          const committeeUid = this.syncEnabled() && this.isWriter() ? (this.committee()?.uid ?? null) : null;
+      toObservable(lookupKey).pipe(
+        switchMap(({ candidates, committeeUid }) => {
+          // The caller already has every linked list in hand (the Auto Sync drawer) — reuse it
+          // instead of every open instance issuing its own identical getMailingListsByCommittee
+          // request (#4899 review).
+          if (candidates) {
+            return of(candidates);
+          }
           return committeeUid
             ? this.mailingListService.getMailingListsByCommittee(committeeUid).pipe(
                 catchError((error) => {

@@ -176,11 +176,24 @@
   <lfx-ui-drawer heading="Auto Sync" [subtitle]="committee().name">
     <div class="flex flex-col gap-4">
       @for (ml of associatedMailingLists(); track ml.uid) {
-        <lfx-mailing-list-sync-settings [mailingList]="ml" (updated)="onSyncSettingsUpdated()" />
+        <!-- List name/email identifies which card controls which list — needed once a committee has
+             more than one linked list, since the child component's own title/description are
+             committee-scoped, not list-scoped (#4899 review). -->
+        <div class="flex flex-col gap-2">
+          <span class="text-sm font-semibold text-gray-900" data-testid="auto-sync-list-label">{{ ml.group_name }} ({{ ml | mailingListEmail }})</span>
+          <lfx-mailing-list-sync-settings
+            [mailingList]="ml"
+            [siblingCandidates]="associatedMailingLists()"
+            (updated)="onSyncSettingsUpdated()"
+            (savingChange)="onSyncSettingsSavingChange(ml.uid, $event)" />
+        </div>
       }
     </div>
     <ng-container drawerFooter>
-      <lfx-ui-button variant="primary" size="small" (click)="ref.close()">Done</lfx-ui-button>
+      <!-- Disabled, not hidden, while a save is in flight (#4899 review) — `ref.close()` bypasses the
+           drawer's `canClose` gate (see UiDrawerService.open doc comment), so this is the only thing
+           stopping Done from tearing down a child mid-save. -->
+      <lfx-ui-button variant="primary" size="small" [disabled]="drawerSavingCount() > 0" (click)="ref.close()">Done</lfx-ui-button>
     </ng-container>
   </lfx-ui-drawer>
 </ng-template>

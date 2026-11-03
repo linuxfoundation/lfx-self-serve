@@ -8,7 +8,7 @@ import type { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MailingListSyncSettingsComponent } from './mailing-list-sync-settings.component';
@@ -41,12 +41,18 @@ describe('MailingListSyncSettingsComponent', () => {
 
   const render = async (
     mailingList: GroupsIOMailingList,
-    options: { flagEnabled?: boolean; siblingLists?: GroupsIOMailingList[]; updateResult?: GroupsIOMailingList | 'error' } = {}
+    options: {
+      flagEnabled?: boolean;
+      siblingLists?: GroupsIOMailingList[];
+      siblingCandidates?: GroupsIOMailingList[];
+      updateResult?: GroupsIOMailingList | 'error';
+      updateDeferred?: boolean;
+    } = {}
   ): Promise<void> => {
     TestBed.resetTestingModule();
-    updateMailingList = vi.fn(() =>
-      options.updateResult === 'error' ? throwError(() => new Error('upstream rejected')) : of(options.updateResult ?? mailingList)
-    );
+    updateMailingList = options.updateDeferred
+      ? vi.fn(() => new Subject<GroupsIOMailingList>())
+      : vi.fn(() => (options.updateResult === 'error' ? throwError(() => new Error('upstream rejected')) : of(options.updateResult ?? mailingList)));
     getMailingListsByCommittee = vi.fn(() => of(options.siblingLists ?? []));
     messageAdd = vi.fn();
 
@@ -61,6 +67,9 @@ describe('MailingListSyncSettingsComponent', () => {
 
     fixture = TestBed.createComponent(MailingListSyncSettingsComponent);
     fixture.componentRef.setInput('mailingList', mailingList);
+    if (options.siblingCandidates) {
+      fixture.componentRef.setInput('siblingCandidates', options.siblingCandidates);
+    }
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -117,5 +126,39 @@ describe('MailingListSyncSettingsComponent', () => {
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
     consoleErrorSpy.mockRestore();
+  });
+
+  it('flips the toggle immediately on click, then reverts it if the save fails (#4899 review)', async () => {
+    await render(baseList, { updateResult: 'error' });
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    fixture.componentInstance['onToggleChange'](false);
+    expect(fixture.componentInstance['syncOn']()).toBe(false);
+
+    await fixture.whenStable();
+
+    // baseList has no sync_mode, so the persisted state is "off" — the revert should land back there.
+    expect(fixture.componentInstance['syncOn']()).toBe(false);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('reuses siblingCandidates instead of fetching getMailingListsByCommittee when provided (#4899 review)', async () => {
+    const sibling = { ...baseList, uid: 'list-2', sync_mode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE };
+    await render(baseList, { siblingCandidates: [baseList, sibling] });
+
+    expect(getMailingListsByCommittee).not.toHaveBeenCalled();
+    const toggle = fixture.debugElement.query((el) => el.name === 'lfx-toggle')?.componentInstance;
+    expect(toggle?.disabled()).toBe(true);
+  });
+
+  it('emits savingChange while a save is in flight (#4899 review)', async () => {
+    await render(baseList, { updateDeferred: true });
+    const savingChanges: boolean[] = [];
+    fixture.componentInstance.savingChange.subscribe((v) => savingChanges.push(v));
+
+    fixture.componentInstance['onToggleChange'](true);
+    await fixture.whenStable();
+
+    expect(savingChanges).toContain(true);
   });
 });

@@ -104,6 +104,14 @@ export class CommitteeSettingsTabComponent {
   // Subject to trigger ML list refresh after association changes
   private refreshMl$ = new Subject<void>();
 
+  // Count of Auto Sync drawer instances currently mid-save — closing the drawer destroys every open
+  // lfx-mailing-list-sync-settings instance, tearing down its (updated) binding, so a save that's
+  // still in flight would otherwise never reach onSyncSettingsUpdated() (#4899 review). Gates both
+  // the drawer's canClose (Escape/backdrop/close button) and the Done button, since DialogRef.close()
+  // — what Done calls — does not consult canClose.
+  public drawerSavingCount = signal(0);
+  private readonly savingMlUids = new Set<string>();
+
   // Form
   public form = new FormGroup({
     // pattern(/\S/) rejects a whitespace-only name, which `required` alone accepts and persistSettings would then silently drop.
@@ -259,7 +267,25 @@ export class CommitteeSettingsTabComponent {
   }
 
   public openAutoSyncDrawer(): void {
-    this.drawerService.open(this.autoSyncDrawerTemplate(), { width: 600 });
+    this.drawerService.open(this.autoSyncDrawerTemplate(), {
+      width: 600,
+      // Blocks Escape/backdrop/close-button dismissal while any card's save is in flight (#4899 review).
+      canClose: () => this.drawerSavingCount() === 0,
+    });
+  }
+
+  // Tracks how many open Auto Sync drawer cards are currently saving, keyed by whether this
+  // particular instance's own saving state just turned on or off (not a plain increment/decrement,
+  // since a misordered pair of emissions from the same instance must not leave the count permanently
+  // off by one).
+  public onSyncSettingsSavingChange(mlUid: string, saving: boolean): void {
+    const current = this.savingMlUids;
+    if (saving) {
+      current.add(mlUid);
+    } else {
+      current.delete(mlUid);
+    }
+    this.drawerSavingCount.set(current.size);
   }
 
   // Refreshes associatedMailingLists (shared by this card and the drawer). The @for loop rebinds
