@@ -51,9 +51,11 @@ export class DataService {
 
 ### Vote summary send lifetime
 
-`VoteSummarySendService` owns each initiated summary POST independently of its dialog. It retains the reviewed preview and the pending, successful, or failed attempt per vote in memory. Reopening the dialog observes that same attempt without another preview or POST; successful detailed results and ambiguous errors remain inspectable until **Close** dismisses them. Clear pre-send rejections are dismissed after the dialog reports them, permitting a new attempt.
+`VoteSummarySendService` owns each initiated summary POST independently of its dialog. It retains the reviewed preview and the pending, successful, or failed attempt per vote in memory. Reopening the dialog observes that same attempt without another preview or POST; successful detailed results and ambiguous errors remain inspectable until explicit dismissal through the footer **Close** or header **X**. The host's `onClose` event clears settled attempts; destroying the view during navigation does not. Clear pre-send rejections are dismissed after the dialog reports them, permitting a new attempt.
 
 Attempts belong to the effective user's `sub`. Reads reject a different subject synchronously, identity changes clear the cache, and late responses cannot overwrite another subject's attempt. Dialogs also close on subject changes. No recipient data is written to browser storage; a full reload discards the cache. Legacy successful responses without per-voter details and ambiguous failures use the retained earlier preview, explicitly labelled as review-based rather than confirmed send-time outcomes.
+
+The client waits at most `VOTE_SUMMARY_SEND_TIMEOUT_MS` (five minutes) for the POST. Deadline expiry settles the retained attempt as an error and shows review-based Unconfirmed results, unlocking dismissal without retrying the write. It does not prove that server-side email sending has stopped; reopening before explicit dismissal restores those same results and duplicate-send warnings.
 
 ## 👤 User State Management
 

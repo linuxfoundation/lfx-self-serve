@@ -76,9 +76,11 @@ The row shows the new deadline right away. You can only extend a vote that is st
 
 The list is for review only. You can't add or remove voters from it. If several voters share an email address, the dialog says so, and that address receives one summary. If no voter has an email address, the dialog says **Nobody can be emailed** and **Send** stays unavailable. If the vote has no invited voters, the dialog says so. If the list can't load, select **Retry**.
 
-Keyboard users can Tab into each scrollable recipient list and use the arrow or Page Down keys to inspect more rows. Selecting **Send** moves focus to the confirmation question; **Back** returns focus to **Send**.
+Recipient lists and results show the voter's username when no display name is available. If neither is available, LFX uses the email address, or **—** when there is no address either.
 
-While the summary is sending, the dialog can't be closed. When it finishes, the dialog shows the results for each voter, grouped by outcome:
+Keyboard users can Tab into each scrollable recipient list and use the arrow or Page Down keys to inspect more rows. Selecting **Send** moves focus to the confirmation question; **Back** and a rejected send return focus to **Send**. Selecting **Retry** moves focus to **Cancel** while loading, then to **Send** when recipients are ready, **Retry** if loading fails again, or **Cancel** when nobody can be emailed.
+
+While the summary is sending, the dialog can't be closed, and a screen-reader status announces that sending is in progress. LFX waits up to five minutes for a response. If that deadline expires, it shows review-based **Unconfirmed** results and allows you to close the dialog; the server may still be sending emails, so this is not a cancellation and LFX does not automatically retry. When detailed results are available, the dialog shows each voter grouped by outcome:
 
 - **Sent:** the email service confirmed the send. LFX doesn't track whether the email reached the inbox or was opened.
 - **Not sent:** the email was not sent.
@@ -89,7 +91,7 @@ Voters who share an email address share that address's outcome. The results summ
 
 If LFX can't obtain detailed send results, for example after a lost connection, timeout, or a response from an older server, the dialog explicitly labels its counts as based on the **earlier review**, not confirmed send outcomes. Voters who had an email address are shown as **Unconfirmed**. Voters who lacked an address appear under **No email at review**, which does not mean they were definitely skipped when sending. The actual send-time recipients and outcomes are unknown: addresses may have changed, and newly added voters may not appear in these lists. Check with voters before sending again, because emails may already have arrived.
 
-If you navigate elsewhere in LFX while sending, the operation continues. Return to the same vote and select **⋮ → Send summary** to see its pending send or retained results rather than starting another send. Select **Close** on the results to dismiss the retained attempt. This information is kept only in the current app session for the same signed-in user; refreshing the page, signing out, or changing the effective user clears it. There is no resend action in the results dialog.
+If you navigate elsewhere in LFX while sending, the operation continues. Return to the same vote and select **⋮ → Send summary** to see its pending send or retained results rather than starting another send. Select **Close** or the header **X** on the results to dismiss the retained attempt; reopening after either loads a fresh review. This information is kept only in the current app session for the same signed-in user; refreshing the page, signing out, or changing the effective user clears it. There is no resend action in the results dialog.
 
 If you try to send before the vote has closed, LFX says the vote hasn't closed yet. If pre-send checks find that you need to sign in again or that the vote is no longer available, LFX says that nothing was sent and explains the issue instead of asking you to retry the same send. The summary is sent only when you ask for it. It is never sent automatically.
 
