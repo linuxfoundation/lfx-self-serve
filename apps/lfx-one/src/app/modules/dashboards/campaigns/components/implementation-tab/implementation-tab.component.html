@@ -238,6 +238,79 @@
   </div>
 }
 
+<!--
+  Already created for this event (#4983). The campaigns this brief already has, so a second create on
+  the same platform is a choice made knowing the first exists.
+
+  Five states, kept apart on purpose:
+    - the read FAILED: say so, with Retry. Rendering nothing would read as "none created" over
+      campaigns that may be live and spending (the failure-as-absence rule).
+    - answered with live campaigns: list them, with the per-platform count.
+    - a read in flight: say it is checking, since `null` alone cannot tell that from "nothing".
+    - answered empty but possibly stale: indexing lags a create, so say recent ones may be missing.
+      (Only an empty answer can be stale: the BFF sets `possiblyStale` for an empty list alone.)
+    - answered empty and fresh, or not loaded: no panel.
+  Hidden while a create runs; the list is re-read when it settles.
+-->
+@if (step() !== 'creating') {
+  @if (briefCampaignsUnavailable()) {
+    <div
+      class="mb-4 flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+      data-testid="implementation-existing-unavailable">
+      <p>
+        <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>The campaigns already created for this event could not be loaded, so this page
+        can't show whether one exists. Check before creating another.
+      </p>
+      <div>
+        <lfx-button
+          label="Retry"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="retryBriefCampaigns.emit()"
+          data-testid="implementation-existing-retry" />
+      </div>
+    </div>
+  } @else if (existingCampaigns().length > 0) {
+    <div class="mb-4 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4" data-testid="implementation-existing-campaigns">
+      <h3 class="text-sm font-semibold text-blue-900">Already created for this event</h3>
+      <div class="flex flex-col gap-1">
+        @for (notice of existingPlatformNotices(); track notice.platform) {
+          <p class="text-xs text-blue-900" [attr.data-testid]="'implementation-existing-notice-' + notice.platform">{{ notice.message }}</p>
+        }
+      </div>
+      <table class="w-full text-left text-xs text-gray-700" data-testid="implementation-existing-table">
+        <thead>
+          <tr class="text-gray-500">
+            <th scope="col" class="py-1 pr-3 font-medium">Platform</th>
+            <th scope="col" class="py-1 pr-3 font-medium">Name</th>
+            <th scope="col" class="py-1 pr-3 font-medium">Status</th>
+            <th scope="col" class="py-1 font-medium">Slot</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (campaign of existingCampaigns(); track campaign.id) {
+            <tr class="border-t border-blue-100" [attr.data-testid]="'implementation-existing-row-' + campaign.id">
+              <td class="py-1 pr-3">{{ campaign.platformLabel }}</td>
+              <td class="break-all py-1 pr-3 font-mono">{{ campaign.name }}</td>
+              <td class="py-1 pr-3">{{ campaign.status }}</td>
+              <td class="py-1">{{ campaign.slot }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else if (briefCampaignsLoading()) {
+    <p class="mb-4 text-xs text-gray-600" data-testid="implementation-existing-loading">
+      <i class="fa-light fa-spinner-third fa-spin mr-1.5" aria-hidden="true"></i>Checking for campaigns already created for this event…
+    </p>
+  } @else if (briefCampaigns() !== null && briefCampaignsStale()) {
+    <p class="mb-4 text-xs text-gray-600" data-testid="implementation-existing-stale">
+      No campaigns are listed for this event yet, but campaigns created in the last few minutes may not be listed yet.
+    </p>
+  }
+}
+
 <!-- Form Step -->
 @if (step() === 'form') {
   <div class="flex flex-col gap-6" data-testid="implementation-form-step">
@@ -4352,6 +4425,13 @@
       </div>
     }
 
+    <!-- Until a deliberate second campaign ships (#4983), a repeat create on a platform that already
+         has one returns that campaign. Said before the click rather than discovered in the results. -->
+    @if (createAnotherNotice(); as notice) {
+      <p class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="implementation-create-another-notice">
+        <i class="fa-light fa-circle-info mr-1.5" aria-hidden="true"></i>{{ notice }}
+      </p>
+    }
     <lfx-button
       label="Create Another"
       icon="fa-light fa-plus"

@@ -69,6 +69,10 @@ import {
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_EMAIL_CHANNEL_LABEL,
+  CAMPAIGN_EMAIL_CHANNEL_PLATFORM,
+  CAMPAIGN_STATUS_DELETED,
+  CAMPAIGN_STATUSES_NOT_REUSED,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
   GOOGLE_ADS_DECIMAL_NUMBER_PATTERN,
@@ -181,6 +185,9 @@ import type {
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
   CampaignJobOutcome,
+  CampaignExistingPlatformNotice,
+  CampaignExistingRow,
+  CampaignIndexDoc,
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
@@ -657,6 +664,32 @@ export class ImplementationTabComponent implements OnInit {
   public readonly replaceSavedBriefRequested = output<void>();
 
   /**
+   * The campaigns already created from this brief, as the page's list read returned them (#4983).
+   * `null` is NOT LOADED (no saved brief yet, or a read in flight), never "none": only an answered
+   * read supports saying anything about what exists.
+   */
+  public readonly briefCampaigns = input<CampaignIndexDoc[] | null>(null);
+
+  /** The list read answered, but indexing lags a create, so recent campaigns may be missing. */
+  public readonly briefCampaignsStale = input(false);
+
+  /** The list read FAILED, which must not render as "nothing created" (failure-as-absence). */
+  public readonly briefCampaignsUnavailable = input(false);
+
+  /** A list read is in flight, so "nothing listed" means "checking", not "nothing created". */
+  public readonly briefCampaignsLoading = input(false);
+
+  /** Asks the parent to read the campaign list again after a failed read. */
+  public readonly retryBriefCampaigns = output<void>();
+
+  /**
+   * A create job reached a terminal state, so the campaigns already created for this event may have
+   * changed and the parent re-reads them. Emitted on every terminal outcome, failures included: a
+   * failed or unconfirmed job may still have created something.
+   */
+  public readonly createJobSettled = output<void>();
+
+  /**
    * Asks the parent to open the SAVED brief in Planning's editor, after the same
    * `unowned-brief-exists` refusal (#4983). The other way out beside Replace saved brief: keep the
    * stored brief and edit it, instead of overwriting it with this one.
@@ -676,6 +709,32 @@ export class ImplementationTabComponent implements OnInit {
    * keeps the parent's copy ahead of the teardown and needs no lifecycle hook at all.
    */
   public readonly draftChange = output<CampaignImplementationDraft>();
+
+  /**
+   * The live campaigns already created for this event (#4983): every listed campaign but a deleted
+   * one, which frees its slot and no longer exists on the platform. Empty while the list is not
+   * loaded or failed; the template tells those apart through the two inputs above.
+   */
+  protected readonly existingCampaigns: Signal<CampaignExistingRow[]> = this.initExistingCampaigns();
+
+  /**
+   * One line per platform that already has a live campaign: "You already have N … campaign(s) for
+   * this event." (#4983).
+   */
+  protected readonly existingPlatformNotices: Signal<CampaignExistingPlatformNotice[]> = this.initExistingPlatformNotices();
+
+  /**
+   * What Create Another would really do on a platform that already has a campaign (#4983), until a
+   * deliberate second campaign ships. Without `new_version` campaign-service treats a repeat create of
+   * the same campaign (same platform, and for Google the same campaign type) as a retry and returns the
+   * existing one, which the results then list as though created, so this says so before the click.
+   *
+   * The platforms are those with a campaign campaign-service would hand back (not a pending or partial
+   * row, see `CAMPAIGN_STATUSES_NOT_REUSED`), joined with the ones the job just created: right after a
+   * create the list is still being re-read, and the new campaign may not be indexed yet. `null` when
+   * there are none.
+   */
+  protected readonly createAnotherNotice: Signal<string | null> = this.initCreateAnotherNotice();
 
   /**
    * Whether Edit brief is enabled (#4983). Not while a create job is being polled: proceeding from
@@ -7279,6 +7338,7 @@ export class ImplementationTabComponent implements OnInit {
             this.platformResults.set(outcome.platformResults ?? []);
             this.errors.set(outcome.errors);
             this.step.set('results');
+            this.createJobSettled.emit();
           }
         },
         error: (error: unknown) => {
@@ -7288,17 +7348,83 @@ export class ImplementationTabComponent implements OnInit {
               : 'Lost connection to the campaign creation process. Please try again or check your ad platforms directly.';
           this.errors.set([message]);
           this.step.set('results');
+          this.createJobSettled.emit();
         },
         complete: () => {
           if (this.step() === 'creating') {
             this.errors.set(['Campaign creation is taking longer than expected. Check your ad platforms to see if campaigns were created.']);
             this.step.set('results');
+            this.createJobSettled.emit();
           }
         },
       });
   }
 
   // === Private Initializers ===
+  /** A platform id as the panel names it: the picker's label, HubSpot email, or the id itself. */
+  private existingPlatformLabel(platform: string): string {
+    if (platform === CAMPAIGN_EMAIL_CHANNEL_PLATFORM) {
+      return CAMPAIGN_EMAIL_CHANNEL_LABEL;
+    }
+    return CAMPAIGN_PLATFORMS.find((option) => option.id === platform)?.label ?? platform;
+  }
+
+  private initExistingCampaigns(): Signal<CampaignExistingRow[]> {
+    return computed(() =>
+      (this.briefCampaigns() ?? [])
+        .filter((campaign) => campaign.status !== CAMPAIGN_STATUS_DELETED)
+        .map((campaign) => ({
+          id: campaign.id,
+          platformLabel: this.existingPlatformLabel(campaign.platform),
+          name: campaign.campaign_name,
+          status: campaign.status.replace(/_/g, ' '),
+          slot: typeof campaign.slot_version === 'number' ? String(campaign.slot_version) : '—',
+        }))
+    );
+  }
+
+  private initExistingPlatformNotices(): Signal<CampaignExistingPlatformNotice[]> {
+    return computed(() => {
+      const counts = new Map<string, number>();
+      for (const campaign of this.briefCampaigns() ?? []) {
+        if (campaign.status !== CAMPAIGN_STATUS_DELETED) {
+          counts.set(campaign.platform, (counts.get(campaign.platform) ?? 0) + 1);
+        }
+      }
+      return [...counts.entries()].map(([platform, count]) => {
+        const label = this.existingPlatformLabel(platform);
+        const noun = count === 1 ? 'campaign' : 'campaigns';
+        return { platform, label, count, message: `You already have ${count} ${label} ${noun} for this event.` };
+      });
+    });
+  }
+
+  private initCreateAnotherNotice(): Signal<string | null> {
+    return computed(() => {
+      const platforms = new Set<string>();
+      for (const campaign of this.briefCampaigns() ?? []) {
+        const reusable =
+          !!campaign.platform_campaign_id && campaign.status !== CAMPAIGN_STATUS_DELETED && !CAMPAIGN_STATUSES_NOT_REUSED.includes(campaign.status);
+        if (reusable) {
+          platforms.add(campaign.platform);
+        }
+      }
+      for (const result of this.platformResults()) {
+        if (result.ok) {
+          platforms.add(result.platform);
+        }
+      }
+      if (platforms.size === 0) {
+        return null;
+      }
+      const labels = [...platforms].map((platform) => this.existingPlatformLabel(platform));
+      return (
+        `Creating the same campaign again on ${labels.join(', ')} returns the one already created there instead of making a second, ` +
+        "and the results list it again. A second campaign on the same platform isn't available here yet."
+      );
+    });
+  }
+
   /**
    * Whether the Performance Max prefill notice is true right now (#4784): some field still holds the
    * copy the brief seeded into it.

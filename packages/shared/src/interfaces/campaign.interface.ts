@@ -4896,6 +4896,27 @@ export interface HubSpotUtmCreateResult {
 // ---------------------------------------------------------------------------
 
 /**
+ * One platform's line in the Implement tab's "Already created for this event" panel (#4983): how
+ * many live campaigns the event already has there, and the sentence that says so.
+ */
+export interface CampaignExistingPlatformNotice {
+  platform: string;
+  label: string;
+  count: number;
+  message: string;
+}
+
+/** One live campaign in that panel, with its display values resolved for the template. */
+export interface CampaignExistingRow {
+  id: string;
+  platformLabel: string;
+  name: string;
+  status: string;
+  /** The slot as text: the number, or '—' when the index does not record it. */
+  slot: string;
+}
+
+/**
  * A campaign as the platform's Query Service indexes it.
  *
  * Mirrors campaign-service's `CampaignDoc` (`internal/infrastructure/indexer/contract.go`)
@@ -4950,6 +4971,14 @@ export interface CampaignIndexDoc {
    * refuses with 409 `reason: "campaign_adopted"`). The BFF keeps only a literal `true`.
    */
   adopted?: boolean;
+  /**
+   * Which campaign on its `(brief, platform, variant)` slot this is: 1 for the first, 2+ for a
+   * deliberate second (`new_version`). campaign-service's indexer always emits it
+   * (`CampaignDoc.SlotVersion`, `internal/infrastructure/indexer/contract.go`), but documents indexed
+   * before the field existed lack it until the campaign's next write, so absence means "not
+   * recorded", not slot 1. Unrelated to `version`, the optimistic-concurrency counter (#4983).
+   */
+  slot_version?: number;
 }
 
 /**
