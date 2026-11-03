@@ -45,7 +45,9 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
   async function pick(testId: string, label: string): Promise<void> {
     (query(testId)?.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement).click();
     await settle();
-    (Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ui-option"]')).find((option) => option.textContent?.trim() === label) as HTMLElement).click();
+    (
+      Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ui-option"]')).find((option) => option.textContent?.trim() === label) as HTMLElement
+    ).click();
     await settle();
   }
 
@@ -158,7 +160,10 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
   });
 
   it('shows each picker with the value of the list it is given', () => {
-    render({ adSchedules: [{ dayOfWeek: 'FRIDAY', startHour: 9, startMinute: 15, endHour: 24, endMinute: 0 }], devices: [{ device: 'TABLET', bidModifier: 0 }] });
+    render({
+      adSchedules: [{ dayOfWeek: 'FRIDAY', startHour: 9, startMinute: 15, endHour: 24, endMinute: 0 }],
+      devices: [{ device: 'TABLET', bidModifier: 0 }],
+    });
     const shown = (testId: string) => query(testId)?.querySelector('[data-testid="ui-select-value"]')?.textContent?.trim();
 
     expect(shown('implementation-google-ad-schedule-day-0')).toBe('Friday');
