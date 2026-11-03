@@ -12,7 +12,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TableComponent } from '@components/table/table.component';
 import { lfxColors, NEWSLETTER_TOP_LINKS_LIMIT, SHARE_CHANNEL_LABELS, SHARE_CHANNELS } from '@lfx-one/shared/constants';
 import { NewsletterAnalytics, NewsletterChartData, NewsletterLinkRow } from '@lfx-one/shared/interfaces';
-import { normalizeToUrl } from '@lfx-one/shared/utils';
+import { combinedViewCount, normalizeToUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -96,6 +96,11 @@ export class NewsletterAnalyticsComponent {
   protected readonly topLinksLimit = NEWSLETTER_TOP_LINKS_LIMIT;
   /** "LinkedIn 2 · Copy link 1" — the channels used, in dialog order; a hint when there are none yet. */
   protected readonly shareBreakdown: Signal<string> = this.initShareBreakdown();
+  /** Total views = email opens + unique web page views (the reader's views number); null while page views are unknown. */
+  protected readonly totalViews: Signal<number | null> = computed(() => {
+    const a = this.analytics();
+    return a?.total_page_views === undefined ? null : combinedViewCount(a.total_opens, a.total_page_views);
+  });
 
   public constructor() {
     // Lazy chart rendering on the browser only — Chart.js touches `window` on init.
