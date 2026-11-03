@@ -103,6 +103,7 @@ export class MeetingsRedesignComponent {
   private readonly tabsBar = viewChild<ElementRef<HTMLElement>>('tabsBar');
   private readonly list = viewChild<ElementRef<HTMLElement>>('list');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
+  private readonly chips = viewChild(UiChipGroupComponent, { read: ElementRef });
   /** Takes focus when the last pending RSVP is answered. */
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
   /** Takes focus when the last pending RSVP is answered and there is no Create Meeting button. */
@@ -162,6 +163,13 @@ export class MeetingsRedesignComponent {
     afterRenderEffect(() => {
       this.list();
       untracked(() => this.updateScroll());
+    });
+    // A new tab, search or filters starts at the list's first row, so a trigger left in view does not load a page.
+    afterRenderEffect(() => {
+      this.store.tab();
+      this.store.search();
+      this.store.filters();
+      untracked(() => this.scrollToListStart());
     });
     // The composer saves in place, so refetch to show the new or edited meeting; skip(1) drops the replayed count.
     toObservable(this.composer.saveCount)
@@ -266,6 +274,20 @@ export class MeetingsRedesignComponent {
 
   private tabItem(value: MeetingDashboardView, label: string, unknown: boolean, count: number): UiTabItem {
     return unknown ? { value, label } : { value, label, count, countLabel: `${count} ${count === 1 ? 'meeting' : 'meetings'}` };
+  }
+
+  /** Scrolls the chips or list back up to just below the sticky tabs bar when they have scrolled under it. */
+  private scrollToListStart(): void {
+    const centre = this.centre()?.nativeElement;
+    const start: HTMLElement | undefined = this.chips()?.nativeElement ?? this.list()?.nativeElement;
+    if (!centre || !start) return;
+
+    const desktop = this.columnHeight() !== null;
+    const stickyEdge = desktop ? centre.getBoundingClientRect().top : this.stickyTop();
+    const offset = start.getBoundingClientRect().top - (stickyEdge + this.headerHeight() + this.tabsBarHeight());
+    if (offset >= 0) return;
+    if (desktop) centre.scrollBy({ top: offset });
+    else window.scrollBy({ top: offset });
   }
 
   /** Bottom padding of every ancestor up to `main` — the layout's content wrapper sits above the route-entry host, not directly over this one. */
