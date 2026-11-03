@@ -34,6 +34,13 @@ export const COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS = {
 } as const;
 
 /**
+ * Minimum invites within the window before a member who joined inside that window gets a rate
+ * tier. Below it they classify `New` — a single meeting (1/1 or 0/1) is not enough history to call
+ * someone highly engaged or inactive.
+ */
+export const COMMITTEE_ENGAGEMENT_MIN_INVITES = 2;
+
+/**
  * Display labels per supported window. `Record<CommitteeEngagementWindow, ...>` is
  * exhaustiveness-checked, so adding a window to `COMMITTEE_ENGAGEMENT_SUPPORTED_WINDOWS` fails to
  * compile until a label is added here — the pill list below derives from the supported constant
@@ -66,6 +73,7 @@ export const COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY: Record<CommitteeE
   Medium: 'info',
   Low: 'warn',
   Inactive: 'danger',
+  New: 'secondary',
   Emeritus: 'secondary',
   'LF Staff': 'secondary',
 };
