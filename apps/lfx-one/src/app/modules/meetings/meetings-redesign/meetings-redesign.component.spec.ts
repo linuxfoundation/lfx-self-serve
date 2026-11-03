@@ -1,20 +1,27 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
-import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
+import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+
+import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
 import { MeetingsRedesignComponent } from './meetings-redesign.component';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -59,6 +66,10 @@ describe('MeetingsRedesignComponent', () => {
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let navigate: ReturnType<typeof vi.fn>;
   let observerCallback: IntersectionObserverCallback | null;
+  let canWriteMeetings: WritableSignal<boolean>;
+  let openCreateDialog: ReturnType<typeof vi.fn>;
+  let refreshUserMeetings: ReturnType<typeof vi.fn>;
+  let refreshUserPastMeetings: ReturnType<typeof vi.fn>;
 
   const render = (): ComponentFixture<MeetingsRedesignComponent> => {
     const fixture = TestBed.createComponent(MeetingsRedesignComponent);
@@ -73,6 +84,8 @@ describe('MeetingsRedesignComponent', () => {
     past$.next(past);
     await fixture.whenStable();
   };
+  const button = (fixture: ComponentFixture<MeetingsRedesignComponent>, testId: string): UiButtonComponent =>
+    fixture.debugElement.query(By.css(`[data-testid="${testId}"]`)).componentInstance;
   const rowTitles = (fixture: ComponentFixture<MeetingsRedesignComponent>): string[] =>
     Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-day-group-row"]')).map(
       (row) => row.querySelector('[data-testid="meetings-home-row-title"]')?.textContent?.trim() ?? ''
@@ -88,6 +101,10 @@ describe('MeetingsRedesignComponent', () => {
     queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
     navigate = vi.fn().mockResolvedValue(true);
     observerCallback = null;
+    canWriteMeetings = signal(true);
+    openCreateDialog = vi.fn();
+    refreshUserMeetings = vi.fn();
+    refreshUserPastMeetings = vi.fn();
     vi.stubGlobal(
       'IntersectionObserver',
       class {
@@ -119,26 +136,29 @@ describe('MeetingsRedesignComponent', () => {
             getUserMeetings: () => upcoming$,
             getUserPastMeetings: () => past$,
             getUserLatestPastMeetings: () => latestPast$,
+            meetingsRefresh$: new Subject<void>(),
+            pastMeetingsRefresh$: new Subject<void>(),
             authenticated: signal(true),
             meetingJoinIdentity: signal(null),
             confirmedMeetingRsvps: () => [],
             isMeetingRsvpCurrent: () => true,
-            isMeetingRegistrationEnded: () => false,
+            refreshUserMeetings,
+            refreshUserPastMeetings,
           },
         },
-        { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
+        { provide: ProjectContextService, useValue: { canWriteMeetings } },
+        { provide: CreateArtifactDialogService, useValue: { open: openCreateDialog } },
+        { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         {
           provide: MeetingService,
           useValue: {
             removedRegistrationMeetingIds: signal(new Set<string>()),
-            getMeetingRsvps: () => of([]),
             getPastMeetingSummary: () => of(null),
-            getPastMeetingTranscript: () => of(null),
             getPastMeetingRecording: () => of(null),
           },
         },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
-        { provide: PersonaService, useValue: { personaLoaded } },
+        { provide: PersonaService, useValue: { personaLoaded, hasBoardRole: signal(false), hasProjectRole: signal(true) } },
         { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
       ],
@@ -206,13 +226,115 @@ describe('MeetingsRedesignComponent', () => {
     expect(query(fixture, 'meetings-redesign-rail-last-meeting')).toBeNull();
     expect(query(fixture, 'meetings-redesign-folded-last-meeting')).toBeNull();
     expect(query(fixture, 'meetings-redesign-rail-next-meeting')).toBeTruthy();
+    // The lone folded card spans both columns.
+    const folded = query(fixture, 'meetings-redesign-folded-next-meeting');
+    expect(folded?.className).toContain('@[621px]:only:col-span-2');
+    expect(folded?.parentElement?.querySelectorAll(':scope > section')).toHaveLength(1);
   });
 
-  it('has no Create meeting button', async () => {
+  describe('Create Meeting', () => {
+    it('opens the create dialog for meetings from a labelled button', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+
+      const button = query(fixture, 'meetings-home-create')?.querySelector('button');
+      expect(button?.textContent?.trim()).toBe('Create Meeting');
+      expect(button?.querySelector('i')?.className).toContain('fa-plus');
+      button?.click();
+
+      expect(openCreateDialog).toHaveBeenCalledWith('meeting');
+    });
+
+    it('is left out without meeting write access, and the header actions hide with nothing pending', async () => {
+      canWriteMeetings.set(false);
+      const fixture = render();
+      await loadFeeds(fixture, [buildMeeting(1)]);
+
+      expect(query(fixture, 'meetings-home-create')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-header-actions')?.classList).toContain('hidden');
+      // Capped to the header and wrapping, so both buttons fit on a 320px phone.
+      expect(query(fixture, 'meetings-redesign-header-actions')?.className).toContain('max-w-full flex-none flex-wrap');
+    });
+
+    it("gives way to the empty Upcoming state's own button, and stays on an empty Past tab", async () => {
+      const fixture = render();
+      await fixture.whenStable();
+
+      // Kept while the feed loads.
+      expect(query(fixture, 'meetings-home-create')).not.toBeNull();
+
+      await loadFeeds(fixture, []);
+      expect(query(fixture, 'meetings-home-empty-create')).not.toBeNull();
+      expect(query(fixture, 'meetings-home-create')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-header-actions')?.classList).toContain('hidden');
+
+      // The empty Past state has no Create of its own.
+      query(fixture, 'ui-tab-past')?.click();
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-empty-past')).not.toBeNull();
+      expect(query(fixture, 'meetings-home-create')).not.toBeNull();
+    });
+
+    it('stays beside the error when the Upcoming feed fails to load', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = render();
+      await fixture.whenStable();
+
+      upcoming$.error(new Error('down'));
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-error')).not.toBeNull();
+      expect(query(fixture, 'meetings-home-create')).not.toBeNull();
+    });
+
+    it('takes focus once the last pending RSVP is answered, else the heading does', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      const pending = (): PendingRsvpsComponent => fixture.debugElement.query(By.directive(PendingRsvpsComponent)).componentInstance;
+
+      expect(pending().fallbackFocus()).toBe(fixture.debugElement.query(By.css('[data-testid="meetings-home-create"]')).componentInstance);
+
+      canWriteMeetings.set(false);
+      await fixture.whenStable();
+      expect(pending().fallbackFocus()).toBe(query(fixture, 'meetings-redesign-title'));
+    });
+
+    it('refetches both feeds after the composer saves', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      expect(refreshUserMeetings).not.toHaveBeenCalled();
+
+      TestBed.inject(MeetingComposerService).notifySaved();
+      await fixture.whenStable();
+
+      expect(refreshUserMeetings).toHaveBeenCalledOnce();
+      expect(refreshUserPastMeetings).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('folds the right column into a two-column grid and hides the description at 1024px and below', async () => {
     const fixture = render();
     await fixture.whenStable();
 
-    expect(fixture.nativeElement.textContent).not.toContain('Create meeting');
+    const folded = query(fixture, 'meetings-redesign-folded-rail');
+    expect(folded?.className).toContain('grid grid-cols-1');
+    expect(folded?.className).toContain('@[621px]:grid-cols-2');
+    expect(folded?.className).toContain('min-[1025px]:hidden');
+    expect(folded?.parentElement?.classList).toContain('@container');
+    expect(query(fixture, 'meetings-redesign-right-column')?.className).toContain('hidden');
+    expect(query(fixture, 'meetings-redesign-description')?.className).toContain('hidden text-[13px] text-gray-500 min-[1025px]:block');
+  });
+
+  it('shows skeleton Next meeting cards while the upcoming feed loads, and hides them when it fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fixture = render();
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.querySelector('[data-testid="meetings-home-next-card-loading"]')).toBeTruthy();
+
+    upcoming$.error(new Error('down'));
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-redesign-rail-next-meeting')).toBeNull();
+    expect(query(fixture, 'meetings-redesign-folded-next-meeting')).toBeNull();
   });
 
   it('shows the Pending RSVPs button in the header once the feed has dates to answer', async () => {
@@ -251,6 +373,39 @@ describe('MeetingsRedesignComponent', () => {
 
     expect(query(fixture, 'meetings-redesign-header')?.style.top).toBe('0px');
     expect(query(fixture, 'meetings-redesign-tabs-bar')?.style.top).toBe(`${HEADER_HEIGHT}px`);
+  });
+
+  it('sticks the day headings below the header and tabs bar, and drops the fade under a stuck heading', async () => {
+    const fixture = render();
+    await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1)]);
+    fixture.detectChanges();
+
+    const separator = query(fixture, 'meetings-home-day-group-separator');
+    expect(separator?.className).toContain('sticky');
+    expect(separator?.style.top).toBe(`${HEADER_HEIGHT * 2}px`);
+    expect(query(fixture, 'meetings-home-filters-chips')?.className ?? '').not.toContain('sticky');
+
+    const fade = (): string => query(fixture, 'meetings-redesign-tabs-fade')?.className ?? '';
+    const list = query(fixture, 'meetings-home-list') as HTMLElement;
+    const scrollListTo = async (top: number): Promise<void> => {
+      vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, top, 100, 1000));
+      query(fixture, 'meetings-redesign-centre')?.dispatchEvent(new Event('scroll'));
+      await fixture.whenStable();
+    };
+    expect(fade()).not.toContain('mt-[24px]');
+
+    await scrollListTo(HEADER_HEIGHT * 2 - 40);
+    expect(fade()).toContain('mt-[24px]');
+
+    await scrollListTo(HEADER_HEIGHT * 2 + 40);
+    expect(fade()).not.toContain('mt-[24px]');
+
+    // Swapping the list for an empty state, with no scroll, drops the offset too.
+    await scrollListTo(HEADER_HEIGHT * 2 - 40);
+    query(fixture, 'ui-tab-past')?.click();
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-home-empty-past')).toBeTruthy();
+    expect(fade()).not.toContain('mt-[24px]');
   });
 
   it("counts the layout wrapper's bottom padding, not main's own, in the desktop column height", async () => {
@@ -296,6 +451,9 @@ describe('MeetingsRedesignComponent', () => {
 
     expect(query(fixture, 'meetings-redesign-header')?.style.top).toBe(`${IMPERSONATION_BANNER_HEIGHT_PX}px`);
     expect(query(fixture, 'meetings-redesign-tabs-bar')?.style.top).toBe(`${IMPERSONATION_BANNER_HEIGHT_PX + HEADER_HEIGHT}px`);
+
+    await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1)]);
+    expect(query(fixture, 'meetings-home-day-group-separator')?.style.top).toBe(`${IMPERSONATION_BANNER_HEIGHT_PX + HEADER_HEIGHT * 2}px`);
   });
 
   describe('list', async () => {
@@ -419,20 +577,43 @@ describe('MeetingsRedesignComponent', () => {
       expect(rowTitles(fixture)).toEqual(['Meeting 1']);
     });
 
-    it('shows the empty state for a tab without meetings and hides search', async () => {
+    it('shows the empty state for a tab without meetings and hides the search and filters bar', async () => {
       const fixture = render();
       await fixture.whenStable();
       await loadFeeds(fixture, []);
 
+      const empty = fixture.debugElement.query(By.css('[data-testid="meetings-home-empty-upcoming"]')).componentInstance;
+      expect(empty.size()).toBe('default');
       expect(query(fixture, 'meetings-home-empty-upcoming')?.textContent).toContain('No upcoming meetings');
       expect(query(fixture, 'meetings-home-empty-upcoming')?.textContent).toContain('Meetings from your committees and projects will appear here.');
       expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      expect(query(fixture, 'meetings-home-filters-button')).toBeNull();
+      expect(query(fixture, 'meetings-home-list')).toBeNull();
 
       query(fixture, 'ui-tab-past')?.click();
       await fixture.whenStable();
 
       expect(query(fixture, 'meetings-home-empty-past')?.textContent).toContain('No past meetings');
       expect(query(fixture, 'meetings-home-empty-past')?.textContent).toContain('Your past meetings will appear here.');
+      expect(query(fixture, 'meetings-home-empty-create')).toBeNull();
+    });
+
+    it("offers Create Meeting on the empty Upcoming tab, with the header button's gating and handler", async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, []);
+
+      const create = button(fixture, 'meetings-home-empty-create');
+      expect(create.variant()).toBe('secondary-accent');
+      expect(create.size()).toBe('large');
+      expect(create.icon()).toBe('fa-light fa-plus');
+      expect(query(fixture, 'meetings-home-empty-create')?.textContent?.trim()).toBe('Create Meeting');
+      query(fixture, 'meetings-home-empty-create')?.querySelector('button')?.click();
+      expect(openCreateDialog).toHaveBeenCalledWith('meeting');
+
+      canWriteMeetings.set(false);
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-empty-create')).toBeNull();
     });
 
     it('shows no "No results" when the search matches only the Next meeting card', async () => {
@@ -459,6 +640,11 @@ describe('MeetingsRedesignComponent', () => {
 
       expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No results found');
       expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('Try adjusting your filter criteria');
+      expect(query(fixture, 'meetings-home-no-results')?.querySelector('[data-testid="ui-empty-state-icon"] i')?.classList).toContain('fa-eyes');
+      const reset = button(fixture, 'meetings-home-no-results-reset');
+      expect([reset.variant(), reset.size(), reset.icon()]).toEqual(['tertiary-accent', 'large', 'fa-light fa-arrow-rotate-left']);
+      // The search and filters stay, so the query can still be changed.
+      expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
 
       (query(fixture, 'meetings-home-no-results-reset')?.querySelector('button') as HTMLButtonElement).click();
       await fixture.whenStable();
@@ -517,6 +703,25 @@ describe('MeetingsRedesignComponent', () => {
       expect(rowTitles(fixture)).toEqual(['Board Review', 'Tech Sync']);
       expect(document.activeElement).toBe(query(fixture, 'meetings-home-filters-button')?.querySelector('button'));
       fixture.nativeElement.remove();
+    });
+
+    it('clears the filters and the search from the No results reset', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, meetings());
+      await applyOrganizedByMe(fixture);
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'sync';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-no-results')).toBeTruthy();
+
+      (query(fixture, 'meetings-home-no-results-reset')?.querySelector('button') as HTMLButtonElement).click();
+      await fixture.whenStable();
+
+      expect(chips(fixture)).toEqual([]);
+      expect((query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement).value).toBe('');
+      expect(rowTitles(fixture)).toEqual(['Board Review', 'Tech Sync']);
     });
 
     it('clears applied filters on a tab switch but keeps the search', async () => {

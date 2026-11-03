@@ -3,16 +3,21 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
 import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
-import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
+import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
+import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
+import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
 
 const START = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -65,6 +70,7 @@ function buildRow(meeting: Meeting, overrides: Partial<MeetingHomeRow> = {}): Me
 describe('MeetingHomeRowComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
+  const viewerUsername = signal<string | null>('viewer');
 
   const render = async (row: MeetingHomeRow, view: MeetingDashboardView = 'upcoming'): Promise<ComponentFixture<MeetingHomeRowComponent>> => {
     const fixture = TestBed.createComponent(MeetingHomeRowComponent);
@@ -76,6 +82,11 @@ describe('MeetingHomeRowComponent', () => {
   const query = (fixture: ComponentFixture<MeetingHomeRowComponent>, testId: string): HTMLElement | null =>
     fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   const text = (fixture: ComponentFixture<MeetingHomeRowComponent>, testId: string): string => query(fixture, testId)?.textContent?.trim() ?? '';
+  const texts = (fixture: ComponentFixture<MeetingHomeRowComponent>, testId: string): string[] =>
+    Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll(`[data-testid="${testId}"]`)).map(
+      (element) => element.textContent?.replace('·', '').trim() ?? ''
+    );
+  const classes = (fixture: ComponentFixture<MeetingHomeRowComponent>, testId: string): string[] => Array.from(query(fixture, testId)?.classList ?? []);
 
   beforeEach(() => {
     navigateByUrl = vi.fn().mockResolvedValue(true);
@@ -84,6 +95,7 @@ describe('MeetingHomeRowComponent', () => {
       'ResizeObserver',
       class {
         public observe = vi.fn();
+        public unobserve = vi.fn();
         public disconnect = vi.fn();
       }
     );
@@ -91,10 +103,13 @@ describe('MeetingHomeRowComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
-        { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
+        { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null) } },
+        { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
-        { provide: UserService, useValue: { authenticated: signal(true) } },
+        { provide: UserService, useValue: { authenticated: signal(true), viewerUsername } },
+        { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
+        { provide: MeetingsHomeDeleteService, useValue: {} },
       ],
     });
   });
@@ -113,8 +128,8 @@ describe('MeetingHomeRowComponent', () => {
       expect(text(fixture, 'meetings-home-row-project-name')).toBe('Kubernetes');
       expect(text(fixture, 'meetings-home-row-title')).toBe('Series title');
       const weekday = START.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-      expect(text(fixture, 'meetings-home-row-when')).toBe(`${weekday} · ${formatMeetingTimeRange(START, 60)} · 60 min`);
-      expect(text(fixture, 'meetings-home-row-type')).toBe('Technical');
+      expect(texts(fixture, 'meetings-home-row-when')).toEqual([weekday, formatMeetingTimeRange(START, 60), '60 min']);
+      expect(text(fixture, 'meetings-home-row-type').replace('·', '').trim()).toBe('Technical');
       expect(query(fixture, 'meetings-home-row-recurring')).toBeNull();
       expect(query(fixture, 'meetings-home-row-attended')).toBeNull();
     });
@@ -123,7 +138,7 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(buildMeeting(), { title: 'Occurrence title', durationMinutes: 90 }));
 
       expect(text(fixture, 'meetings-home-row-title')).toBe('Occurrence title');
-      expect(text(fixture, 'meetings-home-row-when')).toMatch(/ · 90 min$/);
+      expect(texts(fixture, 'meetings-home-row-when').at(-1)).toBe('90 min');
     });
 
     it('labels a recurring meeting with its repeat rule', async () => {
@@ -135,7 +150,7 @@ describe('MeetingHomeRowComponent', () => {
     });
 
     it.each<[Partial<Meeting>, string[]]>([
-      [{ visibility: MeetingVisibility.PUBLIC, restricted: false }, ['public']],
+      [{ visibility: MeetingVisibility.PUBLIC, restricted: false }, []],
       [{ visibility: MeetingVisibility.PRIVATE, restricted: false }, ['private']],
       [{ visibility: MeetingVisibility.PUBLIC, restricted: true }, ['restricted']],
       [{ visibility: MeetingVisibility.PRIVATE, restricted: true }, ['private', 'restricted']],
@@ -145,6 +160,81 @@ describe('MeetingHomeRowComponent', () => {
 
       expect(badges.map((badge) => badge.getAttribute('aria-label')?.toLowerCase())).toEqual(kinds);
       expect(badges.every((badge) => badge.tabIndex === 0)).toBe(true);
+    });
+
+    it('sizes the tile 40×42, and 46×48 in a centre over 860px', async () => {
+      const fixture = await render(buildRow(buildMeeting()));
+
+      expect(classes(fixture, 'meetings-home-row-date')).toEqual(expect.arrayContaining(['w-[40px]', 'h-[42px]', '@[861px]:w-[46px]', '@[861px]:h-[48px]']));
+      expect(classes(fixture, 'meetings-home-row-date-month')).toEqual(expect.arrayContaining(['h-[14px]', 'text-[8.5px]']));
+      expect(classes(fixture, 'meetings-home-row-date-day')).toContain('text-[19px]');
+    });
+
+    it('lays the row out as a top-aligned grid, and one nowrap line over 860px', async () => {
+      const fixture = await render(buildRow(buildMeeting()));
+
+      expect(classes(fixture, 'meetings-home-row')).toEqual(
+        expect.arrayContaining(['grid', 'grid-cols-[auto_minmax(0,1fr)_auto_auto]', 'items-start', '@[861px]:flex', '@[861px]:flex-nowrap'])
+      );
+      expect(classes(fixture, 'meetings-home-row-actions')).toEqual(expect.arrayContaining(['contents', '@[861px]:flex']));
+      expect(classes(fixture, 'meetings-home-row-menu')).toEqual(expect.arrayContaining(['col-start-4', 'row-start-1', '-my-[4px]']));
+    });
+
+    describe('organized by', () => {
+      const jane = { name: 'Jane Doe', username: 'jdoe', email: '', profile_picture: 'https://example.org/jane.png' };
+      const avatars = (fixture: ComponentFixture<MeetingHomeRowComponent>): HTMLElement[] =>
+        Array.from(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-row-organizer-avatar"]'));
+
+      it('shows one organizer as a labelled avatar with a tooltip, then the name', async () => {
+        const fixture = await render(buildRow(buildMeeting({ created_by: jane })));
+        const [avatar] = avatars(fixture);
+
+        expect(text(fixture, 'meetings-home-row-organizer').replace('·', '').trim()).toBe('Organized by:Jane Doe');
+        expect(text(fixture, 'meetings-home-row-organizer-name')).toBe('Jane Doe');
+        expect(avatars(fixture)).toHaveLength(1);
+        expect(avatar.getAttribute('role')).toBe('img');
+        expect(avatar.getAttribute('aria-label')).toBe('Jane Doe');
+        expect(avatar.getAttribute('tabindex')).toBe('0');
+        expect(avatar.querySelector('img')?.getAttribute('src')).toBe(jane.profile_picture);
+        expect(fixture.debugElement.query(By.css('[data-testid="meetings-home-row-organizer-avatar"]')).injector.get(UiTooltipDirective).text()).toBe(
+          'Jane Doe'
+        );
+      });
+
+      it('draws 18px avatars with the design initials, overlapping 5px after the first', async () => {
+        const fixture = await render(buildRow(buildMeeting({ created_by: { ...jane, profile_picture: undefined }, organizers: ['asmith'] })));
+        const [first, second] = avatars(fixture);
+        const avatar = second.querySelector<HTMLElement>('lfx-ui-avatar');
+
+        expect(first.style.marginLeft).toBe('0px');
+        expect(second.style.marginLeft).toBe('-5px');
+        expect(avatar?.style.width).toBe('18px');
+        expect(Array.from(avatar?.classList ?? [])).toEqual(expect.arrayContaining(['!text-[8px]', '!font-semibold', 'ring-2', 'ring-ui-background-100']));
+        expect(avatar?.getAttribute('aria-hidden')).toBe('true');
+        expect(first.textContent?.trim()).toBe('JD');
+        expect(second.textContent?.trim()).toBe('AS');
+      });
+
+      it('shows several organizers as avatars only, with no names or count', async () => {
+        const fixture = await render(buildRow(buildMeeting({ created_by: jane, organizers: ['jdoe', 'auth0|asmith', 'bking'] })));
+
+        expect(avatars(fixture).map((avatar) => avatar.getAttribute('aria-label'))).toEqual(['Jane Doe', 'asmith', 'bking']);
+        expect(query(fixture, 'meetings-home-row-organizer-name')).toBeNull();
+        expect(text(fixture, 'meetings-home-row-organizer')).not.toContain('+');
+      });
+
+      it('names the viewer "You"', async () => {
+        const fixture = await render(buildRow(buildMeeting({ created_by: { name: 'Viewer Person', username: 'viewer', email: '' }, organizers: ['viewer'] })));
+
+        expect(avatars(fixture)[0].getAttribute('aria-label')).toBe('You');
+        expect(text(fixture, 'meetings-home-row-organizer-name')).toBe('You');
+      });
+
+      it('hides the item without an owner or creator', async () => {
+        const fixture = await render(buildRow(buildMeeting()));
+
+        expect(query(fixture, 'meetings-home-row-organizer')).toBeNull();
+      });
     });
 
     it('opens the meeting page in a new tab with the password and date', async () => {
@@ -215,6 +305,10 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(buildMeeting({ is_invite_responses_enabled: true }), { myRsvp: null }));
 
       expect(query(fixture, 'meetings-home-rsvp')).not.toBeNull();
+      expect(classes(fixture, 'meetings-home-row-rsvp-cell')).toEqual(
+        expect.arrayContaining(['col-[2/-1]', 'row-start-2', '@[481px]:col-[3/4]', '@[481px]:row-start-1'])
+      );
+      expect(fixture.debugElement.query(By.css('[data-testid="meetings-home-rsvp-accepted"]')).componentInstance.size()).toBe('small');
       query(fixture, 'meetings-home-rsvp')?.click();
       expect(open).not.toHaveBeenCalled();
       expect(navigateByUrl).not.toHaveBeenCalled();
@@ -239,6 +333,18 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(buildMeeting({ user_attended: false })), 'past');
 
       expect(query(fixture, 'meetings-home-row-attended')).toBeNull();
+    });
+
+    it('shows Recording and AI Summary in place of the RSVP controls, and never on upcoming rows', async () => {
+      const meeting = buildMeeting({ has_recording: true, has_ai_summary: true });
+      const past = await render(buildRow(meeting), 'past');
+      const upcoming = await render(buildRow(meeting));
+
+      expect(query(past, 'meetings-home-row-recording')).toBeTruthy();
+      expect(query(past, 'meetings-home-row-summary')).toBeTruthy();
+      expect(query(past, 'meetings-home-rsvp')).toBeNull();
+      expect(query(upcoming, 'meetings-home-row-artifacts')).toBeNull();
+      expect(classes(past, 'meetings-home-row-artifacts-cell')).toEqual(expect.arrayContaining(['col-[2/-1]', 'row-start-2', 'hidden', 'has-[div]:flex']));
     });
 
     it('opens the meeting page in place for invitees', async () => {

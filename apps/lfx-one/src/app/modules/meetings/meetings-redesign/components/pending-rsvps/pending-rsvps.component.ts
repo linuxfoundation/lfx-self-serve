@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DOCUMENT, formatDate } from '@angular/common';
+import { DOCUMENT } from '@angular/common';
 import {
   afterNextRender,
   ChangeDetectionStrategy,
@@ -17,8 +17,10 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
+import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import { MeetingHomeRow, MeetingPendingRsvpItem, UiFocusable } from '@lfx-one/shared/interfaces';
 import {
+  formatMeetingDateTime,
   getMeetingHomeRowLink,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
@@ -52,7 +54,6 @@ export class PendingRsvpsComponent {
   private readonly panelList = viewChild<ElementRef<HTMLElement>>('panelList');
   private readonly rowElements = viewChildren<ElementRef<HTMLElement>>('rowElement');
   private readonly rowTitles = viewChildren<ElementRef<HTMLElement>>('rowTitle');
-  private readonly timeFormat = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
 
   /** Dates the viewer still has to answer, soonest first. */
   public readonly rows = input.required<MeetingHomeRow[]>();
@@ -104,8 +105,9 @@ export class PendingRsvpsComponent {
       row,
       project: getMeetingHomeRowProject(row.meeting),
       link: getMeetingHomeRowLink(row, 'upcoming'),
-      visibilityBadges: getMeetingVisibilityBadges(row.meeting),
-      when: `${formatDate(row.startTime, 'EEE, MMM d', 'en-US')} · ${this.timeFormat.format(new Date(row.startTime))}`,
+      // Public is the default, so only Private and Restricted get a badge.
+      visibilityBadges: getMeetingVisibilityBadges(row.meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC),
+      when: formatMeetingDateTime(row.startTime),
       type: getMeetingHomeRowType(row.meeting),
       recurrenceTooltip: getMeetingRecurrenceTooltip(row.meeting, row.occurrence),
     };

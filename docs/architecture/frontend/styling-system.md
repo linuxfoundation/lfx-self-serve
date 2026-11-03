@@ -237,6 +237,7 @@ Icons are loaded via a Font Awesome kit script in `index.html` (not an npm packa
 - Use `fa-light` for most interface icons
 - Use `fa-solid` for emphasis and CTAs
 - Use `fa-regular` for secondary actions
+- Uikit components (`shared/uikit/`) follow the LFX UI Library instead: `fa-light` everywhere, another weight only to show a state
 - Maintain consistent icon sizing
 - Provide accessible labels
 

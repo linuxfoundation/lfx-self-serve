@@ -434,9 +434,6 @@ export class VoteDetailComponent {
       case VOTE_DETAIL_SUMMARY_CARD_ACTIONS.COMMENTS:
         this.switchTab('comments');
         return;
-      case VOTE_DETAIL_SUMMARY_CARD_ACTIONS.NOT_VOTED:
-        this.onSendReminder();
-        return;
     }
   }
 
@@ -866,7 +863,7 @@ export class VoteDetailComponent {
           iconContainerClass: 'bg-amber-100 text-amber-600',
           subLineClass: VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
           disabled,
-          ...this.notVotedCardCtas(loaded),
+          ...this.notVotedCardCtas(),
         },
       ];
     });
@@ -917,19 +914,10 @@ export class VoteDetailComponent {
     return { label: 'Not voted yet', subLine: 'Voting not open yet' };
   }
 
-  /** Visible buttons for the Not voted tile: reminder (active, someone left to remind) and the Voters tab (when reachable). */
-  private notVotedCardCtas(loaded: boolean): Pick<StatCardItem, 'ctas'> {
+  /** Offers the Voters tab from the Not voted tile when it is reachable; reminders stay in the page header. */
+  private notVotedCardCtas(): Pick<StatCardItem, 'ctas'> {
     const viewVoters: StatCardCta = { label: 'View voters', action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.RESPONSES, text: true };
-    const showViewVoters = this.showVotersTab();
-    if (this.isActive() && (!loaded || this.notVotedCount() > 0)) {
-      const sendReminder: StatCardCta = {
-        label: 'Send reminder',
-        action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.NOT_VOTED,
-        icon: 'fa-light fa-envelope',
-      };
-      return { ctas: showViewVoters ? [sendReminder, viewVoters] : [sendReminder] };
-    }
-    if (showViewVoters) {
+    if (this.showVotersTab()) {
       return { ctas: [viewVoters] };
     }
     return {};

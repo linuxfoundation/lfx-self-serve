@@ -4,6 +4,7 @@
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
+  afterRenderEffect,
   ChangeDetectionStrategy,
   Component,
   computed,
@@ -13,14 +14,18 @@ import {
   PLATFORM_ID,
   Signal,
   signal,
+  untracked,
   viewChild,
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
+import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
@@ -29,7 +34,7 @@ import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.com
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
-import { EMPTY, Observable, switchMap } from 'rxjs';
+import { EMPTY, Observable, skip, switchMap } from 'rxjs';
 
 import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
 import { MeetingHomeActionsComponent } from './components/meeting-home-actions/meeting-home-actions.component';
@@ -37,11 +42,13 @@ import { MeetingsDayGroupComponent } from './components/meetings-day-group/meeti
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { NextMeetingCardComponent } from './components/next-meeting-card/next-meeting-card.component';
 import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
+import { MeetingsHomeDeleteService } from './services/meetings-home-delete.service';
+import { MeetingsHomeEditService } from './services/meetings-home-edit.service';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
 /**
  * Redesigned Home / Me lens meetings page (epic #4468).
- * @description Header with the Pending RSVPs button, tabs bar and the day-grouped meetings list in the centre; Next meeting and Last meeting
+ * @description Header with the Pending RSVPs and Create Meeting buttons, tabs bar and the day-grouped meetings list in the centre; Next meeting and Last meeting
  * in a fixed 360px right column. At 1024px and below the right column folds into the centre,
  * above the tabs, and the window scrolls instead of the columns. Rendered by `MeetingsEntryComponent`
  * behind `MEETINGS_REDESIGN_FLAG`.
@@ -70,7 +77,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     PendingRsvpsComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
-  providers: [MeetingsHomeStore],
+  providers: [MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'block -mx-5 -mt-6 md:-mx-8',
@@ -86,13 +93,19 @@ export class MeetingsRedesignComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly createArtifactDialog = inject(CreateArtifactDialogService);
+  private readonly composer = inject(MeetingComposerService);
+  private readonly projectContext = inject(ProjectContextService);
   protected readonly store = inject(MeetingsHomeStore);
 
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
   private readonly tabsBar = viewChild<ElementRef<HTMLElement>>('tabsBar');
+  private readonly list = viewChild<ElementRef<HTMLElement>>('list');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
   /** Takes focus when the last pending RSVP is answered. */
+  protected readonly createButton = viewChild<UiButtonComponent>('createButton');
+  /** Takes focus when the last pending RSVP is answered and there is no Create Meeting button. */
   protected readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
   /** Takes focus when the last filter chip is removed. */
   protected readonly filtersControl = viewChild(MeetingsFiltersComponent);
@@ -100,8 +113,12 @@ export class MeetingsRedesignComponent {
   protected readonly idPrefix = 'meetings-redesign';
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
   protected readonly personaLoaded = this.personaService.personaLoaded;
+  // shortcut: gated on meeting write access in the active project context. revisit: when Me-lens create gating is settled
+  protected readonly canWriteMeetings: Signal<boolean> = this.projectContext.canWriteMeetings;
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
+  /** Measured tabs bar height; the day headings stick right below it. */
+  protected readonly tabsBarHeight: WritableSignal<number> = signal(0);
   /** Page height on desktop, where the columns scroll on their own; `null` when the window scrolls (1024px and below). */
   protected readonly columnHeight: WritableSignal<number | null> = signal(null);
   /** Where the sticky header stops: 0 inside the centre column, below the mobile menu bar and impersonation banner otherwise. */
@@ -110,6 +127,10 @@ export class MeetingsRedesignComponent {
   protected readonly scrolled: WritableSignal<boolean> = signal(false);
   /** True once the tabs bar has reached its sticky position; the fade then sits under it instead of the header. */
   protected readonly tabsStuck: WritableSignal<boolean> = signal(false);
+  /** True while the list runs under the tabs bar, so a day heading is stuck there; the fade then sits under the heading. */
+  protected readonly dayHeadingStuck: WritableSignal<boolean> = signal(false);
+  /** Where the day headings stick: below the sticky header and tabs bar. */
+  protected readonly dayHeadingTop: Signal<number> = computed(() => this.stickyTop() + this.headerHeight() + this.tabsBarHeight());
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
   /** The Next meeting as a one-item list, so its menu is keyed by row. */
   protected readonly nextRows: Signal<MeetingHomeRow[]> = computed(() => {
@@ -123,6 +144,10 @@ export class MeetingsRedesignComponent {
   });
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
+  /** Header Create Meeting; the empty Upcoming tab offers its own in the empty state instead, per the design. */
+  protected readonly showCreate: Signal<boolean> = computed(
+    () => this.canWriteMeetings() && !(this.store.tab() === 'upcoming' && this.tabEmpty() && !this.store.failed())
+  );
   /** The active tab has meetings, but none match the search and filters. */
   protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.matchingRows().length === 0);
   /** "All N meetings loaded" once every row of a list longer than one page is shown. */
@@ -133,12 +158,26 @@ export class MeetingsRedesignComponent {
   public constructor() {
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.store.setTab(params.get('time') === 'past' ? 'past' : 'upcoming'));
     this.initLoadMore();
+    // The list comes and goes with the tab's state without a scroll, so re-check the stuck day heading then.
+    afterRenderEffect(() => {
+      this.list();
+      untracked(() => this.updateScroll());
+    });
+    // The composer saves in place, so refetch to show the new or edited meeting; skip(1) drops the replayed count.
+    toObservable(this.composer.saveCount)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.userService.refreshUserMeetings();
+        this.userService.refreshUserPastMeetings();
+      });
 
     afterNextRender(() => {
       const observer = new ResizeObserver(() => this.measure());
       const header = this.header()?.nativeElement;
+      const tabsBar = this.tabsBar()?.nativeElement;
       const footer = this.footer();
       if (header) observer.observe(header);
+      if (tabsBar) observer.observe(tabsBar);
       if (footer) observer.observe(footer);
       this.destroyRef.onDestroy(() => observer.disconnect());
       this.measure();
@@ -157,9 +196,15 @@ export class MeetingsRedesignComponent {
     });
   }
 
+  protected createMeeting(): void {
+    this.createArtifactDialog.open('meeting');
+  }
+
   protected measure(): void {
     const header = this.header()?.nativeElement;
+    const tabsBar = this.tabsBar()?.nativeElement;
     if (header) this.headerHeight.set(header.offsetHeight);
+    if (tabsBar) this.tabsBarHeight.set(tabsBar.offsetHeight);
 
     if (window.matchMedia('(min-width: 1025px)').matches) {
       const host = this.host.nativeElement;
@@ -186,6 +231,9 @@ export class MeetingsRedesignComponent {
     const stickyEdge = desktop ? centre.getBoundingClientRect().top : this.stickyTop();
     this.scrolled.set(scrolled);
     this.tabsStuck.set(scrolled && tabsBar.getBoundingClientRect().top - stickyEdge <= this.headerHeight() + 1);
+    const list = this.list()?.nativeElement.getBoundingClientRect();
+    const headingTop = stickyEdge + this.headerHeight() + this.tabsBarHeight();
+    this.dayHeadingStuck.set(!!list && list.top <= headingTop && list.bottom > headingTop);
   }
 
   private initTabs(): Signal<UiTabItem[]> {

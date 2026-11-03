@@ -9,6 +9,7 @@ import {
   FAQ_NEEDS_ANSWER_LABEL,
   FAQ_VIEW_TABS,
   FAQ_ANSWERED_REVISION_LABEL,
+  MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
   MKTG_DOCUMENT_COMMENT_STATUS_LABELS,
 } from '@lfx-one/shared/constants';
 import {
@@ -20,7 +21,7 @@ import {
   MktgRevisionApproval,
   MktgRevisionSummary,
 } from '@lfx-one/shared/interfaces';
-import { faqGroupViews, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
+import { describeMktgAcceptedGaps, faqGroupViews, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
@@ -99,6 +100,9 @@ export class MktgFaqViewComponent {
   });
   protected readonly report = computed(() => this.asset().report);
   protected readonly findings = computed(() => this.asset().checks.findings);
+  protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
+  /** Under an approved revision's gaps: accepted at that approval, still open. */
+  protected readonly acceptedGapsNote = computed(() => describeMktgAcceptedGaps(this.report(), this.approval(), this.version()));
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>
     this.report()

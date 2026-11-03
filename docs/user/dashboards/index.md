@@ -1,10 +1,10 @@
 ---
 title: Dashboard
-description: The LFX Self Serve dashboard provides a lens-based overview of your projects, foundation, and personal activity.
+description: The LFX Self Serve dashboard provides a lens-based overview of your personal activity, your projects and foundations, and your organization's involvement.
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, overview, lens, access, me, foundation, project, org, organization, company, employer]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Dashboards
 ---
 
@@ -55,14 +55,7 @@ Go to **app.lfx.dev** — the Me lens is the default view on login, or select **
 
 ## Your company's activity
 
-The **Org Overview** page in Org Lens (route: `/org`) shows your organization's membership and participation across Linux Foundation projects. Instead of your personal activity, this view surfaces how your company is engaged with the Linux Foundation as a whole.
-
-### What you can see
-
-- Your organization's current membership status and tier
-- Committee participation by members of your organization
-- Contribution and engagement metrics across projects your company supports
-- Key contacts and representatives for your organization
+The **Org Overview** is the **Dashboard** of the Organization lens: a one-page summary of how the selected organization takes part in Linux Foundation foundations and projects, instead of your personal activity. Its address is `/org/<organization>/overview`. See [Org Overview dashboard](../organization/org-overview/) for what each card and tile shows.
 
 ### Organization scope
 
@@ -71,25 +64,29 @@ Pages in Org Lens that count contributors — **People** (Contributors and All E
 - **Insights organization** (the default) counts only the organization shown on your company's LFX Insights page, and only in the repositories LFX Insights counts, so the numbers line up with that page.
 - **All related organizations (N)** counts every organization linked to your company account — subsidiaries, acquisitions and duplicate records — in every repository. N is how many of those organizations have code activity in the past two years.
 
-Your choice stays in the page address (`?orgScope=all`) and carries to the other pages with the dropdown when you move between them from the sidebar, the Projects list or a project's detail page. The Org Overview has no dropdown: its **Active Contributors** card always counts the Insights organization (every related organization if your company has none), and links from the Overview open the other pages with the Insights organization selected. Maintainer roles, board and committee seats, events and training are counted the same way under both options. On **All Employees** the choice changes code contributions, so someone whose only activity is code outside the Insights organization is listed only under **All related organizations**. All Employees counts code from the same data as **People → Contributors**, so with the employment filter set to **All employees** its **Code Contributors** card shows the same number as Contributors for the same time range, project type, organization scope and team-member choice. If your company has no LFX Insights organization with code activity in the past two years, the dropdown is disabled and every related organization is counted.
+Your choice stays in the page address (`?orgScope=all`) and carries to the other pages with the dropdown when you move between them from the sidebar, the Projects list or a project's detail page. The Org Overview has no dropdown: its **Active Contributors** card always counts the Insights organization (every related organization if your company has no LFX Insights organization with code activity in the past two years), and links from the Overview open the other pages with the Insights organization selected. Maintainer roles, board and committee seats, events and training are counted the same way under both options. On **All Employees** the choice changes code contributions, so someone whose only activity is code outside the Insights organization is listed only under **All related organizations**. All Employees counts code from the same data as **People → Contributors**, so with the employment filter set to **All employees** its **Code Contributors** card shows the same number as Contributors for the same time range, project type, organization scope and team-member choice. If your company has no LFX Insights organization with code activity in the past two years, the dropdown is disabled and every related organization is counted.
 
 On the **Projects** list the choice changes the **Contributors** column only; influence, health, participants and maintainers are the same under both options. On a project's detail page, contributors' first and most recent activity dates come from every related organization. Under **Insights organization**, the influence level next to **Our Technical Influence** and **Our Ecosystem Influence** is the Insights organization's own; if it has no leaderboard ranking on the project, no level is shown, even when a related organization has one.
 
+**People**, **Code Contributions** and the **Projects** list also have a **Team members** dropdown under **More filters**. People marked as team members in the Community Data Platform are excluded by default, as LFX Insights does; choose **Include team members** to count them. Your choice stays in the page address (`?teamMembers=include`) and carries between these pages when you move between them from the sidebar. On the **Projects** list it changes the **Contributors** column only; participants and maintainers are the same under both options.
+
 ### Navigation
 
-Switch to the **Organization** lens using the lens selector. The Org Overview is the default landing page for the Org lens (route: `/org`).
+On a larger screen, selecting **Organization** in the lens switcher opens the Org Overview of the selected organization. On a phone or small screen, selecting **Organization** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that organization is CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), you land on its **EasyCLA** page instead.
 
 ### Who can access this
 
-Everyone can open the **Organization** lens, but a company's pages show only to people who have access to that organization. Access is granted by the organization's own **Organization Lens administrators**, not by the Linux Foundation. Administrators manage it on the **Org Lens Access** tab; see [Manage Org Lens Access](../organization/manage-org-lens-access/). If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. Linux Foundation staff can open every organization.
+Everyone can open the **Organization** lens, but a company's pages show only to people who have access to that organization, directly or through a related organization. A CLA Manager or initial CLA Manager designee with no other role on an organization sees only its **EasyCLA** page. Admin and viewer access is granted by the organization's own **Organization Lens administrators**, not by the Linux Foundation. Administrators manage it on the **Org Lens Access** tab; see [Manage Org Lens Access](../organization/manage-org-lens-access/). If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. Linux Foundation staff can open every organization.
 
-If you do not have access, the Organization lens shows one of these messages instead of your company's pages:
+If you do not have access, the Organization lens shows a message instead of your company's pages, such as:
 
 - **No organization linked to your account**: LFX did not find an organization you have access to, and could not confirm that your employer is a Linux Foundation member. You can see this even if you have already added an affiliation. The message offers **Add an affiliation**, which links your profile to your employer, but an affiliation does not by itself give you access. You still need a grant from your organization's Organization Lens administrators.
 - **You do not have access to the Organization Lens**: your employer is a Linux Foundation member, but you have not been granted access to it.
 - **You do not have access to this organization**: the link you opened is for an organization you do not have access to.
 
-If you are a CLA Manager, see [Why can't I see my company in the Organization lens?](../organization/faq/#why-can-t-i-see-my-company-in-the-organization-lens).
+For the other messages, such as **Some organizations could not be loaded**, see [What do the messages on the Org Overview mean?](../organization/org-overview/#what-do-the-messages-on-the-org-overview-mean).
+
+If you are a CLA Manager or an initial CLA Manager designee, see [Why can't I see my company in the Organization lens?](../organization/faq/#why-can-t-i-see-my-company-in-the-organization-lens).
 
 ## Related sections
 

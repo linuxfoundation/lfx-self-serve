@@ -625,6 +625,24 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
     await page.screenshot({ path: info.outputPath('saved-profile.png'), fullPage: true });
   });
+  // The BFF names the author by their saved profile (server spec); here the two screens must agree, whatever the live account is called.
+  for (const [identity, name] of [
+    ['a profile name that differs from the account name', 'Example persona'],
+    ['a profile name equal to the account name', LINKEDIN_TEST_PROFILE.about.name],
+  ] as const)
+    test(`the document by-line shows the identity set at the profile step: ${identity}`, async ({ page }, info) => {
+      const profile = { ...LINKEDIN_TEST_PROFILE, about: { ...LINKEDIN_TEST_PROFILE.about, name } };
+      await setupLinkedin(page, { saved: true, profile });
+      await openLinkedin(page);
+      await expect(page.getByTestId('mktg-linkedin-identity')).toContainText(`Writing as ${name}`);
+      await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic release.');
+      await page.getByTestId('mktg-linkedin-draft').click();
+      await expect(page.getByTestId('mktg-document-view-document')).toBeVisible();
+      await expect(page.getByTestId('mktg-linkedin-document-author')).toContainText(`Writing as ${name}`);
+      await expect(page.getByTestId('mktg-linkedin-document-author')).not.toContainText('Drafted by');
+      await expect(page.getByTestId('mktg-linkedin-document-edit-profile')).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`writing-as-${name === 'Example persona' ? 'persona' : 'account'}.png`), fullPage: true });
+    });
   for (const source of ['url', 'file'] as const)
     test(`draft from ${source} submits the source, not invented extracted text`, async ({ page }, info) => {
       await setupLinkedin(page, { saved: true });

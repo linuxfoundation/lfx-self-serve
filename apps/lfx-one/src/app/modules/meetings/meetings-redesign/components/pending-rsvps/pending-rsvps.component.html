@@ -18,13 +18,13 @@
 }
 
 <ng-template #panel>
-  <!-- 470px scrolling list inside the design's 660px panel cap -->
+  <!-- 470px scrolling list inside the design's 660px panel cap; rows split by a 1px inset line, not a border -->
   <div
     #panelList
-    class="flex max-h-[min(470px,calc(100vh-160px))] flex-col divide-y divide-gray-100 overflow-y-auto overscroll-contain py-[4px]"
+    class="flex max-h-[min(470px,calc(100vh-160px))] flex-col overflow-y-auto overscroll-contain py-[4px] [&>*+*]:shadow-[inset_0_1px_0_0] [&>*+*]:shadow-gray-100"
     data-testid="meetings-home-pending-rsvps-panel">
     @for (item of items(); track item.row.key) {
-      <div #rowElement class="flex flex-wrap items-center gap-x-[32px] gap-y-[12px] p-[16px]" data-testid="meetings-home-pending-rsvps-row">
+      <div #rowElement class="flex flex-wrap items-start gap-x-[32px] gap-y-[12px] p-[16px]" data-testid="meetings-home-pending-rsvps-row">
         <div class="flex min-w-0 flex-[1_1_220px] flex-col gap-[4px]">
           @if (item.project; as project) {
             <span class="flex min-w-0 items-center gap-[6px] text-[12px] text-gray-600" data-testid="meetings-home-pending-rsvps-row-project">
@@ -74,14 +74,17 @@
                 aria-label="Recurring"
                 class="inline-flex flex-none cursor-default items-center gap-[5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
                 [lfxUiTooltip]="tooltip"
+                lfxUiTooltipTitle="Recurring"
                 data-testid="meetings-home-pending-rsvps-row-recurring">
                 <i class="fa-light fa-arrows-rotate text-[11px]" aria-hidden="true"></i>Recurring
               </span>
             }
           </span>
         </div>
-        <!-- 24px buttons in the popover, as designed; the list keeps 32px. -->
-        <lfx-meeting-rsvp-controls size="small" [row]="item.row" />
+        <!-- Top-right of the row; on phones it wraps to its own line, right-aligned, as on the list rows. -->
+        <div class="ml-auto" data-testid="meetings-home-pending-rsvps-row-rsvp">
+          <lfx-meeting-rsvp-controls size="small" [row]="item.row" />
+        </div>
       </div>
     }
   </div>

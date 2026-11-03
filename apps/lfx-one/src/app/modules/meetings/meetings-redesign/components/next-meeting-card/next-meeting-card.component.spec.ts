@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingHomeRow, MeetingRsvp } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingHomeRow } from '@lfx-one/shared/interfaces';
 import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,27 +57,13 @@ function buildRow(meeting: Meeting, start: Date = new Date(meeting.start_time), 
   };
 }
 
-function rsvp(registrant: string, response: MeetingRsvp['response_type']): MeetingRsvp {
-  return {
-    id: `r-${registrant}`,
-    meeting_id: '123',
-    registrant_id: registrant,
-    username: registrant,
-    email: `${registrant}@example.test`,
-    name: `Person ${registrant}`,
-    response_type: response,
-    scope: 'all',
-    created_at: new Date().toISOString(),
-  };
-}
-
 describe('NextMeetingCardComponent', () => {
   let navigate: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
 
   const render = async (
     row: MeetingHomeRow | null,
-    inputs: { rsvps?: MeetingRsvp[] | null; joinable?: boolean; joinUrl?: string | null } = {}
+    inputs: { loading?: boolean; joinable?: boolean; joinUrl?: string | null } = {}
   ): Promise<ComponentFixture<NextMeetingCardComponent>> => {
     const fixture = TestBed.createComponent(NextMeetingCardComponent);
     fixture.componentRef.setInput('row', row);
@@ -111,20 +97,45 @@ describe('NextMeetingCardComponent', () => {
     expect(text(fixture, 'meetings-home-next-card-empty')).toContain('Your scheduled meetings will appear here.');
   });
 
-  it('renders the date tile, project, title, time range, recurrence and tags', async () => {
+  it('shows a skeleton card while the upcoming feed loads', async () => {
+    const fixture = await render(null, { loading: true });
+
+    expect(query(fixture, 'meetings-home-next-card-loading')?.getAttribute('role')).toBe('status');
+    expect(query(fixture, 'meetings-home-next-card-empty')).toBeNull();
+  });
+
+  it('renders the date tile, project, title, time range and the type and recurring tags', async () => {
     const meeting = buildMeeting({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } });
     const start = new Date(meeting.start_time);
     const fixture = await render(buildRow(meeting, start, { title: 'Occurrence title' }));
 
     expect(text(fixture, 'meetings-home-next-card-date')).toContain(String(start.getDate()));
-    expect(query(fixture, 'meetings-home-next-card-visibility-public')).toBeTruthy();
     expect(text(fixture, 'meetings-home-next-card-project')).toMatch(/Kubernetes$/);
     expect(text(fixture, 'meetings-home-next-card-title')).toBe('Occurrence title');
     const weekday = start.toLocaleString('en-US', { weekday: 'short' });
     expect(text(fixture, 'meetings-home-next-card-when')).toBe(`${weekday}, ${formatMeetingTimeRange(start, 60)} · 60m`);
-    expect(text(fixture, 'meetings-home-next-card-recurring')).toBe('Recurring');
     expect(text(fixture, 'meetings-home-next-card-type')).toBe('Technical');
-    expect(text(fixture, 'meetings-home-next-card-groups')).toBe('TOC');
+    expect(text(fixture, 'meetings-home-next-card-recurring')).toBe('Recurring');
+    expect(fixture.nativeElement.textContent).not.toContain('TOC');
+  });
+
+  it('badges only Private and Restricted meetings on the tile', async () => {
+    const badges = async (overrides: Partial<Meeting>): Promise<string[]> => {
+      const fixture = await render(buildRow(buildMeeting(overrides)));
+      return Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="meetings-home-next-card-visibility-"]')).map(
+        (badge) => (badge as HTMLElement).dataset['testid'] ?? ''
+      );
+    };
+
+    expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: false })).toEqual([]);
+    expect(await badges({ visibility: MeetingVisibility.PRIVATE, restricted: false })).toEqual(['meetings-home-next-card-visibility-private']);
+    expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: true })).toEqual(['meetings-home-next-card-visibility-restricted']);
+  });
+
+  it('shows no recurring tag for a one-off meeting', async () => {
+    const fixture = await render(buildRow(buildMeeting()));
+
+    expect(query(fixture, 'meetings-home-next-card-recurring')).toBeNull();
   });
 
   it('opens the meeting in a new tab on a card click', async () => {
@@ -133,27 +144,6 @@ describe('NextMeetingCardComponent', () => {
     query(fixture, 'meetings-home-next-card')?.click();
 
     expect(open).toHaveBeenCalledWith(expect.stringMatching(/^\/meetings\/123\?password=secret/), '_blank', 'noopener,noreferrer');
-  });
-
-  describe('attendees', () => {
-    it('shows the people going or maybe and the going and maybe counts', async () => {
-      const fixture = await render(buildRow(buildMeeting()), {
-        rsvps: [rsvp('a', 'accepted'), rsvp('b', 'maybe'), rsvp('c', 'declined'), rsvp('d', 'accepted')],
-      });
-
-      expect(text(fixture, 'meetings-home-next-card-counts')).toBe('2 going · 1 maybe');
-      const avatars = Array.from<HTMLElement>(query(fixture, 'meetings-home-next-card-attendees')?.querySelectorAll('lfx-ui-avatar') ?? []);
-      expect(avatars).toHaveLength(3);
-    });
-
-    it.each<[string, MeetingRsvp[] | null]>([
-      ['the roster is hidden from the viewer', []],
-      ['the responses are still loading', null],
-    ])('hides the row while %s', async (_, rsvps) => {
-      const fixture = await render(buildRow(buildMeeting()), { rsvps });
-
-      expect(query(fixture, 'meetings-home-next-card-attendees')).toBeNull();
-    });
   });
 
   describe('join', () => {

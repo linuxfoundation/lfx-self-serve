@@ -3,10 +3,10 @@
 
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DialogRef } from '@angular/cdk/dialog';
-import { formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, TemplateRef, viewChild } from '@angular/core';
 import { MeetingDashboardView, MeetingHomeRow, MeetingHomeRowProject, MeetingHomeRowType } from '@lfx-one/shared/interfaces';
 import {
+  formatMeetingDateTime,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingRecurrenceTooltip,
@@ -14,26 +14,30 @@ import {
   getPastMeetingResourceId,
 } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
-import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiMenuItemComponent } from '@shared/uikit/menu/menu-item.component';
+import { UiMenuSeparatorComponent } from '@shared/uikit/menu/menu-separator.component';
 import { UiMenuComponent } from '@shared/uikit/menu/menu.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { finalize, take } from 'rxjs';
 
+import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
+import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
+
 /**
- * The ⋯ menu of a meetings home row: Copy Link, and for upcoming meetings Resend Invite and Remove Myself.
- * @description Resend and Remove follow the legacy meeting card's gates. Feedback is uikit toasts at the bottom centre.
+ * The ⋯ menu of a meetings home row: Copy Link, and for upcoming meetings Edit Meeting, Resend Invite, Remove Myself and Delete Meeting.
+ * @description Edit, Delete, Resend and Remove follow the legacy meeting card's gates. Feedback is uikit toasts at the bottom centre.
  */
 @Component({
   selector: 'lfx-meeting-home-actions',
-  imports: [UiAvatarComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiModalComponent],
+  imports: [UiAvatarComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent, UiModalComponent],
   templateUrl: './meeting-home-actions.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'inline-flex' },
@@ -42,10 +46,12 @@ export class MeetingHomeActionsComponent {
   private readonly clipboard = inject(Clipboard);
   private readonly toast = inject(UiToastService);
   private readonly modal = inject(UiModalService);
-  private readonly inviteResend = inject(MeetingInviteResendService);
+  private readonly inviteResend = inject(MeetingOwnInviteResendService);
   private readonly selfRemoval = inject(MeetingSelfRemovalService);
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
+  private readonly editService = inject(MeetingsHomeEditService);
+  private readonly deleteService = inject(MeetingsHomeDeleteService);
   private readonly removeDialog = viewChild.required<TemplateRef<unknown>>('removeDialog');
   private dialogRef: DialogRef | null = null;
 
@@ -54,6 +60,13 @@ export class MeetingHomeActionsComponent {
 
   protected readonly removing = signal(false);
   protected readonly resending: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.row().meeting.id));
+  protected readonly checkingEdit: Signal<boolean> = computed(() => this.editService.isChecking(this.row().meeting.id));
+  /** `organizer` is the meeting's FGA organizer relation; the edit route needs the project slug (legacy edit button). */
+  protected readonly canEdit: Signal<boolean> = computed(
+    () => this.view() === 'upcoming' && this.row().meeting.organizer === true && !!this.row().meeting.project_slug
+  );
+  /** Upcoming only: a past row would delete its whole parent meeting, possibly a live series. */
+  protected readonly canDelete: Signal<boolean> = computed(() => this.view() === 'upcoming' && this.row().meeting.organizer === true);
   /** Registered to this upcoming meeting; an organizer only with a registration of their own (legacy `isRegisteredAttendee`). */
   protected readonly canRemove: Signal<boolean> = this.initCanRemove();
   /** A resend goes to the viewer's own registrant row, so one must exist (legacy `canResendInvite`). */
@@ -62,7 +75,7 @@ export class MeetingHomeActionsComponent {
     getMeetingSelfRemovalMessage(this.row().title, { viaCommittee: this.row().meeting.invited_via_committee, organizer: this.row().meeting.organizer })
   );
   /** "Thu, Oct 1 · 6:30 AM PDT" for the dialog's meeting card. */
-  protected readonly when: Signal<string> = this.initWhen();
+  protected readonly when: Signal<string> = computed(() => formatMeetingDateTime(this.row().startTime));
   protected readonly recurring: Signal<boolean> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence) !== null);
   protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => getMeetingHomeRowProject(this.row().meeting));
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
@@ -97,6 +110,14 @@ export class MeetingHomeActionsComponent {
       return;
     }
     this.toast.show({ variant: 'dark', message: 'Meeting Link Copied', description: 'The meeting link has been copied to your clipboard' });
+  }
+
+  protected editMeeting(): void {
+    this.editService.edit(this.row());
+  }
+
+  protected deleteMeeting(): void {
+    this.deleteService.delete(this.row());
   }
 
   protected resendInvite(): void {
@@ -153,14 +174,6 @@ export class MeetingHomeActionsComponent {
     return computed(
       () => this.view() === 'upcoming' && this.userService.authenticated() && this.invited() && (!this.row().meeting.organizer || this.hasOwnRegistration())
     );
-  }
-
-  private initWhen(): Signal<string> {
-    return computed(() => {
-      const start = new Date(this.row().startTime);
-      const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(start);
-      return `${formatDate(start, 'EEE, MMM d', 'en-US')} · ${time}`;
-    });
   }
 
   private showError(message: string, description: string): void {

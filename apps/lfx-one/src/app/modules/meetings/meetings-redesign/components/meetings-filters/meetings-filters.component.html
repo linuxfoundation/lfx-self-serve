@@ -1,9 +1,11 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Re-created per tab, so a tab switch closes an open popover. -->
+<!-- Re-created per tab, so a tab switch closes an open popover. Fills the host, which the page widens at 640px and below. -->
 @for (current of [tab()]; track current) {
   <lfx-ui-button
+    class="grow"
+    fullWidth
     variant="tertiary"
     icon="fa-light fa-bars-filter"
     popoverLabel="Filters"
@@ -15,7 +17,7 @@
     data-testid="meetings-home-filters-button">
     Filters
     @if (appliedCount()) {
-      <lfx-ui-badge tone="accent" size="sm" data-testid="meetings-home-filters-count">{{ appliedCount() }}</lfx-ui-badge>
+      <lfx-ui-badge tone="accent" variant="solid" size="sm" data-testid="meetings-home-filters-count">{{ appliedCount() }}</lfx-ui-badge>
     }
   </lfx-ui-button>
 }
@@ -24,19 +26,36 @@
   <!-- Exact px design values: 344px panel, 6px body padding, 40px switch rows; rem undershoots at the 14px root. -->
   <div class="flex max-h-[min(560px,calc(100vh-220px))] flex-col" data-testid="meetings-home-filters-panel">
     <div class="flex min-h-0 flex-col gap-[2px] overflow-y-auto p-[6px]">
-      <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
-        <lfx-ui-select
-          label="Project"
-          size="small"
-          [value]="draft().project ?? ''"
-          (valueChange)="setProject($event)"
-          data-testid="meetings-home-filters-project">
-          <lfx-ui-option value="" label="All projects" />
-          @for (option of projectOptions(); track option.value) {
-            <lfx-ui-option [value]="option.value" [label]="option.label" />
-          }
-        </lfx-ui-select>
-      </div>
+      @if (showFoundation()) {
+        <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
+          <lfx-ui-select
+            label="Foundation"
+            size="small"
+            [value]="draft().foundation ?? ''"
+            (valueChange)="setFoundation($event)"
+            data-testid="meetings-home-filters-foundation">
+            <lfx-ui-option value="" label="All foundations" />
+            @for (option of foundationOptions(); track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+        </div>
+      }
+      @if (showProject()) {
+        <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
+          <lfx-ui-select
+            label="Project"
+            size="small"
+            [value]="draft().project ?? ''"
+            (valueChange)="setProject($event)"
+            data-testid="meetings-home-filters-project">
+            <lfx-ui-option value="" label="All projects" />
+            @for (option of projectOptions(); track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+        </div>
+      }
       <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
         <lfx-ui-select
           label="Meeting type"

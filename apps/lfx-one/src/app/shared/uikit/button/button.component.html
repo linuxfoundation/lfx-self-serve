@@ -29,8 +29,9 @@
     [lfxUiTooltipShortcut]="tooltipShortcut()"
     [lfxUiTooltipSide]="tooltipSide()"
     [lfxUiTooltipDelay]="tooltipDelay()"
-    [lfxUiTooltipDisabled]="tooltipDisabled()"
+    [lfxUiTooltipDisabled]="tooltipDisabled() || disabled()"
     (click)="onClick($event)"
+    (mousedown)="onMouseDown($event)"
     data-testid="ui-button">
     <ng-container [ngTemplateOutlet]="content" />
   </a>
@@ -49,7 +50,7 @@
     [lfxUiTooltipShortcut]="tooltipShortcut()"
     [lfxUiTooltipSide]="tooltipSide()"
     [lfxUiTooltipDelay]="tooltipDelay()"
-    [lfxUiTooltipDisabled]="tooltipDisabled()"
+    [lfxUiTooltipDisabled]="tooltipDisabled() || disabled()"
     (click)="onClick($event)"
     data-testid="ui-button">
     <ng-container [ngTemplateOutlet]="content" />
@@ -71,7 +72,7 @@
     [lfxUiTooltipShortcut]="tooltipShortcut()"
     [lfxUiTooltipSide]="tooltipSide()"
     [lfxUiTooltipDelay]="tooltipDelay()"
-    [lfxUiTooltipDisabled]="tooltipDisabled()"
+    [lfxUiTooltipDisabled]="tooltipDisabled() || disabled()"
     (click)="onClick($event)"
     data-testid="ui-button">
     <ng-container [ngTemplateOutlet]="content" />
@@ -90,7 +91,7 @@
     [lfxUiTooltipShortcut]="tooltipShortcut()"
     [lfxUiTooltipSide]="tooltipSide()"
     [lfxUiTooltipDelay]="tooltipDelay()"
-    [lfxUiTooltipDisabled]="tooltipDisabled()"
+    [lfxUiTooltipDisabled]="tooltipDisabled() || disabled()"
     (click)="onClick($event)"
     data-testid="ui-button">
     <ng-container [ngTemplateOutlet]="content" />

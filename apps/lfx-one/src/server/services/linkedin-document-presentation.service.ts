@@ -2,20 +2,44 @@
 // SPDX-License-Identifier: MIT
 
 import { LINKEDIN_POST_INTAKE, LINKEDIN_PRESENTATION_KEY } from '@lfx-one/shared/constants';
-import { LinkedinDocumentContent, LinkedinShareLinkResponse } from '@lfx-one/shared/interfaces';
+import { LinkedinDocumentAuthor, LinkedinDocumentContent, LinkedinShareLinkResponse } from '@lfx-one/shared/interfaces';
 import { buildMktgDocumentPrefix, normalizeLinkedinShareLink } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
+import { getEffectiveSub } from '../utils/auth-helper';
+import { LinkedinProfileService } from './linkedin-profile.service';
+import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
 
 /**
- * Mutable link overlay only. The generic document store resolves revision authors
- * from author-id metadata; this service never trusts attribution in a sidecar.
+ * Mutable link overlay and the read-time by-line. The generic document store resolves
+ * revision authors from author-id metadata; this service never trusts attribution in a
+ * sidecar, and never stores a profile name with the document.
  */
 export class LinkedinDocumentPresentationService {
   private readonly store = new ObjectStoreService();
+  private readonly profiles = new LinkedinProfileService();
+
+  /**
+   * The author's by-line names the identity they set at the profile step: their own saved
+   * profile, read by the same effective subject the profile endpoints use, never a
+   * client-supplied one. Other project writers keep the resolved account name and never
+   * see another user's profile. An absent or unreadable profile falls back to the account
+   * name; a profile failure never fails the document read.
+   */
+  public async attribution(req: Request, authorId: string, account: LinkedinDocumentAuthor): Promise<Pick<LinkedinDocumentContent, 'author' | 'isAuthor'>> {
+    const viewer = getEffectiveSub(req);
+    if (!viewer || viewer !== authorId) return { author: account, isAuthor: false };
+    try {
+      const saved = await this.profiles.read(req, viewer);
+      return { author: saved ? { name: saved.profile.about.name } : account, isAuthor: true };
+    } catch (err) {
+      logger.warning(req, 'linkedin_document_attribution', 'Saved profile lookup failed — showing the account name', { err });
+      return { author: account, isAuthor: true };
+    }
+  }
 
   public async read(req: Request, project: string, documentId: string, content: LinkedinDocumentContent): Promise<LinkedinDocumentContent> {
     const object = await this.store.getObject(req, 'marketing-os-artifacts', this.key(project, documentId));

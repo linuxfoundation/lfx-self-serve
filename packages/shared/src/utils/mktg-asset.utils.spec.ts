@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { MKTG_HOST_ASSET_STATES } from '../constants/mktg-asset.constants';
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
 import type { MktgRevisionResponse, MktgRevisionSummary } from '../interfaces/mktg-document-store.interface';
-import { describeMktgAssetReadiness, mktgAssetHeaderFallback, mktgAssetHeaderMetadata } from './mktg-asset.utils';
+import { describeMktgAcceptedGaps, describeMktgAssetReadiness, mktgAssetHeaderFallback, mktgAssetHeaderMetadata } from './mktg-asset.utils';
 
 describe('Asset readiness', () => {
   it('uses singular source when the only source failed', () => {
@@ -29,6 +29,23 @@ describe('Asset readiness', () => {
         notes: '',
       })
     ).toBe(expected);
+  });
+});
+
+describe('Accepted gaps caption', () => {
+  const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
+  const withGaps = { sources_read: ['Docs'], sources_failed: [], gaps: ['Missing evidence'], notes: '' };
+
+  it('names the approved version under its still-open gaps', () => {
+    expect(describeMktgAcceptedGaps(withGaps, approval, 3)).toBe('Accepted when v3 was approved; still open.');
+  });
+  it('drops the version when none is known', () => {
+    expect(describeMktgAcceptedGaps(withGaps, approval, null)).toBe('Accepted at approval; still open.');
+  });
+  it('says nothing when the revision is not approved, has no gap or has no report', () => {
+    expect(describeMktgAcceptedGaps(withGaps, null, 3)).toBeNull();
+    expect(describeMktgAcceptedGaps({ ...withGaps, gaps: [] }, approval, 3)).toBeNull();
+    expect(describeMktgAcceptedGaps(null, approval, 3)).toBeNull();
   });
 });
 

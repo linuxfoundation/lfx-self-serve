@@ -18,8 +18,8 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
-import { MeetingType, MeetingVisibilityKind } from '@lfx-one/shared/enums';
+import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
+import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
   MeetingHomeRow,
   MeetingHomeRowLink,
@@ -30,12 +30,12 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   getMeetingHomeRowLink,
-  getMeetingProjectUrl,
+  getMeetingHomeRowProject,
+  getMeetingHomeRowType,
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
   getPastMeetingSummaryContent,
   isPastMeetingSummaryAwaitingApproval,
-  stripMarkdown,
 } from '@lfx-one/shared/utils';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
@@ -47,10 +47,9 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
 
 /**
- * Last meeting card of the meetings home right column: the viewer's most recent past meeting with its AI summary,
- * transcript and recording.
- * @description Each artifact shows only once it has loaded and exists; a failed lookup hides it. Read more, Transcript
- * and Recording open the meetings home dialogs.
+ * Last meeting card of the meetings home right column: the viewer's most recent past meeting with its recording and AI summary.
+ * @description Each button shows only once its artifact has loaded and exists; a failed lookup hides it. Both open the
+ * meetings home dialogs.
  */
 @Component({
   selector: 'lfx-last-meeting-card',
@@ -66,61 +65,51 @@ export class LastMeetingCardComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
-  private readonly groupNameElement = viewChild<ElementRef<HTMLElement>>('groupName');
 
   /** The last meeting; null when the viewer has none. */
   public readonly row = input.required<MeetingHomeRow | null>();
   public readonly loading = input<boolean>(false);
   /** Undefined while loading, null when there is none or the lookup failed. */
   public readonly summary = input<PastMeetingSummary | null | undefined>(undefined);
-  public readonly hasTranscript = input<boolean | null | undefined>(undefined);
   public readonly recordingUrl = input<string | null | undefined>(undefined);
   /** The summary after an organizer edited or approved it in the dialog. */
   public readonly summaryChange = output<PastMeetingSummary>();
 
   protected readonly projectTruncated = signal(false);
-  protected readonly groupTruncated = signal(false);
   protected readonly link: Signal<MeetingHomeRowLink | null> = computed(() => {
     const row = this.row();
     return row ? getMeetingHomeRowLink(row, 'past') : null;
   });
   protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = computed(() => {
     const row = this.row();
-    return row ? getMeetingVisibilityBadges(row.meeting) : [];
+    // Public needs no badge on the tile, as on the list rows.
+    return row ? getMeetingVisibilityBadges(row.meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC) : [];
   });
-  protected readonly project: Signal<MeetingHomeRowProject | null> = this.initProject();
+  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => {
+    const row = this.row();
+    return row ? getMeetingHomeRowProject(row.meeting) : null;
+  });
   protected readonly when: Signal<string> = this.initWhen();
   protected readonly recurrenceTooltip: Signal<string | null> = computed(() => {
     const row = this.row();
     return row ? getMeetingRecurrenceTooltip(row.meeting, row.occurrence) : null;
   });
-  protected readonly meetingType: Signal<MeetingHomeRowType | null> = this.initMeetingType();
-  protected readonly group: Signal<string> = computed(() =>
-    (this.row()?.meeting.committees ?? [])
-      .map((committee) => committee.name?.trim())
-      .filter(Boolean)
-      .join(', ')
-  );
+  protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => {
+    const row = this.row();
+    return row ? getMeetingHomeRowType(row.meeting) : null;
+  });
   /** Raw summary text the viewer may read; organizers also see one awaiting their approval. */
   protected readonly summaryContent: Signal<string | null> = this.initSummaryContent();
-  protected readonly summaryText: Signal<string> = computed(() => stripMarkdown(this.summaryContent() ?? ''));
   /** Only organizers see a summary that still needs approval; tell them invitees don't yet. */
   protected readonly summaryAwaitingReview: Signal<boolean> = computed(() => !!this.summaryContent() && isPastMeetingSummaryAwaitingApproval(this.summary()));
-  protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
-    [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
-    [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
-    [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
-  };
+  protected readonly visibilityBg = MEETING_VISIBILITY_BG_CLASSES;
 
   public constructor() {
     afterNextRender(() => {
       if (!isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
       const isTruncated = (element: ElementRef<HTMLElement> | undefined): boolean =>
         !!element && element.nativeElement.scrollWidth > element.nativeElement.clientWidth;
-      const observer = new ResizeObserver(() => {
-        this.projectTruncated.set(isTruncated(this.projectNameElement()));
-        this.groupTruncated.set(isTruncated(this.groupNameElement()));
-      });
+      const observer = new ResizeObserver(() => this.projectTruncated.set(isTruncated(this.projectNameElement())));
       // The card re-renders as data loads, so observe its host rather than elements that come and go.
       observer.observe(this.host.nativeElement);
       this.destroyRef.onDestroy(() => observer.disconnect());
@@ -150,12 +139,6 @@ export class LastMeetingCardComponent {
     this.dialogs.openSummary(row, summary, (change) => this.summaryChange.emit(change));
   }
 
-  protected openTranscript(event: Event): void {
-    event.stopPropagation();
-    const row = this.row();
-    if (row) this.dialogs.openTranscript(row);
-  }
-
   protected openRecording(event: Event): void {
     event.stopPropagation();
     const row = this.row();
@@ -163,36 +146,11 @@ export class LastMeetingCardComponent {
     if (row && shareUrl) this.dialogs.openRecording(row, shareUrl);
   }
 
-  // shortcut: date tile, visibility badges and eyebrow repeat meeting-home-row's. revisit: when the Next card lands with the same pieces
-  private initProject(): Signal<MeetingHomeRowProject | null> {
-    return computed(() => {
-      const meeting = this.row()?.meeting;
-      const name = meeting?.project_name?.trim();
-      if (!meeting || !name) return null;
-      return {
-        name,
-        initial: Array.from(name)[0].toUpperCase(),
-        logo: meeting.project_logo_url ?? '',
-        url: getMeetingProjectUrl(meeting),
-        label: `${meeting.is_foundation ? 'Jump to foundation' : 'Jump to project'}: ${name}`,
-      };
-    });
-  }
-
   /** "Wed, 8:00 AM · 60m" in the viewer's zone, per the design. */
   private initWhen(): Signal<string> {
     return computed(() => {
       const row = this.row();
       return row ? `${formatDate(row.startTime, 'EEE, h:mm a', 'en-US')} · ${row.durationMinutes}m` : '';
-    });
-  }
-
-  private initMeetingType(): Signal<MeetingHomeRowType | null> {
-    return computed(() => {
-      const type = this.row()?.meeting.meeting_type?.trim();
-      if (!type || type === MeetingType.NONE) return null;
-      const config = MEETING_TYPE_CONFIGS[type.toLowerCase()];
-      return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
     });
   }
 

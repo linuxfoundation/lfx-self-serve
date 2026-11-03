@@ -7,6 +7,7 @@ import { applicationConfig, argsToTemplate, type Meta, type StoryObj } from '@st
 import { UiMenuItemComponent } from '../menu/menu-item.component';
 import { UiMenuSeparatorComponent } from '../menu/menu-separator.component';
 import { UiMenuComponent } from '../menu/menu.component';
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 import { UiButtonComponent } from './button.component';
 
 const meta: Meta<UiButtonComponent> = {
@@ -71,6 +72,19 @@ export const WithTooltip: Story = {
         <lfx-ui-button variant="secondary" [iconOnly]="true" icon="fa-light fa-copy" ariaLabel="Copy link" lfxUiTooltip="Copy the public link" [lfxUiTooltipShortcut]="['⌘', 'C']" />
       </div>`,
     moduleMetadata: { imports: [UiButtonComponent] },
+  }),
+};
+
+/** A disabled button drops its own tooltip, so the reason it is off goes on a focusable wrapper, reachable by hover and keyboard. */
+export const DisabledWithReason: Story = {
+  render: () => ({
+    template: `
+      <div class="flex justify-center p-[64px]">
+        <span lfxUiTooltip="Connect a calendar to sync" tabindex="0" class="inline-block" data-testid="story-disabled-reason">
+          <lfx-ui-button variant="secondary" icon="fa-light fa-arrows-rotate" lfxUiTooltip="Sync now" [disabled]="true">Sync</lfx-ui-button>
+        </span>
+      </div>`,
+    moduleMetadata: { imports: [UiButtonComponent, UiTooltipDirective] },
   }),
 };
 

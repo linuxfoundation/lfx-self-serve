@@ -173,6 +173,11 @@ export interface OrgLensProjectsResponse {
    * never cached, so the compact cache encoding never needs to carry it.
    */
   maintainerRolesUnavailable?: true;
+  /**
+   * Present (and `true`) only when Exclude team members was asked but the team-member flag could not be read
+   * (lfx-self-serve-ops#1246): the contributors then include CDP team members. Never cached, like the flag above.
+   */
+  teamMembersUnavailable?: true;
 }
 
 export interface OrgLensProjectSearchResult {
