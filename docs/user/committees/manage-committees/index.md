@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-10-28
+last_updated: 2026-11-02
 intercom_collection: Committees
 ---
 
@@ -42,6 +42,8 @@ To link directly to a tab, append `?tab=members` to the group URL for the Member
 2. Select **Edit Group** in the header. The button appears for managers who also have write access to the group's project or foundation; other managers can use the **Settings** tab instead. The edit page (route: `/groups/:id/edit`) is the same four-step wizard used to create a group, filled in with the group's current values.
 3. Move between steps freely; in edit mode the steps are not locked in order. See [Create a Group](../create-committee/) for what each step contains.
 4. On the last step, select **Update Group** to save your changes together with any staged member changes.
+
+When you rename a group in the edit wizard, a public-facing name that matched the original group name follows the new name, including when you make the group public in the same update. A distinct public-facing alias is preserved.
 
 To change only the name, type, parent, join mode, features, or chat channel, you can also use the group's **Settings** tab, which saves with **Save Changes**. Changing the group type there asks you to confirm first; the edit wizard saves it when you select **Update Group**, without a separate confirmation. Associated mailing lists are managed on the **Settings** tab and save as soon as you confirm them, without **Save Changes**.
 
