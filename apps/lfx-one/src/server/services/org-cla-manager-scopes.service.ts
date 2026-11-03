@@ -57,6 +57,14 @@ function companyIdsOf(scope: UserServiceScopePermission): (string | null)[] {
   });
 }
 
+/**
+ * The companies the caller may open through the bridge, from their own `cla-manager` and
+ * `cla-manager-designee` scopes.
+ *
+ * Only a role in `ORG_CLA_LENS_ENTRY_ROLES` on a `project|organization` scope counts. The request
+ * already asks for those roles, but the role is re-checked on every scope: a signatory or
+ * company-admin scope must never qualify, even if the filter is ignored upstream.
+ */
 export function claManagerCompanies(payload: UserServiceMePermissions | null | undefined): ClaManagerCompanies {
   const companySfids = new Set<string>();
   const rejected: Record<ClaManagerScopeRejection, number> = { malformed_scope: 0, not_account_id: 0 };

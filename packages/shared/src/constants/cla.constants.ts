@@ -987,15 +987,17 @@ export const ORG_CLA_RECENT_ACTIVITY_VIEW_ALL_LABEL = 'View full activity log';
 
 export const ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE = 3;
 
-/**
- * M3 CLA-manager lens entry. A CLA Manager holds ACS `cla-manager` on one `project|organization`
- * scope per CLA Group, and that scope is the only record of the role readable with their own token,
- * so it is how Self Serve finds the companies a CLA Manager without a `b2b_org` grant may open.
- */
 const ORG_CLA_MANAGER_ROLE = 'cla-manager';
 
 const ORG_CLA_MANAGER_DESIGNEE_ROLE = 'cla-manager-designee';
 
+/**
+ * M3 CLA-manager lens entry. A CLA Manager holds ACS `cla-manager`, and the initial CLA Manager
+ * designee holds `cla-manager-designee` until the CCLA is signed (EasyCLA then removes it), each on
+ * one `project|organization` scope per CLA Group. That scope is the only record of either role
+ * readable with the caller's own token, so it is how Self Serve finds the companies whose EasyCLA
+ * tab a caller without a `b2b_org` grant may open. `cla-signatory` and `company-admin` never qualify.
+ */
 export const ORG_CLA_LENS_ENTRY_ROLES: readonly string[] = [ORG_CLA_MANAGER_ROLE, ORG_CLA_MANAGER_DESIGNEE_ROLE];
 
 /** The ACS scope type that pairs a project with a company; its `ID` is `[projectSfid, companySfid]`. */
