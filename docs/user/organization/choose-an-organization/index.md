@@ -32,7 +32,7 @@ Open the organization switcher at the top of the sidebar and select another orga
 1. Select the organization switcher at the top of the sidebar.
 2. Select the organization you want. On a keyboard, use the arrow keys to move through the list and press Enter to select.
 
-After a switch, the browser's Back button returns you to the organization you were viewing before. An **Employees** selection on a page does not carry over to the new organization, because it was a list of the previous organization's people.
+After a switch, the browser's Back button returns you to the organization you were viewing before. If the address you switched from had no organization in it, such as `/org/projects`, Back takes you to the page you visited before that one instead. An **Employees** selection on a page does not carry over to the new organization, because it was a list of the previous organization's people.
 
 ## What does my role in the organization switcher mean?
 
