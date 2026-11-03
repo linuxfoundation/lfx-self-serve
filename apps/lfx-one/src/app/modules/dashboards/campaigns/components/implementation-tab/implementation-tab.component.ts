@@ -69,7 +69,10 @@ import {
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_EMAIL_CHANNEL_LABEL,
+  CAMPAIGN_EMAIL_CHANNEL_PLATFORM,
   CAMPAIGN_STATUS_DELETED,
+  CAMPAIGN_STATUSES_NOT_REUSED,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
   GOOGLE_ADS_DECIMAL_NUMBER_PATTERN,
@@ -673,6 +676,9 @@ export class ImplementationTabComponent implements OnInit {
   /** The list read FAILED, which must not render as "nothing created" (failure-as-absence). */
   public readonly briefCampaignsUnavailable = input(false);
 
+  /** A list read is in flight, so "nothing listed" means "checking", not "nothing created". */
+  public readonly briefCampaignsLoading = input(false);
+
   /** Asks the parent to read the campaign list again after a failed read. */
   public readonly retryBriefCampaigns = output<void>();
 
@@ -709,9 +715,14 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * What Create Another would really do on a platform that already has a campaign (#4983), until a
-   * deliberate second campaign ships. Without `new_version` campaign-service treats a repeat create
-   * as a retry and returns the existing campaign, which the results then list as though created, so
-   * this says so before the click. `null` when no platform has one.
+   * deliberate second campaign ships. Without `new_version` campaign-service treats a repeat create of
+   * the same campaign (same platform, and for Google the same campaign type) as a retry and returns the
+   * existing one, which the results then list as though created, so this says so before the click.
+   *
+   * The platforms are those with a campaign campaign-service would hand back (not a pending or partial
+   * row, see `CAMPAIGN_STATUSES_NOT_REUSED`), joined with the ones the job just created: right after a
+   * create the list is still being re-read, and the new campaign may not be indexed yet. `null` when
+   * there are none.
    */
   protected readonly createAnotherNotice: Signal<string | null> = this.initCreateAnotherNotice();
 
@@ -5261,6 +5272,14 @@ export class ImplementationTabComponent implements OnInit {
    * class of bug the parent's `(project, event)` ownership keys exist to prevent. On a mismatch
    * the draft is ignored and the brief's own copy stands.
    */
+  /** A platform id as the panel names it: the picker's label, HubSpot email, or the id itself. */
+  private existingPlatformLabel(platform: string): string {
+    if (platform === CAMPAIGN_EMAIL_CHANNEL_PLATFORM) {
+      return CAMPAIGN_EMAIL_CHANNEL_LABEL;
+    }
+    return CAMPAIGN_PLATFORMS.find((option) => option.id === platform)?.label ?? platform;
+  }
+
   /**
    * Normalise a geo list AND drop what Meta cannot target — the single owner of that pair.
    *
@@ -5275,14 +5294,6 @@ export class ImplementationTabComponent implements OnInit {
    * `metaEffectiveGeoTargets` keeps its own filter regardless — it is the boundary `submit()`
    * reads, and a guard there costs nothing.
    */
-  /** A platform id as the panel names it: the picker's label, HubSpot for email, or the id itself. */
-  private existingPlatformLabel(platform: string): string {
-    if (platform === 'hubspot') {
-      return 'HubSpot email';
-    }
-    return CAMPAIGN_PLATFORMS.find((option) => option.id === platform)?.label ?? platform;
-  }
-
   private acceptedMetaGeos(codes: readonly string[]): string[] {
     return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
   }
@@ -7364,13 +7375,26 @@ export class ImplementationTabComponent implements OnInit {
 
   private initCreateAnotherNotice(): Signal<string | null> {
     return computed(() => {
-      const labels = this.existingPlatformNotices().map((notice) => notice.label);
-      if (labels.length === 0) {
+      const platforms = new Set<string>();
+      for (const campaign of this.briefCampaigns() ?? []) {
+        const reusable =
+          !!campaign.platform_campaign_id && campaign.status !== CAMPAIGN_STATUS_DELETED && !CAMPAIGN_STATUSES_NOT_REUSED.includes(campaign.status);
+        if (reusable) {
+          platforms.add(campaign.platform);
+        }
+      }
+      for (const result of this.platformResults()) {
+        if (result.ok) {
+          platforms.add(result.platform);
+        }
+      }
+      if (platforms.size === 0) {
         return null;
       }
+      const labels = [...platforms].map((platform) => this.existingPlatformLabel(platform));
       return (
-        `Create Another does not make a second campaign on ${labels.join(', ')} yet: campaign-service returns the campaign already created there ` +
-        'instead, and the results list it again. Creating more than one campaign per platform is coming.'
+        `Creating the same campaign again on ${labels.join(', ')} returns the one already created there instead of making a second, ` +
+        "and the results list it again. A second campaign on the same platform isn't available here yet."
       );
     });
   }

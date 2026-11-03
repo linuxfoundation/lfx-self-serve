@@ -115,6 +115,14 @@ test.describe('Campaigns Implement tab — already created for this event (#4983
     await expect(page.getByTestId('implementation-existing-row-gone')).toHaveCount(0);
   });
 
+  test('says an empty answer may be missing campaigns created moments ago', async ({ page }) => {
+    await mockPlanningApis(page, { lookup: notFound(), savedBrief, briefCampaigns: { ...listResult([]), possiblyStale: true } });
+    await restoreToImplement(page);
+
+    await expect(page.getByTestId('implementation-existing-stale')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('implementation-existing-campaigns')).toHaveCount(0);
+  });
+
   test('reports a failed read as a failure, with Retry, rather than as nothing created', async ({ page }) => {
     await mockPlanningApis(page, { lookup: notFound(), savedBrief });
     await page.route('**/api/campaigns/list?**', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));

@@ -3092,6 +3092,23 @@ describe('CampaignsComponent brief persistence', () => {
         expect(page.briefCampaignsCapabilityRead()).toBe('ready');
       });
 
+      /**
+       * #4983. Proceeding with a newly generated brief drops the PREVIOUS brief's campaign list at once,
+       * so the Implement tab never shows another brief's campaigns while (or instead of, on a refused
+       * save) this brief's own read.
+       */
+      it('drops the previous brief campaigns when a new brief is proceeded', async () => {
+        const campaigns = (): unknown => (fixture.componentInstance as unknown as { briefCampaigns(): unknown }).briefCampaigns();
+        (fixture.componentInstance as unknown as { briefCampaigns: { set(v: unknown): void } }).briefCampaigns.set([
+          { id: 'old', platform: 'google-ads', status: 'active' },
+        ]);
+        persistBrief.mockReturnValue(NEVER);
+
+        proceed(otherBrief);
+
+        expect(campaigns(), "the previous brief's campaigns stayed on Implement").toBeNull();
+      });
+
       it('clears the previous brief campaigns when the foundation changes', async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({
@@ -12334,9 +12351,9 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     page().onProceedToImplementation(brief);
     await settle();
 
-    // Two reads of the same endpoint: the capability read, and the list-only read for the Implement
-    // tab's "Already created for this event" panel (#4983).
-    expect(listBriefCampaigns).toHaveBeenCalledTimes(2);
+    // One read: the capability read also files the list for the Implement tab's panel (#4983).
+    expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
+    expect((page() as unknown as { briefCampaigns(): unknown }).briefCampaigns(), 'the save did not file the campaign list').not.toBeNull();
     expect(page().briefCampaignsBiddingEnabled()).toBe(true);
     expect(q('implementation-bidding-capability-unsaved')).toBeNull();
     expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });

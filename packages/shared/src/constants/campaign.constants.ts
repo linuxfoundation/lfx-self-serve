@@ -90,6 +90,14 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
 export const CAMPAIGN_STATUS_DELETED = 'deleted';
 
 /**
+ * Statuses of a row campaign-service does NOT hand back on a repeat create. Its `isReusableCampaign`
+ * (`internal/service/orchestrator.go`) reuses only a row with a platform id that is past `pending` and
+ * not a partial orphan: a `pending` claim is reported as skipped, and `group_created` / `unconfirmed`
+ * come back as an error asking for reconciliation. The Create Another notice leaves these out (#4983).
+ */
+export const CAMPAIGN_STATUSES_NOT_REUSED: readonly string[] = ['pending', 'group_created', 'unconfirmed'];
+
+/**
  * Whether the Monitoring tab offers this platform's monitor.
  *
  * Deliberately separate from `disabled`, which gates the CREATE flow only. X is the case that splits

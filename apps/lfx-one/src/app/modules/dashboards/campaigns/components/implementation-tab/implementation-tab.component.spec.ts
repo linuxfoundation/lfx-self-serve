@@ -66,7 +66,7 @@ import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { AutoComplete } from 'primeng/autocomplete';
-import { of, Subject, throwError } from 'rxjs';
+import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
@@ -15053,15 +15053,17 @@ describe('ImplementationTabComponent already created for this event', () => {
       campaign_name: `KubeCon EU 2026 | ${platform} | ${id}`,
       status,
       version: 1,
+      platform_campaign_id: `pc-${id}`,
       ...(slot === undefined ? {} : { slot_version: slot }),
     }) as CampaignIndexDoc;
 
   const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
 
-  function setList(campaigns: CampaignIndexDoc[] | null, stale = false, unavailable = false): void {
+  function setList(campaigns: CampaignIndexDoc[] | null, stale = false, unavailable = false, loading = false): void {
     fixture.componentRef.setInput('briefCampaigns', campaigns);
     fixture.componentRef.setInput('briefCampaignsStale', stale);
     fixture.componentRef.setInput('briefCampaignsUnavailable', unavailable);
+    fixture.componentRef.setInput('briefCampaignsLoading', loading);
     fixture.detectChanges();
   }
 
@@ -15124,30 +15126,57 @@ describe('ImplementationTabComponent already created for this event', () => {
     expect(q('implementation-existing-stale')).toBeNull();
     expect(q('implementation-existing-campaigns')).toBeNull();
 
+    // Not loaded and not loading: nothing to say, so no panel and no caveat.
     setList(null, false);
-    expect(q('implementation-existing-unavailable')).toBeNull();
+    expect(q('implementation-existing-campaigns')).toBeNull();
+    expect(q('implementation-existing-stale')).toBeNull();
+    expect(q('implementation-existing-loading')).toBeNull();
+  });
+
+  it('says it is checking while the list is being read, rather than showing nothing', () => {
+    setList(null, false, false, true);
+    expect(q('implementation-existing-loading')?.textContent).toContain('Checking for campaigns already created');
+    expect(q('implementation-existing-campaigns')).toBeNull();
   });
 
   it('says before Create Another that a platform with a campaign returns it rather than making a second', () => {
     (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('results');
-    setList([doc('g1', 'google-ads', 'active', 1), doc('gone', 'reddit-ads', 'deleted', 1)]);
+    setList([doc('g1', 'google-ads', 'active', 1), doc('gone', 'reddit-ads', 'deleted', 1), doc('claim', 'meta-ads', 'pending', 1)]);
 
     const notice = q('implementation-create-another-notice')?.textContent ?? '';
-    expect(notice).toContain('does not make a second campaign on Google Ads yet');
-    expect(notice, 'a deleted campaign was counted as existing').not.toContain('Reddit');
+    expect(notice).toContain('Creating the same campaign again on Google Ads returns the one already created there');
+    expect(notice, 'a deleted campaign was counted as one campaign-service returns').not.toContain('Reddit');
+    expect(notice, 'a pending claim was counted as one campaign-service returns').not.toContain('Meta');
 
     setList([]);
     expect(q('implementation-create-another-notice')).toBeNull();
   });
 
-  it('asks the parent to re-read the list when a create job settles', () => {
-    const outcome = { campaigns: [], platformResults: [], errors: [] } as unknown as CampaignJobOutcome;
-    vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(of(outcome));
+  it('names the platforms the job just created, before the list has caught up', () => {
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('results');
+    (fixture.componentInstance as unknown as { platformResults: { set(v: unknown): void } }).platformResults.set([
+      { platform: 'microsoft-ads', ok: true },
+      { platform: 'reddit-ads', ok: false, error: 'refused' },
+    ]);
+    setList(null, false, false, true);
+
+    const notice = q('implementation-create-another-notice')?.textContent ?? '';
+    expect(notice).toContain('Microsoft Ads');
+    expect(notice, 'a failed platform was named as created').not.toContain('Reddit');
+  });
+
+  it.each([
+    ['an outcome', (): Observable<CampaignJobOutcome | null> => of({ campaigns: [], platformResults: [], errors: [] } as unknown as CampaignJobOutcome)],
+    ['a lost poll', (): Observable<CampaignJobOutcome | null> => throwError(() => new Error('lost'))],
+    ['a poll that runs out', (): Observable<CampaignJobOutcome | null> => EMPTY],
+  ])('asks the parent to re-read the list once when a create job settles with %s', (_label, answer) => {
+    vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(answer());
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('creating');
     const settled = vi.fn();
     fixture.componentInstance.createJobSettled.subscribe(settled);
 
     (fixture.componentInstance as unknown as { pollJob(jobId: string, projectSlug: string): void }).pollJob('job-1', 'tlf');
 
-    expect(settled).toHaveBeenCalled();
+    expect(settled).toHaveBeenCalledTimes(1);
   });
 });
