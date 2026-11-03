@@ -735,7 +735,10 @@ export class MeetingCommitteeManagerComponent {
           this.membersResolved = false;
           this._membersFetchError.set(false);
           this.membersPaginationLimit.set(false);
-          this.committeeMembersResolvedChange.emit(null);
+          // The initial empty trigger precedes applying the parent's selection; it owes no roster yet.
+          if (this.selectionApplied || committeeIds.length > 0) {
+            this.committeeMembersResolvedChange.emit(null);
+          }
 
           if (!committeeIds || committeeIds.length === 0) {
             this.membersResolved = this.selectionApplied;

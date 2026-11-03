@@ -151,6 +151,27 @@ async function mount(
  * and both would delete a saved roster.
  */
 describe('MeetingCommitteeManagerComponent — committee member emissions', () => {
+  it('does not leave phantom pending coverage when an empty picker unmounts before options load', async () => {
+    const options = new Subject<Committee[]>();
+    const { component, reports, emissions, fixture } = await mount([], {}, options);
+    expect(component.committeesLoading()).toBe(true);
+    expect(reports).toEqual([]);
+    expect(emissions).toEqual([]);
+    fixture.destroy();
+    options.next([BOARD]);
+    options.complete();
+    expect(reports).toEqual([]);
+  });
+
+  it('still invalidates coverage while reconciling removal of the last selected group', async () => {
+    const { component, reports, fixture } = await mount([{ uid: BOARD.uid }], { [BOARD.uid]: of([]) });
+    expect(reports.at(-1)).toEqual([BOARD.uid]);
+    component.committeeForm.get('committees')!.setValue([]);
+    await fixture.whenStable();
+    expect(reports.at(-2)).toBeNull();
+    expect(reports.at(-1)).toEqual([]);
+  });
+
   it('stays silent until the members of a saved group have landed', async () => {
     const board = new Subject<CommitteeMember[]>();
     const { emissions, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], { [BOARD.uid]: board });

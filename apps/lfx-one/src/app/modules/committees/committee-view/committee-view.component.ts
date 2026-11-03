@@ -261,8 +261,8 @@ export class CommitteeViewComponent {
       !this.membersLoading() &&
       !this.membersError() &&
       !!this.committeeId() &&
-      this.membersLoadedFor() === this.committeeId() &&
-      this.committee()?.uid === this.committeeId() &&
+      this.membersLoadedFor() === this.committee()?.uid &&
+      committeeRouteIdMatches(this.committeeId(), this.committee()) &&
       canViewCommitteeRoster(this.committee())
   );
   public invitesLoading = signal<boolean>(true);

@@ -324,6 +324,39 @@ describe('CommitteeViewComponent', () => {
       expect(getCommitteeMembers.mock.calls.every((call) => call[1].get('require_complete') === 'true')).toBe(true);
     });
 
+    it.each([
+      { routeId: 'docs-working-group', rows: [] },
+      { routeId: 'DOCS-WORKING-GROUP', rows: [{ uid: 'member-1' }] },
+    ])('enables member actions after a complete roster loads through vanity URL $routeId', ({ routeId, rows }) => {
+      currentCommittee = { ...committee, sso_group_name: 'docs-working-group', writer: true, member_visibility: 'basic_profile' } as Committee;
+      routeParams.next(convertToParamMap({ id: routeId }));
+      getCommitteeMembers.mockReturnValue(of(rows));
+      const component = createComponent();
+      flush();
+      expect(component.membersError()).toBe(false);
+      expect(component.members()).toEqual(rows);
+      expect(component.membersReady()).toBe(true);
+    });
+
+    it('does not reuse a vanity-route roster after navigating to another group slug', () => {
+      currentCommittee = { ...committee, sso_group_name: 'first-group', writer: true, member_visibility: 'basic_profile' } as Committee;
+      routeParams.next(convertToParamMap({ id: 'first-group' }));
+      const component = createComponent();
+      flush();
+      expect(component.membersReady()).toBe(true);
+      const pending = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(pending);
+      currentCommittee = { ...currentCommittee, uid: 'committee-2', sso_group_name: 'second-group' };
+      routeParams.next(convertToParamMap({ id: 'second-group' }));
+      expect(component.membersReady()).toBe(false);
+      flush();
+      expect(component.membersReady()).toBe(false);
+      pending.next([]);
+      pending.complete();
+      flush();
+      expect(component.membersReady()).toBe(true);
+    });
+
     it('invalidates readiness synchronously during refresh and route changes; an old request cannot restore it', () => {
       currentCommittee = { ...committee, writer: true, member_visibility: 'basic_profile' } as Committee;
       const component = createComponent();
