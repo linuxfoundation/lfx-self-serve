@@ -21,7 +21,7 @@ You choose an organization from the organization switcher at the top of the side
 3. Select the organization switcher at the top of the sidebar. It shows the organization's logo, its name, and your role on it.
 4. Select an organization from the list. A check mark marks the one you are viewing.
 
-The first time you open the Organization lens, LFX selects one of your organizations for you: one where you have the most access, with an organization you can edit ahead of one you can only view. Linux Foundation staff with no organizations assigned to them get no selection. The **Dashboard** says **No organization selected** until you search for an organization in the switcher and select it. Your browser remembers the organization you last selected for 30 days.
+The first time you open the Organization lens, LFX selects one of your organizations for you. It is not always the one where you have the most access, so check the name in the organization switcher and switch if you need a different one. Linux Foundation staff with no organizations assigned to them get no selection. The **Dashboard** says **No organization selected** until you search for an organization in the switcher and select it. Your browser remembers the organization you last selected for 30 days.
 
 If you can open only one organization, the switcher shows that organization without a list to open, because there is nothing to switch to.
 
@@ -67,7 +67,7 @@ Every Organization lens page address names the organization it shows, in the for
 - `<organization>` is the organization's short name, in lowercase letters, numbers, and hyphens. An organization without a short name is addressed by its 18-character account ID, which starts with `001`.
 - `/org/<organization>` on its own opens that organization's **Dashboard**, or its **EasyCLA** page when your only role on it is CLA Manager.
 - A link you share names the organization, so the person who opens it sees the same organization, as long as they have access to it.
-- An older address without an organization, such as `/org/projects`, still works. It shows the organization you have selected, and the address then fills in that organization's name.
+- An older address without an organization, such as `/org/projects`, still opens. It shows the organization you have selected, which may not be the one the sender was viewing. The address usually fills in that organization's name when the page loads, but not always, so before you share a link, check that it reads `/org/<organization>/<page>`.
 
 Opening an address for an organization you have access to switches your selection to that organization, as if you had picked it in the switcher.
 
