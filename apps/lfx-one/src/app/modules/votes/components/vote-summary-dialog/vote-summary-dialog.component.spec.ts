@@ -391,6 +391,43 @@ describe('VoteSummaryDialogComponent', () => {
     expect(byTestId(fixture, 'vote-summary-dialog-send-now')).toBeNull();
   });
 
+  it('moves keyboard focus from Send now to Hide while sending while the request is pending', async () => {
+    const pending = new Subject<SendVoteSummaryResponse>();
+    const { fixture } = await mount(of(PREVIEW), pending);
+    current = fixture;
+    button(fixture, 'vote-summary-dialog-send').click();
+    await render(fixture);
+    const confirm = button(fixture, 'vote-summary-dialog-send-now');
+    confirm.focus();
+    confirm.click();
+    await render(fixture);
+    expect(confirm.disabled).toBe(true);
+    expect(document.activeElement).toBe(button(fixture, 'vote-summary-dialog-hide'));
+    expect(pending.observed).toBe(true);
+  });
+
+  it.each(['success', 'unconfirmed'] as const)('keeps focus on %s results when the send settles synchronously', async (outcome) => {
+    const send = outcome === 'success' ? of(SENT) : throwError(() => new HttpErrorResponse({ status: 504 }));
+    const { fixture } = await mount(of(PREVIEW), send);
+    current = fixture;
+    await sendNow(fixture);
+    expect(byTestId(fixture, 'vote-summary-dialog-hide')).toBeNull();
+    expect(document.activeElement).toBe(byTestId(fixture, 'vote-summary-dialog-result-summary'));
+  });
+
+  it('does not focus Hide when the request settles before the pending view renders', async () => {
+    const pending = new Subject<SendVoteSummaryResponse>();
+    const { fixture } = await mount(of(PREVIEW), pending);
+    current = fixture;
+    button(fixture, 'vote-summary-dialog-send').click();
+    await render(fixture);
+    button(fixture, 'vote-summary-dialog-send-now').click();
+    pending.next(SENT);
+    await render(fixture);
+    expect(byTestId(fixture, 'vote-summary-dialog-hide')).toBeNull();
+    expect(document.activeElement).toBe(byTestId(fixture, 'vote-summary-dialog-result-summary'));
+  });
+
   it('locks the host header and Escape only while sending', async () => {
     const pending = new Subject<SendVoteSummaryResponse>();
     const { fixture, component, config, close } = await mount(of(PREVIEW), pending);
@@ -588,6 +625,7 @@ describe('VoteSummaryDialogComponent', () => {
     current = reopened;
     await render(reopened);
     expect(button(reopened, 'vote-summary-dialog-send-now').disabled).toBe(true);
+    expect(document.activeElement).toBe(button(reopened, 'vote-summary-dialog-hide'));
     expect(byTestId(reopened, 'vote-summary-dialog-send')).toBeNull();
     expect(sendVoteSummary).toHaveBeenCalledTimes(1);
     expect(getVoteSummaryPreview).toHaveBeenCalledTimes(1);

@@ -63,6 +63,7 @@ export class VoteSummaryDialogComponent {
   private readonly reviewSendButton = viewChild<ButtonComponent, ElementRef<HTMLElement>>('reviewSendButton', { read: ElementRef });
   private readonly reviewCancelButton = viewChild<ButtonComponent, ElementRef<HTMLElement>>('reviewCancelButton', { read: ElementRef });
   private readonly retryButton = viewChild<ButtonComponent, ElementRef<HTMLElement>>('retryButton', { read: ElementRef });
+  private readonly hideButton = viewChild<ButtonComponent, ElementRef<HTMLElement>>('hideButton', { read: ElementRef });
 
   protected readonly phase = signal<VoteSummaryDialogPhase>('review');
   protected readonly preview = signal<VoteSummaryPreviewResponse | null>(null);
@@ -103,8 +104,13 @@ export class VoteSummaryDialogComponent {
         if (!attempt || this.viewerSubject !== this.summarySendService.viewerSubject()) return;
         this.preview.set(attempt.preview);
         this.loading.set(false);
-        if (attempt.status === 'sending') this.phase.set('sending');
-        else if (attempt.status === 'success') this.showResults(attempt.response);
+        if (attempt.status === 'sending') {
+          this.phase.set('sending');
+          this.focusAfterRender(() => {
+            if (this.summarySendService.getAttempt(this.vote.uid)?.status !== 'sending') return undefined;
+            return this.hideButton()?.nativeElement.querySelector<HTMLButtonElement>('button') ?? undefined;
+          });
+        } else if (attempt.status === 'success') this.showResults(attempt.response);
         else this.onSendFailed(attempt.error);
       });
   }
