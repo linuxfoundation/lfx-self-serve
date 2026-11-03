@@ -530,6 +530,39 @@ describe('MeetingsHomeStore', () => {
     });
   });
 
+  describe('deleted and cancelled', () => {
+    it('drops every row of a deleted meeting, keeping upcoming ones out after a refetch and past ones until their feed answers', () => {
+      const store = create();
+      const pastOfIt = { ...buildPastMeeting('a', inDays(-1)), meeting_id: 'm-1' };
+      const emit = (): void => {
+        upcoming$.next([weeklyMeeting([inDays(1)]), buildMeeting({ id: 'm-2' })]);
+        past$.next([pastOfIt]);
+        latestPast$.next([pastOfIt]);
+      };
+      emit();
+      store.removeMeeting('m-1');
+
+      expect(store.pastRows()).toEqual([]);
+      expect(store.lastMeeting()).toBeNull();
+      emit();
+
+      expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['m-2']);
+      expect(store.pastRows().map((row) => row.key)).toEqual(['m-past-a']);
+      expect(store.lastMeeting()?.key).toBe('m-past-a');
+    });
+
+    it('drops only the cancelled date of a series and marks it cancelled for the pickers', () => {
+      const store = create();
+      const [first, second] = [inDays(1), inDays(8)];
+      upcoming$.next([weeklyMeeting([first, second])]);
+
+      store.removeOccurrence('m-1', seconds(first));
+
+      expect(store.upcomingRows().map((row) => row.occurrenceId)).toEqual([seconds(second)]);
+      expect(store.upcomingRows()[0].meeting.cancelled_occurrences).toEqual([seconds(first)]);
+    });
+  });
+
   describe('last meeting', () => {
     const summary = { uid: 's-1', approved: true, requires_approval: false } as PastMeetingSummary;
 

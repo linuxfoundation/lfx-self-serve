@@ -166,3 +166,10 @@ export interface MeetingEditScopeDialogData {
   /** The date the dialog opens on. */
   occurrence: MeetingOccurrence;
 }
+
+/** What the meetings home delete dialogs open with: the recurring scope picker, and the delete or cancel confirmation. */
+export interface MeetingDeleteDialogData {
+  row: MeetingHomeRow;
+  /** Picker: the date it opens on. Confirmation: the date to cancel; null deletes the whole meeting. */
+  occurrence: MeetingOccurrence | null;
+}

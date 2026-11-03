@@ -21,21 +21,23 @@ import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiMenuItemComponent } from '@shared/uikit/menu/menu-item.component';
+import { UiMenuSeparatorComponent } from '@shared/uikit/menu/menu-separator.component';
 import { UiMenuComponent } from '@shared/uikit/menu/menu.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { finalize, take } from 'rxjs';
 
+import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 
 /**
- * The ⋯ menu of a meetings home row: Copy Link, and for upcoming meetings Edit Meeting, Resend Invite and Remove Myself.
- * @description Edit, Resend and Remove follow the legacy meeting card's gates. Feedback is uikit toasts at the bottom centre.
+ * The ⋯ menu of a meetings home row: Copy Link, for upcoming meetings Edit Meeting, Resend Invite and Remove Myself, and Delete Meeting.
+ * @description Edit, Delete, Resend and Remove follow the legacy meeting card's gates. Feedback is uikit toasts at the bottom centre.
  */
 @Component({
   selector: 'lfx-meeting-home-actions',
-  imports: [UiAvatarComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiModalComponent],
+  imports: [UiAvatarComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent, UiModalComponent],
   templateUrl: './meeting-home-actions.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'inline-flex' },
@@ -49,6 +51,7 @@ export class MeetingHomeActionsComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
   private readonly editService = inject(MeetingsHomeEditService);
+  private readonly deleteService = inject(MeetingsHomeDeleteService);
   private readonly removeDialog = viewChild.required<TemplateRef<unknown>>('removeDialog');
   private dialogRef: DialogRef | null = null;
 
@@ -62,6 +65,8 @@ export class MeetingHomeActionsComponent {
   protected readonly canEdit: Signal<boolean> = computed(
     () => this.view() === 'upcoming' && this.row().meeting.organizer === true && !!this.row().meeting.project_slug
   );
+  /** Upcoming and past alike: the legacy delete button has no past exclusion. */
+  protected readonly canDelete: Signal<boolean> = computed(() => this.row().meeting.organizer === true);
   /** Registered to this upcoming meeting; an organizer only with a registration of their own (legacy `isRegisteredAttendee`). */
   protected readonly canRemove: Signal<boolean> = this.initCanRemove();
   /** A resend goes to the viewer's own registrant row, so one must exist (legacy `canResendInvite`). */
@@ -109,6 +114,10 @@ export class MeetingHomeActionsComponent {
 
   protected editMeeting(): void {
     this.editService.edit(this.row());
+  }
+
+  protected deleteMeeting(): void {
+    this.deleteService.delete(this.row());
   }
 
   protected resendInvite(): void {

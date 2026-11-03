@@ -15,7 +15,6 @@
     @if (canEdit()) {
       <lfx-ui-menu-item icon="fa-light fa-pen" (triggered)="editMeeting()" data-testid="meetings-home-row-actions-edit">Edit Meeting</lfx-ui-menu-item>
     }
-    <!-- Organizer items: a separator and Delete Meeting go last. -->
     <lfx-ui-menu-item icon="fa-light fa-link" (triggered)="copyLink()" data-testid="meetings-home-row-actions-copy-link">Copy Link</lfx-ui-menu-item>
     @if (canResend()) {
       <lfx-ui-menu-item icon="fa-light fa-paper-plane" (triggered)="resendInvite()" data-testid="meetings-home-row-actions-resend"
@@ -25,6 +24,12 @@
     @if (canRemove()) {
       <lfx-ui-menu-item icon="fa-light fa-user-minus" (triggered)="confirmRemove()" data-testid="meetings-home-row-actions-remove"
         >Remove Myself</lfx-ui-menu-item
+      >
+    }
+    @if (canDelete()) {
+      <lfx-ui-menu-separator />
+      <lfx-ui-menu-item variant="danger" icon="fa-light fa-trash" (triggered)="deleteMeeting()" data-testid="meetings-home-row-actions-delete"
+        >Delete Meeting</lfx-ui-menu-item
       >
     }
   </lfx-ui-menu>

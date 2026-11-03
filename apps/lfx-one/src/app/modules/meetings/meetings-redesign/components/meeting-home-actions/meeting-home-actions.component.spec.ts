@@ -16,6 +16,7 @@ import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingHomeActionsComponent } from './meeting-home-actions.component';
 
@@ -54,6 +55,7 @@ describe('MeetingHomeActionsComponent', () => {
   let remove$: ReturnType<typeof vi.fn>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
   let edit: ReturnType<typeof vi.fn>;
+  let deleteMeeting: ReturnType<typeof vi.fn>;
   let checkingEdit: WritableSignal<boolean>;
 
   const settle = async (): Promise<void> => {
@@ -92,6 +94,7 @@ describe('MeetingHomeActionsComponent', () => {
     resendOwn$ = vi.fn().mockReturnValue(of({ message: 'ok' }));
     refreshUserMeetings = vi.fn();
     edit = vi.fn();
+    deleteMeeting = vi.fn();
     checkingEdit = signal(false);
     remove$ = vi.fn().mockReturnValue(of({ removed_registrant_ids: ['synthetic-reg'], remaining_registrant_ids: [] }));
 
@@ -107,6 +110,7 @@ describe('MeetingHomeActionsComponent', () => {
         },
         { provide: MeetingSelfRemovalService, useValue: { remove$, describeFailure: () => 'Unable to remove you from this meeting. Please try again.' } },
         { provide: MeetingsHomeEditService, useValue: { edit, isChecking: () => checkingEdit() } },
+        { provide: MeetingsHomeDeleteService, useValue: { delete: deleteMeeting } },
       ],
     });
     overlay = TestBed.inject(OverlayContainer).getContainerElement();
@@ -137,16 +141,16 @@ describe('MeetingHomeActionsComponent', () => {
       expect(await openMenu()).toEqual(['Copy Link', 'Remove Myself']);
     });
 
-    it('offers an organizer only Copy Link without a registration of their own', async () => {
+    it('offers an organizer Copy Link and Delete Meeting without a registration of their own', async () => {
       await render(row({ ...INVITEE, organizer: true, my_registrant_ids: [] }));
 
-      expect(await openMenu()).toEqual(['Copy Link']);
+      expect(await openMenu()).toEqual(['Copy Link', 'Delete Meeting']);
     });
 
     it('offers a registered organizer the attendee actions', async () => {
       await render(row({ ...INVITEE, organizer: true }));
 
-      expect(await openMenu()).toEqual(['Copy Link', 'Resend Invite', 'Remove Myself']);
+      expect(await openMenu()).toEqual(['Copy Link', 'Resend Invite', 'Remove Myself', 'Delete Meeting']);
     });
 
     it('stops offering Resend and Remove once the registration was removed', async () => {
@@ -169,7 +173,7 @@ describe('MeetingHomeActionsComponent', () => {
     it('goes first for an organizer of an upcoming meeting', async () => {
       await render(row(ORGANIZER));
 
-      expect(await openMenu()).toEqual(['Edit Meeting', 'Copy Link', 'Resend Invite', 'Remove Myself']);
+      expect(await openMenu()).toEqual(['Edit Meeting', 'Copy Link', 'Resend Invite', 'Remove Myself', 'Delete Meeting']);
     });
 
     it.each([
@@ -195,6 +199,23 @@ describe('MeetingHomeActionsComponent', () => {
       await render(row(ORGANIZER));
 
       expect(trigger().getAttribute('aria-busy')).toBe('true');
+    });
+  });
+
+  describe('Delete Meeting', () => {
+    it('is offered to an organizer on a past meeting too, last and after a separator', async () => {
+      await render(row({ ...INVITEE, organizer: true }), 'past');
+
+      expect(await openMenu()).toEqual(['Copy Link', 'Delete Meeting']);
+      expect(find('meetings-home-row-actions-delete')?.previousElementSibling?.tagName.toLowerCase()).toBe('lfx-ui-menu-separator');
+    });
+
+    it('hands the row to the delete flow', async () => {
+      const value = row({ ...INVITEE, organizer: true });
+      await render(value);
+      await choose('meetings-home-row-actions-delete');
+
+      expect(deleteMeeting).toHaveBeenCalledWith(value);
     });
   });
 

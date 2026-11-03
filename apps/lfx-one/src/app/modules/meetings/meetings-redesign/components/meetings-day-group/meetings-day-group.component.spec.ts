@@ -10,6 +10,7 @@ import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsDayGroupComponent } from './meetings-day-group.component';
 
@@ -25,6 +26,7 @@ describe('MeetingsDayGroupComponent', () => {
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: UserService, useValue: { authenticated: signal(true), viewerUsername: signal(null) } },
         { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
+        { provide: MeetingsHomeDeleteService, useValue: {} },
       ],
     });
   });
