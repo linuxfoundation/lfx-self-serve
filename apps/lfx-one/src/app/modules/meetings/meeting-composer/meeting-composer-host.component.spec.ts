@@ -7,7 +7,7 @@ import { computed, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { Router } from '@angular/router';
+import { NavigationEnd, NavigationStart, Router } from '@angular/router';
 import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import type { Meeting, MeetingWriteAccess, UiToastConfig } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
@@ -42,6 +42,7 @@ describe('MeetingComposerHostComponent', () => {
   let messageService: { add: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
   let toast: { show: ReturnType<typeof vi.fn> };
   let navigateByUrl: ReturnType<typeof vi.fn>;
+  let routerEvents: Subject<unknown>;
   let meetingWriteAccess: WritableSignal<MeetingWriteAccess>;
   let currentPersona: WritableSignal<string>;
   let clearContextLens: ReturnType<typeof vi.fn>;
@@ -103,6 +104,7 @@ describe('MeetingComposerHostComponent', () => {
     messageService = { add: vi.fn(), clear: vi.fn() };
     toast = { show: vi.fn(() => ({ id: 'toast', dismiss: vi.fn() })) };
     navigateByUrl = vi.fn(() => Promise.resolve(true));
+    routerEvents = new Subject();
     meetingWriteAccess = signal<MeetingWriteAccess>({ contextUid: 'project-1', canWrite: true });
     currentPersona = signal('maintainer');
     clearContextLens = vi.fn();
@@ -143,7 +145,7 @@ describe('MeetingComposerHostComponent', () => {
         // The create picker's lens override is the only one the host ends; the real service reads
         // cookies and the router to work out a lens nothing here asks it for.
         { provide: LensService, useValue: { clearContextLens } },
-        { provide: Router, useValue: { events: new Subject(), url: '/meetings', parseUrl: () => ({ queryParams: {} }), navigateByUrl } },
+        { provide: Router, useValue: { events: routerEvents, url: '/meetings', parseUrl: () => ({ queryParams: {} }), navigateByUrl } },
       ],
     });
     // `set` replaces only the listed metadata keys, so the component's own `providers` survive and the
@@ -442,6 +444,38 @@ describe('MeetingComposerHostComponent', () => {
 
       // Sticky toasts never expire, so creating several meetings in a row would stack them over the drawer.
       expect(first.dismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the announcement through events that stay on the same route', () => {
+      vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
+
+      component['onSubmit']();
+      const created = toast.show.mock.results[0].value;
+      routerEvents.next(new NavigationStart(1, '/project/overview'));
+      routerEvents.next(new NavigationEnd(2, '/meetings?time=past', '/meetings?time=past'));
+
+      expect(created.dismiss).not.toHaveBeenCalled();
+    });
+
+    it('retires the announcement when the user navigates to another route', () => {
+      vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
+
+      component['onSubmit']();
+      const created = toast.show.mock.results[0].value;
+      routerEvents.next(new NavigationEnd(1, '/project/overview', '/project/overview'));
+
+      expect(created.dismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('retires the announcement once View meeting has navigated', () => {
+      vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
+
+      component['onSubmit']();
+      const created = toast.show.mock.results[0].value;
+      runAction('View meeting');
+      routerEvents.next(new NavigationEnd(1, '/meetings/meeting-1', '/meetings/meeting-1'));
+
+      expect(created.dismiss).toHaveBeenCalledTimes(1);
     });
 
     it('carries the password to the meeting link when the meeting has one', () => {

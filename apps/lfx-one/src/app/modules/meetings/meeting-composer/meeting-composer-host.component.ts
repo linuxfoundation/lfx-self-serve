@@ -3,7 +3,7 @@
 
 import { Component, computed, DestroyRef, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+import { NavigationEnd, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
@@ -181,6 +181,7 @@ export class MeetingComposerHostComponent {
    */
   private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initMeetingEntityContext();
   private createdToast: UiToastRef | null = null;
+  private createdToastPath = '';
 
   public constructor() {
     toObservable(this.composer.context)
@@ -263,6 +264,15 @@ export class MeetingComposerHostComponent {
     // The sticky create toast sits above the drawer, so opening the composer retires it; only the newest survives.
     toObservable(this.composer.isOpen)
       .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => this.createdToast?.dismiss());
+
+    // Leaving the route retires it too, so it never lingers over a later page's drawers and dialogs.
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        filter((event) => event.urlAfterRedirects.split(/[?#]/)[0] !== this.createdToastPath),
+        takeUntilDestroyed()
+      )
       .subscribe(() => this.createdToast?.dismiss());
 
     // Derive the project context from the meeting being edited so a context-less edit link
@@ -489,6 +499,7 @@ export class MeetingComposerHostComponent {
       ...(meeting.password ? { meetingLinkState: { password: meeting.password } } : {}),
     };
 
+    this.createdToastPath = this.router.url.split(/[?#]/)[0];
     this.createdToast = this.toast.show({
       variant: 'success',
       position: MEETING_COMPOSER_TOAST_POSITION,
