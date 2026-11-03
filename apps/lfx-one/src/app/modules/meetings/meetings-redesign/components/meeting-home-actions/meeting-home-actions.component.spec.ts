@@ -207,13 +207,13 @@ describe('MeetingHomeActionsComponent', () => {
       await render(row({ ...INVITEE, organizer: true }), 'past');
 
       expect(await openMenu()).toEqual(['Copy Link', 'Delete Meeting']);
-      expect(find('meetings-home-delete-menu-item')?.previousElementSibling?.tagName.toLowerCase()).toBe('lfx-ui-menu-separator');
+      expect(find('meetings-home-row-actions-delete')?.previousElementSibling?.tagName.toLowerCase()).toBe('lfx-ui-menu-separator');
     });
 
     it('hands the row to the delete flow', async () => {
       const value = row({ ...INVITEE, organizer: true });
       await render(value);
-      await choose('meetings-home-delete-menu-item');
+      await choose('meetings-home-row-actions-delete');
 
       expect(deleteMeeting).toHaveBeenCalledWith(value);
     });

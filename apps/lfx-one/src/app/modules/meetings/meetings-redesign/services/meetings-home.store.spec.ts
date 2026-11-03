@@ -531,7 +531,7 @@ describe('MeetingsHomeStore', () => {
   });
 
   describe('deleted and cancelled', () => {
-    it('drops every row of a deleted meeting, the Last meeting card included, and keeps them out after a refetch', () => {
+    it('drops every row of a deleted meeting, keeping upcoming ones out after a refetch and past ones until their feed answers', () => {
       const store = create();
       const pastOfIt = { ...buildPastMeeting('a', inDays(-1)), meeting_id: 'm-1' };
       upcoming$.next([weeklyMeeting([inDays(1), inDays(8)]), buildMeeting({ id: 'm-2' })]);
@@ -539,11 +539,17 @@ describe('MeetingsHomeStore', () => {
       latestPast$.next([pastOfIt]);
 
       store.removeMeeting('m-1');
-      upcoming$.next([weeklyMeeting([inDays(1), inDays(8)]), buildMeeting({ id: 'm-2' })]);
 
-      expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['m-2']);
       expect(store.pastRows().map((row) => row.key)).toEqual(['m-past-b']);
       expect(store.lastMeeting()).toBeNull();
+
+      upcoming$.next([weeklyMeeting([inDays(1), inDays(8)]), buildMeeting({ id: 'm-2' })]);
+      past$.next([pastOfIt]);
+      latestPast$.next([pastOfIt]);
+
+      expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['m-2']);
+      expect(store.pastRows().map((row) => row.key)).toEqual(['m-past-a']);
+      expect(store.lastMeeting()?.key).toBe('m-past-a');
     });
 
     it('drops only the cancelled date of a series', () => {

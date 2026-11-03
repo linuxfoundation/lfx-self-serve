@@ -93,6 +93,12 @@ export class MeetingsHomeStore {
     this.lastMeetingLoadingState,
     this.lastMeetingFailedState
   );
+  // Past records may outlive their meeting, so past rows are hidden only until their feed answers again.
+  private readonly deletedPastIds: WritableSignal<ReadonlySet<string>> = linkedSignal({ source: this.pastMeetings, computation: () => new Set<string>() });
+  private readonly deletedLatestPastIds: WritableSignal<ReadonlySet<string>> = linkedSignal({
+    source: this.latestPastMeetings,
+    computation: () => new Set<string>(),
+  });
   private readonly visibleCountState: WritableSignal<number> = linkedSignal({
     source: () => ({ tab: this.tab(), search: this.search(), filters: this.filters() }),
     computation: () => MEETINGS_HOME_PAGE_SIZE,
@@ -132,7 +138,7 @@ export class MeetingsHomeStore {
     () =>
       this.latestPastMeetings()
         .map((meeting) => toPastMeetingHomeRow(meeting))
-        .find((row) => row !== null && !this.isRemoved(row)) ?? null
+        .find((row) => row !== null && !this.deletedLatestPastIds().has(getMeetingSeriesUid(row.meeting))) ?? null
   );
   private readonly fetchedLastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = this.initLastMeetingArtifact((id) =>
     this.meetingService.getPastMeetingSummary(id)
@@ -185,7 +191,10 @@ export class MeetingsHomeStore {
 
   /** Drops every row of a deleted meeting, upcoming and past. */
   public removeMeeting(meetingId: string): void {
-    this.deletedMeetingIds.update((ids) => new Set(ids).add(meetingId));
+    const add = (ids: ReadonlySet<string>): ReadonlySet<string> => new Set(ids).add(meetingId);
+    this.deletedMeetingIds.update(add);
+    this.deletedPastIds.update(add);
+    this.deletedLatestPastIds.update(add);
   }
 
   /** Drops the row of one cancelled date. */
@@ -309,7 +318,7 @@ export class MeetingsHomeStore {
     return computed(() =>
       sortPastMeetingsDescending(this.pastMeetings())
         .flatMap((meeting) => toPastMeetingHomeRow(meeting) ?? [])
-        .filter((row) => !this.isRemoved(row))
+        .filter((row) => !this.deletedPastIds().has(getMeetingSeriesUid(row.meeting)))
     );
   }
 
