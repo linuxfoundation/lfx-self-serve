@@ -731,7 +731,7 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-refresh-progress')).toBeNull();
   });
 
-  it('clears a terminal detail error on the next good detail read, and leaves a list error alone', async () => {
+  it('clears a terminal detail error on the next good detail read', async () => {
     store.getDocument
       .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MKTG_DOCUMENT_NOT_FOUND' } })))
       .mockReturnValue(of(detail));
@@ -746,6 +746,24 @@ describe('MktgDocumentsComponent', () => {
     expect(store.getDocument).toHaveBeenCalledTimes(2);
     expect(query('mktg-documents-error')).toBeNull();
     expect(query('mktg-documents-revisions')).not.toBeNull();
+  });
+
+  it('keeps the error box while the list is still failed, even after the detail read recovers', async () => {
+    store.getDocument
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MKTG_DOCUMENT_NOT_FOUND' } })))
+      .mockReturnValue(of(detail));
+    await render();
+    expect(query('mktg-documents-error')?.textContent).toContain('This document could not be found.');
+    // The detail is read only for a selected document the list has, so both flags can meet only across reads: hold the
+    // list's terminal failure while the detail alone recovers on a wake. The detail's recovery clears only its own error.
+    fixture.componentInstance['listFailed'].set(true);
+    store.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.getDocument).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance['detailFailed']()).toBe(false);
+    expect(query('mktg-documents-error')).not.toBeNull();
   });
 
   it('keeps the one line while the list is still failing, even after a good detail read, and clears it on the next good list read', async () => {

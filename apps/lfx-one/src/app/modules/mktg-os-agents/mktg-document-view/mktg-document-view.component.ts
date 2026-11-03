@@ -913,11 +913,11 @@ export class MktgDocumentViewComponent {
                   ).pipe(
                     switchMap((event) => {
                       if (event.kind === 'ok') return of(event.value);
-                      const status = event.error instanceof HttpErrorResponse ? event.error.status : 0;
-                      // Status only: no upstream payload enters diagnostics.
-                      console.error('Marketing OS document read failed', { status });
-                      // A transient first read fails quietly and the poller retries it; anything else is terminal.
+                      // A transient first read fails quietly and the poller retries it; anything else is terminal and the
+                      // outer handler logs it once.
                       if (!isTransientHttpError(event.error)) return throwError(() => event.error);
+                      // Status only: no upstream payload enters diagnostics.
+                      console.error('Marketing OS document read failed', { status: event.error instanceof HttpErrorResponse ? event.error.status : 0 });
                       unavailable();
                       return EMPTY;
                     })

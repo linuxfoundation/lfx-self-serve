@@ -133,7 +133,6 @@ export class MktgDocumentCommentsService {
       return;
     }
     this.readError.set('');
-    this.retryingRead.set(false);
     const read = () => {
       if (this.deniedKey === key) return EMPTY;
       // Loading only until the first list is measured: a wake re-read of a loaded list changes nothing on screen until it
@@ -246,7 +245,6 @@ export class MktgDocumentCommentsService {
     this.data.set([]);
     this.measured.set(false);
     this.reading.set(false);
-    this.retryingRead.set(false);
     this.writing.set(false);
     this.readError.set('');
     this.writeError.set('');
@@ -257,10 +255,12 @@ export class MktgDocumentCommentsService {
     return JSON.stringify([owner, scope.projectUid, scope.agentKey, scope.documentId, scope.revisionId]);
   }
 
+  /** Ends the current read; nothing is retrying once no read is in flight (a save's own result or a refusal replaces the line). */
   private cancelRead(): void {
     this.readEpoch++;
     this.reader?.unsubscribe();
     this.reader = undefined;
+    this.retryingRead.set(false);
   }
 
   private current(owner = this.owner()): boolean {

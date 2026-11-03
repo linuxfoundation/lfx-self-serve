@@ -1836,8 +1836,31 @@ describe('MktgAgentRunComponent', () => {
       // As on main: the card goes headless and the document link (a navigation, not a re-read) stays the way on.
       expect(query('mktg-run-public-document-link')).not.toBeNull();
       expect(component['publicProgressView']()?.headless()).toBe(true);
-      // The reader keeps reading past the landed state until the produced revision is confirmed: no idle wait.
-      expect(component['publicProgressView']()?.continuous()).toBe(true);
+      // The reader keeps its state-driven cadence: the shared poller's wakes re-read; a continuous read here is follow-up work.
+      expect(component['publicProgressView']()?.continuous()).toBe(false);
+    });
+
+    it('sends exactly one GET for a refusal while waiting, and none after the state clears (the latch holds)', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const read = vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['privateReceiptRunId'] = runId;
+      component['activeRequest'] = { projectUid: PROJECT_1.uid, agentId: type.catalogAgentId } as MktgGenerateRequest;
+      component['onPublicLanding']();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).not.toBeNull();
+      expect(read).toHaveBeenCalledTimes(1);
+      read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      // RFC 9110 §15.5.4: the refusal is final; clearing the waiting state must not restart the reader or re-send the GET.
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(query('mktg-run-public-waiting')).toBeNull();
+      expect(query('mktg-run-public-error')?.textContent).toContain('write access');
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(read).toHaveBeenCalledTimes(2);
     });
 
     it('clears the unconfirmed-revision line when the context resets and when a read recovers', async () => {
@@ -1862,8 +1885,6 @@ describe('MktgAgentRunComponent', () => {
       component['onPublicObserved']({ detail: record('writing'), view: null });
       fixture.detectChanges();
       expect(query('mktg-run-public-waiting')).toBeNull();
-      // With the line gone the reader returns to its state-driven cadence.
-      expect(component['publicProgressView']()?.continuous()).toBe(false);
     });
 
     it('settles a malformed run selector to an error and document recovery instead of a skeleton', async () => {

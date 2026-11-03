@@ -850,7 +850,7 @@ describe('MktgRunProgressComponent', () => {
     await setup('browser', 1);
     read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     const retrying = vi.fn();
-    fixture.componentInstance.retrying.subscribe(retrying);
+    fixture.componentInstance.readRetrying.subscribe(retrying);
     await fixture.whenStable();
     // A transient first read, with nothing known yet: the host rendering this reader headless shows the one line from this.
     expect(retrying.mock.calls).toEqual([[true]]);

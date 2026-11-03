@@ -96,8 +96,8 @@ export class MktgRunProgressComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
   private readonly router = inject(Router);
-  /** Last `retrying` value emitted; the output fires on transitions only. */
-  private retryingOn = false;
+  /** Last `readRetrying` value emitted; the output fires on transitions only. */
+  private readRetryingOn = false;
 
   public readonly project = input.required<string>();
   public readonly projectName = input('your project');
@@ -147,7 +147,7 @@ export class MktgRunProgressComponent {
    * once a read lands or fails for good. Emitted on transitions only, so a host that renders this reader headless (the
    * living document view, the run page while it checks the run) can show the one quiet connection-state line itself.
    */
-  public readonly retrying = output<boolean>();
+  public readonly readRetrying = output<boolean>();
 
   private readonly loaded = signal<MktgDocumentDetailResponse | null>(null);
   private readonly loadedSubject = signal('');
@@ -580,11 +580,11 @@ export class MktgRunProgressComponent {
     this.loadedSubject.set('');
   }
 
-  /** Emits `retrying` on transitions only. */
+  /** Emits `readRetrying` on transitions only. */
   private setRetrying(on: boolean): void {
-    if (this.retryingOn === on) return;
-    this.retryingOn = on;
-    this.retrying.emit(on);
+    if (this.readRetryingOn === on) return;
+    this.readRetryingOn = on;
+    this.readRetrying.emit(on);
   }
 
   protected onPublicAnswers(answers: MktgRunAnswer[]): void {

@@ -6,7 +6,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import { MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES, MKTG_POLL_RETRYING_TEXT, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import type { MktgDocumentComment, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFieldCommentsComponent } from '../../modules/mktg-os-agents/components/mktg-field-comments/mktg-field-comments.component';
@@ -136,7 +136,8 @@ describe('MktgDocumentCommentsService', () => {
     for (let cycle = 0; cycle < 2; cycle++) {
       service.refresh(); // The panel delegates directly to this existing same-scope read.
       fixture.detectChanges();
-      expect(service.loading()).toBe(true);
+      // A re-read of a loaded list is not a loading state (law 5): the list, the composer and Send stay as they are.
+      expect(service.loading()).toBe(false);
       expect(service.loaded()).toBe(true);
       expect(element.querySelector('textarea')).toBe(textarea);
       expect(document.activeElement).toBe(textarea);
@@ -369,6 +370,42 @@ describe('MktgDocumentCommentsService', () => {
     http.expectNone(() => true);
     expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
     expect(service.loaded()).toBe(false);
+  });
+
+  it('drops the retrying line when a save lands during a failing read: the saved list is the next good state', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    service.select(SCOPE);
+    http.expectOne((request) => request.method === 'GET').flush('', { status: 503, statusText: 'Unavailable' });
+    expect(service.retrying()).toBe(true);
+    service.add({ kind: 'field', key: 'mf.tagline' }, 'Shorten it.', 'stable-request').subscribe();
+    http.expectOne(PATH).flush({ revisionId: SCOPE.revisionId, threads: [thread()] });
+    expect(service.retrying()).toBe(false);
+    expect(service.loadError()).toBe('');
+    expect(service.threads()).toEqual([thread()]);
+    // The cancelled read's retry never fires: nothing is retrying behind the saved list.
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone((request) => request.method === 'GET');
+    vi.useRealTimers();
+  });
+
+  it('drops the retrying line when a save is refused during a failing read: the access line shows, not the retrying one', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    service.select(SCOPE);
+    http.expectOne((request) => request.method === 'GET').flush('', { status: 503, statusText: 'Unavailable' });
+    expect(service.retrying()).toBe(true);
+    service.add({ kind: 'field', key: 'mf.tagline' }, 'Change it.', 'request').subscribe({ error: vi.fn() });
+    http.expectOne(PATH).flush('', { status: 403, statusText: 'Denied' });
+    expect(service.retrying()).toBe(false);
+    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+    // RFC 9110 §15.5.4: the refused scope is latched; the backoff retry and a later refresh send nothing.
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    service.refresh();
+    http.expectNone((request) => request.method === 'GET');
+    expect(service.retrying()).toBe(false);
+    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
+    vi.useRealTimers();
   });
 
   it('cancels a pending read after a denied save so stale data cannot reappear', () => {

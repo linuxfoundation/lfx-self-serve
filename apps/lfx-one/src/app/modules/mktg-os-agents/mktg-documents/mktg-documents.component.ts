@@ -254,10 +254,10 @@ export class MktgDocumentsComponent {
               // A refused read is latched for this document (RFC 9110 §15.5.4): no wake sends the same credentials again.
               if (denied) return EMPTY;
               return this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(
-                // Clears only this reader's flags; the list's own line is the list's.
+                // Clears only this reader's flags; the list's own line and error are the list's.
                 tap(() => {
                   this.detailFailing.set(false);
-                  if (this.detailFailed()) this.errorText.set('');
+                  if (this.detailFailed() && !this.listFailed()) this.errorText.set('');
                   this.detailFailed.set(false);
                 }),
                 catchError((error: HttpErrorResponse) => {
@@ -370,7 +370,8 @@ export class MktgDocumentsComponent {
                 : data
             ),
             tap((data) => {
-              if (this.listFailed()) this.errorText.set('');
+              // A list recovery clears only the list's error; a failed detail keeps its own.
+              if (this.listFailed() && !this.detailFailed()) this.errorText.set('');
               this.listFailed.set(false);
               known = data;
               if (data.progressUnavailable) unavailable();

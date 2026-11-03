@@ -39,7 +39,6 @@
         [runId]="publicRunId()"
         [refreshKey]="publicRefreshKey()"
         [runPage]="true"
-        [continuous]="!!publicWaitingText()"
         [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || !!publicWaitingText() || (!!errorText() && !navigation())"
         [watchQuestions]="phase() === 'questions'"
         [errorText]="errorText()"
@@ -47,7 +46,7 @@
         (alreadyAnswered)="onAlreadyAnswered($event)"
         (observed)="onPublicObserved($event)"
         (readError)="onPublicReadError($event)"
-        (retrying)="publicRetrying.set($event)"
+        (readRetrying)="publicRetrying.set($event)"
         (landed)="onPublicLanding()"
         (failed)="onPublicLanding(true)" />
       @if (!publicIdentityPending() && publicWaitingText()) {
