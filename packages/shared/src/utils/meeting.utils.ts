@@ -1491,7 +1491,7 @@ export function buildMeetingOrganizerMailto(params: {
  * Normalizes a username for viewer-identity comparison — lowercased and stripped of any
  * auth-provider prefix (e.g. `auth0|`), so an OIDC `sub` still matches a plain LFID.
  */
-function normalizeUsername(username: string | null | undefined): string {
+export function normalizeUsername(username: string | null | undefined): string {
   return (username ?? '').trim().toLowerCase().split('|').pop() ?? '';
 }
 
