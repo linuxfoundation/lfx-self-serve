@@ -378,6 +378,27 @@ export const CAMPAIGN_EMAIL_CHANNEL_LABEL = 'HubSpot email';
 export const CAMPAIGN_USD_COST_PLATFORMS: ReadonlySet<string> = new Set(['linkedin-ads']);
 
 /** The live cost counter's label, by what the platform's read reports cost in. */
+/**
+ * What the live Conversions counter says when campaign-service reports no total
+ * (lfx-v2-campaign-service#175). `unavailable` names the platform, see
+ * `CAMPAIGN_CONVERSIONS_PLATFORM_NAMES`.
+ */
+export const CAMPAIGN_CONVERSIONS_STATUS_REASONS = {
+  incomplete: 'Incomplete data for this window',
+  no_conversions: 'No conversions in this window',
+  unavailable: 'Not reported by',
+} as const;
+
+/** The platform as a conversions reason names it ("Not reported by LinkedIn"). */
+export const CAMPAIGN_CONVERSIONS_PLATFORM_NAMES: Readonly<Record<string, string>> = {
+  'google-ads': 'Google Ads',
+  'microsoft-ads': 'Microsoft Advertising',
+  'linkedin-ads': 'LinkedIn',
+  'meta-ads': 'Meta',
+  'reddit-ads': 'Reddit',
+  'twitter-ads': 'X',
+};
+
 export const CAMPAIGN_LIVE_COST_LABELS = {
   usd: 'Cost (USD)',
   account: 'Cost (ad account currency)',

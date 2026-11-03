@@ -192,6 +192,51 @@ describe('withAdoptedMarker', () => {
   });
 });
 
+describe('buildCampaignLiveCounters — conversions status (lfx-v2-campaign-service#175)', () => {
+  const base = {
+    campaign_id: 'c-1',
+    platform_campaign_id: '123',
+    window: 'last_30_days',
+    impressions: 1000,
+    clicks: 40,
+    cost_micros: 5_000_000,
+    ctr: 0.04,
+  } as const;
+
+  it('shows the total only when reported, unrounded', () => {
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 3 }, 'linkedin-ads')).toEqual(
+      expect.objectContaining({ conversions: '3', conversionsReported: true })
+    );
+    // Google Ads and Microsoft credit partial conversions: 0.4 is a value, not a zero.
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 0.4 }, 'google-ads').conversions).toBe('0.4');
+  });
+
+  it.each([
+    ['unavailable', 'linkedin-ads', 'Not reported by LinkedIn'],
+    ['unavailable', 'microsoft-ads', 'Not reported by Microsoft Advertising'],
+    ['incomplete', 'linkedin-ads', 'Incomplete data for this window'],
+    ['no_conversions', 'linkedin-ads', 'No conversions in this window'],
+  ] as const)('gives a reason, never 0 or a blank, for %s on %s', (status, platform, reason) => {
+    // A stray total beside a non-reported status is ignored: only `reported` carries one.
+    const counters = buildCampaignLiveCounters({ ...base, conversions_status: status, conversions: 0 }, platform);
+
+    expect(counters.conversions).toBe(reason);
+    expect(counters.conversionsReported).toBe(false);
+  });
+
+  it('reads a reported status without a total, or an unknown status, as unavailable rather than 0', () => {
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported' }, 'linkedin-ads').conversions).toBe('Not reported by LinkedIn');
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'something_new' as never, conversions: 2 }, 'linkedin-ads').conversions).toBe(
+      'Not reported by LinkedIn'
+    );
+  });
+
+  it('shows no counter when the read carries no status (an older campaign-service) or on the email channel', () => {
+    expect(buildCampaignLiveCounters({ ...base, conversions: 5 }, 'linkedin-ads').conversions).toBeNull();
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 5 }, 'hubspot').conversions).toBeNull();
+  });
+});
+
 describe('buildCampaignLiveCounters', () => {
   it('shows micro-unit cost in whole units without a currency symbol, and CTR as a percentage', () => {
     const counters = buildCampaignLiveCounters({
