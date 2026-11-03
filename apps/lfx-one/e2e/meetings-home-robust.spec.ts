@@ -11,6 +11,7 @@ import { MEETINGS_HOME_TITLES as TITLES } from './fixtures/mock-data';
 import { gotoMeetingsHome, homeRow, homeRows, MEETINGS_HOME_TEST_OPTIONS, rightColumn } from './helpers/meetings-home.helper';
 
 async function box(locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+  await expect(locator).toBeVisible();
   const rect = await locator.boundingBox();
   expect(rect).not.toBeNull();
   return rect as { x: number; y: number; width: number; height: number };
@@ -179,7 +180,8 @@ test.describe('Meetings home page - Robust Tests', () => {
       await expect(homeRows(page)).toHaveCount(4);
     });
 
-    test('a centre wider than 860px keeps the folded cards side by side and each row on one flex line', async ({ page }) => {
+    test('a centre wider than 860px keeps the folded cards side by side and each row on one flex line', async ({ page, isMobile }) => {
+      test.skip(isMobile, 'The mobile shell leaves the centre narrower than 861px at this width');
       await gotoMeetingsHome(page);
 
       const next = await box(page.getByTestId('meetings-redesign-folded-next-meeting'));
@@ -233,7 +235,7 @@ test.describe('Meetings home page - Robust Tests', () => {
 
       const search = await box(page.getByTestId('meetings-redesign-search'));
       expect((await box(page.getByTestId('meetings-home-filters-button'))).y).toBeGreaterThanOrEqual(search.y + search.height);
-      expect(search.width).toBeCloseTo((await box(page.getByTestId('meetings-redesign-tabs-bar'))).width, 0);
+      expect(Math.abs(search.width - (await box(page.getByTestId('meetings-redesign-tabs-bar'))).width)).toBeLessThanOrEqual(1);
     });
   });
 

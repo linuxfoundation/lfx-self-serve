@@ -17,6 +17,11 @@ const rowTitles = (page: Page) => homeRows(page).getByTestId('meetings-home-row-
 const search = (page: Page) => page.getByRole('searchbox', { name: 'Search meetings' });
 const filtersDialog = (page: Page) => page.getByRole('dialog', { name: 'Filters' });
 
+/** The series row for one date, by its day of the month. */
+function seriesRowOn(page: Page, day: string): Locator {
+  return homeRow(page, TITLES.series).filter({ has: page.getByTestId('meetings-home-row-date-day').getByText(day, { exact: true }) });
+}
+
 async function openRowAction(page: Page, row: Locator, action: string): Promise<void> {
   await row.getByTestId('meetings-home-row-actions-trigger').click();
   await page.getByRole('menuitem', { name: action }).click();
@@ -196,7 +201,7 @@ test.describe('Meetings home page', () => {
       await stubMeetingsV2Flag(page, true);
       await gotoMeetingsHome(page, { organizer: true });
 
-      await openRowAction(page, homeRow(page, TITLES.series).first(), 'Edit Meeting');
+      await openRowAction(page, seriesRowOn(page, '13'), 'Edit Meeting');
       const dialog = page.getByRole('dialog', { name: 'Edit meeting' });
       await expect(dialog.getByRole('radio', { name: 'A single occurrence' })).toBeChecked();
       await expect(dialog.getByRole('radio', { name: 'The entire series' })).not.toBeChecked();
@@ -204,7 +209,7 @@ test.describe('Meetings home page', () => {
       await dialog.getByRole('button', { name: 'Continue' }).click();
       await expect(dialog).toBeHidden();
       await expect(page.getByTestId('meeting-composer-header')).toContainText('Edit meeting');
-      await expect(page.getByTestId('meeting-composer-scope-occurrence')).toBeVisible();
+      await expect(page.getByTestId('meeting-composer-scope-occurrence')).toContainText('Nov 13');
     });
 
     test('Delete on a one-off meeting confirms, deletes it and drops the row', async ({ page }) => {
@@ -215,28 +220,49 @@ test.describe('Meetings home page', () => {
       await expect(dialog).toContainText(TITLES.oneOff);
       await expect(dialog).toContainText('This will permanently delete this meeting.');
 
+      // The stub feed still lists the meeting, so the row must stay gone after the refetch.
+      const refetch = page.waitForResponse('**/api/user/meetings*');
       await dialog.getByRole('button', { name: 'Delete Meeting' }).click();
       await expect(homeToast(page, 'Meeting deleted successfully.')).toBeVisible();
+      await refetch;
       await expect(homeRow(page, TITLES.oneOff)).toHaveCount(0);
       expect(mocks.deletes).toEqual(['home-e2e-one-off']);
+    });
+
+    test('a failed delete keeps the dialog open with an error and the row in place', async ({ page }) => {
+      await gotoMeetingsHome(page, { organizer: true });
+      await page.route(/\/api\/meetings\/home-e2e-one-off$/, (route) =>
+        route.request().method() === 'DELETE' ? route.fulfill({ status: 500 }) : route.fallback()
+      );
+
+      await openRowAction(page, homeRow(page, TITLES.oneOff), 'Delete Meeting');
+      const dialog = page.getByRole('alertdialog', { name: 'Delete meeting' });
+      await dialog.getByRole('button', { name: 'Delete Meeting' }).click();
+
+      await expect(homeToast(page, 'Server error occurred. Please try again later.')).toBeVisible();
+      await expect(dialog).toBeVisible();
+      await expect(homeRow(page, TITLES.oneOff)).toHaveCount(1);
     });
 
     test('Delete on a recurring row cancels the picked occurrence with a reason', async ({ page }) => {
       const mocks = await gotoMeetingsHome(page, { organizer: true });
 
-      await openRowAction(page, homeRow(page, TITLES.series).first(), 'Delete Meeting');
+      await openRowAction(page, seriesRowOn(page, '13'), 'Delete Meeting');
       const scope = page.getByRole('dialog', { name: 'Delete meeting' });
       await expect(scope.getByRole('radio', { name: 'Cancel a single occurrence' })).toBeChecked();
       await scope.getByRole('button', { name: 'Continue' }).click();
 
       const confirm = page.getByRole('alertdialog', { name: 'Cancel Occurrence' });
       await confirm.getByRole('textbox', { name: 'Reason (optional)' }).fill('Team offsite');
+      const refetch = page.waitForResponse('**/api/user/meetings*');
       await confirm.getByRole('button', { name: 'Cancel Occurrence' }).click();
 
       await expect(homeToast(page, 'Occurrence cancelled')).toBeVisible();
-      await expect(homeRow(page, TITLES.series)).toHaveCount(1);
+      await refetch;
+      await expect(seriesRowOn(page, '13')).toHaveCount(0);
+      await expect(seriesRowOn(page, '6')).toHaveCount(1);
       expect(mocks.cancellations).toEqual([
-        { meetingId: 'home-e2e-series', occurrenceId: String(Date.parse('2026-11-06T17:00:00Z') / 1000), body: { note: 'Team offsite' } },
+        { meetingId: 'home-e2e-series', occurrenceId: String(Date.parse('2026-11-13T17:00:00Z') / 1000), body: { note: 'Team offsite' } },
       ]);
       expect(mocks.deletes).toEqual([]);
     });
@@ -269,7 +295,7 @@ test.describe('Meetings home page', () => {
       await expect(rows).toHaveCount(2);
       await expect(page.getByTestId('meetings-home-pending-rsvps-count')).toHaveText('2');
 
-      await rows.filter({ hasText: TITLES.series }).first().getByTestId('meetings-home-rsvp-declined').click();
+      await rows.filter({ hasText: 'Nov 6' }).getByTestId('meetings-home-rsvp-declined').click();
       const scope = page.getByRole('dialog', { name: 'RSVP to recurring meeting' });
       await scope.getByRole('radio', { name: 'All occurrences' }).check();
       await scope.getByTestId('meetings-home-rsvp-scope-ok').click();
@@ -302,6 +328,7 @@ test.describe('Meetings home page', () => {
     test('a past row offers Recording and AI Summary only when it has them', async ({ page }) => {
       await gotoMeetingsHome(page, { query: '?time=past' });
 
+      await expect(homeRow(page, TITLES.pastOlder)).toBeVisible();
       await expect(homeRow(page, TITLES.pastOlder).getByTestId('meetings-home-row-artifacts')).toHaveCount(0);
       const row = homeRow(page, TITLES.pastRecent);
 
@@ -320,6 +347,7 @@ test.describe('Meetings home page', () => {
       await page.context().route('https://zoom.example.test/**', (route) => route.fulfill({ body: '' }));
       await gotoMeetingsHome(page, { joinWindow: true });
 
+      await expect(homeRow(page, TITLES.oneOff)).toBeVisible();
       await expect(homeRow(page, TITLES.oneOff).getByTestId('meetings-home-row-join')).toHaveCount(0);
       const popup = page.waitForEvent('popup');
       await homeRow(page, TITLES.ended)

@@ -53,7 +53,7 @@ function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-/** Me lens, contributor persona and a synthetic project context, so the Create gate never depends on the test account. */
+/** Me lens, the given personas and a synthetic project context, so the Create gate never depends on the test account. */
 async function seedCookies(page: Page, personas: PersonaType[]): Promise<void> {
   const url = new URL(test.info().project.use.baseURL ?? 'http://localhost:4200').origin;
   const persona: PersistedPersonaState = { primary: personas[0], all: personas };
@@ -64,7 +64,7 @@ async function seedCookies(page: Page, personas: PersonaType[]): Promise<void> {
   ]);
 }
 
-/** Feeds, RSVP writes and per-meeting lookups; no synthetic id reaches the deployed meeting services. */
+/** Feeds, artifacts, join links, recorded writes and per-meeting lookups; no synthetic id reaches the deployed meeting services. */
 async function stubMeetingsHome(page: Page, options: MeetingsHomeStubOptions): Promise<MeetingsHomeMocks> {
   const mocks: MeetingsHomeMocks = { rsvpPosts: [], deletes: [], cancellations: [], selfRemovals: [] };
   const answers = new Map<string, MeetingRsvp>();
@@ -100,15 +100,18 @@ async function stubMeetingsHome(page: Page, options: MeetingsHomeStubOptions): P
       mocks.deletes.push(`${meetingId}${url.search}`);
       return route.fulfill({ status: 204 });
     }
+    if (route.request().method() !== 'GET') return route.fallback();
     const meeting = upcoming().find((item) => item.id === meetingId);
     return meeting ? fulfillJson(route, meeting) : fulfillJson(route, {}, 404);
   });
   await page.route('**/api/meetings/home-e2e-*/occurrences/*', (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
     const [, , , meetingId, , occurrenceId] = new URL(route.request().url()).pathname.split('/');
     mocks.cancellations.push({ meetingId, occurrenceId, body: route.request().postDataJSON() as CancelMeetingOccurrenceRequest | null });
     return route.fulfill({ status: 204 });
   });
   await page.route('**/api/meetings/home-e2e-*/registrants/self', (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
     mocks.selfRemovals.push(new URL(route.request().url()).pathname.split('/')[3]);
     return fulfillJson(route, { removed_registrant_ids: ['reg'], remaining_registrant_ids: [] });
   });
