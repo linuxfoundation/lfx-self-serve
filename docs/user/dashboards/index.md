@@ -82,7 +82,7 @@ If you do not have access, the Organization lens shows a message instead of your
 - **You do not have access to the Organization Lens**: your employer is a Linux Foundation member, but you have not been granted access to it.
 - **You do not have access to this organization**: the link you opened is for an organization you do not have access to.
 
-For the other messages, such as **Contractor accounts need an organization grant** or **Some organizations could not be loaded**, see [What do the messages on the Org Overview mean?](../organization/org-overview/#what-do-the-messages-on-the-org-overview-mean).
+For the other messages, such as **Some organizations could not be loaded**, see [What do the messages on the Org Overview mean?](../organization/org-overview/#what-do-the-messages-on-the-org-overview-mean).
 
 If you are a CLA Manager, see [Why can't I see my company in the Organization lens?](../organization/faq/#why-can-t-i-see-my-company-in-the-organization-lens).
 
