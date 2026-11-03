@@ -11,7 +11,7 @@ import { VoteSummarySendService } from '@services/vote-summary-send.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
+import { NEVER, Observable, of, Subject, throwError, TimeoutError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteSummaryDialogComponent } from './vote-summary-dialog.component';
@@ -45,14 +45,15 @@ async function mount(preview: Observable<VoteSummaryPreviewResponse>, send: Obse
   const getVoteSummaryPreview = vi.fn().mockReturnValue(preview);
   const sendVoteSummary = vi.fn().mockReturnValue(send);
   const add = vi.fn();
-  const close = vi.fn();
+  const onClose = new Subject<unknown>();
+  const close = vi.fn((result?: unknown) => onClose.next(result));
   const config = { data: { vote: { uid: 'vote-1', name: 'Spring Election' } }, closable: true };
   const user = signal<{ sub: string } | null>({ sub: 'synthetic-manager' });
 
   TestBed.configureTestingModule({
     imports: [VoteSummaryDialogComponent],
     providers: [
-      { provide: DynamicDialogRef, useValue: { close } },
+      { provide: DynamicDialogRef, useValue: { close, onClose: onClose.asObservable() } },
       { provide: DynamicDialogConfig, useValue: config },
       { provide: VoteService, useValue: { getVoteSummaryPreview, sendVoteSummary } },
       { provide: UserService, useValue: { user } },
@@ -177,6 +178,41 @@ describe('VoteSummaryDialogComponent', () => {
     expect(getVoteSummaryPreview).toHaveBeenCalledTimes(2);
     expect(byTestId(fixture, 'vote-summary-dialog-error')).toBeNull();
     expect(button(fixture, 'vote-summary-dialog-send').disabled).toBe(false);
+    expect(document.activeElement).toBe(button(fixture, 'vote-summary-dialog-send'));
+  });
+
+  it.each(['ready', 'error', 'nobody'] as const)('keeps Retry focus inside the modal while loading, then focuses the %s action', async (outcome) => {
+    const { fixture, getVoteSummaryPreview } = await mount(throwError(() => new HttpErrorResponse({ status: 500 })));
+    current = fixture;
+    const pending = new Subject<VoteSummaryPreviewResponse>();
+    getVoteSummaryPreview.mockReturnValue(pending);
+    button(fixture, 'vote-summary-dialog-retry').focus();
+    button(fixture, 'vote-summary-dialog-retry').click();
+    await render(fixture);
+    expect(byTestId(fixture, 'vote-summary-dialog-loading')).not.toBeNull();
+    expect(document.activeElement).toBe(button(fixture, 'vote-summary-dialog-cancel'));
+
+    if (outcome === 'error') pending.error(new HttpErrorResponse({ status: 500 }));
+    else {
+      pending.next(outcome === 'ready' ? PREVIEW : { ...PREVIEW, ready: [], unique_email_count: 0 });
+      pending.complete();
+    }
+    await render(fixture);
+    let action = 'cancel';
+    if (outcome === 'ready') action = 'send';
+    else if (outcome === 'error') action = 'retry';
+    expect(document.activeElement).toBe(button(fixture, `vote-summary-dialog-${action}`));
+  });
+
+  it.each([false, true])('identifies username-only voters in review and results (review-based fallback: %s)', async (fallback) => {
+    const voter = { uid: 'r-lfid', username: 'drew-example' };
+    const preview = { ...PREVIEW, missing_email: [voter] };
+    const result: SendVoteSummaryResponse = { ...SENT, recipients: [...SENT.recipients.slice(0, 2), { ...voter, outcome: 'skipped' }] };
+    const { fixture } = await mount(of(preview), fallback ? throwError(() => new HttpErrorResponse({ status: 0 })) : of(result));
+    current = fixture;
+    expect(byTestId(fixture, 'vote-summary-dialog-missing-r-lfid')!.textContent).toContain('drew-example');
+    await sendNow(fixture);
+    expect(byTestId(fixture, 'vote-summary-dialog-result-r-lfid')!.textContent).toContain('drew-example');
   });
 
   it('closes with false on Cancel and sends nothing', async () => {
@@ -346,9 +382,15 @@ describe('VoteSummaryDialogComponent', () => {
       return event;
     };
     expect(escape().defaultPrevented).toBe(false);
+    const status = byTestId(fixture, 'vote-summary-dialog-send-status')!;
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.getAttribute('aria-atomic')).toBe('true');
+    expect(status.textContent!.trim()).toBe('');
 
     await sendNow(fixture);
 
+    expect(status.textContent).toContain('Sending the summary.');
+    expect(status.textContent).toContain('The dialog cannot be closed until results are available.');
     expect(escape().defaultPrevented).toBe(true);
     expect(config.closable).toBe(false);
     expect(button(fixture, 'vote-summary-dialog-back').disabled).toBe(true);
@@ -362,6 +404,39 @@ describe('VoteSummaryDialogComponent', () => {
 
     expect(config.closable).toBe(true);
     expect(escape().defaultPrevented).toBe(false);
+    expect(status.textContent!.trim()).toBe('');
+  });
+
+  it.each(['success', 'unconfirmed'] as const)('clears %s results on host header closure and loads a fresh review when reopened', async (outcome) => {
+    const send = outcome === 'success' ? of(SENT) : throwError(() => new HttpErrorResponse({ status: 504 }));
+    const { fixture, close, getVoteSummaryPreview, sendVoteSummary } = await mount(of(PREVIEW), send);
+    current = fixture;
+    await sendNow(fixture);
+    expect(TestBed.inject(VoteSummarySendService).getAttempt('vote-1')).toBeDefined();
+
+    // PrimeNG's header X emits ref.onClose, unlike route destruction.
+    close();
+    expect(TestBed.inject(VoteSummarySendService).getAttempt('vote-1')).toBeUndefined();
+    fixture.destroy();
+    const reopened = TestBed.createComponent(VoteSummaryDialogComponent);
+    current = reopened;
+    await render(reopened);
+    expect(getVoteSummaryPreview).toHaveBeenCalledTimes(2);
+    expect(button(reopened, 'vote-summary-dialog-send').disabled).toBe(false);
+    expect(sendVoteSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains settled results when navigation destroys the view without an explicit close', async () => {
+    const { fixture, getVoteSummaryPreview, sendVoteSummary } = await mount(of(PREVIEW));
+    current = fixture;
+    await sendNow(fixture);
+    fixture.destroy();
+    const reopened = TestBed.createComponent(VoteSummaryDialogComponent);
+    current = reopened;
+    await render(reopened);
+    expect(byTestId(reopened, 'vote-summary-dialog-group-failed')!.textContent).toContain('Blake Example');
+    expect(getVoteSummaryPreview).toHaveBeenCalledTimes(1);
+    expect(sendVoteSummary).toHaveBeenCalledTimes(1);
   });
 
   it('lets an initiated send finish after destruction without scheduling a render on the destroyed view', async () => {
@@ -456,6 +531,7 @@ describe('VoteSummaryDialogComponent', () => {
 
     expect(add).toHaveBeenCalledWith({ severity: 'error', summary: "Couldn't send summary", detail });
     expect(byTestId(fixture, 'vote-summary-dialog-send')).not.toBeNull();
+    expect(document.activeElement).toBe(button(fixture, 'vote-summary-dialog-send'));
     expect(byTestId(fixture, 'vote-summary-dialog-result-summary')).toBeNull();
   });
 
@@ -509,6 +585,7 @@ describe('VoteSummaryDialogComponent', () => {
     ['a plain 502 without a BFF code', new HttpErrorResponse({ status: 502 })],
     ['a transport failure', new HttpErrorResponse({ status: 0 })],
     ['a timeout or unknown 5xx', new HttpErrorResponse({ status: 504 })],
+    ['the client send deadline', new TimeoutError()],
     ['a non-HTTP error', new Error('boom')],
   ])('shows every emailable voter as Unconfirmed with the duplicate warning after %s', async (_label, error) => {
     const { fixture, add } = await mount(

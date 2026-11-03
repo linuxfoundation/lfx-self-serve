@@ -75,6 +75,8 @@ export class VoteSummaryDialogComponent {
   private readonly resultSummary = viewChild<ElementRef<HTMLElement>>('resultSummary');
   private readonly confirmText = viewChild<ElementRef<HTMLElement>>('confirmText');
   private readonly reviewSendButton = viewChild<ButtonComponent, ElementRef<HTMLElement>>('reviewSendButton', { read: ElementRef });
+  private readonly reviewCancelButton = viewChild<ButtonComponent, ElementRef<HTMLElement>>('reviewCancelButton', { read: ElementRef });
+  private readonly retryButton = viewChild<ButtonComponent, ElementRef<HTMLElement>>('retryButton', { read: ElementRef });
 
   protected readonly phase = signal<VoteSummaryDialogPhase>('review');
   protected readonly preview = signal<VoteSummaryPreviewResponse | null>(null);
@@ -94,6 +96,10 @@ export class VoteSummaryDialogComponent {
 
   public constructor() {
     lockDynamicDialogWhile(this.sending);
+    // Host Close (including the header X) is explicit dismissal; route destruction is not.
+    this.ref.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.viewerSubject === this.summarySendService.viewerSubject()) this.summarySendService.dismiss(this.vote.uid);
+    });
     if (!this.summarySendService.getAttempt(this.vote.uid)) this.loadPreview();
     effect(() => {
       if (this.viewerSubject !== this.summarySendService.viewerSubject()) {
@@ -115,7 +121,8 @@ export class VoteSummaryDialogComponent {
   }
 
   protected retry(): void {
-    this.loadPreview();
+    this.focusAfterRender(() => this.reviewCancelButton()?.nativeElement.querySelector<HTMLButtonElement>('button') ?? undefined);
+    this.loadPreview(true);
   }
 
   protected onSend(): void {
@@ -195,13 +202,16 @@ export class VoteSummaryDialogComponent {
     });
   }
 
-  private loadPreview(): void {
+  private loadPreview(restoreFocus = false): void {
     this.loading.set(true);
     this.loadError.set(null);
     this.voteService
       .getVoteSummaryPreview(this.vote.uid)
       .pipe(
-        finalize(() => this.loading.set(false)),
+        finalize(() => {
+          this.loading.set(false);
+          if (restoreFocus) this.focusReviewAction();
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
@@ -221,6 +231,15 @@ export class VoteSummaryDialogComponent {
     this.result.set(hasRecipients ? result : this.buildUnconfirmedResult());
     this.phase.set('results');
     this.focusAfterRender(() => this.resultSummary()?.nativeElement);
+  }
+
+  private focusReviewAction(): void {
+    this.focusAfterRender(() => {
+      let target = this.reviewCancelButton();
+      if (this.loadError()) target = this.retryButton();
+      else if (this.canSend()) target = this.reviewSendButton();
+      return target?.nativeElement.querySelector<HTMLButtonElement>('button') ?? undefined;
+    });
   }
 
   private focusAfterRender(target: () => HTMLElement | undefined): void {
@@ -282,6 +301,7 @@ export class VoteSummaryDialogComponent {
     this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail });
     this.phase.set('review');
     this.summarySendService.dismiss(this.vote.uid);
+    this.focusReviewAction();
   }
 
   /** With no per-voter outcome from the server, every emailable voter from the preview is unconfirmed. */

@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import { VOTE_SUMMARY_SEND_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { VoteSummaryPreviewResponse, VoteSummarySendAttempt } from '@lfx-one/shared/interfaces';
-import { take } from 'rxjs';
+import { take, timeout } from 'rxjs';
 
 import { UserService } from './user.service';
 import { VoteService } from './vote.service';
@@ -40,7 +41,8 @@ export class VoteSummarySendService {
     this.attempts.update((attempts) => new Map(attempts).set(voteUid, pending));
     this.voteService
       .sendVoteSummary(voteUid)
-      .pipe(take(1))
+      // Stop waiting, never retry: the server may continue sending after the client deadline.
+      .pipe(timeout({ first: VOTE_SUMMARY_SEND_TIMEOUT_MS }), take(1))
       .subscribe({
         next: (response) => this.settle(voteUid, owner, pending, { preview, status: 'success', response }),
         error: (error: unknown) => this.settle(voteUid, owner, pending, { preview, status: 'error', error }),

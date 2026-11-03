@@ -32,7 +32,9 @@
             <li
               class="flex flex-col gap-0.5 border-t border-gray-100 px-4 py-2.5 first:border-t-0"
               [attr.data-testid]="'vote-summary-dialog-result-' + recipient.uid">
-              <span class="text-[12.5px] font-semibold text-gray-900 break-words">{{ recipient.user_name || recipient.user_email || '—' }}</span>
+              <span class="text-[12.5px] font-semibold text-gray-900 break-words">{{
+                recipient.user_name || recipient.username || recipient.user_email || '—'
+              }}</span>
               @if (recipient.user_email) {
                 <span class="text-[12px] text-gray-500 break-all">{{ recipient.user_email }}</span>
               }
@@ -58,6 +60,7 @@
         <i class="fa-light fa-triangle-exclamation text-2xl text-gray-400" aria-hidden="true"></i>
         <p class="text-[12.5px] text-gray-600">{{ loadError() }}</p>
         <lfx-button
+          #retryButton
           label="Retry"
           icon="fa-light fa-rotate-right"
           severity="secondary"
@@ -103,7 +106,9 @@
                 <li
                   class="flex flex-col gap-0.5 border-t border-gray-100 px-4 py-2.5 first:border-t-0"
                   [attr.data-testid]="'vote-summary-dialog-ready-' + recipient.uid">
-                  <span class="text-[12.5px] font-semibold text-gray-900 break-words">{{ recipient.user_name || recipient.user_email }}</span>
+                  <span class="text-[12.5px] font-semibold text-gray-900 break-words">{{
+                    recipient.user_name || recipient.username || recipient.user_email
+                  }}</span>
                   <span class="text-[12px] text-gray-500 break-all">{{ recipient.user_email }}</span>
                 </li>
               }
@@ -125,7 +130,7 @@
                 <li
                   class="flex flex-col gap-0.5 border-t border-gray-100 px-4 py-2.5 first:border-t-0"
                   [attr.data-testid]="'vote-summary-dialog-missing-' + recipient.uid">
-                  <span class="text-[12.5px] font-semibold text-gray-900 break-words">{{ recipient.user_name || '—' }}</span>
+                  <span class="text-[12.5px] font-semibold text-gray-900 break-words">{{ recipient.user_name || recipient.username || '—' }}</span>
                   <span class="text-[12px] text-gray-500">Can't receive the summary</span>
                 </li>
               }
@@ -138,6 +143,11 @@
 </div>
 
 <div class="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-3" data-testid="vote-summary-dialog-footer">
+  <p role="status" aria-atomic="true" class="sr-only" data-testid="vote-summary-dialog-send-status">
+    @if (sending()) {
+      Sending the summary. The dialog cannot be closed until results are available.
+    }
+  </p>
   @if (phase() === 'confirm' || phase() === 'sending') {
     <p #confirmText id="vote-summary-confirm-text" tabindex="-1" class="text-[12.5px] text-gray-700" data-testid="vote-summary-dialog-confirm-text">
       Emails can't be recalled once sent. Send the summary to {{ preview()?.unique_email_count }}
@@ -151,6 +161,7 @@
       }
       @case ('review') {
         <lfx-button
+          #reviewCancelButton
           label="Cancel"
           severity="secondary"
           [outlined]="true"

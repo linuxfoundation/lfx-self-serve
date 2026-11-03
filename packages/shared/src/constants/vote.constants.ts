@@ -99,6 +99,9 @@ export const VOTE_SUMMARY_NOT_ENDED = 'VOTE_SUMMARY_NOT_ENDED';
 /** The on-demand close summary (#3662) was confirmed not sent to any recipient: every attempt was rejected, none was uncertain. */
 export const VOTE_SUMMARY_SEND_FAILED = 'VOTE_SUMMARY_SEND_FAILED';
 
+/** Client wait budget for a summary POST; expiry is unconfirmed, not proof that server-side sending stopped. */
+export const VOTE_SUMMARY_SEND_TIMEOUT_MS = 5 * 60 * 1000;
+
 /** Legacy toast lifetime hint (ms) returned by the notice helper; the persistent results dialog ignores it. */
 export const VOTE_SUMMARY_NOTICE_LIFE_MS = 8000;
 

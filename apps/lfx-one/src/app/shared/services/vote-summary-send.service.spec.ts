@@ -4,9 +4,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { effect, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { VOTE_SUMMARY_SEND_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { SendVoteSummaryResponse, VoteSummaryPreviewResponse } from '@lfx-one/shared/interfaces';
-import { Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Subject, TimeoutError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserService } from './user.service';
 import { VoteSummarySendService } from './vote-summary-send.service';
@@ -46,6 +47,8 @@ describe('VoteSummarySendService', () => {
     service = TestBed.inject(VoteSummarySendService);
   });
 
+  afterEach(() => vi.useRealTimers());
+
   it('retains a pending attempt and its eventual outcome until explicitly dismissed', () => {
     expect(service.send('vote-1', PREVIEW)).toBe(true);
     expect(service.getAttempt('vote-1')).toEqual({ preview: PREVIEW, status: 'sending' });
@@ -69,6 +72,34 @@ describe('VoteSummarySendService', () => {
     pending.error(error);
     expect(service.getAttempt('vote-1')).toEqual({ preview: PREVIEW, status: 'error', error });
     expect(service.send('vote-1', PREVIEW)).toBe(false);
+    expect(sendVoteSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles a stalled request at the deadline without retrying or accepting a late response', () => {
+    vi.useFakeTimers();
+    service.send('vote-1', PREVIEW);
+    vi.advanceTimersByTime(VOTE_SUMMARY_SEND_TIMEOUT_MS - 1);
+    expect(service.getAttempt('vote-1')?.status).toBe('sending');
+
+    vi.advanceTimersByTime(1);
+    const attempt = service.getAttempt('vote-1');
+    expect(attempt).toMatchObject({ preview: PREVIEW, status: 'error' });
+    expect(attempt?.error).toBeInstanceOf(TimeoutError);
+    expect(pending.observed).toBe(false);
+    pending.next(RESULT);
+    expect(service.getAttempt('vote-1')).toBe(attempt);
+    expect(service.send('vote-1', PREVIEW)).toBe(false);
+    expect(sendVoteSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a response received before the deadline instead of replacing it with a timeout', () => {
+    vi.useFakeTimers();
+    service.send('vote-1', PREVIEW);
+    vi.advanceTimersByTime(VOTE_SUMMARY_SEND_TIMEOUT_MS - 1);
+    pending.next(RESULT);
+    vi.advanceTimersByTime(VOTE_SUMMARY_SEND_TIMEOUT_MS);
+    expect(service.getAttempt('vote-1')).toEqual({ preview: PREVIEW, status: 'success', response: RESULT });
+    expect(pending.observed).toBe(false);
     expect(sendVoteSummary).toHaveBeenCalledTimes(1);
   });
 

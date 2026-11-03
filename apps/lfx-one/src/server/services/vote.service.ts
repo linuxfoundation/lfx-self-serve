@@ -913,7 +913,7 @@ export class VoteService {
         seen.add(row.uid);
         return true;
       })
-      .map((row) => ({ uid: row.uid, user_name: row.user_name, user_email: row.user_email }))
+      .map((row) => ({ uid: row.uid, user_name: row.user_name, username: row.username, user_email: row.user_email }))
       .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? ''));
 
     logger.debug(req, 'get_vote_summary_recipients', 'Mapped vote summary recipients', {

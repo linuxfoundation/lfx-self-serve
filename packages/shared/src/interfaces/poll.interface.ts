@@ -700,6 +700,8 @@ export interface VoteSummaryRecipient {
   uid: string;
   /** Invitee's display name */
   user_name?: string;
+  /** Invitee's LFID username, used when the display name is unavailable */
+  username?: string;
   /** Invitee's email address */
   user_email?: string;
 }

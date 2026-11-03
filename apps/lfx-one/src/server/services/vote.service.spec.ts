@@ -3127,7 +3127,13 @@ describe('VoteService', () => {
 
       const [recipient] = await service.getVoteSummaryRecipients(req, VOTE_UID);
 
-      expect(Object.keys(recipient).sort()).toEqual(['uid', 'user_email', 'user_name'].sort());
+      expect(Object.keys(recipient).sort()).toEqual(['uid', 'user_email', 'user_name', 'username'].sort());
+    });
+
+    it('preserves the LFID identity of a voter without a display name or email', async () => {
+      fetchAllQueryResources.mockResolvedValue([row({ user_name: undefined, user_email: undefined, username: 'avery-example' })]);
+      const [recipient] = await service.getVoteSummaryRecipients(req, VOTE_UID);
+      expect(recipient).toEqual({ uid: 'b-1', user_name: undefined, user_email: undefined, username: 'avery-example' });
     });
 
     it('reads vote_response rows without checking pseudo_anonymity or vote status', async () => {
@@ -3175,9 +3181,16 @@ describe('VoteService', () => {
 
       expect(Object.keys(preview).sort()).toEqual(['missing_email', 'ready', 'shared_email_voter_count', 'unique_email_count']);
       for (const recipient of [...preview.ready, ...preview.missing_email]) {
-        expect(Object.keys(recipient).every((key) => ['uid', 'user_name', 'user_email'].includes(key))).toBe(true);
+        expect(Object.keys(recipient).every((key) => ['uid', 'user_name', 'user_email', 'username'].includes(key))).toBe(true);
       }
       expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('@acme-motors.example');
+    });
+
+    it('keeps username-only voters identifiable in the missing-email preview', async () => {
+      vi.mocked(service.getVoteSummaryRecipients).mockResolvedValue([{ uid: 'r-lfid', username: 'drew-example' }]);
+      const preview = await service.getVoteSummaryPreview(req, CANONICAL_UID);
+      expect(preview.missing_email).toEqual([{ uid: 'r-lfid', username: 'drew-example' }]);
+      expect(preview.unique_email_count).toBe(0);
     });
 
     it('does not send anything', async () => {
@@ -3252,6 +3265,14 @@ describe('VoteService', () => {
         statusCode: 502,
         code: VOTE_SUMMARY_PRECHECK_FAILED,
       });
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it('preserves usernames in per-voter results without attempting email for a missing address', async () => {
+      vi.mocked(service.getVoteSummaryRecipients).mockResolvedValue([{ uid: 'r-lfid', username: 'drew-example' }]);
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+      expect(result.recipients).toEqual([{ uid: 'r-lfid', username: 'drew-example', outcome: 'skipped' }]);
+      expect(result.skipped_count).toBe(1);
       expect(sendEmail).not.toHaveBeenCalled();
     });
 
