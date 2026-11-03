@@ -3135,6 +3135,47 @@ export interface CampaignDeviceBidModifier {
   bidModifier: number;
 }
 
+/**
+ * One ad schedule as normalized for judgement and dispatch.
+ *
+ * Widened from {@link CampaignAdSchedule} in three places: `dayOfWeek` is the caller's own string
+ * rather than one of the seven Google accepts, and the two minute fields are plain numbers rather
+ * than the four-value enum, because the BFF judges an unvalidated body and narrowing a type before
+ * the value has been judged would mean casting a lie. The BFF's `createCampaign` refuses each by
+ * name through `googleAdScheduleRefusal`, so what it dispatches always carries a real day and real
+ * quarter-hours.
+ *
+ * `bidModifier` stays OPTIONAL rather than being zero-filled like every other field: upstream reads
+ * an absent modifier as "listed but unadjusted" and `0` as the -100% opt-out, so the two must stay
+ * distinguishable all the way to the wire.
+ */
+export interface NormalizedGoogleAdSchedule extends Omit<CampaignAdSchedule, 'dayOfWeek' | 'startMinute' | 'endMinute'> {
+  dayOfWeek: string;
+  startMinute: number;
+  endMinute: number;
+}
+
+/**
+ * One device bid modifier as normalized for judgement and dispatch.
+ *
+ * `device` is widened from {@link CampaignDeviceBidModifier}'s enum to the caller's own string, for
+ * the same reason {@link NormalizedGoogleAdSchedule} widens its day of week: the body is unvalidated
+ * there and narrowing a type before the value has been judged would mean casting a lie.
+ *
+ * `bidModifier` is widened the other way — from REQUIRED to optional — and that is the one place
+ * this type must not be read as a copy of its ad-schedule sibling. There an absent modifier is the
+ * ordinary case and must survive all the way to the wire; here an absent modifier is a REFUSAL, and
+ * it is optional only so the BFF can see the absence and name it.
+ * Upstream's wire type carries a `*float64` for exactly this reason and `googleAdsDeviceBidModifiers`
+ * (`internal/dispatch/googleads.go`) refuses the nil, because the client type it maps onto holds a
+ * plain `float64` where `0` is the -100% opt-out — so an omitted modifier flattened to a zero would
+ * stop the campaign serving on that device while reporting a successful create.
+ */
+export interface NormalizedGoogleDeviceBidModifier extends Omit<CampaignDeviceBidModifier, 'device' | 'bidModifier'> {
+  device: string;
+  bidModifier?: number;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
