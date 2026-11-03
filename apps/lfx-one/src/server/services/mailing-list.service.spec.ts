@@ -1,14 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_MAX_PAGES } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import type { GroupsIOMemberResponse, MailingListMember } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { checkSingleAccessStrict, addAccessToResource, proxyRequest, getEffectiveEmail } = vi.hoisted(() => ({
+const { checkSingleAccessStrict, addAccessToResource, addAccessToResources, proxyRequest, getEffectiveEmail } = vi.hoisted(() => ({
   checkSingleAccessStrict: vi.fn(),
   addAccessToResource: vi.fn(async (_req: unknown, resource: unknown) => resource),
+  addAccessToResources: vi.fn(async (_req: unknown, resources: unknown) => resources),
   proxyRequest: vi.fn(),
   getEffectiveEmail: vi.fn(),
 }));
@@ -17,6 +19,7 @@ vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public checkSingleAccessStrict = checkSingleAccessStrict;
     public addAccessToResource = addAccessToResource;
+    public addAccessToResources = addAccessToResources;
   },
 }));
 vi.mock('./microservice-proxy.service', () => ({
@@ -91,9 +94,55 @@ describe('MailingListService member authorization', () => {
   beforeEach(() => {
     checkSingleAccessStrict.mockReset();
     addAccessToResource.mockReset().mockImplementation(async (_req: unknown, resource: unknown) => resource);
+    addAccessToResources.mockReset().mockImplementation(async (_req: unknown, resources: unknown) => resources);
     proxyRequest.mockReset();
     getEffectiveEmail.mockReset();
     service = new MailingListService();
+  });
+
+  describe('getMembers completeness', () => {
+    it('returns and enriches a complete roster across pages', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ type: 'groupsio_member', id: 'groupsio_member:member-1', data: indexedMember }], page_token: 'next' })
+        .mockResolvedValueOnce({ resources: [] });
+
+      await expect(service.getMembers(req, 'list-1')).resolves.toEqual([indexedMember]);
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ tags: 'mailing_list_uid:list-1', page_token: 'next' });
+      expect(addAccessToResources).toHaveBeenCalledWith(req, [indexedMember], 'groupsio_member');
+    });
+
+    it('rejects a repeated token instead of enriching a partial roster', async () => {
+      proxyRequest.mockResolvedValue({
+        resources: [{ type: 'groupsio_member', id: 'groupsio_member:member-1', data: indexedMember }],
+        page_token: 'repeated',
+      });
+
+      await expect(service.getMembers(req, 'list-1')).rejects.toMatchObject({ code: 'QUERY_SERVICE_PAGINATION_LIMIT', statusCode: 502 });
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
+
+    it('rejects a continuing roster at the page cap instead of reporting a complete list', async () => {
+      let page = 0;
+      proxyRequest.mockImplementation(async () => ({
+        resources: [{ type: 'groupsio_member', id: 'groupsio_member:member-1', data: indexedMember }],
+        page_token: `page-${++page}`,
+      }));
+
+      await expect(service.getMembers(req, 'list-1')).rejects.toMatchObject({ code: 'QUERY_SERVICE_PAGINATION_LIMIT', statusCode: 502 });
+      expect(proxyRequest).toHaveBeenCalledTimes(QUERY_SERVICE_MAX_PAGES);
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
+
+    it('propagates a later-page error rather than returning a successful prefix', async () => {
+      const failure = Object.assign(new Error('page failed'), { statusCode: 400 });
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ type: 'groupsio_member', id: 'groupsio_member:member-1', data: indexedMember }], page_token: 'next' })
+        .mockRejectedValueOnce(failure);
+
+      await expect(service.getMembers(req, 'list-1')).rejects.toBe(failure);
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
   });
 
   describe('createMember', () => {

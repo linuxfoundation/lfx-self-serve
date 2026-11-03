@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Committee, CommitteeMember, CommitteeMemberVotingStatus, MeetingCommittee } from '@lfx-one/shared';
@@ -161,6 +162,29 @@ describe('MeetingCommitteeManagerComponent — committee member emissions', () =
 
     expect(emissions).toHaveLength(1);
     expect(emissions[0].map((entry) => entry.email)).toEqual(['chair@example.com']);
+  });
+
+  it('requires a complete roster and withholds reconciliation until a stopped scan is retried successfully', async () => {
+    const failure = new HttpErrorResponse({ status: 502, error: { code: 'QUERY_SERVICE_PAGINATION_LIMIT' } });
+    const responses: Record<string, Observable<CommitteeMember[]>> = { [BOARD.uid]: throwError(() => failure) };
+    const { component, emissions, resolved, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], responses);
+    const getMembers = vi.mocked(TestBed.inject(CommitteeService).getCommitteeMembers);
+
+    expect(getMembers.mock.calls[0][1]?.get('require_complete')).toBe('true');
+    expect(component.membersFetchError()).toBe(true);
+    expect(emissions).toEqual([]);
+    expect(resolved).toEqual([]);
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-members-retry"]')).toBeTruthy();
+
+    responses[BOARD.uid] = of([member(BOARD.uid, 'chair@example.com')]);
+    component.retryCommitteeMembers();
+    await fixture.whenStable();
+
+    expect(getMembers.mock.calls.at(-1)?.[1]?.get('require_complete')).toBe('true');
+    expect(component.membersFetchError()).toBe(false);
+    expect(emissions).toHaveLength(1);
+    expect(emissions[0].map((entry) => entry.email)).toEqual(['chair@example.com']);
+    expect(resolved).toEqual([[BOARD.uid]]);
   });
 
   it('never emits when a member fetch fails', async () => {

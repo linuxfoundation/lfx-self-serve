@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
+import { HttpParams } from '@angular/common/http';
 import {
   afterNextRender,
   Component,
@@ -740,7 +741,7 @@ export class MeetingCommitteeManagerComponent {
           // Load members for all selected committees
           const memberRequests = committeeIds.map((id) => {
             const committee = this.committeeOptions().find((c) => c.uid === id);
-            return this.committeeService.getCommitteeMembers(id).pipe(
+            return this.committeeService.getCommitteeMembers(id, new HttpParams().set('require_complete', 'true')).pipe(
               map((members) =>
                 members.map((member) => ({
                   ...member,

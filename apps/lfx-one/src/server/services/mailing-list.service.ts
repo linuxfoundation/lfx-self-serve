@@ -501,11 +501,15 @@ export class MailingListService {
       tags: `mailing_list_uid:${mailingListId}`,
     };
 
-    const members = await fetchAllQueryResources<MailingListMember>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    // The members UI treats this array as the complete, locally searchable roster.
+    const members = await fetchAllQueryResources<MailingListMember>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
 
     // Add writer access field to all members

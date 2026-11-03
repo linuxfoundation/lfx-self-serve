@@ -198,6 +198,20 @@ the helper's retry policy, the request fails and the existing member-load or imp
 error guard blocks the preview. This guarantees successful pagination, not immediate
 search-index consistency or an atomic snapshot across requests.
 
+### Complete rosters and membership context
+
+The meeting committee manager also requests `require_complete=true`: its existing
+error/retry gate withholds both roster emissions and resolved-group coverage when
+pagination fails or stops early, preventing reconciliation from deleting saved guests
+that were merely absent from a partial response.
+
+`OrgMembershipResolverService` uses `failOnPartial: true` before resolving or caching
+a membership context, so key-contact writes cannot select a membership from a partial
+scan. `MailingListService.getMembers` likewise requires complete pagination; failures
+reach the members UI's existing load-error state rather than a searchable prefix with
+a misleading total. These strict reads still fail for legitimate datasets beyond the
+page cap; they do not introduce user-facing cursor pagination.
+
 ### Bound multi-request dashboard sources
 
 For a paginated source that also performs authorization and enrichment, a timeout per HTTP request is not a timeout for the entire source. Pass the same `ApiRequestOptions.deadlineAt` (absolute epoch milliseconds) to every standard JSON proxy request and strict access check. `ApiClientService` uses the smaller of the per-request timeout and the remaining deadline, aborts an in-flight transfer when that budget expires, and rejects before dispatch when no budget remains. Pagination retry delays can briefly extend source completion beyond the transport deadline, but cannot dispatch another expired request.
