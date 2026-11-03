@@ -696,7 +696,7 @@ describe('VoteDetailComponent', () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       const fixture = await setup();
 
-      call(fixture, 'onSendReminder');
+      fixture.debugElement.query(By.css('lfx-vote-detail-header')).triggerEventHandler('sendReminder');
 
       expect(dialogService.open).toHaveBeenCalledWith(VoteReminderDialogComponent, expect.objectContaining({ data: { vote: makeVote() } }));
     });
@@ -790,12 +790,11 @@ describe('VoteDetailComponent', () => {
 
     const notVotedCard = (fixture: ComponentFixture<VoteDetailComponent>): StatCardItem => read<StatCardItem[]>(fixture, 'summaryCards')[2];
 
-    it('keeps Responded and Comments clickable and moves Not voted to buttons on an open vote', async () => {
+    it('keeps Responded and Comments clickable and offers only View voters on the Not voted card', async () => {
       const fixture = await setup();
 
       expect(cardActions(fixture)).toEqual(['responses', 'comments', undefined]);
       expect(notVotedCard(fixture).ctas).toEqual([
-        { label: 'Send reminder', action: 'not-voted', icon: 'fa-light fa-envelope' },
         { label: 'View voters', action: 'responses', text: true },
       ]);
     });
@@ -905,12 +904,20 @@ describe('VoteDetailComponent', () => {
       expect(notVotedCard(fixture).ctas).toBeUndefined();
     });
 
-    it('opens the reminder dialog from the Send reminder button', async () => {
+    it('keeps the Not voted card non-clickable without a reminder shortcut', async () => {
       const fixture = await setup('browser', [StatCardGridComponent]);
+      const card = testId(fixture, 'stat-card-Not voted yet')!;
 
-      fixture.nativeElement.querySelector('[data-testid="stat-card-cta-not-voted"] button').click();
+      expect(card.tagName).toBe('DIV');
+      expect(card.textContent).toContain('1');
+      expect(card.textContent).toContain('Eligible for a reminder');
+      expect(card.textContent).not.toContain('Send reminder');
+      expect(testId(fixture, 'stat-card-cta-not-voted')).toBeNull();
 
-      expect(dialogService.open).toHaveBeenCalledWith(VoteReminderDialogComponent, expect.objectContaining({ data: { vote: makeVote() } }));
+      card.click();
+      clickCard(fixture, 'not-voted');
+
+      expect(dialogService.open).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -969,7 +976,7 @@ describe('VoteDetailComponent', () => {
       const buttons = (): HTMLButtonElement[] =>
         Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-summary"] button'));
 
-      expect(buttons()).toHaveLength(4);
+      expect(buttons()).toHaveLength(3);
       expect(buttons().every((button) => button.disabled)).toBe(phase === 'initial load');
       if (phase === 'ballot refresh') {
         call(fixture, 'onVoteSubmitted', 'vote-1');
@@ -982,7 +989,7 @@ describe('VoteDetailComponent', () => {
 
       expect(read(fixture, 'voteResultsError')).toBe(true);
       expect(read(fixture, 'loadingVoteResults')).toBe(false);
-      expect(buttons()).toHaveLength(4);
+      expect(buttons()).toHaveLength(3);
       expect(buttons().every((button) => button.disabled)).toBe(true);
       router.navigate.mockClear();
       dialogService.open.mockClear();
