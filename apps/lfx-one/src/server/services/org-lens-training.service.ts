@@ -143,7 +143,7 @@ export class OrgLensTrainingService {
   /** The one stats function: both pages and the Overview tile call it, so equal queries always give equal numbers. */
   public async getTrainingStats(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<OrgTrainingStats> {
     if (!(await this.carriesOnlyKnownFilters(accountId, query, qualification))) {
-      // Zeros for every range metric; the roster is live and unfiltered, so it comes from the unfiltered stats entry.
+      // Zeros for every range metric; the roster is live and unfiltered, and the as-of is the build time of the same rows, so both come from the unfiltered stats entry.
       const unfiltered = await this.cached(
         qualification,
         accountId,
@@ -151,7 +151,7 @@ export class OrgLensTrainingService {
         () => this.fetchTrainingStats(accountId, { range: query.range, foundation: null, project: null, course: null, level: null, format: null }),
         isTrainingStats
       );
-      return emptyTrainingStats(query.range, unfiltered.rosterMembers, unfiltered.rosterMembersAsOf);
+      return emptyTrainingStats(query.range, unfiltered.asOf, unfiltered.rosterMembers, unfiltered.rosterMembersAsOf);
     }
     return this.cached(
       qualification,
@@ -599,10 +599,10 @@ function buildKnownFilterValues(rows: readonly OrgTrainingKnownValueRow[]): OrgT
 }
 
 /** The stats of a filter the org carries no value for: every range metric is zero; only the live, unfiltered roster is carried. */
-function emptyTrainingStats(range: OrgLensTimeRange, rosterMembers: number | null, rosterMembersAsOf: string | null): OrgTrainingStats {
+function emptyTrainingStats(range: OrgLensTimeRange, asOf: string | null, rosterMembers: number | null, rosterMembersAsOf: string | null): OrgTrainingStats {
   return {
     range,
-    asOf: null,
+    asOf,
     rosterMembers,
     rosterMembersAsOf,
     peopleWithTrainingActivity: 0,

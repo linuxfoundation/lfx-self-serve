@@ -333,9 +333,10 @@ describe('OrgLensTrainingService — a filter value the organization never carri
   const ZERO_TOTALS = { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 };
 
   /** Known values, groups, and the live roster row (null: the org has no LF Education client). */
-  function mockUnknownFilterWarehouse(roster: Record<string, unknown> | null): void {
+  function mockUnknownFilterWarehouse(roster: Record<string, unknown> | null, asOf: string | null = '2026-10-30T09:48:21.094Z'): void {
     execute.mockImplementation(async (sql: string) => {
       if (isKnownValuesSql(sql)) return { rows: KNOWN_ROWS };
+      if (sql.includes('MAX(DBT_RUN_AT)')) return { rows: [{ AS_OF: asOf }] };
       if (sql.includes('ORG_TRAINING_ROSTER_MEMBERS')) return { rows: roster ? [roster] : [] };
       if (sql.includes('AS GROUP_KEY')) return { rows: GROUP_ROWS };
       return { rows: [] };
@@ -360,7 +361,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
       expect(stats).toEqual({
         range: '730d',
-        asOf: null,
+        asOf: '2026-10-30T09:48:21.094Z',
         rosterMembers: 40,
         rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
         peopleWithTrainingActivity: 0,
@@ -401,8 +402,20 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
     expect(stats.rosterMembers).toBeNull();
     expect(stats.rosterMembersAsOf).toBeNull();
-    expect(stats.asOf).toBeNull();
+    expect(stats.asOf).toBe('2026-10-30T09:48:21.094Z');
     expect(stats.coursesTaken).toBe(0);
+  });
+
+  it('carries the unfiltered as-of into the zero payload, and keeps it null only when the unfiltered read has none', async () => {
+    mockUnknownFilterWarehouse({ ROSTER_MEMBERS: 40, AS_OF_TS: '2026-10-29T23:00:00.000Z' }, '2026-11-02T08:00:00.000Z');
+    const withAsOf = await service.getTrainingStats(ACCOUNT, { ...QUERY, level: 'Unknown level' }, 'org-grant');
+    expect(withAsOf.asOf).toBe('2026-11-02T08:00:00.000Z');
+    expect(withAsOf.coursesTaken).toBe(0);
+
+    withOrgCache.mockClear();
+    mockUnknownFilterWarehouse({ ROSTER_MEMBERS: 40, AS_OF_TS: '2026-10-29T23:00:00.000Z' }, null);
+    const withoutAsOf = await service.getTrainingStats(ACCOUNT, { ...QUERY, level: 'Unknown level' }, 'org-grant');
+    expect(withoutAsOf.asOf).toBeNull();
   });
 
   it('does not share the zero groups payload between responses', async () => {
