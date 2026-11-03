@@ -1635,6 +1635,44 @@ export interface CampaignBriefLoadResult {
   approved: boolean;
 }
 
+/**
+ * A saved brief the Plan tab offers, with the provenance the page needs to take ownership of its row.
+ *
+ * Emitted by both the restore offer and its Open to edit action (#4983).
+ */
+export interface CampaignSavedBriefOffer {
+  brief: CampaignBriefOutput;
+  briefId: string;
+  etag: string | null;
+  approved: boolean;
+  /**
+   * The `savedBriefRefreshToken` this offer's lookup was DISPATCHED under.
+   *
+   * The page keeps its own record of the row and has to decide, on every restore, whether that record
+   * or this offer is the newer account. Neither is reliably newer on its own: the offer loses to a
+   * record written by an approval the Plan tab's cache has not seen, and the record loses to a read
+   * that happened after it. The id cannot separate those, since it is the same row in both.
+   *
+   * This token can, because the page bumps it on every write it makes to the row. An offer carrying a
+   * token ABOVE the one stamped on the record was read after that write and is the newer account; one
+   * at or below it is a replay of what the page already held. Emitted rather than inferred, because
+   * only the Plan tab knows which token its cached answer belongs to.
+   */
+  readAt: number;
+}
+
+/**
+ * Asks the Plan tab to open a brief in its editor (#4983): the saved brief from Open to edit, or the
+ * brief on the Implement tab from Edit brief.
+ *
+ * `requestId` makes each request distinct, so asking again for the same brief re-opens it, and a
+ * Plan tab re-created by a program change does not re-apply a request it already handled.
+ */
+export interface CampaignBriefEditRequest {
+  brief: CampaignBriefOutput;
+  requestId: number;
+}
+
 // ---------------------------------------------------------------------------
 // LinkedIn Ads
 // ---------------------------------------------------------------------------

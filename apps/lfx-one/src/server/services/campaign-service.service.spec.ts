@@ -38,6 +38,7 @@ vi.mock('./logger.service', () => ({ logger }));
 import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CALLOUTS,
@@ -2423,6 +2424,39 @@ describe('CampaignServiceClient.createCampaigns', () => {
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
 
     const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], { metaConfig: { budget: 100 } });
+
+    expect(res.error).toBe('Campaign creation was rejected and nothing was created. Please try again.');
+  });
+
+  /**
+   * The brief moved since this page read it (#4983): another tab edited and saved it, which resets it
+   * to `draft` and bumps its version. campaign-service refuses the create with one of two messages,
+   * and retrying from this tab is refused identically, so the user is told to refresh, not to retry.
+   */
+  it.each([
+    ['the 409 stale approval', 409, 'brief is no longer approved at the expected version; refresh and re-approve, then retry'],
+    ['the 400 unapproved brief', 400, 'brief must be approved before creating campaigns'],
+  ])('tells the user to refresh after %s', async (_label, status, message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.indeterminate, 'a definite refusal was marked indeterminate').toBeUndefined();
+    expect(res.error).toBe(CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE);
+    expect(res.error).toContain('Refresh the page');
+    expect(res.error).not.toContain('Please try again');
+  });
+
+  it.each([
+    ['a 409 that is not a stale approval', 409, 'another write to this campaign is already in progress; retry shortly'],
+    ['the stale wording on a 412', 412, 'brief is no longer approved at the expected version; refresh and re-approve, then retry'],
+  ])('keeps the generic refusal text for %s', async (_label, status, message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
 
     expect(res.error).toBe('Campaign creation was rejected and nothing was created. Please try again.');
   });

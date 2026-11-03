@@ -1174,3 +1174,6 @@ export const MEETING_DURATION_OPTIONS = [
   { label: '120 minutes', value: 120 },
   { label: 'Custom...', value: 'custom' },
 ];
+
+/** How often the meeting page re-reads the wall clock so time-gated UI (join window, ended) updates without a reload. */
+export const MEETING_CLOCK_TICK_MS = 5_000;
