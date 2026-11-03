@@ -61,6 +61,6 @@ describe('UiLoadingDotsComponent', () => {
   });
 
   it('paints the dots CanvasText in forced colours', () => {
-    host.querySelectorAll('i').forEach((dot) => expect(dot.className).toContain('forced-colors:bg-[color:CanvasText]'));
+    host.querySelectorAll('[data-testid="ui-loading-dots-dot"]').forEach((dot) => expect(dot.className).toContain('forced-colors:bg-[color:CanvasText]'));
   });
 });

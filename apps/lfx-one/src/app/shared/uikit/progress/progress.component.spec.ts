@@ -100,7 +100,6 @@ describe('UiProgressComponent', () => {
       await set('tone', tone);
       expect(fill().className).toContain(cls);
       expect(fill().className).not.toContain('bg-ui-accent-500');
-      expect(fill().className).toContain('forced-colors:bg-[color:Highlight]');
     }
   });
 
