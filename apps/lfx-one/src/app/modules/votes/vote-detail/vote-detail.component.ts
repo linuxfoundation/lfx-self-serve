@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, isPlatformBrowser, isPlatformServer, NgTemplateOutlet } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, ElementRef, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal, viewChild } from '@angular/core';
+import { VoteDescriptionPipe } from '../pipes/vote-description.pipe';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Params, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -12,12 +14,15 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 import { TagComponent } from '@components/tag/tag.component';
 import {
   VOTE_DETAIL_DEFAULT_TAB,
+  VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS,
+  VOTE_DETAIL_RESULTS_POLL_OPTIONS,
   VOTE_DETAIL_SUMMARY_CARD_ACTIONS,
   VOTE_DETAIL_TABS,
   VOTE_DETAIL_VALID_TABS,
   VOTE_VOTERS_ABSTAINED_CHOICE_KEY,
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
+  VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
   VOTE_OVERVIEW_COMMENT_PREVIEW_LIMIT,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
@@ -29,7 +34,9 @@ import {
   PollCommentResult,
   RankedQuestionView,
   ServerRequestContext,
+  StatCardCta,
   StatCardItem,
+  StatCardProgress,
   Vote,
   VoteCommentAnonymityReason,
   VoteDetailState,
@@ -47,6 +54,7 @@ import {
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
   canVoterFetchVoteResults,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   getRecentCommentResponses,
   isRankedPollType,
@@ -64,12 +72,31 @@ import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 import { exportSlideImage, voteSlideFileName, voteSlideToast } from '@shared/utils/slide-export.util';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { resolveVoteCanManage } from '@shared/utils/write-access.util';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, startWith, switchMap, tap, throwError } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  filter,
+  finalize,
+  map,
+  merge,
+  Observable,
+  of,
+  startWith,
+  Subject,
+  switchMap,
+  tap,
+  takeUntil,
+  takeWhile,
+  throwError,
+} from 'rxjs';
 
 import { NotFoundComponent } from '../../not-found/not-found.component';
 import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vote-abstain-result.component';
@@ -117,6 +144,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     CardComponent,
     ExternalLinksDirective,
     LinkifyHtmlPipe,
+    VoteDescriptionPipe,
     NotFoundComponent,
     SkeletonModule,
     StatCardGridComponent,
@@ -153,6 +181,8 @@ export class VoteDetailComponent {
 
   /** Re-runs the vote load: `retry` shows the skeleton again, `refresh` (after a ballot) reloads in place. */
   private readonly reload$ = new BehaviorSubject<'retry' | 'refresh'>('retry');
+  /** Authoritative metadata read by the results poll joins the same state stream as the initial load. */
+  private readonly polledVote$ = new Subject<Vote>();
 
   // === Writable Signals ===
   protected readonly castDrawerVisible = signal<boolean>(false);
@@ -167,8 +197,15 @@ export class VoteDetailComponent {
   protected readonly myBallotError = signal<boolean>(false);
   /** Records a settled lookup even when the viewer has no response row; null alone cannot identify its vote. */
   private readonly myResponseLoadedFor = signal<string | null>(null);
+  /** Final badges require this vote's successful, non-held results read after closure was confirmed. */
+  private readonly finalResultsFor = signal<string | null>(null);
   /** Results status belongs to its request's vote, just like the retained payload. */
-  private readonly voteResultsStatus = signal<{ voteId: string | null; loading: boolean; error: boolean }>({ voteId: null, loading: false, error: false });
+  private readonly voteResultsStatus = signal<{ voteId: string | null; loading: boolean; error: boolean; stale: boolean }>({
+    voteId: null,
+    loading: false,
+    error: false,
+    stale: false,
+  });
   /** Bumped after a ballot is submitted so my-response and results reload. */
   private readonly refreshTick = signal<number>(0);
   /** The vote a ballot was cast on from this page — it reads as submitted before the refreshed (indexed) response catches up. */
@@ -204,6 +241,7 @@ export class VoteDetailComponent {
   protected readonly voteResults: Signal<VoteResultsResponse | null> = this.initVoteResults();
   protected readonly loadingVoteResults: Signal<boolean> = this.initLoadingVoteResults();
   protected readonly voteResultsError: Signal<boolean> = computed(() => this.voteResultsStatus().voteId === this.vote()?.uid && this.voteResultsStatus().error);
+  protected readonly voteResultsStale: Signal<boolean> = computed(() => this.voteResultsStatus().voteId === this.vote()?.uid && this.voteResultsStatus().stale);
   /** Settled, successful results — participation totals wait for these, since `computeVoteParticipationStats(null)` reads as zero. */
   protected readonly hasLoadedResults: Signal<boolean> = computed(() => !!this.voteResults() && !this.loadingVoteResults() && !this.voteResultsError());
   /** Pseudo-anonymous totals, abstentions and comments are held until the vote ends (#3916) — a missing `num_abstained` must not read as 0. */
@@ -276,6 +314,11 @@ export class VoteDetailComponent {
   protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = computed(() =>
     buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed())
   );
+  /** The lone generic question that renders as bars on the Overview results card; null for ranked and multi-question votes (#4769). */
+  protected readonly overviewQuestion: Signal<VoteResultsQuestion | null> = computed(() => {
+    const questions = this.questionsWithResults();
+    return this.isGenericPoll() && questions.length === 1 ? questions[0] : null;
+  });
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.commentResults().map((result) => result.prompt));
   protected readonly commentPromptCount: Signal<number> = computed(() =>
@@ -453,7 +496,14 @@ export class VoteDetailComponent {
               console.error('Failed to load vote for detail page', { status: err?.status, message: err?.message });
               // A failed in-place refresh keeps the page it already shows: the ballot was recorded, only the reload failed.
               return of(inPlace && lastLoaded ? lastLoaded : errorState);
-            }),
+            })
+          );
+          const polled$ = this.polledVote$.pipe(filter((vote) => vote.uid === id));
+          const states$ = merge(
+            // Matching polled metadata supersedes any older foreground response still in flight.
+            load$.pipe(takeUntil(polled$)),
+            polled$.pipe(map((vote): VoteDetailState => ({ loading: false, notFound: false, error: false, vote })))
+          ).pipe(
             tap((state) => {
               lastLoaded = state.vote ? state : null;
               // Real HTTP 404 during SSR for the not-found branch only; the error state intentionally stays HTTP 200.
@@ -462,7 +512,7 @@ export class VoteDetailComponent {
               }
             })
           );
-          return inPlace ? load$ : load$.pipe(startWith(loadingState));
+          return inPlace ? states$ : states$.pipe(startWith(loadingState));
         })
       ),
       { initialValue: loadingState }
@@ -569,46 +619,108 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Managers always load results; voters only after close with a settled, matching, non-removed response. */
+  /** Managers refresh active results and bounded ended finalization; voters read once after close with verified access. */
   private initVoteResults(): Signal<VoteResultsResponse | null> {
     const key = computed(() => {
       const id = this.voteId();
       const canManage = this.canManage();
       const tick = this.refreshTick();
       if (!id || canManage === null) return null;
-      if (canManage) return { id, tick };
+      if (canManage) {
+        const status = normalizePollStatus(this.vote()?.status);
+        return { id, tick, poll: isPlatformBrowser(this.platformId) && (status === PollStatus.ACTIVE || status === PollStatus.ENDED) };
+      }
       const canFetch = canVoterFetchVoteResults(id, this.vote(), this.myResponse(), this.myResponseLoading(), this.myResponseError());
-      return canFetch ? { id, tick } : null;
+      return canFetch ? { id, tick, poll: false } : null;
     });
 
     // Retain only the current eligible vote's last results while a same-vote refresh is in flight.
     let loadedFor: string | null = null;
     let lastResults: VoteResultsResponse | null = null;
+    const isTransientError = (error: unknown): boolean =>
+      error instanceof HttpErrorResponse && (error.status === 0 || (error.status >= 500 && error.status < 600));
 
     const results = toSignal(
       toObservable(key).pipe(
-        distinctUntilChanged((a, b) => a?.id === b?.id && a?.tick === b?.tick),
+        distinctUntilChanged((a, b) => a?.id === b?.id && a?.tick === b?.tick && a?.poll === b?.poll),
         switchMap((resultsKey) => {
+          this.finalResultsFor.set(null);
           if (!resultsKey) {
             loadedFor = null;
             lastResults = null;
-            this.voteResultsStatus.set({ voteId: null, loading: false, error: false });
+            this.voteResultsStatus.set({ voteId: null, loading: false, error: false, stale: false });
             return of(null);
           }
           if (loadedFor !== resultsKey.id) lastResults = null;
           loadedFor = resultsKey.id;
-          this.voteResultsStatus.set({ voteId: resultsKey.id, loading: !lastResults, error: false });
-          return this.voteService.getVoteResults(resultsKey.id).pipe(
-            catchError(() => {
-              this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: true });
-              return of(null);
+          this.voteResultsStatus.update((status) => ({
+            voteId: resultsKey.id,
+            loading: !lastResults,
+            error: false,
+            stale: status.voteId === resultsKey.id && status.stale,
+          }));
+          let attempted = false;
+          let backgroundRefresh = false;
+          // Keep the same subscription across remote closure, including its retained results and cancellation.
+          let ended = normalizePollStatus(this.vote()?.status) === PollStatus.ENDED;
+          let finalizationAttempts = 0;
+          const load = (poll = false) => {
+            backgroundRefresh = resultsKey.poll && (poll || attempted);
+            attempted = true;
+            this.voteResultsStatus.update((status) => (backgroundRefresh && status.error ? status : { ...status, loading: !lastResults, error: false }));
+            // Until closure is confirmed, scheduled and returning-tab refreshes read authoritative status first.
+            // Finalization only needs results; both requests retain hidden-tab, route and destruction cancellation.
+            const metadata$: Observable<Vote | null> =
+              backgroundRefresh && !ended
+                ? this.voteService.fetchVote(resultsKey.id, { uncached: true }).pipe(
+                    tap((vote) => {
+                      ended = normalizePollStatus(vote.status) === PollStatus.ENDED;
+                      this.polledVote$.next(vote);
+                    })
+                  )
+                : of(null);
+            return metadata$.pipe(
+              switchMap(() => this.voteService.getVoteResults(resultsKey.id)),
+              finalize(() => {
+                this.voteResultsStatus.update((status) => (status.voteId === resultsKey.id ? { ...status, loading: false } : status));
+              })
+            );
+          };
+          const requests = resultsKey.poll
+            ? createVisibilityPoll(this.document, load, VOTE_DETAIL_RESULTS_POLL_OPTIONS)
+            : load().pipe(
+                map((value) => ({ kind: 'ok' as const, value })),
+                catchError((error: unknown) => of({ kind: 'error' as const, error }))
+              );
+          return requests.pipe(
+            // Inclusive termination emits the last outcome and also removes visibility/focus listeners.
+            // Count settled attempts outside the visibility loop so returning to the tab cannot reset the budget.
+            takeWhile((event) => {
+              if (!ended) return true;
+              finalizationAttempts++;
+              if (finalizationAttempts >= VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS) return false;
+              return event.kind === 'ok' ? event.value.results_held === true : isTransientError(event.error);
+            }, true),
+            map((event) => {
+              if (event.kind === 'error') {
+                console.error('Failed to load vote results for detail page', {
+                  status: event.error instanceof HttpErrorResponse ? event.error.status : undefined,
+                });
+                const exhausted = ended && finalizationAttempts >= VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS;
+                const stale = backgroundRefresh && !!lastResults && isTransientError(event.error) && !exhausted;
+                if (!stale) {
+                  lastResults = null;
+                  this.finalResultsFor.set(null);
+                }
+                this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: !stale, stale });
+              } else {
+                lastResults = event.value;
+                this.finalResultsFor.set(ended && event.value.results_held !== true ? resultsKey.id : null);
+                this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: false, stale: false });
+              }
+              return { id: resultsKey.id, payload: lastResults };
             }),
-            tap((results) => (lastResults = results)),
-            finalize(() => {
-              this.voteResultsStatus.update((status) => (status.voteId === resultsKey.id ? { ...status, loading: false } : status));
-            }),
-            startWith(lastResults),
-            map((payload) => ({ id: resultsKey.id, payload }))
+            startWith({ id: resultsKey.id, payload: lastResults })
           );
         })
       ),
@@ -669,7 +781,7 @@ export class VoteDetailComponent {
 
   private initIsVoteClosed(): Signal<boolean> {
     return computed(() => {
-      if (normalizePollStatus(this.vote()?.status) === PollStatus.ENDED) return true;
+      if (this.isEnded()) return this.finalResultsFor() === this.vote()?.uid;
       // Treat 100% participation as finalized even if the vote hasn't formally ended.
       const stats = this.participationStats();
       return stats.eligibleVoters > 0 && stats.participationRate >= 100;
@@ -678,10 +790,10 @@ export class VoteDetailComponent {
 
   private initResultsStatusTag(): Signal<{ value: string; severity: 'success' | 'secondary' }> {
     return computed(() => {
-      // Held results are never final: an ended vote can still be held while upstream catches up (#3916).
-      if (this.resultsHeld()) {
-        if (this.isEnded()) return { value: 'Totals pending', severity: 'secondary' };
-      } else if (this.isVoteClosed()) {
+      // Closure alone cannot finalize retained live counts; wait for released post-closure results.
+      if (this.isEnded() && !this.isVoteClosed()) {
+        return { value: 'Totals pending', severity: 'secondary' };
+      } else if (!this.resultsHeld() && this.isVoteClosed()) {
         return { value: 'Final results', severity: 'secondary' };
       }
       if (this.isActive()) return { value: 'Voting in progress', severity: 'success' };
@@ -732,13 +844,16 @@ export class VoteDetailComponent {
           subLine: loaded ? this.respondedSubLine(stats.participationRate, abstained) : undefined,
           icon: 'fa-light fa-users',
           iconContainerClass: 'bg-blue-100 text-blue-600',
+          subLineClass: VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
+          ...(loaded && { progress: this.respondedProgress(stats, abstained) }),
           disabled,
           ...(this.showVotersTab() && { action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.RESPONSES }),
         },
         {
           value: loaded && !held ? this.commentCount() : dash,
           label: 'Comments',
-          subLine: this.commentPromptCount() > 0 ? 'Optional written responses' : 'Comments not enabled',
+          subLine: this.commentPromptCount() > 0 ? 'Written comments left by voters' : 'Comments not enabled',
+          subLineClass: VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
           icon: 'fa-light fa-comments',
           iconContainerClass: 'bg-violet-100 text-violet-600',
           disabled,
@@ -746,11 +861,12 @@ export class VoteDetailComponent {
         },
         {
           value: loaded ? this.notVotedCount() : dash,
-          ...this.notVotedCardText(),
+          ...this.notVotedCardText(loaded),
           icon: 'fa-light fa-clock',
           iconContainerClass: 'bg-amber-100 text-amber-600',
+          subLineClass: VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
           disabled,
-          ...(this.isActive() && { action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.NOT_VOTED }),
+          ...this.notVotedCardCtas(loaded),
         },
       ];
     });
@@ -790,10 +906,55 @@ export class VoteDetailComponent {
   }
 
   /** Open, ended or draft — a draft hasn't opened for voting, so it reads neither as reminder-ready nor as closed. */
-  private notVotedCardText(): Pick<StatCardItem, 'label' | 'subLine'> {
-    if (this.isActive()) return { label: 'Not voted yet', subLine: 'Eligible for a reminder' };
+  private notVotedCardText(loaded: boolean): Pick<StatCardItem, 'label' | 'subLine'> {
+    if (this.isActive()) {
+      if (loaded && this.participationStats().eligibleVoters === 0) {
+        return { label: 'Not voted yet', subLine: 'No eligible voters' };
+      }
+      return { label: 'Not voted yet', subLine: loaded && this.notVotedCount() === 0 ? 'Everyone has voted' : 'Eligible for a reminder' };
+    }
     if (this.isEnded()) return { label: 'Did not vote', subLine: 'Voting is closed' };
     return { label: 'Not voted yet', subLine: 'Voting not open yet' };
+  }
+
+  /** Visible buttons for the Not voted tile: reminder (active, someone left to remind) and the Voters tab (when reachable). */
+  private notVotedCardCtas(loaded: boolean): Pick<StatCardItem, 'ctas'> {
+    const viewVoters: StatCardCta = { label: 'View voters', action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.RESPONSES, text: true };
+    const showViewVoters = this.showVotersTab();
+    if (this.isActive() && (!loaded || this.notVotedCount() > 0)) {
+      const sendReminder: StatCardCta = {
+        label: 'Send reminder',
+        action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.NOT_VOTED,
+        icon: 'fa-light fa-envelope',
+      };
+      return { ctas: showViewVoters ? [sendReminder, viewVoters] : [sendReminder] };
+    }
+    if (showViewVoters) {
+      return { ctas: [viewVoters] };
+    }
+    return {};
+  }
+
+  /** Released results split substantive ballots from abstentions; held results show only overall participation. */
+  private respondedProgress(stats: VoteParticipationStats, abstained: number): StatCardProgress {
+    const segments = computeParticipationSegments(stats, abstained);
+    const eligibleVoters = Math.max(0, stats.eligibleVoters);
+    const responded = Math.min(eligibleVoters, Math.max(0, stats.totalResponses));
+    const shownAbstained = Math.min(responded, Math.max(0, abstained));
+    const notVoted = eligibleVoters - responded;
+    if (this.resultsHeld()) {
+      return {
+        segments: [{ percentage: segments.voted, className: 'bg-blue-600' }],
+        ariaLabel: `${responded} of ${eligibleVoters} eligible voters responded; abstention totals are withheld`,
+      };
+    }
+    return {
+      segments: [
+        { percentage: segments.voted, className: 'bg-blue-600' },
+        { percentage: segments.abstained, className: 'bg-gray-800' },
+      ],
+      ariaLabel: `${responded - shownAbstained} voted, ${shownAbstained} abstained, ${notVoted} not voted yet of ${eligibleVoters} eligible voters`,
+    };
   }
 
   private respondedSubLine(participationRate: number, abstained: number): string {

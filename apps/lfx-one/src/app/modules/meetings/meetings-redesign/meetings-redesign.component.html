@@ -27,7 +27,14 @@
           data-testid="meetings-redesign-header-fade"></span>
         @if (personaLoaded()) {
           <div class="flex min-w-0 flex-col gap-[4px]">
-            <h1 class="font-display text-[24px] font-light leading-tight text-gray-900" data-testid="meetings-redesign-title">Meetings</h1>
+            <!-- Focusable so focus has somewhere to go when the Pending RSVPs button hides. -->
+            <h1
+              #heading
+              tabindex="-1"
+              class="font-display text-[24px] font-light leading-tight text-gray-900 outline-none"
+              data-testid="meetings-redesign-title">
+              Meetings
+            </h1>
             <p class="text-[13px] text-gray-600" data-testid="meetings-redesign-description">
               Meetings you're invited to or organizing, across all your projects.
             </p>
@@ -38,6 +45,8 @@
             <lfx-ui-skeleton width="min(28rem, 100%)" height="14px" />
           </div>
         }
+        <!-- Renders nothing while no date is pending, so it adds no wrapped row on narrow screens. -->
+        <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="heading()?.nativeElement ?? null" />
       </div>
 
       <!-- Right column content, folded into the centre at 1024px and below -->
@@ -66,15 +75,27 @@
           (valueChange)="onTabChange($event)"
           data-testid="meetings-redesign-tabs" />
         @if (!tabEmpty()) {
-          <lfx-ui-search-input
-            class="w-full min-[641px]:w-auto"
-            placeholder="Search meetings"
-            ariaLabel="Search meetings"
-            [value]="store.search()"
-            (valueChange)="store.setSearch($event)"
-            data-testid="meetings-redesign-search" />
+          <div class="flex w-full flex-wrap items-center gap-[8px] min-[641px]:w-auto">
+            <lfx-ui-search-input
+              class="w-full min-[641px]:w-auto"
+              placeholder="Search meetings"
+              ariaLabel="Search meetings"
+              [value]="store.search()"
+              (valueChange)="store.setSearch($event)"
+              data-testid="meetings-redesign-search" />
+            <lfx-meetings-filters [tab]="store.tab()" [rows]="store.tabRows()" [filters]="store.filters()" (filtersChange)="store.setFilters($event)" />
+          </div>
         }
       </div>
+
+      @if (!tabEmpty() && store.filterChips().length) {
+        <!-- -6px pulls the chips toward the tabs bar, per the design -->
+        <lfx-ui-chip-group class="-mt-[6px]" ariaLabel="Applied filters" [fallbackFocus]="filtersControl() ?? null" data-testid="meetings-home-filters-chips">
+          @for (chip of store.filterChips(); track chip.key) {
+            <lfx-ui-chip [label]="chip.label" (dismissed)="store.clearFilter(chip.key)" data-testid="meetings-home-filters-chip" />
+          }
+        </lfx-ui-chip-group>
+      }
 
       <!-- List areas: one tabpanel per tab, so every aria-controls resolves; only the active one renders the list -->
       @for (tab of tabs(); track tab.value) {
@@ -105,10 +126,41 @@
 </div>
 
 <ng-template #railTemplate let-scope>
-  @for (block of railBlocks; track block.key) {
-    <section class="flex min-w-0 flex-col gap-[8px]" [attr.data-testid]="'meetings-redesign-' + scope + '-' + block.key">
-      <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">{{ block.label }}</h2>
+  <section class="flex min-w-0 flex-col gap-[8px]" [attr.data-testid]="'meetings-redesign-' + scope + '-next-meeting'">
+    <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">Next meeting</h2>
+    <!-- The placeholder also stands in after a failed feed; the list shows that error with a retry. -->
+    @if (store.upcomingLoading() || store.upcomingFailed()) {
       <div class="h-[112px] rounded-[12px] border border-gray-200 bg-gray-50"></div>
+    } @else {
+      <lfx-next-meeting-card
+        [row]="store.nextRow()"
+        [now]="store.now()"
+        [rsvps]="store.nextRowRsvps()"
+        [joinable]="store.nextRowJoinable()"
+        [joinUrl]="store.nextRowJoinUrl()">
+        <!-- Keyed by row, so a new Next meeting gets a fresh menu and closes the old one's dialog. -->
+        @for (nextRow of nextRows(); track nextRow.key) {
+          <lfx-meeting-home-actions next-meeting-card-menu [row]="nextRow" view="upcoming" />
+        }
+      </lfx-next-meeting-card>
+    }
+  </section>
+  <!-- A failed feed hides the card rather than claiming the viewer has no past meetings. -->
+  @if (!store.lastMeetingFailed()) {
+    <section class="flex min-w-0 flex-col gap-[8px]" [attr.data-testid]="'meetings-redesign-' + scope + '-last-meeting'">
+      <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">Last meeting</h2>
+      <lfx-last-meeting-card
+        [row]="store.lastMeeting()"
+        [loading]="store.lastMeetingLoading()"
+        [summary]="store.lastMeetingSummary()"
+        [hasTranscript]="store.lastMeetingHasTranscript()"
+        [recordingUrl]="store.lastMeetingRecordingUrl()"
+        (summaryChange)="store.setLastMeetingSummary($event)">
+        <!-- Keyed by row, so a new Last meeting gets a fresh menu. -->
+        @for (lastRow of lastRows(); track lastRow.key) {
+          <lfx-meeting-home-actions last-meeting-card-menu [row]="lastRow" view="past" />
+        }
+      </lfx-last-meeting-card>
     </section>
   }
 </ng-template>
@@ -184,7 +236,7 @@
     <!-- 22px between day groups (exact px) -->
     <div class="relative flex flex-col gap-[22px]" data-testid="meetings-home-list">
       @for (group of store.groups(); track group.label) {
-        <lfx-meetings-day-group [group]="group" data-testid="meetings-home-day-group" />
+        <lfx-meetings-day-group [group]="group" [view]="store.tab()" data-testid="meetings-home-day-group" />
       }
       @if (store.hasMore()) {
         <!-- Re-created per page so a trigger still in view after a page loads fires again. -->

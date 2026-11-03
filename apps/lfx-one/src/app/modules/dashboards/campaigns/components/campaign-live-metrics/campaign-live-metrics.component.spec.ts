@@ -340,4 +340,35 @@ describe('CampaignLiveMetricsComponent (#3299)', () => {
     expect(q('optimization-campaign-live-counters-c-1')).toBeNull();
     expect(button()!.textContent?.trim()).toBe('Live counters');
   });
+
+  /** lfx-v2-campaign-service#175: the Conversions counter follows conversions_status. */
+  it('shows a reported LinkedIn total, and a reason instead of 0 when none was reported', () => {
+    fixture.componentRef.setInput('platform', 'linkedin-ads');
+    fixture.componentRef.setInput('briefRow', {
+      campaign_id: 'c-1',
+      platform: 'linkedin-ads',
+      status: 'ok',
+      metrics: { ...METRICS, conversions_status: 'reported', conversions: 7 },
+    } as BriefMetricsRow);
+    fixture.detectChanges();
+    expect(text('optimization-campaign-live-conversions-c-1')).toBe('7');
+
+    fixture.componentRef.setInput('briefRow', {
+      campaign_id: 'c-1',
+      platform: 'linkedin-ads',
+      status: 'ok',
+      metrics: { ...METRICS, conversions_status: 'incomplete' },
+    } as BriefMetricsRow);
+    fixture.detectChanges();
+    expect(text('optimization-campaign-live-conversions-c-1')).toBe('Incomplete data for this window');
+  });
+
+  it('shows no Conversions counter when campaign-service sends no status', () => {
+    fixture.componentRef.setInput('platform', 'linkedin-ads');
+    fixture.componentRef.setInput('briefRow', { campaign_id: 'c-1', platform: 'linkedin-ads', status: 'ok', metrics: { ...METRICS } } as BriefMetricsRow);
+    fixture.detectChanges();
+
+    expect(q('optimization-campaign-live-counters-c-1')).not.toBeNull();
+    expect(q('optimization-campaign-live-conversions-c-1')).toBeNull();
+  });
 });

@@ -839,13 +839,13 @@ describe('VoteService', () => {
 
   describe('vote summary (#3662)', () => {
     it('sendVoteSummary POSTs an empty body to the encoded summary URL and passes through the response', () => {
-      http.post.mockReturnValue(of({ recipient_count: 3, failed_count: 0 }));
+      http.post.mockReturnValue(of({ recipient_count: 3, failed_count: 0, skipped_count: 1, uncertain_count: 2 }));
       const next = vi.fn();
 
       service.sendVoteSummary('vote/1').subscribe(next);
 
       expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/summary', {});
-      expect(next).toHaveBeenCalledWith({ recipient_count: 3, failed_count: 0 });
+      expect(next).toHaveBeenCalledWith({ recipient_count: 3, failed_count: 0, skipped_count: 1, uncertain_count: 2 });
     });
   });
 

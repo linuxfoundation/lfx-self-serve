@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { MeetingVisibilityKind } from '../enums';
-import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp } from './meeting.interface';
+import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp, PastMeetingSummary, RsvpResponse, RsvpScope } from './meeting.interface';
+import type { UiBadgeTone } from './uikit.interface';
 
 /** One row of the meetings home list: a single date of a meeting. */
 export interface MeetingHomeRow {
@@ -65,4 +66,87 @@ export interface MeetingVisibilityInfo {
   /** Tooltip description; null when the title says it all. */
   description: string | null;
   icon: string;
+}
+
+/** Where a meetings home row opens. */
+export interface MeetingHomeRowLink {
+  /** App-relative URL with its query string. */
+  url: string;
+  /** Open in a new tab, as the legacy card does for upcoming meetings. */
+  newTab: boolean;
+}
+
+/** Project eyebrow of a meetings home row. */
+export interface MeetingHomeRowProject {
+  name: string;
+  /** Shown in the logo tile when there is no logo. */
+  initial: string;
+  /** Logo URL; empty when the project has none. */
+  logo: string;
+  /** Project or foundation overview; null without a project slug. */
+  url: string | null;
+  /** Accessible name, e.g. "Jump to project: Kubernetes". */
+  label: string;
+}
+
+/** Meeting type label and icon on a meetings home row. */
+export interface MeetingHomeRowType {
+  label: string;
+  icon: string;
+}
+
+/** One date in the Pending RSVPs popover of the meetings home page, with what its row shows. */
+export interface MeetingPendingRsvpItem {
+  row: MeetingHomeRow;
+  project: MeetingHomeRowProject | null;
+  link: MeetingHomeRowLink;
+  visibilityBadges: MeetingVisibilityInfo[];
+  /** Day and start time in the viewer's zone, e.g. "Thu, Oct 1 · 6:30 AM PDT". */
+  when: string;
+  type: MeetingHomeRowType | null;
+  /** Recurring tooltip; null for a one-time meeting. */
+  recurrenceTooltip: string | null;
+}
+
+/** One RSVP answer on a meetings home row: its button label, its status label and look. */
+export interface MeetingRsvpChoice {
+  response: RsvpResponse;
+  /** Button label before answering, e.g. "Yes". */
+  action: string;
+  /** Status label once answered, e.g. "Going". */
+  label: string;
+  icon: string;
+  tone: UiBadgeTone;
+}
+
+/** What the recurring RSVP dialog opens with. */
+export interface MeetingRsvpScopeDialogData {
+  row: MeetingHomeRow;
+  response: RsvpResponse;
+}
+
+/** One choice of the recurring RSVP dialog. */
+export interface MeetingRsvpScopeOption {
+  value: RsvpScope;
+  label: string;
+  description: string;
+}
+
+/** What the meetings home AI summary dialog opens with. */
+export interface MeetingSummaryDialogData {
+  row: MeetingHomeRow;
+  summary: PastMeetingSummary;
+  /** Gets the summary after each saved edit or approval. */
+  onChange?: (summary: PastMeetingSummary) => void;
+}
+
+/** What the meetings home transcript dialog opens with. */
+export interface MeetingTranscriptDialogData {
+  row: MeetingHomeRow;
+}
+
+/** What the meetings home recording dialog opens with. */
+export interface MeetingRecordingDialogData {
+  row: MeetingHomeRow;
+  shareUrl: string;
 }

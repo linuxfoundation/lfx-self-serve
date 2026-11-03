@@ -70,6 +70,7 @@ import {
   mentorshipApplicantDisplayStatus,
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
+  mentorshipContactMenteeUrl,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
@@ -716,14 +717,27 @@ export class CurrentMenteesTabComponent {
           statusLabel: MENTORSHIP_APPLICANT_STATUS_LABELS[mentorshipApplicantDisplayStatus(application)],
         })),
       ...mentorshipNoteDisplay({}, person, MENTORSHIP_ADD_NOTE_LABEL),
-      actions: mentorshipRowActions(
-        MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[person.status],
-        MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
-        MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS
-      ),
+      actions: this.rowActions(person),
       hasTasks: mentorshipApplicantHasTasks(person),
       tasksStatus: tasksState?.status ?? null,
       taskRows: mentorshipApplicantTaskRows(tasksState?.tasks ?? []),
     };
+  }
+
+  /**
+   * The row's actions for its status. Contact Mentee is a `mailto:` link rather than a handled action, so it is
+   * dropped when the mentee has no address that is safe to put in one.
+   */
+  private rowActions(person: MentorshipProgramApplicant): MentorshipRowAction[] {
+    const contactValue: MentorshipCurrentMenteeAction = 'contact-mentee';
+    const contactUrl = mentorshipContactMenteeUrl(person.email);
+    return mentorshipRowActions(
+      MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[person.status],
+      MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
+      MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS
+    ).flatMap((action) => {
+      if (action.value !== contactValue) return [action];
+      return contactUrl ? [{ ...action, url: contactUrl }] : [];
+    });
   }
 }

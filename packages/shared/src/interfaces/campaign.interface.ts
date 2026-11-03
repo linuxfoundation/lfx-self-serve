@@ -1499,6 +1499,44 @@ export interface CampaignBriefLoadResult {
   approved: boolean;
 }
 
+/**
+ * A saved brief the Plan tab offers, with the provenance the page needs to take ownership of its row.
+ *
+ * Emitted by both the restore offer and its Open to edit action (#4983).
+ */
+export interface CampaignSavedBriefOffer {
+  brief: CampaignBriefOutput;
+  briefId: string;
+  etag: string | null;
+  approved: boolean;
+  /**
+   * The `savedBriefRefreshToken` this offer's lookup was DISPATCHED under.
+   *
+   * The page keeps its own record of the row and has to decide, on every restore, whether that record
+   * or this offer is the newer account. Neither is reliably newer on its own: the offer loses to a
+   * record written by an approval the Plan tab's cache has not seen, and the record loses to a read
+   * that happened after it. The id cannot separate those, since it is the same row in both.
+   *
+   * This token can, because the page bumps it on every write it makes to the row. An offer carrying a
+   * token ABOVE the one stamped on the record was read after that write and is the newer account; one
+   * at or below it is a replay of what the page already held. Emitted rather than inferred, because
+   * only the Plan tab knows which token its cached answer belongs to.
+   */
+  readAt: number;
+}
+
+/**
+ * Asks the Plan tab to open a brief in its editor (#4983): the saved brief from Open to edit, or the
+ * brief on the Implement tab from Edit brief.
+ *
+ * `requestId` makes each request distinct, so asking again for the same brief re-opens it, and a
+ * Plan tab re-created by a program change does not re-apply a request it already handled.
+ */
+export interface CampaignBriefEditRequest {
+  brief: CampaignBriefOutput;
+  requestId: number;
+}
+
 // ---------------------------------------------------------------------------
 // LinkedIn Ads
 // ---------------------------------------------------------------------------
@@ -2360,6 +2398,13 @@ export interface HubSpotCampaignCreateRequest {
    */
   buttonUrl?: string;
   /**
+   * The links the event page published (CFP, agenda, venue, sponsorship), sent by the client so the BFF
+   * can judge the body's secondary links the way the preview did (#3306). BFF-ONLY: never forwarded to
+   * campaign-service. Not trusted either: the BFF keeps only those on `buttonUrl`'s host or an LF-owned
+   * domain (`emailLinkDestinations`), so an off-host url sent here is refused like any other.
+   */
+  secondaryLinkUrls?: string[];
+  /**
    * Hero banner image URL, rendered as its own image module ABOVE the body during the same full
    * content rebuild (`internal/dispatch/hubspot.go`'s `HeroImageURL`). Upstream re-hosts it to
    * HubSpot's file manager via `UploadImage` before attaching it; a failed upload degrades to no
@@ -2502,6 +2547,19 @@ export interface GoogleCreativeHeldImageView {
 export interface GoogleCreativeImageOption {
   label: string;
   value: string;
+}
+
+/**
+ * What the browser learned about one pasted Google image URL, by loading it as an image: still
+ * loading, its natural size, or that it could not be loaded here. Advisory only — campaign-service
+ * downloads and checks every pasted URL itself before anything is created.
+ */
+export interface GoogleTypedImageProbe {
+  state: 'checking' | 'loaded' | 'failed';
+  width?: number;
+  height?: number;
+  /** A settled answer being probed again. It stays the answer shown until the new probe settles. */
+  rechecking?: boolean;
 }
 
 /**
@@ -4845,6 +4903,27 @@ export interface HubSpotUtmCreateResult {
 // ---------------------------------------------------------------------------
 
 /**
+ * One platform's line in the Implement tab's "Already created for this event" panel (#4983): how
+ * many live campaigns the event already has there, and the sentence that says so.
+ */
+export interface CampaignExistingPlatformNotice {
+  platform: string;
+  label: string;
+  count: number;
+  message: string;
+}
+
+/** One live campaign in that panel, with its display values resolved for the template. */
+export interface CampaignExistingRow {
+  id: string;
+  platformLabel: string;
+  name: string;
+  status: string;
+  /** The slot as text: the number, or '—' when the index does not record it. */
+  slot: string;
+}
+
+/**
  * A campaign as the platform's Query Service indexes it.
  *
  * Mirrors campaign-service's `CampaignDoc` (`internal/infrastructure/indexer/contract.go`)
@@ -4899,6 +4978,14 @@ export interface CampaignIndexDoc {
    * refuses with 409 `reason: "campaign_adopted"`). The BFF keeps only a literal `true`.
    */
   adopted?: boolean;
+  /**
+   * Which campaign on its `(brief, platform, variant)` slot this is: 1 for the first, 2+ for a
+   * deliberate second (`new_version`). campaign-service's indexer always emits it
+   * (`CampaignDoc.SlotVersion`, `internal/infrastructure/indexer/contract.go`), but documents indexed
+   * before the field existed lack it until the campaign's next write, so absence means "not
+   * recorded", not slot 1. Unrelated to `version`, the optimistic-concurrency counter (#4983).
+   */
+  slot_version?: number;
 }
 
 /**
@@ -6214,6 +6301,9 @@ export interface CampaignServiceEmailMetrics {
   unsubscribes: number;
 }
 
+/** campaign-service's `conversions_status` on a metrics read (lfx-v2-campaign-service#452, issue #175). */
+export type CampaignConversionsStatus = 'reported' | 'unavailable' | 'incomplete' | 'no_conversions';
+
 /** One campaign's measurement, as campaign-service reports it. */
 export interface CampaignServiceCampaignMetrics {
   campaign_id: string;
@@ -6247,8 +6337,19 @@ export interface CampaignServiceCampaignMetrics {
    * populated for accounts wired for Universal Event Tracking, and a partial column summed as
    * though it were complete would understate the campaign. So a consumer must not render an
    * absent value as zero or fold it into a conversion total.
+   *
+   * Present ONLY when `conversions_status` is `reported` (lfx-v2-campaign-service#452). Read the
+   * status for WHY it is absent, never the absence itself.
    */
   conversions?: number;
+  /**
+   * Why `conversions` is or is not there (required upstream since lfx-v2-campaign-service#452):
+   * `reported` (a complete measurement, the only status with a total), `unavailable` (the channel or
+   * this account reports none), `incomplete` (part of the window came back without it), or
+   * `no_conversions` (a zero-click window with no conversion reported, and no total). OPTIONAL here
+   * because an older campaign-service sends none, and that case keeps the previous behaviour.
+   */
+  conversions_status?: CampaignConversionsStatus;
   email?: CampaignServiceEmailMetrics;
 }
 

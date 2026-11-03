@@ -45,7 +45,9 @@ import {
   buildVoteVoterChoiceSummaries,
   buildVoteVoterRowView,
   canVoterFetchVoteResults,
+  buildVoteSummarySendNotice,
   compareVotesByRecency,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   computeVoteRowParticipation,
   countVoteParticipationByStatus,
@@ -214,6 +216,24 @@ for (const [name, build] of voteRequestBuilders) {
       expect('allow_abstain' in request).toBe(true);
     });
 
+    it.each([
+      ['plain text with indentation and blank lines', '\n  First paragraph\n\n\n    - indented  bullet\n1.  numbered\n'],
+      ['rich HTML', '<p>One</p>\n<ul><li>A<ul><li>B</li></ul></li></ul>'],
+    ])('preserves the description exactly for %s', (_label, description) => {
+      expect(build(formValue({ description }), 'project-uid').description).toBe(description);
+    });
+
+    it.each([[''], ['   \n  '], [undefined], [null]])('emits an empty description for %j', (description) => {
+      expect(build(formValue({ description: description as string }), 'project-uid').description).toBe('');
+    });
+
+    it('still trims the title but not the description', () => {
+      const request = build(formValue({ title: '  Title  ', description: '  keep  ' }), 'project-uid');
+
+      expect(request.name).toBe('Title');
+      expect(request.description).toBe('  keep  ');
+    });
+
     // v2 requires end_time_timezone on every vote mutation — the builders must never omit it.
     it('always emits end_time_timezone (required by the v2 vote mutation contract)', () => {
       const request = build(formValue({ timezone: 'America/New_York' }), 'project-uid');
@@ -305,6 +325,15 @@ describe('mapVoteToFormValue', () => {
 
   it('defaults allow_abstain to false when the vote predates the field', () => {
     expect(mapVoteToFormValue(vote()).allow_abstain).toBe(false);
+  });
+
+  it.each([
+    ['form', mapVoteToFormValue],
+    ['clone form', mapVoteToCloneFormValue],
+  ])('keeps the stored description untouched in the %s value', (_label, map) => {
+    const description = '  Indented\n\n\n<p>Rich</p>  ';
+
+    expect(map(vote({ description })).description).toBe(description);
   });
 
   it('hydrates close time and zone from end_time in the stored timezone', () => {
@@ -1942,5 +1971,104 @@ describe('buildVoteAnswerSummary', () => {
 
   it('returns no lines for an abstention', () => {
     expect(buildVoteAnswerSummary(questions, { abstain: true })).toEqual([]);
+  });
+});
+
+describe('buildVoteSummarySendNotice', () => {
+  const counts = { recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0 };
+
+  it('reports a plain success only when every invited voter was sent', () => {
+    expect(buildVoteSummarySendNotice({ ...counts, recipient_count: 3 })).toEqual({
+      severity: 'success',
+      summary: 'Summary sent',
+      detail: 'Summary sent to 3 voter(s).',
+    });
+  });
+
+  it('warns about a partial send and names the skipped voters', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, recipient_count: 2, skipped_count: 1 });
+    expect(notice.severity).toBe('warn');
+    expect(notice.summary).toBe('Summary partially sent');
+    expect(notice.detail).toContain('Sent to 2 voter(s)');
+    expect(notice.detail).toContain('1 skipped (no email address)');
+    expect(notice.life).toBe(8000);
+  });
+
+  it('warns about a partial send and names the failed voters', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, recipient_count: 2, failed_count: 1 });
+    expect(notice.severity).toBe('warn');
+    expect(notice.summary).toBe('Summary partially sent');
+    expect(notice.detail).toContain('1 failed');
+    expect(notice.detail).not.toContain('skipped');
+  });
+
+  it('lists sent, skipped and failed together', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, recipient_count: 4, skipped_count: 2, failed_count: 1 });
+    expect(notice.detail).toContain('Sent to 4 voter(s)');
+    expect(notice.detail).toContain('2 skipped');
+    expect(notice.detail).toContain('1 failed');
+  });
+
+  it('warns that retrying may duplicate when any outcome is uncertain, alone or mixed with others', () => {
+    const alone = buildVoteSummarySendNotice({ ...counts, uncertain_count: 3 });
+    expect(alone.severity).toBe('warn');
+    expect(alone.summary).toBe('Summary delivery unconfirmed');
+    expect(alone.detail).toContain('3 unconfirmed');
+    expect(alone.detail).toContain('retrying may send duplicate summaries');
+    expect(alone.life).toBe(8000);
+
+    const mixed = buildVoteSummarySendNotice({ recipient_count: 2, failed_count: 1, skipped_count: 1, uncertain_count: 2 });
+    expect(mixed.summary).toBe('Summary delivery unconfirmed');
+    expect(mixed.detail).toContain('Sent to 2 voter(s)');
+    expect(mixed.detail).toContain('1 skipped');
+    expect(mixed.detail).toContain('1 failed');
+    expect(mixed.detail).toContain('2 unconfirmed');
+    expect(mixed.detail).toContain('retrying may send duplicate summaries');
+  });
+
+  it('reports that nothing was sent when nobody has an email address', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, skipped_count: 4 });
+    expect(notice.severity).toBe('info');
+    expect(notice.summary).toBe('No summaries sent');
+    expect(notice.detail).toContain('4 invited voter(s) have no email address');
+  });
+
+  it('reports that nothing was sent when there are no invited voters', () => {
+    const notice = buildVoteSummarySendNotice(counts);
+    expect(notice.severity).toBe('info');
+    expect(notice.summary).toBe('No summaries sent');
+    expect(notice.detail).toContain('no invited voters have an email address');
+  });
+});
+
+describe('computeParticipationSegments', () => {
+  const stats = (eligibleVoters: number, totalResponses: number) => ({
+    eligibleVoters,
+    totalResponses,
+    participationRate: 0,
+    abstainedVoters: 0,
+    abstainedRate: 0,
+  });
+
+  it('puts every response in the voted segment when nobody abstained', () => {
+    expect(computeParticipationSegments(stats(10, 4), 0)).toEqual({ voted: 40, abstained: 0 });
+  });
+
+  it('separates abstentions from substantive ballots', () => {
+    expect(computeParticipationSegments(stats(10, 5), 2)).toEqual({ voted: 30, abstained: 20 });
+  });
+
+  it('returns zeros when there are no eligible voters', () => {
+    expect(computeParticipationSegments(stats(0, 0), 0)).toEqual({ voted: 0, abstained: 0 });
+  });
+
+  it('caps combined participation when overcounted responses include abstentions', () => {
+    expect(computeParticipationSegments(stats(5, 9), 2)).toEqual({ voted: 60, abstained: 40 });
+  });
+
+  it('clamps inconsistent counts into 0-100', () => {
+    expect(computeParticipationSegments(stats(5, 9), 0)).toEqual({ voted: 100, abstained: 0 });
+    expect(computeParticipationSegments(stats(5, 2), 7)).toEqual({ voted: 0, abstained: 40 });
+    expect(computeParticipationSegments(stats(5, 2), -3)).toEqual({ voted: 40, abstained: 0 });
   });
 });

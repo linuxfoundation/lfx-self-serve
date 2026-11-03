@@ -52,6 +52,11 @@
           <p-skeleton width="100%" height="12rem" />
         </div>
       } @else {
+        @if (showsResults() && voteResultsStale()) {
+          <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status" data-testid="vote-detail-results-stale">
+            Results may be out of date. Reconnecting automatically.
+          </p>
+        }
         @if (audience() === 'creator') {
           <lfx-stat-card-grid
             [cards]="summaryCards()"
@@ -74,11 +79,11 @@
                   <lfx-card data-testid="vote-detail-description">
                     <div class="flex flex-col gap-2">
                       <h2 class="text-base font-semibold text-gray-900">About this vote</h2>
-                      <!-- whitespace-pre-line keeps the line breaks of plain-text descriptions, as the cast drawer does (GH-2326). -->
+                      <!-- voteDescription preserves plain-text spacing; normal HTML whitespace and prose restore rich-text paragraphs and lists (GH-2326, #4727). -->
                       <div
-                        class="text-sm text-gray-700 leading-relaxed whitespace-pre-line break-words [&_a]:text-blue-600 [&_a]:underline"
+                        class="prose prose-sm max-w-none text-sm text-gray-700 leading-relaxed whitespace-normal break-words [&_a]:text-blue-600 [&_a]:underline"
                         lfxExternalLinks
-                        [innerHTML]="voteData.description | linkifyHtml"></div>
+                        [innerHTML]="voteData.description | voteDescription | linkifyHtml"></div>
                     </div>
                   </lfx-card>
                 }
@@ -272,7 +277,7 @@
       }
     </ng-template>
 
-    <!-- Compact Overview results: one leader/winner line per question, with the full breakdown on the Results tab (#4450). -->
+    <!-- Compact Overview results: bars for a single generic question, else one leader/winner line per question; the full breakdown stays on the Results tab (#4450, #4769). -->
     <ng-template #overviewResultsSummary>
       @if (loadingVoteResults()) {
         <div class="flex flex-col gap-3" data-testid="vote-detail-results-loading">
@@ -290,6 +295,11 @@
           <p class="text-sm text-gray-500" data-testid="vote-detail-results-empty">
             {{ isVoteClosed() ? 'No votes were submitted.' : 'No votes recorded yet.' }}
           </p>
+        } @else if (overviewQuestion(); as q) {
+          <div class="flex flex-col gap-3" data-testid="vote-detail-overview-bars">
+            <h3 class="text-sm font-semibold text-gray-900">{{ q.question }}</h3>
+            <lfx-vote-option-results [options]="q.options" variant="compact" testIdPrefix="vote-detail-overview-option-" />
+          </div>
         } @else {
           @for (line of overviewSummary(); track line.questionId; let idx = $index) {
             <div class="flex flex-col gap-1">
@@ -302,6 +312,9 @@
               <p class="text-sm text-gray-700 break-words" [attr.data-testid]="'vote-detail-overview-summary-' + line.questionId">{{ line.text }}</p>
             </div>
           }
+        }
+        @if (showAbstain()) {
+          <lfx-vote-abstain-result [stats]="participationStats()" variant="live" testId="vote-detail-overview-abstain" />
         }
       }
     </ng-template>
@@ -319,7 +332,9 @@
         <div class="flex flex-col gap-1">
           <p class="text-sm font-semibold text-gray-900">{{ isEnded() ? 'Totals are being finalized' : 'Totals appear when voting closes' }}</p>
           @if (isEnded()) {
-            <p class="text-sm text-gray-700">Voting has closed. Totals, abstentions and comments will appear here once they are finalized.</p>
+            <p class="text-sm text-gray-700">
+              Voting has closed. Totals, abstentions and comments will appear here once they are finalized. If totals do not appear, reload this page.
+            </p>
           } @else {
             <p class="text-sm text-gray-700">Totals, abstentions and comments stay hidden until voting closes.</p>
           }

@@ -65,7 +65,7 @@ beforeEach(() => {
 describe('OrgIdentityController.uploadLogo', () => {
   it('rejects an invalid uid without calling the proxy', async () => {
     const next = vi.fn();
-    const req = { params: { uid: 'not-a-valid-uid' }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+    const req = { params: { uid: 'not-a-valid-uid' }, headers: { 'content-type': 'image/svg+xml' }, body: Buffer.from('abc') } as any;
 
     await new OrgIdentityController().uploadLogo(req, buildRes(), next);
 
@@ -86,9 +86,20 @@ describe('OrgIdentityController.uploadLogo', () => {
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
 
+  it.each(['image/png', 'image/jpeg'])('rejects %s now that logos are SVG-only, without calling the proxy', async (contentType) => {
+    const next = vi.fn();
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': contentType }, body: Buffer.from('abc') } as any;
+
+    await new OrgIdentityController().uploadLogo(req, buildRes(), next);
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
   it('rejects an empty body without calling the proxy', async () => {
     const next = vi.fn();
-    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.alloc(0) } as any;
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/svg+xml' }, body: Buffer.alloc(0) } as any;
 
     await new OrgIdentityController().uploadLogo(req, buildRes(), next);
 
@@ -100,14 +111,14 @@ describe('OrgIdentityController.uploadLogo', () => {
   it('fetches a fresh ETag before uploading and forwards it as If-Match, returning the canonical record', async () => {
     proxyRequest.mockResolvedValue(rawOrg);
     const res = buildRes();
-    const body = Buffer.from('binary-image-bytes');
-    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png; charset=binary' }, body } as any;
+    const body = Buffer.from('svg-bytes');
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/svg+xml; charset=binary' }, body } as any;
 
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
     expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/b2b_orgs/${VALID_UID}`, 'GET');
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/b2b_orgs/${VALID_UID}/logo`, 'POST', undefined, body, {
-      'Content-Type': 'image/png',
+      'Content-Type': 'image/svg+xml',
       'If-Match': 'W/"etag-1"',
     });
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
@@ -117,7 +128,7 @@ describe('OrgIdentityController.uploadLogo', () => {
   it('fails closed with a 502 when the pre-upload fetch carries no ETag, rather than forwarding "undefined"', async () => {
     proxyRequestWithResponse.mockResolvedValue({ data: rawOrg, status: 200, statusText: 'OK', headers: {} });
     const res = buildRes();
-    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/svg+xml' }, body: Buffer.from('abc') } as any;
 
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
@@ -129,7 +140,7 @@ describe('OrgIdentityController.uploadLogo', () => {
   it('maps a 403 upstream rejection to a 403 permission-denied envelope', async () => {
     proxyRequest.mockRejectedValue(new MicroserviceError('forbidden', 403, 'FORBIDDEN', { service: 'member_service' }));
     const res = buildRes();
-    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/svg+xml' }, body: Buffer.from('abc') } as any;
 
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
@@ -140,7 +151,7 @@ describe('OrgIdentityController.uploadLogo', () => {
   it('maps a 404 upstream rejection to a 404', async () => {
     proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'member_service' }));
     const res = buildRes();
-    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/svg+xml' }, body: Buffer.from('abc') } as any;
 
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
@@ -151,7 +162,7 @@ describe('OrgIdentityController.uploadLogo', () => {
   it('maps a 500 upstream failure to a 502', async () => {
     proxyRequest.mockRejectedValue(new MicroserviceError('boom', 500, 'UPSTREAM_ERROR', { service: 'member_service' }));
     const res = buildRes();
-    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/svg+xml' }, body: Buffer.from('abc') } as any;
 
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
@@ -162,7 +173,7 @@ describe('OrgIdentityController.uploadLogo', () => {
   it('maps a 412 upstream rejection (org changed since the pre-upload fetch) to a 409 conflict', async () => {
     proxyRequest.mockRejectedValue(new MicroserviceError('precondition failed', 412, 'PRECONDITION_FAILED', { service: 'member_service' }));
     const res = buildRes();
-    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/svg+xml' }, body: Buffer.from('abc') } as any;
 
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
@@ -173,7 +184,7 @@ describe('OrgIdentityController.uploadLogo', () => {
   it('maps a 404 from the pre-upload ETag fetch to a 404, without attempting the upload', async () => {
     proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'member_service' }));
     const res = buildRes();
-    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/svg+xml' }, body: Buffer.from('abc') } as any;
 
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
@@ -185,7 +196,7 @@ describe('OrgIdentityController.uploadLogo', () => {
   it('maps a 408 upstream timeout to a 502', async () => {
     proxyRequest.mockRejectedValue(new MicroserviceError('timeout', 408, 'TIMEOUT', { service: 'member_service' }));
     const res = buildRes();
-    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/svg+xml' }, body: Buffer.from('abc') } as any;
 
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
@@ -195,7 +206,7 @@ describe('OrgIdentityController.uploadLogo', () => {
   it('forwards any other error to next', async () => {
     proxyRequest.mockRejectedValue(new Error('unexpected'));
     const next = vi.fn();
-    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/svg+xml' }, body: Buffer.from('abc') } as any;
 
     await new OrgIdentityController().uploadLogo(req, buildRes(), next);
 

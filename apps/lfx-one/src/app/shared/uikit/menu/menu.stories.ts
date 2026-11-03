@@ -115,3 +115,25 @@ export const FlipsAtTheEdge: Story = {
       </ng-template>`,
   }),
 };
+
+/** Shortcut keycaps: `+` splits keys, a `+` with no key on one side is the `+` key itself, and a leading ⌘ ⇧ ⌥ ⌃ is its own key. */
+export const Shortcuts: Story = {
+  render: (args) => ({
+    props: { cfg: args },
+    template: `
+      <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
+      <ng-template #menu>
+        <lfx-ui-menu ariaLabel="Shortcut forms" class="!w-[280px]">
+          <lfx-ui-menu-item shortcut="⌘K">Search</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="⌘ K">Search, spaced</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="Ctrl+Shift+K">Delete Line</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="+K">Add Keyword</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="Ctrl++K">Zoom to Fit</lfx-ui-menu-item>
+          <lfx-ui-menu-separator />
+          <lfx-ui-menu-item shortcut="+">Expand</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="Ctrl+">Zoom In</lfx-ui-menu-item>
+          <lfx-ui-menu-item shortcut="⌘+">Larger Text</lfx-ui-menu-item>
+        </lfx-ui-menu>
+      </ng-template>`,
+  }),
+};

@@ -19,22 +19,29 @@ import {
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { MeetingDashboardView, MeetingsRailBlock, UiTabItem } from '@lfx-one/shared/interfaces';
+import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
+import { UiChipComponent } from '@shared/uikit/chip/chip.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { EMPTY, Observable, switchMap } from 'rxjs';
 
+import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
+import { MeetingHomeActionsComponent } from './components/meeting-home-actions/meeting-home-actions.component';
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
+import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
+import { NextMeetingCardComponent } from './components/next-meeting-card/next-meeting-card.component';
+import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
 /**
  * Redesigned Home / Me lens meetings page (epic #4468).
- * @description Header, tabs bar and the day-grouped meetings list in the centre; Next meeting and Last meeting
+ * @description Header with the Pending RSVPs button, tabs bar and the day-grouped meetings list in the centre; Next meeting and Last meeting
  * in a fixed 360px right column. At 1024px and below the right column folds into the centre,
  * above the tabs, and the window scrolls instead of the columns. Rendered by `MeetingsEntryComponent`
  * behind `MEETINGS_REDESIGN_FLAG`.
@@ -53,7 +60,14 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     UiSkeletonComponent,
     UiEmptyStateComponent,
     UiButtonComponent,
+    UiChipGroupComponent,
+    UiChipComponent,
     MeetingsDayGroupComponent,
+    MeetingHomeActionsComponent,
+    MeetingsFiltersComponent,
+    LastMeetingCardComponent,
+    NextMeetingCardComponent,
+    PendingRsvpsComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
   providers: [MeetingsHomeStore],
@@ -78,12 +92,12 @@ export class MeetingsRedesignComponent {
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
   private readonly tabsBar = viewChild<ElementRef<HTMLElement>>('tabsBar');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
+  /** Takes focus when the last pending RSVP is answered. */
+  protected readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
+  /** Takes focus when the last filter chip is removed. */
+  protected readonly filtersControl = viewChild(MeetingsFiltersComponent);
 
   protected readonly idPrefix = 'meetings-redesign';
-  protected readonly railBlocks: MeetingsRailBlock[] = [
-    { key: 'next-meeting', label: 'Next meeting' },
-    { key: 'last-meeting', label: 'Last meeting' },
-  ];
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
   protected readonly personaLoaded = this.personaService.personaLoaded;
   /** Measured header height; the tabs bar sticks right below it. */
@@ -97,10 +111,20 @@ export class MeetingsRedesignComponent {
   /** True once the tabs bar has reached its sticky position; the fade then sits under it instead of the header. */
   protected readonly tabsStuck: WritableSignal<boolean> = signal(false);
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
+  /** The Next meeting as a one-item list, so its menu is keyed by row. */
+  protected readonly nextRows: Signal<MeetingHomeRow[]> = computed(() => {
+    const row = this.store.nextRow();
+    return row ? [row] : [];
+  });
+  /** The Last meeting as a one-item list, so its menu is keyed by row. */
+  protected readonly lastRows: Signal<MeetingHomeRow[]> = computed(() => {
+    const row = this.store.lastMeeting();
+    return row ? [row] : [];
+  });
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
   /** The active tab has meetings, but none match the search and filters. */
-  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
+  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.matchingRows().length === 0);
   /** "All N meetings loaded" once every row of a list longer than one page is shown. */
   protected readonly allLoaded: Signal<boolean> = computed(
     () => !this.store.loading() && !this.store.hasMore() && this.store.filteredRows().length > MEETINGS_HOME_PAGE_SIZE
