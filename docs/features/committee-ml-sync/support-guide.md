@@ -8,11 +8,11 @@
 
 A Group (Self Serve's term for what the backend calls a "committee" — see [Terminology](#terminology)) can be linked to one or more Groups.io mailing lists. Once linked, a manager can turn on automatic membership sync in one direction:
 
-| Mode                 | `sync_mode` wire value | Behavior                                                                                                       |
-| -------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Group → Mailing List | `auto_c_to_ml`         | When someone joins/leaves the Group, they're automatically subscribed/unsubscribed on the linked mailing list. |
-| Mailing List → Group | `auto_ml_to_c`         | When someone joins/leaves the mailing list, they're automatically added/removed as a Group member.             |
-| Manual               | `manual`               | No automatic sync. The manager uses **Sync Now** to review and apply differences on demand.                    |
+| Mode                 | `sync_mode` wire value | Behavior                                                                                                                     |
+| -------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Group → Mailing List | `auto_c_to_ml`         | When someone joins/leaves the Group, they're automatically subscribed/unsubscribed on the linked mailing list.               |
+| Mailing List → Group | `auto_ml_to_c`         | When someone joins/leaves the mailing list, they're automatically added/removed as a Group member.                           |
+| Manual               | `manual`               | No automatic sync. Sync Now is not available for `manual` lists yet (see [Limitations](#limitations-and-known-constraints)). |
 
 Only one linked list per Group can run an auto direction at a time — see [Limitations](#limitations-and-known-constraints).
 
