@@ -56,11 +56,9 @@ export class MeetingDeleteScopeModalComponent {
   protected readonly meetingType: MeetingHomeRowType | null = getMeetingHomeRowType(this.row.meeting);
   protected readonly occurrenceOptions: MeetingOccurrenceOption[] = buildMeetingOccurrenceOptions(this.row.meeting, this.data.occurrence?.occurrence_id);
   protected readonly occurrenceId = signal<string | null>(
-    this.occurrenceOptions.find((option) => isSameOccurrenceId(option.value, this.data.occurrence?.occurrence_id))?.value ??
-      this.occurrenceOptions[0]?.value ??
-      null
+    this.occurrenceOptions.find((option) => isSameOccurrenceId(option.value, this.data.occurrence?.occurrence_id))?.value ?? null
   );
-  protected readonly scope = signal<string | null>(this.occurrenceId() ? 'occurrence' : 'series');
+  protected readonly scope = signal<string | null>(this.occurrenceId() ? 'occurrence' : this.initialScopeWithoutDate());
   protected readonly canContinue: Signal<boolean> = computed(() => this.scope() === 'series' || !!this.occurrenceId());
 
   protected cancel(): void {
@@ -71,5 +69,10 @@ export class MeetingDeleteScopeModalComponent {
     if (!this.canContinue()) return;
     const occurrenceId = this.occurrenceId();
     this.dialogRef.close(this.scope() === 'occurrence' && occurrenceId ? { deleteType: 'occurrence', occurrenceId } : { deleteType: 'series' });
+  }
+
+  /** With no date of its own the organizer must choose, so no other date is cancelled by default; with none left, only the series can go. */
+  private initialScopeWithoutDate(): string | null {
+    return this.occurrenceOptions.length ? null : 'series';
   }
 }

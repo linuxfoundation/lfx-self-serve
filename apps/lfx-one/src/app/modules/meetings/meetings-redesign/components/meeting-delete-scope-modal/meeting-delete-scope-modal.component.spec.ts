@@ -72,6 +72,13 @@ describe('MeetingDeleteScopeModalComponent', () => {
     expect(close).toHaveBeenCalledWith({ deleteType: 'series' });
   });
 
+  it('opens with nothing chosen when it has no date of its own', async () => {
+    await render(buildData(MEETING, null));
+
+    expect(radio('occurrence').checked || radio('series').checked).toBe(false);
+    expect(button('meetings-home-delete-scope-continue').disabled).toBe(true);
+  });
+
   it('opens on the series when no date is left to cancel', async () => {
     await render(buildData({ ...MEETING, occurrences: [] }, null));
 

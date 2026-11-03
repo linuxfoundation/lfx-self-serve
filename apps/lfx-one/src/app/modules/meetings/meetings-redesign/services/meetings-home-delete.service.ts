@@ -48,7 +48,7 @@ export class MeetingsHomeDeleteService {
       .getMeetingDetail(getMeetingSeriesUid(row.meeting), { skipCache: true })
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (meeting) => this.start({ ...row, meeting, occurrence: null, occurrenceId: null }),
+        next: (meeting) => this.start({ ...row, meeting, occurrence: null, occurrenceId: null }, null),
         error: (error: unknown) => {
           const gone = error instanceof HttpErrorResponse && error.status === 404;
           this.showError('Delete Failed', gone ? 'Meeting not found. It may have already been deleted.' : 'Failed to delete meeting. Please try again.');
@@ -56,13 +56,13 @@ export class MeetingsHomeDeleteService {
       });
   }
 
-  private start(row: MeetingHomeRow): void {
+  /** `opening` is the date the scope picker opens on; a past row has none, so nothing is preselected. */
+  private start(row: MeetingHomeRow, opening = row.occurrence ?? getCurrentOrNextOccurrence(row.meeting)): void {
     if (!row.meeting.recurrence) {
       this.confirm(row, null);
       return;
     }
 
-    const opening = row.occurrence ?? getCurrentOrNextOccurrence(row.meeting);
     this.track(this.modal.open<MeetingDeleteTypeResult, MeetingDeleteDialogData>(MeetingDeleteScopeModalComponent, { data: { row, occurrence: opening } }))
       .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((result) => {

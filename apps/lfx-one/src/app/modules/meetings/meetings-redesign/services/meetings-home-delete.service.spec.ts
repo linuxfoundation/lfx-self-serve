@@ -111,7 +111,8 @@ describe('MeetingsHomeDeleteService', () => {
       service.delete(row(PAST));
 
       expect(getMeetingDetail).toHaveBeenCalledWith('synthetic-meeting', { skipCache: true });
-      expect((openedWith(MeetingDeleteScopeModalComponent)?.[1] as { data: { row: MeetingHomeRow } }).data.row.meeting).toBe(SERIES);
+      const { data } = openedWith(MeetingDeleteScopeModalComponent)?.[1] as { data: { row: MeetingHomeRow; occurrence: null } };
+      expect([data.row.meeting, data.occurrence]).toEqual([SERIES, null]);
     });
 
     it('reports a meeting that is already gone', () => {

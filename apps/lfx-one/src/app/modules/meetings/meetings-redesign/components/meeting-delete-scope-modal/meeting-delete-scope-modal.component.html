@@ -31,13 +31,11 @@
         label="Cancel a single occurrence"
         [disabled]="!occurrenceOptions.length"
         data-testid="meetings-home-delete-scope-occurrence" />
-      <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600">
-        @if (occurrenceOptions.length) {
-          Only the occurrence you pick will be canceled. The rest of the series will remain.
-        } @else {
-          There are no upcoming occurrences left to cancel on their own.
-        }
-      </span>
+      <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600">{{
+        occurrenceOptions.length
+          ? 'Only the occurrence you pick will be canceled. The rest of the series will remain.'
+          : 'There are no upcoming occurrences left to cancel on their own.'
+      }}</span>
       @if (scope() === 'occurrence') {
         <div class="mt-[6px] pl-[24px]">
           <lfx-ui-select
