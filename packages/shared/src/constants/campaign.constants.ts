@@ -1898,6 +1898,28 @@ export const GOOGLE_ADS_SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THUR
  */
 export const GOOGLE_ADS_SCHEDULE_MINUTES = [0, 15, 30, 45] as const;
 
+/** What the Implementation tab's ad-schedule editor calls each {@link GOOGLE_ADS_SCHEDULE_DAYS} value. */
+export const GOOGLE_ADS_SCHEDULE_DAY_LABELS = {
+  MONDAY: 'Monday',
+  TUESDAY: 'Tuesday',
+  WEDNESDAY: 'Wednesday',
+  THURSDAY: 'Thursday',
+  FRIDAY: 'Friday',
+  SATURDAY: 'Saturday',
+  SUNDAY: 'Sunday',
+} as const;
+
+/**
+ * Every quarter-hour of the day as minutes since midnight, 00:00 through 24:00, for the ad-schedule
+ * editor's time pickers. A pick can only land on a {@link GOOGLE_ADS_SCHEDULE_MINUTES} value, so the
+ * editor cannot write a minute Google refuses. 24:00 is listed because it is the only way to end a
+ * window at midnight; the editor offers it as an end time only.
+ */
+export const GOOGLE_ADS_SCHEDULE_TIME_OPTIONS = Array.from({ length: 24 * 4 + 1 }, (_, i) => ({
+  value: i * 15,
+  label: `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`,
+}));
+
 /**
  * Google's documented bid-adjustment range for an ad schedule or device criterion
  * (`campaign_criteria.go`'s `minBidModifier` / `maxBidModifier`): a multiplier of 0.1 through 10.0,
@@ -1969,6 +1991,13 @@ export const GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS = 3;
  * lands at the criteria mutate, AFTER the budget and campaign are committed.
  */
 export const GOOGLE_ADS_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET'] as const;
+
+/** What the Implementation tab's device control calls each {@link GOOGLE_ADS_DEVICES} value, in Google's own words. */
+export const GOOGLE_ADS_DEVICE_LABELS = {
+  MOBILE: 'Mobile phones',
+  DESKTOP: 'Computers',
+  TABLET: 'Tablets',
+} as const;
 
 /**
  * Upstream's bound on EACH demographic exclusion list

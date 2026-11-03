@@ -1366,6 +1366,17 @@ export interface CampaignImplementationDraft {
    */
   googleLanguages?: string[];
   /**
+   * Google's ad-schedule windows, as the operator set them in the editor. Absent and empty agree:
+   * no windows means the campaign serves all day, every day. Held and restored on the same rule as
+   * {@link googleLanguages}, so a list saved under a channel that takes none is kept, not sent.
+   */
+  googleAdSchedules?: CampaignAdSchedule[];
+  /**
+   * Google's device bid adjustments and exclusions, one entry per device the operator changed from
+   * the default. Held and restored on the same rule as {@link googleAdSchedules}.
+   */
+  googleDeviceBidModifiers?: CampaignDeviceBidModifier[];
+  /**
    * Google's callout extensions, as the operator typed them — already trimmed, because a callout
    * only becomes a chip once it has passed the add guards.
    *
@@ -3174,6 +3185,32 @@ export interface NormalizedGoogleAdSchedule extends Omit<CampaignAdSchedule, 'da
 export interface NormalizedGoogleDeviceBidModifier extends Omit<CampaignDeviceBidModifier, 'device' | 'bidModifier'> {
   device: string;
   bidModifier?: number;
+}
+
+/**
+ * One ad-schedule window as the Implementation tab's editor renders it: the day, the start and end
+ * as minutes since midnight (24:00 is 1440), and the bid adjustment as a whole percentage, or `null`
+ * when the window carries no adjustment.
+ */
+export interface GoogleAdScheduleRowView {
+  dayOfWeek: GoogleAdsScheduleDay;
+  start: number;
+  end: number;
+  adjustment: number | null;
+}
+
+/**
+ * What the device control does with one device: leave Google's default bid, adjust it, or exclude
+ * the device (a `0` bid modifier, which stops the campaign serving there).
+ */
+export type GoogleDeviceBidMode = 'default' | 'adjust' | 'exclude';
+
+/** One device as the Implementation tab's device control renders it; `adjustment` is a whole percentage. */
+export interface GoogleDeviceBidRowView {
+  device: GoogleAdsDevice;
+  label: string;
+  mode: GoogleDeviceBidMode;
+  adjustment: number | null;
 }
 
 export interface CampaignCreateRequest {

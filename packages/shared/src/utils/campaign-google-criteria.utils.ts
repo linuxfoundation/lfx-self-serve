@@ -368,3 +368,17 @@ export function googleExcludedGeoClashRefusal(targeted: readonly string[], exclu
   if (clash === undefined) return null;
   return `Google Ads cannot both target and exclude ${googleAdsEchoed(clash)} — the exclusion would win and the campaign would not serve there at all. Remove it from one of the two lists and create again.`;
 }
+
+/**
+ * A bid adjustment written as a percentage, as Google's own UI shows it, turned into the bid
+ * modifier the request carries: -20% is 0.8, +50% is 1.5 and -100% is 0, the do-not-serve opt-out.
+ * Rounded to a whole percentage, so the modifier never carries float noise such as 0.7999999.
+ */
+export function googleBidModifierFromPercent(percent: number): number {
+  return Math.round(100 + percent) / 100;
+}
+
+/** The inverse of {@link googleBidModifierFromPercent}: the whole percentage a bid modifier adjusts by. */
+export function googleBidAdjustmentPercent(modifier: number): number {
+  return Math.round(modifier * 100) - 100;
+}

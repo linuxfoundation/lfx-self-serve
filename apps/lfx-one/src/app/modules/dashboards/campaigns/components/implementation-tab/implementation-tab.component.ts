@@ -127,8 +127,10 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
@@ -211,6 +213,8 @@ import type {
   CampaignMicrosoftImageAssetBlock,
   CampaignProximityTarget,
   CampaignProximityTargetDraft,
+  CampaignAdSchedule,
+  CampaignDeviceBidModifier,
   CampaignRedditImageAssetBlock,
   CampaignCallExtension,
   CampaignCallExtensionDraft,
@@ -270,11 +274,13 @@ import {
   dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
   describeCampaignDispatchFailure,
+  googleAdScheduleRefusal,
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
   googleCreativeImageDrift,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
+  googleDeviceBidModifierRefusal,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
   isHttpUrl,
@@ -287,6 +293,7 @@ import {
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
+import { CampaignGoogleTargetingPanelComponent } from '../campaign-google-targeting-panel/campaign-google-targeting-panel.component';
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
@@ -339,6 +346,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     LowerCasePipe,
     SlicePipe,
     CampaignBiddingControlComponent,
+    CampaignGoogleTargetingPanelComponent,
     CreativeLibraryUploadComponent,
     CreativeSlotGridComponent,
     GoogleCreativeImageLibraryComponent,
@@ -1635,6 +1643,13 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleLanguages = signal<string[]>([]);
   protected readonly googleMaxLanguages = GOOGLE_ADS_MAX_LANGUAGES;
+  /**
+   * The Google campaign's ad-schedule windows and device bid adjustments, edited in
+   * `lfx-campaign-google-targeting-panel`. Empty is Google's own default — serve all day, every day,
+   * at one bid on every device — so leaving either alone changes nothing about the campaign.
+   */
+  protected readonly googleAdSchedules = signal<CampaignAdSchedule[]>([]);
+  protected readonly googleDeviceBidModifiers = signal<CampaignDeviceBidModifier[]>([]);
   /**
    * The languages Google Ads can target on this path, offered as a closed list.
    *
@@ -3252,6 +3267,8 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.googleFlightError() !== null) return false;
     // Search with no keyword, which creates a campaign that can never serve (#4848).
     if (googleSelected && this.googleSearchKeywordsError() !== null) return false;
+    // An ad schedule or device adjustment the BFF would refuse; the message is under the panel.
+    if (googleSelected && (this.googleAdSchedulesError() !== null || this.googleDeviceBidModifiersError() !== null)) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -3521,6 +3538,20 @@ export class ImplementationTabComponent implements OnInit {
     const count = this.googleLanguages().length;
     return `${channelLabel} campaigns do not take campaign languages, so the ${count} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.`;
   });
+  /**
+   * Whether the targeting panel offers ad schedules / device adjustments, and so whether the request
+   * carries them: `googleBiddingChannel` (a Google channel on the campaign-service road) fenced by the
+   * shared channel list the BFF refuses on. The template and `googleTargetingPayload` both read these.
+   */
+  protected readonly googleAdSchedulesAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_AD_SCHEDULES));
+  protected readonly googleDeviceBidModifiersAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS));
+  /** The shared refusal the BFF would answer the create with, or `null`; `canSubmit` blocks on it. */
+  protected readonly googleAdSchedulesError = computed(() => (this.googleAdSchedulesAvailable() ? googleAdScheduleRefusal(this.googleAdSchedules()) : null));
+  protected readonly googleDeviceBidModifiersError = computed(() =>
+    this.googleDeviceBidModifiersAvailable() ? googleDeviceBidModifierRefusal(this.googleDeviceBidModifiers()) : null
+  );
+  /** The held-targeting sentence, or `''`; one string feeds the visible notice and the live region, as for languages. */
+  protected readonly googleTargetingWithheldMessage: Signal<string> = this.initGoogleTargetingWithheldMessage();
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
   protected readonly googleProximityChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleProximityChannel();
   protected readonly googleProximityWithheldOn: Signal<string | null> = this.initGoogleProximityWithheldOn();
@@ -4716,6 +4747,16 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  protected onGoogleAdSchedulesChange(schedules: CampaignAdSchedule[]): void {
+    this.googleAdSchedules.set(schedules);
+    this.emitDraft();
+  }
+
+  protected onGoogleDeviceBidModifiersChange(devices: CampaignDeviceBidModifier[]): void {
+    this.googleDeviceBidModifiers.set(devices);
+    this.emitDraft();
+  }
+
   /**
    * Add one audience segment, reporting whether it was actually added.
    *
@@ -5204,6 +5245,8 @@ export class ImplementationTabComponent implements OnInit {
       // The language narrowing, Google-gated for the same reason, and already withheld unless the
       // dispatched channel is one upstream accepts campaign languages on.
       ...(platforms.includes('google-ads') ? this.googleLanguagesPayload() : {}),
+      // Ad schedules and device adjustments, on the same Google gate, already withheld per channel.
+      ...(platforms.includes('google-ads') ? this.googleTargetingPayload() : {}),
       // The audience segments, Google-gated for the same reason, and already withheld unless the
       // dispatched channel is Search, the one channel upstream attaches audience criteria on.
       ...(platforms.includes('google-ads') ? this.googleAudienceSegmentsPayload() : {}),
@@ -6665,6 +6708,13 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleLanguages !== undefined) {
       this.googleLanguages.set([...draft.googleLanguages]);
     }
+    // Entries copied too, and held rather than sent on a channel that takes none, as languages are.
+    if (draft.googleAdSchedules !== undefined) {
+      this.googleAdSchedules.set(draft.googleAdSchedules.map((s) => ({ ...s })));
+    }
+    if (draft.googleDeviceBidModifiers !== undefined) {
+      this.googleDeviceBidModifiers.set(draft.googleDeviceBidModifiers.map((d) => ({ ...d })));
+    }
     // Copied on the same rule, and restored whatever the channel selection is: the section and
     // `googleAudienceSegmentsPayload` both gate on `googleAudienceSegmentsAvailable`, so a list
     // restored under a non-Search channel is held, not sent.
@@ -7013,6 +7063,8 @@ export class ImplementationTabComponent implements OnInit {
       // Entries copied too, matching the restore.
       googleProximityTargets: this.googleProximityTargets().map((t) => ({ ...t })),
       googleLanguages: [...this.googleLanguages()],
+      googleAdSchedules: this.googleAdSchedules().map((s) => ({ ...s })),
+      googleDeviceBidModifiers: this.googleDeviceBidModifiers().map((d) => ({ ...d })),
       googleAudienceSegments: [...this.googleAudienceSegments()],
       googleCallouts: [...this.googleCallouts()],
       // Entries copied too, for the reason the restore above gives in the other direction.
@@ -7459,6 +7511,8 @@ export class ImplementationTabComponent implements OnInit {
     this.googlePostalGeoLabels.set({});
     this.googleProximityTargets.set([]);
     this.googleLanguages.set([]);
+    this.googleAdSchedules.set([]);
+    this.googleDeviceBidModifiers.set([]);
     this.googleAudienceSegments.set([]);
     this.googleCallouts.set([]);
     this.googleSitelinks.set([]);
@@ -8401,6 +8455,33 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * What the dispatched channel holds back from the targeting panel, said out loud — whichever list
+   * its shared channel fence leaves out. The lists are kept for a switch back, not sent, so the
+   * campaign serves all day or at one bid; the notice says so rather than letting the section simply
+   * vanish. `''` off the campaign-service road and when nothing is held.
+   */
+  private initGoogleTargetingWithheldMessage(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel) return '';
+      const kinds: string[] = [];
+      const held: string[] = [];
+      const schedules = this.googleAdSchedulesAvailable() ? 0 : this.googleAdSchedules().length;
+      const devices = this.googleDeviceBidModifiersAvailable() ? 0 : this.googleDeviceBidModifiers().length;
+      if (schedules > 0) {
+        kinds.push('ad schedules');
+        held.push(`${schedules} ad schedule ${schedules === 1 ? 'window' : 'windows'}`);
+      }
+      if (devices > 0) {
+        kinds.push('device bid adjustments');
+        held.push(`${devices} device ${devices === 1 ? 'setting' : 'settings'}`);
+      }
+      if (held.length === 0) return '';
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take ${kinds.join(' or ')}, so the ${held.join(' and ')} you set will not be sent. Switch the channel back to keep them.`;
+    });
+  }
+
+  /**
    * Whether postal-code targets are offered and sent — on the campaign-service road with a Google
    * channel selected, which is exactly when `googleBiddingChannel` is non-null.
    *
@@ -9262,6 +9343,25 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.googleLanguagesChannel()) return {};
     const languages = this.googleLanguages();
     return languages.length > 0 ? { languages: [...languages] } : {};
+  }
+
+  /**
+   * Ad schedules and device adjustments as the request carries them: each gated by the SAME computed
+   * the panel renders on, omitted when empty (Google's default), entries copied.
+   */
+  private googleTargetingPayload(): Partial<CampaignCreateRequest> {
+    const payload: Partial<CampaignCreateRequest> = {};
+    const schedules = this.googleAdSchedules();
+    if (this.googleAdSchedulesAvailable() && schedules.length > 0) payload.adSchedules = schedules.map((s) => ({ ...s }));
+    const devices = this.googleDeviceBidModifiers();
+    if (this.googleDeviceBidModifiersAvailable() && devices.length > 0) payload.deviceBidModifiers = devices.map((d) => ({ ...d }));
+    return payload;
+  }
+
+  /** Whether the dispatched Google channel (`googleBiddingChannel`, null off the campaign-service road) is in `channels`. */
+  private googleChannelIn(channels: readonly GoogleCampaignChannel[]): boolean {
+    const channel = this.googleBiddingChannel();
+    return channel !== null && channels.includes(channel);
   }
 
   /**

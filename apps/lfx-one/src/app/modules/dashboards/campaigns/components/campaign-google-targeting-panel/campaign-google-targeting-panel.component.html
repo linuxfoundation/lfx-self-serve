@@ -1,0 +1,147 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!--
+  The two errors, announced. Always mounted while the panel is, and only their text changes: a live
+  region inserted with its text already present is not reliably announced. The visible errors below
+  stay the sections' aria-describedby targets.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-targeting-live">
+  {{ adSchedulesError() ?? '' }} {{ devicesError() ?? '' }}
+</div>
+
+<div class="flex flex-col gap-4" data-testid="implementation-google-targeting-panel">
+  @if (showAdSchedules()) {
+    <fieldset
+      class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5"
+      [attr.aria-describedby]="scheduleDescribedBy()"
+      data-testid="implementation-google-ad-schedule">
+      <legend class="float-left mb-1 text-xs font-medium text-gray-700">Ad schedule ({{ adSchedules().length }}/{{ maxAdSchedules }})</legend>
+      <p id="google-ad-schedule-hint" class="text-xs text-gray-500">
+        Times are in the Google Ads account's time zone. With no windows the campaign serves all day, every day. A bid adjustment runs from -90% to +900%, or
+        -100% to stop serving in that window; leave it blank for none. Errors give Google's bid modifier, where -20% is 0.8.
+      </p>
+
+      @for (row of scheduleRows(); track $index; let i = $index) {
+        <div class="flex flex-wrap items-end gap-2" [attr.data-testid]="'implementation-google-ad-schedule-row-' + i">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-gray-700" [for]="'google-ad-schedule-day-' + i">Day</label>
+            <select
+              [id]="'google-ad-schedule-day-' + i"
+              (change)="onScheduleDay(i, $event)"
+              class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              [attr.data-testid]="'implementation-google-ad-schedule-day-' + i">
+              @for (day of dayOptions; track day.value) {
+                <option [value]="day.value" [selected]="day.value === row.dayOfWeek">{{ day.label }}</option>
+              }
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-gray-700" [for]="'google-ad-schedule-start-' + i">From</label>
+            <select
+              [id]="'google-ad-schedule-start-' + i"
+              (change)="onScheduleTime(i, 'start', $event)"
+              class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              [attr.data-testid]="'implementation-google-ad-schedule-start-' + i">
+              @for (time of startTimeOptions; track time.value) {
+                <option [value]="time.value" [selected]="time.value === row.start">{{ time.label }}</option>
+              }
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-gray-700" [for]="'google-ad-schedule-end-' + i">To</label>
+            <select
+              [id]="'google-ad-schedule-end-' + i"
+              (change)="onScheduleTime(i, 'end', $event)"
+              class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              [attr.data-testid]="'implementation-google-ad-schedule-end-' + i">
+              @for (time of endTimeOptions; track time.value) {
+                <option [value]="time.value" [selected]="time.value === row.end">{{ time.label }}</option>
+              }
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-gray-700" [for]="'google-ad-schedule-adjustment-' + i">Bid adjustment (%)</label>
+            <input
+              type="number"
+              step="1"
+              [id]="'google-ad-schedule-adjustment-' + i"
+              [value]="row.adjustment ?? ''"
+              (change)="onScheduleAdjustment(i, $event)"
+              placeholder="None"
+              class="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              [attr.data-testid]="'implementation-google-ad-schedule-adjustment-' + i" />
+          </div>
+          <lfx-button
+            icon="fa-light fa-trash"
+            size="small"
+            severity="secondary"
+            [text]="true"
+            [ariaLabel]="'Remove ad schedule window ' + (i + 1)"
+            (onClick)="removeAdSchedule(i)"
+            [attr.data-testid]="'implementation-google-ad-schedule-remove-' + i" />
+        </div>
+      }
+
+      <div>
+        <lfx-button
+          label="Add window"
+          icon="fa-light fa-plus"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="scheduleFull()"
+          (onClick)="addAdSchedule()"
+          data-testid="implementation-google-ad-schedule-add" />
+      </div>
+      @if (adSchedulesError(); as message) {
+        <p id="google-ad-schedule-error" class="text-xs text-red-600" data-testid="implementation-google-ad-schedule-error">{{ message }}</p>
+      }
+    </fieldset>
+  }
+
+  @if (showDevices()) {
+    <fieldset
+      class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5"
+      [attr.aria-describedby]="devicesDescribedBy()"
+      data-testid="implementation-google-devices">
+      <legend class="float-left mb-1 text-xs font-medium text-gray-700">Devices</legend>
+      <p id="google-devices-hint" class="text-xs text-gray-500">
+        Adjust the bid on a device from -90% to +900%, or exclude it to stop serving there. Smart Bidding strategies, such as Maximize conversions, ignore
+        device adjustments but still honour an exclusion. Errors give Google's bid modifier, where -20% is 0.8.
+      </p>
+      @for (row of deviceRows(); track row.device) {
+        <div class="flex flex-wrap items-end gap-2" [attr.data-testid]="'implementation-google-device-' + row.device">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-gray-700" [for]="'google-device-mode-' + row.device">{{ row.label }}</label>
+            <select
+              [id]="'google-device-mode-' + row.device"
+              (change)="onDeviceMode(row.device, $event)"
+              class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              [attr.data-testid]="'implementation-google-device-mode-' + row.device">
+              <option value="default" [selected]="row.mode === 'default'">Default bid</option>
+              <option value="adjust" [selected]="row.mode === 'adjust'">Adjust bid</option>
+              <option value="exclude" [selected]="row.mode === 'exclude'">Exclude</option>
+            </select>
+          </div>
+          @if (row.mode === 'adjust') {
+            <div class="flex flex-col gap-1">
+              <label class="text-xs text-gray-700" [for]="'google-device-adjustment-' + row.device">{{ row.label }} bid adjustment (%)</label>
+              <input
+                type="number"
+                step="1"
+                [id]="'google-device-adjustment-' + row.device"
+                [value]="row.adjustment ?? 0"
+                (change)="onDeviceAdjustment(row.device, $event)"
+                class="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                [attr.data-testid]="'implementation-google-device-adjustment-' + row.device" />
+            </div>
+          }
+        </div>
+      }
+      @if (devicesError(); as message) {
+        <p id="google-devices-error" class="text-xs text-red-600" data-testid="implementation-google-devices-error">{{ message }}</p>
+      }
+    </fieldset>
+  }
+</div>

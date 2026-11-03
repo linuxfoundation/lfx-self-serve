@@ -47,11 +47,13 @@ import {
   REDDIT_CALL_TO_ACTIONS,
 } from '@lfx-one/shared/constants';
 import type {
+  CampaignAdSchedule,
   CampaignBriefOutput,
   CampaignIndexDoc,
   CampaignJobOutcome,
   CampaignBriefPersistenceState,
   CampaignCreateResult,
+  CampaignDeviceBidModifier,
   CampaignImplementationDraft,
   CampaignPlatformResult,
   CampaignSitelink,
@@ -7918,6 +7920,123 @@ describe('ImplementationTabComponent google languages', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleLanguages']()).toEqual([code]);
+  });
+});
+
+/**
+ * Ad schedules and device bid adjustments (#4991). The panel's edits land in two tab signals; these
+ * pin what the create request carries for each channel, that Create waits on the shared refusals the
+ * BFF answers with, and that a list hidden by a channel switch is held and said to be held.
+ */
+describe('ImplementationTabComponent google ad schedules and devices', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const MONDAY_EVENINGS: CampaignAdSchedule = { dayOfWeek: 'MONDAY', startHour: 18, startMinute: 0, endHour: 24, endMinute: 0, bidModifier: 0.8 };
+  const NO_TABLETS: CampaignDeviceBidModifier = { device: 'TABLET', bidModifier: 0 };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  function seedTargeting(patch: Record<string, unknown>): Record<string, any> {
+    const c = seedChannel(fixture, patch);
+    c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS]);
+    c['onGoogleDeviceBidModifiersChange']([NO_TABLETS]);
+    fixture.detectChanges();
+    return c;
+  }
+
+  it.each([
+    ['search', { includeSearch: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }],
+    ['display', { includeDisplay: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }],
+    ['performance-max', { includePerformanceMax: true }, { adSchedules: [MONDAY_EVENINGS] }],
+    ['demand-gen', { includeDemandGen: true }, {}],
+  ])('sends what %s accepts and holds the rest', (_channel, patch, expected) => {
+    const c = seedTargeting(patch);
+
+    expect(c['googleTargetingPayload']()).toEqual(expected);
+    expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
+    expect(c['googleDeviceBidModifiers']()).toEqual([NO_TABLETS]);
+  });
+
+  it('submits both lists on Search, copied rather than shared', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedTargeting({ includeSearch: true });
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['adSchedules']).toEqual([MONDAY_EVENINGS]);
+    expect(request['deviceBidModifiers']).toEqual([NO_TABLETS]);
+    expect((request['adSchedules'] as CampaignAdSchedule[])[0]).not.toBe(c['googleAdSchedules']()[0]);
+  });
+
+  it('sends neither key when nothing was set', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleTargetingPayload']()).toEqual({});
+  });
+
+  it('renders the panel on Search and not on Demand Gen, where it says what is held', () => {
+    seedTargeting({ includeSearch: true });
+    const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+    expect(query('implementation-google-ad-schedule')).not.toBeNull();
+    expect(query('implementation-google-devices')).not.toBeNull();
+    expect(query('implementation-google-targeting-withheld')).toBeNull();
+
+    (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(query('implementation-google-targeting-panel')).toBeNull();
+    expect(query('implementation-google-targeting-withheld')?.textContent).toContain(
+      'Demand Gen campaigns do not take ad schedules or device bid adjustments, so the 1 ad schedule window and 1 device setting you set will not be sent.'
+    );
+    expect(query('implementation-google-targeting-withheld-live')?.textContent).toContain('Demand Gen campaigns do not take ad schedules');
+  });
+
+  it('holds Create on the shared refusal and shows it under the panel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS, { ...MONDAY_EVENINGS, startHour: 20, bidModifier: undefined }]);
+    fixture.detectChanges();
+
+    expect(c['googleAdSchedulesError']()).toContain('overlaps MONDAY 18:00-24:00');
+    expect(c['canSubmit']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-ad-schedule-error"]')?.textContent).toContain('overlaps');
+
+    c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS]);
+    c['onGoogleDeviceBidModifiersChange']([{ device: 'MOBILE', bidModifier: 0.05 }]);
+    expect(c['googleDeviceBidModifiersError']()).toContain('bid modifier of 0.05');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it('withholds the panel and both keys off the campaign-service road', () => {
+    const c = seedTargeting({ includeSearch: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+
+    expect(c['googleTargetingPayload']()).toEqual({});
+    expect(c['googleTargetingWithheldMessage']()).toBe('');
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-targeting-panel"]')).toBeNull();
+  });
+
+  it('round-trips both lists through a draft and empties them for a new brief', () => {
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const c = seedTargeting({ includeSearch: true });
+
+    expect(emitted?.googleAdSchedules).toEqual([MONDAY_EVENINGS]);
+    expect(emitted?.googleDeviceBidModifiers).toEqual([NO_TABLETS]);
+
+    c['resetGoogleFields']();
+    expect(c['googleAdSchedules']()).toEqual([]);
+    restoreGoogleDraft(fixture, c, { googleAdSchedules: [MONDAY_EVENINGS], googleDeviceBidModifiers: [NO_TABLETS] });
+
+    expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
+    expect(c['googleDeviceBidModifiers']()).toEqual([NO_TABLETS]);
   });
 });
 
