@@ -52,7 +52,7 @@ const domainIn = (text: string): string | null => {
 export class ItOsDnsAgentService {
   public readonly messages = signal<ItOsChatMessage[]>([]);
   public readonly domains = signal<ItOsDomain[]>(cloneDomains());
-  /** "Viewing as": LF staff see fee lines; external members are referred to the Formation Team. */
+  /** "Viewing as": LF staff get fee amounts when they ask; external members are referred to the Formation Team. */
   public readonly staff = signal(true);
   public readonly busy = computed(() => this.messages().some((m) => m.typing || (m.steps !== undefined && (m.shown ?? 0) <= m.steps.length)));
 
@@ -161,11 +161,6 @@ export class ItOsDnsAgentService {
 
   public reason(proposal: ItOsProposal): string {
     return IT_OS_DNS_ACTIONS[proposal.key].reason(proposal.payload);
-  }
-
-  public cost(proposal: ItOsProposal): string | null {
-    if (!IT_OS_DNS_ACTIONS[proposal.key].addsDomainFee) return null;
-    return this.staff() ? `+${IT_OS_FEES.perDomain}/mo to the Essentials fee` : IT_OS_FORMATION_TEXT;
   }
 
   public details(payload: ItOsActionPayload): { label: string; value: string }[] {
@@ -500,8 +495,7 @@ export class ItOsDnsAgentService {
           ],
         });
       }
-      const fee = this.staff() ? `Registering it adds ${IT_OS_FEES.perDomain}/mo to the project's Essentials fee. ` : '';
-      this.plan(`<p>${mono(name)} is available. ${fee}It will auto-renew. Availability is simulated in this prototype.</p>`, [
+      this.plan(`<p>${mono(name)} is available. It will auto-renew. Availability is simulated in this prototype.</p>`, [
         { key: 'domain.register', payload: { domain: name } },
       ]);
     });
@@ -529,10 +523,9 @@ export class ItOsDnsAgentService {
     // Pantheon multisite: only the primary domain points at Pantheon.
     if (/pantheon/i.test(goal)) {
       const target = name ?? 'www';
-      const fee = this.staff() ? ` (${IT_OS_FEES.pantheonMultisite}/mo)` : '';
       notes.push({
         tone: 'warn',
-        text: `Only ${P.primaryDomain} points at Pantheon. Pointing ${target} there too would count as another Pantheon multisite site${fee}. I suggest a URL redirect to ${P.primaryDomain} instead.`,
+        text: `Only ${P.primaryDomain} points at Pantheon. I suggest a URL redirect to ${P.primaryDomain} instead of pointing ${target} there too. It's the LF standard.`,
       });
       proposals.push({ key: 'dns.addRecord', payload: { domain: d.name, type: 'URL', name: target, content: `https://${P.primaryDomain}`, ttl: 3600 } });
       return { notes, proposals };
@@ -768,10 +761,9 @@ export class ItOsDnsAgentService {
       attestDnsElsewhere: false,
       askDnsElsewhere: names.some((n) => this.progress(n).manage === 'no'),
     };
-    const fee = this.staff() ? `Each domain adds ${IT_OS_FEES.perDomain}/mo to the Essentials fee.` : IT_OS_FORMATION_TEXT;
     this.bot(
       `<p>Last step: I need the transfer code${names.length > 1 ? ' for each domain' : ''} (also called the authorization or EPP code) from the registrar. This is a prototype, so don't enter a real code.</p>${muted(
-        `Applies immediately: moving project domains to LF is a required setup step. ${esc(fee)}`
+        'Applies immediately: moving project domains to LF is a required setup step.'
       )}`,
       { transferForm: form, actions: [action(names.length > 1 ? `Begin ${names.length} transfers` : 'Begin transfer', () => this.beginTransfer(form), true)] }
     );

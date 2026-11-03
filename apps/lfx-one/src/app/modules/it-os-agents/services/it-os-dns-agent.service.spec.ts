@@ -61,10 +61,11 @@ describe('ItOsDnsAgentService', () => {
     expect(service.domainBy('examplefoundation.org')?.records?.some((r) => r.name === 'blog' && r.type === 'CNAME')).toBe(true);
   });
 
-  it('warns about the Pantheon multisite charge and offers a URL redirect instead', () => {
+  it('suggests a URL redirect as the LF standard instead of a second Pantheon site, without mentioning cost', () => {
     const reply = ask('Point events at our Pantheon site');
 
-    expect(reply.html).toContain('another Pantheon multisite site');
+    expect(reply.html).toContain('It&#39;s the LF standard.');
+    expect(reply.html).not.toMatch(/cost|fee|\/mo/i);
     expect(reply.plan?.proposals[0].payload).toMatchObject({ type: 'URL', name: 'events', content: 'https://examplefoundation.org' });
   });
 

@@ -58,8 +58,6 @@ export interface ItOsActionPolicy {
   describe: (payload: ItOsActionPayload) => string;
   needsApproval: (payload: ItOsActionPayload) => boolean;
   reason: (payload: ItOsActionPayload) => string;
-  /** Whether the change adds to the project's monthly Essentials fee. */
-  addsDomainFee?: boolean;
 }
 
 export interface ItOsProposal {

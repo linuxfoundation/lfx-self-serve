@@ -181,9 +181,6 @@
                                 <span>
                                   <b>{{ agent.needsApproval(proposal) ? 'Needs LF IT approval' : 'Applies immediately' }}.</b>
                                   {{ agent.reason(proposal) }}
-                                  @if (agent.cost(proposal); as cost) {
-                                    {{ cost }}
-                                  }
                                 </span>
                               </span>
                             </span>

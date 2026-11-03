@@ -40,12 +40,7 @@ export const IT_OS_COST_NOTE =
   "From LF IT's IT fee schedule. Amounts are placeholders in this prototype; real amounts are internal and shown to LF staff only.";
 export const IT_OS_FORMATION_TEXT = 'Fee questions for this project go to the Formation Team.';
 
-export const IT_OS_DNS_SUGGESTIONS = [
-  'Transfer all waiting domains',
-  'Point events at our Pantheon site',
-  'What do we pay for domains?',
-  'Which domains renew in November?',
-];
+export const IT_OS_DNS_SUGGESTIONS = ['Transfer all waiting domains', 'Point events at our Pantheon site', 'Which domains renew in November?'];
 
 const RISKY_DELETE_TYPES = ['MX', 'NS', 'TXT'];
 
@@ -75,13 +70,11 @@ export const IT_OS_DNS_ACTIONS: Record<string, ItOsActionPolicy> = {
     describe: (p) => `Register ${p.domain}`,
     needsApproval: () => false,
     reason: () => 'Domains are registered on auto-renew, the LF standard.',
-    addsDomainFee: true,
   },
   'domain.transfer': {
     describe: (p) => `Transfer ${p.domain} to the Linux Foundation`,
     needsApproval: () => false,
     reason: () => 'Moving project domains to LF is a required setup step.',
-    addsDomainFee: true,
   },
   'domain.autoRenew': {
     describe: (p) => `Turn auto-renew ${p.on ? 'on' : 'off'} for ${p.domain}`,
