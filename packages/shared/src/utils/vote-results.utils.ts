@@ -70,7 +70,10 @@ export function computeParticipationSegments(stats: VoteParticipationStats, abst
  * Builds the generic (plurality) per-question results view model from the results API payload
  * @description Choice percentages prefer the upstream value and fall back to `num_votes_cast` as the base. Winner and
  * tie markers are only set when `isClosed`; `isLeading` marks the top option(s) regardless of `isClosed`, and live
- * views use it for the highlight.
+ * views use it for the highlight. Options follow the question's configured choice order rather than the tally rows'
+ * order, which upstream does not keep stable between reads (#5021); tally rows for choice ids the question does not
+ * list follow, in their payload order. Only the supplied tally rows are projected — no zero rows are added for
+ * configured choices without one.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
  * @param isClosed - Whether the vote is finalized (ended, or 100% participation)
  * @returns One VoteResultsQuestion per poll question, in API order
@@ -81,7 +84,12 @@ export function buildVoteResultsQuestions(results: VoteResultsResponse | null, i
   }
 
   return results.poll_results.map((pollResult) => {
-    const choiceVotes = pollResult.generic_choice_votes || [];
+    // Sort a copy by configured position; unknown ids share the position after the last choice, so the stable sort
+    // keeps them in payload order.
+    const choices = pollResult.question.choices ?? [];
+    const choiceById = new Map(choices.map((choice, index) => [choice.choice_id, { index, text: choice.choice_text }]));
+    const choicePosition = (choiceId: string): number => choiceById.get(choiceId)?.index ?? choices.length;
+    const choiceVotes = [...(pollResult.generic_choice_votes || [])].sort((a, b) => choicePosition(a.choice_id) - choicePosition(b.choice_id));
 
     // Per-question choice-vote sum — drives the question model's totalVotes (zero-state detection), not percentages.
     const totalVotes = choiceVotes.reduce((sum, cv) => sum + cv.vote_count, 0);
@@ -89,7 +97,7 @@ export function buildVoteResultsQuestions(results: VoteResultsResponse | null, i
     // Build options with vote counts from the results API
     const optionsWithCounts: VoteResultsOption[] = choiceVotes.map((cv) => ({
       choiceId: cv.choice_id,
-      text: pollResult.question.choices.find((c) => c.choice_id === cv.choice_id)?.choice_text || cv.choice_id,
+      text: choiceById.get(cv.choice_id)?.text || cv.choice_id,
       voteCount: cv.vote_count,
       percentage: computeResultPercentage(cv.percentage, cv.vote_count, results.num_votes_cast || 0),
       isWinner: false,

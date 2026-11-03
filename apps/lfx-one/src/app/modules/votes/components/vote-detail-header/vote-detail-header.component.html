@@ -22,6 +22,8 @@
             [value]="privacyLabel()"
             [severity]="vote().pseudo_anonymity ? 'warn' : 'secondary'"
             icon="fa-light fa-lock"
+            [tooltip]="visibilityText()"
+            tooltipPosition="bottom"
             data-testid="vote-detail-header-privacy" />
         }
       </div>
@@ -122,6 +124,14 @@
             <i class="fa-light fa-users" aria-hidden="true"></i>{{ invited }}
           </span>
         }
+        @if (createdText(); as created) {
+          <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-created">
+            <i class="fa-light fa-clock" aria-hidden="true"></i>Created {{ created }}
+          </span>
+        }
+        <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-comments">
+          <i class="fa-light fa-comments" aria-hidden="true"></i>Comments: {{ commentsText() }}
+        </span>
       </div>
     }
   </div>

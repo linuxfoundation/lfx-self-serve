@@ -32,7 +32,7 @@ import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.s
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 
 /**
- * The ⋯ menu of a meetings home row: Copy Link, for upcoming meetings Edit Meeting, Resend Invite and Remove Myself, and Delete Meeting.
+ * The ⋯ menu of a meetings home row: Copy Link, and for upcoming meetings Edit Meeting, Resend Invite, Remove Myself and Delete Meeting.
  * @description Edit, Delete, Resend and Remove follow the legacy meeting card's gates. Feedback is uikit toasts at the bottom centre.
  */
 @Component({
@@ -65,8 +65,8 @@ export class MeetingHomeActionsComponent {
   protected readonly canEdit: Signal<boolean> = computed(
     () => this.view() === 'upcoming' && this.row().meeting.organizer === true && !!this.row().meeting.project_slug
   );
-  /** Upcoming and past alike: the legacy delete button has no past exclusion. */
-  protected readonly canDelete: Signal<boolean> = computed(() => this.row().meeting.organizer === true);
+  /** Upcoming only: a past row would delete its whole parent meeting, possibly a live series. */
+  protected readonly canDelete: Signal<boolean> = computed(() => this.view() === 'upcoming' && this.row().meeting.organizer === true);
   /** Registered to this upcoming meeting; an organizer only with a registration of their own (legacy `isRegisteredAttendee`). */
   protected readonly canRemove: Signal<boolean> = this.initCanRemove();
   /** A resend goes to the viewer's own registrant row, so one must exist (legacy `canResendInvite`). */

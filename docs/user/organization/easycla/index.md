@@ -8,7 +8,7 @@ last_updated: 2026-11-03
 intercom_collection: Organization
 ---
 
-These steps apply to anyone who can open **EasyCLA** for an organization in the Organization lens: an organization admin, a viewer, Linux Foundation staff with access to that organization, or a CLA Manager or initial CLA Manager designee whose only Organization lens page is EasyCLA.
+These steps apply to anyone who can open **EasyCLA** for an organization in the Organization lens: an organization admin, a viewer, Linux Foundation staff with access to that organization, or a CLA (Contributor License Agreement) Manager or initial CLA Manager designee whose only Organization lens page is EasyCLA.
 
 **EasyCLA** lists the corporate CLAs (Contributor License Agreements) the selected organization holds. A CLA is the agreement that covers contributions to a Linux Foundation project that requires one. A **CCLA** (Corporate CLA) is the agreement a company signs so its people can contribute under the company's name. EasyCLA answers: which corporate CLAs does this organization hold, who can change each one, and what still needs a signature?
 

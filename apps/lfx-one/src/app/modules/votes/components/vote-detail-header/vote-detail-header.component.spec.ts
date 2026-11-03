@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { formatDate } from '@angular/common';
 import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -54,6 +55,8 @@ describe('VoteDetailHeaderComponent', () => {
       canSendBallots?: boolean;
       slideBusy?: boolean;
       limited?: boolean;
+      resultsHeld?: boolean;
+      commentPromptCount?: number | null;
     } = {}
   ): void {
     fixture = TestBed.createComponent(VoteDetailHeaderComponent);
@@ -64,6 +67,8 @@ describe('VoteDetailHeaderComponent', () => {
     fixture.componentRef.setInput('canSendBallots', inputs.canSendBallots ?? false);
     fixture.componentRef.setInput('slideBusy', inputs.slideBusy ?? false);
     fixture.componentRef.setInput('limited', inputs.limited ?? false);
+    fixture.componentRef.setInput('resultsHeld', inputs.resultsHeld ?? false);
+    fixture.componentRef.setInput('commentPromptCount', inputs.commentPromptCount ?? null);
     fixture.componentRef.setInput('activeTab', 'overview');
     fixture.componentRef.setInput('tabs', VOTE_DETAIL_TABS);
     fixture.detectChanges();
@@ -141,7 +146,7 @@ describe('VoteDetailHeaderComponent', () => {
     });
 
     expect(text('vote-detail-header-close-date')).toMatch(/^Closed /);
-    expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026.');
+    expect(text('vote-detail-header-ended-early')).toBe(`Vote closed early on ${formatDate('2026-10-20T12:00:00Z', 'MMM d, y', 'en-US')}.`);
   });
 
   it.each([
@@ -167,7 +172,7 @@ describe('VoteDetailHeaderComponent', () => {
     fixture.detectChanges();
 
     expect(text('vote-detail-header-close-date')).toBe('Closed Oct 20, 2026 12:00 PM UTC');
-    expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026.');
+    expect(text('vote-detail-header-ended-early')).toBe(`Vote closed early on ${formatDate('2026-10-20T12:00:00Z', 'MMM d, y', 'en-US')}.`);
   });
 
   it.each(['creator', 'voter'] as const)('exposes the full closing time zone to screen readers for a %s', (audience) => {
@@ -458,13 +463,67 @@ describe('VoteDetailHeaderComponent', () => {
   it.each([PollStatus.ACTIVE, PollStatus.ENDED])('shows only title, status and back navigation when limited on a %s vote (#4330)', (status) => {
     render({ limited: true, vote: makeVote({ status, early_end_time: '2026-10-20T12:00:00Z' }) });
 
-    for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+    for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'created', 'comments', 'view-results', 'tabs']) {
       expect(exists(`vote-detail-header-${suffix}`)).toBe(false);
     }
     expect(fixture.nativeElement.querySelector('[data-testid^="vote-detail-header-tab-"]')).toBeNull();
     expect(text('vote-detail-header-title')).toBe('Synthetic roadmap approval');
     expect(exists('vote-detail-header-status')).toBe(true);
     expect(exists('vote-detail-header-back')).toBe(true);
+  });
+
+  describe('visibility tooltip and vote details', () => {
+    const privacyTooltip = (): string => fixture.debugElement.query(By.css('[data-testid="vote-detail-header-privacy"]')).componentInstance.tooltip();
+
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('explains the visibility rules to a manager on an open named vote', () => {
+      render({ audience: 'creator', vote: makeVote({ pseudo_anonymity: false }) });
+
+      expect(privacyTooltip()).toContain('Voters see only their own response until the vote closes.');
+      expect(privacyTooltip()).toContain("You can see each voter's ballot on the Voters tab.");
+    });
+
+    it('explains the final visibility on a closed vote', () => {
+      render({ audience: 'creator', vote: makeVote({ status: PollStatus.ENDED }) });
+
+      expect(privacyTooltip()).toContain('As a manager, you can see the final totals and comments.');
+    });
+
+    it('explains held totals when results are still being finalized', () => {
+      render({ audience: 'creator', resultsHeld: true, vote: makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true }) });
+
+      expect(privacyTooltip()).toContain('Totals and comments will appear once they are finalized.');
+    });
+
+    it('shows the UTC created date during SSR and comment settings in the meta row', () => {
+      render({ vote: makeVote({ creation_time: '2026-10-01T12:00:00Z', poll_comment_prompts: [] }), commentPromptCount: 2 });
+
+      expect(text('vote-detail-header-created')).toBe('Created Oct 1, 2026');
+      expect(text('vote-detail-header-comments')).toBe('Comments: Optional · 2 questions');
+    });
+
+    it.each([
+      ['server', 'Pacific/Auckland', '2026-10-01T12:00:00Z', 'Oct 1, 2026'],
+      ['server', 'America/Los_Angeles', '2026-10-01T00:30:00Z', 'Oct 1, 2026'],
+      ['browser', 'Pacific/Auckland', '2026-10-01T12:00:00Z', 'Oct 2, 2026'],
+      ['browser', 'America/Los_Angeles', '2026-10-01T00:30:00Z', 'Sep 30, 2026'],
+      ['browser', 'America/Los_Angeles', '2026-07-01T07:30:00Z', 'Jul 1, 2026'],
+      ['browser', 'America/Los_Angeles', '2026-01-01T07:30:00Z', 'Dec 31, 2025'],
+    ])('formats Created on %s with host zone %s at %s', (platform, timezone, creationTime, expected) => {
+      vi.stubEnv('TZ', timezone);
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: platform });
+      render({ vote: makeVote({ status: PollStatus.ENDED, creation_time: creationTime }) });
+
+      expect(text('vote-detail-header-created')).toBe(`Created ${expected}`);
+    });
+
+    it('reports comments as not enabled and omits Created without a creation time', () => {
+      render();
+
+      expect(text('vote-detail-header-comments')).toBe('Comments: Not enabled');
+      expect(exists('vote-detail-header-created')).toBe(false);
+    });
   });
 
   it('renders the tab strip and emits the clicked tab', () => {

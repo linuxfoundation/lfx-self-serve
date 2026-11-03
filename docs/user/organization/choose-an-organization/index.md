@@ -8,7 +8,7 @@ last_updated: 2026-11-03
 intercom_collection: Organization
 ---
 
-These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer), a CLA Manager, or Linux Foundation staff. Access to an organization is granted by that organization's own Organization Lens administrators, not by the Linux Foundation.
+These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer), a CLA (Contributor License Agreement) Manager, an initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), or Linux Foundation staff. Admin and viewer access to an organization is granted by that organization's own Organization Lens administrators, not by the Linux Foundation.
 
 The organization switcher at the top of the sidebar names what you are viewing, and every page in the lens (**Dashboard**, **Memberships**, **Projects**, and the rest) follows it. Usually that is a single organization. If you have access to two or more, the switcher also offers the **All Organizations Roll-Up**, a combined view across all of them.
 
@@ -17,7 +17,7 @@ The organization switcher at the top of the sidebar names what you are viewing, 
 You choose an organization from the organization switcher at the top of the sidebar, once you are in the Organization lens.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Organization** in the lens switcher. On a larger screen, you land on the **Dashboard** of the selected organization. On a phone or small screen, selecting **Organization** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that organization is CLA Manager, you land on its **EasyCLA** page instead, because that is the only page you can open for it, and on a phone or small screen **EasyCLA** is the only page in its menu. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+2. Select **Organization** in the lens switcher. On a larger screen, you land on the **Dashboard** of the selected organization. On a phone or small screen, selecting **Organization** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that organization is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead, because that is the only page you can open for it, and on a phone or small screen **EasyCLA** is the only page in its menu. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 3. Select the organization switcher at the top of the sidebar. It shows the organization's logo, its name, and your role on it.
 4. Select an organization from the list. A check mark marks the one you are viewing.
 
@@ -27,7 +27,7 @@ If you can open only one organization, the switcher shows that organization with
 
 ## How do I switch to a different organization?
 
-Open the organization switcher at the top of the sidebar and select another organization. You stay on the same page, now showing the organization you picked, unless your only role on that organization is CLA Manager: then you land on its **EasyCLA** page, the only page you can open for it.
+Open the organization switcher at the top of the sidebar and select another organization. You stay on the same page, now showing the organization you picked, unless your only role on that organization is CLA Manager or initial CLA Manager designee: then you land on its **EasyCLA** page, the only page you can open for it.
 
 1. Select the organization switcher at the top of the sidebar.
 2. Select the organization you want. On a keyboard, use the arrow keys to move through the list and press Enter to select.
@@ -42,7 +42,7 @@ It appears as the first entry in the organization switcher, above your organizat
 
 **When it is offered.** Only when you have access to two or more organizations. With access to one, there is nothing to combine, so the entry does not appear at all.
 
-**What it covers.** Every organization on your list, including those you reach through access to a related organization. Organizations where your only role is CLA Manager are not part of the combined view; manage those in the [Corporate CLA Console](https://corporate.lfcla.com).
+**What it covers.** Every organization on your list, including those you reach through access to a related organization. Organizations where your only role is CLA Manager or initial CLA Manager designee are not part of the combined view; manage those in the [Corporate CLA Console](https://corporate.lfcla.com).
 
 To select it:
 
@@ -73,7 +73,7 @@ In the list of organizations, hovering over an inherited role shows **Inherited 
 
 ## Why can't I search for an organization in the switcher?
 
-Only Linux Foundation staff can search the switcher. Everyone else sees a list of the organizations they have access to, with no search box. If you have an admin or viewer role on any organization, the list leaves out organizations where your only role is CLA Manager. Manage those organizations' corporate CLAs in the [Corporate CLA Console](https://corporate.lfcla.com).
+Only Linux Foundation staff can search the switcher. Everyone else sees a list of the organizations they have access to, with no search box. If you have an admin or viewer role on any organization, the list leaves out organizations where your only role is CLA Manager or initial CLA Manager designee. Manage those organizations' corporate CLAs in the [Corporate CLA Console](https://corporate.lfcla.com).
 
 For Linux Foundation staff, the switcher opens with a **Search organizations...** box. Type at least two characters to search every organization. Until you do, an empty list shows **Search for any organization…**. When the results include organizations you are not assigned to, the ones you are assigned to are listed under **Your organizations** and the rest under **All organizations**. Each organization under **All organizations** carries a **Member** or **Non-member** label for its Linux Foundation membership.
 
@@ -88,7 +88,7 @@ Other messages in the switcher:
 Every Organization lens page address names the organization it shows, in the form `/org/<organization>/<page>`. For example, `app.lfx.dev/org/<organization>/projects` opens the **Projects** page of that organization.
 
 - `<organization>` is the organization's short name, in lowercase letters, numbers, and hyphens. An organization without a short name is addressed by its 18-character account ID, which starts with `001`.
-- `/org/<organization>` on its own opens that organization's **Dashboard**, or its **EasyCLA** page when your only role on it is CLA Manager.
+- `/org/<organization>` on its own opens that organization's **Dashboard**, or its **EasyCLA** page when your only role on it is CLA Manager or initial CLA Manager designee.
 - `/org/all/<page>` is the combined view: it opens **All Organizations Roll-Up** on that page. `all` is reserved for it, so an organization whose short name would be `all` is addressed by its account ID instead. Opening a `/org/all` address switches you to the combined view, the same way an organization address switches you to that organization. If you have access to only one organization, the combined view is not yours to open: LFX opens the page for your organization instead, and if it cannot, you land on the page described below.
 - A link you share names the organization, so the person who opens it sees the same organization, as long as they have access to it.
 - An older address without an organization, such as `/org/projects`, still opens. It shows the organization you have selected, which may not be the one the sender was viewing. The address usually fills in that organization's name when the page loads, but not always, so before you share a link, check that it reads `/org/<organization>/<page>`.

@@ -1,16 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { RecurrenceType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingDeleteTypeResult, MeetingHomeRow, MeetingOccurrence, PastMeeting } from '@lfx-one/shared/interfaces';
-import { MeetingService } from '@services/meeting.service';
+import { Meeting, MeetingDeleteTypeResult, MeetingHomeRow, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of, Subject, throwError } from 'rxjs';
+import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDeleteModalComponent } from '../components/meeting-delete-modal/meeting-delete-modal.component';
@@ -36,7 +34,6 @@ describe('MeetingsHomeDeleteService', () => {
   let userService: { refreshUserMeetings: ReturnType<typeof vi.fn>; refreshUserPastMeetings: ReturnType<typeof vi.fn> };
   let scopeResult: Subject<MeetingDeleteTypeResult | undefined>;
   let confirmResult: Subject<boolean | undefined>;
-  let getMeetingDetail: ReturnType<typeof vi.fn>;
   let dialogClose: ReturnType<typeof vi.fn>;
 
   const openedWith = (component: unknown): unknown[] | undefined => modalOpen.mock.calls.find(([content]) => content === component);
@@ -47,7 +44,6 @@ describe('MeetingsHomeDeleteService', () => {
     confirmResult = new Subject();
     dialogClose = vi.fn();
     modalOpen = vi.fn((component: unknown) => ({ close: dialogClose, closed: component === MeetingDeleteScopeModalComponent ? scopeResult : confirmResult }));
-    getMeetingDetail = vi.fn().mockReturnValue(of(SERIES));
     toastShow = vi.fn();
     store = { removeMeeting: vi.fn(), removeOccurrence: vi.fn() };
     userService = { refreshUserMeetings: vi.fn(), refreshUserPastMeetings: vi.fn() };
@@ -56,7 +52,6 @@ describe('MeetingsHomeDeleteService', () => {
         MeetingsHomeDeleteService,
         { provide: MeetingsHomeStore, useValue: store },
         { provide: UserService, useValue: userService },
-        { provide: MeetingService, useValue: { getMeetingDetail } },
         { provide: UiModalService, useValue: { open: modalOpen } },
         { provide: UiToastService, useValue: { show: toastShow } },
       ],
@@ -102,28 +97,6 @@ describe('MeetingsHomeDeleteService', () => {
     TestBed.resetTestingModule();
 
     expect(dialogClose).toHaveBeenCalledWith();
-  });
-
-  describe('past row', () => {
-    const PAST = { ...ONE_OFF, id: 'synthetic-meeting-2524640400', meeting_id: 'synthetic-meeting' } as unknown as PastMeeting;
-
-    it('re-reads its meeting and asks for the scope when that meeting recurs', () => {
-      service.delete(row(PAST));
-
-      expect(getMeetingDetail).toHaveBeenCalledWith('synthetic-meeting', { skipCache: true });
-      const { data } = openedWith(MeetingDeleteScopeModalComponent)?.[1] as { data: { row: MeetingHomeRow; occurrence: null } };
-      expect([data.row.meeting, data.occurrence]).toEqual([SERIES, null]);
-    });
-
-    it('reports a meeting that is already gone', () => {
-      getMeetingDetail.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
-      service.delete(row(PAST));
-
-      expect(modalOpen).not.toHaveBeenCalled();
-      expect(toastShow).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Delete Failed', description: 'Meeting not found. It may have already been deleted.' })
-      );
-    });
   });
 
   describe('recurring', () => {
