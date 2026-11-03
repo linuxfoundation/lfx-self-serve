@@ -71,7 +71,10 @@ import {
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_EMAIL_CHANNEL_LABEL,
   CAMPAIGN_EMAIL_CHANNEL_PLATFORM,
+  CAMPAIGN_FUNNEL_STAGE_OPTIONS,
+  CAMPAIGN_FUNNEL_STAGE_SHORT_LABELS,
   CAMPAIGN_STATUS_DELETED,
+  CAMPAIGN_TACTIC_OPTIONS,
   CAMPAIGN_STATUSES_NOT_REUSED,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
@@ -161,6 +164,7 @@ import {
   isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
@@ -185,7 +189,11 @@ import type {
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
   CampaignJobOutcome,
+  CampaignCreateAnother,
+  CampaignCreateAnotherDialogData,
   CampaignExistingPlatformNotice,
+  CampaignFunnelStage,
+  CampaignTactic,
   CampaignExistingRow,
   CampaignIndexDoc,
   CampaignKeyword,
@@ -276,6 +284,7 @@ import {
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
+import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
@@ -332,6 +341,9 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     CreativeSlotGridComponent,
     GoogleCreativeImageLibraryComponent,
   ],
+  // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
+  // also provides one at root, and this instance behaves the same.
+  providers: [DialogService],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -341,6 +353,7 @@ export class ImplementationTabComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
@@ -679,6 +692,13 @@ export class ImplementationTabComponent implements OnInit {
   /** A list read is in flight, so "nothing listed" means "checking", not "nothing created". */
   public readonly briefCampaignsLoading = input(false);
 
+  /**
+   * The platforms this deployment lets an operator deliberately create ANOTHER campaign on (#4983,
+   * "ss-3"): `CampaignListResult.multiCampaignPlatforms`, already narrowed by the BFF to the platforms
+   * campaign-service supports it for. `null` (unanswered) and `[]` both mean off.
+   */
+  public readonly multiCampaignPlatforms = input<string[] | null>(null);
+
   /** Asks the parent to read the campaign list again after a failed read. */
   public readonly retryBriefCampaigns = output<void>();
 
@@ -704,6 +724,70 @@ export class ImplementationTabComponent implements OnInit {
    * would switch to Planning and destroy this tab, and with it the job's polling.
    */
   public readonly createStarted = output<void>();
+
+  /** The funnel-stage and tactic choices for a "create another" (#4983, "ss-3"). */
+  protected readonly funnelStageOptions = [...CAMPAIGN_FUNNEL_STAGE_OPTIONS];
+  protected readonly tacticOptions = [...CAMPAIGN_TACTIC_OPTIONS];
+  protected readonly funnelStageShortLabels = CAMPAIGN_FUNNEL_STAGE_SHORT_LABELS;
+
+  /**
+   * The stage (required) and tactic (optional) for the next "create another". A FormGroup behind
+   * `lfx-select`, so a picker the template removes and recreates (switching channel and back) shows the
+   * value that will be sent rather than its placeholder.
+   */
+  protected readonly anotherForm = this.fb.group({
+    stage: this.fb.control<CampaignFunnelStage | null>(null),
+    tactic: this.fb.control<CampaignTactic | null>(null),
+  });
+
+  /** The stage the operator chose for the next "create another". Required before it can be sent. */
+  protected readonly anotherStage = toSignal(this.anotherForm.controls.stage.valueChanges.pipe(map((value): CampaignFunnelStage | '' => value ?? '')), {
+    initialValue: '' as CampaignFunnelStage | '',
+  });
+
+  /** The tactic the operator chose for the next "create another". Optional. */
+  protected readonly anotherTactic = toSignal(this.anotherForm.controls.tactic.valueChanges.pipe(map((value): CampaignTactic | '' => value ?? '')), {
+    initialValue: '' as CampaignTactic | '',
+  });
+
+  /**
+   * The highest slot version this tab has SEEN per slot (`platform|variant`), from the jobs it ran. The
+   * campaign list lags a create while it is re-indexed, so the expectation sent with the next "create
+   * another" takes the higher of the two (#4983).
+   */
+  private readonly seenSlotVersions = signal<Record<string, number>>({});
+
+  /**
+   * The campaigns this tab's own jobs reported, keyed like `seenSlotVersions` plus the slot version, so
+   * the confirmation lists one the index has not caught up with yet (#4983).
+   */
+  private readonly seenCampaigns = signal<Record<string, CampaignExistingRow & { variant: string; slotVersion: number }>>({});
+
+  /**
+   * The selected platforms that already have a live campaign for this event (#4983, "ss-3"): listed, or
+   * created by a job this tab just ran.
+   */
+  protected readonly overlappingPlatforms: Signal<string[]> = this.initOverlappingPlatforms();
+
+  /** Of those, the ones a deliberate second campaign may be created on here. */
+  protected readonly createAnotherPlatforms: Signal<string[]> = computed(() => {
+    const allowed = this.multiCampaignPlatforms() ?? [];
+    return this.overlappingPlatforms().filter((platform) => allowed.includes(platform));
+  });
+
+  /** Whether the next create adds another campaign: every overlapping platform supports it, and some overlap. */
+  protected readonly createAnotherMode = computed(
+    () => this.createAnotherPlatforms().length > 0 && this.createAnotherPlatforms().length === this.overlappingPlatforms().length
+  );
+
+  /**
+   * Why a create that would add another campaign cannot go as it stands, or `null` (#4983, "ss-3").
+   *
+   * campaign-service refuses a `new_version` request as a whole when any platform in it is not being
+   * created again, so a create that adds another campaign may hold ONLY those platforms; and the new
+   * campaign must carry a funnel stage.
+   */
+  protected readonly createAnotherBlock: Signal<string | null> = this.initCreateAnotherBlock();
 
   /** Why the last Edit brief opened nothing, from the parent, or `null` (#4983). */
   public readonly editBriefError = input<string | null>(null);
@@ -1143,7 +1227,17 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly platformResultsHeading = computed(() => {
     if (this.anyPlatformCreated()) {
-      return 'Campaigns Created';
+      // Every successful row came back `reused` (#4983): campaign-service returned campaigns that
+      // already existed, so "Created" would contradict the line under each row.
+      // A reused row beside a proven pre-create failure is two confirmed outcomes, and says both. A reused
+      // row beside an unconfirmed one falls through to the headings below, which never claim more than
+      // was verified.
+      const rows = this.platformOutcomes();
+      if (rows.some((r) => (r.outcome === 'created' && r.reused !== true) || r.outcome === 'orphaned')) return 'Campaigns Created';
+      if (rows.every((r) => r.outcome === 'created' && r.reused === true)) return 'Existing Campaigns Returned';
+      if (rows.every((r) => (r.outcome === 'created' && r.reused === true) || r.outcome === 'nothing-created')) {
+        return 'Existing Campaigns Returned; Nothing Else Created';
+      }
     }
     const rows = this.platformOutcomes();
     return rows.length > 0 && rows.every((r) => r.outcome === 'nothing-created') ? 'No Campaigns Created' : 'Campaign Status Unconfirmed';
@@ -3083,6 +3177,7 @@ export class ImplementationTabComponent implements OnInit {
     // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
     // First, not last, because an early `return false` must not skip registering it.
     void this.campaignFormRevision();
+    if (this.createAnotherBlock() !== null) return false;
     const platforms = this.selectedPlatforms();
     const googleSelected = platforms.includes('google-ads');
     const linkedInSelected = platforms.includes('linkedin-ads');
@@ -3668,6 +3763,8 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Public Methods ===
   public reset(): void {
+    // A new create starts with no stage chosen, so adding another campaign is always a fresh decision.
+    this.anotherForm.reset({ stage: null, tactic: null });
     this.jobSubscription?.unsubscribe();
     this.jobSubscription = null;
     this.step.set('form');
@@ -5014,6 +5111,38 @@ export class ImplementationTabComponent implements OnInit {
 
   protected submit(): void {
     if (!this.canSubmit()) return;
+    // Adding another campaign on a platform that already has one is confirmed every time (#4983): the
+    // dialog lists what exists and says the new campaign is separately budgeted. Only Create another in
+    // it sends `new_version`; anything else sends nothing.
+    if (this.createAnotherMode()) {
+      const another = this.buildCreateAnother();
+      if (another === null) {
+        // Unreachable while `createAnotherBlock` gates Create, and said out loud rather than dropped.
+        this.errors.set(['This page could not tell which campaigns already exist, so nothing was created. Reload and try again.']);
+        return;
+      }
+      this.dialogService
+        .open(CampaignCreateAnotherDialogComponent, {
+          header: 'Create another campaign?',
+          width: '36rem',
+          style: { maxWidth: '90vw' },
+          modal: true,
+          closable: true,
+          data: this.createAnotherDialogData(another),
+        })
+        ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+        .subscribe((confirmed: boolean | undefined) => {
+          if (confirmed === true && this.canSubmit() && this.step() === 'form') {
+            this.dispatchCreate(another);
+          }
+        });
+      return;
+    }
+    this.dispatchCreate();
+  }
+
+  /** Send the create; `another` only after the operator confirmed a deliberate second campaign. */
+  protected dispatchCreate(another?: CampaignCreateAnother): void {
     // The X start rule depends on the clock, which `canSubmit`'s memo cannot see move: a form left
     // open across midnight UTC would otherwise send a start campaign-service now refuses.
     const twitterFlightError = this.selectedPlatforms().includes('twitter-ads') ? this.twitterFlightErrorAt(Date.now()) : null;
@@ -5035,6 +5164,8 @@ export class ImplementationTabComponent implements OnInit {
     const slug = form.eventSlug || form.eventName.toLowerCase().replace(/\s+/g, '-');
 
     const request = {
+      // A confirmed "create another" (#4983). Absent otherwise, so a repeat create stays a retry.
+      ...(another === undefined ? {} : { another }),
       eventName: form.eventName,
       eventSlug: slug,
       countryCode: form.countryCode,
@@ -7347,6 +7478,7 @@ export class ImplementationTabComponent implements OnInit {
             this.results.set(outcome.campaigns);
             this.platformResults.set(outcome.platformResults ?? []);
             this.errors.set(outcome.errors);
+            this.rememberSlotVersions(outcome.platformResults ?? []);
             this.step.set('results');
             this.createJobSettled.emit();
           }
@@ -7371,6 +7503,137 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   // === Private Initializers ===
+  /**
+   * The latest slot version of the slot a create on `platform` would claim, when that slot's latest
+   * campaign is one campaign-service would hand back (see `initOverlappingPlatforms`); `null` when the
+   * slot is empty or its latest row is unfinished. A listed row indexed before slot versions existed
+   * counts as slot 1.
+   *
+   * A Google row indexed before variants existed names no channel, and it could be any of them, so it
+   * matches none: the create stays a plain one, which campaign-service resolves against the campaign
+   * itself (reusing it on its own channel). Every other platform has the one `default` slot.
+   *
+   * A version this tab saw counts until the list shows that very campaign deleted; campaign-service
+   * compares against the latest LIVE slot, so expecting a deleted one would only ever return the older.
+   */
+  private slotLatest(platform: string): number | null {
+    const variant = this.createVariant(platform);
+    let seen = this.seenSlotVersions()[this.seenSlotKey(platform, variant)] ?? 0;
+    let latest: CampaignIndexDoc | null = null;
+    for (const campaign of this.briefCampaigns() ?? []) {
+      if (!this.inSlot(campaign, platform, variant)) continue;
+      if (campaign.status === CAMPAIGN_STATUS_DELETED) {
+        if ((campaign.slot_version ?? 1) === seen) seen = 0;
+        continue;
+      }
+      if (latest === null || (campaign.slot_version ?? 1) > (latest.slot_version ?? 1)) latest = campaign;
+    }
+    const latestVersion = latest === null ? 0 : (latest.slot_version ?? 1);
+    if (seen > latestVersion) return seen;
+    if (latest === null) return null;
+    const reusable = !!latest.platform_campaign_id && !CAMPAIGN_STATUSES_NOT_REUSED.includes(latest.status);
+    return reusable ? latestVersion : null;
+  }
+
+  /** Whether a listed campaign sits on the slot `platform`/`variant` names (see `slotLatest` for a variant-less Google row). */
+  private inSlot(campaign: CampaignIndexDoc, platform: string, variant: string): boolean {
+    if (campaign.platform !== platform) return false;
+    if (campaign.variant === undefined) return platform !== 'google-ads' && variant === 'default';
+    return campaign.variant === variant;
+  }
+
+  /** `seenSlotVersions` is keyed by brief as well, so a slot seen for one brief says nothing about another. */
+  private seenSlotKey(platform: string, variant: string): string {
+    return `${this.briefPersistence().briefId ?? ''}|${platform}|${variant}`;
+  }
+
+  /** The slot variant a create on `platform` would claim: Google's channel (`default` for Search), else `default`. */
+  private createVariant(platform: string): string {
+    if (platform !== 'google-ads') return 'default';
+    const channel = this.resolveGoogleChannel();
+    return channel === null || channel === 'search' ? 'default' : channel;
+  }
+
+  /** File the slot versions a finished job reports, so the next expectation is not behind them (#4983). */
+  private rememberSlotVersions(results: readonly CampaignPlatformResult[]): void {
+    const seen = { ...this.seenSlotVersions() };
+    const campaigns = { ...this.seenCampaigns() };
+    for (const result of results) {
+      if (result.ok && typeof result.slotVersion === 'number') {
+        const variant = result.variant ?? 'default';
+        const key = this.seenSlotKey(result.platform, variant);
+        seen[key] = Math.max(seen[key] ?? 0, result.slotVersion);
+        campaigns[`${key}|${result.slotVersion}`] = {
+          id: `seen-${result.platform}-${variant}-${result.slotVersion}`,
+          platform: result.platform,
+          platformLabel: this.existingPlatformLabel(result.platform),
+          name: 'Created here moments ago; still being listed',
+          status: result.reused === true ? 'existing' : 'created',
+          slot: String(result.slotVersion),
+          variant,
+          slotVersion: result.slotVersion,
+        };
+      }
+    }
+    this.seenSlotVersions.set(seen);
+    this.seenCampaigns.set(campaigns);
+  }
+
+  /**
+   * The campaigns the confirmation lists for `platforms`: the indexed ones, plus any this tab's jobs
+   * reported that the index does not show yet, so a create made moments ago is never missing (#4983).
+   */
+  private confirmationCampaigns(platforms: readonly string[]): CampaignExistingRow[] {
+    const listed = this.existingCampaigns().filter((campaign) => platforms.includes(campaign.platform));
+    const docs = this.briefCampaigns() ?? [];
+    const prefix = `${this.briefPersistence().briefId ?? ''}|`;
+    const pending = Object.entries(this.seenCampaigns())
+      .filter(([key, row]) => key.startsWith(prefix) && platforms.includes(row.platform))
+      .filter(([, row]) => !docs.some((doc) => this.inSlot(doc, row.platform, row.variant) && (doc.slot_version ?? 1) === row.slotVersion))
+      .map(([, row]) => ({
+        id: row.id,
+        platform: row.platform,
+        platformLabel: row.platformLabel,
+        name: row.name,
+        status: row.status,
+        slot: row.slot,
+      }));
+    return [...listed, ...pending];
+  }
+
+  /**
+   * The "create another" payload, or `null` when it cannot be built (#4983).
+   *
+   * `expectedSlotVersions` names, per platform, the latest slot version of the SAME slot the operator
+   * saw: for Google, the channel being created, since each channel is its own slot. It is the higher of
+   * the listed campaigns and what this tab's own jobs reported; a listed campaign indexed before slot
+   * versions existed counts as slot 1.
+   */
+  private buildCreateAnother(): CampaignCreateAnother | null {
+    const stage = this.anotherStage();
+    if (stage === '') return null;
+    const expectedSlotVersions: Record<string, number> = {};
+    for (const platform of this.createAnotherPlatforms()) {
+      const latest = this.slotLatest(platform);
+      if (latest === null) return null;
+      expectedSlotVersions[platform] = latest;
+    }
+    const tactic = this.anotherTactic();
+    return { funnelStage: stage, ...(tactic === '' ? {} : { tactic }), expectedSlotVersions };
+  }
+
+  private createAnotherDialogData(another: CampaignCreateAnother): CampaignCreateAnotherDialogData {
+    const platforms = Object.keys(another.expectedSlotVersions);
+    const labels = platforms.map((platform) => this.existingPlatformLabel(platform)).join(', ');
+    const stage = CAMPAIGN_FUNNEL_STAGE_OPTIONS.find((option) => option.id === another.funnelStage)?.label ?? another.funnelStage;
+    const tactic = another.tactic === undefined ? null : (CAMPAIGN_TACTIC_OPTIONS.find((option) => option.id === another.tactic)?.label ?? another.tactic);
+    const tacticPart = tactic === null ? '' : `, ${tactic} tactic,`;
+    return {
+      summary: `This creates a separate, separately budgeted ${stage}${tacticPart} campaign on ${labels}. The campaigns already created for this event keep running.`,
+      existing: this.confirmationCampaigns(platforms),
+    };
+  }
+
   /** A platform id as the panel names it: the picker's label, HubSpot email, or the id itself. */
   private existingPlatformLabel(platform: string): string {
     if (platform === CAMPAIGN_EMAIL_CHANNEL_PLATFORM) {
@@ -7379,12 +7642,46 @@ export class ImplementationTabComponent implements OnInit {
     return CAMPAIGN_PLATFORMS.find((option) => option.id === platform)?.label ?? platform;
   }
 
+  /**
+   * A platform overlaps when the SLOT the create would claim (the platform, and for Google the
+   * channel) already holds a campaign campaign-service would hand back: its latest live row has a
+   * platform id and is not pending or a partial orphan (`CAMPAIGN_STATUSES_NOT_REUSED`), or this tab's
+   * own job just created one there. Otherwise the create stays a plain one: a first campaign on a new
+   * channel, or the retry that reconciles an unfinished row, neither of which `new_version` serves.
+   */
+  private initOverlappingPlatforms(): Signal<string[]> {
+    return computed(() => this.selectedPlatforms().filter((platform) => this.slotLatest(platform) !== null));
+  }
+
+  private initCreateAnotherBlock(): Signal<string | null> {
+    return computed(() => {
+      const overlapping = this.overlappingPlatforms();
+      const another = this.createAnotherPlatforms();
+      if (another.length === 0) {
+        // Nothing here can be created again: a repeat create on those platforms is a retry, as before.
+        return null;
+      }
+      if (another.length < overlapping.length) {
+        const unsupported = overlapping.filter((platform) => !another.includes(platform)).map((platform) => this.existingPlatformLabel(platform));
+        return `A second ${unsupported.join(', ')} campaign isn't supported yet. Create it separately, without the platforms you are adding another campaign on.`;
+      }
+      if (this.selectedPlatforms().length > overlapping.length) {
+        return 'Adding another campaign can only include platforms that already have one. Create the other platforms separately.';
+      }
+      if (this.anotherStage() === '') {
+        return 'Choose a funnel stage for the new campaign.';
+      }
+      return null;
+    });
+  }
+
   private initExistingCampaigns(): Signal<CampaignExistingRow[]> {
     return computed(() =>
       (this.briefCampaigns() ?? [])
         .filter((campaign) => campaign.status !== CAMPAIGN_STATUS_DELETED)
         .map((campaign) => ({
           id: campaign.id,
+          platform: campaign.platform,
           platformLabel: this.existingPlatformLabel(campaign.platform),
           name: campaign.campaign_name,
           status: campaign.status.replace(/_/g, ' '),
@@ -7423,6 +7720,11 @@ export class ImplementationTabComponent implements OnInit {
         if (result.ok) {
           platforms.add(result.platform);
         }
+      }
+      // A platform this deployment can create another campaign on gets the stage picker instead (#4983,
+      // "ss-3"), so this retry warning is only true of the others.
+      for (const platform of this.createAnotherPlatforms()) {
+        platforms.delete(platform);
       }
       if (platforms.size === 0) {
         return null;

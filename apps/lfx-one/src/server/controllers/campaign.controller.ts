@@ -1895,6 +1895,8 @@ export class CampaignController {
       // a concept it does not have is a category error.
       const viaService = await this.campaignServiceClient.createCampaigns(req, briefId, projectSlug, platforms, configEnvelope, {
         campaignTypes: body?.campaignTypes,
+        // A confirmed "create another" (#4983). Judged in `createCampaigns`, not trusted.
+        ...(body?.another ? { another: body.another } : {}),
       });
 
       if (viaService.enabled && viaService.jobId !== null) {
@@ -1903,6 +1905,13 @@ export class CampaignController {
         // a UUID here and `job_...` there, which is exactly what lets the poll route send each
         // one back to the system that owns it.
         res.json({ jobId: viaService.jobId });
+        return;
+      }
+      // A confirmed "create another" (#4983) exists only on the cutover path. With create dark the legacy
+      // creator would drop `another` and send an unconditional create, so refuse it terminally instead.
+      if (!viaService.enabled && body?.another) {
+        logger.warning(req, 'campaign_create', 'create-another requested while the campaign-service create cutover is dark', { briefId, projectSlug });
+        res.json({ jobId: '', error: "Creating another campaign isn't available right now, so nothing was created. Reload the page and try again." });
         return;
       }
       if (viaService.enabled && viaService.error !== null) {

@@ -791,6 +791,20 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(res.json).toHaveBeenCalledWith({ jobId: 'job_123_abc' });
   });
 
+  /** #4983: a confirmed "create another" must never fall through to the legacy creator, which would drop it. */
+  it('refuses a create-another outright while the cutover is dark, instead of creating unconditionally', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+
+    await controller.createCampaign(
+      buildReq({ ...body, another: { funnelStage: 'mid', expectedSlotVersions: { 'google-ads': 1 } } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(legacyCreate, 'the legacy creator ran a create-another with no compare-and-set').not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ jobId: '', error: expect.stringContaining('nothing was created') }));
+  });
+
   it('does NOT run the legacy path once campaign-service accepts the job', async () => {
     // The property worth pinning: both paths create real campaigns on real ad platforms, so a
     // fall-through after an accepted 202 would double-create and spend twice.
