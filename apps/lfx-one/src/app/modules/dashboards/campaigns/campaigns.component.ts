@@ -606,6 +606,23 @@ export class CampaignsComponent {
   private planningEditRequestSeq = 0;
 
   /**
+   * Bumped whenever Planning moves on — a discard (New Brief, Cancel, a fresh Generate) or another open —
+   * so an Open to edit still waiting on its re-read (`readAndOpenSavedBrief`) can tell it is stale and
+   * drop its answer instead of replacing whatever Planning holds now (#4983).
+   */
+  private planningOpenGeneration = 0;
+
+  /**
+   * The ownership epoch of the brief handed to Implement, taken at the handover (#4983).
+   *
+   * An epoch bump means another account of the row arrived (a restore, an Open to edit, a read), whose
+   * validator may name newer bytes than the ones Implement holds. Edit brief compares against it: when
+   * the epoch has moved, it re-reads the row instead of reopening Implement's copy under that newer
+   * validator, which would replace the newer content without any conflict.
+   */
+  private briefOutputEpoch: number | null = null;
+
+  /**
    * True while `onRestoreSavedBrief` is adopting a restored brief's own program.
    *
    * The `programType` subscription treats a change as the user choosing a different program and
@@ -2808,6 +2825,7 @@ export class CampaignsComponent {
     this.carriedTwitterDraft.set(null);
     this.twitterCarryDiscarded = true;
     this.planningEditRequest.set(null);
+    this.planningOpenGeneration++;
   }
 
   /**
@@ -2846,9 +2864,14 @@ export class CampaignsComponent {
    */
   protected onEditBriefFromImplement(): void {
     const brief = this.briefOutput();
-    if (brief !== null) {
-      this.openInPlanningEditor(brief);
+    if (brief === null) return;
+    const key = this.ownershipKey(this.activeFoundationSlug(), brief);
+    if (key !== null && this.briefOutputEpoch !== null && (this.ownershipEpochs.get(key) ?? 0) !== this.briefOutputEpoch) {
+      // Another account of the row arrived after this brief was handed over (see `briefOutputEpoch`).
+      this.readAndOpenSavedBrief(brief, () => this.openInPlanningEditor(brief));
+      return;
     }
+    this.openInPlanningEditor(brief);
   }
 
   /**
@@ -2947,6 +2970,8 @@ export class CampaignsComponent {
     this.twitterCarryDiscarded = false;
     this.implementationDraft.set(null);
     this.briefOutput.set(handedOver);
+    const handedKey = this.ownershipKey(this.activeFoundationSlug(), handedOver);
+    this.briefOutputEpoch = handedKey === null ? null : (this.ownershipEpochs.get(handedKey) ?? 0);
     this.selectedTab.set('implementation');
     if (alreadyPersisted) {
       // Bump the generation even though nothing is being saved. `persistBrief` normally does
@@ -6757,8 +6782,12 @@ export class CampaignsComponent {
     if (projectSlug === '' || this.ownershipKey(projectSlug, seed) === null) return;
     const generation = this.briefPersistenceGeneration;
     const ownershipAtSend = this.ownershipGeneration;
+    const openGeneration = ++this.planningOpenGeneration;
     const mayAdopt = (): boolean =>
-      generation === this.briefPersistenceGeneration && ownershipAtSend === this.ownershipGeneration && projectSlug === this.activeFoundationSlug();
+      generation === this.briefPersistenceGeneration &&
+      ownershipAtSend === this.ownershipGeneration &&
+      openGeneration === this.planningOpenGeneration &&
+      projectSlug === this.activeFoundationSlug();
 
     from(this.persistChain)
       .pipe(
@@ -6796,6 +6825,7 @@ export class CampaignsComponent {
 
   /** Hand a brief to the paid planner's editor and show the Plan tab (#4983). */
   private openInPlanningEditor(brief: CampaignBriefOutput): void {
+    this.planningOpenGeneration++;
     this.planningEditRequestSeq += 1;
     this.planningEditRequest.set({ brief, requestId: this.planningEditRequestSeq });
     this.selectedTab.set('planning');

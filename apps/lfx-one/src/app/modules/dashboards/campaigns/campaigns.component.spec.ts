@@ -3551,6 +3551,45 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief, "the approval's ETag was dropped").toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
     });
 
+    it('drops a pending re-read when Planning discards its brief meanwhile', async () => {
+      const save = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValueOnce(save);
+      proceed();
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief, briefId: 'b-new', etag: 'W/"1"', approved: true }));
+      openFromOffer(offer(0, 'W/"0"'));
+
+      // New Brief / Generate in Planning while the read waits on the running save.
+      (fixture.componentInstance as unknown as { onPlanningBriefDiscarded(): void }).onPlanningBriefDiscarded();
+      save.next({ enabled: true, briefId: 'b-new', etag: 'W/"1"', created: true, approved: true });
+      save.complete();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalled();
+      expect(editRequest(), 'the late read replaced what Planning holds now').toBeNull();
+    });
+
+    it('re-reads the row on Edit brief once ownership moved past the brief on Implement', async () => {
+      // Implement holds a brief handed over earlier...
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      // ...then Open to edit records a newer account of the same row.
+      openFromOffer(offer(5, 'W/"8"'));
+      const current = { ...brief, keywords: [{ term: 'current', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief: current, briefId: 'stored-1', etag: 'W/"8"', approved: true }));
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalledTimes(1);
+      expect(editRequest()?.brief, "Implement's older copy was reopened under the newer validator").toBe(current);
+    });
+
     it('drops the X fields typed on Implement, which belong to the brief that was there', () => {
       const flag = (): boolean => (fixture.componentInstance as unknown as { twitterCarryDiscarded: boolean }).twitterCarryDiscarded;
       persistBrief.mockReturnValueOnce(NEVER);

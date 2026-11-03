@@ -1000,6 +1000,69 @@ describe('PlanningTabComponent editing an existing brief', () => {
     expect(proceeded[0].campaignGoal, 'a goal nobody chose was stored').toBeNull();
   });
 
+  it('closes a previous edit session when the next brief opens without the editor', async () => {
+    await openInEditor(1);
+    expect(internals().isEditing()).toBe(true);
+
+    const copyless = { ...storedBrief, structuredCopy: null, keywords: [], selectedPlatforms: ['reddit-ads'] } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('editRequest', { brief: copyless, requestId: 2 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(internals().isEditing(), "the previous brief's editor stayed open").toBe(false);
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().onProceedToImplementation();
+    expect(proceeded[0].structuredCopy, "the previous brief's Google copy was written into this one").toBeNull();
+    expect(proceeded[0].keywords).toEqual([]);
+  });
+
+  it('writes no Google block the brief did not have when only its keywords are edited', async () => {
+    const keywordsOnly = { ...storedBrief, structuredCopy: { reddit_ads: { variants: [] } } } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('editRequest', { brief: keywordsOnly, requestId: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(internals().isEditing()).toBe(true);
+
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().onProceedToImplementation();
+
+    expect(proceeded[0].structuredCopy?.['google_search'], 'an empty Search block was added').toBeUndefined();
+    expect(proceeded[0].structuredCopy?.['google_display'], 'an empty Display block was added').toBeUndefined();
+    expect(proceeded[0].structuredCopy?.['reddit_ads']).toEqual({ variants: [] });
+  });
+
+  it('keeps the stored HubSpot token and the stored LinkedIn copy when neither was changed here', async () => {
+    const linkedInCopy = {
+      variants: [{ introText: 'Stored intro', headline: 'Stored LinkedIn headline', imageAssetId: 'asset-1' }],
+      recommendedGeoTargets: [],
+      recommendedTargetingProfile: 'cloud-native',
+    };
+    const withLinkedIn = {
+      ...storedBrief,
+      selectedPlatforms: ['google-ads', 'linkedin-ads'],
+      structuredCopy: {
+        google_search: { headlines: ['Stored headline'], descriptions: ['Stored description'] },
+        linkedin_sponsored: { variants: [{ intro_text: 'Stored intro', headline: 'Stored LinkedIn headline' }] },
+      },
+      linkedInCopy,
+    } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('editRequest', { brief: withLinkedIn, requestId: 4 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // A lookup for whatever the URL field named answered after the brief opened.
+    (fixture.componentInstance as unknown as { hsUtm: { set(v: string | null): void } }).hsUtm.set('utm-of-another-event');
+
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().editSearchHeadlines.set(['Edited headline']);
+    internals().onProceedToImplementation();
+
+    expect(proceeded[0].hsUtm, "another event's token was saved on this brief").toBe('utm-stored');
+    expect(proceeded[0].linkedInCopy, 'a Google-only edit rebuilt the LinkedIn copy and dropped its fields').toEqual(linkedInCopy);
+  });
+
   it('frees the event again on New Brief', async () => {
     await openInEditor();
     internals().reset();
