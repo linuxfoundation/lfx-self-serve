@@ -8,14 +8,15 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
-import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY } from '@lfx-one/shared/constants';
-import type { Meeting, MeetingWriteAccess } from '@lfx-one/shared/interfaces';
+import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
+import type { Meeting, MeetingWriteAccess, UiToastConfig } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Drawer } from 'primeng/drawer';
@@ -39,6 +40,8 @@ describe('MeetingComposerHostComponent', () => {
   let composer: MeetingComposerService;
   let formService: MeetingComposerFormService;
   let messageService: { add: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
+  let toast: { show: ReturnType<typeof vi.fn> };
+  let navigateByUrl: ReturnType<typeof vi.fn>;
   let meetingWriteAccess: WritableSignal<MeetingWriteAccess>;
   let currentPersona: WritableSignal<string>;
   let clearContextLens: ReturnType<typeof vi.fn>;
@@ -88,10 +91,18 @@ describe('MeetingComposerHostComponent', () => {
   };
 
   const lastToast = () => messageService.add.mock.calls[messageService.add.mock.calls.length - 1][0];
+  const lastUiToast = (): UiToastConfig => toast.show.mock.calls[toast.show.mock.calls.length - 1][0];
+  const runAction = (label: string): void => {
+    const action = lastUiToast().actions?.find((candidate) => candidate.label === label);
+    expect(action, `toast action "${label}"`).toBeDefined();
+    action?.run();
+  };
   const setWriteAccess = (patch: Partial<MeetingWriteAccess>) => meetingWriteAccess.update((current) => ({ ...current, ...patch }));
 
   beforeEach(async () => {
     messageService = { add: vi.fn(), clear: vi.fn() };
+    toast = { show: vi.fn(() => ({ id: 'toast', dismiss: vi.fn() })) };
+    navigateByUrl = vi.fn(() => Promise.resolve(true));
     meetingWriteAccess = signal<MeetingWriteAccess>({ contextUid: 'project-1', canWrite: true });
     currentPersona = signal('maintainer');
     clearContextLens = vi.fn();
@@ -99,6 +110,7 @@ describe('MeetingComposerHostComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: messageService },
+        { provide: UiToastService, useValue: toast },
         { provide: CommitteeService, useValue: {} },
         {
           provide: MeetingService,
@@ -131,7 +143,7 @@ describe('MeetingComposerHostComponent', () => {
         // The create picker's lens override is the only one the host ends; the real service reads
         // cookies and the router to work out a lens nothing here asks it for.
         { provide: LensService, useValue: { clearContextLens } },
-        { provide: Router, useValue: { events: new Subject(), url: '/meetings', parseUrl: () => ({ queryParams: {} }) } },
+        { provide: Router, useValue: { events: new Subject(), url: '/meetings', parseUrl: () => ({ queryParams: {} }), navigateByUrl } },
       ],
     });
     // `set` replaces only the listed metadata keys, so the component's own `providers` survive and the
@@ -392,41 +404,55 @@ describe('MeetingComposerHostComponent', () => {
       vi.spyOn(formService, 'validateForSubmit').mockReturnValue(true);
     });
 
-    it('raises a sticky keyed toast carrying the created meeting', () => {
+    it('raises a sticky bottom-right uikit toast carrying the created meeting', () => {
       vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
 
       component['onSubmit']();
 
-      expect(lastToast()).toMatchObject({
-        key: MEETING_COMPOSER_TOAST_KEY,
-        severity: 'success',
-        summary: 'Meeting created',
-        detail: 'Weekly sync',
-        sticky: true,
-        closable: true,
-        data: { meetingUid: 'meeting-1', meetingTitle: 'Weekly sync', meetingUrl: '/meetings/meeting-1' },
+      expect(lastUiToast()).toMatchObject({
+        variant: 'success',
+        position: 'bottom-right',
+        message: 'Meeting created',
+        description: 'Weekly sync',
+        duration: 0,
+        dismissible: true,
       });
-      // A meeting with no password carries no navigation state at all, so the link is a plain route.
-      expect(lastToast().data.meetingLinkState).toBeUndefined();
+      expect(lastUiToast().actions?.map((action) => action.label)).toEqual(['Edit meeting', 'View meeting']);
+      expect(messageService.add).not.toHaveBeenCalled();
     });
 
-    it('retires the previous announcement before raising its own', () => {
+    it('opens the meeting as a plain route when it has no password', () => {
       vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
 
       component['onSubmit']();
+      runAction('View meeting');
 
-      // Sticky toasts never expire, so creating several meetings in a row would stack them over the page.
-      expect(messageService.clear).toHaveBeenCalledWith(MEETING_COMPOSER_TOAST_KEY);
+      expect(navigateByUrl).toHaveBeenCalledWith('/meetings/meeting-1', { state: undefined });
+    });
+
+    it('retires the announcement when the composer opens again', async () => {
+      vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
+
+      component['onSubmit']();
+      await flush();
+      const first = toast.show.mock.results[0].value;
+      expect(first.dismiss).not.toHaveBeenCalled();
+
+      await openCreate();
+
+      // Sticky toasts never expire, so creating several meetings in a row would stack them over the drawer.
+      expect(first.dismiss).toHaveBeenCalledTimes(1);
     });
 
     it('carries the password to the meeting link when the meeting has one', () => {
       vi.spyOn(formService, 'submit').mockReturnValue(of({ ...createdMeeting, password: 'secret' } as Meeting));
 
       component['onSubmit']();
+      runAction('View meeting');
 
       // Without it the join page bounces every private or restricted meeting to /meetings/not-found.
       // Router state, not a query param, so the shared secret never reaches the address bar.
-      expect(lastToast().data.meetingLinkState).toEqual({ password: 'secret' });
+      expect(navigateByUrl).toHaveBeenCalledWith('/meetings/meeting-1', { state: { password: 'secret' } });
     });
 
     it('names an untitled meeting rather than showing a blank toast', () => {
@@ -434,7 +460,7 @@ describe('MeetingComposerHostComponent', () => {
 
       component['onSubmit']();
 
-      expect(lastToast().data.meetingTitle).toBe('Untitled meeting');
+      expect(lastUiToast().description).toBe('Untitled meeting');
     });
 
     it('falls back to a plain confirmation when the create returns no meeting', () => {
@@ -444,7 +470,7 @@ describe('MeetingComposerHostComponent', () => {
 
       // A keyed toast here would offer two actions that dead-end: there is no uid to link to.
       expect(lastToast()).toEqual({ severity: 'success', summary: 'Meeting created', detail: 'Open it from the list to review the details.' });
-      expect(lastToast().key).toBeUndefined();
+      expect(toast.show).not.toHaveBeenCalled();
     });
 
     it('confirms an edit instead of announcing a creation', () => {
@@ -472,7 +498,7 @@ describe('MeetingComposerHostComponent', () => {
 
       // The handler closes the composer, so a second emission would announce a meeting over a surface
       // that has already moved on.
-      expect(messageService.add).toHaveBeenCalledTimes(1);
+      expect(toast.show).toHaveBeenCalledTimes(1);
       expect(composer.saveCount()).toBe(1);
     });
   });
@@ -511,14 +537,14 @@ describe('MeetingComposerHostComponent', () => {
       expect(composer.context()).toMatchObject({ mode: 'create' });
     });
 
-    it('clears the toast and reopens the composer in edit mode', () => {
-      component['onEditCreatedMeeting']({
-        meetingUid: 'meeting-1',
-        meetingTitle: 'Weekly sync',
-        meetingUrl: '/meetings/meeting-1',
-      });
+    it('reopens the composer in edit mode from the toast action', async () => {
+      await openCreate();
+      vi.spyOn(formService, 'validateForSubmit').mockReturnValue(true);
+      vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
+      component['onSubmit']();
 
-      expect(messageService.clear).toHaveBeenCalledWith(MEETING_COMPOSER_TOAST_KEY);
+      runAction('Edit meeting');
+
       expect(composer.context()).toEqual({ mode: 'edit', meetingUid: 'meeting-1' });
     });
   });
@@ -684,9 +710,7 @@ describe('MeetingComposerHostComponent — a refused edit load', () => {
         provideHttpClientTesting(),
         // `p-drawer` binds synthetic animation listeners, which throw without an animations module.
         provideNoopAnimations(),
-        // The real service, not a double: this suite renders the template, and `p-toast` subscribes
-        // to `messageObserver` on init — a stub with only `add`/`clear` fails the drawer's first
-        // change detection before the error block is ever reached.
+        // The real service: the host still raises its plain confirmations through it.
         MessageService,
         { provide: CommitteeService, useValue: {} },
         {
@@ -721,6 +745,10 @@ describe('MeetingComposerHostComponent — a refused edit load', () => {
     fixture = TestBed.createComponent(MeetingComposerHostComponent);
     composer = TestBed.inject(MeetingComposerService);
     await flush();
+  });
+
+  it('mounts no p-toast of its own, because the create toast goes through the uikit toast service', () => {
+    expect(fixture.nativeElement.querySelector('p-toast')).toBeNull();
   });
 
   it('tells a revoked organizer their access is gone, not that the request broke', async () => {
@@ -798,8 +826,7 @@ describe('MeetingComposerHostComponent — frozen while a save is in flight', ()
         provideHttpClientTesting(),
         // `p-drawer` binds synthetic animation listeners, which throw without an animations module.
         provideNoopAnimations(),
-        // The real service: `p-toast` subscribes to `messageObserver` on init, and a stub without it
-        // fails the drawer's first change detection before any of this is on screen.
+        // The real service: the host still raises its plain confirmations through it.
         MessageService,
         { provide: CommitteeService, useValue: { getCommittees: vi.fn(() => of([])) } },
         {

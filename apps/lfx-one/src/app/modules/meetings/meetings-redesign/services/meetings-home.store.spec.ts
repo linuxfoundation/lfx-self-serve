@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary, PastMeetingTranscript } from '@lfx-one/shared/interfaces';
@@ -155,6 +156,7 @@ describe('MeetingsHomeStore', () => {
 
       expect(userService['getUserMeetings']).toHaveBeenCalledTimes(1);
       expect(userService['getUserPastMeetings']).toHaveBeenCalledTimes(1);
+      expect(userService['getUserPastMeetings']).toHaveBeenCalledWith({ includeArtifacts: true });
       expect(store.upcomingLoading()).toBe(true);
       expect(store.pastLoading()).toBe(true);
 
@@ -344,6 +346,20 @@ describe('MeetingsHomeStore', () => {
 
       confirmed.update((answers) => [...answers, rsvp({ id: 'r-2', meeting_id: 'series', scope: 'this_and_following', occurrence_id: seconds(second) })]);
       expect(store.pendingRsvpRows()).toEqual([]);
+    });
+  });
+
+  describe('composer saves', () => {
+    it("reloads the next meeting's responses after a save", () => {
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+      expect(store.nextRowRsvps()).toEqual([]);
+
+      TestBed.inject(MeetingComposerService).notifySaved();
+      TestBed.tick();
+
+      expect(meetingService['getMeetingRsvps']).toHaveBeenCalledTimes(2);
     });
   });
 

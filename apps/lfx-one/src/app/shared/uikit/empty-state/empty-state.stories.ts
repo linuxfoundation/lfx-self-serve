@@ -11,8 +11,14 @@ const meta: Meta<UiEmptyStateComponent> = {
   component: UiEmptyStateComponent,
   decorators: [moduleMetadata({ imports: [UiButtonComponent] })],
   // Compodoc cannot read the shared union alias, so the select is declared here.
-  argTypes: { headingLevel: { control: 'select', options: [1, 2, 3, 4, 5, 6] } },
-  args: { heading: 'No meetings scheduled', description: 'Meetings for this committee will appear here.', icon: 'fa-light fa-calendar', headingLevel: 3 },
+  argTypes: { headingLevel: { control: 'select', options: [1, 2, 3, 4, 5, 6] }, size: { control: 'select', options: ['default', 'small'] } },
+  args: {
+    heading: 'No meetings scheduled',
+    description: 'Meetings for this committee will appear here.',
+    icon: 'fa-light fa-calendar',
+    headingLevel: 3,
+    size: 'default',
+  },
   render: (args) => ({ props: args, template: `<lfx-ui-empty-state ${argsToTemplate(args)} />` }),
 };
 export default meta;
@@ -72,6 +78,36 @@ export const Guide: Story = {
           <div class="edge rounded-ui-sm p-[16px] label-14 text-ui-neutral-900">Working group</div>
         </div>
       </lfx-ui-empty-state>`,
+  }),
+};
+
+/** Small: for cards, side panels and popovers. A 40px tile, an Inter title and 13px copy, with tighter spacing. */
+export const Small: Story = {
+  args: { size: 'small', heading: 'Your calendar is clear', description: 'Upcoming meetings will show here.' },
+  render: (args) => ({
+    props: args,
+    template: `
+      <div class="w-[320px] rounded-ui-md edge">
+        <lfx-ui-empty-state ${argsToTemplate(args)}>
+          <lfx-ui-button empty-state-action variant="secondary">Create Meeting</lfx-ui-button>
+        </lfx-ui-empty-state>
+      </div>`,
+  }),
+};
+
+/** Both sizes side by side, for comparison with the library. */
+export const Sizes: Story = {
+  render: (args) => ({
+    props: args,
+    template: `
+      <div class="flex items-start gap-[24px]">
+        <lfx-ui-empty-state class="flex-1" icon="fa-light fa-calendar" heading="No meetings scheduled" description="Meetings for this committee will appear here.">
+          <lfx-ui-button empty-state-action size="large">Create Meeting</lfx-ui-button>
+        </lfx-ui-empty-state>
+        <lfx-ui-empty-state class="w-[320px]" size="small" icon="fa-light fa-calendar" heading="Your calendar is clear" description="Upcoming meetings will show here.">
+          <lfx-ui-button empty-state-action variant="secondary">Create Meeting</lfx-ui-button>
+        </lfx-ui-empty-state>
+      </div>`,
   }),
 };
 

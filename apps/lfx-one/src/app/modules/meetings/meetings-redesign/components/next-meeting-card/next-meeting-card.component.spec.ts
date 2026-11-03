@@ -77,7 +77,7 @@ describe('NextMeetingCardComponent', () => {
 
   const render = async (
     row: MeetingHomeRow | null,
-    inputs: { rsvps?: MeetingRsvp[] | null; joinable?: boolean; joinUrl?: string | null } = {}
+    inputs: { loading?: boolean; rsvps?: MeetingRsvp[] | null; joinable?: boolean; joinUrl?: string | null } = {}
   ): Promise<ComponentFixture<NextMeetingCardComponent>> => {
     const fixture = TestBed.createComponent(NextMeetingCardComponent);
     fixture.componentRef.setInput('row', row);
@@ -109,6 +109,13 @@ describe('NextMeetingCardComponent', () => {
     expect(query(fixture, 'meetings-home-next-card')).toBeNull();
     expect(text(fixture, 'meetings-home-next-card-empty')).toContain('Your calendar is clear');
     expect(text(fixture, 'meetings-home-next-card-empty')).toContain('Your scheduled meetings will appear here.');
+  });
+
+  it('shows a skeleton card while the upcoming feed loads', async () => {
+    const fixture = await render(null, { loading: true });
+
+    expect(query(fixture, 'meetings-home-next-card-loading')?.getAttribute('role')).toBe('status');
+    expect(query(fixture, 'meetings-home-next-card-empty')).toBeNull();
   });
 
   it('renders the date tile, project, title, time range, recurrence and tags', async () => {

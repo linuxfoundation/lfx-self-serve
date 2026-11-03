@@ -371,6 +371,9 @@ export interface UiFocusable {
 /** Padding of a uikit popover panel: the default 16px, or none for content that runs edge to edge. */
 export type UiPopoverPadding = 'default' | 'none';
 
+/** Size of a uikit empty state: `default` for pages and lists, `small` for cards, side panels and popovers. */
+export type UiEmptyStateSize = 'default' | 'small';
+
 /** What a uikit popover passes to its template: `<ng-template let-close="close">` closes the popover from inside, such as a Done button. */
 export interface UiPopoverContext {
   /** Closes the popover and returns focus to the trigger. */

@@ -12,6 +12,8 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **Overlays** build on `@angular/cdk`.
 - **Modal** deliberately omits `aria-modal` (CDK default): overlays stay exposed to assistive technology, while the page behind still gets `aria-hidden`.
 - **Stacking:** CDK overlays sit at z-index 10000, above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. A PrimeNG overlay panel opened from inside a uikit modal renders below it unless it is appended to its own element.
+- **Cursor:** every interactive control (buttons, tabs, menu items, toggles, checkboxes, radios, labels that wrap an input) shows a pointer, and `not-allowed` when disabled. A disabled `lfx-ui-button` shows it without taking the click.
+- **Icons:** uikit components and stories follow the LFX UI Library: Font Awesome Light (`fa-light`) by default, another weight only to show a state, such as a filled star for "starred".
 - **Types:** shared interfaces such as `UiTabItem` live in `@lfx-one/shared/interfaces`.
 - **Compound components** (a menu and its items, groups and separators) share one spec and one stories file, named after the parent.
 - **Form controls:** register with `NG_VALUE_ACCESSOR` and `forwardRef`, as in `lfx-ui-checkbox`; that is the standard for new controls. The `NgControl`-based controls (input, textarea, slider, calendar, select, combobox, multi-select) convert in a dedicated follow-up PR (tracked on #4661), not in unrelated fixes.
@@ -57,7 +59,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-switch`         | `UiSwitchComponent`        | Segmented control, 2 to 4 views: radiogroup of `lfx-ui-switch-option` radios, three sizes, icon-only with tooltip; `[(value)]`, forms                                  |
 | `lfx-ui-choicebox`      | `UiChoiceboxComponent`     | Large radio or checkbox tile with title, description and badge; `lfx-ui-choicebox-group` holds them: `[(value)]` or `[(values)]`, forms                                |
 | `lfx-ui-textarea`       | `UiTextareaComponent`      | Multi-line field: label, hint, error, 80px minimum, vertical resize, `maxlength`; `[(value)]` and forms                                                                |
-| `lfx-ui-empty-state`    | `UiEmptyStateComponent`    | Icon tile or your own art, title and one sentence, with `empty-state-action` buttons below; title is a heading at a level you set                                      |
+| `lfx-ui-empty-state`    | `UiEmptyStateComponent`    | Icon tile or your own art, title and one sentence, `empty-state-action` buttons below; heading level you set; `default` or `small` size                                |
 | `lfx-ui-toast`          | `UiToastComponent`         | Toast: default, success, warning, error, dark (bottom-centre, 3s); `description`; up to two actions, dismiss; 5s, 8s with actions, never on errors; hover/focus pauses |
 | `lfx-ui-split-button`   | `UiSplitButtonComponent`   | Main action joined to a chevron that opens an `lfx-ui-menu`: primary or secondary, three sizes; named, `aria-haspopup`, `aria-expanded`                                |
 | `UiToastService`        | `UiToastService`           | Bottom-right stack, bottom-centre for `dark` or `position`, in CDK overlays kept as polite live regions; newest on top; `show()` returns a handle, `dismissAll()`      |

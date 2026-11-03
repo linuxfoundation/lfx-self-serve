@@ -1,24 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
-import { MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
-import type { EntityWithProject, Meeting, MeetingComposerEditScope, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
+import { MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
+import type {
+  EntityWithProject,
+  Meeting,
+  MeetingComposerEditScope,
+  MeetingComposerSection,
+  MeetingComposerToastData,
+  UiToastRef,
+} from '@lfx-one/shared/interfaces';
 import { formatMeetingOccurrenceLabel } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { ToastModule } from 'primeng/toast';
-import type { ToastPositionType } from 'primeng/types/toast';
 import { filter, pairwise, take } from 'rxjs';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
@@ -43,7 +48,6 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
 @Component({
   selector: 'lfx-meeting-composer-host',
   imports: [
-    NgClass,
     DrawerModule,
     MeetingComposerRailComponent,
     MeetingComposerPreviewComponent,
@@ -55,14 +59,13 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
     ComposerGuestsComponent,
     ComposerAgendaResourcesComponent,
     QuickCreateDialogComponent,
-    ToastModule,
-    RouterLink,
   ],
   templateUrl: './meeting-composer-host.component.html',
   providers: [MeetingComposerFormService],
 })
 export class MeetingComposerHostComponent {
   private readonly messageService = inject(MessageService);
+  private readonly toast = inject(UiToastService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
@@ -75,14 +78,6 @@ export class MeetingComposerHostComponent {
 
   /** Narrower for a single-occurrence edit, which drops the series-only sections. */
   protected readonly sections: Signal<readonly MeetingComposerSection[]> = this.formService.visibleSections;
-  protected readonly toastKey = MEETING_COMPOSER_TOAST_KEY;
-  /**
-   * Annotated rather than inferred, so the shared literal is checked against PrimeNG's own union.
-   * @description The constant lives in `@lfx-one/shared`, which carries no PrimeNG dependency — not
-   * even a peer one — so the type has to be applied here, at the only place that feeds it to `<p-toast>`.
-   * A typo in the constant would otherwise reach the DOM as a silently ignored `position`.
-   */
-  protected readonly toastPosition: ToastPositionType = MEETING_COMPOSER_TOAST_POSITION;
 
   /**
    * Single mode source for the chrome, matching what the rail reads.
@@ -175,7 +170,7 @@ export class MeetingComposerHostComponent {
     return this.sections().some((section) => this.formService.sectionNeedsAttention(section, visited));
   });
   /**
-   * Why the toast's Edit action can't act, or `null` when it can.
+   * Why the toast's Edit action can't act, or `null` when it can. Defensive only: opening the composer retires the toast.
    * @description One question only: reopening while another meeting is part-way through the composer
    * would discard that draft. Permission is deliberately not asked here — see
    * {@link initEditFromToastBlockedReason}.
@@ -185,6 +180,7 @@ export class MeetingComposerHostComponent {
    * The open meeting reshaped for the project-context syncs, or `null` when nothing should drive them.
    */
   private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initMeetingEntityContext();
+  private createdToast: UiToastRef | null = null;
 
   public constructor() {
     toObservable(this.composer.context)
@@ -263,6 +259,11 @@ export class MeetingComposerHostComponent {
         takeUntilDestroyed()
       )
       .subscribe(() => this.lensService.clearContextLens());
+
+    // The sticky create toast sits above the drawer, so opening the composer retires it; only the newest survives.
+    toObservable(this.composer.isOpen)
+      .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => this.createdToast?.dismiss());
 
     // Derive the project context from the meeting being edited so a context-less edit link
     // (/project/meetings/:id/edit) lands in the meeting's project, not the cookie-restored
@@ -378,20 +379,14 @@ export class MeetingComposerHostComponent {
 
   /**
    * Reopens the composer on the meeting the toast was raised for.
-   * @description Guarded by `editFromToastBlockedReason`, which the template also reflects as
-   * `aria-disabled` plus a tooltip naming the reason.
+   * @description Guarded by `editFromToastBlockedReason`; running the action dismisses the toast.
    */
   protected onEditCreatedMeeting(data: MeetingComposerToastData): void {
     if (this.editFromToastBlockedReason()) {
       return;
     }
 
-    this.messageService.clear(this.toastKey);
     this.composer.open({ mode: 'edit', meetingUid: data.meetingUid });
-  }
-
-  protected onDismissToast(): void {
-    this.messageService.clear(this.toastKey);
   }
 
   /**
@@ -431,8 +426,7 @@ export class MeetingComposerHostComponent {
    * has since switched context is judged against a project their meeting was never in. The
    * meeting-scoped check that is actually authoritative lives on the path this action opens — a
    * revoked reopen comes back 200 with `organizer: false`, which the composer's own load path treats
-   * as `denied` and lands on its "you don't have permission" panel, which says more than a disabled
-   * button with a tooltip ever did.
+   * as `denied` and lands on its "you don't have permission" panel.
    */
   private initEditFromToastBlockedReason(): Signal<string | null> {
     return computed(() => (this.composer.isOpen() ? 'Close the open composer first' : null));
@@ -495,25 +489,20 @@ export class MeetingComposerHostComponent {
       ...(meeting.password ? { meetingLinkState: { password: meeting.password } } : {}),
     };
 
-    // Only the newest sticky toast survives. Without a lifetime nothing retires these on its own, so
-    // creating several meetings in a row stacked permanent multi-line toasts up over the content the
-    // organizer is still working in. Scoped to this key, so unrelated toasts are untouched.
-    this.messageService.clear(this.toastKey);
-
-    this.messageService.add({
-      key: this.toastKey,
-      severity: 'success',
-      summary: 'Meeting created',
-      detail: data.meetingTitle,
+    this.createdToast = this.toast.show({
+      variant: 'success',
+      position: MEETING_COMPOSER_TOAST_POSITION,
+      message: 'Meeting created',
+      description: data.meetingTitle,
       // Sticky, not timed. The toast carries the only two routes back to the meeting now that creating
       // doesn't navigate, and a fixed lifetime put them out of reach of anyone who needs longer than a
       // few seconds to read and target them.
-      sticky: true,
-      // Explicit rather than relying on the PrimeNG default: with `sticky`, the close button is the only
-      // way out, and it renders outside the custom-template branch — so a template refactor upstream
-      // could strand an undismissable toast. Stating it keeps the intent checkable.
-      closable: true,
-      data,
+      duration: 0,
+      dismissible: true,
+      actions: [
+        { label: 'Edit meeting', run: () => this.onEditCreatedMeeting(data) },
+        { label: 'View meeting', run: () => void this.router.navigateByUrl(data.meetingUrl, { state: data.meetingLinkState }) },
+      ],
     });
   }
 }

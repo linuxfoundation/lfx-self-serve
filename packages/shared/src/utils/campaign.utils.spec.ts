@@ -17,6 +17,7 @@ import {
   campaignActionRuleLever,
   campaignEtagVersion,
   campaignFlightDays,
+  campaignLabelColumns,
   dailyBudgetFromTotal,
   describeCampaignDispatchFailure,
   isReversedCampaignFlight,
@@ -455,5 +456,54 @@ describe('dailyBudgetFromTotal', () => {
     [900, -1],
   ])('returns null for a total of %d over %d day(s)', (total, days) => {
     expect(dailyBudgetFromTotal(total, days)).toBeNull();
+  });
+});
+
+/** #4983 ("ss-4"): the labels that tell a brief's campaigns on one platform apart, "—" when absent. */
+describe('campaignLabelColumns', () => {
+  it('names the Google channel, stage, tactic and created date a labelled campaign records', () => {
+    const labels = campaignLabelColumns(
+      {
+        platform: 'google-ads',
+        variant: 'demand-gen',
+        funnel_stage: 'mid',
+        tactic: 'content-promotion',
+        created_at: '2026-11-02T12:00:00Z',
+      },
+      'UTC'
+    );
+    expect(labels).toEqual({ channel: 'Demand Gen', stage: 'Mid funnel', tactic: 'Content promotion', created: 'Nov 2, 2026' });
+  });
+
+  it("leaves the created date to the browser when the viewer's zone is not known (a server render)", () => {
+    expect(campaignLabelColumns({ platform: 'google-ads', created_at: '2026-11-02T12:00:00Z' }, null).created).toBe('—');
+  });
+
+  it('dates a campaign by the calendar day in the zone it is given', () => {
+    const lateEvening = { platform: 'google-ads', created_at: '2026-11-03T03:00:00Z' };
+    expect(campaignLabelColumns(lateEvening, 'UTC').created).toBe('Nov 3, 2026');
+    expect(campaignLabelColumns(lateEvening, 'America/Los_Angeles').created).toBe('Nov 2, 2026');
+  });
+
+  it("reads Google's default variant as Search, and names no channel on a single-channel platform", () => {
+    expect(campaignLabelColumns({ platform: 'google-ads', variant: 'default' }).channel).toBe('Search');
+    expect(campaignLabelColumns({ platform: 'microsoft-ads', variant: 'default' }).channel).toBe('—');
+  });
+
+  it('shows "—" for every label a legacy campaign does not record', () => {
+    expect(campaignLabelColumns({ platform: 'google-ads' })).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });
+  });
+
+  it('shows "—", never raw text or "Invalid Date", for values this build does not know', () => {
+    const labels = campaignLabelColumns({
+      platform: 'google-ads',
+      variant: 'shopping',
+      // @ts-expect-error an unknown stage, as the unvalidated index can carry
+      funnel_stage: 'toString',
+      // @ts-expect-error an unknown tactic, as the unvalidated index can carry
+      tactic: '<b>other</b>',
+      created_at: 'yesterday',
+    });
+    expect(labels).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });
   });
 });

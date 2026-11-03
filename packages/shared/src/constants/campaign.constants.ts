@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  CampaignFunnelStage,
+  CampaignLabelOption,
+  CampaignTactic,
   AudienceBuildMode,
   AudienceCustomOperator,
   AudienceCustomReuseRecommendation,
@@ -88,6 +91,57 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
  * list leaves it out (#4983).
  */
 export const CAMPAIGN_STATUS_DELETED = 'deleted';
+
+/**
+ * The platforms campaign-service accepts `new_version` and the funnel-stage/tactic labels for: cs
+ * `ProviderNamesByStage` and `ProviderSupportsSlotVersions`, pinned together upstream (Microsoft in
+ * lfx-v2-campaign-service#453, Google in #456, Reddit and Meta in #465, LinkedIn and X in #467). A
+ * platform must be on this list AND on the deployment's `LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS`
+ * before "create another" is offered for it: the env list is what tracks which campaign-service
+ * release a deployment actually runs, so a platform is listed there only once that release is out.
+ */
+export const CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS: readonly string[] = [
+  'microsoft-ads',
+  'google-ads',
+  'reddit-ads',
+  'meta-ads',
+  'linkedin-ads',
+  'twitter-ads',
+];
+
+/** The funnel stages a campaign can be labelled with (lfx-v2-campaign-service#453). */
+export const CAMPAIGN_FUNNEL_STAGE_OPTIONS: readonly CampaignLabelOption<CampaignFunnelStage>[] = [
+  { id: 'top', label: 'Top of funnel (awareness)' },
+  { id: 'mid', label: 'Middle of funnel (consideration)' },
+  { id: 'lower', label: 'Lower funnel (conversion)' },
+];
+
+/** A funnel stage as a results line names it ("Existing top-of-funnel campaign returned"). */
+export const CAMPAIGN_FUNNEL_STAGE_SHORT_LABELS: Readonly<Record<CampaignFunnelStage, string>> = {
+  top: 'top-of-funnel',
+  mid: 'mid-funnel',
+  lower: 'lower-funnel',
+};
+
+/** A funnel stage as a campaign list's Stage column names it (#4983). */
+export const CAMPAIGN_FUNNEL_STAGE_COLUMN_LABELS: Readonly<Record<CampaignFunnelStage, string>> = {
+  top: 'Top of funnel',
+  mid: 'Mid funnel',
+  lower: 'Lower funnel',
+};
+
+/** What a campaign list shows for a label the index does not record (#4983). */
+export const CAMPAIGN_LABEL_ABSENT = '—';
+
+/** The tactic labels a campaign can carry: campaign-service's controlled list (#453). */
+export const CAMPAIGN_TACTIC_OPTIONS: readonly CampaignLabelOption<CampaignTactic>[] = [
+  { id: 'prospecting', label: 'Prospecting' },
+  { id: 'retargeting', label: 'Retargeting' },
+  { id: 'lookalike', label: 'Lookalike' },
+  { id: 'keyword', label: 'Keyword' },
+  { id: 'competitor', label: 'Competitor' },
+  { id: 'content-promotion', label: 'Content promotion' },
+];
 
 /**
  * Statuses of a row campaign-service does NOT hand back on a repeat create. Its `isReusableCampaign`
@@ -4715,8 +4769,8 @@ export const GOOGLE_CREATIVE_REQUEST_KEYS = {
 /**
  * The heading each creative section carries in the Implementation tab.
  *
- * Deliberately NOT {@link GOOGLE_CAMPAIGN_CHANNEL_LABELS}, which is Google Ads' own reporting
- * shorthand (`DG Display`, `PMax`) and belongs on a metrics row, not above a form an operator is
+ * Deliberately NOT {@link GOOGLE_CAMPAIGN_NAME_TOKENS}, which is Google Ads' own reporting
+ * shorthand (`DG Display`) and belongs in a campaign name, not above a form an operator is
  * filling in. These spell the channel the way its own checkbox does, so the section a user opens
  * is named the same as the box they ticked to open it.
  */

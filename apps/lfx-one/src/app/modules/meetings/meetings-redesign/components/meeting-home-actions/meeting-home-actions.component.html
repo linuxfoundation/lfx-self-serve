@@ -7,12 +7,15 @@
   ariaLabel="More actions"
   iconOnly
   [menu]="actionsMenu"
-  [loading]="resending() || removing()"
+  [loading]="resending() || removing() || checkingEdit()"
   data-testid="meetings-home-row-actions-trigger" />
 
 <ng-template #actionsMenu>
   <lfx-ui-menu ariaLabel="Meeting actions" data-testid="meetings-home-row-actions-menu">
-    <!-- Organizer items: Edit Meeting goes first here; a separator and Delete Meeting go last. -->
+    @if (canEdit()) {
+      <lfx-ui-menu-item icon="fa-light fa-pen" (triggered)="editMeeting()" data-testid="meetings-home-row-actions-edit">Edit Meeting</lfx-ui-menu-item>
+    }
+    <!-- Organizer items: a separator and Delete Meeting go last. -->
     <lfx-ui-menu-item icon="fa-light fa-link" (triggered)="copyLink()" data-testid="meetings-home-row-actions-copy-link">Copy Link</lfx-ui-menu-item>
     @if (canResend()) {
       <lfx-ui-menu-item icon="fa-light fa-paper-plane" (triggered)="resendInvite()" data-testid="meetings-home-row-actions-resend"

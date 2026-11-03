@@ -104,7 +104,7 @@ describe('UiButtonComponent', () => {
   it.each([
     ['primary', 'border-transparent'],
     ['secondary', 'border-ui-neutral-alpha-200'],
-    ['secondary-accent', 'border-ui-accent-500'],
+    ['secondary-accent', 'border-ui-accent-300'],
     ['tertiary', 'border-transparent'],
     ['tertiary-accent', 'border-transparent'],
     ['danger', 'border-transparent'],
@@ -119,22 +119,19 @@ describe('UiButtonComponent', () => {
 
   it.each([
     ['secondary', ['hover:bg-ui-neutral-alpha-50', 'active:bg-ui-neutral-alpha-100']],
-    [
-      'secondary-accent',
-      [
-        'hover:bg-ui-accent-50',
-        'hover:text-ui-accent-700',
-        'hover:border-ui-accent-700',
-        'active:bg-ui-accent-100',
-        'active:text-ui-accent-800',
-        'active:border-ui-accent-800',
-      ],
-    ],
+    ['secondary-accent', ['hover:bg-ui-accent-100', 'hover:border-ui-accent-500', 'active:bg-ui-accent-200', 'active:border-ui-accent-500']],
     ['tertiary', ['hover:bg-ui-neutral-alpha-50', 'active:bg-ui-neutral-alpha-100']],
-    ['tertiary-accent', ['hover:bg-ui-accent-50', 'hover:text-ui-accent-700', 'active:bg-ui-accent-100', 'active:text-ui-accent-800']],
+    ['tertiary-accent', ['hover:bg-ui-accent-100', 'active:bg-ui-accent-200']],
   ])('gives the %s variant the library hover and pressed states', async (variant, states) => {
     await set('variant', variant);
     expect(Array.from(el().classList)).toEqual(expect.arrayContaining(states));
+  });
+
+  it.each(['secondary-accent', 'tertiary-accent'])('keeps the %s label on the accent through hover and press', async (variant) => {
+    await set('variant', variant);
+    const classes = Array.from(el().classList);
+    expect(classes).toContain('text-ui-accent-500');
+    expect(classes.filter((name) => /^(hover|active):text-/.test(name))).toEqual([]);
   });
 
   it('shows the 4px accent halo on keyboard focus only', () => {
@@ -144,9 +141,9 @@ describe('UiButtonComponent', () => {
   });
 
   it.each([
-    ['small', 'h-ui-tiny', 'rounded-[8px]', 'px-[8px]', 'button-12', '[&>i]:text-[12px]'],
-    ['default', 'h-ui-small', 'rounded-[10px]', 'px-[10px]', 'button-14', '[&>i]:text-[14px]'],
-    ['large', 'h-ui-medium', 'rounded-ui-sm', 'px-[16px]', 'button-14', '[&>i]:text-[16px]'],
+    ['small', 'h-ui-tiny', 'rounded-[10px]', 'px-[8px]', 'button-12', '[&>i]:text-[12px]'],
+    ['default', 'h-ui-small', 'rounded-ui-sm', 'px-[10px]', 'button-14', '[&>i]:text-[14px]'],
+    ['large', 'h-ui-medium', 'rounded-[14px]', 'px-[16px]', 'button-14', '[&>i]:text-[18px]'],
   ])('sizes %s with height, radius, padding, type role and icon size', async (size, height, radius, padding, type, icon) => {
     await set('size', size);
     expect(Array.from(el().classList)).toEqual(expect.arrayContaining([height, radius, padding, type, icon]));
@@ -247,6 +244,23 @@ describe('UiButtonComponent', () => {
     expect(button.classList).toContain('pointer-events-none');
   });
 
+  it('shows the not-allowed cursor on a disabled button, with its children out of the hit test', async () => {
+    expect(el().classList).toContain('cursor-pointer');
+    await set('disabled', true);
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['pointer-events-auto', 'cursor-not-allowed', '[&_*]:pointer-events-none']));
+    expect(el().classList).not.toContain('cursor-pointer');
+  });
+
+  it('shows the not-allowed cursor on a disabled link and still swallows its click', async () => {
+    const host = TestBed.createComponent(LinkHostComponent);
+    host.componentInstance.disabled.set(true);
+    await host.whenStable();
+    const anchor = host.nativeElement.querySelector('a') as HTMLAnchorElement;
+    expect(anchor.classList).toContain('cursor-not-allowed');
+    anchor.click();
+    expect(host.componentInstance.open).not.toHaveBeenCalled();
+  });
+
   it('does not navigate when a disabled link is clicked', async () => {
     const router = TestBed.inject(Router);
     const navigate = vi.spyOn(router, 'navigateByUrl');
@@ -278,6 +292,18 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('href')).toBe('/meetings/create');
   });
 
+  it('pins a link label colour in every state and never underlines it', async () => {
+    await set('variant', 'tertiary-accent');
+    await set('link', '/meetings');
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['!no-underline', '!text-ui-accent-500']));
+    await set('disabled', true);
+    expect(el().classList).toContain('!text-ui-neutral-500');
+  });
+
+  it('adds no link pins to a button', () => {
+    expect(Array.from(el().classList).filter((name) => name.startsWith('!'))).toEqual([]);
+  });
+
   it('marks a disabled link as aria-disabled and out of the tab order', async () => {
     await set('link', '/meetings');
     await set('disabled', true);
@@ -303,7 +329,7 @@ describe('UiButtonComponent', () => {
 
     it.each([
       ['small', '12px'],
-      ['large', '16px'],
+      ['large', '18px'],
     ])('sizes the spinner to the icon on a %s button: %s', async (size, width) => {
       await set('size', size);
       await set('loading', true);
