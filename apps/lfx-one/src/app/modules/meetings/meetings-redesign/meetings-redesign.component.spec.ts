@@ -254,7 +254,7 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-redesign-header-actions')?.className).toContain('max-w-full flex-none flex-wrap');
     });
 
-    it('hides the header button while the tab shows its no-meetings empty state', async () => {
+    it("gives way to the empty Upcoming state's own button, and stays on an empty Past tab", async () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const fixture = render();
       await fixture.whenStable();
@@ -267,12 +267,15 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-home-create')).toBeNull();
       expect(query(fixture, 'meetings-redesign-header-actions')?.classList).toContain('hidden');
 
+      // The empty Past state has no Create of its own.
       query(fixture, 'ui-tab-past')?.click();
       await fixture.whenStable();
       expect(query(fixture, 'meetings-home-empty-past')).not.toBeNull();
-      expect(query(fixture, 'meetings-home-create')).toBeNull();
+      expect(query(fixture, 'meetings-home-create')).not.toBeNull();
 
-      past$.error(new Error('down'));
+      query(fixture, 'ui-tab-upcoming')?.click();
+      await fixture.whenStable();
+      upcoming$.error(new Error('down'));
       await fixture.whenStable();
       expect(query(fixture, 'meetings-home-error')).not.toBeNull();
       expect(query(fixture, 'meetings-home-create')).not.toBeNull();
