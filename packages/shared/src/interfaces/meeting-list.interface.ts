@@ -140,11 +140,6 @@ export interface MeetingSummaryDialogData {
   onChange?: (summary: PastMeetingSummary) => void;
 }
 
-/** What the meetings home transcript dialog opens with. */
-export interface MeetingTranscriptDialogData {
-  row: MeetingHomeRow;
-}
-
 /** What the meetings home recording dialog opens with. */
 export interface MeetingRecordingDialogData {
   row: MeetingHomeRow;

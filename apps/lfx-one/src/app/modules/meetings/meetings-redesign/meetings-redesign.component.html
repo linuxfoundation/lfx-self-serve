@@ -150,7 +150,6 @@
         [row]="store.nextRow()"
         [loading]="store.upcomingLoading()"
         [now]="store.now()"
-        [rsvps]="store.nextRowRsvps()"
         [joinable]="store.nextRowJoinable()"
         [joinUrl]="store.nextRowJoinUrl()">
         <!-- Keyed by row, so a new Next meeting gets a fresh menu and closes the old one's dialog. -->
@@ -168,7 +167,6 @@
         [row]="store.lastMeeting()"
         [loading]="store.lastMeetingLoading()"
         [summary]="store.lastMeetingSummary()"
-        [hasTranscript]="store.lastMeetingHasTranscript()"
         [recordingUrl]="store.lastMeetingRecordingUrl()"
         (summaryChange)="store.setLastMeetingSummary($event)">
         <!-- Keyed by row, so a new Last meeting gets a fresh menu. -->
