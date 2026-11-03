@@ -113,6 +113,8 @@ export class MeetingsHomeEditService {
     const committeeUid = meeting.committees?.[0]?.uid;
     if (committeeUid) queryParams['committee_uid'] = committeeUid;
     const commands = getEntityCommands('meetings', meeting.id, meeting.is_foundation, 'edit') ?? ['/meetings', meeting.id, 'edit'];
+    // The pre-v2 editor does not refresh the feed, so the home list reloads on return.
+    this.userService.refreshUserMeetings(false);
     void this.router.navigate(commands, { queryParams });
   }
 

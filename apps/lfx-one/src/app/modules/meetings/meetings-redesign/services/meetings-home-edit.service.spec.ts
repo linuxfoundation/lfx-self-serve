@@ -215,6 +215,7 @@ describe('MeetingsHomeEditService', () => {
       service.edit(row(ONE_OFF));
 
       expect(composerOpen).not.toHaveBeenCalled();
+      expect(refreshUserMeetings).toHaveBeenCalledWith(false);
       expect(navigate).toHaveBeenCalledWith(['/meetings', 'synthetic-meeting', 'edit'], {
         queryParams: { project: 'synthetic-project', committee_uid: 'synthetic-committee' },
       });
