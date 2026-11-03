@@ -4,11 +4,11 @@
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { formatDate } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingDeleteDialogData } from '@lfx-one/shared/interfaces';
-import { formatMeetingTimeRange, getMeetingSeriesUid, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
+import { codePointLength, formatMeetingTimeRange, getMeetingSeriesUid, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
@@ -46,6 +46,10 @@ export class MeetingDeleteModalComponent {
   protected readonly guestCount = resolveMeetingBaseCount(this.data.row.meeting) ?? 0;
   protected readonly reasonMaxLength = MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH;
   protected readonly reason = signal('');
+  // Counted like the BFF: code points of the trimmed text.
+  protected readonly reasonError: Signal<string> = computed(() =>
+    codePointLength(this.reason().trim()) > this.reasonMaxLength ? `Reason must be ${this.reasonMaxLength} characters or fewer.` : ''
+  );
   /** True while the request runs; the dialog cannot close meanwhile, or the list would miss the result. */
   public readonly busy = signal(false);
 
@@ -54,7 +58,7 @@ export class MeetingDeleteModalComponent {
   }
 
   protected confirm(): void {
-    if (this.busy()) return;
+    if (this.busy() || this.reasonError()) return;
     this.busy.set(true);
     const meetingId = getMeetingSeriesUid(this.data.row.meeting);
     const occurrence = this.occurrence;

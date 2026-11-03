@@ -136,6 +136,23 @@ describe('MeetingDeleteModalComponent', () => {
       expect(query('meetings-home-delete-details')?.textContent).toContain(formatMeetingTimeRange(OCCURRENCE.start_time, 60));
     });
 
+    it('blocks a reason over the limit, counting code points of the trimmed text', async () => {
+      await render(buildData(SERIES, OCCURRENCE));
+      const textarea = query('meetings-home-delete-reason')?.querySelector('textarea') as HTMLTextAreaElement;
+      const type = async (value: string): Promise<void> => {
+        textarea.value = value;
+        textarea.dispatchEvent(new Event('input'));
+        await fixture.whenStable();
+      };
+
+      await type(`${'a'.repeat(3998)}😀😀  `);
+      expect(query('meetings-home-delete-reason')?.textContent).not.toContain('Reason must be');
+
+      await type('a'.repeat(4001));
+      expect(query('meetings-home-delete-reason')?.textContent).toContain('Reason must be 4000 characters or fewer.');
+      expect(query('meetings-home-delete-confirm')?.querySelector('button')?.disabled).toBe(true);
+    });
+
     it('sends no reason when it is left empty', async () => {
       await render(buildData(SERIES, OCCURRENCE));
       await confirm();

@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DialogRef } from '@angular/cdk/dialog';
+import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, inject, Injectable } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MeetingDeleteDialogData, MeetingDeleteTypeResult, MeetingHomeRow, MeetingOccurrence } from '@lfx-one/shared/interfaces';
-import { getActiveOccurrences, getCurrentOrNextOccurrence, getMeetingSeriesUid, isSameOccurrenceId } from '@lfx-one/shared/utils';
+import { getActiveOccurrences, getCurrentOrNextOccurrence, getMeetingSeriesUid, isPastMeetingCalendarRow, isSameOccurrenceId } from '@lfx-one/shared/utils';
+import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
@@ -22,20 +25,45 @@ import { MeetingsHomeStore } from './meetings-home.store';
 @Injectable()
 export class MeetingsHomeDeleteService {
   private readonly store = inject(MeetingsHomeStore);
+  private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly openDialogs = new Set<() => void>();
+
+  public constructor() {
+    // A dialog still running its request stays open (its close predicate) and reports when done.
+    this.destroyRef.onDestroy(() => this.openDialogs.forEach((close) => close()));
+  }
 
   public delete(row: MeetingHomeRow): void {
+    if (!isPastMeetingCalendarRow(row.meeting)) {
+      this.start(row);
+      return;
+    }
+
+    // A past row is one date and rarely says whether its meeting recurs, so the flow runs on a fresh read of the meeting.
+    this.meetingService
+      .getMeetingDetail(getMeetingSeriesUid(row.meeting), { skipCache: true })
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (meeting) => this.start({ ...row, meeting, occurrence: null, occurrenceId: null }),
+        error: (error: unknown) => {
+          const gone = error instanceof HttpErrorResponse && error.status === 404;
+          this.showError('Delete Failed', gone ? 'Meeting not found. It may have already been deleted.' : 'Failed to delete meeting. Please try again.');
+        },
+      });
+  }
+
+  private start(row: MeetingHomeRow): void {
     if (!row.meeting.recurrence) {
       this.confirm(row, null);
       return;
     }
 
     const opening = row.occurrence ?? getCurrentOrNextOccurrence(row.meeting);
-    this.modal
-      .open<MeetingDeleteTypeResult, MeetingDeleteDialogData>(MeetingDeleteScopeModalComponent, { data: { row, occurrence: opening } })
+    this.track(this.modal.open<MeetingDeleteTypeResult, MeetingDeleteDialogData>(MeetingDeleteScopeModalComponent, { data: { row, occurrence: opening } }))
       .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((result) => {
         if (!result) return;
@@ -46,7 +74,7 @@ export class MeetingsHomeDeleteService {
         // A picked date that no longer resolves is reported, never swapped for another one.
         const occurrence = result.occurrenceId ? this.findOccurrence(row, result.occurrenceId) : opening;
         if (!occurrence) {
-          this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Error', description: 'No upcoming occurrence found to cancel.' });
+          this.showError('Error', 'No upcoming occurrence found to cancel.');
           return;
         }
         this.confirm(row, occurrence);
@@ -54,13 +82,15 @@ export class MeetingsHomeDeleteService {
   }
 
   private confirm(row: MeetingHomeRow, occurrence: MeetingOccurrence | null): void {
-    this.modal
-      .open<boolean, MeetingDeleteDialogData, MeetingDeleteModalComponent>(
+    // Not bound to the page: a request that finishes after it is left still confirms and reloads the feeds.
+    this.track(
+      this.modal.open<boolean, MeetingDeleteDialogData, MeetingDeleteModalComponent>(
         MeetingDeleteModalComponent,
         { data: { row, occurrence }, role: 'alertdialog', autoFocus: '[data-autofocus] button' },
         { closePredicate: (_result, _config, dialog) => !(dialog instanceof MeetingDeleteModalComponent && dialog.busy()) }
       )
-      .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+    )
+      .closed.pipe(take(1))
       .subscribe((done) => {
         if (!done) return;
         const meetingId = getMeetingSeriesUid(row.meeting);
@@ -78,6 +108,17 @@ export class MeetingsHomeDeleteService {
         this.userService.refreshUserMeetings();
         this.userService.refreshUserPastMeetings();
       });
+  }
+
+  private track<R, C>(ref: DialogRef<R, C>): DialogRef<R, C> {
+    const close = (): void => ref.close();
+    this.openDialogs.add(close);
+    ref.closed.pipe(take(1)).subscribe(() => this.openDialogs.delete(close));
+    return ref;
+  }
+
+  private showError(message: string, description: string): void {
+    this.toast.show({ variant: 'error', position: 'bottom-center', message, description });
   }
 
   private findOccurrence(row: MeetingHomeRow, occurrenceId: string): MeetingOccurrence | null {

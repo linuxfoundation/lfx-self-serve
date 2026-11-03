@@ -48,7 +48,7 @@
     <lfx-ui-textarea
       label="Reason (optional)"
       hint="Included in the cancellation email sent to guests."
-      [maxlength]="reasonMaxLength"
+      [error]="reasonError()"
       [disabled]="busy()"
       [(value)]="reason"
       data-testid="meetings-home-delete-reason" />
@@ -74,6 +74,7 @@
       variant="danger"
       [icon]="occurrence ? 'fa-light fa-ban' : 'fa-light fa-trash'"
       [loading]="busy()"
+      [disabled]="!!reasonError()"
       (click)="confirm()"
       data-testid="meetings-home-delete-confirm"
       >{{ occurrence ? 'Cancel Occurrence' : 'Delete Meeting' }}</lfx-ui-button
