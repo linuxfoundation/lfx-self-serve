@@ -8,7 +8,7 @@ last_updated: 2026-11-03
 intercom_collection: Organization
 ---
 
-These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. Access to an organization is granted by that organization's own Organization Lens administrators, not by the Linux Foundation.
+These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer), a CLA Manager, or Linux Foundation staff. Access to an organization is granted by that organization's own Organization Lens administrators, not by the Linux Foundation.
 
 The Organization lens always shows one organization at a time. The organization switcher at the top of the sidebar names the organization you are viewing, and every page in the lens (**Dashboard**, **Memberships**, **Projects**, and the rest) is about that organization.
 
@@ -27,7 +27,7 @@ If you can open only one organization, the switcher shows that organization with
 
 ## How do I switch to a different organization?
 
-Open the organization switcher at the top of the sidebar and select another organization. You stay on the same page, now showing the organization you picked.
+Open the organization switcher at the top of the sidebar and select another organization. You stay on the same page, now showing the organization you picked, unless your only role on that organization is CLA Manager: then you land on its **EasyCLA** page, the only page you can open for it.
 
 1. Select the organization switcher at the top of the sidebar.
 2. Select the organization you want. On a keyboard, use the arrow keys to move through the list and press Enter to select.
