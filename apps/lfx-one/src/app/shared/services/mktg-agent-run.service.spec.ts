@@ -1134,6 +1134,28 @@ describe('MktgAgentRunService', () => {
       expect(events.some((event) => event.type === 'persisted')).toBe(false);
     });
 
+    it.each([401, 403])(
+      'latches a refused retry poll (%s): the document stays, no further poll or wake sends the same credentials, nothing claims a server copy',
+      async (status) => {
+        resultResponses = [READY_NO_RECEIPT, new HttpErrorResponse({ status, statusText: 'Refused' }), READY_WITH_RECEIPT];
+        const events: MktgGenerateProgress[] = [];
+        let error: unknown;
+        service.generate(generateRequest()).subscribe({ next: (event) => events.push(event), error: (err) => (error = err) });
+
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+        expect(events).toHaveLength(2);
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+        expect(resultCalls()).toHaveLength(2);
+
+        // RFC 9110 §15.5.4: the same credentials are refused again, so neither a tick nor a focus wake retries.
+        window.dispatchEvent(new Event('focus'));
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
+        expect(resultCalls()).toHaveLength(2);
+        expect(error).toBeUndefined();
+        expect(events.some((event) => event.type === 'persisted')).toBe(false);
+      }
+    );
+
     it('never fails a run that already produced its document when a retry poll errors — the attempt is spent, the next one retries', async () => {
       resultResponses = [READY_NO_RECEIPT, new HttpErrorResponse({ status: 500, statusText: 'Server Error' }), READY_WITH_RECEIPT];
       const events: MktgGenerateProgress[] = [];

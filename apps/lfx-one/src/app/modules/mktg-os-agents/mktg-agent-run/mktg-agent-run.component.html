@@ -35,7 +35,7 @@
         [runId]="publicRunId()"
         [refreshKey]="publicRefreshKey()"
         [runPage]="true"
-        [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || (!!errorText() && !navigation())"
+        [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || !!publicWaitingText() || (!!errorText() && !navigation())"
         [watchQuestions]="phase() === 'questions'"
         [errorText]="errorText()"
         [retainedAnswersNotice]="answeredNotice()"
@@ -44,6 +44,14 @@
         (readError)="onPublicReadError($event)"
         (landed)="onPublicLanding()"
         (failed)="onPublicLanding(true)" />
+      @if (!publicIdentityPending() && publicWaitingText()) {
+        <p role="status" class="text-xs text-gray-500" data-testid="mktg-run-public-waiting">{{ publicWaitingText() }}</p>
+        <lfx-button
+          label="Open the document"
+          [routerLink]="publicDocumentLink()"
+          [queryParams]="{ project: projectSlug() ?? '' }"
+          data-testid="mktg-run-public-document-link" />
+      }
       @if (!publicIdentityPending() && errorText()) {
         <lfx-message severity="error" [text]="errorText()" data-testid="mktg-run-public-error" />
         @if (navigation()) {

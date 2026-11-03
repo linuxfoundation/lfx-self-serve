@@ -1821,6 +1821,46 @@ describe('MktgAgentRunComponent', () => {
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
     });
 
+    it('shows the unconfirmed produced revision as a quiet status line, never as an error box', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['privateReceiptRunId'] = runId;
+      component['activeRequest'] = { projectUid: PROJECT_1.uid, agentId: type.catalogAgentId } as MktgGenerateRequest;
+      component['onPublicLanding']();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')?.textContent).toContain('The produced revision is not confirmed yet.');
+      expect(query('mktg-run-public-waiting')?.getAttribute('role')).toBe('status');
+      expect(query('mktg-run-public-error')).toBeNull();
+      // As on main: the card goes headless and the document link (a navigation, not a re-read) stays the way on.
+      expect(query('mktg-run-public-document-link')).not.toBeNull();
+      expect(component['publicProgressView']()?.headless()).toBe(true);
+    });
+
+    it('clears the unconfirmed-revision line when the context resets or a new run starts', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['privateReceiptRunId'] = runId;
+      component['activeRequest'] = { projectUid: PROJECT_1.uid, agentId: type.catalogAgentId } as MktgGenerateRequest;
+      component['onPublicLanding']();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).not.toBeNull();
+      component['resetForContext'](PROJECT_1, false);
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).toBeNull();
+      // The reset dropped the private receipt; a fresh landing with it set shows the line again, and a recovered read clears it.
+      component['privateReceiptRunId'] = runId;
+      component['activeRequest'] = { projectUid: PROJECT_1.uid, agentId: type.catalogAgentId } as MktgGenerateRequest;
+      component['onPublicLanding']();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).not.toBeNull();
+      component['publicReadFailed'] = true;
+      component['onPublicObserved']({ detail: record('writing'), view: null });
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).toBeNull();
+    });
+
     it('settles a malformed run selector to an error and document recovery instead of a skeleton', async () => {
       await configure('browser', type.catalogAgentId, { run: 'invalid-run' });
       activeContext.set(PROJECT_1);

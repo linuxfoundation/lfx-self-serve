@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants/mktg-run.constants';
+import { BRAND_KIT_INTAKE, MKTG_AGENT_INTAKES, MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 import type { MktgRunResultResponse, MktgRunSessionResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
 import { DOCUMENT_PROJECT, DOCUMENT_TYPE, documentFixture, fulfillDocumentJson, setupDocuments } from './helpers/mktg-os-documents.helper';
 import { ASSET_FAILURE, ASSET_PROJECT, DATA_LOAD_TIMEOUT, assetRevision, setupAsset } from './helpers/mktg-os-assets.helper';
@@ -157,9 +157,10 @@ test.describe('Marketing OS runs land on assets', () => {
     await page.route(/\/api\/mktg-agents\/documents\/[^/]+\/living\?/, (route) =>
       new URL(route.request().url()).searchParams.get('poll') === '1' ? fulfillDocumentJson(route, { code: 'SYNTHETIC_UNAVAILABLE' }, 503) : route.fallback()
     );
-    await expect(page.getByTestId('mktg-run-progress-status')).toContainText('last loaded', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-run-progress-status')).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-document-view-refresh-progress').getByRole('button')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-refresh-progress')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-run-progress-live').getByRole('button', { name: 'Refresh' })).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-error')).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('transient-run-progress-warning.png'), fullPage: true });
   });

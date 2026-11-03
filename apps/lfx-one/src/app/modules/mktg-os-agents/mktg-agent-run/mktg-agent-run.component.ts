@@ -281,6 +281,8 @@ export class MktgAgentRunComponent {
   private readonly priorDocumentCount = signal(0);
   private readonly priorLogoCount = signal(0);
   protected readonly errorText = signal('');
+  /** A waiting state of the public receiver (the produced revision is not confirmed yet): a quiet status line, not an error. */
+  protected readonly publicWaitingText = signal('');
   protected readonly runFailed = signal(false);
   protected readonly navigation = signal<MktgRunNavigation | null>(null);
   protected readonly navigating = signal(false);
@@ -766,10 +768,13 @@ export class MktgAgentRunComponent {
         this.receiptRecoveryRunId = runId;
         this.resumeAcceptedAttempt({ ...owned, state: 'writing', pendingQuestions: undefined }, projectUid);
       } else if ((!this.generationSub || this.generationSub.closed) && !this.navigation()?.revisionId) {
-        this.errorText.set('The produced revision is not confirmed yet. Refresh this run before opening its saved output.');
+        // The progress reader stops at a completed run and re-reads on tab return or focus; until then this is the plain
+        // waiting state (not an error, no instruction to refresh), and the document link below it is the way on (law 3).
+        this.publicWaitingText.set('The produced revision is not confirmed yet.');
       }
       return;
     }
+    this.publicWaitingText.set('');
     const completed = this.publicProgressView()?.selectedRun() ?? this.completedRun;
     const produced =
       !failed &&
@@ -815,6 +820,7 @@ export class MktgAgentRunComponent {
     if (this.publicReadFailed) {
       this.publicReadFailed = false;
       this.errorText.set('');
+      this.publicWaitingText.set('');
     }
     if (
       run?.state === 'completed' &&
@@ -838,6 +844,7 @@ export class MktgAgentRunComponent {
       this.clearQuestions();
       this.phase.set('running');
       this.errorText.set('');
+      this.publicWaitingText.set('');
       if (owned) this.runAttempts.save({ ...owned, state: 'failed', pendingQuestions: undefined });
       return;
     }
@@ -2006,6 +2013,7 @@ export class MktgAgentRunComponent {
     this.recheckingAttempt.set(false);
     this.runFailed.set(false);
     this.errorText.set('');
+    this.publicWaitingText.set('');
     this.fromLfxApplied.set({});
     this.lfxMissing.set({});
     this.fromPriorRunApplied.set({});
@@ -2263,6 +2271,7 @@ export class MktgAgentRunComponent {
 
     this.runFailed.set(false);
     this.errorText.set('');
+    this.publicWaitingText.set('');
     // Consent/start supersedes the old UI snapshot, not the retained accepted capability.
     // An explicit retry still performs the live-record check through confirmDiscard.
     this.waitingRun.set(null);

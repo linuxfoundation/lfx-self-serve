@@ -12,6 +12,7 @@ import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.c
 import {
   MKTG_DOCUMENT_PROGRESS_POLL,
   MKTG_DOCUMENT_TYPES,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_REVISION_ID_REGEX,
   MKTG_STARTED_RUN_ID_REGEX,
@@ -41,8 +42,24 @@ import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
-import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
-import { catchError, defer, distinctUntilChanged, EMPTY, exhaustMap, expand, finalize, map, of, Subject, switchMap, tap, throwError, timer } from 'rxjs';
+import { createVisibilityPoll, pollBackoffDelayMs } from '@shared/utils/visibility-poll.util';
+import {
+  catchError,
+  defer,
+  distinctUntilChanged,
+  EMPTY,
+  exhaustMap,
+  expand,
+  finalize,
+  map,
+  Observable,
+  of,
+  Subject,
+  switchMap,
+  tap,
+  throwError,
+  timer,
+} from 'rxjs';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
 import { MktgClosedRunMessageComponent } from '../mktg-closed-run-message/mktg-closed-run-message.component';
@@ -130,8 +147,6 @@ export class MktgRunProgressComponent {
   private readonly lastSelectedRunId = signal('');
   private readonly lastSelectedStartedAt = signal('');
   protected readonly warning = signal('');
-  /** True once automatic checks stopped after the poll deadline; only then does the waiting state offer Refresh. */
-  protected readonly paused = signal(false);
   protected readonly readFailure = signal('');
   private readonly reload = signal(0);
   protected readonly answersSending = signal(false);
@@ -326,7 +341,6 @@ export class MktgRunProgressComponent {
           }
           readerScope = key;
           this.warning.set('');
-          this.paused.set(false);
           this.readFailure.set('');
           if (!isPlatformBrowser(this.platformId) || !request.polling || !request.project || !request.agentKey || !request.documentId) return EMPTY;
           if (request.runId && !MKTG_STARTED_RUN_ID_REGEX.test(request.runId)) {
@@ -344,14 +358,15 @@ export class MktgRunProgressComponent {
           if (!known && retained) known = { detail: retained, view: null };
           if (!known && this.expectedPending() && type)
             known = { detail: { project: request.project, type, documentId: request.documentId, revisions: [], approvedCurrent: null, runs: [] }, view: null };
-          let unavailableSince: number | null = null;
           let unavailableCount = 0;
           let refreshedFailure = false;
           let terminal = '';
+          // A refused read (401/403) latches this request: no poll or wake sends the same credentials again (RFC 9110 §15.5.4).
+          let denied = false;
+          // One plain connection-state line while a check fails; it clears on the next good read and the loaded content stays.
           const unavailable = () => {
-            unavailableSince ??= Date.now();
             unavailableCount++;
-            this.warning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
+            this.warning.set(MKTG_POLL_RETRYING_TEXT);
           };
           const read = (poll: boolean) => {
             // Stamp each actual read before exposing creator-only activity, not the long-lived scope.
@@ -420,10 +435,9 @@ export class MktgRunProgressComponent {
                 known = cycle;
                 if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) unavailable();
                 else {
-                  unavailableSince = null;
                   unavailableCount = 0;
                   this.warning.set('');
-                  this.paused.set(false);
+                  this.readFailure.set('');
                 }
               }),
               catchError((error: unknown) => {
@@ -475,41 +489,41 @@ export class MktgRunProgressComponent {
               })
             );
           };
-          const observe = () =>
-            read(false).pipe(
+          /** The surface's own interval while healthy; after a failed or partial read, capped jittered backoff floored at that interval — never a stop. */
+          const nextDelay = (base: number) => (unavailableCount ? pollBackoffDelayMs(unavailableCount, base, MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs) : base);
+          const observe = (poll = false): Observable<MktgDocumentReadCycle> => {
+            if (denied) return EMPTY;
+            return read(poll).pipe(
               expand((cycle) => {
                 if (readMktgRetiredRunHint(cycle.detail.runs?.find((row) => row.runId === this.runId()))) return EMPTY;
-                const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
-                if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
-                  this.warning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
-                  this.paused.set(true);
-                  return EMPTY;
-                }
                 const active =
                   this.runState() === 'writing' ||
                   this.runState() === 'storing' ||
                   cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-                const questions = this.runPage() && (this.selectedRun()?.state === 'questions' || this.watchQuestions());
+                // The waiting state polls on every surface (run page and document card), so a second browser sees new questions or writing without a click.
+                const questions = this.selectedRun()?.state === 'questions' || this.watchQuestions();
                 const local = this.localProgress();
-                if (!active && !questions && !request.continuous && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
-                let delay: number = questions ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
-                if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
-                if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
-                return timer(delay).pipe(switchMap(() => read(true)));
+                if (!active && !questions && !request.continuous && local !== 'writing' && local !== 'storing' && !unavailableCount) return EMPTY;
+                return timer(nextDelay(questions ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs)).pipe(switchMap(() => read(true)));
               }),
               catchError((error: HttpErrorResponse) => {
+                console.error('Marketing OS run progress read failed', { status: error.status });
+                // A transient failure (network, 408, 429, 5xx) is the shared poller's to retry on its capped backoff: the error
+                // reaches it, so no retry nests inside the last (RFC 9110 for the transient set).
+                if (isTransientHttpError(error)) {
+                  unavailable();
+                  return throwError(() => error);
+                }
+                denied = error.status === 401 || error.status === 403;
                 this.loaded.set(null);
-                this.readFailure.set(
-                  error.status === 401 || error.status === 403
-                    ? 'You need write access to this project to see its Marketing OS documents.'
-                    : 'This run could not be loaded. Try again in a moment.'
-                );
                 this.readError.emit(error);
+                this.readFailure.set(denied ? 'You need write access to this project to see its Marketing OS documents.' : 'This run could not be loaded.');
                 return EMPTY;
               })
             );
-          // The shared helper owns visibility/focus cancellation; this reader retains its
-          // per-state cadence and bounded availability budget inside that visible session.
+          };
+          // The shared poller owns hidden-tab cancellation, the wakes (visible, focus, online) and the retry of a failed first
+          // read; this reader keeps its per-state cadence and its own backoff after a partial read inside that visible session.
           return createVisibilityPoll(this.document, observe, {
             intervalMs: MKTG_RUN_POLL.intervalMs,
             backoffBaseMs: MKTG_RUN_POLL.intervalMs,

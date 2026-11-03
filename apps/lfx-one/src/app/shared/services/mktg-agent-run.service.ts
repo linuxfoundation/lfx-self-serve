@@ -752,12 +752,26 @@ export class MktgAgentRunService {
     const matches = (response: MktgRunResultResponse): boolean =>
       !!response.persistence && response.version === result.version && mktgRunResultIdentity(response, false) === payloadDigest;
     let firstWindow = true;
+    // A refused poll (401/403) latches this watch: the same credentials are not sent again, by a tick or a wake (RFC 9110
+    // §15.5.4); the run keeps its document and nothing claims the server copy exists. Other failures spend one attempt.
+    let denied = false;
     const observe = () => {
+      if (denied) return EMPTY;
       const delay = firstWindow ? MKTG_RUN_POLL.intervalMs : 0;
       firstWindow = false;
       return timer(delay, MKTG_RUN_POLL.intervalMs).pipe(
+        takeWhile(() => !denied),
         exhaustMap(() =>
-          this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
+          this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
+            catchError((error: HttpErrorResponse) => {
+              console.error('Marketing OS run persistence check failed', { status: error.status });
+              if (error.status === 401 || error.status === 403) {
+                denied = true;
+                return EMPTY;
+              }
+              return of<MktgRunResultResponse>({ status: 'pending' });
+            })
+          )
         )
       );
     };
