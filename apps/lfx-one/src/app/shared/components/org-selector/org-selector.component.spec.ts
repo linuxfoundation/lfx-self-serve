@@ -317,7 +317,7 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
   const rowA: OrgItem = { uid: UID_A, accountId: UID_A, name: 'Acme', logoUrl: null, slug: 'acme-inc' };
   const rowB: OrgItem = { uid: UID_B, accountId: UID_B, name: 'Beta', logoUrl: null, slug: 'beta-llc' };
   /** What `AccountContextService` holds while the roll-up is the selection. */
-  const rollUpAccount: Account = { accountId: 'all', accountName: 'All Organizations', membershipTier: '', uid: 'all', slug: null };
+  const rollUpAccount: Account = { accountId: 'all', accountName: 'All Organizations Roll-Up', membershipTier: '', uid: 'all', slug: null };
 
   interface RollUpView {
     activateOption(active: HTMLElement): boolean;
@@ -412,7 +412,7 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
 
   it('describes the set rather than a persona', async () => {
     const view = await create({ canSelectRollUp: true, count: 4 });
-    expect(view.rollUpSubtitle()).toBe('Combined view · 4 organizations');
+    expect(view.rollUpSubtitle()).toBe('Combined view of related organizations · 4 organizations');
     expect(view.rollUpTriggerSubtitle()).toBe('4 organizations');
   });
 
@@ -469,7 +469,7 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
   it('agrees with the noun at one organization', async () => {
     const view = await create({ canSelectRollUp: true, isRollUp: true, count: 1 });
     expect(view.rollUpTriggerSubtitle()).toBe('1 organization');
-    expect(view.rollUpSubtitle()).toBe('Combined view · 1 organization');
+    expect(view.rollUpSubtitle()).toBe('Combined view of related organizations · 1 organization');
   });
 
   /**

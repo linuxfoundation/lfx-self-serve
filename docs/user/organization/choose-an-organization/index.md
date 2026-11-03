@@ -1,6 +1,6 @@
 ---
 title: Choose and switch an organization
-description: Pick the organization you are viewing in the Organization lens, switch to another one, use the All Organizations combined view, read the organization in a page address, and understand the messages on a link that does not open an organization.
+description: Pick the organization you are viewing in the Organization lens, switch to another one, use the All Organizations Roll-Up combined view, read the organization in a page address, and understand the messages on a link that does not open an organization.
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, switcher, switch-organization, all-organizations, combined-view, url, not-found, access]
@@ -10,7 +10,7 @@ intercom_collection: Organization
 
 These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer), a CLA Manager, or Linux Foundation staff. Access to an organization is granted by that organization's own Organization Lens administrators, not by the Linux Foundation.
 
-The organization switcher at the top of the sidebar names what you are viewing, and every page in the lens (**Dashboard**, **Memberships**, **Projects**, and the rest) follows it. Usually that is a single organization. If you have access to two or more, the switcher also offers **All Organizations**, a combined view across all of them.
+The organization switcher at the top of the sidebar names what you are viewing, and every page in the lens (**Dashboard**, **Memberships**, **Projects**, and the rest) follows it. Usually that is a single organization. If you have access to two or more, the switcher also offers the **All Organizations Roll-Up**, a combined view across all of them.
 
 ## How do I choose an organization in the Organization lens?
 
@@ -34,11 +34,11 @@ Open the organization switcher at the top of the sidebar and select another orga
 
 After a switch, the browser's Back button returns you to the organization you were viewing before. If the address you switched from had no organization in it, such as `/org` or `/org/projects`, Back takes you to the page you visited before that one instead. If you switched from a page that says a link does not open an organization, Back returns you to that page. An **Employees** selection on a page does not carry over to the new organization, because it was a list of the previous organization's people.
 
-## What is All Organizations?
+## What is the All Organizations Roll-Up?
 
-**All Organizations** is a combined view across every organization you have access to, instead of one at a time. It is useful when you administer several related companies and want to see them together rather than switching between them.
+The **All Organizations Roll-Up** is a combined view across every organization you have access to, instead of one at a time. It is useful when you administer several related companies and want to see them together rather than switching between them.
 
-It appears as the first entry in the organization switcher, above your organizations and separated from them, with the label **Combined view** and the number of organizations it covers. Selecting it is like selecting an organization: the switcher then shows **All Organizations** and, in place of your role, the number of organizations being combined. A view across several organizations has no single role, so no role is shown.
+It appears as the first entry in the organization switcher, above your organizations and separated from them, with the line **Combined view of related organizations** and the number of organizations it covers. Selecting it is like selecting an organization: the switcher then shows **All Organizations Roll-Up** and, in place of your role, the number of organizations being combined. A view across several organizations has no single role, so no role is shown.
 
 **When it is offered.** Only when you have access to two or more organizations. With access to one, there is nothing to combine, so the entry does not appear at all.
 
@@ -47,11 +47,11 @@ It appears as the first entry in the organization switcher, above your organizat
 To select it:
 
 1. Select the organization switcher at the top of the sidebar.
-2. Select **All Organizations** at the top of the list. On a keyboard, use the arrow keys to reach it and press Enter.
+2. Select **All Organizations Roll-Up** at the top of the list. On a keyboard, use the arrow keys to reach it and press Enter.
 
 To leave it, open the switcher again and select a single organization.
 
-Searching does not hide it: when a search matches none of your organizations, **All Organizations** stays at the top of the list and **No organizations found** appears below it, so you can always get back to the combined view.
+Searching does not hide it: when a search matches none of your organizations, the **All Organizations Roll-Up** stays at the top of the list and **No organizations found** appears below it, so you can always get back to the combined view.
 
 Like an organization, your choice is remembered for 30 days, and the address names it, so a link to a combined page opens as a combined page for anyone else who can use it. See [What does the organization in a page address mean?](#what-does-the-organization-in-a-page-address-mean) below.
 
@@ -89,7 +89,7 @@ Every Organization lens page address names the organization it shows, in the for
 
 - `<organization>` is the organization's short name, in lowercase letters, numbers, and hyphens. An organization without a short name is addressed by its 18-character account ID, which starts with `001`.
 - `/org/<organization>` on its own opens that organization's **Dashboard**, or its **EasyCLA** page when your only role on it is CLA Manager.
-- `/org/all/<page>` is the combined view: it opens **All Organizations** on that page. `all` is reserved for it, so an organization whose short name would be `all` is addressed by its account ID instead. Opening a `/org/all` address switches you to the combined view, the same way an organization address switches you to that organization. If you have access to only one organization, the combined view is not yours to open: LFX opens the page for your organization instead, and if it cannot, you land on the page described below.
+- `/org/all/<page>` is the combined view: it opens **All Organizations Roll-Up** on that page. `all` is reserved for it, so an organization whose short name would be `all` is addressed by its account ID instead. Opening a `/org/all` address switches you to the combined view, the same way an organization address switches you to that organization. If you have access to only one organization, the combined view is not yours to open: LFX opens the page for your organization instead, and if it cannot, you land on the page described below.
 - A link you share names the organization, so the person who opens it sees the same organization, as long as they have access to it.
 - An older address without an organization, such as `/org/projects`, still opens. It shows the organization you have selected, which may not be the one the sender was viewing. The address usually fills in that organization's name when the page loads, but not always, so before you share a link, check that it reads `/org/<organization>/<page>`.
 

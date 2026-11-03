@@ -14,7 +14,7 @@ You switch organizations from the organization switcher at the top of the sideba
 
 ## Can I see all my organizations at once?
 
-Yes, if you have access to two or more. The organization switcher then offers **All Organizations** as its first entry, a combined view across all of them, labelled **Combined view** with the number of organizations it covers. Select it the way you would select an organization; to leave it, open the switcher and select a single organization. Organizations where your only role is CLA Manager are not part of it. With access to only one organization the entry does not appear, because there is nothing to combine. See [What is All Organizations?](../choose-an-organization/#what-is-all-organizations).
+Yes, if you have access to two or more. The organization switcher then offers the **All Organizations Roll-Up** as its first entry, a combined view across all of them, labelled **Combined view of related organizations** with the number of organizations it covers. Select it the way you would select an organization; to leave it, open the switcher and select a single organization. Organizations where your only role is CLA Manager are not part of it. With access to only one organization the entry does not appear, because there is nothing to combine. See [What is the All Organizations Roll-Up?](../choose-an-organization/#what-is-the-all-organizations-roll-up).
 
 ## What does the Org Overview dashboard show?
 

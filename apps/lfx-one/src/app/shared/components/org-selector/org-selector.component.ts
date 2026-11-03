@@ -132,7 +132,7 @@ export class OrgSelectorComponent {
     const count = this.rollUpOrganizationCount();
     return `${count} ${count === 1 ? 'organization' : 'organizations'}`;
   });
-  protected readonly rollUpSubtitle: Signal<string> = computed(() => `Combined view · ${this.rollUpTriggerSubtitle()}`);
+  protected readonly rollUpSubtitle: Signal<string> = computed(() => `Combined view of related organizations · ${this.rollUpTriggerSubtitle()}`);
 
   protected readonly items: Signal<OrgItem[]> = this.orgNavigationService.items;
   protected readonly loading: Signal<boolean> = this.orgNavigationService.loading;

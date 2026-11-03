@@ -633,7 +633,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
     cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
     service.initializeUserOrganizations([seedA, seedB]);
     expect(service.isRollUp()).toBe(true);
-    expect(service.selectedAccount().accountName).toBe('All Organizations');
+    expect(service.selectedAccount().accountName).toBe('All Organizations Roll-Up');
   });
 
   /**

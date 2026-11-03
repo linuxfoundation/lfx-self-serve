@@ -60,7 +60,7 @@ export const ORG_LENS_PAGE_SEGMENTS: Readonly<Record<string, true>> = {
 export const ORG_ROLLUP_SEGMENT = 'all';
 
 /** Display name of the All Organizations roll-up, shown wherever a concrete organization's name would be (#4125). */
-export const ROLLUP_ACCOUNT_NAME = 'All Organizations';
+export const ROLLUP_ACCOUNT_NAME = 'All Organizations Roll-Up';
 
 /** Fewest organizations a roll-up is worth offering over: with one, it is the organization. */
 export const ROLLUP_MIN_ORGANIZATIONS = 2;
