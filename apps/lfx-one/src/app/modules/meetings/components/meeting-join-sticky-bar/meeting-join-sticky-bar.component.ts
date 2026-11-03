@@ -31,8 +31,6 @@ export class MeetingJoinStickyBarComponent {
   public readonly primaryAction = input<'resend' | 'subscribe' | null>(null);
   /** True while the self-resend request is in flight (same state the page's own Resend Invite button shows). */
   public readonly resending = input<boolean>(false);
-  /** The project's calendar feed URL, for the `subscribe` action. */
-  public readonly subscribeUrl = input<string>('');
   /** Whether the join window is open. */
   public readonly canJoin = input<boolean>(false);
   /** Resolved join URL; while `canJoin` is true and this is empty (and `joinUnavailable` is false) Join shows its loading state. */
@@ -45,11 +43,11 @@ export class MeetingJoinStickyBarComponent {
   public readonly suppressed = input<boolean>(false);
 
   public readonly resendInvite = output<void>();
+  /** Asks the page to open the calendar subscribe dialog. */
+  public readonly subscribeCalendar = output<void>();
 
   /** The join URL only when it is a plain http(s) link; anything else is never bound to an anchor. */
   protected readonly safeJoinHref = computed(() => this.toHttpUrl(this.joinHref()));
-  /** The feed URL only when it is a plain http(s) link. */
-  protected readonly safeSubscribeUrl = computed(() => this.toHttpUrl(this.subscribeUrl()));
 
   private readonly isPhone = signal<boolean>(false);
 

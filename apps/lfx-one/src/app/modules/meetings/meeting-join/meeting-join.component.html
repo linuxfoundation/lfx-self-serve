@@ -1006,9 +1006,9 @@
           [unlockLabel]="joinUnlockLabel()"
           [primaryAction]="stickyBarAction()"
           [resending]="resendingInvite()"
-          [subscribeUrl]="projectCalendarFeedUrl()"
           [suppressed]="stickyBarSuppressed()"
-          (resendInvite)="resendInvite()" />
+          (resendInvite)="resendInvite()"
+          (subscribeCalendar)="onSubscribeCalendar()" />
       }
     </div>
   } @else {

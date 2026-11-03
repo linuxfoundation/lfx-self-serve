@@ -17,16 +17,14 @@
         [loading]="resending()"
         (onClick)="resendInvite.emit()"
         data-testid="sticky-resend-invite" />
-    } @else if (primaryAction() === 'subscribe' && safeSubscribeUrl()) {
+    } @else if (primaryAction() === 'subscribe') {
       <lfx-button
         class="w-full"
         styleClass="w-full"
         icon="fa-light fa-calendar-plus"
         label="Subscribe to calendar"
         severity="primary"
-        [href]="safeSubscribeUrl()"
-        target="_blank"
-        rel="noopener noreferrer"
+        (onClick)="subscribeCalendar.emit()"
         data-testid="sticky-subscribe-calendar" />
     }
     @if (canJoin() && safeJoinHref()) {

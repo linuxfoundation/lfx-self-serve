@@ -112,6 +112,7 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
+import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -205,6 +206,7 @@ export class MeetingJoinComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly overlayState = inject(OverlayStateService);
   private readonly registrantsOverlayId = 'meeting-join-registrants-drawer';
+  private readonly materialsOverlayId = 'meeting-join-materials-drawer';
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
 
@@ -259,6 +261,10 @@ export class MeetingJoinComponent implements OnInit {
   public messageIcon: Signal<string>;
   public alertMessage: Signal<string>;
   private hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
+  // True only when the join window was already open when the page first loaded the meeting. Set once in initializeMeeting. The 5s clock
+  // can open the window later, which enables the Join button but must never open Zoom on its own (no user gesture).
+  private joinWindowOpenAtLoad = false;
+  private joinWindowChecked = false;
   /** True when `zoom_redirect=false` is on the URL — suppresses automatic Zoom open. */
   private readonly zoomRedirectDisabled: Signal<boolean>;
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
@@ -511,7 +517,10 @@ export class MeetingJoinComponent implements OnInit {
 
   public constructor() {
     // Navigating away destroys the page with the drawer possibly still open; never strand the launcher hidden.
-    this.destroyRef.onDestroy(() => this.overlayState.unregister(this.registrantsOverlayId));
+    this.destroyRef.onDestroy(() => {
+      this.overlayState.unregister(this.registrantsOverlayId);
+      this.overlayState.unregister(this.materialsOverlayId);
+    });
     // Initialize all class variables
     this.authenticated = this.userService.authenticated;
 
@@ -667,6 +676,16 @@ export class MeetingJoinComponent implements OnInit {
           this.overlayState.unregister(this.registrantsOverlayId);
         }
       });
+    // Same for the materials drawer: it is bottom-anchored on phones, where the launcher would otherwise sit on top of it.
+    toObservable(this.materialsDrawerVisible)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((open) => {
+        if (open) {
+          this.overlayState.register(this.materialsOverlayId);
+        } else {
+          this.overlayState.unregister(this.materialsOverlayId);
+        }
+      });
   }
 
   public ngOnInit(): void {
@@ -680,6 +699,23 @@ export class MeetingJoinComponent implements OnInit {
     if (isPlatformBrowser(this.platformId)) {
       this.startClock();
     }
+  }
+
+  /** Opens the same iCal subscribe dialog the meetings dashboard uses, so the calendar stays in sync (webcal) instead of importing a snapshot. */
+  public onSubscribeCalendar(): void {
+    const feedUrl = this.projectCalendarFeedUrl();
+    if (!feedUrl) {
+      return;
+    }
+    const name = this.project()?.name || 'Project';
+    this.dialogService.open(IcalSubscribeDialogComponent, {
+      header: `Subscribe — ${name}`,
+      width: '480px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { feedUrl, name },
+    });
   }
 
   public handleCopyLink(): void {
@@ -970,7 +1006,17 @@ export class MeetingJoinComponent implements OnInit {
           const alreadyJoined = this.hasAutoJoined();
           const usingGuestForm = this.showGuestForm();
 
-          return !!url && authenticated && !!user && !!user.email && canJoin && !alreadyJoined && !usingGuestForm && !zoomRedirectDisabled;
+          return (
+            !!url &&
+            authenticated &&
+            !!user &&
+            !!user.email &&
+            canJoin &&
+            !alreadyJoined &&
+            !usingGuestForm &&
+            !zoomRedirectDisabled &&
+            this.joinWindowOpenAtLoad
+          );
         }),
         // Take only the first valid URL
         take(1)
@@ -1129,6 +1175,7 @@ export class MeetingJoinComponent implements OnInit {
         // follow-up). Only a settled success should clear it.
         this.meetingLoadFailed.set(false);
         this.meetingResolvedRouteId.set(this.meetingRouteId());
+        this.recordJoinWindowAtLoad(res as Meeting);
         // Persist the resolved state during SSR so the client can hydrate to the same branch.
         // Angular defers serialization until this tracked HTTP call settles.
         if (isPlatformServer(this.platformId)) {
@@ -1227,9 +1274,8 @@ export class MeetingJoinComponent implements OnInit {
       if (this.canResendInvite()) {
         return 'resend';
       }
-      // The project feed lists public meetings only (private ones are not in it), so it is offered for those alone.
-      const meeting = this.meeting();
-      const inPublicFeed = meeting?.visibility === 'public' && !meeting?.restricted;
+      // The project feed lists public meetings only (private ones are not in it), restricted or not, so it is offered for those alone.
+      const inPublicFeed = this.meeting()?.visibility === 'public';
       return inPublicFeed && this.projectCalendarFeedUrl() ? 'subscribe' : null;
     });
   }
@@ -1274,18 +1320,31 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
-    return computed(() => {
-      const meeting = this.meeting();
-      // Check if a specific occurrence was requested via query param
-      const requestedOccurrence = this.activatedRoute.snapshot.queryParamMap.get('occurrence');
-      if (requestedOccurrence && meeting?.occurrences?.length) {
-        const requestedTime = parseInt(requestedOccurrence, 10);
-        const active = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences);
-        const match = active.find((o: MeetingOccurrence) => new Date(o.start_time).getTime() === requestedTime);
-        if (match) return match;
-      }
-      return getCurrentOrNextOccurrence(meeting);
-    });
+    return computed(() => this.resolveOccurrence(this.meeting()));
+  }
+
+  private resolveOccurrence(meeting: Meeting): MeetingOccurrence | null {
+    // Check if a specific occurrence was requested via query param
+    const requestedOccurrence = this.activatedRoute.snapshot.queryParamMap.get('occurrence');
+    if (requestedOccurrence && meeting?.occurrences?.length) {
+      const requestedTime = parseInt(requestedOccurrence, 10);
+      const active = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences);
+      const match = active.find((o: MeetingOccurrence) => new Date(o.start_time).getTime() === requestedTime);
+      if (match) return match;
+    }
+    return getCurrentOrNextOccurrence(meeting);
+  }
+
+  // Remembers, once, whether the join window was already open when the meeting first loaded. Only then may the page open Zoom by itself.
+  private recordJoinWindowAtLoad(meeting: Meeting): void {
+    if (this.joinWindowChecked) {
+      return;
+    }
+    this.joinWindowChecked = true;
+    if (this.loadedViaPastMeetingId()) {
+      return;
+    }
+    this.joinWindowOpenAtLoad = this.liveMeetingFullAccess() ? canJoinMeeting(meeting, this.resolveOccurrence(meeting)) : this.liveMeetingCanJoin();
   }
 
   /**

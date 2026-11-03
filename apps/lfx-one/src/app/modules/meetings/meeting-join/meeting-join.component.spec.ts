@@ -27,6 +27,7 @@ import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/me
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
+import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
 import { OverlayStateService } from '@services/overlay-state.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -2199,15 +2200,31 @@ describe('MeetingJoinComponent', () => {
         expect(part(fixture, 'sticky-resend-invite')?.querySelector('button')?.disabled).toBe(true);
       });
 
-      it('offers a non-registrant a link to the project calendar feed instead, opening in a new tab', async () => {
+      it('offers a non-registrant Subscribe, which opens the iCal subscribe dialog for the project feed (no link, no new tab)', async () => {
         const fixture = await render({ invited: false, organizer: false });
+        const open = vi
+          .spyOn(fixture.debugElement.injector.get(DialogService), 'open')
+          .mockReturnValue({ onClose: new Subject() } as unknown as DynamicDialogRef);
 
-        const link = part(fixture, 'sticky-subscribe-calendar')?.querySelector('a') as HTMLAnchorElement;
+        const subscribe = part(fixture, 'sticky-subscribe-calendar') as HTMLElement;
         expect(part(fixture, 'sticky-resend-invite')).toBeNull();
-        expect(link.textContent).toContain('Subscribe to calendar');
-        expect(link.href).toBe(`${environment.urls.home}/public/api/projects/project-1/calendar.ics`);
-        expect(link.target).toBe('_blank');
-        expect(link.rel).toContain('noopener');
+        expect(subscribe.textContent).toContain('Subscribe to calendar');
+        expect(subscribe.querySelector('a')).toBeNull();
+        expect(subscribe.getAttribute('target')).toBeNull();
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-subscribe-calendar"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+
+        expect(open).toHaveBeenCalledTimes(1);
+        expect(open).toHaveBeenCalledWith(
+          IcalSubscribeDialogComponent,
+          expect.objectContaining({ data: { feedUrl: `${environment.urls.home}/public/api/projects/project-1/calendar.ics`, name: 'Test Project' } })
+        );
+      });
+
+      it('offers Subscribe for a restricted public meeting too, since the project feed lists it', async () => {
+        const fixture = await render({ invited: false, organizer: false, restricted: true });
+
+        expect(part(fixture, 'sticky-subscribe-calendar')).not.toBeNull();
       });
 
       it('offers no calendar action when the meeting is not in the project feed (private) and the viewer is not invited', async () => {
@@ -2270,6 +2287,20 @@ describe('MeetingJoinComponent', () => {
       expect(inline.closest('div')?.classList.contains('max-sm:hidden')).toBe(true);
     });
 
+    it('keeps the support launcher hidden while the materials drawer is open, and releases it on close', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await render();
+
+      fixture.componentInstance.materialsDrawerVisible.set(true);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(true);
+      expect(bar(fixture)).toBeNull();
+
+      fixture.componentInstance.materialsDrawerVisible.set(false);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
     it('yields to the guests drawer and returns when it closes', async () => {
       const fixture = await render();
 
@@ -2320,6 +2351,35 @@ describe('MeetingJoinComponent', () => {
         await settle();
         expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
         expect(part(fixture, 'sticky-join')?.textContent).not.toContain('Join opens');
+      });
+
+      it('only enables Join at T-10 and never opens Zoom on its own for a page that loaded before the window', async () => {
+        getPublicMeetingJoinUrl.mockReturnValue(of({ link: 'https://zoom.us/j/1234567890' }));
+        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+        const fixture = await renderEleven();
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+
+        advance(2 * 60_000);
+        window.dispatchEvent(new Event('focus'));
+        await settle();
+        // Let the effects that feed the auto-join stream run, so a regression would have had its chance to open Zoom.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        await settle();
+
+        expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+        expect(fixture.componentInstance.fetchedJoinUrl()).toContain('https://zoom.us/j/1234567890');
+        expect(part(fixture, 'sticky-join')?.querySelector('a')?.getAttribute('href')).toContain('https://zoom.us/j/1234567890');
+        expect(open).not.toHaveBeenCalled();
+      });
+
+      it('still opens Zoom on its own when the window was already open at load', async () => {
+        getPublicMeetingJoinUrl.mockReturnValue(of({ link: 'https://zoom.us/j/1234567890' }));
+        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+        vi.setSystemTime(T0);
+
+        await render({ start_time: '2030-06-01T10:05:00Z', early_join_time_minutes: 10 });
+
+        expect(open).toHaveBeenCalledTimes(1);
       });
 
       it('catches up when the tab regains focus (mobile browsers freeze background timers)', async () => {

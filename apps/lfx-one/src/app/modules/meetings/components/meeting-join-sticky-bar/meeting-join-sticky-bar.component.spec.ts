@@ -73,26 +73,20 @@ describe('MeetingJoinStickyBarComponent', () => {
     expect(emitted).toHaveBeenCalledTimes(1);
   });
 
-  it('links Subscribe to the project feed in a new tab with noopener', async () => {
+  it('asks the page to open the subscribe dialog; Subscribe is a button, not a link to a new tab', async () => {
     const fixture = await create();
     fixture.componentRef.setInput('primaryAction', 'subscribe');
-    fixture.componentRef.setInput('subscribeUrl', 'https://app.example/public/api/projects/p1/calendar.ics');
     await fixture.whenStable();
+    const emitted = vi.fn();
+    fixture.componentInstance.subscribeCalendar.subscribe(emitted);
 
-    const anchor = testId(fixture, 'sticky-subscribe-calendar')?.querySelector('a') as HTMLAnchorElement;
-    expect(anchor.href).toBe('https://app.example/public/api/projects/p1/calendar.ics');
-    expect(anchor.target).toBe('_blank');
-    expect(anchor.rel).toContain('noopener');
+    const subscribe = testId(fixture, 'sticky-subscribe-calendar') as HTMLElement;
+    expect(subscribe.querySelector('a')).toBeNull();
+    expect(subscribe.getAttribute('target')).toBeNull();
     expect(testId(fixture, 'sticky-resend-invite')).toBeNull();
-  });
 
-  it.each(['javascript:alert(1)', 'data:text/html,x', ''])('renders no Subscribe link for an unusable feed URL (%s)', async (url) => {
-    const fixture = await create();
-    fixture.componentRef.setInput('primaryAction', 'subscribe');
-    fixture.componentRef.setInput('subscribeUrl', url);
-    await fixture.whenStable();
-
-    expect(testId(fixture, 'sticky-subscribe-calendar')).toBeNull();
+    fixture.debugElement.query(By.css('[data-testid="sticky-subscribe-calendar"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+    expect(emitted).toHaveBeenCalledTimes(1);
   });
 
   it('renders only the Join row when there is no primary action', async () => {
