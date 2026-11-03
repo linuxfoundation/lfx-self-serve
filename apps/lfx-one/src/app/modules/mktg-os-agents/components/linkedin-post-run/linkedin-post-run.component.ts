@@ -30,6 +30,7 @@ import {
   LINKEDIN_VOICE_FIELDS,
   MKTG_RUN_NEW_MODE,
   MKTG_DOCUMENT_TYPES,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_RUN_ACTIVE_DIALOG_KEYS,
   MKTG_RUN_RESUME_QUERY_CLEAR,
@@ -277,7 +278,7 @@ export class LinkedinPostRunComponent {
               if (!project.writer) return of(null);
               return this.documents.listDocuments(context.uid, true, true).pipe(
                 switchMap((snapshot) => {
-                  if (snapshot.progressUnavailable) this.runWarning.set('Recorded runs could not be checked. Your inputs are available; checking again.');
+                  if (snapshot.progressUnavailable) this.runWarning.set(MKTG_POLL_RETRYING_TEXT);
                   return this.api.profile().pipe(map((profile) => ({ ...profile, snapshot })));
                 })
               );
@@ -356,7 +357,8 @@ export class LinkedinPostRunComponent {
       .subscribe(({ event, project, subject }) => {
         if (project !== this.context.activeContextUid() || subject !== this.user.user()?.sub) return;
         if (event.kind === 'error' || event.value.progressUnavailable) {
-          this.runWarning.set('Recorded runs could not be checked. Showing available inputs; checking again.');
+          // One plain connection-state line (no explanatory copy) while the shared poller keeps checking.
+          this.runWarning.set(MKTG_POLL_RETRYING_TEXT);
           return;
         }
         this.runWarning.set('');

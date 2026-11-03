@@ -4424,7 +4424,8 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe('https://docs.google.com/presentation/d/SyntheticDeck/edit');
     } else if (answer === 'error' && afterCap) {
       expect(exporter?.classList.contains('hidden')).toBe(false);
-      expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+      expect(query('mktg-slides-export-check-again')).toBeNull();
+      expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
     } else {
       expect(exporter?.classList.contains('hidden')).toBe(true);
       expect(query('mktg-slides-export-panel')).toBeNull();
@@ -4435,7 +4436,8 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     if (answer === 'error') {
       expect(exporter?.classList.contains('hidden')).toBe(false);
-      expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+      expect(query('mktg-slides-export-check-again')).toBeNull();
+      expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
       expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
     } else {
       expect(query('mktg-slides-export-panel')).toBe(settledPanel);

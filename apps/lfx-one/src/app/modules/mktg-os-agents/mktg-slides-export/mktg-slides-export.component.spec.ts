@@ -8,6 +8,8 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
   MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_LOGO_NOTES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
@@ -22,7 +24,7 @@ import {
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgSlidesExportComponent } from './mktg-slides-export.component';
 
@@ -117,6 +119,11 @@ describe('MktgSlidesExportComponent', () => {
       logoNote: 'not-public',
     };
     pollResult = of({ status: 'ready', record: record() });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('shows nothing until there is a last export or an export under way', async () => {
@@ -295,9 +302,27 @@ describe('MktgSlidesExportComponent', () => {
     expect(service.last).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps Export available through a wake re-read of a settled lookup (tab return, focus), and holds it only for a first or changed read', async () => {
+    lastResponse = { last: record({ revisionNumber: 1 }), latestRevision: { id: `000003-${'b'.repeat(64)}`, number: 3, contentSha256: 'b'.repeat(64) } };
+    await setup();
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+    expect(exporter.canExport()).toBe(true);
+    const lookup = new Subject<MktgSlidesExportLastResponse>();
+    service.last.mockReturnValueOnce(lookup);
+    window.dispatchEvent(new Event('focus'));
+    // The wake re-read is in flight: Export stays available and the tooltip names no check.
+    expect(exporter.canExport()).toBe(true);
+    expect(exporter.disabledReason()).toBe('');
+    lookup.next(lastResponse);
+    lookup.complete();
+    await fixture.whenStable();
+    expect(exporter.canExport()).toBe(true);
+  });
+
   it('retains the loaded deck and approved-current status after a failed notification refresh, keeping Export enabled', async () => {
     lastResponse = { last: record({ revisionNumber: 1 }), latestRevision: { id: `000003-${'b'.repeat(64)}`, number: 3, contentSha256: 'b'.repeat(64) } };
     await setup();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
     expect(exporter.canExport()).toBe(true);
     expect(query('mktg-slides-export-stale')).not.toBeNull();
@@ -314,11 +339,12 @@ describe('MktgSlidesExportComponent', () => {
     expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe(DECK_LINK);
     expect(query('mktg-slides-export-last')?.textContent).toContain('from revision 1');
     expect(query('mktg-slides-export-stale')).not.toBeNull();
-    expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain('Could not check for an earlier deck');
-    expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+    expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-slides-export-check-again')).toBeNull();
     await click('host-export');
     expect(query('mktg-slides-export-choice')).not.toBeNull();
     expect(service.start).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it('labels a Draft with the deck revision, keeping the last deck link/date and the approved-view wording', async () => {
@@ -453,20 +479,25 @@ describe('MktgSlidesExportComponent', () => {
     expect(query('mktg-slides-export-open')?.getAttribute('href')).toBe(DECK_LINK);
   });
 
-  it('says so when the last export cannot be read, and holds Export until a check succeeds', async () => {
+  it('says so when the last export cannot be read, reads again on its own with no Check again button, and holds Export until a check succeeds', async () => {
     await setup();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
     service.last.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
     fixture.componentInstance.target.set({ ...TARGET, revisionId: `000001-${'c'.repeat(64)}` });
     await fixture.whenStable();
 
-    expect(query('mktg-slides-export-lookup-failed')).not.toBeNull();
+    expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-slides-export-check-again')).toBeNull();
     expect(exporter.canExport()).toBe(false);
+    expect(exporter.disabledReason()).toBe('Could not check the last export.');
     await click('host-export');
     expect(service.start).not.toHaveBeenCalled();
 
     lastResponse = { last: record(), latestRevision: null };
-    await click('mktg-slides-export-check-again');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
 
     expect(service.last).toHaveBeenCalledTimes(3);
     expect(query('mktg-slides-export-lookup-failed')).toBeNull();
@@ -474,10 +505,13 @@ describe('MktgSlidesExportComponent', () => {
     await click('host-export');
     expect(query('mktg-slides-export-choice')).not.toBeNull();
     expect(service.start).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
-  it('keeps the failed check on screen while it checks again, so a slow check never takes away the retry', async () => {
+  it('keeps the failed check on screen while it checks again, backing off between checks, so a slow check never takes the line away', async () => {
     await setup();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(1);
     const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
     service.last.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
     fixture.componentInstance.target.set({ ...TARGET, revisionId: `000001-${'c'.repeat(64)}` });
@@ -486,65 +520,95 @@ describe('MktgSlidesExportComponent', () => {
 
     const lookup = new Subject<MktgSlidesExportLastResponse>();
     service.last.mockReturnValueOnce(lookup);
-    await click('mktg-slides-export-check-again');
+    // Jitter pinned at 1: the first retry waits the ceiling, twice the healthy interval.
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
 
-    // The check is under way: the line and its (checking) button stay, Export still waits, and a second click asks nothing more.
-    expect(exporter.visible()).toBe(true);
-    expect(query('mktg-slides-export-lookup-failed')).not.toBeNull();
-    expect(query('mktg-slides-export-check-again')?.textContent).toContain('Checking');
-    expect(exporter.canExport()).toBe(false);
-    await click('mktg-slides-export-check-again');
+    // The check is under way: the line stays and Export still waits.
     expect(service.last).toHaveBeenCalledTimes(3);
+    expect(exporter.visible()).toBe(true);
+    expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(exporter.canExport()).toBe(false);
 
-    // It fails again: the line offers Check again once more.
+    // It fails again: the line stays and the next check's ceiling doubles.
     lookup.error(new HttpErrorResponse({ status: 503 }));
     await fixture.whenStable();
-    expect(query('mktg-slides-export-lookup-failed')).not.toBeNull();
-    expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
-
-    await click('mktg-slides-export-check-again');
+    expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    expect(service.last).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
     expect(service.last).toHaveBeenCalledTimes(4);
     expect(query('mktg-slides-export-lookup-failed')).toBeNull();
     expect(exporter.canExport()).toBe(true);
+    vi.useRealTimers();
   });
 
-  it.each([false, true])('offers Check again after the first document history failure and paint cap (late failure: %s)', async (afterCap) => {
+  it('keeps a final lookup failure as a plain line that is not retried', async () => {
     await setup();
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    try {
-      const lookup = new Subject<MktgSlidesExportLastResponse>();
-      service.last.mockReturnValueOnce(lookup);
-      fixture.componentInstance.lookupTarget.set({ project: TARGET.project, agentKey: TARGET.agentKey, documentId: TARGET.documentId });
-      await fixture.whenStable();
-      const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
-      expect(exporter.canExport()).toBe(false);
-      await vi.advanceTimersByTimeAsync(MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS - 1);
-      if (afterCap) await vi.advanceTimersByTimeAsync(1);
-      lookup.error(new HttpErrorResponse({ status: 503 }));
-      await fixture.whenStable();
-      if (!afterCap) {
-        expect(exporter.visible()).toBe(false);
-        expect(query('mktg-slides-export-check-again')).toBeNull();
-        await vi.advanceTimersByTimeAsync(1);
-        await fixture.whenStable();
-      }
-      expect(exporter.visible()).toBe(true);
-      expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
-      expect(exporter.disabledReason()).toContain('Use Check again below');
-      expect(exporter.canExport()).toBe(false);
-      exporter.onExport();
-      expect(service.start).not.toHaveBeenCalled();
-      query('mktg-slides-export-check-again')?.querySelector('button')?.click();
-      await fixture.whenStable();
-      expect(service.last).toHaveBeenCalledTimes(3);
-      expect(query('mktg-slides-export-lookup-failed')).toBeNull();
-      expect(exporter.canExport()).toBe(true);
-      expect(service.start).not.toHaveBeenCalled();
-    } finally {
-      fixture.destroy();
-      vi.useRealTimers();
-    }
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+    service.last.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403 })));
+    fixture.componentInstance.target.set({ ...TARGET, revisionId: `000001-${'c'.repeat(64)}` });
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain('Could not check for an earlier deck of this');
+    expect(query('mktg-slides-export-lookup-failed')?.textContent).not.toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(exporter.disabledReason()).toBe('Could not check the last export.');
+    expect(exporter.canExport()).toBe(false);
+    await vi.advanceTimersByTimeAsync(10 * MKTG_RUN_POLL.intervalMs);
+    // RFC 9110 §15.5.4: a refused lookup is latched; a wake does not send the same credentials again.
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(service.last).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
+
+  it.each([false, true])(
+    'shows the plain line after the first document history failure and paint cap, then reads again on its own (late failure: %s)',
+    async (afterCap) => {
+      await setup();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const lookup = new Subject<MktgSlidesExportLastResponse>();
+        const retry = new Subject<MktgSlidesExportLastResponse>();
+        service.last.mockReturnValueOnce(lookup).mockReturnValueOnce(retry);
+        fixture.componentInstance.lookupTarget.set({ project: TARGET.project, agentKey: TARGET.agentKey, documentId: TARGET.documentId });
+        await fixture.whenStable();
+        const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+        expect(exporter.canExport()).toBe(false);
+        await vi.advanceTimersByTimeAsync(MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS - 1);
+        if (afterCap) await vi.advanceTimersByTimeAsync(1);
+        lookup.error(new HttpErrorResponse({ status: 503 }));
+        await fixture.whenStable();
+        if (!afterCap) {
+          expect(exporter.visible()).toBe(false);
+          expect(query('mktg-slides-export-lookup-failed')).toBeNull();
+          await vi.advanceTimersByTimeAsync(1);
+          await fixture.whenStable();
+        }
+        // Returning to the tab reads again at once; the line stays until that read answers.
+        window.dispatchEvent(new Event('focus'));
+        await fixture.whenStable();
+        expect(service.last).toHaveBeenCalledTimes(3);
+        expect(exporter.visible()).toBe(true);
+        expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+        expect(query('mktg-slides-export-check-again')).toBeNull();
+        expect(exporter.disabledReason()).toBe('Could not check the last export.');
+        expect(exporter.canExport()).toBe(false);
+        exporter.onExport();
+        expect(service.start).not.toHaveBeenCalled();
+        retry.next(lastResponse);
+        retry.complete();
+        await fixture.whenStable();
+        expect(query('mktg-slides-export-lookup-failed')).toBeNull();
+        expect(exporter.canExport()).toBe(true);
+        expect(service.start).not.toHaveBeenCalled();
+      } finally {
+        fixture.destroy();
+        vi.useRealTimers();
+      }
+    }
+  );
 
   it('retries an Update the panel came back to as an Update, never as a second deck', async () => {
     const results = new Subject<MktgSlidesExportResultResponse>();

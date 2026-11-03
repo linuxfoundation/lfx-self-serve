@@ -12,6 +12,8 @@ import {
   MKTG_SLIDES_EXPORT_START_MESSAGES,
   MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
   MKTG_FAMILY_EXPORT_FORMAT_HINT,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -125,7 +127,7 @@ describe('Family export slot', () => {
     expect(root.textContent).toContain('Your deck is ready');
   });
 
-  it('disables actions during lookup and after failure; retry checks again instead of guessing Create', async () => {
+  it('disables actions during lookup and after a final failure, with no Check again button and no guessed Create', async () => {
     const pending = new Subject<MktgFamilyExportLastResponse>();
     api.last.mockReturnValue(pending);
     const { fixture, root, button } = await setup();
@@ -135,11 +137,52 @@ describe('Family export slot', () => {
     await fixture.whenStable();
     expect(button('slides')?.disabled).toBe(true);
     expect(root.textContent).toContain('no second deck');
+    expect(button('check-again')).toBeNull();
+  });
+
+  it('reads a transiently failed lookup again on its own, behind the one plain line, instead of a Check again button', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    api.last.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const { fixture, root, button } = await setup();
+    expect(button('slides')?.disabled).toBe(true);
+    const line = root.querySelector('[data-testid="family-export-lookup-retrying"]');
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(root.querySelector('[data-testid="family-export-lookup-error"]')).toBeNull();
+    expect(root.textContent).not.toContain('Checking approved assets');
+    expect(button('check-again')).toBeNull();
     api.last.mockReturnValue(of(lookup()));
-    button('check-again')?.click();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     expect(api.last).toHaveBeenLastCalledWith(expect.anything(), true);
+    expect(root.textContent).not.toContain(MKTG_POLL_RETRYING_TEXT);
     expect(button('slides')?.disabled).toBe(false);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps the loaded lookup through a transient wake re-read behind the one plain line, and clears the line on the good read', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const { fixture, root, button } = await setup();
+    expect(button('slides')?.disabled).toBe(false);
+    api.last.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(root.querySelector('[data-testid="family-export-lookup-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    // The loaded lookup stays (no flicker); Export waits only while the re-read is still failing.
+    expect(fixture.componentInstance['lookup']()).not.toBeNull();
+    expect(button('slides')?.disabled).toBe(true);
+    api.last.mockReturnValue(of(lookup()));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(root.querySelector('[data-testid="family-export-lookup-retrying"]')).toBeNull();
+    expect(button('slides')?.disabled).toBe(false);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('shows approval-empty and reader-disabled states without calling the exporter', async () => {

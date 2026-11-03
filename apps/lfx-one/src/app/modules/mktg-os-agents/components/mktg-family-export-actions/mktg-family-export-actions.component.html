@@ -25,9 +25,10 @@
     } @else if (checking() || pdfPending()) {
       <!-- The same checking line lasts until the PDF is prepared and mounted: one transition, no new copy. -->
       <p role="status" class="text-xs text-gray-500" data-testid="family-export-loading">Checking approved assets and the last export…</p>
+    } @else if (lookupRetrying()) {
+      <p role="status" class="text-xs text-gray-500" data-testid="family-export-lookup-retrying">{{ retryingText }}</p>
     } @else if (lookupError()) {
       <lfx-message severity="error" [text]="lookupError()" data-testid="family-export-lookup-error" />
-      <lfx-button label="Check again" [text]="true" size="small" data-testid="family-export-check-again" (onClick)="checkAgain()" />
     } @else if (!lookup()?.currentMembers?.length) {
       <p class="text-xs text-gray-500" data-testid="family-export-empty">{{ approvalNote }}</p>
     }
