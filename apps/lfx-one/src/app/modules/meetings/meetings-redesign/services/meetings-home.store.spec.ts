@@ -227,6 +227,22 @@ describe('MeetingsHomeStore', () => {
       expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['fresh']);
     });
 
+    it('takes the next refresh after a failed first load and clears the error', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = create();
+      upcoming$.error(new Error('down'));
+      expect(store.upcomingFailed()).toBe(true);
+
+      const refreshed$ = new Subject<Meeting[]>();
+      (userService['getUserMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(refreshed$);
+      meetingsRefresh$.next();
+      refreshed$.next([buildMeeting()]);
+
+      expect(store.upcomingFailed()).toBe(false);
+      expect(store.upcomingRows()).toHaveLength(1);
+      expect(toast.show).not.toHaveBeenCalled();
+    });
+
     it('does not request anything during server rendering', () => {
       const store = create('server');
 

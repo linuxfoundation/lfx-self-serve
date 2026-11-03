@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { MEETING_HOME_RECORDING_ARTIFACT, MEETING_HOME_SUMMARY_ARTIFACT } from '@lfx-one/shared/constants';
+import { MEETINGS_HOME_RECORDING_ARTIFACT, MEETINGS_HOME_SUMMARY_ARTIFACT } from '@lfx-one/shared/constants';
 import { Meeting, MeetingHomeArtifact, MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { getLargestSessionShareUrl, getPastMeetingSummaryContent } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -50,7 +50,7 @@ export class MeetingHomeArtifactsComponent {
 
   protected openRecording(): void {
     const row = this.row();
-    this.load(this.loadingRecording, this.meetingService.getPastMeetingRecording(row.key), MEETING_HOME_RECORDING_ARTIFACT, (recording) => {
+    this.load(this.loadingRecording, this.meetingService.getPastMeetingRecording(row.key), MEETINGS_HOME_RECORDING_ARTIFACT, (recording) => {
       const shareUrl = getLargestSessionShareUrl(recording);
       if (shareUrl) this.dialogs.openRecording(row, shareUrl);
       return !!shareUrl;
@@ -59,7 +59,7 @@ export class MeetingHomeArtifactsComponent {
 
   protected openSummary(): void {
     const row = this.row();
-    this.load(this.loadingSummary, this.meetingService.getPastMeetingSummary(row.key), MEETING_HOME_SUMMARY_ARTIFACT, (summary) => {
+    this.load(this.loadingSummary, this.meetingService.getPastMeetingSummary(row.key), MEETINGS_HOME_SUMMARY_ARTIFACT, (summary) => {
       // The dialog leaves the visibility check to its caller.
       const visible = getPastMeetingSummaryContent(row.meeting, summary) !== null;
       // The Last meeting card shows this summary too when the row is the last meeting.

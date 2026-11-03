@@ -1,21 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
-import {
-  afterNextRender,
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  DestroyRef,
-  ElementRef,
-  inject,
-  input,
-  PLATFORM_ID,
-  Signal,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { DatePipe, formatDate } from '@angular/common';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
@@ -62,7 +49,6 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
 export class MeetingHomeRowComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly platformId = inject(PLATFORM_ID);
   private readonly userService = inject(UserService);
   private readonly resize = inject(MeetingsHomeResizeService);
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
@@ -91,7 +77,6 @@ export class MeetingHomeRowComponent {
 
   public constructor() {
     afterNextRender(() => {
-      if (!isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
       const title = this.titleElement().nativeElement;
       const projectName = this.projectNameElement()?.nativeElement;
       const stop = this.resize.observe(projectName ? [title, projectName] : [title], () => {
