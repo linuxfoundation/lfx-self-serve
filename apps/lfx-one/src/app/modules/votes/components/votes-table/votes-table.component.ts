@@ -495,7 +495,7 @@ export class VotesTableComponent {
           .subscribe({
             next: (result) => {
               const notice = buildVoteSummarySendNotice(result);
-              this.messageService.add({ ...notice, summary: `${notice.summary}: "${vote.name}"` });
+              this.messageService.add({ ...notice, summary: this.summaryNoticeTitle(notice.summary, vote.name) });
             },
             error: (error: unknown) => this.onSendSummaryFailed(error, vote.name),
           });
@@ -772,6 +772,10 @@ export class VotesTableComponent {
     }
   }
 
+  private summaryNoticeTitle(title: string, voteName: string): string {
+    return `${title}: "${voteName}"`;
+  }
+
   /**
    * Reports a failed summary send (#4689). Only a clear rejection or a pre-send failure invites an
    * immediate retry; a transport failure, timeout, gateway error or unknown 5xx can leave summaries
@@ -781,7 +785,11 @@ export class VotesTableComponent {
     const code = error instanceof HttpErrorResponse ? (error.error?.code as string | undefined) : undefined;
 
     if (error instanceof HttpErrorResponse && error.status === 409 && code === VOTE_SUMMARY_NOT_ENDED) {
-      this.messageService.add({ severity: 'error', summary: `Couldn't send summary: "${voteName}"`, detail: 'This vote has not closed yet.' });
+      this.messageService.add({
+        severity: 'error',
+        summary: this.summaryNoticeTitle("Couldn't send summary", voteName),
+        detail: 'This vote has not closed yet.',
+      });
       return;
     }
 
@@ -792,7 +800,7 @@ export class VotesTableComponent {
       } else if (error.status === 404) {
         detail = 'Nothing was sent. This vote is no longer available.';
       }
-      this.messageService.add({ severity: 'error', summary: `Couldn't send summary: "${voteName}"`, detail });
+      this.messageService.add({ severity: 'error', summary: this.summaryNoticeTitle("Couldn't send summary", voteName), detail });
       return;
     }
 
@@ -806,20 +814,28 @@ export class VotesTableComponent {
         counts.failed_count > 0 &&
         [counts.failed_count, counts.skipped_count].every((count) => Number.isInteger(count) && count >= 0)
       ) {
-        this.messageService.add({ ...buildVoteSummarySendNotice(counts), severity: 'error', summary: `Couldn't send summary: "${voteName}"` });
+        this.messageService.add({
+          ...buildVoteSummarySendNotice(counts),
+          severity: 'error',
+          summary: this.summaryNoticeTitle("Couldn't send summary", voteName),
+        });
         return;
       }
     }
 
     const rejected = error instanceof HttpErrorResponse && !isBffTransportFailure(error) && [400, 401, 403, 429].includes(error.status);
     if (rejected) {
-      this.messageService.add({ severity: 'error', summary: `Couldn't send summary: "${voteName}"`, detail: 'No summaries were sent. Please try again.' });
+      this.messageService.add({
+        severity: 'error',
+        summary: this.summaryNoticeTitle("Couldn't send summary", voteName),
+        detail: 'No summaries were sent. Please try again.',
+      });
       return;
     }
 
     this.messageService.add({
       severity: 'warn',
-      summary: `Summary delivery unconfirmed: "${voteName}"`,
+      summary: this.summaryNoticeTitle('Summary delivery unconfirmed', voteName),
       detail: "We couldn't confirm whether the summary was sent. Check with voters before retrying, since retrying may send duplicate summaries.",
       life: VOTE_SUMMARY_NOTICE_LIFE_MS,
     });

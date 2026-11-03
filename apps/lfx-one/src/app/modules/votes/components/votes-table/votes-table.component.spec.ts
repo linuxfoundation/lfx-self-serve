@@ -1537,7 +1537,9 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     capturedConfirmation?.accept?.();
 
     expect(sendVoteSummary).toHaveBeenCalledWith('ended');
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Summary sent to 3 voter(s).' }));
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Summary sent: "Board ended"', detail: 'Summary sent to 3 voter(s).' })
+    );
   });
 
   /** Accepts the confirmation for the ended vote so the mocked sendVoteSummary result reaches the component. */
@@ -1596,7 +1598,9 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { code: VOTE_SUMMARY_PRECHECK_FAILED } })));
     await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Nothing was sent. Please try again.' }));
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: `Couldn't send summary: "Board ended"`, detail: 'Nothing was sent. Please try again.' })
+    );
   });
 
   it.each([
@@ -1606,7 +1610,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: status as number, error: { code: VOTE_SUMMARY_PRECHECK_FAILED } })));
     await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: `Couldn't send summary: "Board ended"`, detail }));
     expect(messageAdd.mock.calls[0][0].detail).not.toContain('try again');
   });
 
@@ -1659,7 +1663,9 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
     await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No summaries were sent. Please try again.' }));
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: `Couldn't send summary: "Board ended"`, detail: 'No summaries were sent. Please try again.' })
+    );
   });
 
   it.each([
