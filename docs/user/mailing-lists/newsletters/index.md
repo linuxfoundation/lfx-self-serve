@@ -3,7 +3,7 @@ title: Newsletters
 description: Write, send, and schedule newsletters to a Newsletter group, see how they performed, and read the newsletters you receive in LFX Self Serve.
 audience: [all]
 product_area: Mailing Lists
-tags: [newsletters, newsletter, newsletter group, email, communication, schedule, analytics, personalization, share]
+tags: [newsletters, newsletter, newsletter group, email, communication, schedule, analytics, personalization, share, views]
 last_updated: 2026-11-02
 intercom_collection: Mailing Lists
 ---
@@ -90,9 +90,9 @@ Select the failed count to open **Failed deliveries**, which lists the addresses
 
 ## Read the newsletters you receive
 
-In the **Me** lens, select **Newsletters** in the sidebar. You see one card for each foundation where you are a member of a Newsletter group. The newsletters shown follow your group membership, so when you join a Newsletter group you can also read the newsletters it sent before you joined. A foundation whose Newsletter group hasn't sent anything yet still gets a card. Select **View newsletters** to see that foundation's newsletters, search them, and filter by project. Select a newsletter to read it.
+In the **Me** lens, select **Newsletters** in the sidebar. You see one card for each foundation where you are a member of a Newsletter group. The newsletters shown follow your group membership, so when you join a Newsletter group you can also read the newsletters it sent before you joined. A foundation whose Newsletter group hasn't sent anything yet still gets a card. Select **View newsletters** to see that foundation's newsletters, search them, and filter by project. Select a newsletter to open it on its own page. To go back, use the breadcrumb at the top of the page: select the foundation's name to return to its newsletter list, or **Newsletters** to return to the foundation cards.
 
-To share a newsletter, open it and select **Share**, then pick X, LinkedIn, Reddit, or Email, or select **Copy link**. The button shows how many times the newsletter has been shared, for example **Share · 12**, and the **Shares** column on a foundation's newsletter list shows the same count. Each person counts once per destination, so sharing to LinkedIn twice counts once.
+When you open a newsletter, two counts sit to the left of it (above it on a small screen): the eye icon shows how many times the newsletter has been viewed, which counts every email open, so one person opening it twice counts twice. The paper-plane icon is the share button, with the number of times the newsletter has been shared below it. To share a newsletter, select the paper-plane icon, then pick X, LinkedIn, Reddit, or Email, or select **Copy link**. The **Shares** column on a foundation's newsletter list shows the same share count. Each person counts once per destination, so sharing to LinkedIn twice counts once. If the view count isn't available, the eye icon is hidden; the share count appears once the newsletter has been shared.
 
 If you aren't a member of any Newsletter group, the page says "No newsletters yet". Join a foundation or project's Newsletter group to see its newsletters.
 

@@ -405,8 +405,8 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
   });
 });
 
-// The client sends the passcode in a header so it stays out of request URLs; the query param is
-// still read for older client bundles.
+// The client sends the passcode in a header so it stays out of request URLs; a `?password=` query
+// param is ignored.
 describe('PublicMeetingController.getMeetingById passcode source', () => {
   let controller: PublicMeetingController;
 
@@ -433,17 +433,17 @@ describe('PublicMeetingController.getMeetingById passcode source', () => {
     expect(res.json).toHaveBeenCalled();
   });
 
-  it('still accepts the legacy ?password= query param', async () => {
+  it('ignores a ?password= query param', async () => {
     const { req, res, next } = buildReqRes(false);
     req.query.password = 'pw';
 
     await controller.getMeetingById(req, res, next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('password') }));
   });
 
-  it('prefers the header over the query param', async () => {
+  it('uses the header even when a query param is also present', async () => {
     const { req, res, next } = buildReqRes(false);
     req.headers['x-meeting-password'] = 'pw';
     req.query.password = 'wrong';
@@ -454,7 +454,7 @@ describe('PublicMeetingController.getMeetingById passcode source', () => {
     expect(res.json).toHaveBeenCalled();
   });
 
-  it('rejects a caller with no passcode in either place', async () => {
+  it('rejects a caller with no passcode header', async () => {
     const { req, res, next } = buildReqRes(false);
 
     await controller.getMeetingById(req, res, next);

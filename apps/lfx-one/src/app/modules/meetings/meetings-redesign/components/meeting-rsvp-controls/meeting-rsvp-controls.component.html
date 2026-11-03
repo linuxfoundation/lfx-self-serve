@@ -31,6 +31,7 @@
       @for (choice of choices; track choice.response) {
         <lfx-ui-button
           variant="secondary"
+          [size]="size()"
           [icon]="choice.icon + ' ' + iconColor[choice.response]"
           [ariaLabel]="'RSVP ' + choice.action + ' to ' + row().title"
           [loading]="saving() === choice.response"

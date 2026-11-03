@@ -317,6 +317,36 @@ describe('MeetingsHomeStore', () => {
     });
   });
 
+  describe('pending RSVPs', () => {
+    it('lists every unanswered date the viewer can answer, whatever the search and filters', () => {
+      const [first, second] = [inDays(2), inDays(9)];
+      const store = create();
+      upcoming$.next([
+        weeklyMeeting([first, second], { id: 'series', my_rsvp: null, my_rsvps: [] }),
+        buildMeeting({ id: 'answered', my_rsvp: rsvp({ meeting_id: 'answered' }), my_rsvps: [] }),
+        buildMeeting({ id: 'not-invited', invited: false, organizer: true, my_rsvp: null, my_rsvps: [] }),
+        buildMeeting({ id: 'responses-off', is_invite_responses_enabled: false, my_rsvp: null, my_rsvps: [] }),
+        buildMeeting({ id: 'removed', organizer: true, my_rsvp: null, my_rsvps: [] }),
+      ]);
+      removed.set(new Set(['removed']));
+      store.setSearch('no match');
+
+      expect(store.pendingRsvpRows().map((row) => row.key)).toEqual([`series:${seconds(first)}`, `series:${seconds(second)}`]);
+    });
+
+    it('drops a date once answered, and every covered date after a recurring answer', () => {
+      const [first, second, third] = [inDays(2), inDays(9), inDays(16)];
+      const store = create();
+      upcoming$.next([weeklyMeeting([first, second, third], { id: 'series', my_rsvp: null, my_rsvps: [] })]);
+
+      confirmed.set([rsvp({ meeting_id: 'series', scope: 'single', occurrence_id: seconds(first) })]);
+      expect(store.pendingRsvpRows()).toHaveLength(2);
+
+      confirmed.update((answers) => [...answers, rsvp({ id: 'r-2', meeting_id: 'series', scope: 'this_and_following', occurrence_id: seconds(second) })]);
+      expect(store.pendingRsvpRows()).toEqual([]);
+    });
+  });
+
   describe('identity', () => {
     it("re-requests on a viewer change and never shows the previous viewer's rows", () => {
       const store = create();

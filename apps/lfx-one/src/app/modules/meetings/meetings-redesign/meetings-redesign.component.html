@@ -27,7 +27,14 @@
           data-testid="meetings-redesign-header-fade"></span>
         @if (personaLoaded()) {
           <div class="flex min-w-0 flex-col gap-[4px]">
-            <h1 class="font-display text-[24px] font-light leading-tight text-gray-900" data-testid="meetings-redesign-title">Meetings</h1>
+            <!-- Focusable so focus has somewhere to go when the Pending RSVPs button hides. -->
+            <h1
+              #heading
+              tabindex="-1"
+              class="font-display text-[24px] font-light leading-tight text-gray-900 outline-none"
+              data-testid="meetings-redesign-title">
+              Meetings
+            </h1>
             <p class="text-[13px] text-gray-600" data-testid="meetings-redesign-description">
               Meetings you're invited to or organizing, across all your projects.
             </p>
@@ -38,6 +45,8 @@
             <lfx-ui-skeleton width="min(28rem, 100%)" height="14px" />
           </div>
         }
+        <!-- Renders nothing while no date is pending, so it adds no wrapped row on narrow screens. -->
+        <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="heading()?.nativeElement ?? null" />
       </div>
 
       <!-- Right column content, folded into the centre at 1024px and below -->
@@ -146,7 +155,12 @@
         [summary]="store.lastMeetingSummary()"
         [hasTranscript]="store.lastMeetingHasTranscript()"
         [recordingUrl]="store.lastMeetingRecordingUrl()"
-        (summaryChange)="store.setLastMeetingSummary($event)" />
+        (summaryChange)="store.setLastMeetingSummary($event)">
+        <!-- Keyed by row, so a new Last meeting gets a fresh menu. -->
+        @for (lastRow of lastRows(); track lastRow.key) {
+          <lfx-meeting-home-actions last-meeting-card-menu [row]="lastRow" view="past" />
+        }
+      </lfx-last-meeting-card>
     </section>
   }
 </ng-template>

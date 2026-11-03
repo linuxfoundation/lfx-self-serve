@@ -170,8 +170,8 @@ describe('MeetingHomeActionsComponent', () => {
       });
     });
 
-    it('copies the past meeting page for a past row', async () => {
-      const past = { ...INVITEE, password: null, meeting_and_occurrence_id: 'synthetic-meeting-occurrence' } as unknown as PastMeeting;
+    it('copies the past meeting page for a past row, without the passcode', async () => {
+      const past = { ...INVITEE, meeting_and_occurrence_id: 'synthetic-meeting-occurrence' } as unknown as PastMeeting;
       await render(row(past), 'past');
       await choose('meetings-home-row-actions-copy-link');
 

@@ -28,7 +28,7 @@ describe('ShareButtonComponent', () => {
     fixture.componentRef.setInput('count', 1234);
     fixture.detectChanges();
     expect(count()!.textContent!.trim()).toBe('· 1,234');
-    expect(button().getAttribute('aria-label')).toBe('Share, shared 1234 times');
+    expect(button().getAttribute('aria-label')).toBe('Share, shared 1,234 times');
   });
 
   it('emits share on click', () => {

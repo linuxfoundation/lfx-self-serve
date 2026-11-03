@@ -18,9 +18,6 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
-import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
-import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { MeetingType, MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
@@ -36,9 +33,8 @@ import {
   getMeetingProjectUrl,
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
+  getPastMeetingSummaryContent,
   isPastMeetingSummaryAwaitingApproval,
-  isPastMeetingSummaryReadOnly,
-  isPastMeetingSummaryVisible,
   stripMarkdown,
 } from '@lfx-one/shared/utils';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
@@ -47,13 +43,14 @@ import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
-import { DialogService } from 'primeng/dynamicdialog';
+
+import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
 
 /**
  * Last meeting card of the meetings home right column: the viewer's most recent past meeting with its AI summary,
  * transcript and recording.
  * @description Each artifact shows only once it has loaded and exists; a failed lookup hides it. Read more, Transcript
- * and Recording open the same dialogs as the legacy meeting card and meeting page.
+ * and Recording open the meetings home dialogs.
  */
 @Component({
   selector: 'lfx-last-meeting-card',
@@ -64,7 +61,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 })
 export class LastMeetingCardComponent {
   private readonly router = inject(Router);
-  private readonly dialogService = inject(DialogService);
+  private readonly dialogs = inject(MeetingsHomeDialogsService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -149,57 +146,21 @@ export class LastMeetingCardComponent {
     event.stopPropagation();
     const row = this.row();
     const summary = this.summary();
-    const content = this.summaryContent();
-    if (!row || !summary || !content) return;
-
-    this.dialogService.open(SummaryModalComponent, {
-      header: 'Meeting Summary',
-      width: '800px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: {
-        summaryContent: content,
-        summaryUid: summary.uid ?? '',
-        pastMeetingUid: row.key,
-        meetingTitle: row.title,
-        approved: summary.approved,
-        readOnly: isPastMeetingSummaryReadOnly(row.meeting, summary),
-        onSummaryUpdated: (update: { content: string; approved: boolean }) =>
-          this.summaryChange.emit({ ...summary, approved: update.approved, summary_data: { ...summary.summary_data, edited_content: update.content } }),
-      },
-    });
+    if (!row || !summary || !this.summaryContent()) return;
+    this.dialogs.openSummary(row, summary, (change) => this.summaryChange.emit(change));
   }
 
   protected openTranscript(event: Event): void {
     event.stopPropagation();
     const row = this.row();
-    if (!row) return;
-
-    this.dialogService.open(TranscriptModalComponent, {
-      header: 'Transcript',
-      width: '700px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: { pastMeetingUid: row.key, meetingTitle: row.title },
-    });
+    if (row) this.dialogs.openTranscript(row);
   }
 
   protected openRecording(event: Event): void {
     event.stopPropagation();
     const row = this.row();
     const shareUrl = this.recordingUrl();
-    if (!row || !shareUrl) return;
-
-    this.dialogService.open(RecordingModalComponent, {
-      header: 'Meeting Recording',
-      width: '650px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: { shareUrl, meetingTitle: row.title },
-    });
+    if (row && shareUrl) this.dialogs.openRecording(row, shareUrl);
   }
 
   // shortcut: date tile, visibility badges and eyebrow repeat meeting-home-row's. revisit: when the Next card lands with the same pieces
@@ -236,11 +197,6 @@ export class LastMeetingCardComponent {
   }
 
   private initSummaryContent(): Signal<string | null> {
-    return computed(() => {
-      const summary = this.summary();
-      const content = summary?.summary_data?.edited_content || summary?.summary_data?.content;
-      if (!content?.trim()) return null;
-      return isPastMeetingSummaryVisible(summary) || this.row()?.meeting.organizer === true ? content : null;
-    });
+    return computed(() => getPastMeetingSummaryContent(this.row()?.meeting, this.summary()));
   }
 }

@@ -338,7 +338,7 @@ describe('NewsletterReaderComponent', () => {
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
     const shareCount = () => el.querySelector('[data-testid="newsletter-reader-share-count"]')?.textContent?.trim();
-    expect(shareCount()).toBe('· 7');
+    expect(shareCount()).toBe('7');
 
     el.querySelector<HTMLButtonElement>('[data-testid="newsletter-reader-share"]')!.click();
     const { onShare } = vi.mocked(TestBed.inject(ShareDialogService).open).mock.calls[0][0];
@@ -349,7 +349,36 @@ describe('NewsletterReaderComponent', () => {
 
     expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'linkedin');
     expect(newsletterService.recordShare).toHaveBeenCalledTimes(3);
-    expect(shareCount()).toBe('· 9');
+    expect(shareCount()).toBe('9');
+  });
+
+  it('shows views from total_opens on the engagement rail, beside the issue rather than in the header', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(
+      of({ access: 'group_member', newsletter: makeNewsletter({ total_opens: 1248, share_count: 4 }) })
+    );
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="newsletter-reader-views-count"]')!.textContent!.trim()).toBe('1,248');
+    expect(el.querySelector('[data-testid="newsletter-reader-views"]')!.getAttribute('aria-label')).toBe('Viewed 1,248 times');
+    const rail = el.querySelector('[data-testid="newsletter-reader-engagement-rail"]')!;
+    expect(rail.querySelector('[data-testid="newsletter-reader-share"]')).not.toBeNull();
+    expect(el.querySelector('lfx-newsletter-share-button')).toBeNull();
+  });
+
+  it('hides views while total_opens is unknown but keeps the Share button', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="newsletter-reader-views"]')).toBeNull();
+    expect(el.querySelector('[data-testid="newsletter-reader-share"]')).not.toBeNull();
   });
 
   it('records a share against the issue the dialog opened for, even after Back/Forward', () => {
@@ -375,7 +404,7 @@ describe('NewsletterReaderComponent', () => {
     fixture.detectChanges();
 
     expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'reddit');
-    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('· 7');
+    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('7');
   });
 
   it('leaves the count alone when the server does not accept the share', () => {
@@ -391,7 +420,7 @@ describe('NewsletterReaderComponent', () => {
     fixture.detectChanges();
 
     expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'x');
-    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('· 7');
+    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('7');
   });
 
   describe('member benefit (#3469)', () => {
@@ -582,7 +611,49 @@ describe('NewsletterReaderComponent', () => {
 
       render();
 
-      expect(component['inviteFoundation']()?.uid).toBe('found-1');
+      expect(component['issueFoundation']()?.uid).toBe('found-1');
+    });
+
+    it("links the breadcrumb's middle crumb to the parent foundation's newsletter list for a sub-project issue (#4979)", () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject({ uid: 'sub-1', name: 'Sub Project', parent_uid: 'found-1' })));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter({ project_uid: 'sub-1' }) }));
+      vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(
+        of(
+          makeFoundationsResponse({
+            foundations: [makeFoundation({ uid: 'found-1', slug: 'tlf', name: 'The Linux Foundation' })],
+            newsletters: [{ id: 'news-123', project_uid: 'sub-1', foundation_uid: 'found-1' } as MyNewsletterFoundationsResponse['newsletters'][number]],
+          })
+        )
+      );
+
+      const el = render();
+      const crumb = el.querySelector<HTMLAnchorElement>('[data-testid="newsletter-reader-foundation-link"]')!;
+      expect(el.querySelector('[data-testid="newsletter-reader-breadcrumb"]')?.getAttribute('aria-label')).toBe('Breadcrumb');
+      expect(crumb.textContent?.trim()).toBe('The Linux Foundation');
+      expect(crumb.getAttribute('href')).toBe('/newsletters/my/tlf');
+
+      const router = TestBed.inject(Router);
+      const lensService = TestBed.inject(LensService);
+      crumb.dispatchEvent(new MouseEvent('click', { button: 0, bubbles: true, cancelable: true }));
+      expect(lensService.setLens).toHaveBeenCalledWith('me');
+      expect(router.navigate).toHaveBeenCalledWith(['/newsletters/my', 'tlf']);
+    });
+
+    it('falls back to the project name linking to the foundation cards when the foundation does not resolve', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject({ uid: 'sub-1', name: 'Sub Project', parent_uid: 'other-parent' })));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'auditor', newsletter: makeNewsletter({ project_uid: 'sub-1' }) }));
+      vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(
+        of(makeFoundationsResponse({ foundations: [makeFoundation({ uid: 'other-parent' })] }))
+      );
+
+      const el = render();
+      const crumb = el.querySelector<HTMLAnchorElement>('[data-testid="newsletter-reader-foundation-link"]')!;
+      expect(crumb.textContent?.trim()).toBe('Sub Project');
+      expect(crumb.getAttribute('href')).toBe('/newsletters/my');
+
+      const router = TestBed.inject(Router);
+      crumb.dispatchEvent(new MouseEvent('click', { button: 0, bubbles: true, cancelable: true }));
+      expect(router.navigate).toHaveBeenCalledWith(['/newsletters/my']);
     });
 
     it('resolves through another feed row of the same project when the issue is not in the feed', () => {
@@ -599,7 +670,7 @@ describe('NewsletterReaderComponent', () => {
 
       render();
 
-      expect(component['inviteFoundation']()?.uid).toBe('found-1');
+      expect(component['issueFoundation']()?.uid).toBe('found-1');
     });
 
     it('never guesses the parent card when the server has not grouped the project under it', () => {
@@ -611,7 +682,7 @@ describe('NewsletterReaderComponent', () => {
 
       const el = render();
 
-      expect(component['inviteFoundation']()).toBeNull();
+      expect(component['issueFoundation']()).toBeNull();
       expect(el.querySelector('[data-testid="newsletter-reader-invite"]')).toBeNull();
     });
 

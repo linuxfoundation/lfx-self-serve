@@ -259,8 +259,8 @@ import {
   googleCreativeImageFit,
   googleCreativeImageRequirement,
   googlePriceExtensionRefusal,
-  isHttpUrl,
   googlePromotionRefusal,
+  isHttpUrl,
   isReversedCampaignFlight,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
@@ -7720,9 +7720,11 @@ export class ImplementationTabComponent implements OnInit {
           const lines: string[] = [];
           if (misfits.length > 0) {
             // "Likely", not "will": the browser applies a JPEG's EXIF rotation and campaign-service measures
-            // the raw pixels, so a rotated photo can measure differently there.
+            // the raw pixels, so a rotated photo can measure differently there. Only the pixel size is
+            // measured here, so the line names that size and states the requirement (which includes the
+            // byte cap) as what the slot needs, as the library image line does.
             lines.push(
-              `Measured here as not ${googleCreativeImageRequirement(shape)}: ${misfits.join(', ')}. Create will likely be refused for ${misfits.length === 1 ? 'it' : 'them'}; campaign-service checks again before anything is created.`
+              `Measured here: ${misfits.join(', ')} ${misfits.length === 1 ? 'does' : 'do'} not fit. This slot needs ${googleCreativeImageRequirement(shape)}. Create will likely be refused for ${misfits.length === 1 ? 'it' : 'them'}; campaign-service checks again before anything is created.`
             );
           }
           if (unchecked.length > 0) {
@@ -9486,12 +9488,15 @@ export class ImplementationTabComponent implements OnInit {
     // The host learns nothing of where the URL was pasted; one that insists on a referrer reads as "not checked".
     image.referrerPolicy = 'no-referrer';
     let settled = false;
-    // Stops the probe without recording anything: the tab is gone, or the answer is in.
+    // Stops the probe without recording anything: the tab is gone, the time is up, or the answer is in.
+    // Dropping `src` after the handlers cancels a download still in flight, so a slow host does not keep
+    // sending an image nothing will read, and no `onerror` fires for the cancellation.
     const stop = (): void => {
       settled = true;
       clearTimeout(timer);
       image.onload = null;
       image.onerror = null;
+      image.removeAttribute('src');
     };
     const unregister = this.destroyRef.onDestroy(stop);
     const settle = (probe: GoogleTypedImageProbe): void => {
