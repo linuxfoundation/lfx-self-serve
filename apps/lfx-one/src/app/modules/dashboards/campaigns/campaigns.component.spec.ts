@@ -3051,6 +3051,22 @@ describe('CampaignsComponent brief persistence', () => {
        * #4983. The Implement tab's list read (its Retry, and after a create settles) reports a failure
        * as unavailable for the panel, and leaves the capabilities that tab gates its controls on alone.
        */
+      /** #4983: a switch invalidates the pending read, so it must also end the "checking" state itself. */
+      it("ends the Implement list's checking state when the foundation switches during a read", async () => {
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }));
+        const pending = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(pending);
+        proceed();
+        await fixture.whenStable();
+        const loading = (): boolean => (fixture.componentInstance as unknown as { briefCampaignsLoading(): boolean }).briefCampaignsLoading();
+        expect(loading()).toBe(true);
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        expect(loading(), 'the panel would say "Checking…" for good').toBe(false);
+      });
+
       it('marks the Implement list unavailable on a failed re-read without blanking the capability', async () => {
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
           of({

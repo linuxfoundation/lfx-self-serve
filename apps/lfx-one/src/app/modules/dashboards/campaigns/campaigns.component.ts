@@ -2540,6 +2540,9 @@ export class CampaignsComponent {
         this.briefCampaignsGeneration++;
         this.briefCampaigns.set(null);
         this.briefCampaignsStale.set(false);
+        // The bump above invalidates any list read still out, so its answer can no longer clear this
+        // flag; left set, the Implement panel would say "Checking…" for good (#4983).
+        this.briefCampaignsLoading.set(false);
         this.briefCampaignsToggleEnabled.set(false);
         this.briefCampaignsDemandGenEnabled.set(null);
         this.briefCampaignsGoogleChannelsEnabled.set(null);

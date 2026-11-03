@@ -5298,14 +5298,6 @@ export class ImplementationTabComponent implements OnInit {
    * class of bug the parent's `(project, event)` ownership keys exist to prevent. On a mismatch
    * the draft is ignored and the brief's own copy stands.
    */
-  /** A platform id as the panel names it: the picker's label, HubSpot email, or the id itself. */
-  private existingPlatformLabel(platform: string): string {
-    if (platform === CAMPAIGN_EMAIL_CHANNEL_PLATFORM) {
-      return CAMPAIGN_EMAIL_CHANNEL_LABEL;
-    }
-    return CAMPAIGN_PLATFORMS.find((option) => option.id === platform)?.label ?? platform;
-  }
-
   /**
    * Normalise a geo list AND drop what Meta cannot target — the single owner of that pair.
    *
@@ -7369,6 +7361,14 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   // === Private Initializers ===
+  /** A platform id as the panel names it: the picker's label, HubSpot email, or the id itself. */
+  private existingPlatformLabel(platform: string): string {
+    if (platform === CAMPAIGN_EMAIL_CHANNEL_PLATFORM) {
+      return CAMPAIGN_EMAIL_CHANNEL_LABEL;
+    }
+    return CAMPAIGN_PLATFORMS.find((option) => option.id === platform)?.label ?? platform;
+  }
+
   private initExistingCampaigns(): Signal<CampaignExistingRow[]> {
     return computed(() =>
       (this.briefCampaigns() ?? [])
