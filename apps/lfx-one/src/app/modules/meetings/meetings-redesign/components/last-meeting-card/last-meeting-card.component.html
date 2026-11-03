@@ -101,7 +101,7 @@
 
       <span class="truncate text-[12px] text-gray-500" data-testid="meetings-home-last-card-when">{{ when() }}</span>
 
-      @if (meetingType() || recurrenceTooltip()) {
+      @if (meetingType() || recurrenceTooltip() || summaryAwaitingReview()) {
         <span class="mt-[6px] flex flex-wrap items-center gap-[6px]">
           @if (meetingType(); as type) {
             <lfx-ui-badge variant="outline" size="sm" data-testid="meetings-home-last-card-type"
@@ -120,6 +120,9 @@
               data-testid="meetings-home-last-card-recurring"
               ><i class="fa-light fa-arrows-rotate" aria-hidden="true"></i>Recurring</lfx-ui-badge
             >
+          }
+          @if (summaryAwaitingReview()) {
+            <lfx-ui-badge tone="warning" size="sm" data-testid="meetings-home-last-card-summary-pending">Awaiting your review</lfx-ui-badge>
           }
         </span>
       }

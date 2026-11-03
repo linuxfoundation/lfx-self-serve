@@ -155,6 +155,17 @@ describe('LastMeetingCardComponent', () => {
       expect(!!query(fixture, 'meetings-home-last-card-summary')).toBe(shown);
     });
 
+    it('tells an organizer the summary is awaiting their review', async () => {
+      const pending = { approved: false, requires_approval: true };
+      const fixture = await render({ row: rowOf(buildMeeting({ organizer: true })), summary: buildSummary(pending) });
+
+      expect(text(fixture, 'meetings-home-last-card-summary-pending')).toBe('Awaiting your review');
+
+      fixture.componentRef.setInput('summary', buildSummary());
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-last-card-summary-pending')).toBeNull();
+    });
+
     it.each<[PastMeetingSummary | null | undefined, string | null | undefined]>([
       [undefined, undefined],
       [null, null],

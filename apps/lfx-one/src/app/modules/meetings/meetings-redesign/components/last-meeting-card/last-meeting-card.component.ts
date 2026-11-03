@@ -34,6 +34,7 @@ import {
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
   getPastMeetingSummaryContent,
+  isPastMeetingSummaryAwaitingApproval,
 } from '@lfx-one/shared/utils';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
@@ -91,6 +92,8 @@ export class LastMeetingCardComponent {
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = this.initMeetingType();
   /** Raw summary text the viewer may read; organizers also see one awaiting their approval. */
   protected readonly summaryContent: Signal<string | null> = this.initSummaryContent();
+  /** Only organizers see a summary that still needs approval; tell them invitees don't yet. */
+  protected readonly summaryAwaitingReview: Signal<boolean> = computed(() => !!this.summaryContent() && isPastMeetingSummaryAwaitingApproval(this.summary()));
   protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
     [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
     [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
