@@ -3,6 +3,7 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
@@ -172,8 +173,7 @@ describe('MeetingHomeRowComponent', () => {
         expect.arrayContaining(['grid', 'grid-cols-[auto_minmax(0,1fr)_auto_auto]', 'items-start', '@[861px]:flex', '@[861px]:flex-nowrap'])
       );
       expect(classes(fixture, 'meetings-home-row-actions')).toEqual(expect.arrayContaining(['contents', '@[861px]:flex']));
-      const menu = query(fixture, 'meetings-home-row-actions')?.querySelector('lfx-meeting-home-actions');
-      expect(Array.from(menu?.classList ?? [])).toEqual(expect.arrayContaining(['col-start-4', 'row-start-1', '-my-[4px]']));
+      expect(classes(fixture, 'meetings-home-row-menu')).toEqual(expect.arrayContaining(['col-start-4', 'row-start-1', '-my-[4px]']));
     });
 
     it.each<[Partial<Meeting>, string | null]>([
@@ -255,9 +255,10 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(buildMeeting({ is_invite_responses_enabled: true }), { myRsvp: null }));
 
       expect(query(fixture, 'meetings-home-rsvp')).not.toBeNull();
-      const cell = query(fixture, 'meetings-home-rsvp')?.parentElement?.parentElement;
-      expect(Array.from(cell?.classList ?? [])).toEqual(expect.arrayContaining(['col-[2/-1]', 'row-start-2', '@[481px]:col-[3/4]', '@[481px]:row-start-1']));
-      expect(query(fixture, 'meetings-home-rsvp-accepted')?.querySelector('button')?.className).toContain('h-ui-tiny');
+      expect(classes(fixture, 'meetings-home-row-rsvp-cell')).toEqual(
+        expect.arrayContaining(['col-[2/-1]', 'row-start-2', '@[481px]:col-[3/4]', '@[481px]:row-start-1'])
+      );
+      expect(fixture.debugElement.query(By.css('[data-testid="meetings-home-rsvp-accepted"]')).componentInstance.size()).toBe('small');
       query(fixture, 'meetings-home-rsvp')?.click();
       expect(open).not.toHaveBeenCalled();
       expect(navigateByUrl).not.toHaveBeenCalled();
@@ -293,8 +294,7 @@ describe('MeetingHomeRowComponent', () => {
       expect(query(past, 'meetings-home-row-summary')).toBeTruthy();
       expect(query(past, 'meetings-home-rsvp')).toBeNull();
       expect(query(upcoming, 'meetings-home-row-artifacts')).toBeNull();
-      const cell = query(past, 'meetings-home-row-artifacts')?.parentElement?.parentElement;
-      expect(Array.from(cell?.classList ?? [])).toEqual(expect.arrayContaining(['col-[2/-1]', 'row-start-2', 'hidden', 'has-[div]:flex']));
+      expect(classes(past, 'meetings-home-row-artifacts-cell')).toEqual(expect.arrayContaining(['col-[2/-1]', 'row-start-2', 'hidden', 'has-[div]:flex']));
     });
 
     it('opens the meeting page in place for invitees', async () => {

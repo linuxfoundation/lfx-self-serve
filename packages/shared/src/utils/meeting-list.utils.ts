@@ -330,10 +330,7 @@ export function getMeetingHomeRowType(meeting: Pick<Meeting, 'meeting_type'>): M
   return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
 }
 
-/**
- * "Organized by" text for a home row: the owner or creator, "you" when that is the viewer, and the first name with "+N"
- * when the upstream `organizers` usernames list others too. Null when nobody resolves.
- */
+/** "Organized by" text: owner or creator ("you" for the viewer), first name + "+N" for extra `organizers`. */
 export function getMeetingHomeRowOrganizer(meeting: Pick<Meeting, 'created_by' | 'owner' | 'organizers'>, viewerUsername?: string | null): string | null {
   const [primary] = collectMeetingOrganizers(meeting);
   if (!primary) return null;

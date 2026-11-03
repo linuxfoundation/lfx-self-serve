@@ -47,8 +47,7 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
 
 /**
  * One row of the meetings home list: date tile with visibility badges, project eyebrow, title and meta line.
- * @description Clicking the row opens the meeting; the project eyebrow opens the project instead. RSVP and the row menu sit
- * top-right; in a centre of 860px or less the row becomes a grid and past Recording / AI Summary move to a second line.
+ * @description Clicking the row opens the meeting; the project eyebrow opens the project instead.
  */
 @Component({
   selector: 'lfx-meeting-home-row',
