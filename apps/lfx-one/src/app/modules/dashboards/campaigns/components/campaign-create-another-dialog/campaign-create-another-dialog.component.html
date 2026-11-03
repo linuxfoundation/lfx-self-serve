@@ -8,7 +8,10 @@
     <ul class="flex flex-col gap-1" data-testid="campaign-create-another-existing">
       @for (campaign of data.existing; track campaign.id) {
         <li class="break-all font-mono text-xs text-gray-700" [attr.data-testid]="'campaign-create-another-existing-' + campaign.id">
-          {{ campaign.platformLabel }} · {{ campaign.name }} · {{ campaign.status }}
+          <span>{{ campaign.platformLabel }} · {{ campaign.name }} · {{ campaign.status }}</span>
+          <span class="block font-sans text-gray-500" [attr.data-testid]="'campaign-create-another-labels-' + campaign.id"
+            >Channel: {{ campaign.labels.channel }} · Stage: {{ campaign.labels.stage }} · Tactic: {{ campaign.labels.tactic }}</span
+          >
         </li>
       }
     </ul>

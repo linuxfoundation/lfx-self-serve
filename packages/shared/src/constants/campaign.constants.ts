@@ -4769,8 +4769,8 @@ export const GOOGLE_CREATIVE_REQUEST_KEYS = {
 /**
  * The heading each creative section carries in the Implementation tab.
  *
- * Deliberately NOT {@link GOOGLE_CAMPAIGN_CHANNEL_LABELS}, which is Google Ads' own reporting
- * shorthand (`DG Display`, `PMax`) and belongs on a metrics row, not above a form an operator is
+ * Deliberately NOT {@link GOOGLE_CAMPAIGN_NAME_TOKENS}, which is Google Ads' own reporting
+ * shorthand (`DG Display`) and belongs in a campaign name, not above a form an operator is
  * filling in. These spell the channel the way its own checkbox does, so the section a user opens
  * is named the same as the box they ticked to open it.
  */

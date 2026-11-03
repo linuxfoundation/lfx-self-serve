@@ -462,14 +462,23 @@ describe('dailyBudgetFromTotal', () => {
 /** #4983 ("ss-4"): the labels that tell a brief's campaigns on one platform apart, "—" when absent. */
 describe('campaignLabelColumns', () => {
   it('names the Google channel, stage, tactic and created date a labelled campaign records', () => {
-    const labels = campaignLabelColumns({
-      platform: 'google-ads',
-      variant: 'demand-gen',
-      funnel_stage: 'mid',
-      tactic: 'content-promotion',
-      created_at: '2026-11-02T12:00:00Z',
-    });
+    const labels = campaignLabelColumns(
+      {
+        platform: 'google-ads',
+        variant: 'demand-gen',
+        funnel_stage: 'mid',
+        tactic: 'content-promotion',
+        created_at: '2026-11-02T12:00:00Z',
+      },
+      'UTC'
+    );
     expect(labels).toEqual({ channel: 'Demand Gen', stage: 'Mid funnel', tactic: 'Content promotion', created: 'Nov 2, 2026' });
+  });
+
+  it('dates a campaign by the calendar day in the zone it is given', () => {
+    const lateEvening = { platform: 'google-ads', created_at: '2026-11-03T03:00:00Z' };
+    expect(campaignLabelColumns(lateEvening, 'UTC').created).toBe('Nov 3, 2026');
+    expect(campaignLabelColumns(lateEvening, 'America/Los_Angeles').created).toBe('Nov 2, 2026');
   });
 
   it("reads Google's default variant as Search, and names no channel on a single-channel platform", () => {
@@ -485,8 +494,10 @@ describe('campaignLabelColumns', () => {
     const labels = campaignLabelColumns({
       platform: 'google-ads',
       variant: 'shopping',
-      funnel_stage: 'toString' as never,
-      tactic: '<b>other</b>' as never,
+      // @ts-expect-error an unknown stage, as the unvalidated index can carry
+      funnel_stage: 'toString',
+      // @ts-expect-error an unknown tactic, as the unvalidated index can carry
+      tactic: '<b>other</b>',
       created_at: 'yesterday',
     });
     expect(labels).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });

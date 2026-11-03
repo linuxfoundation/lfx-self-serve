@@ -3774,7 +3774,13 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
 
     const labels = (id: string): string[] =>
       ['channel', 'stage', 'tactic', 'created'].map((column) => q(`optimization-campaign-${column}-${id}`)?.textContent?.trim() ?? 'missing');
-    expect(labels('g-2')).toEqual(['Demand Gen', 'Top of funnel', 'Prospecting', 'Nov 2, 2026']);
+    // The viewer's own calendar day, so the assertion holds in any CI time zone.
+    expect(labels('g-2')).toEqual([
+      'Demand Gen',
+      'Top of funnel',
+      'Prospecting',
+      new Date('2026-11-02T12:00:00Z').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+    ]);
     expect(labels('m-1')).toEqual(['—', '—', '—', '—']);
     const terms = [...(q('optimization-campaign-labels-g-2')?.querySelectorAll('dt') ?? [])].map((dt) => dt.textContent?.trim());
     expect(terms).toEqual(['Channel:', 'Stage:', 'Tactic:', 'Created:']);

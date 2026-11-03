@@ -285,15 +285,20 @@ export function dailyBudgetFromTotal(total: number, days: number): number | null
  * rather than raw text. The channel is a Google one only: Google's variant is the channel (search is
  * `default`), and every other platform has a single channel, so naming one there would add nothing.
  * A created date that does not parse is "—", never "Invalid Date".
+ *
+ * The date is the calendar day in `timeZone`, or in the runtime's own zone when omitted, which is the
+ * viewer's in the browser. A server-rendered caller must pass one, or the server's day (UTC) and the
+ * browser's could differ near midnight and mismatch on hydration.
  */
 export function campaignLabelColumns(
-  campaign: Pick<CampaignIndexDoc, 'platform' | 'variant' | 'funnel_stage' | 'tactic' | 'created_at'>
+  campaign: Pick<CampaignIndexDoc, 'platform' | 'variant' | 'funnel_stage' | 'tactic' | 'created_at'>,
+  timeZone?: string
 ): CampaignLabelColumns {
   return {
     channel: campaignChannelLabel(campaign.platform, campaign.variant),
     stage: lookupLabel(CAMPAIGN_FUNNEL_STAGE_COLUMN_LABELS, campaign.funnel_stage),
     tactic: CAMPAIGN_TACTIC_OPTIONS.find((option) => option.id === campaign.tactic)?.label ?? CAMPAIGN_LABEL_ABSENT,
-    created: campaignCreatedLabel(campaign.created_at),
+    created: campaignCreatedLabel(campaign.created_at, timeZone),
   };
 }
 
@@ -304,7 +309,7 @@ function campaignChannelLabel(platform: unknown, variant: unknown): string {
   return lookupLabel(GOOGLE_CAMPAIGN_CHANNEL_LABELS, variant === 'default' ? 'search' : variant);
 }
 
-function campaignCreatedLabel(createdAt: unknown): string {
+function campaignCreatedLabel(createdAt: unknown, timeZone: string | undefined): string {
   if (typeof createdAt !== 'string' || createdAt === '') {
     return CAMPAIGN_LABEL_ABSENT;
   }
@@ -312,7 +317,7 @@ function campaignCreatedLabel(createdAt: unknown): string {
   if (Number.isNaN(when.getTime())) {
     return CAMPAIGN_LABEL_ABSENT;
   }
-  return when.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  return when.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', ...(timeZone === undefined ? {} : { timeZone }) });
 }
 
 function lookupLabel(labels: Readonly<Record<string, string>>, key: unknown): string {

@@ -72,6 +72,7 @@ import {
   CAMPAIGN_EMAIL_CHANNEL_LABEL,
   CAMPAIGN_EMAIL_CHANNEL_PLATFORM,
   CAMPAIGN_FUNNEL_STAGE_OPTIONS,
+  CAMPAIGN_LABEL_ABSENT,
   CAMPAIGN_FUNNEL_STAGE_SHORT_LABELS,
   CAMPAIGN_STATUS_DELETED,
   CAMPAIGN_TACTIC_OPTIONS,
@@ -7567,6 +7568,7 @@ export class ImplementationTabComponent implements OnInit {
           name: 'Created here moments ago; still being listed',
           status: result.reused === true ? 'existing' : 'created',
           slot: String(result.slotVersion),
+          labels: campaignLabelColumns({ platform: result.platform, variant: result.variant, funnel_stage: result.funnelStage, tactic: result.tactic }),
           variant,
           slotVersion: result.slotVersion,
         };
@@ -7594,6 +7596,7 @@ export class ImplementationTabComponent implements OnInit {
         name: row.name,
         status: row.status,
         slot: row.slot,
+        labels: row.labels,
       }));
     return [...listed, ...pending];
   }
@@ -7682,7 +7685,7 @@ export class ImplementationTabComponent implements OnInit {
           platformLabel: this.existingPlatformLabel(campaign.platform),
           name: campaign.campaign_name,
           status: campaign.status.replace(/_/g, ' '),
-          slot: typeof campaign.slot_version === 'number' ? String(campaign.slot_version) : '—',
+          slot: typeof campaign.slot_version === 'number' ? String(campaign.slot_version) : CAMPAIGN_LABEL_ABSENT,
           labels: campaignLabelColumns(campaign),
         }))
     );

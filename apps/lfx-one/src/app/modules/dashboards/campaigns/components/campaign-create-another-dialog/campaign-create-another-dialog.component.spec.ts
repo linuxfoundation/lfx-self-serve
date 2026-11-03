@@ -21,7 +21,7 @@ describe('CampaignCreateAnotherDialogComponent (#4983)', () => {
         name: 'LFX | Search Campaign | g1',
         status: 'active',
         slot: '1',
-        labels: { channel: 'Search', stage: '—', tactic: '—', created: '—' },
+        labels: { channel: 'Search', stage: 'Top of funnel', tactic: 'Prospecting', created: '—' },
       },
     ],
   };
@@ -43,6 +43,11 @@ describe('CampaignCreateAnotherDialogComponent (#4983)', () => {
   it('says what will be created and lists the campaigns that already exist', () => {
     expect(q('campaign-create-another-summary')?.textContent).toContain('separately budgeted');
     expect(q('campaign-create-another-existing-g1')?.textContent).toContain('LFX | Search Campaign | g1');
+  });
+
+  /** #4983 ("ss-4"): the labels that tell the campaign being added apart from the ones that exist. */
+  it("shows each existing campaign's channel, stage and tactic", () => {
+    expect(q('campaign-create-another-labels-g1')?.textContent?.trim()).toBe('Channel: Search · Stage: Top of funnel · Tactic: Prospecting');
   });
 
   it('closes with true only on Create another, and with false on Cancel', () => {

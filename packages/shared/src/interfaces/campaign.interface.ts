@@ -5056,9 +5056,10 @@ export interface CampaignIndexDoc {
   /** The campaign's tactic label, set when it was created (#453). Absent for an unlabelled or older campaign. */
   tactic?: CampaignTactic;
   /**
-   * When campaign-service made this campaign, as an RFC 3339 timestamp (multi-campaign cs-1). Absent on a
-   * document indexed before the field existed, until the campaign's next write, and on a row never read
-   * back. Shown as "—" then, never guessed.
+   * When campaign-service made this campaign, as an RFC 3339 timestamp: its indexer's `CampaignDoc.CreatedAt`
+   * (`internal/infrastructure/indexer/contract.go`, multi-campaign cs-1). Absent on a document indexed
+   * before the field existed, until the campaign's next write, and on a row never read back. Shown as "—"
+   * then, never guessed.
    */
   created_at?: string;
 }

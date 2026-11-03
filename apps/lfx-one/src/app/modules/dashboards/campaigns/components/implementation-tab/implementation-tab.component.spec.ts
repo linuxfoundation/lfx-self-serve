@@ -15219,7 +15219,13 @@ describe('ImplementationTabComponent already created for this event', () => {
 
     const labels = (id: string): string[] =>
       ['channel', 'stage', 'tactic', 'created'].map((column) => q(`implementation-existing-${column}-${id}`)?.textContent?.trim() ?? 'missing');
-    expect(labels('g2')).toEqual(['Search', 'Lower funnel', 'Retargeting', 'Nov 2, 2026']);
+    // The viewer's own calendar day, so the assertion holds in any CI time zone.
+    expect(labels('g2')).toEqual([
+      'Search',
+      'Lower funnel',
+      'Retargeting',
+      new Date('2026-11-02T12:00:00Z').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+    ]);
     expect(labels('g1')).toEqual(['Search', '—', '—', '—']);
     const headings = [...((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid="implementation-existing-table"] th') ?? [])].map((th) =>
       th.textContent?.trim()
@@ -15503,6 +15509,17 @@ describe('ImplementationTabComponent create another campaign', () => {
     fixture.detectChanges();
 
     expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).not.toBe('Existing Campaigns Returned');
+  });
+
+  it('labels a campaign this tab just created with the stage and tactic its job reported', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 2, variant: 'default', funnelStage: 'mid', tactic: 'keyword' }]);
+    c().anotherForm.controls.stage.setValue('top');
+    fixture.detectChanges();
+
+    c().submit();
+    const existing = (dialogOpen.mock.calls[0] as unknown as [unknown, { data: { existing: { slot: string; labels: unknown }[] } }])[1].data.existing;
+    expect(existing.find((row) => row.slot === '2')?.labels).toEqual({ channel: 'Search', stage: 'Mid funnel', tactic: 'Keyword', created: '—' });
   });
 
   it('lists a campaign this tab just created in the confirmation, before the index shows it', () => {
