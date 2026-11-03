@@ -2301,6 +2301,14 @@ describe('MeetingJoinComponent', () => {
       expect(overlayState.anyOpen()).toBe(false);
     });
 
+    it('keeps a header Support entry that does not depend on the launcher while the bar is showing (#4922)', async () => {
+      const fixture = await render();
+
+      expect(bar(fixture)).not.toBeNull();
+      expect(part(fixture, 'header-support-button')).not.toBeNull();
+      expect(part(fixture, 'mobile-menu-toggle')).toBeNull();
+    });
+
     it('yields to the guests drawer and returns when it closes', async () => {
       const fixture = await render();
 
