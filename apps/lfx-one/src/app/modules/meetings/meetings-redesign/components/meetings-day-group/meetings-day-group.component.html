@@ -2,7 +2,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
-<div class="flex items-center gap-[8px] pb-[6px]" data-testid="meetings-home-day-group-separator">
+<!-- Sticks under the page's sticky tabs bar; 24px tall, which the bar's fade offset relies on. -->
+<div class="sticky z-[1] flex h-[24px] items-center gap-[8px] bg-white pb-[6px]" [style.top.px]="stickyTop()" data-testid="meetings-home-day-group-separator">
   <h2 class="whitespace-nowrap text-[12px] font-semibold text-gray-500" data-testid="meetings-home-day-group-label">{{ group().label }}</h2>
   <span class="text-[11px] text-gray-400" data-testid="meetings-home-day-group-count"
     >{{ group().count }}<span class="sr-only"> {{ group().count === 1 ? 'meeting' : 'meetings' }}</span></span

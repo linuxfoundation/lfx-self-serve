@@ -29,10 +29,11 @@ describe('MeetingsDayGroupComponent', () => {
     });
   });
 
-  const render = async (group: MeetingDayGroup): Promise<HTMLElement> => {
+  const render = async (group: MeetingDayGroup, stickyTop?: number): Promise<HTMLElement> => {
     const fixture = TestBed.createComponent(MeetingsDayGroupComponent);
     fixture.componentRef.setInput('group', group);
     fixture.componentRef.setInput('view', 'upcoming');
+    if (stickyTop !== undefined) fixture.componentRef.setInput('stickyTop', stickyTop);
     await fixture.whenStable();
     return fixture.nativeElement;
   };
@@ -52,5 +53,14 @@ describe('MeetingsDayGroupComponent', () => {
     const element = await render({ label: 'Today', count: 1, rows: [row('a', 'Board Review')] });
 
     expect(element.querySelector('[data-testid="meetings-home-day-group-count"] .sr-only')?.textContent?.trim()).toBe('meeting');
+  });
+
+  it('sticks the separator at the given offset on a white 24px band', async () => {
+    const element = await render({ label: 'Today', count: 1, rows: [row('a', 'Board Review')] }, 132);
+
+    const separator = element.querySelector<HTMLElement>('[data-testid="meetings-home-day-group-separator"]');
+    expect(separator?.className).toContain('sticky z-[1] flex h-[24px]');
+    expect(separator?.className).toContain('bg-white');
+    expect(separator?.style.top).toBe('132px');
   });
 });

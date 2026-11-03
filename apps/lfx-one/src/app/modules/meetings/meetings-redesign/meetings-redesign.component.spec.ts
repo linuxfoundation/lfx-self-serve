@@ -19,6 +19,8 @@ import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+
 import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
 import { MeetingsRedesignComponent } from './meetings-redesign.component';
 
@@ -82,6 +84,8 @@ describe('MeetingsRedesignComponent', () => {
     past$.next(past);
     await fixture.whenStable();
   };
+  const button = (fixture: ComponentFixture<MeetingsRedesignComponent>, testId: string): UiButtonComponent =>
+    fixture.debugElement.query(By.css(`[data-testid="${testId}"]`)).componentInstance;
   const rowTitles = (fixture: ComponentFixture<MeetingsRedesignComponent>): string[] =>
     Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-day-group-row"]')).map(
       (row) => row.querySelector('[data-testid="meetings-home-row-title"]')?.textContent?.trim() ?? ''
@@ -339,6 +343,32 @@ describe('MeetingsRedesignComponent', () => {
     expect(query(fixture, 'meetings-redesign-tabs-bar')?.style.top).toBe(`${HEADER_HEIGHT}px`);
   });
 
+  it('sticks the day headings below the header and tabs bar, and drops the fade under a stuck heading', async () => {
+    const fixture = render();
+    await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1)]);
+    fixture.detectChanges();
+
+    const separator = query(fixture, 'meetings-home-day-group-separator');
+    expect(separator?.className).toContain('sticky');
+    expect(separator?.style.top).toBe(`${HEADER_HEIGHT * 2}px`);
+    expect(query(fixture, 'meetings-home-filters-chips')?.className ?? '').not.toContain('sticky');
+
+    const fade = (): string => query(fixture, 'meetings-redesign-tabs-fade')?.className ?? '';
+    const list = query(fixture, 'meetings-home-list') as HTMLElement;
+    const scrollListTo = async (top: number): Promise<void> => {
+      vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, top, 100, 1000));
+      query(fixture, 'meetings-redesign-centre')?.dispatchEvent(new Event('scroll'));
+      await fixture.whenStable();
+    };
+    expect(fade()).not.toContain('mt-[24px]');
+
+    await scrollListTo(HEADER_HEIGHT * 2 - 40);
+    expect(fade()).toContain('mt-[24px]');
+
+    await scrollListTo(HEADER_HEIGHT * 2 + 40);
+    expect(fade()).not.toContain('mt-[24px]');
+  });
+
   it("counts the layout wrapper's bottom padding, not main's own, in the desktop column height", async () => {
     vi.stubGlobal('innerHeight', 900);
     // The real shape: main (own padding) > content wrapper (21px) > route-entry host stand-in > the page.
@@ -382,6 +412,9 @@ describe('MeetingsRedesignComponent', () => {
 
     expect(query(fixture, 'meetings-redesign-header')?.style.top).toBe(`${IMPERSONATION_BANNER_HEIGHT_PX}px`);
     expect(query(fixture, 'meetings-redesign-tabs-bar')?.style.top).toBe(`${IMPERSONATION_BANNER_HEIGHT_PX + HEADER_HEIGHT}px`);
+
+    await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1)]);
+    expect(query(fixture, 'meetings-home-day-group-separator')?.style.top).toBe(`${IMPERSONATION_BANNER_HEIGHT_PX + HEADER_HEIGHT * 2}px`);
   });
 
   describe('list', async () => {
@@ -505,20 +538,43 @@ describe('MeetingsRedesignComponent', () => {
       expect(rowTitles(fixture)).toEqual(['Meeting 1']);
     });
 
-    it('shows the empty state for a tab without meetings and hides search', async () => {
+    it('shows the empty state for a tab without meetings and hides the search and filters bar', async () => {
       const fixture = render();
       await fixture.whenStable();
       await loadFeeds(fixture, []);
 
+      const empty = fixture.debugElement.query(By.css('[data-testid="meetings-home-empty-upcoming"]')).componentInstance;
+      expect(empty.size()).toBe('default');
       expect(query(fixture, 'meetings-home-empty-upcoming')?.textContent).toContain('No upcoming meetings');
       expect(query(fixture, 'meetings-home-empty-upcoming')?.textContent).toContain('Meetings from your committees and projects will appear here.');
       expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+      expect(query(fixture, 'meetings-home-filters-button')).toBeNull();
+      expect(query(fixture, 'meetings-home-list')).toBeNull();
 
       query(fixture, 'ui-tab-past')?.click();
       await fixture.whenStable();
 
       expect(query(fixture, 'meetings-home-empty-past')?.textContent).toContain('No past meetings');
       expect(query(fixture, 'meetings-home-empty-past')?.textContent).toContain('Your past meetings will appear here.');
+      expect(query(fixture, 'meetings-home-empty-create')).toBeNull();
+    });
+
+    it("offers Create Meeting on the empty Upcoming tab, with the header button's gating and handler", async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, []);
+
+      const create = button(fixture, 'meetings-home-empty-create');
+      expect(create.variant()).toBe('secondary-accent');
+      expect(create.size()).toBe('large');
+      expect(create.icon()).toBe('fa-light fa-plus');
+      expect(query(fixture, 'meetings-home-empty-create')?.textContent?.trim()).toBe('Create Meeting');
+      query(fixture, 'meetings-home-empty-create')?.querySelector('button')?.click();
+      expect(openCreateDialog).toHaveBeenCalledWith('meeting');
+
+      canWriteMeetings.set(false);
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-empty-create')).toBeNull();
     });
 
     it('shows no "No results" when the search matches only the Next meeting card', async () => {
@@ -545,6 +601,11 @@ describe('MeetingsRedesignComponent', () => {
 
       expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No results found');
       expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('Try adjusting your filter criteria');
+      expect(query(fixture, 'meetings-home-no-results')?.querySelector('[data-testid="ui-empty-state-icon"] i')?.classList).toContain('fa-eyes');
+      const reset = button(fixture, 'meetings-home-no-results-reset');
+      expect([reset.variant(), reset.size(), reset.icon()]).toEqual(['tertiary-accent', 'large', 'fa-light fa-arrow-rotate-left']);
+      // The search and filters stay, so the query can still be changed.
+      expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
 
       (query(fixture, 'meetings-home-no-results-reset')?.querySelector('button') as HTMLButtonElement).click();
       await fixture.whenStable();
@@ -603,6 +664,25 @@ describe('MeetingsRedesignComponent', () => {
       expect(rowTitles(fixture)).toEqual(['Board Review', 'Tech Sync']);
       expect(document.activeElement).toBe(query(fixture, 'meetings-home-filters-button')?.querySelector('button'));
       fixture.nativeElement.remove();
+    });
+
+    it('clears the filters and the search from the No results reset', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, meetings());
+      await applyOrganizedByMe(fixture);
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'sync';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-no-results')).toBeTruthy();
+
+      (query(fixture, 'meetings-home-no-results-reset')?.querySelector('button') as HTMLButtonElement).click();
+      await fixture.whenStable();
+
+      expect(chips(fixture)).toEqual([]);
+      expect((query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement).value).toBe('');
+      expect(rowTitles(fixture)).toEqual(['Board Review', 'Tech Sync']);
     });
 
     it('clears applied filters on a tab switch but keeps the search', async () => {

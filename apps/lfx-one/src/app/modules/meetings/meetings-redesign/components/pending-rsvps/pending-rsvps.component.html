@@ -24,8 +24,9 @@
     class="flex max-h-[min(470px,calc(100vh-160px))] flex-col divide-y divide-gray-100 overflow-y-auto overscroll-contain py-[4px]"
     data-testid="meetings-home-pending-rsvps-panel">
     @for (item of items(); track item.row.key) {
-      <div #rowElement class="flex flex-wrap items-center gap-x-[32px] gap-y-[12px] p-[16px]" data-testid="meetings-home-pending-rsvps-row">
-        <div class="flex min-w-0 flex-[1_1_220px] flex-col gap-[4px]">
+      <!-- 16px gap on phones keeps the title readable beside the buttons. -->
+      <div #rowElement class="flex items-start gap-[16px] p-[16px] min-[641px]:gap-[32px]" data-testid="meetings-home-pending-rsvps-row">
+        <div class="flex min-w-0 flex-1 flex-col gap-[4px]">
           @if (item.project; as project) {
             <span class="flex min-w-0 items-center gap-[6px] text-[12px] text-gray-600" data-testid="meetings-home-pending-rsvps-row-project">
               <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
@@ -80,7 +81,7 @@
             }
           </span>
         </div>
-        <!-- 24px buttons in the popover, as designed; the list keeps 32px. -->
+        <!-- Small buttons in the row's top-right corner at every width. -->
         <lfx-meeting-rsvp-controls size="small" [row]="item.row" />
       </div>
     }
