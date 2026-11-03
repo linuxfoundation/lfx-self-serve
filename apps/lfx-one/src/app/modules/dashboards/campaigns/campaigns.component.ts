@@ -3663,7 +3663,15 @@ export class CampaignsComponent {
     // usually wants a recent one, and an empty box with no options reads as a broken channel.
     // Started here rather than on Implement's entry precisely BECAUSE the audience step now sits
     // in between: the round trip finishes while the operator is composing.
-    this.searchEmailTemplates('');
+    //
+    // Not when that very search is already on the wire: the reset above starts it on Survey when
+    // the selection came from a filtered list, and a second one would walk the portal again only
+    // for the generation check to discard the first.
+    const unfilteredSearchPending =
+      this.emailTemplatesLoading() && this.emailTemplateSubmittedQuery() === '' && this.emailSearchProjectSlug() === this.activeFoundationSlug();
+    if (!unfilteredSearchPending) {
+      this.searchEmailTemplates('');
+    }
   }
 
   /**

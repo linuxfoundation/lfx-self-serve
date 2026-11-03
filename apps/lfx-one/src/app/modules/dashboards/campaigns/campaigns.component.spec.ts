@@ -9847,6 +9847,24 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(search).toHaveBeenCalledWith('');
     });
 
+    it('reads the portal templates once when a filtered pick is dropped on the way off Planning', () => {
+      TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-t', slug: 'tlf', name: 'TLF' } as ProjectContext, false);
+      selectSurvey();
+      const search = vi.spyOn(service, 'searchHubSpotEmails').mockReturnValue(new Subject<never>() as never);
+      const component = fixture.componentInstance as unknown as {
+        emailTemplateSubmittedQuery: { set(q: string): void };
+        onEmailProceedFromPlanning(brief: CampaignBriefOutput): void;
+      };
+      seq().emailTemplates.set([{ id: 'hs-filtered', name: 'Newsletter', subject: 'News' }] as HubSpotMarketingEmail[]);
+      component.emailTemplateSubmittedQuery.set('newsletter');
+      seq().selectedEmailTemplateId.set('hs-filtered');
+
+      component.onEmailProceedFromPlanning(surveyBrief);
+
+      expect(search, 'the handoff joins the search the reset started').toHaveBeenCalledTimes(1);
+      expect(search).toHaveBeenCalledWith('tlf', '');
+    });
+
     it('does not pick the survey template while a search is replacing the list', () => {
       const component = fixture.componentInstance as unknown as {
         emailTemplatesLoading: { set(v: boolean): void };
