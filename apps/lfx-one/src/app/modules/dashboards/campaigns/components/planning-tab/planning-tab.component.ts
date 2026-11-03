@@ -1673,9 +1673,22 @@ export class PlanningTabComponent implements OnInit {
     display['business_name'] = this.editDisplayBusinessName();
     display['call_to_action'] = this.editDisplayCta();
 
-    copy['google_search'] = search;
+    // Each block is written only when the brief already had it or the editor now gives it content. The
+    // editor shows both, so writing both unconditionally added an empty Google Search or Display block to
+    // a brief that never had one (#4983: a keyword-only or single-channel stored brief).
+    const hasText = (values: string[]): boolean => values.some((value) => value.trim() !== '');
+    if (this.getSearchCopy() !== null || hasText(this.editSearchHeadlines()) || hasText(this.editSearchDescriptions())) {
+      copy['google_search'] = search;
+    }
     const displayKey = copy['demand_gen'] ? 'demand_gen' : 'google_display';
-    copy[displayKey] = display;
+    if (
+      this.getDisplayCopy() !== null ||
+      hasText(this.editDisplayHeadlines()) ||
+      hasText(this.editDisplayDescriptions()) ||
+      hasText([this.editDisplayBusinessName(), this.editDisplayCta()])
+    ) {
+      copy[displayKey] = display;
+    }
 
     this.structuredCopy.set(copy);
     this.keywords.set(this.editKeywords());
@@ -1909,6 +1922,17 @@ export class PlanningTabComponent implements OnInit {
     this.briefSubscription?.unsubscribe();
     this.briefSubscription = null;
     this.generateGeneration++;
+    // A HubSpot lookup still answering for whatever the URL field named must not land on this brief:
+    // its token is the stored brief's (and Proceed takes it from there, see `briefOverEditBase`).
+    this.lookupGeneration++;
+    this.hsSearching.set(false);
+    // Forgotten too, as a foundation switch forgets it: `lookupHubSpot` skips an event it last looked
+    // up, so keeping the abandoned one would stop a later lookup for the same URL from ever running.
+    this.lastLookedUpEvent = '';
+    // Close any edit session first. This planner stays mounted, so a previous brief's editor and its
+    // buffers would otherwise survive into a brief the editor does not open for, and Proceed would
+    // write the previous brief's copy and keywords into this one.
+    this.isEditing.set(false);
     this.statusMessages.set([]);
     this.errorMessage.set(null);
     this.eventDetails.set(brief.eventDetails);
@@ -1968,6 +1992,10 @@ export class PlanningTabComponent implements OnInit {
    * them. LinkedIn copy falls back the same way when no variant could be rebuilt from the copy.
    */
   private briefOverEditBase(base: CampaignBriefOutput, built: CampaignBriefOutput): CampaignBriefOutput {
+    // The stored LinkedIn block is kept whole unless the LinkedIn copy itself changed here (a refine).
+    // The rebuild from `structuredCopy` models only some of its fields — `imageAssetId` on a variant,
+    // for one — so rebuilding it after a Google-only edit would drop the rest.
+    const linkedInChanged = this.linkedInBlockOf(base.structuredCopy) !== this.linkedInBlockOf(built.structuredCopy);
     return {
       ...base,
       ...built,
@@ -1975,10 +2003,30 @@ export class PlanningTabComponent implements OnInit {
       googleCallouts: built.googleCallouts ?? base.googleCallouts,
       googleSitelinks: built.googleSitelinks ?? base.googleSitelinks,
       negativeKeywords: built.negativeKeywords ?? base.negativeKeywords,
-      linkedInCopy: built.linkedInCopy && built.linkedInCopy.variants.length > 0 ? built.linkedInCopy : (base.linkedInCopy ?? built.linkedInCopy),
+      linkedInCopy: this.editedLinkedInCopy(base, built, linkedInChanged),
+      // The HubSpot token identifies the event's campaign for attribution. The review step offers no
+      // way to change it, so the stored one stands, whatever a lookup left in the planner.
+      hsUtm: base.hsUtm,
       deliveryType: base.deliveryType ?? built.deliveryType,
       emailStage: base.emailStage,
     };
+  }
+
+  /** The LinkedIn block of a structured copy, serialised for comparison (top level or under `platforms`). */
+  private linkedInBlockOf(copy: Record<string, unknown> | null): string {
+    const nested = copy?.['platforms'] as Record<string, unknown> | undefined;
+    return JSON.stringify(copy?.['linkedin_sponsored'] ?? nested?.['linkedin_sponsored'] ?? null);
+  }
+
+  /**
+   * The LinkedIn copy an edited existing brief carries: the stored block while its LinkedIn copy is
+   * unchanged; otherwise the rebuild, falling back to the stored block when no variant could be rebuilt.
+   */
+  private editedLinkedInCopy(base: CampaignBriefOutput, built: CampaignBriefOutput, linkedInChanged: boolean): LinkedInBriefCopy | undefined {
+    if (!linkedInChanged && base.linkedInCopy !== undefined) {
+      return base.linkedInCopy;
+    }
+    return built.linkedInCopy && built.linkedInCopy.variants.length > 0 ? built.linkedInCopy : (base.linkedInCopy ?? built.linkedInCopy);
   }
 
   /**

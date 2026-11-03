@@ -700,6 +700,15 @@ export class ImplementationTabComponent implements OnInit {
   public readonly editBriefRequested = output<void>();
 
   /**
+   * A create job is starting (#4983). The parent drops any Edit brief re-read still out: its answer
+   * would switch to Planning and destroy this tab, and with it the job's polling.
+   */
+  public readonly createStarted = output<void>();
+
+  /** Why the last Edit brief opened nothing, from the parent, or `null` (#4983). */
+  public readonly editBriefError = input<string | null>(null);
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -5015,6 +5024,7 @@ export class ImplementationTabComponent implements OnInit {
 
     const platforms = this.selectedPlatforms();
     this.step.set('creating');
+    this.createStarted.emit();
     this.creationProgress.set(['Submitting campaign...']);
     this.results.set([]);
     this.platformResults.set([]);
