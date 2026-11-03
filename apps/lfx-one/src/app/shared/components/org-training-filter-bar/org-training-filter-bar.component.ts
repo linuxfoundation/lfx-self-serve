@@ -3,38 +3,35 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { Component, computed, effect, inject, input, Signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ORG_LENS_TIME_RANGE_OPTIONS, ORG_TRAINING_GROUP_BY_OPTIONS, ORG_TRAINING_VIEW_QUERY_PARAMS } from '@lfx-one/shared/constants';
 import type { OrgDropdownOption, OrgLensTimeRange, OrgTrainingFilterOptions, OrgTrainingFilters, OrgTrainingViewState } from '@lfx-one/shared/interfaces';
 import { hasOrgTrainingFilter, parseOrgTrainingViewState, serializeOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
-import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap } from 'rxjs';
 
 const FILTER_KEYS = ['foundation', 'project', 'course', 'level', 'format'] as const;
 const EMPTY_FILTER_OPTIONS: OrgTrainingFilterOptions = { foundations: [], projects: [], courses: [], levels: [], formats: [] };
-const OPTION_LIST_OF_FILTER: Readonly<Record<keyof OrgTrainingFilters, keyof OrgTrainingFilterOptions>> = {
-  foundation: 'foundations',
-  project: 'projects',
-  course: 'courses',
-  level: 'levels',
-  format: 'formats',
-};
 
 /**
  * The one filter bar of Training & Certification and People › Trainees: range, foundation, project, course, level and
  * format dropdowns (plus a group-by dropdown when `showGroupBy`). The state lives in the URL: it is read from the query
- * params and every pick is written back (other params such as `tab` are kept). Options load for the current range, and
- * a selection the range no longer lists is dropped.
+ * params and every pick is written back (other params such as `tab` are kept). Options load for the current range; a
+ * selection they do not list stays applied and visible (never silently dropped), and Clear all removes it.
+ * Search (projected by the host page, first in the row), range and group-by are always visible; the five filters sit
+ * behind the shared "More filters" toggle, whose label counts the ones set. The expanded state is for the visit only,
+ * as on Code Contributions.
  */
 @Component({
   selector: 'lfx-org-training-filter-bar',
-  imports: [ReactiveFormsModule, ButtonComponent, SelectComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, MoreFiltersToggleComponent, SelectComponent],
   templateUrl: './org-training-filter-bar.component.html',
 })
 export class OrgTrainingFilterBarComponent {
@@ -44,6 +41,8 @@ export class OrgTrainingFilterBarComponent {
   private readonly router = inject(Router);
 
   public readonly showGroupBy = input<boolean>(false);
+
+  protected readonly moreFiltersExpanded = signal(false);
 
   protected readonly rangeOptions: OrgDropdownOption[] = ORG_LENS_TIME_RANGE_OPTIONS.map((option) => ({ label: option.label, value: option.value }));
   protected readonly groupByOptions: OrgDropdownOption[] = ORG_TRAINING_GROUP_BY_OPTIONS.map((option) => ({ label: option.label, value: option.value }));
@@ -66,11 +65,13 @@ export class OrgTrainingFilterBarComponent {
   private readonly options: Signal<OrgTrainingFilterOptions> = this.initOptions();
 
   protected readonly hasFilter: Signal<boolean> = computed(() => hasOrgTrainingFilter(this.state()));
-  protected readonly foundationOptions = this.withAll('All Foundations', 'foundations');
-  protected readonly projectOptions = this.withAll('All Projects', 'projects');
-  protected readonly courseOptions = this.withAll('All Courses', 'courses');
-  protected readonly levelOptions = this.withAll('All Levels', 'levels');
-  protected readonly formatOptions = this.withAll('All Formats', 'formats');
+  /** Filters set behind the toggle, so a pick from the URL is never invisible while it is collapsed. */
+  protected readonly hiddenFilterCount: Signal<number> = computed(() => FILTER_KEYS.filter((key) => this.state()[key] !== null).length);
+  protected readonly foundationOptions = this.withAll('All Foundations', 'foundations', 'foundation');
+  protected readonly projectOptions = this.withAll('All Projects', 'projects', 'project');
+  protected readonly courseOptions = this.withAll('All Courses', 'courses', 'course');
+  protected readonly levelOptions = this.withAll('All Levels', 'levels', 'level');
+  protected readonly formatOptions = this.withAll('All Formats', 'formats', 'format');
 
   public constructor() {
     // URL → form (silent: only a pick by the user writes to the URL).
@@ -119,28 +120,20 @@ export class OrgTrainingFilterBarComponent {
       combineLatest([orgUid$, toObservable(this.range)]).pipe(
         switchMap(([orgUid, range]) => {
           if (!orgUid) return of(EMPTY_FILTER_OPTIONS);
-          return this.trainingService.getFilterOptions(orgUid, range).pipe(
-            tap((options) => this.pruneSelections(options)),
-            catchError(() => of(EMPTY_FILTER_OPTIONS))
-          );
+          return this.trainingService.getFilterOptions(orgUid, range).pipe(catchError(() => of(EMPTY_FILTER_OPTIONS)));
         })
       ),
       { initialValue: EMPTY_FILTER_OPTIONS }
     );
   }
 
-  /** A new range or organization rebuilds every list; a selection it no longer lists would match nothing. */
-  private pruneSelections(options: OrgTrainingFilterOptions): void {
-    const state = untracked(() => this.state());
-    const cleared: Partial<Record<keyof OrgTrainingFilters, null>> = {};
-    for (const key of FILTER_KEYS) {
-      const picked = state[key];
-      if (picked !== null && !options[OPTION_LIST_OF_FILTER[key]].some((option) => option.value === picked)) cleared[key] = null;
-    }
-    if (Object.keys(cleared).length > 0) this.navigate({ ...state, ...cleared });
-  }
-
-  private withAll(allLabel: string, list: keyof OrgTrainingFilterOptions): Signal<OrgDropdownOption[]> {
-    return computed(() => [{ label: allLabel, value: '' }, ...this.options()[list]]);
+  /** "All" first, then the loaded options; a picked value the options do not list (not loaded yet, or none in this range) is kept so the dropdown shows what the numbers are filtered by. */
+  private withAll(allLabel: string, list: keyof OrgTrainingFilterOptions, key: keyof OrgTrainingFilters): Signal<OrgDropdownOption[]> {
+    return computed(() => {
+      const options = this.options()[list];
+      const picked = this.state()[key];
+      const kept = picked !== null && !options.some((option) => option.value === picked) ? [{ label: picked, value: picked }] : [];
+      return [{ label: allLabel, value: '' }, ...kept, ...options];
+    });
   }
 }

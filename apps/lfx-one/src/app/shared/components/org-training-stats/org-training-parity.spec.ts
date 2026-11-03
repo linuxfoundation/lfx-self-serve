@@ -15,6 +15,8 @@ import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
+import { OrgOverviewInvolvementComponent } from '@modules/dashboards/org/components/org-overview-involvement/org-overview-involvement.component';
+import { OrgInvolvementAnalyticsService } from '@shared/services/org-involvement-analytics.service';
 import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -128,8 +130,8 @@ function snapshotTiles(host: HTMLElement): TileSnapshot[] {
   });
 }
 
-const trainingService = () => ({
-  getTrainingStats: vi.fn(() => of(STATS)),
+const trainingService = (stats: OrgTrainingStats = STATS) => ({
+  getTrainingStats: vi.fn(() => of(stats)),
   getFilterOptions: vi.fn(() => of({ foundations: [], projects: [{ label: 'Project K', value: 'proj-k8s' }], courses: [], levels: [], formats: [] })),
   getGroups: vi.fn(() => of(CERTIFICATIONS_TAB)),
   getGroupEmployees: vi.fn(() => of({ total: 0, data: [] })),
@@ -141,9 +143,9 @@ async function settle(fixture: { detectChanges(): void; whenStable(): Promise<un
   fixture.detectChanges();
 }
 
-async function renderTrainingPage(): Promise<HTMLElement> {
+async function renderTrainingPage(query: Record<string, string> = { range: 'all', project: 'proj-k8s' }, service = trainingService()): Promise<HTMLElement> {
   const pageState = signal(null);
-  const params = convertToParamMap({ range: 'all', project: 'proj-k8s' });
+  const params = convertToParamMap(query);
   await TestBed.configureTestingModule({
     imports: [OrgTrainingComponent],
     providers: [
@@ -163,7 +165,7 @@ async function renderTrainingPage(): Promise<HTMLElement> {
           retry: vi.fn(),
         },
       },
-      { provide: OrgLensTrainingService, useValue: trainingService() },
+      { provide: OrgLensTrainingService, useValue: service },
       {
         provide: PersonDetailDrawerService,
         useValue: {
@@ -287,5 +289,76 @@ describe('stat identities', () => {
     const tiles = snapshotTiles(await renderTraineesPage());
 
     expect(tiles.find((tile) => tile.testId === 'org-training-stat-certifications')?.value).toBe(String(CERTIFICATIONS_TAB.totals.completed));
+  });
+});
+
+describe('Overview Education tiles vs the Training page in its default state', () => {
+  const DEFAULT_QUERY = { range: '730d', foundation: null, project: null, course: null, level: null, format: null };
+  const DEFAULT_STATS: OrgTrainingStats = {
+    ...STATS,
+    range: '730d',
+    certifiedPeople: 857,
+    certifications: 1134,
+    coursesTaken: 9660,
+    trainingsCompleted: 2373,
+    coursesInProgress: 6153,
+  };
+
+  async function renderOverview(service: ReturnType<typeof trainingService>) {
+    const analytics = {
+      getFoundationCoverage: () => of({ accountId: ACME.accountId, foundationCount: 0, foundations: [] }),
+      getContributorsMonthly: () => of({ accountId: ACME.accountId, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] }),
+      getMaintainersMonthly: () => of({ accountId: ACME.accountId, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] }),
+      getEventAttendanceMonthly: () =>
+        of({
+          accountId: ACME.accountId,
+          accountName: '',
+          totalAttended: 0,
+          totalSpeakers: 0,
+          attendeesMonthlyData: [],
+          speakersMonthlyData: [],
+          monthlyLabels: [],
+        }),
+      getCertifiedEmployeesMonthly: () =>
+        of({ accountId: ACME.accountId, totalCertifications: 99, totalCertifiedEmployees: 98, monthlyData: [1], monthlyLabels: ['Jan 2030'] }),
+      getTrainingEnrollments: () => of({ accountId: ACME.accountId, totalEnrollments: 97, dailyData: [] }),
+    };
+    TestBed.configureTestingModule({
+      imports: [OrgOverviewInvolvementComponent],
+      providers: [
+        provideRouter([]),
+        { provide: AccountContextService, useValue: { selectedAccount: signal(ACME) } },
+        { provide: OrgInvolvementAnalyticsService, useValue: analytics },
+        { provide: OrgLensTrainingService, useValue: service },
+      ],
+    });
+    TestBed.overrideComponent(OrgOverviewInvolvementComponent, { set: { template: '', imports: [] } });
+    const fixture = TestBed.createComponent(OrgOverviewInvolvementComponent);
+    await fixture.whenStable();
+    return fixture.componentInstance.primaryMetrics();
+  }
+
+  it('reads the same stats query as the Training page without URL params, and shows the page tiles numbers', async () => {
+    const pageService = trainingService(DEFAULT_STATS);
+    const host = await renderTrainingPage({}, pageService);
+    const page = snapshotTiles(host);
+    TestBed.resetTestingModule();
+
+    const overviewService = trainingService(DEFAULT_STATS);
+    const cards = await renderOverview(overviewService);
+
+    expect(pageService.getTrainingStats).toHaveBeenCalledWith('org-uid-1', DEFAULT_QUERY);
+    expect(overviewService.getTrainingStats).toHaveBeenCalledWith('org-uid-1', DEFAULT_QUERY);
+    const certified = cards.find((card) => card.testId === 'org-overview-involvement-card-certified-employees')!;
+    const enrollments = cards.find((card) => card.testId === 'org-overview-involvement-card-training-enrollments')!;
+    const tile = (testId: string) => page.find((entry) => entry.testId === testId)!;
+    expect(certified.value).toBe(tile('org-training-stat-certified-people').value);
+    expect(certified.value).toBe('857');
+    expect(certified.subtitle).toContain(`${tile('org-training-stat-certifications').value} certifications`);
+    expect(enrollments.value).toBe(tile('org-training-stat-courses-taken').value);
+    expect(enrollments.value).toBe('9,660');
+    expect(enrollments.subtitle).toBe(tile('org-training-stat-courses-taken').caption);
+    expect(certified.title).toBe(tile('org-training-stat-certified-people').label);
+    expect(enrollments.title).toBe(tile('org-training-stat-courses-taken').label);
   });
 });

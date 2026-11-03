@@ -11,6 +11,7 @@ import {
   orgTrainingRangeWindow,
   orgTrainingStatCaption,
   orgTrainingStatTooltip,
+  orgTrainingTableNote,
 } from './org-training-stats.utils';
 
 const ASOF = '2026-11-02T09:48:21.094Z';
@@ -90,5 +91,19 @@ describe('buildOrgTrainingStatTiles', () => {
 
   it('keeps courses taken = certifications + trainings completed + in progress in the fixture', () => {
     expect(stats.certifications + stats.trainingsCompleted + stats.coursesInProgress).toBe(stats.coursesTaken);
+  });
+});
+
+describe('orgTrainingTableNote', () => {
+  it('names the selected range and denies the 12-month rule and a snapshot', () => {
+    const note = orgTrainingTableNote('90d');
+    expect(note).toContain('Past 90 days');
+    expect(note).toContain('no certificate in that range');
+    expect(note).toContain('not a snapshot');
+    expect(note).not.toContain('12 months');
+  });
+
+  it('says "at any time" for all time', () => {
+    expect(orgTrainingTableNote('all')).toContain('at any time');
   });
 });

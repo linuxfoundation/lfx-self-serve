@@ -49,7 +49,8 @@
           [value]="metric.value"
           [subtitle]="metric.subtitle"
           [loading]="metric.loading"
-          [clickable]="false"></lfx-metric-card>
+          [clickable]="metric.category === 'education'"
+          (cardClick)="openTraining()"></lfx-metric-card>
       }
     </div>
 

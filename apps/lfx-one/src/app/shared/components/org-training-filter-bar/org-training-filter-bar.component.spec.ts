@@ -165,20 +165,74 @@ describe('OrgTrainingFilterBarComponent', () => {
     expect(el().querySelector('[data-testid="org-training-filter-clear-all"] button')?.hasAttribute('disabled')).toBe(true);
   });
 
-  it('drops selections the loaded options no longer list, keeping the ones they do', async () => {
+  it('keeps a selection the loaded options do not list: still in the URL, applied and shown in its dropdown', async () => {
     await mount('/?range=30d&foundation=fb&project=pl&course=Kubernetes%20Basics&format=E-Learning');
 
+    expect(router().url).toContain('foundation=fb');
+    expect(router().url).toContain('course=Kubernetes');
     expect(router().url).toContain('project=pl');
     expect(router().url).toContain('format=E-Learning');
-    expect(router().url).not.toContain('foundation=');
-    expect(router().url).not.toContain('course=');
-    expect(fixture.componentInstance.form.getRawValue()).toMatchObject({ foundation: '', course: '', project: 'pl', format: 'E-Learning' });
+    expect(fixture.componentInstance.form.getRawValue()).toMatchObject({ foundation: 'fb', course: 'Kubernetes Basics', project: 'pl', format: 'E-Learning' });
   });
 
-  it('does not prune when the options fail to load', async () => {
+  it('keeps a URL selection while the options have not loaded or fail to load', async () => {
     getFilterOptions.mockReturnValue(new Observable((subscriber) => subscriber.error(new Error('down'))));
     await mount('/?foundation=fa');
 
     expect(router().url).toContain('foundation=fa');
+    expect(fixture.componentInstance.form.getRawValue().foundation).toBe('fa');
+  });
+
+  describe('More filters toggle', () => {
+    const toggle = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-training-more-filters-toggle"]');
+    const secondary = (): HTMLElement | null => el().querySelector('[data-testid="org-training-more-filters"]');
+
+    it('keeps range and group-by visible and the five filters collapsed by default', async () => {
+      await mount('/', true);
+
+      expect(secondary()?.classList.contains('hidden')).toBe(true);
+      expect(
+        el()
+          .querySelector('[data-testid="org-training-filter-primary"]')
+          ?.contains(select('range') as Node)
+      ).toBe(true);
+      expect(
+        el()
+          .querySelector('[data-testid="org-training-filter-primary"]')
+          ?.contains(select('group-by') as Node)
+      ).toBe(true);
+      for (const name of ['foundation', 'project', 'course', 'level', 'format']) expect(secondary()?.contains(select(name) as Node), name).toBe(true);
+      expect(toggle()?.textContent?.trim()).toBe('More filters');
+    });
+
+    it('expands and collapses on click, and leaves the picks alone', async () => {
+      await mount('/?format=E-Learning');
+
+      toggle()?.click();
+      await settle();
+      expect(secondary()?.classList.contains('hidden')).toBe(false);
+      expect(toggle()?.textContent?.trim()).toBe('Fewer filters');
+
+      toggle()?.click();
+      await settle();
+      expect(secondary()?.classList.contains('hidden')).toBe(true);
+      expect(router().url).toContain('format=E-Learning');
+    });
+
+    it('counts the filters set behind it, and Clear all resets the count', async () => {
+      await mount('/?foundation=fa&format=E-Learning&range=all');
+
+      expect(toggle()?.textContent?.trim()).toBe('More filters (2)');
+
+      (el().querySelector('[data-testid="org-training-filter-clear-all"] button') as HTMLButtonElement).click();
+      await settle();
+      expect(toggle()?.textContent?.trim()).toBe('More filters');
+    });
+
+    it('does not count range or group-by, which stay visible', async () => {
+      await mount('/?range=30d&groupBy=format', true);
+
+      expect(toggle()?.textContent?.trim()).toBe('More filters');
+    });
   });
 });

@@ -91,3 +91,12 @@ export function buildOrgTrainingStatTiles(stats: OrgTrainingStats | null, range:
     };
   });
 }
+
+/**
+ * Note under the Training table: what "Certified / Completed" and "In progress" count in the selected range, so the
+ * table states its own window (no 12-month rule, no snapshot of today).
+ */
+export function orgTrainingTableNote(range: OrgLensTimeRange): string {
+  const window = range === 'all' ? 'at any time' : `in the selected range (${orgTrainingRangeWindow(range)})`;
+  return `Certified and Completed count person-course pairs with a certificate dated ${window}. In progress counts pairs enrolled ${window} with no certificate in that range; it is not a snapshot of today. Roster members are live and not filtered.`;
+}

@@ -4,16 +4,18 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DEFAULT_ORG_TRAINING_TAB_ID, ORG_TRAINING_TABS, VALID_ORG_TRAINING_TAB_IDS } from '@lfx-one/shared/constants';
 import type { OrgTrainingStats, OrgTrainingStatsQuery, OrgTrainingTabId, OrgTrainingViewState } from '@lfx-one/shared/interfaces';
-import { orgTrainingFiltersSignature, orgTrainingStatsQuery, parseOrgTrainingViewState } from '@lfx-one/shared/utils';
+import { orgTrainingFiltersSignature, orgTrainingStatsQuery, orgTrainingTableNote, parseOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { catchError, debounceTime, finalize, of, switchMap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { OrgTrainingFilterBarComponent } from '@components/org-training-filter-bar/org-training-filter-bar.component';
 import { OrgTrainingStatsComponent } from '@components/org-training-stats/org-training-stats.component';
@@ -33,6 +35,7 @@ import { OrgTrainingGroupsTableComponent } from './components/org-training-group
     SkeletonModule,
     CardComponent,
     CardTabsBarComponent,
+    InputTextComponent,
     OrgLensEmptyStateComponent,
     OrgTrainingFilterBarComponent,
     OrgTrainingStatsComponent,
@@ -59,6 +62,9 @@ export class OrgTrainingComponent {
   // Starts true: the first org emission arrives after the first render, which must not state an as-of date it lacks.
   protected readonly statsLoading = signal(true);
   protected readonly statsError = signal(false);
+  // The name search sits in the filter row but is table-local: it narrows the group rows, never the stat tiles.
+  protected readonly searchForm = new FormGroup({ search: new FormControl('') });
+  protected readonly searchQuery = signal('');
 
   // ─── Computed / toSignal ───────────────────────────────────────────────────
   // Page-level state (e.g. `contractor-no-grant`, `could-not-load`) replacing the page, or null when it renders.
@@ -75,6 +81,7 @@ export class OrgTrainingComponent {
   });
   protected readonly groupBy = computed(() => this.viewState().groupBy);
   protected readonly range = computed(() => this.viewState().range);
+  protected readonly tableNote = computed(() => orgTrainingTableNote(this.range()));
   protected readonly activeTab: Signal<OrgTrainingTabId> = computed(() => {
     const raw = this.queryParamMap().get('tab');
     return raw && VALID_ORG_TRAINING_TAB_IDS.has(raw as OrgTrainingTabId) ? (raw as OrgTrainingTabId) : DEFAULT_ORG_TRAINING_TAB_ID;
@@ -82,6 +89,10 @@ export class OrgTrainingComponent {
   private readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
   // Null while loading or failed, so no tile states the previous organization's or filters' numbers or as-of dates.
   protected readonly shownStats: Signal<OrgTrainingStats | null> = computed(() => (this.statsLoading() || this.statsError() ? null : this.trainingStats()));
+
+  public constructor() {
+    this.searchForm.controls.search.valueChanges.pipe(debounceTime(300), takeUntilDestroyed()).subscribe((value) => this.searchQuery.set((value ?? '').trim()));
+  }
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onActiveTabChange(tabId: string): void {

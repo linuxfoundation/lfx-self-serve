@@ -26,6 +26,10 @@ Training enrollment is handled on the Linux Foundation training platform. LFX Se
 
 All authenticated users can view their training enrollments.
 
+### Overview Education tiles
+
+On the Org Overview, the **Certified people** and **Courses taken** tiles show the same numbers as the Training & Certification page when it opens with its defaults (Past 2 years, no filters), with their unit, window and as-of date. Select a tile to open that page. The small charts on those tiles are monthly and cumulative history; each states the span it shows and is not the headline number.
+
 ### Navigation
 
 Go to **app.lfx.dev** and select **Training & Certifications** from the left navigation sidebar (route: `/me/training`). The page shows tabs for Certifications, Enrolled Trainings, and Rewards, plus a **Useful links** section in the right sidebar.
@@ -46,7 +50,9 @@ The **Training & Certification** page in Org Lens (route: `/org/training`) gives
 
 ### Time range, filters and group by
 
-The Training & Certification page and People › Trainees share one filter bar and read the same numbers, so for the same selections they show the same figures. Both start on **Past 2 years**.
+The Training & Certification page and People › Trainees share one filter bar and read the same numbers, so for the same selections they show the same figures. Both start on **Past 2 years**. On Training & Certification the bar sits in the card above the table, on one row with the name search; on People › Trainees it sits in its own card above the numbers.
+
+Search, **Time range** and (on Training & Certification) **Group by** are always visible. Foundation, Project, Course, Level and Format are behind **More filters**; the link reads **More filters (2)** when two of them are set, so a filter from a shared link is never hidden. **Fewer filters** collapses them again. Whether the row is open applies to the visit only, while the filter values stay in the page address.
 
 - **Time range** — Past 30 days, Past 90 days, Past 365 days, Past 2 years (default) or All time. It applies to every number and table on the page, and it is kept in the page address (`?range=`), so a link or a reload shows the same view.
 - **Filters** — Foundation, Project, Course, Level and Format. They narrow the numbers and the table together. **Format** applies to enrollments only, since certificates carry no format. **Clear all** resets the five filters and keeps the time range and group by.
@@ -71,14 +77,15 @@ Every number states what it counts (people or person-course pairs), its window a
 The two tabs split the same table by product type. **Certifications** lists certification products; **Trainings** lists everything else. Each row shows the group (with its logo where there is one), **People**, **Courses taken**, **Certified** (Certifications tab) or **Completed** (Trainings tab), and **In progress**.
 
 - The **Total** row at the bottom covers every row of the tab, not only the page or the search, and matches the tiles: on the Certifications tab Certified equals the **Certifications** tile, on the Trainings tab Completed equals the **Trainings completed** tile. People in the total is distinct people, not the sum of the rows.
-- The search box above the table narrows the rows only. It never changes the numbers at the top.
+- The search box in the filter row narrows the rows only. It never changes the numbers at the top.
+- A note under the card states what Certified, Completed and In progress count in the selected range.
 - Sorting and paging happen on the full result, not only on the rows shown.
 - Switching tabs keeps the time range, filters and group by.
 - Select a **Certified**, **Completed** or **In progress** count to open the list of people behind it. The count is person-course pairs, and the list shows **current employees only**, so it can be shorter than the count.
 
 ### People › Trainees
 
-People › Trainees lists the people on your organization's people list with training activity in the selected time range, using the same filter bar (without Group by) and the same numbers as above. Search by name. The cards at the top follow the time range and the filters, and state the date of the data.
+People › Trainees lists the people on your organization's people list with training activity in the selected time range, using the same filter bar (without Group by) and the same numbers as above. Search by name or title (it narrows the table only). The cards at the top follow the time range and the filters, and state the date of the data.
 
 Learners linked to your organization who are not on its people list appear in a separate list below the table, **Learners not on the people list**, with their name and one overall status for the time range: **Certified** if they earned a certificate in the range, **Enrolled** otherwise. No course, project or date is shown for them. The list follows the time range and the name search only, so it is hidden while a foundation, project, course, level or format is selected.
 

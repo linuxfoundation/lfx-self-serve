@@ -37,9 +37,6 @@
       descriptionTestId="org-training-subtitle"
       data-testid="org-training-header" />
 
-    <!-- One filter bar: range, foundation, project, course, level, format and group-by, kept in the URL. -->
-    <lfx-org-training-filter-bar [showGroupBy]="true" />
-
     <!-- The same stat tiles as People › Trainees, for the same range and filters. A failed read is stated as such, never as dashes that read like "no data". -->
     @if (statsError()) {
       <lfx-card>
@@ -57,10 +54,24 @@
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-training-content-card">
       <lfx-card-tabs-bar [options]="tabs" [selectedFilter]="activeTab()" (filterChange)="onActiveTabChange($event)" data-testid="org-training-tabs" />
 
-      <section [id]="'org-training-panel-' + activeTab()" [attr.data-testid]="'org-training-panel-' + activeTab()" class="p-5">
-        <lfx-org-training-groups-table [orgUid]="orgUid()" [query]="statsQuery()" [groupBy]="groupBy()" [tab]="activeTab()" />
+      <section [id]="'org-training-panel-' + activeTab()" [attr.data-testid]="'org-training-panel-' + activeTab()" class="flex flex-col gap-4 p-5">
+        <!-- The one filter bar, in the card: name search, range and group-by up front, the other filters behind its toggle. State is in the URL. -->
+        <lfx-org-training-filter-bar [showGroupBy]="true">
+          <div class="w-full md:w-72" data-testid="org-training-groups-search">
+            <lfx-input-text
+              [form]="searchForm"
+              control="search"
+              placeholder="Search by name"
+              icon="fa-light fa-search"
+              size="small"
+              styleClass="w-full"
+              data-testid="org-training-search-input" />
+          </div>
+        </lfx-org-training-filter-bar>
+        <lfx-org-training-groups-table [orgUid]="orgUid()" [query]="statsQuery()" [groupBy]="groupBy()" [tab]="activeTab()" [searchQuery]="searchQuery()" />
       </section>
     </lfx-card>
+    <p class="text-xs text-gray-500" data-testid="org-training-range-note">{{ tableNote() }}</p>
   }
 </div>
 

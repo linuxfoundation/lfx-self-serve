@@ -140,6 +140,46 @@ describe('OrgTrainingComponent', () => {
     expect(el.querySelector('[data-testid="org-certifications-window-note"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-training-level-filter"]')).toBeNull();
   });
+
+  it('puts the one filter bar, with the name search first in its row, inside the content card and none above the stats', async () => {
+    const { el } = await render(null, { stats: STATS });
+    const card = el.querySelector('[data-testid="org-training-content-card"]') as HTMLElement;
+    const bars = el.querySelectorAll('lfx-org-training-filter-bar');
+    const primaryRow = card.querySelector('[data-testid="org-training-filter-primary"]') as HTMLElement;
+
+    expect(bars).toHaveLength(1);
+    expect(card.contains(bars[0])).toBe(true);
+    expect(primaryRow.firstElementChild?.querySelector('[data-testid="org-training-search-input"]')).not.toBeNull();
+    for (const name of ['range', 'group-by']) expect(primaryRow.querySelector(`[data-test="org-training-filter-${name}"]`), name).not.toBeNull();
+    const secondary = card.querySelector('[data-testid="org-training-more-filters"]') as HTMLElement;
+    for (const name of ['foundation', 'project', 'course', 'level', 'format'])
+      expect(secondary.querySelector(`[data-test="org-training-filter-${name}"]`), name).not.toBeNull();
+    expect(secondary.classList.contains('hidden')).toBe(true);
+    expect(card.querySelector('[data-testid="org-training-more-filters-toggle"]')).not.toBeNull();
+  });
+
+  it('keeps the name search table-local: it refetches the groups, never the stats', async () => {
+    const { el, fixture, trainingService } = await render(null, { stats: STATS });
+    const input = el.querySelector('[data-testid="org-training-search-input"] input') as HTMLInputElement;
+
+    input.value = 'kube';
+    input.dispatchEvent(new Event('input'));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(trainingService.getGroups).toHaveBeenLastCalledWith('org-uid-1', expect.anything(), expect.objectContaining({ searchQuery: 'kube' }));
+    expect(trainingService.getTrainingStats).toHaveBeenCalledTimes(1);
+  });
+
+  it('states the selected range in the note under the card, not the old 12-month rule', async () => {
+    const { el } = await render(null, { stats: STATS, params: { range: '90d' } });
+    const note = el.querySelector('[data-testid="org-training-range-note"]')?.textContent ?? '';
+
+    expect(note).toContain('Past 90 days');
+    expect(note).toContain('no certificate in that range');
+    expect(note).not.toContain('12 months');
+  });
 });
 
 describe('OrgTrainingComponent — view state from the URL', () => {
@@ -161,6 +201,63 @@ describe('OrgTrainingComponent — view state from the URL', () => {
       'org-uid-1',
       expect.objectContaining({ range: '365d', foundation: 'f-1', format: 'Online', course: null })
     );
+  });
+
+  it('applies ?range=365d&format=E-Learning to the tiles on first load, even when the loaded options do not list the format', async () => {
+    const { trainingService } = await render(null, { stats: STATS, params: { range: '365d', format: 'E-Learning' } });
+
+    expect(trainingService.getTrainingStats).toHaveBeenCalledTimes(1);
+    expect(trainingService.getTrainingStats).toHaveBeenCalledWith('org-uid-1', {
+      range: '365d',
+      foundation: null,
+      project: null,
+      course: null,
+      level: null,
+      format: 'E-Learning',
+    });
+    expect(trainingService.getGroups).toHaveBeenLastCalledWith(
+      'org-uid-1',
+      expect.objectContaining({ format: 'E-Learning', range: '365d' }),
+      expect.anything()
+    );
+  });
+
+  it('never rewrites the URL on load: no filter is dropped by the options', async () => {
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    await render(null, { stats: STATS, params: { range: '365d', format: 'E-Learning' } });
+
+    expect(navigate).not.toHaveBeenCalled();
+    navigate.mockRestore();
+  });
+
+  it('follows in-page navigation: a new URL state refetches the stats and the table, and removing a filter restores the unfiltered query', async () => {
+    const { fixture, trainingService, queryParamMap$ } = await render(null, { stats: STATS, params: { range: '365d', format: 'E-Learning' } });
+    const appRef = TestBed.inject(ApplicationRef);
+
+    queryParamMap$.next(convertToParamMap({ range: '365d', format: 'Instructor Led', level: 'Advanced' }));
+    await appRef.whenStable();
+    fixture.detectChanges();
+    expect(trainingService.getTrainingStats).toHaveBeenLastCalledWith(
+      'org-uid-1',
+      expect.objectContaining({ range: '365d', format: 'Instructor Led', level: 'Advanced' })
+    );
+    expect(trainingService.getGroups).toHaveBeenLastCalledWith(
+      'org-uid-1',
+      expect.objectContaining({ format: 'Instructor Led', level: 'Advanced' }),
+      expect.anything()
+    );
+
+    queryParamMap$.next(convertToParamMap({}));
+    await appRef.whenStable();
+    fixture.detectChanges();
+    expect(trainingService.getTrainingStats).toHaveBeenLastCalledWith('org-uid-1', {
+      range: '730d',
+      foundation: null,
+      project: null,
+      course: null,
+      level: null,
+      format: null,
+    });
   });
 
   it('feeds the table the URL group-by and loads the Trainings tab from ?tab=trainings', async () => {

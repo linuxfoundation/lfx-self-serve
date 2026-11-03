@@ -5,8 +5,7 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   DEFAULT_ORG_TRAINING_GROUPS_PAGE_SIZE,
   DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD,
@@ -25,10 +24,9 @@ import type {
   OrgTrainingStatsQuery,
   OrgTrainingTabId,
 } from '@lfx-one/shared/interfaces';
-import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
-import { catchError, debounceTime, finalize, of, switchMap } from 'rxjs';
+import { catchError, finalize, of, switchMap } from 'rxjs';
 
 import { OrgTrainingGroupEmployeesDrawerComponent } from '../org-training-group-employees-drawer/org-training-group-employees-drawer.component';
 
@@ -42,12 +40,12 @@ interface PagingState {
 
 /**
  * The Training page's one group-by table: person-course pairs of the selected range and filters, grouped by `groupBy`,
- * split by product type into the Certifications and Trainings tabs. Search, sort and paging are table-local; the
+ * split by product type into the Certifications and Trainings tabs. Sort and paging are table-local and the name search comes from the page; the
  * footer totals come from the response and equal the stat tiles of the same filters.
  */
 @Component({
   selector: 'lfx-org-training-groups-table',
-  imports: [DecimalPipe, InputTextComponent, TableComponent, OrgTrainingGroupEmployeesDrawerComponent],
+  imports: [DecimalPipe, TableComponent, OrgTrainingGroupEmployeesDrawerComponent],
   templateUrl: './org-training-groups-table.component.html',
 })
 export class OrgTrainingGroupsTableComponent {
@@ -58,13 +56,13 @@ export class OrgTrainingGroupsTableComponent {
   public readonly query = input.required<OrgTrainingStatsQuery>();
   public readonly groupBy = input.required<OrgTrainingGroupBy>();
   public readonly tab = input.required<OrgTrainingTabId>();
+  /** The page's name search (it sits in the filter row): narrows the rows below, never the stat tiles. */
+  public readonly searchQuery = input<string>('');
 
   protected readonly browseUrl = ENROLL_AGAIN_URL;
   protected readonly pageSizeOptions = [10, 25, 50];
 
   // ─── Table-local state ─────────────────────────────────────────────────────
-  protected readonly searchForm = new FormGroup({ search: new FormControl('') });
-  private readonly searchValue = signal('');
   protected readonly sortField = signal<OrgTrainingGroupSortField>(DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD);
   protected readonly sortOrder = signal<'ASC' | 'DESC'>(DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER);
   protected readonly pageSize = signal(DEFAULT_ORG_TRAINING_GROUPS_PAGE_SIZE);
@@ -77,7 +75,7 @@ export class OrgTrainingGroupsTableComponent {
   protected readonly drawerLabel = signal('');
   protected readonly drawerCount = signal(0);
 
-  private readonly viewKey = computed(() => JSON.stringify([this.orgUid(), this.query(), this.groupBy(), this.tab(), this.searchValue()]));
+  private readonly viewKey = computed(() => JSON.stringify([this.orgUid(), this.query(), this.groupBy(), this.tab(), this.searchQuery()]));
   private readonly paging = signal<PagingState>({ viewKey: '', offset: 0 });
   protected readonly offset = computed(() => {
     const paging = this.paging();
@@ -96,7 +94,7 @@ export class OrgTrainingGroupsTableComponent {
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.groups().total > this.pageSizeOptions[0] ? this.pageSizeOptions : undefined));
   protected readonly emptyTitle = computed(() => {
     const noun = this.tab() === 'certifications' ? 'certifications' : 'trainings';
-    return this.searchValue() ? `No ${noun} match your search` : `No ${noun} for these filters`;
+    return this.searchQuery() ? `No ${noun} match your search` : `No ${noun} for these filters`;
   });
 
   protected readonly sortAriaMap = computed<Record<OrgTrainingGroupSortField, string>>(() => ({
@@ -113,10 +111,6 @@ export class OrgTrainingGroupsTableComponent {
     completed: this.sortIcon('completed'),
     inProgress: this.sortIcon('inProgress'),
   }));
-
-  public constructor() {
-    this.searchForm.controls.search.valueChanges.pipe(debounceTime(300), takeUntilDestroyed()).subscribe((value) => this.searchValue.set((value ?? '').trim()));
-  }
 
   protected onPageChange(event: { first: number; rows: number }): void {
     this.pageSize.set(event.rows);
@@ -164,7 +158,7 @@ export class OrgTrainingGroupsTableComponent {
         params: {
           groupBy: this.groupBy(),
           tab: this.tab(),
-          searchQuery: this.searchValue() || undefined,
+          searchQuery: this.searchQuery() || undefined,
           sortField: this.sortField(),
           sortOrder: this.sortOrder(),
           pageSize: this.pageSize(),

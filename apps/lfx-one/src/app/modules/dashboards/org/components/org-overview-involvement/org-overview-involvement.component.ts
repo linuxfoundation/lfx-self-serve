@@ -3,6 +3,7 @@
 
 import { Component, computed, inject, Signal, signal, viewChild, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import {
@@ -15,13 +16,15 @@ import {
   ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
+  ORG_OVERVIEW_CERTIFICATIONS_TREND_LABEL,
   ORG_OVERVIEW_TRAINING_TREND_LABEL,
   ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
-import { buildOrgTrainingStatTiles, hexToRgba, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { buildOrgTrainingStatTiles, hexToRgba, orgTrainingStatsQuery, parseOrgTrainingViewState, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
+import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
 import { catchError, distinctUntilChanged, finalize, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
@@ -39,8 +42,11 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import type { ChartOptions, ChartType } from 'chart.js';
 
-/** The Overview tile reads the shared stats over all time with no filters. */
-const OVERVIEW_TRAINING_STATS_QUERY: OrgTrainingStatsQuery = { range: 'all', foundation: null, project: null, course: null, level: null, format: null };
+/**
+ * The Education tiles read the shared stats in the Training page's default state (Past 2 years, no filters): the query
+ * the page itself builds from a URL with no params, so the headline numbers are the page's numbers.
+ */
+const OVERVIEW_TRAINING_STATS_QUERY: OrgTrainingStatsQuery = orgTrainingStatsQuery(parseOrgTrainingViewState(() => null));
 
 @Component({
   selector: 'lfx-org-overview-involvement',
@@ -52,6 +58,8 @@ export class OrgOverviewInvolvementComponent {
   private readonly analyticsService = inject(OrgInvolvementAnalyticsService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly trainingService = inject(OrgLensTrainingService);
+  private readonly router = inject(Router);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
 
   public readonly scrollShadowDirective = viewChild(ScrollShadowDirective);
 
@@ -99,6 +107,11 @@ export class OrgOverviewInvolvementComponent {
 
   public handleFilterChange(filter: string): void {
     this.selectedFilter.set(filter);
+  }
+
+  /** The Education tiles open Training & Certification in its default state: no query, so the page shows the same numbers. */
+  public openTraining(): void {
+    void this.router.navigate(this.orgLensNavigation.orgLensLink('training'));
   }
 
   private initializeCoverageData(): Signal<OrgFoundationCoverageResponse> {
@@ -201,7 +214,13 @@ export class OrgOverviewInvolvementComponent {
   }
 
   private initializeCertifiedEmployeesCard(): Signal<DashboardMetricCard> {
-    return computed(() => this.transformCertifiedEmployees(this.certifiedEmployeesData(), this.getMetricConfig('Certified Employees')));
+    return computed(() =>
+      this.transformCertifiedEmployees(
+        this.certifiedEmployeesData(),
+        this.trainingStats(),
+        this.getMetricConfig(ORG_TRAINING_STAT_DEFINITIONS.certifiedPeople.label)
+      )
+    );
   }
 
   private initializeTrainingEnrollmentsCard(): Signal<DashboardMetricCard> {
@@ -209,7 +228,7 @@ export class OrgOverviewInvolvementComponent {
       this.transformTrainingEnrollments(
         this.trainingEnrollmentsData(),
         this.trainingStats(),
-        this.getMetricConfig(ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity.label)
+        this.getMetricConfig(ORG_TRAINING_STAT_DEFINITIONS.coursesTaken.label)
       )
     );
   }
@@ -375,12 +394,27 @@ export class OrgOverviewInvolvementComponent {
     };
   }
 
-  private transformCertifiedEmployees(data: OrgInvolvementCertifiedEmployeesMonthlyResponse, metric: DashboardMetricCard): DashboardMetricCard {
+  /**
+   * Headline: certified people for the Training page's default range, subtitle the certifications (person-course
+   * pairs) with the window and as-of date. The chart is the monthly certification table, captioned with its own span.
+   */
+  private transformCertifiedEmployees(
+    data: OrgInvolvementCertifiedEmployeesMonthlyResponse,
+    stats: OrgTrainingStats | null,
+    metric: DashboardMetricCard
+  ): DashboardMetricCard {
+    const tiles = buildOrgTrainingStatTiles(stats, OVERVIEW_TRAINING_STATS_QUERY.range);
+    const people = tiles.find((tile) => tile.key === 'certifiedPeople')!;
+    const certifications = tiles.find((tile) => tile.key === 'certifications')!;
+    const span = this.chartSpan(data.monthlyLabels);
     return {
       ...metric,
-      loading: this.certifiedEmployeesLoading(),
-      value: `${data.totalCertifiedEmployees} employees`,
-      subtitle: `${data.totalCertifications} total certifications`,
+      loading: this.certifiedEmployeesLoading() || this.trainingStatsLoading(),
+      value: people.display,
+      // A failed or pending stats read shows a dash, never a zero that reads as "nobody certified", and no as-of date.
+      subtitle: stats === null ? people.caption : `${certifications.display} certifications · ${people.caption.split(' · ').slice(1).join(' · ')}`,
+      tooltipText: `${people.tooltip} ${certifications.tooltip}`,
+      chartCaption: span ? `${ORG_OVERVIEW_CERTIFICATIONS_TREND_LABEL}, ${span}` : undefined,
       chartOptions: this.createLineChartOptions('Certifications'),
       chartData:
         data.monthlyData.length > 0
@@ -402,20 +436,21 @@ export class OrgOverviewInvolvementComponent {
     };
   }
 
-  /** Headline: people with training activity, all time, as on the Training page and Trainees. The chart keeps this year's cumulative enrollments, captioned as such. */
+  /** Headline: courses taken for the Training page's default range (unit, window and as-of in the subtitle). The chart is the cumulative enrollment table, captioned with its own span. */
   private transformTrainingEnrollments(data: OrgTrainingEnrollmentsResponse, stats: OrgTrainingStats | null, metric: DashboardMetricCard): DashboardMetricCard {
     // A failed or pending stats read shows a dash, never a zero that reads as "nobody trained", and no as-of date.
-    const activity = buildOrgTrainingStatTiles(stats, OVERVIEW_TRAINING_STATS_QUERY.range).find((tile) => tile.key === 'peopleWithTrainingActivity')!;
+    const coursesTaken = buildOrgTrainingStatTiles(stats, OVERVIEW_TRAINING_STATS_QUERY.range).find((tile) => tile.key === 'coursesTaken')!;
     const labels = data.dailyData.map(
       (row) => tryParseLocalDateString(row.date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) ?? row.date
     );
+    const span = this.chartSpan(labels);
     return {
       ...metric,
       loading: this.trainingEnrollmentsLoading() || this.trainingStatsLoading(),
-      value: activity.display,
-      subtitle: activity.caption,
-      tooltipText: activity.tooltip,
-      chartCaption: labels.length > 0 ? `${ORG_OVERVIEW_TRAINING_TREND_LABEL}, through ${labels[labels.length - 1]}` : undefined,
+      value: coursesTaken.display,
+      subtitle: coursesTaken.caption,
+      tooltipText: coursesTaken.tooltip,
+      chartCaption: span ? `${ORG_OVERVIEW_TRAINING_TREND_LABEL}, ${span}` : undefined,
       chartOptions: this.createLineChartOptions('Training enrollments'),
       chartData: {
         labels,
@@ -432,6 +467,12 @@ export class OrgOverviewInvolvementComponent {
         ],
       },
     };
+  }
+
+  /** `Jan 2025 to Oct 2026`: the span a chart actually shows, from its first and last label; null with no points. */
+  private chartSpan(labels: readonly string[]): string | null {
+    if (labels.length === 0) return null;
+    return labels.length === 1 ? labels[0] : `${labels[0]} to ${labels[labels.length - 1]}`;
   }
 
   /** Title-keyed lookup into ORG_INVOLVEMENT_METRICS; throws on missing card so renames surface as a clear error. */

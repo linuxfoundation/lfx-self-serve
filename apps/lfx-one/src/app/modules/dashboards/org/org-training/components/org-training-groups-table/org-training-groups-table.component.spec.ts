@@ -156,13 +156,10 @@ describe('OrgTrainingGroupsTableComponent', () => {
     expect(byTestId('org-training-groups-totals-completed')?.getAttribute('aria-label')).toBe('Completed total, equals the Trainings completed tile');
   });
 
-  it('searches in the table only: refetches the groups with the term and never reads the stats', async () => {
+  it('narrows the groups by the page search term and never reads the stats', async () => {
     const { fixture, trainingService } = await render();
-    const input = document.querySelector('[data-testid="org-training-search-input"] input') as HTMLInputElement;
 
-    input.value = 'course';
-    input.dispatchEvent(new Event('input'));
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.componentRef.setInput('searchQuery', 'course');
     await settle(fixture);
 
     expect(trainingService.getGroups).toHaveBeenLastCalledWith('org-1', QUERY, expect.objectContaining({ searchQuery: 'course', offset: 0 }));

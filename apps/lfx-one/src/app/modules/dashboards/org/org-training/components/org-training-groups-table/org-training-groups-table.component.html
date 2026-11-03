@@ -2,18 +2,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4" data-testid="org-training-groups">
-  <!-- Table-local search: narrows the rows below, never the stat tiles -->
-  <div class="relative" data-testid="org-training-groups-search">
-    <lfx-input-text
-      [form]="searchForm"
-      control="search"
-      [placeholder]="'Search by ' + groupLabel().toLowerCase() + '…'"
-      icon="fa-light fa-search"
-      size="small"
-      styleClass="w-full"
-      data-testid="org-training-search-input" />
-  </div>
-
   @if (error()) {
     <div class="flex flex-col items-center justify-center gap-2 py-16 text-center" data-testid="org-training-groups-error">
       <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500" aria-hidden="true"></i>

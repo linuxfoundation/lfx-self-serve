@@ -3,11 +3,14 @@
 
 import { CUSTOM_ELEMENTS_SCHEMA, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import {
   ORG_DEFAULT_PROJECT_SCOPE_LABEL,
   ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
+  ORG_OVERVIEW_CERTIFICATIONS_TREND_LABEL,
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
+  ORG_OVERVIEW_TRAINING_TREND_LABEL,
   ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
 import type { Account, DashboardMetricCard, OrgTrainingEnrollmentsResponse, OrgTrainingStats } from '@lfx-one/shared/interfaces';
@@ -23,7 +26,7 @@ import { OrgOverviewInvolvementComponent } from './org-overview-involvement.comp
 const ACCOUNT_ID = 'acc-1';
 
 const TRAINING_STATS: OrgTrainingStats = {
-  range: 'all',
+  range: '730d',
   asOf: '2030-03-05T09:48:21.094Z',
   rosterMembers: 1250,
   rosterMembersAsOf: '2030-03-04T23:00:00.000Z',
@@ -66,7 +69,7 @@ async function buildMetrics(
   TestBed.configureTestingModule({
     imports: [OrgOverviewInvolvementComponent],
     providers: [
-      { provide: AccountContextService, useValue: { selectedAccount } },
+      { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment: signal('acme') } },
       { provide: OrgInvolvementAnalyticsService, useValue: analytics },
       { provide: OrgLensTrainingService, useValue: { getTrainingStats: () => trainingStats } },
     ],
@@ -80,8 +83,16 @@ async function buildMetrics(
   return fixture.componentInstance.primaryMetrics();
 }
 
+function certifiedCard(metrics: DashboardMetricCard[]): DashboardMetricCard {
+  const card = metrics.find((metric) => metric.title === ORG_TRAINING_STAT_DEFINITIONS.certifiedPeople.label);
+  if (!card) {
+    throw new Error('Certified card missing');
+  }
+  return card;
+}
+
 function trainingCard(metrics: DashboardMetricCard[]): DashboardMetricCard {
-  const card = metrics.find((metric) => metric.title === ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity.label);
+  const card = metrics.find((metric) => metric.title === ORG_TRAINING_STAT_DEFINITIONS.coursesTaken.label);
   if (!card) {
     throw new Error('Training card missing');
   }
@@ -109,15 +120,52 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
     expect(metrics.map((metric) => metric.loading)).toEqual([false, false, false, false, false, false]);
   });
 
-  // lfx-self-serve#4290: the tile shows the Training page's number for the same definition, not this year's enrollments.
-  it('headlines people with training activity, all time, as the shared stat tile does, with the as-of date, instead of the year-to-date enrollment total', async () => {
+  // lfx-self-serve#4290: both Education tiles show the Training page's numbers for its default state (Past 2 years, no filters).
+  it('headlines courses taken for Past 2 years, as the shared stat tile does, with unit, window and the as-of date, instead of the year-to-date enrollment total', async () => {
     const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [{ date: '2030-03-04', count: 7, cumulativeCount: 7 }] });
     const card = trainingCard(metrics);
 
-    expect(card.value).toBe('1,830');
-    expect(card.subtitle).toContain('all time');
-    expect(card.subtitle).toContain('Mar 5, 2030');
+    expect(card.value).toBe('400');
+    expect(card.subtitle).toBe('Person-course pairs · Past 2 years · as of Mar 5, 2030');
     expect(card.tooltipText).toContain('Mar 5, 2030');
+    expect(card.tooltipText).toContain('Past 2 years');
+    expect(card.title).not.toMatch(/this year/i);
+  });
+
+  it('headlines certified people for Past 2 years with the certifications (person-course pairs) in the subtitle, instead of the monthly table totals', async () => {
+    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [] });
+    const card = certifiedCard(metrics);
+
+    expect(card.value).toBe('140');
+    expect(card.subtitle).toBe('190 certifications · Past 2 years · as of Mar 5, 2030');
+    expect(card.tooltipText).toContain('Past 2 years');
+    expect(card.tooltipText).toContain('Mar 5, 2030');
+    expect(card.value).not.toContain('employees');
+  });
+
+  it('captions each chart with the span it actually shows, and states no unit-less "this year"', async () => {
+    const metrics = await buildMetrics({
+      accountId: ACCOUNT_ID,
+      totalEnrollments: 7,
+      dailyData: [
+        { date: '2029-11-04', count: 3, cumulativeCount: 3 },
+        { date: '2030-03-04', count: 4, cumulativeCount: 7 },
+      ],
+    });
+
+    expect(trainingCard(metrics).chartCaption).toBe(`${ORG_OVERVIEW_TRAINING_TREND_LABEL}, Nov 4, 2029 to Mar 4, 2030`);
+    expect(certifiedCard(metrics).chartCaption).toBe(`${ORG_OVERVIEW_CERTIFICATIONS_TREND_LABEL}, Jan 2030`);
+    for (const card of [trainingCard(metrics), certifiedCard(metrics)]) expect(card.chartCaption).not.toMatch(/this (calendar )?year/i);
+  });
+
+  it('opens Training & Certification with no query when an Education tile is clicked', async () => {
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [] });
+    const fixture = TestBed.createComponent(OrgOverviewInvolvementComponent);
+    fixture.componentInstance.openTraining();
+
+    expect(navigate).toHaveBeenCalledWith(['/org', 'acme', 'training']);
+    navigate.mockRestore();
   });
 
   it('shows a dash, not zero, when the training stats cannot load', async () => {
@@ -130,7 +178,8 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
     expect(trainingCard(metrics).value).toBe('—');
     expect(trainingCard(metrics).loading).toBe(false);
     // As on the strip: no number, so no as-of date in the subtitle or the tooltip.
-    expect(trainingCard(metrics).subtitle).toBe('People · all time');
+    expect(trainingCard(metrics).subtitle).toBe('Person-course pairs · Past 2 years');
+    expect(certifiedCard(metrics).value).toBe('—');
     expect(trainingCard(metrics).tooltipText).not.toMatch(/as of|as-of/i);
   });
 
@@ -170,18 +219,19 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
     TestBed.overrideComponent(OrgOverviewInvolvementComponent, { set: { template: '', imports: [] } });
     const fixture = TestBed.createComponent(OrgOverviewInvolvementComponent);
     await fixture.whenStable();
-    expect(trainingCard(fixture.componentInstance.primaryMetrics()).value).toBe('1,830');
+    expect(trainingCard(fixture.componentInstance.primaryMetrics()).value).toBe('400');
 
     selectedAccount.set({ accountId: 'acc-2', accountName: 'Other Org', membershipTier: '', uid: 'org-uid-2', slug: 'other' });
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(getTrainingStats).toHaveBeenLastCalledWith('org-uid-2', { range: 'all', foundation: null, project: null, course: null, level: null, format: null });
+    expect(getTrainingStats).toHaveBeenCalledWith('org-uid-1', { range: '730d', foundation: null, project: null, course: null, level: null, format: null });
+    expect(getTrainingStats).toHaveBeenLastCalledWith('org-uid-2', { range: '730d', foundation: null, project: null, course: null, level: null, format: null });
     const card = trainingCard(fixture.componentInstance.primaryMetrics());
     expect(card.value).toBe('—');
     expect(card.subtitle).not.toContain('Mar 5, 2030');
 
-    pending.next({ ...TRAINING_STATS, peopleWithTrainingActivity: 7 });
+    pending.next({ ...TRAINING_STATS, coursesTaken: 7 });
     pending.complete();
     await fixture.whenStable();
 
