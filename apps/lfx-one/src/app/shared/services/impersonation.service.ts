@@ -2,17 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { MAX_RECENT_IMPERSONATIONS, RECENT_IMPERSONATIONS_STORAGE_KEY } from '@lfx-one/shared/constants';
 import {
   ImpersonationStartRequest,
   ImpersonationStartResponse,
   ImpersonationStatusResponse,
+  ImpersonationSuggestion,
   ImpersonationTransition,
+  ImpersonationUserSearchResponse,
   RecentImpersonation,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, tap } from 'rxjs';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
+import { catchError, map, Observable, of, tap } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -42,6 +45,27 @@ export class ImpersonationService {
     return this.http
       .get<ImpersonationStatusResponse>('/api/impersonate/status')
       .pipe(catchError(() => of({ impersonating: false } as ImpersonationStatusResponse)));
+  }
+
+  /**
+   * People the picker can offer for the typed text: anyone with an LFID, found by username, email or name. The search
+   * runs as the signed-in admin, even while impersonating. A failed search degrades to no results rather than breaking
+   * the typeahead. Strict encoding, so a plus-addressed email survives the query string.
+   */
+  public searchUsers(query: string): Observable<ImpersonationSuggestion[]> {
+    const params = strictHttpParams().set('q', query);
+
+    return this.http.get<ImpersonationUserSearchResponse>('/api/impersonate/users', { params }).pipe(
+      map((response) => response.results ?? []),
+      catchError((error: unknown) => {
+        // Status and code only: the response object carries the request URL, whose query string holds the searched
+        // person's name or address, and the console override ships it to CloudWatch.
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        const code = error instanceof HttpErrorResponse ? error.error?.code : undefined;
+        console.error('Error searching users to impersonate:', { status, code });
+        return of([]);
+      })
+    );
   }
 
   public getRecentImpersonations(): RecentImpersonation[] {

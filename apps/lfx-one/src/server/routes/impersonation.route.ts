@@ -10,6 +10,7 @@ const router = Router();
 const impersonationController = new ImpersonationController();
 
 router.post('/', (req, res, next) => impersonationController.startImpersonation(req, res, next));
+router.get('/users', (req, res, next) => impersonationController.searchUsers(req, res, next));
 router.post('/stop', (req, res, next) => impersonationController.stopImpersonation(req, res, next));
 router.get('/status', (req, res, next) => impersonationController.getImpersonationStatus(req, res, next));
 

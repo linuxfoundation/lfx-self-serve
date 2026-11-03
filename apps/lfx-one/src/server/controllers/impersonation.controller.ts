@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPERSONATION_ALREADY_TARGET_CODE, IMPERSONATION_ALREADY_TARGET_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  IMPERSONATION_ALREADY_TARGET_CODE,
+  IMPERSONATION_ALREADY_TARGET_MESSAGE,
+  IMPERSONATION_SEARCH_LIMIT,
+  IMPERSONATION_SEARCH_MAX_LENGTH,
+} from '@lfx-one/shared/constants';
+import { ImpersonationSuggestion } from '@lfx-one/shared/interfaces';
+import { excludeUserSearchIdentities } from '@lfx-one/shared/utils/search.utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
@@ -67,6 +74,71 @@ export class ImpersonationController {
           username: targetClaims['http://lfx.dev/claims/username'] || '',
         },
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/impersonate/users?q=
+   * People the impersonation picker can offer, from an auth-service search of every user with an LFID. The search is the
+   * signed-in admin's own action, so it runs with their real token (`resolveImpersonatorToken`), never the current
+   * target's: the same call serves picking the first user and switching to another. Requires `can_impersonate`, and
+   * leaves out the admin and the current target, since picking either is pointless. The query is never logged.
+   */
+  public async searchUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'search_impersonation_users', {
+      has_query: typeof req.query['q'] === 'string' && req.query['q'].trim() !== '',
+    });
+
+    try {
+      const query = req.query['q'];
+      if (typeof query !== 'string' || query.trim() === '') {
+        next(
+          ServiceValidationError.forField('q', 'q is required and must be a non-empty string', {
+            operation: 'search_impersonation_users',
+            service: 'impersonation',
+          })
+        );
+        return;
+      }
+
+      const text = query.trim();
+      if (text.length > IMPERSONATION_SEARCH_MAX_LENGTH) {
+        next(
+          ServiceValidationError.forField('q', `q must be at most ${IMPERSONATION_SEARCH_MAX_LENGTH} characters`, {
+            operation: 'search_impersonation_users',
+            service: 'impersonation',
+          })
+        );
+        return;
+      }
+
+      const subjectToken = await resolveImpersonatorToken(req, 'search_impersonation_users');
+      const users = await this.impersonationService.searchUsers(req, text, subjectToken, IMPERSONATION_SEARCH_LIMIT);
+
+      // A person without a username cannot be impersonated by selection, so they are not offered.
+      const suggestions = users
+        .filter((user) => !!user.username)
+        .map(
+          (user): ImpersonationSuggestion => ({
+            targetUser: user.username,
+            username: user.username,
+            email: user.email ?? '',
+            name: user.name || undefined,
+          })
+        );
+
+      const adminClaims = decodeJwtPayload(subjectToken);
+      const currentTarget = req.appSession?.['impersonationUser'];
+      const results = excludeUserSearchIdentities(suggestions, [
+        { username: adminClaims?.['http://lfx.dev/claims/username'], email: adminClaims?.['http://lfx.dev/claims/email'] },
+        { username: currentTarget?.username, email: currentTarget?.email },
+      ]);
+
+      logger.success(req, 'search_impersonation_users', startTime, { result_count: results.length });
+
+      res.json({ results });
     } catch (error) {
       next(error);
     }
