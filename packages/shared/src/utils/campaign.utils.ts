@@ -6,8 +6,12 @@ import {
   CAMPAIGN_DISPATCH_CONNECTION_NOT_USABLE_PATTERN,
   CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS,
   CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES,
+  CAMPAIGN_FUNNEL_STAGE_COLUMN_LABELS,
+  CAMPAIGN_LABEL_ABSENT,
   CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_TACTIC_OPTIONS,
+  GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_SPONSORS,
   MAX_SPONSOR_NAME_LENGTH,
@@ -17,6 +21,8 @@ import type {
   BriefMetricsActionRule,
   CampaignDispatchFailureDescription,
   CampaignEventSponsor,
+  CampaignIndexDoc,
+  CampaignLabelColumns,
   CampaignOptimizeLever,
   KeywordActionPlatform,
   NegativeKeywordInputProblem,
@@ -270,4 +276,45 @@ export function dailyBudgetFromTotal(total: number, days: number): number | null
   let cents = Math.round(total * 100);
   if (cents / 100 > total) cents -= 1;
   return Math.floor(cents / days) / 100;
+}
+
+/**
+ * A campaign's channel, funnel stage, tactic and created date as a campaign list shows them (#4983).
+ *
+ * Each is "—" when absent. The index is unvalidated, so a value this build does not know is "—" too,
+ * rather than raw text. The channel is a Google one only: Google's variant is the channel (search is
+ * `default`), and every other platform has a single channel, so naming one there would add nothing.
+ * A created date that does not parse is "—", never "Invalid Date".
+ */
+export function campaignLabelColumns(
+  campaign: Pick<CampaignIndexDoc, 'platform' | 'variant' | 'funnel_stage' | 'tactic' | 'created_at'>
+): CampaignLabelColumns {
+  return {
+    channel: campaignChannelLabel(campaign.platform, campaign.variant),
+    stage: lookupLabel(CAMPAIGN_FUNNEL_STAGE_COLUMN_LABELS, campaign.funnel_stage),
+    tactic: CAMPAIGN_TACTIC_OPTIONS.find((option) => option.id === campaign.tactic)?.label ?? CAMPAIGN_LABEL_ABSENT,
+    created: campaignCreatedLabel(campaign.created_at),
+  };
+}
+
+function campaignChannelLabel(platform: unknown, variant: unknown): string {
+  if (platform !== 'google-ads' || typeof variant !== 'string') {
+    return CAMPAIGN_LABEL_ABSENT;
+  }
+  return lookupLabel(GOOGLE_CAMPAIGN_CHANNEL_LABELS, variant === 'default' ? 'search' : variant);
+}
+
+function campaignCreatedLabel(createdAt: unknown): string {
+  if (typeof createdAt !== 'string' || createdAt === '') {
+    return CAMPAIGN_LABEL_ABSENT;
+  }
+  const when = new Date(createdAt);
+  if (Number.isNaN(when.getTime())) {
+    return CAMPAIGN_LABEL_ABSENT;
+  }
+  return when.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function lookupLabel(labels: Readonly<Record<string, string>>, key: unknown): string {
+  return typeof key === 'string' && Object.prototype.hasOwnProperty.call(labels, key) ? labels[key] : CAMPAIGN_LABEL_ABSENT;
 }

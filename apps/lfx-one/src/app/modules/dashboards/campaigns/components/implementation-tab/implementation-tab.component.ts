@@ -264,6 +264,7 @@ import {
   campaignBiddingError,
   campaignBiddingPayload,
   campaignFlightDays,
+  campaignLabelColumns,
   codePointLength,
   dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
@@ -7608,6 +7609,7 @@ export class ImplementationTabComponent implements OnInit {
           name: campaign.campaign_name,
           status: campaign.status.replace(/_/g, ' '),
           slot: typeof campaign.slot_version === 'number' ? String(campaign.slot_version) : '—',
+          labels: campaignLabelColumns(campaign),
         }))
     );
   }

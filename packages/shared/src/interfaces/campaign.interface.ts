@@ -4978,6 +4978,8 @@ export interface CampaignExistingRow {
   status: string;
   /** The slot as text: the number, or '—' when the index does not record it. */
   slot: string;
+  /** Channel, stage, tactic and created date as text, '—' when absent. */
+  labels: CampaignLabelColumns;
 }
 
 /**
@@ -5053,6 +5055,24 @@ export interface CampaignIndexDoc {
   funnel_stage?: CampaignFunnelStage;
   /** The campaign's tactic label, set when it was created (#453). Absent for an unlabelled or older campaign. */
   tactic?: CampaignTactic;
+  /**
+   * When campaign-service made this campaign, as an RFC 3339 timestamp (multi-campaign cs-1). Absent on a
+   * document indexed before the field existed, until the campaign's next write, and on a row never read
+   * back. Shown as "—" then, never guessed.
+   */
+  created_at?: string;
+}
+
+/**
+ * The labels that tell a brief's several campaigns on one platform apart, as display text: the Google
+ * channel, funnel stage, tactic and created date. Each is "—" when the index does not record it (a
+ * legacy or adopted campaign) or records a value this build does not know (#4983).
+ */
+export interface CampaignLabelColumns {
+  channel: string;
+  stage: string;
+  tactic: string;
+  created: string;
 }
 
 /**
@@ -5105,6 +5125,8 @@ export interface CampaignRow {
    * same `status` the action was derived from and the two cannot disagree.
    */
   unavailableReason: string;
+  /** Channel, stage, tactic and created date as text, '—' when absent (#4983). */
+  labels: CampaignLabelColumns;
   /**
    * Whether a 412 refused this row's validator and no re-read has yet proved it advanced.
    *

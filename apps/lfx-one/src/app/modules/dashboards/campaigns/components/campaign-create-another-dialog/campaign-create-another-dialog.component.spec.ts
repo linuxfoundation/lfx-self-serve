@@ -13,7 +13,17 @@ describe('CampaignCreateAnotherDialogComponent (#4983)', () => {
   let close: ReturnType<typeof vi.fn>;
   const data: CampaignCreateAnotherDialogData = {
     summary: 'This creates a separate, separately budgeted Middle of funnel (consideration) campaign on Google Ads.',
-    existing: [{ id: 'g1', platform: 'google-ads', platformLabel: 'Google Ads', name: 'LFX | Search Campaign | g1', status: 'active', slot: '1' }],
+    existing: [
+      {
+        id: 'g1',
+        platform: 'google-ads',
+        platformLabel: 'Google Ads',
+        name: 'LFX | Search Campaign | g1',
+        status: 'active',
+        slot: '1',
+        labels: { channel: 'Search', stage: '—', tactic: '—', created: '—' },
+      },
+    ],
   };
   const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
 

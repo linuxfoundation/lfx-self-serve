@@ -15195,13 +15195,36 @@ describe('ImplementationTabComponent already created for this event', () => {
     expect(q('implementation-existing-row-gone'), 'a deleted campaign was listed as already created').toBeNull();
     const cells = (id: string): string[] =>
       [...(q(`implementation-existing-row-${id}`)?.querySelectorAll('td') ?? [])].map((td) => td.textContent?.trim() ?? '');
-    expect(cells('g1')).toEqual(['Google Ads', 'KubeCon EU 2026 | google-ads | g1', 'active', '1']);
+    expect(cells('g1')).toEqual(['Google Ads', 'KubeCon EU 2026 | google-ads | g1', 'active', '1', '—', '—', '—', '—']);
     // No slot recorded (indexed before the field existed) reads as unknown, not as slot 1.
     expect(cells('g2')[3]).toBe('—');
-    expect(cells('r1')).toEqual(['Reddit Ads', 'KubeCon EU 2026 | reddit-ads | r1', 'created degraded', '2']);
+    expect(cells('r1')).toEqual(['Reddit Ads', 'KubeCon EU 2026 | reddit-ads | r1', 'created degraded', '2', '—', '—', '—', '—']);
 
     expect(q('implementation-existing-notice-google-ads')?.textContent?.trim()).toBe('You already have 2 Google Ads campaigns for this event.');
     expect(q('implementation-existing-notice-reddit-ads')?.textContent?.trim()).toBe('You already have 1 Reddit Ads campaign for this event.');
+  });
+
+  /** #4983 ("ss-4"): the labels that tell a second campaign from the first, "—" on a legacy row. */
+  it('shows the channel, stage, tactic and created date of each campaign, and "—" where none is recorded', () => {
+    setList([
+      { ...doc('g1', 'google-ads', 'active', 1), variant: 'default' },
+      {
+        ...doc('g2', 'google-ads', 'active', 2),
+        variant: 'default',
+        funnel_stage: 'lower',
+        tactic: 'retargeting',
+        created_at: '2026-11-02T12:00:00Z',
+      },
+    ]);
+
+    const labels = (id: string): string[] =>
+      ['channel', 'stage', 'tactic', 'created'].map((column) => q(`implementation-existing-${column}-${id}`)?.textContent?.trim() ?? 'missing');
+    expect(labels('g2')).toEqual(['Search', 'Lower funnel', 'Retargeting', 'Nov 2, 2026']);
+    expect(labels('g1')).toEqual(['Search', '—', '—', '—']);
+    const headings = [...((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid="implementation-existing-table"] th') ?? [])].map((th) =>
+      th.textContent?.trim()
+    );
+    expect(headings).toEqual(['Platform', 'Name', 'Status', 'Slot', 'Channel', 'Stage', 'Tactic', 'Created']);
   });
 
   it('says a failed read failed, with Retry, instead of rendering as "nothing created"', () => {

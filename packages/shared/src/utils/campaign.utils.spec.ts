@@ -17,6 +17,7 @@ import {
   campaignActionRuleLever,
   campaignEtagVersion,
   campaignFlightDays,
+  campaignLabelColumns,
   dailyBudgetFromTotal,
   describeCampaignDispatchFailure,
   isReversedCampaignFlight,
@@ -455,5 +456,39 @@ describe('dailyBudgetFromTotal', () => {
     [900, -1],
   ])('returns null for a total of %d over %d day(s)', (total, days) => {
     expect(dailyBudgetFromTotal(total, days)).toBeNull();
+  });
+});
+
+/** #4983 ("ss-4"): the labels that tell a brief's campaigns on one platform apart, "—" when absent. */
+describe('campaignLabelColumns', () => {
+  it('names the Google channel, stage, tactic and created date a labelled campaign records', () => {
+    const labels = campaignLabelColumns({
+      platform: 'google-ads',
+      variant: 'demand-gen',
+      funnel_stage: 'mid',
+      tactic: 'content-promotion',
+      created_at: '2026-11-02T12:00:00Z',
+    });
+    expect(labels).toEqual({ channel: 'Demand Gen', stage: 'Mid funnel', tactic: 'Content promotion', created: 'Nov 2, 2026' });
+  });
+
+  it("reads Google's default variant as Search, and names no channel on a single-channel platform", () => {
+    expect(campaignLabelColumns({ platform: 'google-ads', variant: 'default' }).channel).toBe('Search');
+    expect(campaignLabelColumns({ platform: 'microsoft-ads', variant: 'default' }).channel).toBe('—');
+  });
+
+  it('shows "—" for every label a legacy campaign does not record', () => {
+    expect(campaignLabelColumns({ platform: 'google-ads' })).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });
+  });
+
+  it('shows "—", never raw text or "Invalid Date", for values this build does not know', () => {
+    const labels = campaignLabelColumns({
+      platform: 'google-ads',
+      variant: 'shopping',
+      funnel_stage: 'toString' as never,
+      tactic: '<b>other</b>' as never,
+      created_at: 'yesterday',
+    });
+    expect(labels).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });
   });
 });

@@ -123,6 +123,16 @@ export const CAMPAIGN_FUNNEL_STAGE_SHORT_LABELS: Readonly<Record<CampaignFunnelS
   lower: 'lower-funnel',
 };
 
+/** A funnel stage as a campaign list's Stage column names it (#4983). */
+export const CAMPAIGN_FUNNEL_STAGE_COLUMN_LABELS: Readonly<Record<CampaignFunnelStage, string>> = {
+  top: 'Top of funnel',
+  mid: 'Mid funnel',
+  lower: 'Lower funnel',
+};
+
+/** What a campaign list shows for a label the index does not record (#4983). */
+export const CAMPAIGN_LABEL_ABSENT = '—';
+
 /** The tactic labels a campaign can carry: campaign-service's controlled list (#453). */
 export const CAMPAIGN_TACTIC_OPTIONS: readonly CampaignLabelOption<CampaignTactic>[] = [
   { id: 'prospecting', label: 'Prospecting' },

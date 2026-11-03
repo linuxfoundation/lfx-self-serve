@@ -3765,6 +3765,21 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
 
   const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
+  /** #4983 ("ss-4"): the labels that tell a brief's campaigns on one platform apart, "—" when absent. */
+  it('shows each campaign\'s channel, stage, tactic and created date, and "—" for a legacy campaign', () => {
+    render([
+      doc({ id: 'g-2', platform: 'google-ads', variant: 'demand-gen', funnel_stage: 'top', tactic: 'prospecting', created_at: '2026-11-02T12:00:00Z' }),
+      doc({ id: 'm-1' }),
+    ]);
+
+    const labels = (id: string): string[] =>
+      ['channel', 'stage', 'tactic', 'created'].map((column) => q(`optimization-campaign-${column}-${id}`)?.textContent?.trim() ?? 'missing');
+    expect(labels('g-2')).toEqual(['Demand Gen', 'Top of funnel', 'Prospecting', 'Nov 2, 2026']);
+    expect(labels('m-1')).toEqual(['—', '—', '—', '—']);
+    const terms = [...(q('optimization-campaign-labels-g-2')?.querySelectorAll('dt') ?? [])].map((dt) => dt.textContent?.trim());
+    expect(terms).toEqual(['Channel:', 'Stage:', 'Tactic:', 'Created:']);
+  });
+
   function bidForm(id = 'c-1'): CampaignBidFormComponent {
     const form = fixture.debugElement.queryAll(By.directive(CampaignBidFormComponent)).find((de) => de.componentInstance.campaignId() === id);
     if (!form) {
