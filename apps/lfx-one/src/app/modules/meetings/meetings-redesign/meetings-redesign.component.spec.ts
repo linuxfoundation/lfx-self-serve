@@ -5,7 +5,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 
+import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
 import { MeetingsRedesignComponent } from './meetings-redesign.component';
 
@@ -70,6 +71,8 @@ describe('MeetingsRedesignComponent', () => {
   let openCreateDialog: ReturnType<typeof vi.fn>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
   let refreshUserPastMeetings: ReturnType<typeof vi.fn>;
+  let elementScrollBy: ReturnType<typeof vi.fn<(options?: ScrollToOptions) => void>>;
+  let windowScrollBy: ReturnType<typeof vi.spyOn>;
 
   const render = (): ComponentFixture<MeetingsRedesignComponent> => {
     const fixture = TestBed.createComponent(MeetingsRedesignComponent);
@@ -125,6 +128,10 @@ describe('MeetingsRedesignComponent', () => {
     );
     vi.stubGlobal('matchMedia', (q: string) => ({ matches: desktop, media: q }));
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(HEADER_HEIGHT);
+    // jsdom has no element scrolling and only a logging window.scrollBy.
+    elementScrollBy = vi.fn<(options?: ScrollToOptions) => void>();
+    Object.defineProperty(HTMLElement.prototype, 'scrollBy', { value: elementScrollBy, configurable: true, writable: true });
+    windowScrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
     TestBed.configureTestingModule({
       providers: [
         {
@@ -166,6 +173,7 @@ describe('MeetingsRedesignComponent', () => {
   });
 
   afterEach(() => {
+    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollBy;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -555,6 +563,69 @@ describe('MeetingsRedesignComponent', () => {
       expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE + 5);
       expect(query(fixture, 'meetings-home-load-more')).toBeNull();
       expect(query(fixture, 'meetings-home-all-loaded')?.textContent?.trim()).toBe(`All ${MEETINGS_HOME_PAGE_SIZE + 5} meetings loaded`);
+    });
+
+    it('scrolls the list back to its start on a search, filter or tab change, so a page loads only on a scroll', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      const pastMeeting = { ...buildMeeting(99, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting;
+      await loadFeeds(
+        fixture,
+        Array.from({ length: MEETINGS_HOME_PAGE_SIZE * 2 + 1 }, (_, index) => buildMeeting(index)),
+        [pastMeeting]
+      );
+      observerCallback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+      await fixture.whenStable();
+      expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE * 2);
+
+      // Scrolled 500px into the list, or the chips above it; the header and tabs bar are 80px each.
+      let listTop = HEADER_HEIGHT * 2 - 500;
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        return new DOMRect(0, this.matches('[data-testid="meetings-home-filters-chips"], [data-testid="meetings-home-list"]') ? listTop : 0, 100, 1000);
+      });
+      elementScrollBy.mockClear();
+
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'meeting';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+      expect(elementScrollBy).toHaveBeenLastCalledWith({ top: -500 });
+
+      fixture.debugElement
+        .query(By.directive(MeetingsFiltersComponent))
+        .componentInstance.filters.set({ ...MEETINGS_HOME_DEFAULT_FILTERS, meetingType: 'Technical' });
+      await fixture.whenStable();
+      expect(elementScrollBy).toHaveBeenCalledTimes(2);
+      expect(elementScrollBy).toHaveBeenLastCalledWith({ top: -500 });
+
+      query(fixture, 'ui-tab-past')?.click();
+      await fixture.whenStable();
+      expect(elementScrollBy).toHaveBeenCalledTimes(3);
+
+      // A list that still starts below the tabs bar stays where it is.
+      listTop = HEADER_HEIGHT * 2;
+      query(fixture, 'ui-tab-upcoming')?.click();
+      await fixture.whenStable();
+      expect(elementScrollBy).toHaveBeenCalledTimes(3);
+    });
+
+    it('scrolls the window back to the list start at 1024px and below', async () => {
+      desktop = false;
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1), buildMeeting(2)]);
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        return new DOMRect(0, this.dataset['testid'] === 'meetings-home-list' ? -300 : 0, 100, 1000);
+      });
+      windowScrollBy.mockClear();
+
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'meeting';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      expect(windowScrollBy).toHaveBeenLastCalledWith({ top: -300 - HEADER_HEIGHT * 2 });
     });
 
     it('shows an error with a retry instead of the empty state when the feed fails', async () => {
