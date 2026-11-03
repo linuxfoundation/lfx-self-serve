@@ -23,6 +23,7 @@ import {
   MeetingDashboardView,
   MeetingHomeRow,
   MeetingHomeRowLink,
+  MeetingHomeRowOrganizer,
   MeetingHomeRowProject,
   MeetingHomeRowType,
   MeetingVisibilityInfo,
@@ -31,7 +32,7 @@ import {
 import {
   formatMeetingTimeRange,
   getMeetingHomeRowLink,
-  getMeetingHomeRowOrganizer,
+  getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingRecurrenceTooltip,
@@ -80,7 +81,9 @@ export class MeetingHomeRowComponent {
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
   protected readonly recurrenceTooltip: Signal<string | null> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence));
   protected readonly attended: Signal<boolean> = this.initAttended();
-  protected readonly organizer: Signal<string | null> = computed(() => getMeetingHomeRowOrganizer(this.row().meeting, this.userService.viewerUsername()));
+  protected readonly organizers: Signal<MeetingHomeRowOrganizer[]> = computed(() =>
+    getMeetingHomeRowOrganizers(this.row().meeting, this.userService.viewerUsername())
+  );
   protected readonly visibilityBg: Partial<Record<MeetingVisibilityKind, string>> = {
     [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
     [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',

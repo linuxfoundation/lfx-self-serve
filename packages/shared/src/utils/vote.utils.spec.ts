@@ -631,6 +631,45 @@ describe('buildVoteResultsQuestions', () => {
     expect(question.options[0].text).toBe('c9');
   });
 
+  it.each([undefined, null])('keeps absent or empty tallies empty when choices is %s', (choices) => {
+    for (const tallies of [undefined, []]) {
+      const pollResult = genericQuestion([]);
+      // Simulate an upstream payload that omits required choice metadata.
+      Object.assign(pollResult.question, { choices });
+      pollResult.generic_choice_votes = tallies;
+
+      const [question] = buildVoteResultsQuestions(resultsWith([pollResult]), false);
+
+      expect(question.options).toEqual([]);
+      expect(question.totalVotes).toBe(0);
+    }
+  });
+
+  it.each([undefined, null])('preserves tally order and uses id labels when choices is %s', (choices) => {
+    const pollResult = genericQuestion([
+      ['c2', 1, 25],
+      ['c1', 3, 75],
+    ]);
+    Object.assign(pollResult.question, { choices });
+
+    const [question] = buildVoteResultsQuestions(resultsWith([pollResult]), false);
+
+    expect(question.options.map((o) => [o.choiceId, o.text, o.voteCount, o.percentage, o.isLeading])).toEqual([
+      ['c2', 'c2', 1, 25, false],
+      ['c1', 'c1', 3, 75, true],
+    ]);
+    expect(question.totalVotes).toBe(4);
+  });
+
+  it('falls back to the choice id when the configured label is empty', () => {
+    const pollResult = genericQuestion([['c1', 1, 100]]);
+    pollResult.question.choices[0].choice_text = '';
+
+    const [question] = buildVoteResultsQuestions(resultsWith([pollResult]), false);
+
+    expect(question.options[0].text).toBe('c1');
+  });
+
   it('marks the leading option while live, without winner or tie markers', () => {
     const [question] = buildVoteResultsQuestions(
       resultsWith([
@@ -690,6 +729,270 @@ describe('buildVoteResultsQuestions', () => {
       true
     );
     expect(question.options.every((o) => !o.isWinner && !o.isTied && !o.isLeading)).toBe(true);
+  });
+
+  describe('configured choice order (#5021)', () => {
+    /** Generic question whose configured `choices` ([id, text]) and tally rows ([id, voteCount, apiPercentage]) are ordered independently. */
+    function orderedQuestion(questionId: string, choices: [string, string][], tallies: [string, number, number][] | undefined): PollQuestionResult {
+      return {
+        question: {
+          question_id: questionId,
+          prompt: `Prompt ${questionId}`,
+          type: 'single_choice',
+          choices: choices.map(([choiceId, text]) => ({ choice_id: choiceId, choice_text: text })),
+        },
+        generic_choice_votes: tallies?.map(([choiceId, voteCount, percentage]) => ({ choice_id: choiceId, vote_count: voteCount, percentage })),
+        ranked_choice_votes: [],
+      };
+    }
+
+    const yesNo: [string, string][] = [
+      ['c-yes', 'Yes'],
+      ['c-no', 'No'],
+    ];
+    // Configured order (Zeta, Alpha, Mid) differs from both label order (Alpha, Mid, Zeta) and count order (Alpha, Mid, Zeta).
+    const threeChoices: [string, string][] = [
+      ['c-zeta', 'Zeta'],
+      ['c-alpha', 'Alpha'],
+      ['c-mid', 'Mid'],
+    ];
+    const threeTallies: [string, number, number][] = [
+      ['c-alpha', 5, 56],
+      ['c-zeta', 1, 11],
+      ['c-mid', 3, 33],
+    ];
+    const rows = (question: VoteResultsQuestion) => question.options.map((o) => [o.choiceId, o.text, o.voteCount, o.percentage, o.isLeading]);
+
+    it('keeps the reported Yes / No order when the tally rows arrive reversed', () => {
+      const ballotOrder = buildVoteResultsQuestions(
+        resultsWith(
+          [
+            orderedQuestion('q1', yesNo, [
+              ['c-yes', 88, 87],
+              ['c-no', 7, 7],
+            ]),
+          ],
+          { num_votes_cast: 101, num_abstained: 6 }
+        ),
+        false
+      );
+      const reversed = buildVoteResultsQuestions(
+        resultsWith(
+          [
+            orderedQuestion('q1', yesNo, [
+              ['c-no', 7, 7],
+              ['c-yes', 88, 87],
+            ]),
+          ],
+          { num_votes_cast: 101, num_abstained: 6 }
+        ),
+        false
+      );
+
+      expect(rows(reversed[0])).toEqual([
+        ['c-yes', 'Yes', 88, 87, true],
+        ['c-no', 'No', 7, 7, false],
+      ]);
+      expect(reversed).toEqual(ballotOrder);
+    });
+
+    it('orders options by ballot position, not by count or label, for every tally permutation', () => {
+      const permutations: [string, number, number][][] = [
+        [threeTallies[0], threeTallies[1], threeTallies[2]],
+        [threeTallies[0], threeTallies[2], threeTallies[1]],
+        [threeTallies[1], threeTallies[0], threeTallies[2]],
+        [threeTallies[1], threeTallies[2], threeTallies[0]],
+        [threeTallies[2], threeTallies[0], threeTallies[1]],
+        [threeTallies[2], threeTallies[1], threeTallies[0]],
+      ];
+
+      for (const tallies of permutations) {
+        const [question] = buildVoteResultsQuestions(resultsWith([orderedQuestion('q1', threeChoices, tallies)], { num_votes_cast: 9 }), false);
+        expect(rows(question)).toEqual([
+          ['c-zeta', 'Zeta', 1, 11, false],
+          ['c-alpha', 'Alpha', 5, 56, true],
+          ['c-mid', 'Mid', 3, 33, false],
+        ]);
+        expect(question.totalVotes).toBe(9);
+      }
+    });
+
+    it('keeps a row in place when its count changes between refreshes', () => {
+      const [before] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', yesNo, [
+            ['c-no', 7, 7],
+            ['c-yes', 88, 87],
+          ]),
+        ]),
+        false
+      );
+      const [after] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', yesNo, [
+            ['c-no', 60, 55],
+            ['c-yes', 49, 45],
+          ]),
+        ]),
+        false
+      );
+
+      expect(before.options.map((o) => o.choiceId)).toEqual(['c-yes', 'c-no']);
+      expect(rows(after)).toEqual([
+        ['c-yes', 'Yes', 49, 45, false],
+        ['c-no', 'No', 60, 55, true],
+      ]);
+    });
+
+    it('orders each question by its own configured choices and keeps API question order', () => {
+      const questions = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q-b', threeChoices, [...threeTallies].reverse()),
+          orderedQuestion('q-a', [...yesNo].reverse(), [
+            ['c-yes', 2, 67],
+            ['c-no', 1, 33],
+          ]),
+        ]),
+        false
+      );
+
+      expect(questions.map((q) => q.questionId)).toEqual(['q-b', 'q-a']);
+      expect(questions[0].options.map((o) => o.choiceId)).toEqual(['c-zeta', 'c-alpha', 'c-mid']);
+      expect(questions[1].options.map((o) => o.choiceId)).toEqual(['c-no', 'c-yes']);
+    });
+
+    it('keeps winner, tie and zero-state flags attached to the right options after reordering', () => {
+      const [winner] = buildVoteResultsQuestions(resultsWith([orderedQuestion('q1', threeChoices, threeTallies)]), true);
+      expect(winner.options.map((o) => [o.choiceId, o.isWinner, o.isTied, o.isLeading])).toEqual([
+        ['c-zeta', false, false, false],
+        ['c-alpha', true, false, true],
+        ['c-mid', false, false, false],
+      ]);
+
+      const [tied] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', threeChoices, [
+            ['c-mid', 4, 40],
+            ['c-alpha', 2, 20],
+            ['c-zeta', 4, 40],
+          ]),
+        ]),
+        true
+      );
+      expect(tied.options.map((o) => [o.choiceId, o.isWinner, o.isTied])).toEqual([
+        ['c-zeta', false, true],
+        ['c-alpha', false, false],
+        ['c-mid', false, true],
+      ]);
+
+      const [zero] = buildVoteResultsQuestions(
+        resultsWith(
+          [
+            orderedQuestion('q1', yesNo, [
+              ['c-no', 0, 0],
+              ['c-yes', 0, 0],
+            ]),
+          ],
+          { num_votes_cast: 0 }
+        ),
+        true
+      );
+      expect(zero.options.map((o) => o.choiceId)).toEqual(['c-yes', 'c-no']);
+      expect(zero.options.every((o) => !o.isWinner && !o.isTied && !o.isLeading)).toBe(true);
+    });
+
+    it('lists unknown choice ids after configured ones, in their payload order, with the id as the label', () => {
+      const [question] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', yesNo, [
+            ['c-other-2', 1, 10],
+            ['c-no', 2, 20],
+            ['c-other-1', 3, 30],
+            ['c-yes', 4, 40],
+          ]),
+        ]),
+        false
+      );
+
+      expect(question.options.map((o) => [o.choiceId, o.text, o.voteCount])).toEqual([
+        ['c-yes', 'Yes', 4],
+        ['c-no', 'No', 2],
+        ['c-other-2', 'c-other-2', 1],
+        ['c-other-1', 'c-other-1', 3],
+      ]);
+    });
+
+    it('keeps payload order when the question has no configured choices', () => {
+      const [question] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion(
+            'q1',
+            [],
+            [
+              ['c-b', 1, 50],
+              ['c-a', 1, 50],
+            ]
+          ),
+        ]),
+        false
+      );
+      expect(question.options.map((o) => [o.choiceId, o.text])).toEqual([
+        ['c-b', 'c-b'],
+        ['c-a', 'c-a'],
+      ]);
+    });
+
+    it('projects only the supplied tally rows: omitted and empty stay empty, partial rows gain no zeros, explicit zeros stay', () => {
+      expect(buildVoteResultsQuestions(resultsWith([orderedQuestion('q1', threeChoices, undefined)]), false)[0].options).toEqual([]);
+      expect(buildVoteResultsQuestions(resultsWith([orderedQuestion('q1', threeChoices, [])]), false)[0].options).toEqual([]);
+
+      const [partial] = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', threeChoices, [
+            ['c-mid', 2, 100],
+            ['c-zeta', 0, 0],
+          ]),
+        ]),
+        false
+      );
+      expect(partial.options.map((o) => [o.choiceId, o.voteCount])).toEqual([
+        ['c-zeta', 0],
+        ['c-mid', 2],
+      ]);
+    });
+
+    it('does not mutate the results payload', () => {
+      const deepFreeze = <T>(value: T): T => {
+        if (value && typeof value === 'object') {
+          Object.values(value).forEach(deepFreeze);
+          Object.freeze(value);
+        }
+        return value;
+      };
+      const payload = resultsWith([orderedQuestion('q1', threeChoices, threeTallies)]);
+      const snapshot = structuredClone(payload);
+      deepFreeze(payload);
+
+      const first = buildVoteResultsQuestions(payload, false);
+      const second = buildVoteResultsQuestions(payload, false);
+
+      expect(payload).toEqual(snapshot);
+      expect(payload.poll_results[0].generic_choice_votes?.map((cv) => cv.choice_id)).toEqual(['c-alpha', 'c-zeta', 'c-mid']);
+      expect(second).toEqual(first);
+    });
+
+    it('names tied generic choices in configured order in the results summary', () => {
+      const questions = buildVoteResultsQuestions(
+        resultsWith([
+          orderedQuestion('q1', yesNo, [
+            ['c-no', 5, 50],
+            ['c-yes', 5, 50],
+          ]),
+        ]),
+        false
+      );
+      expect(buildVoteResultsSummary(questions, [], true, false)[0].text).toBe('Tied: Yes and No (50% each)');
+    });
   });
 });
 

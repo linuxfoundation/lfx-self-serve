@@ -28,6 +28,11 @@ describe('UiSkeletonComponent', () => {
     expect(host.className).toContain('via-ui-neutral-100');
   });
 
+  it('shows a GrayText outline in forced colours', () => {
+    expect(host.className).toContain('forced-colors:border');
+    expect(host.className).toContain('forced-colors:border-[color:GrayText]');
+  });
+
   it('fills the container until given a width', async () => {
     expect(host.style.width).toBe('');
 

@@ -25,6 +25,7 @@ import {
   expandMeetingOccurrences,
   filterMeetingsHome,
   getLargestSessionShareUrl,
+  getMeetingSeriesUid,
   getRsvpTimestampMs,
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
@@ -57,6 +58,9 @@ export class MeetingsHomeStore {
   private readonly lastMeetingLoadingState: WritableSignal<boolean> = signal(true);
   private readonly lastMeetingFailedState: WritableSignal<boolean> = signal(false);
   private readonly retry$ = new Subject<void>();
+  // Kept for the page's lifetime, so a refetch that still lists a deleted meeting or cancelled date does not bring it back.
+  private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
+  private readonly cancelledOccurrenceIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = signal(new Map());
   /** Current time, ticking every minute so ended dates drop out and day buckets roll over. */
   public readonly now: Signal<Date> = this.initClock();
 
@@ -87,6 +91,12 @@ export class MeetingsHomeStore {
     this.lastMeetingLoadingState,
     this.lastMeetingFailedState
   );
+  // Past records may outlive their meeting, so past rows are hidden only until their feed answers again.
+  private readonly deletedPastIds: WritableSignal<ReadonlySet<string>> = linkedSignal({ source: this.pastMeetings, computation: () => new Set<string>() });
+  private readonly deletedLatestPastIds: WritableSignal<ReadonlySet<string>> = linkedSignal({
+    source: this.latestPastMeetings,
+    computation: () => new Set<string>(),
+  });
   private readonly visibleCountState: WritableSignal<number> = linkedSignal({
     source: () => ({ tab: this.tab(), search: this.search(), filters: this.filters() }),
     computation: () => MEETINGS_HOME_PAGE_SIZE,
@@ -126,7 +136,7 @@ export class MeetingsHomeStore {
     () =>
       this.latestPastMeetings()
         .map((meeting) => toPastMeetingHomeRow(meeting))
-        .find((row) => row !== null) ?? null
+        .find((row) => row !== null && !this.deletedLatestPastIds().has(getMeetingSeriesUid(row.meeting))) ?? null
   );
   private readonly fetchedLastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = this.initLastMeetingArtifact((id) =>
     this.meetingService.getPastMeetingSummary(id)
@@ -175,6 +185,19 @@ export class MeetingsHomeStore {
   /** Re-requests every feed after a failure. */
   public retry(): void {
     this.retry$.next();
+  }
+
+  /** Drops every row of a deleted meeting, upcoming and past. */
+  public removeMeeting(meetingId: string): void {
+    const add = (ids: ReadonlySet<string>): ReadonlySet<string> => new Set(ids).add(meetingId);
+    this.deletedMeetingIds.update(add);
+    this.deletedPastIds.update(add);
+    this.deletedLatestPastIds.update(add);
+  }
+
+  /** Drops the row of one cancelled date. */
+  public removeOccurrence(meetingId: string, occurrenceId: string): void {
+    this.cancelledOccurrenceIds.update((ids) => new Map(ids).set(meetingId, [...(ids.get(meetingId) ?? []), occurrenceId]));
   }
 
   /** Keeps the Last meeting card in step after an organizer edits or approves the summary. */
@@ -271,8 +294,10 @@ export class MeetingsHomeStore {
     return computed(() => {
       const removed = this.meetingService.removedRegistrationMeetingIds();
       // Organizers keep their meetings after removing their own registration, without the registration.
+      const deleted = this.deletedMeetingIds();
       const meetings = this.upcomingMeetings()
-        .filter((meeting) => meeting.organizer || !removed.has(meeting.id))
+        .filter((meeting) => !deleted.has(meeting.id) && (meeting.organizer || !removed.has(meeting.id)))
+        .map((meeting) => this.withLocalCancellations(meeting))
         .map((meeting) => (removed.has(meeting.id) ? { ...meeting, invited: false, my_registrant_ids: [], my_rsvp: null, my_rsvps: [] } : meeting))
         .map((meeting) => this.withCurrentRsvps(meeting));
       return expandMeetingOccurrences(meetings, this.now()).map((row) => this.withConfirmedRowRsvp(row));
@@ -288,7 +313,17 @@ export class MeetingsHomeStore {
   }
 
   private initPastRows(): Signal<MeetingHomeRow[]> {
-    return computed(() => sortPastMeetingsDescending(this.pastMeetings()).flatMap((meeting) => toPastMeetingHomeRow(meeting) ?? []));
+    return computed(() =>
+      sortPastMeetingsDescending(this.pastMeetings())
+        .flatMap((meeting) => toPastMeetingHomeRow(meeting) ?? [])
+        .filter((row) => !this.deletedPastIds().has(getMeetingSeriesUid(row.meeting)))
+    );
+  }
+
+  /** Marks dates cancelled here as cancelled on the meeting, so its rows and the occurrence pickers leave them out. */
+  private withLocalCancellations(meeting: Meeting): Meeting {
+    const ids = this.cancelledOccurrenceIds().get(meeting.id);
+    return ids ? { ...meeting, cancelled_occurrences: [...(meeting.cancelled_occurrences ?? []), ...ids] } : meeting;
   }
 
   /** Loads one artifact of the last meeting, again whenever it changes; a missing or failed lookup reads as null. */

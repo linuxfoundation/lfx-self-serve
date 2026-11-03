@@ -17,6 +17,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
+import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import { MeetingHomeRow, MeetingPendingRsvpItem, UiFocusable } from '@lfx-one/shared/interfaces';
 import {
   getMeetingHomeRowLink,
@@ -104,7 +105,8 @@ export class PendingRsvpsComponent {
       row,
       project: getMeetingHomeRowProject(row.meeting),
       link: getMeetingHomeRowLink(row, 'upcoming'),
-      visibilityBadges: getMeetingVisibilityBadges(row.meeting),
+      // Public is the default, so only Private and Restricted get a badge.
+      visibilityBadges: getMeetingVisibilityBadges(row.meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC),
       when: `${formatDate(row.startTime, 'EEE, MMM d', 'en-US')} · ${this.timeFormat.format(new Date(row.startTime))}`,
       type: getMeetingHomeRowType(row.meeting),
       recurrenceTooltip: getMeetingRecurrenceTooltip(row.meeting, row.occurrence),

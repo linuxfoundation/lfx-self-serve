@@ -17,6 +17,7 @@ import type {
   MeetingFilterChip,
   MeetingHomeRow,
   MeetingHomeRowLink,
+  MeetingHomeRowOrganizer,
   MeetingHomeRowProject,
   MeetingHomeRowType,
   MeetingOccurrence,
@@ -330,16 +331,34 @@ export function getMeetingHomeRowType(meeting: Pick<Meeting, 'meeting_type'>): M
   return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
 }
 
-/** "Organized by" text: owner or creator ("you" for the viewer), first name + "+N" for extra `organizers`. */
-export function getMeetingHomeRowOrganizer(meeting: Pick<Meeting, 'created_by' | 'owner' | 'organizers'>, viewerUsername?: string | null): string | null {
+/** "Organized by" avatars: owner or creator first ("You" for the viewer), then the other `organizers` by username. */
+export function getMeetingHomeRowOrganizers(
+  meeting: Pick<Meeting, 'created_by' | 'owner' | 'organizers'>,
+  viewerUsername?: string | null
+): MeetingHomeRowOrganizer[] {
   const [primary] = collectMeetingOrganizers(meeting);
-  if (!primary) return null;
-  const isYou = isMeetingOrganizedByViewer(meeting, viewerUsername);
-  const name = isYou ? 'you' : getMeetingOrganizerDisplayName(primary);
+  if (!primary) return [];
+  const name = getMeetingOrganizerDisplayName(primary);
+  const viewer = normalizeUsername(viewerUsername);
+  const organizers: MeetingHomeRowOrganizer[] = [
+    {
+      key: normalizeUsername(primary.username) || normalizeUsername(primary.email) || name,
+      label: isMeetingOrganizedByViewer(meeting, viewerUsername) ? 'You' : name,
+      name,
+      photo: primary.profile_picture ?? '',
+    },
+  ];
   // Entries are usernames on read but emails on create, so the primary is skipped in either form.
-  const primaryKeys = [normalizeUsername(primary.username), normalizeUsername(primary.email)];
-  const others = new Set((meeting.organizers ?? []).map(normalizeUsername).filter((key) => key && !primaryKeys.includes(key))).size;
-  return others ? `${name.split(/\s+/)[0]} +${others}` : name;
+  const seen = new Set([normalizeUsername(primary.username), normalizeUsername(primary.email)]);
+  for (const entry of meeting.organizers ?? []) {
+    const key = normalizeUsername(entry);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    // An email entry shows only its local part, never the full address.
+    const username = (entry.trim().split('|').pop() ?? key).split('@')[0];
+    organizers.push({ key, label: key === viewer ? 'You' : username, name: username, photo: '' });
+  }
+  return organizers;
 }
 
 function isRsvpPending(meeting: Meeting, rsvp: MeetingRsvp | null | undefined): boolean {

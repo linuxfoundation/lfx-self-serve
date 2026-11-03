@@ -45,7 +45,8 @@ export class UiLoadingDotsComponent {
   private initDotClasses(): Signal<string> {
     return computed(() => {
       const sizes = { sm: 'size-[4px]', md: 'size-[5px]', lg: 'size-[7px]' };
-      return `dot block shrink-0 rounded-ui-full bg-current opacity-60 ${sizes[this.size()]}`;
+      // Forced colours drop the currentColor fill, so the dots use CanvasText there.
+      return `dot block shrink-0 rounded-ui-full bg-current opacity-60 forced-colors:bg-[color:CanvasText] ${sizes[this.size()]}`;
     });
   }
 }

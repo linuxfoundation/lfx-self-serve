@@ -64,7 +64,7 @@
         <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'folded' }" />
       </div>
 
-      <!-- Sticky tabs bar; the fade moves here from the header once it is stuck -->
+      <!-- Sticky tabs bar; the fade moves here from the header once it is stuck, then below a stuck day heading -->
       <div
         #tabsBar
         class="sticky z-[5] -mt-[4px] flex flex-wrap items-end justify-between gap-x-[16px] gap-y-[12px] bg-white pb-[12px] pt-[4px]"
@@ -73,6 +73,7 @@
         <span
           class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-white via-white/85 to-white/0 transition-opacity duration-200 motion-reduce:transition-none"
           [class.opacity-0]="!tabsStuck()"
+          [class.mt-[24px]]="dayHeadingStuck()"
           aria-hidden="true"
           data-testid="meetings-redesign-tabs-fade"></span>
         <lfx-ui-tabs
@@ -224,7 +225,19 @@
         icon="fa-light fa-calendar"
         heading="No upcoming meetings"
         description="Meetings from your committees and projects will appear here."
-        data-testid="meetings-home-empty-upcoming" />
+        data-testid="meetings-home-empty-upcoming">
+        @if (canWriteMeetings()) {
+          <lfx-ui-button
+            empty-state-action
+            variant="secondary-accent"
+            size="large"
+            icon="fa-light fa-plus"
+            (click)="createMeeting()"
+            data-testid="meetings-home-empty-create">
+            Create Meeting
+          </lfx-ui-button>
+        }
+      </lfx-ui-empty-state>
     }
   } @else if (noResults()) {
     <lfx-ui-empty-state
@@ -247,9 +260,9 @@
     </lfx-ui-empty-state>
   } @else {
     <!-- 22px between day groups (exact px) -->
-    <div class="relative flex flex-col gap-[22px]" data-testid="meetings-home-list">
+    <div #list class="relative flex flex-col gap-[22px]" data-testid="meetings-home-list">
       @for (group of store.groups(); track group.label) {
-        <lfx-meetings-day-group [group]="group" [view]="store.tab()" data-testid="meetings-home-day-group" />
+        <lfx-meetings-day-group [group]="group" [view]="store.tab()" [stickyTop]="dayHeadingTop()" data-testid="meetings-home-day-group" />
       }
       @if (store.hasMore()) {
         <!-- Re-created per page so a trigger still in view after a page loads fires again. -->

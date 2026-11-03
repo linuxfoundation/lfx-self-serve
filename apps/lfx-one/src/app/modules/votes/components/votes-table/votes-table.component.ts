@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
@@ -53,7 +54,9 @@ import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { VoteSummarySendService } from '@services/vote-summary-send.service';
 import { VoteService } from '@services/vote.service';
+import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -87,6 +90,7 @@ import { VoteSummaryDialogComponent } from '../vote-summary-dialog/vote-summary-
     ConfirmDialogModule,
     EmptyStateComponent,
     NgTemplateOutlet,
+    UiSpinnerComponent,
   ],
   // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
   providers: [ConfirmationService, DialogService],
@@ -98,12 +102,15 @@ export class VotesTableComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly voteService = inject(VoteService);
+  private readonly summarySendService = inject(VoteSummarySendService);
   private readonly clipboardShare = inject(ClipboardShareService);
   private readonly dialogService = inject(DialogService);
   private readonly mailingListService = inject(MailingListService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
+  /** Announces a summary send starting and settling; the row indicator's spinner is aria-hidden so this is the only channel. */
+  private readonly liveAnnouncer = inject(LiveAnnouncer);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
@@ -181,6 +188,17 @@ export class VotesTableComponent {
   protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
   private readonly isResolvingMailingList = signal(false);
+  /** Session-owned sends drive row progress, including when a manager returns after navigation (#4830, #4831). */
+  protected readonly sendingSummaryUids = computed<ReadonlySet<string>>(
+    () =>
+      new Set(
+        this.votes()
+          .filter((vote) => this.summarySendService.getAttempt(vote.uid)?.status === 'sending')
+          .map((vote) => vote.uid)
+      )
+  );
+  /** Messages not yet written by LiveAnnouncer; a burst must retain every vote's lifecycle update. */
+  private pendingSummaryAnnouncements: readonly string[] = [];
   /**
    * Overlays a just-closed vote onto its row as `ended`, for the same reason as `extendedDeadlines`: the index refetch can
    * still report `active`. Evicted once the incoming `votes()` row reports a non-active status.
@@ -226,6 +244,25 @@ export class VotesTableComponent {
   // === Constructor ===
   public constructor() {
     this.initFormSubscriptions();
+    let previousSending: ReadonlySet<string> = new Set();
+    toObservable(this.sendingSummaryUids)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((sending) => {
+        for (const vote of this.votes()) {
+          if (sending.has(vote.uid) && !previousSending.has(vote.uid)) {
+            this.announceSummaryState(`Sending the summary for "${vote.name}"…`);
+          } else if (previousSending.has(vote.uid) && !sending.has(vote.uid) && this.summarySendService.getAttempt(vote.uid)) {
+            this.announceSummaryState(`The summary send for "${vote.name}" has finished. Open Send summary to review the result.`);
+          }
+        }
+        const menuUid = this.rowActionMenuVoteUid();
+        if (menuUid && sending.has(menuUid) !== previousSending.has(menuUid)) {
+          this.rowActionMenuItems.update((items) =>
+            items.map((item) => (item.id === `send-summary-${menuUid}` ? { ...item, ...this.summarySendMenuState(sending.has(menuUid)) } : item))
+          );
+        }
+        previousSending = sending;
+      });
     effect(() => {
       if (!this.showDraftTab() && this.statusTab() === PollStatus.DISABLED) {
         untracked(() => this.statusTab.set('all'));
@@ -331,9 +368,10 @@ export class VotesTableComponent {
     }
     // Summary can only be sent once the vote has closed (#3662) — upstream rejects it otherwise.
     if (vote.writer === true && vote.status === PollStatus.ENDED) {
+      // A pending send can be reopened for inspection; the session service prevents a duplicate request (#4830, #4831).
       items.push({
-        label: 'Send summary',
-        icon: 'fa-light fa-chart-simple',
+        id: `send-summary-${vote.uid}`,
+        ...this.summarySendMenuState(this.sendingSummaryUids().has(vote.uid)),
         tooltipOptions: { tooltipLabel: 'Review recipients and send the results summary', tooltipPosition: 'left' },
         command: () => this.onSendSummary(vote),
       });
@@ -728,6 +766,22 @@ export class VotesTableComponent {
     if (isBrowser) {
       this.document.location.href = href;
     }
+  }
+
+  /** CDK coalesces calls before its live-region write; carry every pending message into that write. */
+  private announceSummaryState(message: string): void {
+    const pending = [...this.pendingSummaryAnnouncements, message];
+    this.pendingSummaryAnnouncements = pending;
+    void this.liveAnnouncer.announce(pending.join(' '), 'polite').then(() => {
+      if (this.pendingSummaryAnnouncements === pending) this.pendingSummaryAnnouncements = [];
+    });
+  }
+
+  private summarySendMenuState(sending: boolean): Pick<MenuItem, 'label' | 'icon'> {
+    return {
+      label: sending ? 'Sending summary…' : 'Send summary',
+      icon: sending ? 'fa-light fa-spinner-third motion-safe:animate-spin' : 'fa-light fa-chart-simple',
+    };
   }
 
   private showNoMailingListToast(): void {

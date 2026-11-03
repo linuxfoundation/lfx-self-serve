@@ -56,6 +56,20 @@ describe('UiStatusDotComponent', () => {
     expect(marker().className.includes('status-dot-pulse')).toBe(pulses);
   });
 
+  it.each([
+    ['queued', ['forced-colors:border-[1.5px]', 'forced-colors:border-[color:Highlight]']],
+    ['building', ['forced-colors:bg-[color:Highlight]']],
+    ['ready', ['forced-colors:bg-[color:CanvasText]']],
+    ['error', ['forced-colors:bg-[color:CanvasText]', 'forced-colors:rounded-none']],
+    ['canceled', ['forced-colors:bg-[color:GrayText]']],
+    ['deleted', ['forced-colors:border-[1.5px]', 'forced-colors:border-[color:GrayText]']],
+  ] as const)('keeps the %s state distinct in forced colours', async (status, forced) => {
+    fixture.componentRef.setInput('status', status);
+    await fixture.whenStable();
+
+    forced.forEach((cls) => expect(marker().className).toContain(cls));
+  });
+
   it('draws the deleted state as a hollow ring', async () => {
     fixture.componentRef.setInput('status', 'deleted');
     await fixture.whenStable();

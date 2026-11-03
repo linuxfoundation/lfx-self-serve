@@ -196,8 +196,8 @@ export const VOTE_VOTER_MAX_CHOICE_CHIPS = 2;
 /** `voters_choice` value the results' abstain row links with — it selects the Abstained status pill, not a choice. */
 export const VOTE_VOTERS_ABSTAINED_CHOICE_KEY = 'status:abstained';
 
-/** Action keys emitted by the vote detail summary cards and their buttons (#4447, #4770): Voters tab, Comments tab and the reminder dialog. */
-export const VOTE_DETAIL_SUMMARY_CARD_ACTIONS = { RESPONSES: 'responses', COMMENTS: 'comments', NOT_VOTED: 'not-voted' } as const;
+/** Action keys emitted by the vote detail summary cards and their buttons (#4447, #4770): Voters tab and Comments tab. */
+export const VOTE_DETAIL_SUMMARY_CARD_ACTIONS = { RESPONSES: 'responses', COMMENTS: 'comments' } as const;
 
 /** Caption color for the vote detail summary tiles — darker than the grid's default `text-gray-400` to meet text contrast. */
 export const VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS = 'text-gray-600';
