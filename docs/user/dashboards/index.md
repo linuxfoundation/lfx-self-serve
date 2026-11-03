@@ -4,7 +4,7 @@ description: The LFX Self Serve dashboard provides a lens-based overview of your
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, overview, lens, access, me, foundation, project, org, organization, company, employer]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Dashboards
 ---
 
@@ -55,14 +55,7 @@ Go to **app.lfx.dev** — the Me lens is the default view on login, or select **
 
 ## Your company's activity
 
-The **Org Overview** page in Org Lens (route: `/org`) shows your organization's membership and participation across Linux Foundation projects. Instead of your personal activity, this view surfaces how your company is engaged with the Linux Foundation as a whole.
-
-### What you can see
-
-- Your organization's current membership status and tier
-- Committee participation by members of your organization
-- Contribution and engagement metrics across projects your company supports
-- Key contacts and representatives for your organization
+The **Org Overview** is the **Dashboard** of the Organization lens: a one-page summary of how the selected organization takes part in Linux Foundation foundations and projects, instead of your personal activity. Its address is `/org/<organization>/overview`. See [Org Overview dashboard](../organization/org-overview/) for what each card and tile shows.
 
 ### Organization scope
 
@@ -77,17 +70,19 @@ On the **Projects** list the choice changes the **Contributors** column only; in
 
 ### Navigation
 
-Switch to the **Organization** lens using the lens selector. The Org Overview is the default landing page for the Org lens (route: `/org`).
+On a larger screen, selecting **Organization** in the lens switcher opens the Org Overview of the selected organization. On a phone or small screen, selecting **Organization** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that organization is CLA Manager, you land on its **EasyCLA** page instead.
 
 ### Who can access this
 
-Everyone can open the **Organization** lens, but a company's pages show only to people who have access to that organization. Access is granted by the organization's own **Organization Lens administrators**, not by the Linux Foundation. Administrators manage it on the **Org Lens Access** tab; see [Manage Org Lens Access](../organization/manage-org-lens-access/). If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. Linux Foundation staff can open every organization.
+Everyone can open the **Organization** lens, but a company's pages show only to people who have access to that organization, directly or through a related organization. A CLA Manager with no other role on an organization sees only its **EasyCLA** page. Access is granted by the organization's own **Organization Lens administrators**, not by the Linux Foundation. Administrators manage it on the **Org Lens Access** tab; see [Manage Org Lens Access](../organization/manage-org-lens-access/). If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. Linux Foundation staff can open every organization.
 
-If you do not have access, the Organization lens shows one of these messages instead of your company's pages:
+If you do not have access, the Organization lens shows a message instead of your company's pages, such as:
 
 - **No organization linked to your account**: LFX did not find an organization you have access to, and could not confirm that your employer is a Linux Foundation member. You can see this even if you have already added an affiliation. The message offers **Add an affiliation**, which links your profile to your employer, but an affiliation does not by itself give you access. You still need a grant from your organization's Organization Lens administrators.
 - **You do not have access to the Organization Lens**: your employer is a Linux Foundation member, but you have not been granted access to it.
 - **You do not have access to this organization**: the link you opened is for an organization you do not have access to.
+
+For the other messages, such as **Contractor accounts need an organization grant** or **Some organizations could not be loaded**, see [What do the messages on the Org Overview mean?](../organization/org-overview/#what-do-the-messages-on-the-org-overview-mean).
 
 If you are a CLA Manager, see [Why can't I see my company in the Organization lens?](../organization/faq/#why-can-t-i-see-my-company-in-the-organization-lens).
 
