@@ -11,7 +11,7 @@
  */
 
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { HubSpotUtmLookupResult, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefLoadResult, CampaignListResult, HubSpotUtmLookupResult, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { expect, Frame, Locator, Page, test } from '@playwright/test';
 
 export const DATA_LOAD_TIMEOUT = 30_000;
@@ -96,6 +96,10 @@ export interface PlanningMockOptions {
   create?: { created: boolean; hs_utm: string | null; campaign_name: string } | { status: number };
   /** Counters the caller can assert on — chiefly that a create did NOT happen. */
   counts?: { lookups: number; creates: number };
+  /** The saved-brief read-back answer (#4983). Omit for "no saved brief". */
+  savedBrief?: CampaignBriefLoadResult;
+  /** The brief's campaign list (`/api/campaigns/list`), for the Implement tab (#4983). Omit to leave it unmocked. */
+  briefCampaigns?: CampaignListResult;
 }
 
 /**
@@ -108,8 +112,15 @@ export async function mockPlanningApis(page: Page, opts: PlanningMockOptions = {
 
   // The saved-brief read-back, which the url field triggers on its own debounce.
   await page.route('**/api/campaigns/brief?**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'not_found' }) })
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.savedBrief ?? { status: 'not_found' }) })
   );
+
+  const briefCampaigns = opts.briefCampaigns;
+  if (briefCampaigns) {
+    await page.route('**/api/campaigns/list?**', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(briefCampaigns) })
+    );
+  }
 
   await page.route('**/api/campaigns/hubspot/utm/create**', (route) => {
     counts.creates += 1;

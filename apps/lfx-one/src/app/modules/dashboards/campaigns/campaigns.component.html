@@ -1503,6 +1503,11 @@
               [createCapabilityRead]="briefCampaignsCapabilityRead()"
               (retryCreateCapabilities)="retryCreateCapabilities()"
               (replaceSavedBriefRequested)="onReplaceSavedBrief()"
+              [briefCampaigns]="briefCampaigns()"
+              [briefCampaignsStale]="briefCampaignsStale()"
+              [briefCampaignsUnavailable]="briefCampaignsUnavailable()"
+              (retryBriefCampaigns)="refreshImplementCampaigns()"
+              (createJobSettled)="refreshImplementCampaigns()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>

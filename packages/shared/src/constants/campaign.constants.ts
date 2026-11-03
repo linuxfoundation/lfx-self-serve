@@ -83,6 +83,13 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
 ] as const;
 
 /**
+ * The campaign status campaign-service gives a soft-deleted row. A deleted campaign frees its slot
+ * and no longer exists on the ad platform, so the Implement tab's "Already created for this event"
+ * list leaves it out (#4983).
+ */
+export const CAMPAIGN_STATUS_DELETED = 'deleted';
+
+/**
  * Whether the Monitoring tab offers this platform's monitor.
  *
  * Deliberately separate from `disabled`, which gates the CREATE flow only. X is the case that splits

@@ -2748,6 +2748,9 @@ export class CampaignsComponent {
       if (this.briefCampaignsDemandGenEnabled() === null) {
         this.loadCreateCapabilities();
       }
+      // Re-read on every entry, as Optimize does: the Implement tab names the campaigns already
+      // created for this event (#4983), and one created or deleted since the last look must show.
+      this.loadBriefCampaigns(false);
     }
   }
 
@@ -2882,6 +2885,9 @@ export class CampaignsComponent {
       // branch above, and asking first read the PREVIOUS id and guarded out. A restored brief
       // then reached Implementation with the capability permanently unknown.
       this.loadCreateCapabilities();
+      // And the campaigns already created from it, for the Implement tab's panel (#4983). This path
+      // sets the tab directly, bypassing `selectTab`, so it has to ask here.
+      this.loadBriefCampaigns(false);
       // A restored brief that upstream holds as `draft` is approved HERE, and this is the whole
       // remedy for the dead end the restore offer used to lead to. campaign-service writes every
       // brief as `draft` and resets an existing one to `draft` on every PUT, so a stored brief
@@ -3992,6 +3998,14 @@ export class CampaignsComponent {
   }
 
   /**
+   * Re-read the campaigns already created for this event, for the Implement tab's panel (#4983):
+   * its Retry, and after a create job settles. List only — see `loadBriefCampaigns`.
+   */
+  protected refreshImplementCampaigns(): void {
+    this.loadBriefCampaigns(false);
+  }
+
+  /**
    * `readAt` is the `savedBriefRefreshToken` Planning's lookup was DISPATCHED under — see the
    * output's own docblock in `planning-tab.component.ts`. It is the only thing that separates a
    * cached replay of what this session already knows from a genuinely fresh read of a row that
@@ -4793,7 +4807,13 @@ export class CampaignsComponent {
    * the list under whichever foundation the user has since moved to — campaigns from one
    * foundation's brief, rendered as another's.
    */
-  private loadBriefCampaigns(): void {
+  /**
+   * `withCapabilities: false` is the Implement tab's read (#4983): the same list, for its "Already
+   * created for this event" panel, without clearing and re-reading the create capabilities that tab
+   * gates its controls on. Those are a deployment fact `loadCreateCapabilities` already answers once,
+   * and blanking them on every entry would withhold controls for a round trip for nothing.
+   */
+  private loadBriefCampaigns(withCapabilities = true): void {
     const projectSlug = this.activeFoundationSlug();
     const briefId = this.briefPersistence().briefId;
 
@@ -4807,7 +4827,7 @@ export class CampaignsComponent {
     // succeeded would still pass `isCurrent` above (its own list generation is untouched by that
     // reader) and reset a live answer to `null`.
     const capabilityDispatchedAt = this.capabilityGeneration;
-    const mayWriteCapability = (): boolean => capabilityDispatchedAt === this.capabilityGeneration;
+    const mayWriteCapability = (): boolean => withCapabilities && capabilityDispatchedAt === this.capabilityGeneration;
 
     // Cleared on EVERY entry, before dispatch — not only on the early return below.
     //
@@ -4828,25 +4848,27 @@ export class CampaignsComponent {
     this.briefCampaignsStale.set(false);
     this.briefCampaignsUnavailable.set(false);
     this.briefCampaignsToggleEnabled.set(false);
-    this.briefCampaignsDemandGenEnabled.set(null);
-    this.briefCampaignsGoogleChannelsEnabled.set(null);
-    this.briefCampaignsGoogleCreativeEnabled.set(null);
-    this.briefCampaignsRedditCreativeEnabled.set(null);
-    this.briefCampaignsRedditAssetUploadEnabled.set(null);
-    this.briefCampaignsMetaCreativeEnabled.set(null);
-    this.briefCampaignsRedditConversionPixelEnabled.set(null);
-    this.briefCampaignsMetaAssetUploadEnabled.set(null);
-    this.briefCampaignsGoogleAssetUploadEnabled.set(null);
-    this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
-    this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
-    this.briefCampaignsBiddingEnabled.set(null);
-    this.briefCampaignsMicrosoftScheduleEnabled.set(null);
-    this.briefCampaignsTwitterCreateEnabled.set(null);
-    this.briefCampaignsMetaInstagramDsaEnabled.set(null);
-    this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
-    this.briefCampaignsGoogleGeoSearchEnabled.set(null);
-    // `unknown` until a read is actually dispatched below — the early return starts none.
-    this.briefCampaignsCapabilityRead.set('unknown');
+    if (withCapabilities) {
+      this.briefCampaignsDemandGenEnabled.set(null);
+      this.briefCampaignsGoogleChannelsEnabled.set(null);
+      this.briefCampaignsGoogleCreativeEnabled.set(null);
+      this.briefCampaignsRedditCreativeEnabled.set(null);
+      this.briefCampaignsRedditAssetUploadEnabled.set(null);
+      this.briefCampaignsMetaCreativeEnabled.set(null);
+      this.briefCampaignsRedditConversionPixelEnabled.set(null);
+      this.briefCampaignsMetaAssetUploadEnabled.set(null);
+      this.briefCampaignsGoogleAssetUploadEnabled.set(null);
+      this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
+      this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
+      this.briefCampaignsBiddingEnabled.set(null);
+      this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+      this.briefCampaignsTwitterCreateEnabled.set(null);
+      this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+      this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+      this.briefCampaignsGoogleGeoSearchEnabled.set(null);
+      // `unknown` until a read is actually dispatched below — the early return starts none.
+      this.briefCampaignsCapabilityRead.set('unknown');
+    }
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
@@ -4855,7 +4877,9 @@ export class CampaignsComponent {
       // way; this arm only stops here.
       return;
     }
-    this.briefCampaignsCapabilityRead.set('pending');
+    if (withCapabilities) {
+      this.briefCampaignsCapabilityRead.set('pending');
+    }
 
     this.campaignService
       .listBriefCampaigns(projectSlug, briefId)
@@ -6226,6 +6250,9 @@ export class CampaignsComponent {
                 // else, which is precisely what makes it the step that reveals Restore.
                 'This brief was saved but not approved, so campaigns cannot be created from it yet. Go back to Planning, select New Brief, then restore the saved brief to approve it.',
           });
+          // The campaigns already created from this row, for the Implement tab's panel (#4983). After the
+          // state above, which is where the read takes the id from.
+          this.loadBriefCampaigns(false);
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
         // needs to know is that the work in front of them is not saved, and that continuing is
