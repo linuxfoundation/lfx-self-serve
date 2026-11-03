@@ -4,7 +4,7 @@ description: Pick the organization you are viewing in the Organization lens, swi
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, switcher, switch-organization, url, not-found, access]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Organization
 ---
 
