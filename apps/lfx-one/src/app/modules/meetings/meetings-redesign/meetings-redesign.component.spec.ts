@@ -311,6 +311,14 @@ describe('MeetingsRedesignComponent', () => {
     });
   });
 
+  it('keeps the tabs bar on one line above 1024px, and lets it wrap at 1024px and below', async () => {
+    const fixture = render();
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-redesign-tabs-bar')?.className).toContain('flex-wrap');
+    expect(query(fixture, 'meetings-redesign-tabs-bar')?.className).toContain('min-[1025px]:flex-nowrap');
+  });
+
   it('folds the right column into a two-column grid and hides the description at 1024px and below', async () => {
     const fixture = render();
     await fixture.whenStable();

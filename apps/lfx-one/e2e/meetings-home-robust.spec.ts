@@ -166,6 +166,28 @@ test.describe('Meetings home page - Robust Tests', () => {
     });
   });
 
+  // The narrowest centres beside the right column: 1025-1059px on the navbar rail, 1280px docked open.
+  for (const width of [1025, 1059, 1280]) {
+    test.describe(`Tabs bar at ${width}px`, () => {
+      test.use({ viewport: { width, height: 900 } });
+
+      test('the tabs, search and Filters share one line without overflowing', async ({ page, isMobile }) => {
+        test.skip(isMobile, 'The mobile shell folds the right column at every width');
+        await gotoMeetingsHome(page);
+
+        const bar = page.getByTestId('meetings-redesign-tabs-bar');
+        const tabs = await box(page.getByTestId('meetings-redesign-tabs'));
+        const search = await box(page.getByTestId('meetings-redesign-search'));
+        const filters = await box(page.getByTestId('meetings-home-filters-button'));
+        expect(search.y).toBeLessThan(tabs.y + tabs.height);
+        expect(filters.y).toBeLessThan(tabs.y + tabs.height);
+        expect(search.x).toBeGreaterThanOrEqual(tabs.x + tabs.width);
+        expect(filters.x).toBeGreaterThanOrEqual(search.x + search.width);
+        expect(await bar.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      });
+    });
+  }
+
   test.describe('Folded layout at 1024px', () => {
     test.use({ viewport: { width: 1024, height: 900 } });
 
