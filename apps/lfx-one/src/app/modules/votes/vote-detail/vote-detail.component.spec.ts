@@ -41,6 +41,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vote-abstain-result.component';
 import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
+import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
@@ -1795,7 +1796,7 @@ describe('VoteDetailComponent', () => {
       expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toContain('comments');
       expect(previewComments(fixture).map((response) => response.comment_text)).toEqual(['Second synthetic comment', 'First synthetic comment']);
       expect(read<StatCardItem[]>(fixture, 'summaryCards').find((card) => card.label === 'Comments')?.subLine).toBe('Written comments left by voters');
-      expect(fixture.debugElement.query(By.css('lfx-vote-detail-header')).properties['commentPromptCount']).toBe(1);
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['commentPromptCount']).toBe(1);
       const viewAll = fixture.debugElement.query(By.css('[data-testid="vote-detail-overview-all-comments"]'));
       expect(viewAll.properties['label']).toBe('View all 2 comments');
       viewAll.triggerEventHandler('onClick', undefined);
@@ -1907,7 +1908,7 @@ describe('VoteDetailComponent', () => {
       expect(read(fixture, 'audience')).toBe('voter');
       expect(read(fixture, 'activeTab')).toBe('comments');
       expect(testId(fixture, 'vote-detail-comments')).not.toBeNull();
-      expect(fixture.debugElement.query(By.css('lfx-vote-detail-header')).properties['commentPromptCount']).toBe(1);
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['commentPromptCount']).toBe(1);
       const list = fixture.debugElement.query(By.css('lfx-vote-comment-results'));
       expect((list.properties['commentResults'] as PollCommentResult[])[0].responses[0].comment_text).toBe('Synthetic linked comment');
     });
@@ -2134,6 +2135,8 @@ describe('VoteDetailComponent', () => {
       const content = testId(fixture, 'vote-detail-panel-overview');
       expect(content?.hasAttribute('role')).toBe(false);
       expect(content?.hasAttribute('aria-labelledby')).toBe(false);
+      expect(content?.classList.contains('lg:col-span-2')).toBe(false);
+      expect(content?.parentElement?.classList.contains('lg:grid-cols-3')).toBe(false);
       expect(testId(fixture, 'vote-detail-description')).toBeNull();
       expect(testId(fixture, 'vote-detail-summary')).toBeNull();
       expect(fixture.nativeElement.querySelector('lfx-vote-comment-results')).toBeNull();
@@ -2141,18 +2144,19 @@ describe('VoteDetailComponent', () => {
     });
 
     it.each([null, makeResponse(IndexedVoteResponseStatus.RESPONDED, { voter_removed: true })])(
-      'hides all non-basic metadata in the real header for outsider response %j',
+      'hides all non-basic metadata in the real header and Vote details for outsider response %j',
       async (response) => {
         voteService.fetchVote.mockReturnValue(of(namedClosedVote()));
         voteService.getMyVoteResponse.mockReturnValue(of(response));
         queryParamMap.next(convertToParamMap({ tab: 'comments' }));
-        const fixture = await setup('browser', [VoteDetailHeaderComponent]);
+        const fixture = await setup('browser', [VoteDetailHeaderComponent, VoteDetailFactsComponent]);
 
         expect(testId(fixture, 'vote-detail-header-title')?.textContent).toContain('Synthetic board election');
         expect(testId(fixture, 'vote-detail-header-status')?.textContent).toContain('Ended');
         for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'created', 'comments', 'view-results', 'tabs']) {
           expect(testId(fixture, `vote-detail-header-${suffix}`)).toBeNull();
         }
+        expect(fixture.nativeElement.querySelector('[data-testid^="vote-detail-facts"]')).toBeNull();
         expect(testId(fixture, response ? 'vote-detail-voter-access-denied' : 'vote-detail-voter-not-participant')).not.toBeNull();
         expect(voteService.getVoteResults).not.toHaveBeenCalled();
       }
@@ -2163,7 +2167,7 @@ describe('VoteDetailComponent', () => {
         voteService.fetchVote.mockReturnValue(of(makeVote({ ...namedClosedVote(), status, total_voting_request_invitations: 12 })));
         voteService.getMyVoteResponse.mockReturnValue(httpError(failureStatus));
         queryParamMap.next(convertToParamMap({ tab: 'comments' }));
-        const fixture = await setup('browser', [VoteDetailHeaderComponent]);
+        const fixture = await setup('browser', [VoteDetailHeaderComponent, VoteDetailFactsComponent]);
 
         expect(read(fixture, 'accessLoading')).toBe(false);
         expect(read(fixture, 'myResponseError')).toBe(true);
@@ -2180,7 +2184,11 @@ describe('VoteDetailComponent', () => {
         const content = testId(fixture, 'vote-detail-panel-overview');
         expect(content?.hasAttribute('role')).toBe(false);
         expect(content?.hasAttribute('aria-labelledby')).toBe(false);
+        expect(content?.classList.contains('lg:col-span-2')).toBe(false);
+        expect(content?.parentElement?.classList.contains('lg:grid-cols-3')).toBe(false);
         expect(testId(fixture, 'vote-detail-description')).toBeNull();
+        expect(fixture.nativeElement.querySelector('lfx-vote-detail-facts')).toBeNull();
+        expect(fixture.nativeElement.textContent).not.toContain('12 invited voters');
         expect(fixture.nativeElement.querySelector('lfx-vote-comment-results')).toBeNull();
         expect(voteService.getVoteResults).not.toHaveBeenCalled();
       });
@@ -2189,13 +2197,14 @@ describe('VoteDetailComponent', () => {
         projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
         voteService.fetchVote.mockReturnValue(of(makeVote({ ...namedClosedVote(), status })));
         voteService.getMyVoteResponse.mockReturnValue(httpError(503));
-        const fixture = await setup('browser', [VoteDetailHeaderComponent]);
+        const fixture = await setup('browser', [VoteDetailHeaderComponent, VoteDetailFactsComponent]);
 
         expect(read(fixture, 'showVoteDetails')).toBe(true);
         expect(testId(fixture, 'vote-detail-header-tabs')).not.toBeNull();
         expect(testId(fixture, 'vote-detail-description')).not.toBeNull();
-        expect(testId(fixture, 'vote-detail-header-comments')).not.toBeNull();
-        expect(testId(fixture, 'vote-detail-header-created')).toBeNull();
+        expect(fixture.nativeElement.querySelector('lfx-vote-detail-facts')).not.toBeNull();
+        expect(testId(fixture, 'vote-detail-facts-close-date')).not.toBeNull();
+        expect(testId(fixture, 'vote-detail-header-meta')).toBeNull();
         expect(voteService.getVoteResults).toHaveBeenCalledWith('vote-1');
       });
     });
@@ -2214,6 +2223,57 @@ describe('VoteDetailComponent', () => {
       fixture.detectChanges();
 
       expect(header(fixture).properties['limited']).toBe(false);
+    });
+
+    it('renders no vote metadata in the real header or Vote details while access is still loading', async () => {
+      const myResponse = new Subject<MyVoteResponse | null>();
+      voteService.fetchVote.mockReturnValue(of(makeVote({ committee_name: 'Synthetic Steering Committee', total_voting_request_invitations: 12 })));
+      voteService.getMyVoteResponse.mockReturnValue(myResponse);
+      const fixture = await setup('browser', [VoteDetailHeaderComponent, VoteDetailFactsComponent]);
+
+      expect(read(fixture, 'accessLoading')).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid^="vote-detail-facts"]')).toBeNull();
+      expect(testId(fixture, 'vote-detail-header-meta')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('Synthetic Steering Committee');
+      expect(fixture.nativeElement.textContent).not.toContain('12 invited voters');
+    });
+
+    // Group, method, close date, countdown, invited voters and the counts appear only in Vote details (#5022).
+    it.each([
+      { label: 'a manager', writer: true, response: null },
+      { label: 'an invited voter', writer: false, response: makeResponse(IndexedVoteResponseStatus.RESPONDED) },
+    ])('shows the vote metadata once, in Vote details, for $label', async ({ writer, response }) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer } as Project));
+      voteService.fetchVote.mockReturnValue(
+        of(
+          makeVote({
+            committee_name: 'Synthetic Steering Committee',
+            poll_type: PollType.GENERIC,
+            total_voting_request_invitations: 12,
+            poll_questions: [{ question_id: 'question-1', prompt: 'Approve the roadmap?', type: 'single_choice', choices: [] }],
+          })
+        )
+      );
+      voteService.getMyVoteResponse.mockReturnValue(of(response));
+      const fixture = await setup('browser', [VoteDetailHeaderComponent, VoteDetailFactsComponent]);
+      const row = (id: string): string => testId(fixture, `vote-detail-facts-${id}`)?.querySelector('dd')?.textContent?.trim() ?? '';
+
+      expect(read(fixture, 'showVoteDetails')).toBe(true);
+      const content = testId(fixture, 'vote-detail-panel-overview');
+      expect(content?.classList.contains('lg:col-span-2')).toBe(true);
+      expect(content?.parentElement?.classList.contains('lg:grid-cols-3')).toBe(true);
+      expect(testId(fixture, 'vote-detail-header-meta')).toBeNull();
+      expect(testId(fixture, 'vote-detail-facts-visibility')).toBeNull();
+      expect(row('group')).toBe('Synthetic Steering Committee');
+      expect(row('method')).toBe('Plurality vote');
+      expect(row('close-date')).toMatch(/^Closes /);
+      expect(row('invited')).toBe('12 invited voters');
+      expect(row('vote-questions')).toBe('1');
+      expect(row('comments')).toBe('Active');
+      expect(row('comment-prompts')).toBe('1');
+      expect(testId(fixture, 'vote-detail-header-privacy')).not.toBeNull();
+      const text = fixture.nativeElement.textContent as string;
+      expect(text.split('Synthetic Steering Committee')).toHaveLength(2);
     });
   });
 
@@ -2243,7 +2303,7 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
     });
 
-    it.each(['2026-10-30T16:00:00Z', ''])('shows each header fact once on held-results Overview (deadline: %s)', async (endTime) => {
+    it.each(['2026-10-30T16:00:00Z', ''])('shows each vote fact once on held-results Overview (deadline: %s)', async (endTime) => {
       voteService.fetchVote.mockReturnValue(
         of(
           makeVote({
@@ -2255,14 +2315,15 @@ describe('VoteDetailComponent', () => {
           })
         )
       );
-      const fixture = await setup('browser', [VoteDetailHeaderComponent]);
+      const fixture = await setup('browser', [VoteDetailHeaderComponent, VoteDetailFactsComponent]);
       const page = testId(fixture, 'vote-detail-page')!.cloneNode(true) as HTMLElement;
       page.querySelector('[data-testid="vote-detail-summary"]')?.remove();
-      // The Voters tab badge carries its own screen-reader text (#4768); the tab strip is not a header fact.
+      // The Voters tab badge carries its own screen-reader text (#4768); the tab strip is not a vote fact.
       page.querySelectorAll('[role="tab"] .sr-only').forEach((el) => el.remove());
       const text = page.textContent?.toLowerCase() ?? '';
       const facts = ['Synthetic Steering Committee', 'Plurality vote', '12 invited voters', 'pseudo-anonymous'];
-      const deadline = testId(fixture, 'vote-detail-header-close-date')
+      const deadline = testId(fixture, 'vote-detail-facts-close-date')
+        ?.querySelector('dd')
         ?.textContent?.trim()
         .replace(/^Closes\s+/, '');
       if (endTime) {
@@ -2336,23 +2397,30 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
     });
 
-    it.each(['creator', 'voter'] as const)('passes held and released results to the header for %s', async (audience) => {
+    it.each(['creator', 'voter'] as const)('keeps held results gated and updates the header tooltip for %s', async (audience) => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: audience === 'creator' } as Project));
       voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true, status: PollStatus.ENDED })));
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
       const results = new Subject<VoteResultsResponse>();
       voteService.getVoteResults.mockReturnValue(results);
-      const fixture = await setup();
+      const fixture = await setup('browser', [VoteDetailFactsComponent]);
 
       results.next(heldResults());
       TestBed.tick();
       fixture.detectChanges();
       expect(fixture.debugElement.query(By.css('lfx-vote-detail-header')).properties['resultsHeld']).toBe(true);
+      expect(read(fixture, 'resultsHeld')).toBe(true);
+      expect(testId(fixture, 'vote-detail-results-held')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-facts-details')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid^="vote-detail-facts-visibility"]')).toBeNull();
+      expect(testId(fixture, 'vote-detail-facts-comments')?.textContent).toContain('Active');
 
       results.next(makeMethodResults());
       TestBed.tick();
       fixture.detectChanges();
       expect(fixture.debugElement.query(By.css('lfx-vote-detail-header')).properties['resultsHeld']).toBe(false);
+      expect(read(fixture, 'resultsHeld')).toBe(false);
+      expect(testId(fixture, 'vote-detail-results-held')).toBeNull();
     });
 
     it('never reads 100% participation on an open held vote as final', async () => {

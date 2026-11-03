@@ -1,58 +1,32 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { formatDate, isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, signal, Signal, viewChildren } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { Component, computed, ElementRef, inject, input, output, PLATFORM_ID, Signal, viewChildren } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { VOTE_METHOD_LABELS } from '@lfx-one/shared/constants';
-import { PollStatus, PollType } from '@lfx-one/shared/enums';
+import { PollStatus } from '@lfx-one/shared/enums';
 import { Vote, VoteDetailTab, VoteDetailTabOption } from '@lfx-one/shared/interfaces';
-import {
-  formatVoteDeadline,
-  getUserTimezone,
-  getVoteEndedEarlyDetailTooltip,
-  getVoteVisibilityRules,
-  isVoteEndedEarly,
-  normalizePollStatus,
-} from '@lfx-one/shared/utils';
-import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
-import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
-import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
+import { getVoteVisibilityRules, normalizePollStatus } from '@lfx-one/shared/utils';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
-import { TooltipModule } from 'primeng/tooltip';
 
 import { VoteSendBallotsComponent } from '../vote-send-ballots/vote-send-ballots.component';
 
 /**
- * Header card of the vote detail page (#3913): back link, title, status and privacy tags, group, method, close date,
- * invited voters, the page actions and the pill tab strip. Presentational — the page owns access, state and navigation.
+ * Header card of the vote detail page (#3913): back link, title, status and privacy tags, the page actions and the pill
+ * tab strip. Group, method, close date and invited voters live in the Vote details card (#5022). Presentational — the
+ * page owns access, state and navigation.
  */
 @Component({
   selector: 'lfx-vote-detail-header',
-  imports: [
-    NgClass,
-    ButtonComponent,
-    CardComponent,
-    TagComponent,
-    TooltipModule,
-    VoteSendBallotsComponent,
-    DueDateLabelColorPipe,
-    LongTimezonePipe,
-    PollStatusLabelPipe,
-    PollStatusSeverityPipe,
-  ],
-  providers: [DueDateLabelPipe],
+  imports: [NgClass, ButtonComponent, CardComponent, TagComponent, VoteSendBallotsComponent, PollStatusLabelPipe, PollStatusSeverityPipe],
   templateUrl: './vote-detail-header.component.html',
 })
 export class VoteDetailHeaderComponent {
   // === Services ===
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly dueDateLabelPipe = inject(DueDateLabelPipe);
 
   // === Inputs ===
   public readonly vote = input.required<Vote>();
@@ -74,8 +48,6 @@ export class VoteDetailHeaderComponent {
   public readonly limited = input<boolean>(false);
   /** Totals and comments can remain held after close while upstream finalizes them; changes the visibility tooltip. */
   public readonly resultsHeld = input<boolean>(false);
-  /** The page includes prompts recovered from authorized results; standalone callers fall back to vote metadata. */
-  public readonly commentPromptCount = input<number | null>(null);
 
   // === Outputs ===
   public readonly tabChange = output<VoteDetailTab>();
@@ -89,43 +61,11 @@ export class VoteDetailHeaderComponent {
   // === View Children ===
   private readonly tabBtns = viewChildren<ElementRef<HTMLButtonElement>>('tabBtn');
 
-  // Resolved once per browser session — SSR has no `Intl` zone, so the close date falls back to UTC there.
-  protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
-
-  // === Clock State ===
-  private readonly countdownTick = signal(0);
-  private countdownTimer: ReturnType<typeof setTimeout> | undefined;
-
   // === Computed Signals ===
   protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ACTIVE);
   protected readonly canSendReminder: Signal<boolean> = computed(() => this.audience() === 'creator' && this.isActive());
-  protected readonly methodLabel: Signal<string> = computed(() => {
-    const pollType = this.vote().poll_type ?? PollType.GENERIC;
-    return VOTE_METHOD_LABELS[pollType] || pollType;
-  });
   protected readonly privacyLabel: Signal<string> = this.initPrivacyLabel();
-  /** The instant shown in the close date: the early end for a vote that ended, otherwise the scheduled deadline. */
-  protected readonly closeTime: Signal<string | undefined> = computed(() => {
-    const vote = this.vote();
-    return normalizePollStatus(vote.status) === PollStatus.ENDED ? vote.early_end_time || vote.end_time : vote.end_time;
-  });
-  protected readonly closeDateText: Signal<string> = this.initCloseDateText();
-  protected readonly timeRemainingText: Signal<string> = this.initTimeRemainingText();
-  protected readonly endedEarlyNote: Signal<string | null> = this.initEndedEarlyNote();
-  protected readonly invitedText: Signal<string | null> = this.initInvitedText();
   protected readonly visibilityText: Signal<string> = this.initVisibilityText();
-  /** `creation_time` — for a draft opened later this is when it was saved, so the fact reads "Created". */
-  protected readonly createdText: Signal<string | null> = this.initCreatedText();
-  protected readonly commentsText: Signal<string> = this.initCommentsText();
-
-  public constructor() {
-    if (isPlatformBrowser(this.platformId)) {
-      toObservable(this.vote)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => this.refreshCountdownClock());
-      this.destroyRef.onDestroy(() => clearTimeout(this.countdownTimer));
-    }
-  }
 
   // === Protected Methods ===
   /**
@@ -158,59 +98,6 @@ export class VoteDetailHeaderComponent {
     });
   }
 
-  private initCloseDateText(): Signal<string> {
-    return computed(() => {
-      const vote = this.vote();
-      const ended = normalizePollStatus(vote.status) === PollStatus.ENDED;
-      const endTime = this.closeTime();
-      if (!endTime) return '';
-      const deadline = formatVoteDeadline(endTime, this.viewerTimezone);
-      return ended ? `Closed ${deadline}` : `Closes ${deadline}`;
-    });
-  }
-
-  private initTimeRemainingText(): Signal<string> {
-    return computed(() => {
-      this.countdownTick();
-      const endTime = this.vote().end_time;
-      const deadline = new Date(endTime).getTime();
-      if (!this.isActive() || Number.isNaN(deadline) || deadline <= Date.now()) return '';
-      // Invoke the shared formatter on each clock invalidation, not a pure template pipe with unchanged inputs.
-      return this.dueDateLabelPipe.transform(endTime, this.viewerTimezone);
-    });
-  }
-
-  /** `end_time` stays the scheduled deadline when ITX ends a vote early, so say so — the same note as the votes table. */
-  private initEndedEarlyNote(): Signal<string | null> {
-    return computed(() => {
-      const vote = this.vote();
-      if (normalizePollStatus(vote.status) !== PollStatus.ENDED || !isVoteEndedEarly(vote)) return null;
-      return getVoteEndedEarlyDetailTooltip(formatDate(vote.early_end_time!, 'MMM d, y', 'en-US'));
-    });
-  }
-
-  private initInvitedText(): Signal<string | null> {
-    return computed(() => {
-      const invited = this.vote().total_voting_request_invitations;
-      if (invited === undefined || invited === null) return null;
-      return `${invited} invited ${invited === 1 ? 'voter' : 'voters'}`;
-    });
-  }
-
-  /** Re-evaluate only at the next label boundary or exact deadline; vote changes replace the pending timeout. */
-  private refreshCountdownClock(): void {
-    clearTimeout(this.countdownTimer);
-    this.countdownTick.update((tick) => tick + 1);
-    const now = Date.now();
-    const deadline = new Date(this.vote().end_time).getTime();
-    if (!this.isActive() || !Number.isFinite(deadline) || deadline <= now) return;
-
-    // In the browser viewerTimezone is the host zone; calendar midnight handles 23/25-hour DST days.
-    const midnight = new Date(now);
-    midnight.setHours(24, 0, 0, 0);
-    this.countdownTimer = setTimeout(() => this.refreshCountdownClock(), Math.min(deadline, midnight.getTime()) - now);
-  }
-
   /** Every voter visibility rule, joined for the privacy tag's tooltip (hover and keyboard focus). */
   private initVisibilityText(): Signal<string> {
     return computed(() => {
@@ -219,27 +106,6 @@ export class VoteDetailHeaderComponent {
       const ended = status === PollStatus.ENDED;
       const ballotsAvailable = status === PollStatus.ACTIVE || ended;
       return getVoteVisibilityRules(this.audience(), vote.pseudo_anonymity, ended, ballotsAvailable, this.resultsHeld()).join(' ');
-    });
-  }
-
-  private initCreatedText(): Signal<string | null> {
-    return computed(() => {
-      const created = this.vote().creation_time;
-      if (!created) return null;
-      return new Date(created).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        timeZone: this.viewerTimezone,
-      });
-    });
-  }
-
-  private initCommentsText(): Signal<string> {
-    return computed(() => {
-      const prompts = this.commentPromptCount() ?? this.vote().poll_comment_prompts?.length ?? 0;
-      if (prompts === 0) return 'Not enabled';
-      return `Optional · ${prompts} ${prompts === 1 ? 'question' : 'questions'}`;
     });
   }
 }
