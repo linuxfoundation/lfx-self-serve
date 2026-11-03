@@ -285,7 +285,7 @@ export function getMimeTypeDisplayName(mimeType: string, fileName?: string): str
  * run that is not at the end of the string. The scan visits each char at most once, so the
  * trim is strictly linear (same approach as `trimTrailingPunctuation` in url.utils.ts).
  */
-function trimDotsAndWhitespace(value: string): string {
+export function trimDotsAndWhitespace(value: string): string {
   const isTrimmable = (char: string): boolean => char === '.' || /\s/.test(char);
 
   let start = 0;

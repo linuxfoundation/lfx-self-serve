@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ALLOWED_FILE_TYPES } from '../constants/file-upload.constants';
-import { downloadFromUrl, formatFileSize, isFileTypeAllowed, isSafeUploadFileName, parseContentDispositionFilename, resolveFileMimeType, sanitizeFilename } from './file.utils';
+import { downloadFromUrl, formatFileSize, isFileTypeAllowed, isSafeUploadFileName, parseContentDispositionFilename, resolveFileMimeType, sanitizeFilename, trimDotsAndWhitespace } from './file.utils';
 
 describe('resolveFileMimeType', () => {
   it.each([
@@ -145,11 +145,33 @@ describe('sanitizeFilename', () => {
     expect(sanitizeFilename(input)).toBe(expected);
   });
 
-  it('stays linear on long runs of periods or whitespace inside the name', () => {
+  it('stays fast end to end on long runs of periods or tabs in the name', () => {
     const started = performance.now();
     sanitizeFilename(`a${'.'.repeat(100_000)}b.pdf`, Number.MAX_SAFE_INTEGER);
     sanitizeFilename(`a${'\t'.repeat(100_000)}b.pdf`, Number.MAX_SAFE_INTEGER);
     sanitizeFilename(`a${'.\t'.repeat(50_000)}b.pdf`, Number.MAX_SAFE_INTEGER);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe('trimDotsAndWhitespace', () => {
+  it.each([
+    ['name', 'name'],
+    ['.name.', 'name'],
+    [' \t. name .\n ', 'name'],
+    ['\u00a0name\u3000', 'name'],
+    ['a. .b', 'a. .b'],
+    ['. . .', ''],
+    ['', ''],
+  ])('trims %p to %p', (input, expected) => {
+    expect(trimDotsAndWhitespace(input)).toBe(expected);
+  });
+
+  it('stays linear on long inner and trailing runs of periods and whitespace', () => {
+    const run = '. '.repeat(50_000);
+    const started = performance.now();
+    expect(trimDotsAndWhitespace(`a${run}b`)).toBe(`a${run}b`);
+    expect(trimDotsAndWhitespace(`a${run}`)).toBe('a');
     expect(performance.now() - started).toBeLessThan(2000);
   });
 });
