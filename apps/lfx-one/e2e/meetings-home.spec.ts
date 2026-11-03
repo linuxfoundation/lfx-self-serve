@@ -169,7 +169,8 @@ test.describe('Meetings home page', () => {
 
       await expect(page.getByTestId('meetings-home-empty-upcoming')).toBeVisible();
       await expect(page.getByTestId('meetings-home-empty-create')).toContainText('Create Meeting');
-      await expect(page.getByTestId('meetings-home-create')).toBeVisible();
+      // The empty state's button replaces the header one.
+      await expect(page.getByTestId('meetings-home-create')).toHaveCount(0);
     });
   });
 });

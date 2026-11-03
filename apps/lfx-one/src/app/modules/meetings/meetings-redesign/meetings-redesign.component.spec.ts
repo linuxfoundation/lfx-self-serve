@@ -254,6 +254,33 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-redesign-header-actions')?.className).toContain('max-w-full flex-none flex-wrap');
     });
 
+    it("gives way to the empty Upcoming state's own button, and stays on an empty Past tab", async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = render();
+      await fixture.whenStable();
+
+      // Kept while the feed loads.
+      expect(query(fixture, 'meetings-home-create')).not.toBeNull();
+
+      await loadFeeds(fixture, []);
+      expect(query(fixture, 'meetings-home-empty-create')).not.toBeNull();
+      expect(query(fixture, 'meetings-home-create')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-header-actions')?.classList).toContain('hidden');
+
+      // The empty Past state has no Create of its own.
+      query(fixture, 'ui-tab-past')?.click();
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-empty-past')).not.toBeNull();
+      expect(query(fixture, 'meetings-home-create')).not.toBeNull();
+
+      query(fixture, 'ui-tab-upcoming')?.click();
+      await fixture.whenStable();
+      upcoming$.error(new Error('down'));
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-error')).not.toBeNull();
+      expect(query(fixture, 'meetings-home-create')).not.toBeNull();
+    });
+
     it('takes focus once the last pending RSVP is answered, else the heading does', async () => {
       const fixture = render();
       await fixture.whenStable();
@@ -289,7 +316,7 @@ describe('MeetingsRedesignComponent', () => {
     expect(folded?.className).toContain('min-[1025px]:hidden');
     expect(folded?.parentElement?.classList).toContain('@container');
     expect(query(fixture, 'meetings-redesign-right-column')?.className).toContain('hidden');
-    expect(query(fixture, 'meetings-redesign-description')?.className).toContain('hidden text-[13px] text-gray-600 min-[1025px]:block');
+    expect(query(fixture, 'meetings-redesign-description')?.className).toContain('hidden text-[13px] text-gray-500 min-[1025px]:block');
   });
 
   it('shows skeleton Next meeting cards while the upcoming feed loads, and hides them when it fails', async () => {

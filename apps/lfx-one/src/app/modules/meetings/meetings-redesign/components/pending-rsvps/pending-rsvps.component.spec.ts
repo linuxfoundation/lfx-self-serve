@@ -143,6 +143,18 @@ describe('PendingRsvpsComponent', () => {
     expect(rsvp?.querySelector('[data-testid="meetings-home-rsvp"]')).not.toBeNull();
   });
 
+  it('gives Recurring the rich tooltip, titled "Recurring" over the repeat rule', async () => {
+    await render([buildRow('b', { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '5' } })]);
+    await open();
+
+    const recurring = byTestId('meetings-home-pending-rsvps-row-recurring');
+    const description = (recurring?.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .map((id) => document.getElementById(id)?.textContent)
+      .join(' ');
+    expect(description).toBe('Recurring. Repeats weekly on Thursday');
+  });
+
   it('badges only Private and Restricted meetings', async () => {
     await render([
       buildRow('public', { visibility: MeetingVisibility.PUBLIC, restricted: false }),

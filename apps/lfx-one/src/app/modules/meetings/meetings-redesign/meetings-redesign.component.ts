@@ -144,6 +144,10 @@ export class MeetingsRedesignComponent {
   });
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
+  /** Header Create Meeting; the empty Upcoming tab offers its own in the empty state instead, per the design. */
+  protected readonly showCreate: Signal<boolean> = computed(
+    () => this.canWriteMeetings() && !(this.store.tab() === 'upcoming' && this.tabEmpty() && !this.store.failed())
+  );
   /** The active tab has meetings, but none match the search and filters. */
   protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.matchingRows().length === 0);
   /** "All N meetings loaded" once every row of a list longer than one page is shown. */
