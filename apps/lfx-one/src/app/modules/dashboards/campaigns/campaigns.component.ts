@@ -2873,10 +2873,10 @@ export class CampaignsComponent {
     this.twitterCarryDiscarded = true;
     const key = this.ownershipKey(this.activeFoundationSlug(), offer.brief);
     if (key !== null && !this.recordEditOwnership(key, offer)) {
-      this.readAndOpenSavedBrief(offer.brief, () => {
-        // Nothing to open from a fresh read: let Planning re-read so its offer shows what is stored.
-        this.savedBriefRefreshToken.update((token) => token + 1);
-      });
+      // Nothing to open from a fresh read, or the read could not run: let Planning re-read so its offer
+      // shows what is stored.
+      const refreshOffer = (): void => this.savedBriefRefreshToken.update((token) => token + 1);
+      this.readAndOpenSavedBrief(offer.brief, refreshOffer, refreshOffer);
       return;
     }
     this.openInPlanningEditor(offer.brief);
@@ -6903,10 +6903,12 @@ export class CampaignsComponent {
     onError: () => void = (): void => undefined
   ): void {
     const projectSlug = this.activeFoundationSlug();
-    // Nothing to read without a foundation or an event: say so through `onUnavailable` rather than
-    // return silently, so every caller gives the user an answer (Edit brief shows why it opened nothing).
+    // Nothing to read without a foundation or an event. That is a FAILED open, not an answer about
+    // the row, so it goes through `onError`: every caller then says why nothing opened, and none of
+    // them mistakes it for persistence going dark (`'off'`), which on the Implement path would clear
+    // the unowned-brief refusal and re-enable Create while a stored brief still exists.
     if (projectSlug === '' || this.ownershipKey(projectSlug, seed) === null) {
-      onUnavailable('off');
+      onError();
       return;
     }
     const generation = this.briefPersistenceGeneration;

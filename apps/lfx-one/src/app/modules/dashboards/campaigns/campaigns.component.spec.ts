@@ -3825,6 +3825,22 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief).toHaveBeenLastCalledWith(stored, 'foundation-a', 'stored-1', 'W/"5"', false);
       });
 
+      it('keeps the refusal, and Create blocked, when the open cannot even start', async () => {
+        // No foundation to read under: a failed open, not persistence going dark.
+        vi.spyOn(fixture.componentInstance as unknown as { activeFoundationSlug(): string }, 'activeFoundationSlug').mockReturnValue('');
+
+        openFromImplement();
+        await fixture.whenStable();
+
+        expect(loadBrief).not.toHaveBeenCalled();
+        expect(state(), 'the unowned refusal was cleared and Create re-enabled').toMatchObject({
+          status: 'error',
+          briefId: '',
+          conflict: 'unowned-brief-exists',
+        });
+        expect(state().message).toContain('could not be read');
+      });
+
       it('keeps Replace on offer when the stored brief cannot be opened', async () => {
         loadBrief.mockReturnValue(of({ status: 'unreadable', brief: null, briefId: 'stored-1', etag: 'W/"5"', approved: false }));
 
