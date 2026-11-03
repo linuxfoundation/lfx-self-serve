@@ -49,6 +49,12 @@ export class DataService {
 - **Simplicity**: Easier to understand than RxJS for simple state
 - **Debugging**: Clear state flow and mutations
 
+### Vote summary send lifetime
+
+`VoteSummarySendService` owns each initiated summary POST independently of its dialog. It retains the reviewed preview and the pending, successful, or failed attempt per vote in memory. Reopening the dialog observes that same attempt without another preview or POST; successful detailed results and ambiguous errors remain inspectable until **Close** dismisses them. Clear pre-send rejections are dismissed after the dialog reports them, permitting a new attempt.
+
+Attempts belong to the effective user's `sub`. Reads reject a different subject synchronously, identity changes clear the cache, and late responses cannot overwrite another subject's attempt. Dialogs also close on subject changes. No recipient data is written to browser storage; a full reload discards the cache. Legacy successful responses without per-voter details and ambiguous failures use the retained earlier preview, explicitly labelled as review-based rather than confirmed send-time outcomes.
+
 ## 👤 User State Management
 
 ### UserService Pattern

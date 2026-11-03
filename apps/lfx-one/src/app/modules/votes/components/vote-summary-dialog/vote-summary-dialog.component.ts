@@ -3,7 +3,21 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  effect,
+  ElementRef,
+  inject,
+  Injector,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -24,13 +38,14 @@ import {
   VoteSummarySendNotice,
 } from '@lfx-one/shared/interfaces';
 import { buildVoteSummarySendNotice } from '@lfx-one/shared/utils';
+import { VoteSummarySendService } from '@services/vote-summary-send.service';
 import { VoteService } from '@services/vote.service';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { finalize, take } from 'rxjs';
+import { finalize } from 'rxjs';
 
 /**
  * Lets a vote manager review who an ended vote's results summary will reach, send it, and see each
@@ -46,6 +61,8 @@ export class VoteSummaryDialogComponent {
   private readonly config = inject<DynamicDialogConfig<{ vote: Vote }>>(DynamicDialogConfig);
   private readonly ref = inject(DynamicDialogRef);
   private readonly voteService = inject(VoteService);
+  private readonly summarySendService = inject(VoteSummarySendService);
+  private readonly viewerSubject = this.summarySendService.viewerSubject();
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
@@ -56,12 +73,15 @@ export class VoteSummaryDialogComponent {
   protected readonly skeletonRows = [0, 1, 2];
 
   private readonly resultSummary = viewChild<ElementRef<HTMLElement>>('resultSummary');
+  private readonly confirmText = viewChild<ElementRef<HTMLElement>>('confirmText');
+  private readonly reviewSendButton = viewChild<ButtonComponent, ElementRef<HTMLElement>>('reviewSendButton', { read: ElementRef });
 
   protected readonly phase = signal<VoteSummaryDialogPhase>('review');
   protected readonly preview = signal<VoteSummaryPreviewResponse | null>(null);
   protected readonly loading = signal(true);
   protected readonly loadError = signal<string | null>(null);
   protected readonly result = signal<SendVoteSummaryResponse | null>(null);
+  protected readonly previewBased = signal(false);
 
   protected readonly sending = computed(() => this.phase() === 'sending');
   protected readonly voterCount = computed(() => {
@@ -74,7 +94,24 @@ export class VoteSummaryDialogComponent {
 
   public constructor() {
     lockDynamicDialogWhile(this.sending);
-    this.loadPreview();
+    if (!this.summarySendService.getAttempt(this.vote.uid)) this.loadPreview();
+    effect(() => {
+      if (this.viewerSubject !== this.summarySendService.viewerSubject()) {
+        this.preview.set(null);
+        this.result.set(null);
+        this.ref.close(false);
+        return;
+      }
+      const attempt = this.summarySendService.getAttempt(this.vote.uid);
+      if (!attempt) return;
+      untracked(() => {
+        this.preview.set(attempt.preview);
+        this.loading.set(false);
+        if (attempt.status === 'sending') this.phase.set('sending');
+        else if (attempt.status === 'success') this.showResults(attempt.response);
+        else this.onSendFailed(attempt.error);
+      });
+    });
   }
 
   protected retry(): void {
@@ -84,11 +121,13 @@ export class VoteSummaryDialogComponent {
   protected onSend(): void {
     if (!this.canSend()) return;
     this.phase.set('confirm');
+    this.focusAfterRender(() => this.confirmText()?.nativeElement);
   }
 
   protected onBack(): void {
     if (this.sending()) return;
     this.phase.set('review');
+    this.focusAfterRender(() => this.reviewSendButton()?.nativeElement.querySelector<HTMLButtonElement>('button') ?? undefined);
   }
 
   protected cancel(): void {
@@ -98,20 +137,16 @@ export class VoteSummaryDialogComponent {
   }
 
   protected onConfirmSend(): void {
-    if (this.phase() !== 'confirm') return;
-
+    const preview = this.preview();
+    if (this.phase() !== 'confirm' || !preview) return;
     this.phase.set('sending');
-    this.voteService
-      .sendVoteSummary(this.vote.uid)
-      // An initiated write must finish even if navigation destroys this dialog.
-      .pipe(take(1))
-      .subscribe({
-        next: (result) => this.showResults(result),
-        error: (error: unknown) => this.onSendFailed(error),
-      });
+    if (!this.summarySendService.send(this.vote.uid, preview) && !this.summarySendService.getAttempt(this.vote.uid)) {
+      this.rejectSend('Nothing was sent. Sign in again before sending a summary.');
+    }
   }
 
   protected close(): void {
+    this.summarySendService.dismiss(this.vote.uid);
     this.ref.close(true);
   }
 
@@ -119,6 +154,17 @@ export class VoteSummaryDialogComponent {
     return computed(() => {
       const result = this.result();
       if (!result) return null;
+      if (this.previewBased()) {
+        const preview = this.preview();
+        return {
+          severity: 'warn',
+          summary: 'Summary delivery unconfirmed',
+          detail:
+            `Earlier review: ${preview?.ready.length ?? 0} unconfirmed voter(s) with email addresses; ` +
+            `${preview?.missing_email.length ?? 0} voter(s) had no email address. These are review counts, not confirmed send outcomes. ` +
+            'Actual send-time recipients may differ or include voters not listed here. Emails may already have been delivered; retrying may send duplicate summaries.',
+        };
+      }
 
       // API send counters count unique email addresses; the dialog describes each voter shown below.
       return buildVoteSummarySendNotice({
@@ -136,7 +182,14 @@ export class VoteSummaryDialogComponent {
       const recipients = this.result()?.recipients ?? [];
       return VOTE_SUMMARY_OUTCOME_ORDER.map((outcome) => ({
         outcome,
-        display: VOTE_SUMMARY_OUTCOME_DISPLAY[outcome],
+        display:
+          this.previewBased() && outcome === 'skipped'
+            ? {
+                ...VOTE_SUMMARY_OUTCOME_DISPLAY.skipped,
+                label: 'No email at review',
+                description: 'These voters had no email address in the earlier review. Their send-time address and outcome are unknown.',
+              }
+            : VOTE_SUMMARY_OUTCOME_DISPLAY[outcome],
         recipients: recipients.filter((recipient) => recipient.outcome === outcome),
       })).filter((group) => group.recipients.length > 0);
     });
@@ -160,13 +213,19 @@ export class VoteSummaryDialogComponent {
       });
   }
 
-  private showResults(result: SendVoteSummaryResponse): void {
-    // The write may finish after navigation has destroyed the dialog.
+  private showResults(result: SendVoteSummaryResponse | undefined, previewBased = false): void {
     if (this.destroyRef.destroyed) return;
-    this.result.set(result);
+    // Old pods can still return aggregate-only success responses during a rolling deployment.
+    const hasRecipients = result && Array.isArray(result.recipients);
+    this.previewBased.set(previewBased || !hasRecipients);
+    this.result.set(hasRecipients ? result : this.buildUnconfirmedResult());
     this.phase.set('results');
-    if (!isPlatformBrowser(this.platformId)) return;
-    afterNextRender(() => this.resultSummary()?.nativeElement.focus(), { injector: this.injector });
+    this.focusAfterRender(() => this.resultSummary()?.nativeElement);
+  }
+
+  private focusAfterRender(target: () => HTMLElement | undefined): void {
+    if (this.destroyRef.destroyed || !isPlatformBrowser(this.platformId)) return;
+    afterNextRender(() => target()?.focus(), { injector: this.injector });
   }
 
   /**
@@ -216,12 +275,13 @@ export class VoteSummaryDialogComponent {
       return;
     }
 
-    this.showResults(this.buildUnconfirmedResult());
+    this.showResults(this.buildUnconfirmedResult(), true);
   }
 
   private rejectSend(detail: string): void {
     this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail });
     this.phase.set('review');
+    this.summarySendService.dismiss(this.vote.uid);
   }
 
   /** With no per-voter outcome from the server, every emailable voter from the preview is unconfirmed. */

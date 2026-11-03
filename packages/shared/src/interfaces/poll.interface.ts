@@ -774,6 +774,15 @@ export interface VoteSummaryResultGroup {
   recipients: VoteSummaryRecipientResult[];
 }
 
+/** In-memory summary attempt retained across in-app navigation for the effective user (#4830). */
+export interface VoteSummarySendAttempt {
+  /** The reviewed identities used when send-time recipient details are unavailable. */
+  preview: VoteSummaryPreviewResponse;
+  status: 'sending' | 'success' | 'error';
+  response?: SendVoteSummaryResponse;
+  error?: unknown;
+}
+
 /** Steps of the send-summary dialog (#4830). */
 export type VoteSummaryDialogPhase = 'review' | 'confirm' | 'sending' | 'results';
 

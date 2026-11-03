@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { VOTE_SUMMARY_NOT_ENDED, VOTE_SUMMARY_PRECHECK_FAILED, VOTE_SUMMARY_SEND_FAILED } from '@lfx-one/shared/constants';
 import { SendVoteSummaryResponse, VoteSummaryPreviewResponse } from '@lfx-one/shared/interfaces';
+import { UserService } from '@services/user.service';
+import { VoteSummarySendService } from '@services/vote-summary-send.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -44,6 +47,7 @@ async function mount(preview: Observable<VoteSummaryPreviewResponse>, send: Obse
   const add = vi.fn();
   const close = vi.fn();
   const config = { data: { vote: { uid: 'vote-1', name: 'Spring Election' } }, closable: true };
+  const user = signal<{ sub: string } | null>({ sub: 'synthetic-manager' });
 
   TestBed.configureTestingModule({
     imports: [VoteSummaryDialogComponent],
@@ -51,6 +55,7 @@ async function mount(preview: Observable<VoteSummaryPreviewResponse>, send: Obse
       { provide: DynamicDialogRef, useValue: { close } },
       { provide: DynamicDialogConfig, useValue: config },
       { provide: VoteService, useValue: { getVoteSummaryPreview, sendVoteSummary } },
+      { provide: UserService, useValue: { user } },
       { provide: MessageService, useValue: { add } },
     ],
   });
@@ -59,7 +64,7 @@ async function mount(preview: Observable<VoteSummaryPreviewResponse>, send: Obse
   fixture.detectChanges();
   await fixture.whenStable();
 
-  return { fixture, component: fixture.componentInstance, config, getVoteSummaryPreview, sendVoteSummary, add, close };
+  return { fixture, component: fixture.componentInstance, config, getVoteSummaryPreview, sendVoteSummary, add, close, user };
 }
 
 function byTestId(fixture: ComponentFixture<VoteSummaryDialogComponent>, id: string): HTMLElement | null {
@@ -115,9 +120,16 @@ describe('VoteSummaryDialogComponent', () => {
     const { fixture } = await mount(of(PREVIEW));
     current = fixture;
 
-    const list = byTestId(fixture, 'vote-summary-dialog-ready')!.querySelector('ul')!;
-    expect(list.classList.contains('overflow-auto')).toBe(true);
-    expect(list.classList.contains('max-h-[min(32rem,calc(90dvh-14rem))]')).toBe(true);
+    for (const id of ['ready', 'missing']) {
+      const list = byTestId(fixture, `vote-summary-dialog-${id}`)!.querySelector('ul')!;
+      expect(list.classList.contains('overflow-auto')).toBe(true);
+      expect(list.classList.contains('max-h-[min(32rem,calc(90dvh-14rem))]')).toBe(true);
+      expect(list.tabIndex).toBe(0);
+      expect(list.getAttribute('aria-labelledby')).toBe(`vote-summary-${id}-heading`);
+      expect(list.classList.contains('focus-visible:outline-2')).toBe(true);
+      list.focus();
+      expect(document.activeElement).toBe(list);
+    }
   });
 
   it('explains that voters sharing an address get one email', async () => {
@@ -181,6 +193,7 @@ describe('VoteSummaryDialogComponent', () => {
     const { fixture, sendVoteSummary } = await mount(of(PREVIEW));
     current = fixture;
 
+    button(fixture, 'vote-summary-dialog-send').focus();
     button(fixture, 'vote-summary-dialog-send').click();
     await render(fixture);
 
@@ -188,12 +201,18 @@ describe('VoteSummaryDialogComponent', () => {
       "Emails can't be recalled once sent. Send the summary to 2 email addresses?"
     );
     expect(sendVoteSummary).not.toHaveBeenCalled();
+    const prompt = byTestId(fixture, 'vote-summary-dialog-confirm-text')!;
+    expect(document.activeElement).toBe(prompt);
+    expect(prompt.getAttribute('role')).toBeNull();
+    expect(button(fixture, 'vote-summary-dialog-send-now').getAttribute('aria-describedby')).toBe(prompt.id);
+    button(fixture, 'vote-summary-dialog-back').focus();
 
     button(fixture, 'vote-summary-dialog-back').click();
     await render(fixture);
 
     expect(byTestId(fixture, 'vote-summary-dialog-confirm-text')).toBeNull();
     expect(byTestId(fixture, 'vote-summary-dialog-send')).not.toBeNull();
+    expect(document.activeElement).toBe(button(fixture, 'vote-summary-dialog-send'));
     expect(sendVoteSummary).not.toHaveBeenCalled();
   });
 
@@ -225,6 +244,12 @@ describe('VoteSummaryDialogComponent', () => {
       'vote-summary-dialog-group-uncertain',
     ]);
     expect(groups.map((group) => group.querySelector('lfx-tag')!.textContent!.trim())).toEqual(['Sent', 'Not sent', 'Missing email', 'Unconfirmed']);
+    for (const group of groups) {
+      const list = group.querySelector('ul')!;
+      expect(list.tabIndex).toBe(0);
+      expect(list.getAttribute('aria-labelledby')).toBe(group.querySelector('h4')!.id);
+      expect(list.classList.contains('focus-visible:outline-2')).toBe(true);
+    }
     expect(byTestId(fixture, 'vote-summary-dialog-group-sent')!.textContent).toContain('Inbox delivery and opens are not tracked.');
 
     const summary = byTestId(fixture, 'vote-summary-dialog-result-summary')!;
@@ -288,7 +313,27 @@ describe('VoteSummaryDialogComponent', () => {
 
     expect(byTestId(fixture, 'vote-summary-dialog-group-uncertain')!.querySelectorAll('li')).toHaveLength(3);
     expect(byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent).toContain('3 unconfirmed');
-    expect(byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent).toContain('1 skipped (no email address)');
+    expect(byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent).toContain('1 voter(s) had no email address');
+    expect(byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent).not.toContain('skipped');
+  });
+
+  it.each([undefined, null, {}])('falls back safely when a successful legacy response has recipients=%s', async (recipients) => {
+    const legacy = { ...SENT, recipients } as unknown as SendVoteSummaryResponse;
+    const { fixture } = await mount(of(PREVIEW), of(legacy));
+    current = fixture;
+    await sendNow(fixture);
+
+    const detail = byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent!;
+    expect(detail).toContain('Earlier review: 2 unconfirmed voter(s)');
+    expect(detail).toContain('not confirmed send outcomes');
+    expect(detail).toContain('Actual send-time recipients may differ or include voters not listed here');
+    expect(detail).toContain('retrying may send duplicate summaries');
+    const missing = byTestId(fixture, 'vote-summary-dialog-group-skipped')!;
+    expect(missing.textContent).toContain('No email at review');
+    expect(missing.textContent).toContain('Their send-time address and outcome are unknown');
+    expect(missing.textContent).not.toContain('nothing could be sent');
+    expect(byTestId(fixture, 'vote-summary-dialog-group-sent')).toBeNull();
+    expect(byTestId(fixture, 'vote-summary-dialog-send-now')).toBeNull();
   });
 
   it('locks the host header and Escape only while sending', async () => {
@@ -332,6 +377,65 @@ describe('VoteSummaryDialogComponent', () => {
     pending.next(SENT);
     pending.complete();
     expect(pending.observed).toBe(false);
+  });
+
+  it('restores a pending send after navigation, then its partial results without another POST or preview', async () => {
+    const pending = new Subject<SendVoteSummaryResponse>();
+    const { fixture, getVoteSummaryPreview, sendVoteSummary } = await mount(of(PREVIEW), pending);
+    current = fixture;
+    await sendNow(fixture);
+    fixture.destroy();
+
+    const reopened = TestBed.createComponent(VoteSummaryDialogComponent);
+    current = reopened;
+    await render(reopened);
+    expect(button(reopened, 'vote-summary-dialog-send-now').disabled).toBe(true);
+    expect(byTestId(reopened, 'vote-summary-dialog-send')).toBeNull();
+    expect(sendVoteSummary).toHaveBeenCalledTimes(1);
+    expect(getVoteSummaryPreview).toHaveBeenCalledTimes(1);
+
+    pending.next(SENT);
+    pending.complete();
+    await render(reopened);
+    expect(byTestId(reopened, 'vote-summary-dialog-group-failed')!.textContent).toContain('Blake Example');
+    expect(TestBed.inject(VoteSummarySendService).getAttempt('vote-1')?.status).toBe('success');
+
+    button(reopened, 'vote-summary-dialog-close').click();
+    expect(TestBed.inject(VoteSummarySendService).getAttempt('vote-1')).toBeUndefined();
+    reopened.destroy();
+    const afterClose = TestBed.createComponent(VoteSummaryDialogComponent);
+    current = afterClose;
+    await render(afterClose);
+    expect(button(afterClose, 'vote-summary-dialog-send').disabled).toBe(false);
+    expect(sendVoteSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores an unconfirmed outcome that arrives while the dialog is destroyed', async () => {
+    const pending = new Subject<SendVoteSummaryResponse>();
+    const { fixture, sendVoteSummary } = await mount(of(PREVIEW), pending);
+    current = fixture;
+    await sendNow(fixture);
+    fixture.destroy();
+    pending.error(new HttpErrorResponse({ status: 504 }));
+
+    const reopened = TestBed.createComponent(VoteSummaryDialogComponent);
+    current = reopened;
+    await render(reopened);
+    expect(byTestId(reopened, 'vote-summary-dialog-group-uncertain')!.textContent).toContain('Avery Example');
+    expect(byTestId(reopened, 'vote-summary-dialog-result-detail')!.textContent).toContain('retrying may send duplicate summaries');
+    expect(sendVoteSummary).toHaveBeenCalledTimes(1);
+    expect(byTestId(reopened, 'vote-summary-dialog-send')).toBeNull();
+  });
+
+  it('closes and clears recipient identities when the effective user changes', async () => {
+    const { fixture, user, close } = await mount(of(PREVIEW));
+    current = fixture;
+    await sendNow(fixture);
+    user.set({ sub: 'another-synthetic-manager' });
+    await render(fixture);
+    expect(close).toHaveBeenCalledWith(false);
+    expect(byTestId(fixture, 'vote-summary-dialog-result-summary')).toBeNull();
+    expect(TestBed.inject(VoteSummarySendService).getAttempt('vote-1')).toBeUndefined();
   });
 
   it.each([
@@ -423,6 +527,9 @@ describe('VoteSummaryDialogComponent', () => {
     expect(uncertain.textContent).toContain('Blake Example');
     expect(uncertain.textContent).toContain('sending again could create duplicates');
     expect(byTestId(fixture, 'vote-summary-dialog-group-skipped')!.textContent).toContain('Drew Example');
+    expect(byTestId(fixture, 'vote-summary-dialog-group-skipped')!.textContent).toContain('No email at review');
+    expect(byTestId(fixture, 'vote-summary-dialog-group-skipped')!.textContent).not.toContain('nothing could be sent');
+    expect(byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent).toContain('not confirmed send outcomes');
     expect(byTestId(fixture, 'vote-summary-dialog-group-sent')).toBeNull();
     expect(byTestId(fixture, 'vote-summary-dialog-close')).not.toBeNull();
   });

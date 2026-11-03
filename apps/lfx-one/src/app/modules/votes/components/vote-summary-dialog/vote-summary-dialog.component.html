@@ -24,7 +24,10 @@
         </div>
         <p class="text-[12.5px] text-gray-500">{{ group.display.description }}</p>
         <!-- Fit about 10 desktop rows while reserving viewport space for the dialog header and actions. -->
-        <ul class="flex max-h-[min(32rem,calc(90dvh-14rem))] flex-col overflow-auto rounded-lg border border-gray-200">
+        <ul
+          tabindex="0"
+          [attr.aria-labelledby]="'vote-summary-group-' + group.outcome"
+          class="flex max-h-[min(32rem,calc(90dvh-14rem))] flex-col overflow-auto rounded-lg border border-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
           @for (recipient of group.recipients; track recipient.uid) {
             <li
               class="flex flex-col gap-0.5 border-t border-gray-100 px-4 py-2.5 first:border-t-0"
@@ -92,7 +95,10 @@
           <section class="flex flex-col gap-2" aria-labelledby="vote-summary-ready-heading" data-testid="vote-summary-dialog-ready">
             <h4 id="vote-summary-ready-heading" class="text-[12.5px] font-semibold text-gray-900">Ready to receive ({{ recipients.ready.length }})</h4>
             <!-- Fit about 10 desktop rows while reserving viewport space for the dialog header and actions. -->
-            <ul class="flex max-h-[min(32rem,calc(90dvh-14rem))] flex-col overflow-auto rounded-lg border border-gray-200">
+            <ul
+              tabindex="0"
+              aria-labelledby="vote-summary-ready-heading"
+              class="flex max-h-[min(32rem,calc(90dvh-14rem))] flex-col overflow-auto rounded-lg border border-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
               @for (recipient of recipients.ready; track recipient.uid) {
                 <li
                   class="flex flex-col gap-0.5 border-t border-gray-100 px-4 py-2.5 first:border-t-0"
@@ -111,7 +117,10 @@
               No email address ({{ recipients.missing_email.length }})
             </h4>
             <!-- Fit about 10 desktop rows while reserving viewport space for the dialog header and actions. -->
-            <ul class="flex max-h-[min(32rem,calc(90dvh-14rem))] flex-col overflow-auto rounded-lg border border-gray-200">
+            <ul
+              tabindex="0"
+              aria-labelledby="vote-summary-missing-heading"
+              class="flex max-h-[min(32rem,calc(90dvh-14rem))] flex-col overflow-auto rounded-lg border border-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
               @for (recipient of recipients.missing_email; track recipient.uid) {
                 <li
                   class="flex flex-col gap-0.5 border-t border-gray-100 px-4 py-2.5 first:border-t-0"
@@ -130,7 +139,7 @@
 
 <div class="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-3" data-testid="vote-summary-dialog-footer">
   @if (phase() === 'confirm' || phase() === 'sending') {
-    <p class="text-[12.5px] text-gray-700" role="alert" data-testid="vote-summary-dialog-confirm-text">
+    <p #confirmText id="vote-summary-confirm-text" tabindex="-1" class="text-[12.5px] text-gray-700" data-testid="vote-summary-dialog-confirm-text">
       Emails can't be recalled once sent. Send the summary to {{ preview()?.unique_email_count }}
       {{ preview()?.unique_email_count === 1 ? 'email address' : 'email addresses' }}?
     </p>
@@ -149,6 +158,7 @@
           (onClick)="cancel()"
           data-testid="vote-summary-dialog-cancel"></lfx-button>
         <lfx-button
+          #reviewSendButton
           label="Send"
           icon="fa-light fa-paper-plane"
           severity="info"
@@ -179,6 +189,7 @@
           icon="fa-light fa-paper-plane"
           severity="info"
           size="small"
+          ariaDescribedBy="vote-summary-confirm-text"
           [loading]="sending()"
           [disabled]="sending()"
           (onClick)="onConfirmSend()"
