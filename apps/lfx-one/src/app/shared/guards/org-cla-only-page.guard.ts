@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { computed, inject, Injector, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateChildFn, NavigationStart, Router, UrlTree } from '@angular/router';
-import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { LENS_DEFAULT_ROUTES, ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { filter, firstValueFrom, of, ReplaySubject, take, takeUntil, timeout } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
@@ -44,7 +44,7 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
   // another company is never judged by this navigation's answer.
   const uid = accountContext.selectedAccount().uid;
   const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;
-  const claPage = (): UrlTree | null => (segment && claOnlyAccess.isClaOnly(uid) ? router.createUrlTree(['/org', segment, CLA_PAGE]) : null);
+  const claPage = (): UrlTree | null => (segment && claOnlyAccess.isClaOnly(uid) ? router.createUrlTree([LENS_DEFAULT_ROUTES.org, segment, CLA_PAGE]) : null);
 
   // Watched from before the first await and replayed, so a navigation that starts during a wait still
   // cancels the late redirect below.

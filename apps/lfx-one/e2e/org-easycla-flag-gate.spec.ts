@@ -5,7 +5,7 @@
  * Org Lens EasyCLA dark-launch gate E2E (GH-1982).
  *
  * The guard has unit tests and the component has unit tests, but neither touches `app.routes.ts` —
- * delete the `canMatch` entry and both still pass while `/org/easycla` becomes reachable with the
+ * delete the `canMatch` entry and both still pass while `/company/easycla` becomes reachable with the
  * flag off. That is the one failure a dark launch cannot afford, so it is pinned here instead:
  * flag off must redirect away and hide the nav item, flag on must render the page.
  *
@@ -39,7 +39,7 @@ function sidebarLink(page: Page, name: string): Locator {
 }
 
 /**
- * Deep-link to `/org/easycla` with the flag pinned, and report where the router settled.
+ * Deep-link to `/company/easycla` with the flag pinned, and report where the router settled.
  *
  * The visit to `/` first, then a reload, is the sequence the other Org Lens specs use to get an
  * authenticated app running before the guarded URL is requested. The guard redirects
@@ -78,7 +78,7 @@ test.describe('Org Lens EasyCLA dark-launch gate', () => {
   test('sends a deep link to Org Overview and hides the nav item while the flag is off', async ({ page }) => {
     await deepLinkToEasycla(page, false);
 
-    await expect(page).toHaveURL(/\/org\/overview/, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(/\/company\/overview/, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-page')).toHaveCount(0);
 
     // Wait for a sibling item before asserting EasyCLA's absence. Org-lens nav items only render
@@ -95,7 +95,7 @@ test.describe('Org Lens EasyCLA dark-launch gate', () => {
     // (spec 050): the organization is inserted into the address. The mock organization publishes
     // no slug, so its segment is the SFID. Asserting the final shape exactly, so a regression that
     // left the leftover address in place — or inserted a different organization — would fail here.
-    await expect(page).toHaveURL(new RegExp(`/org/${MOCK_ACCOUNT_ID}/easycla$`), { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/company/${MOCK_ACCOUNT_ID}/easycla$`), { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-page')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-title')).toContainText(MOCK_ACCOUNT_NAME);
     await expect(page.getByTestId('org-easycla-empty-state')).toBeVisible();

@@ -179,7 +179,10 @@ describe('SidebarNavService', () => {
         // Spec 050 US2: Org Lens items address the selected organization. Most cases assert the tree
         // shape, so the builder is stubbed to the legacy form; `orgSegment` names an organization for
         // the cases that assert the org-scoped form.
-        { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/org/${orgSegment()}/${page}` : `/org/${page}`) } },
+        {
+          provide: OrgLensNavigationService,
+          useValue: { orgLensPath: (page: string) => (orgSegment() ? `/company/${orgSegment()}/${page}` : `/company/${page}`) },
+        },
         { provide: AccountContextService, useValue: { selectedAccount: () => ({ accountId: '', accountName: 'Acme', uid: selectedOrgUid() }) } },
         { provide: OrgRoleGrantsService, useValue: { writerSet: orgWriterSet, claManagerOrgSet } },
       ],
@@ -468,7 +471,7 @@ describe('SidebarNavService', () => {
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
     expect(labels(items)).not.toContain('EasyCLA');
-    expect(findByLink(items, '/org/easycla')).toBeUndefined();
+    expect(findByLink(items, '/company/easycla')).toBeUndefined();
     expect(labels(sectionItems(items, 'Organization Engagement'))).not.toContain('EasyCLA');
   });
 
@@ -478,7 +481,7 @@ describe('SidebarNavService', () => {
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
     const itemLabels = labels(items);
-    const easycla = findByLink(items, '/org/easycla');
+    const easycla = findByLink(items, '/company/easycla');
 
     expect(easycla).toEqual(
       expect.objectContaining({ label: 'EasyCLA', icon: 'fa-light fa-file-signature', testId: 'sidebar-org-easycla', dividerBefore: true })
@@ -507,7 +510,7 @@ describe('SidebarNavService', () => {
     expect(labels(optedIn)).toEqual(['EasyCLA']);
   });
 
-  it('aliases only EasyCLA, to the leftover /org/easycla mount, so an addressed link still highlights there', () => {
+  it('aliases only EasyCLA, to the leftover /company/easycla mount, so an addressed link still highlights there', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
     orgSegment.set('acme-inc');
@@ -515,7 +518,7 @@ describe('SidebarNavService', () => {
     const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
     const aliased = flatten(TestBed.inject(SidebarNavService).sidebarItems()).filter((item) => item.activeAliases);
 
-    expect(aliased).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: '/org/acme-inc/easycla', activeAliases: ['/org/easycla'] })]);
+    expect(aliased).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: '/company/acme-inc/easycla', activeAliases: ['/company/easycla'] })]);
   });
 
   it('keeps EasyCLA directly above Organization Profile and closes the menu with the LF Staff Only section', () => {
@@ -545,7 +548,7 @@ describe('SidebarNavService', () => {
 
       const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-      expect(items).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: `/org/${CLA_ONLY_UID}/easycla` })]);
+      expect(items).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: `/company/${CLA_ONLY_UID}/easycla` })]);
       expect(items[0].dividerBefore).toBeFalsy();
     });
 
@@ -575,13 +578,13 @@ describe('SidebarNavService', () => {
     const lfStaffOnly = sectionItems(items, 'LF Staff Only');
     const itemLabels = labels(items);
 
-    expect(findByLink(items, '/org/acme-inc/overview')).toEqual(expect.objectContaining({ label: 'Dashboard' }));
-    expect(findByLink(lfStaffOnly, '/org/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
-    expect(findByLink(engagement, '/org/acme-inc/people')).toEqual(expect.objectContaining({ label: 'People' }));
+    expect(findByLink(items, '/company/acme-inc/overview')).toEqual(expect.objectContaining({ label: 'Dashboard' }));
+    expect(findByLink(lfStaffOnly, '/company/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
+    expect(findByLink(engagement, '/company/acme-inc/people')).toEqual(expect.objectContaining({ label: 'People' }));
     // Phase 2 (lfx-self-serve#2743): EasyCLA is addressed like every other Org Lens item.
-    expect(findByLink(items, '/org/acme-inc/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA', testId: 'sidebar-org-easycla' }));
+    expect(findByLink(items, '/company/acme-inc/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA', testId: 'sidebar-org-easycla' }));
     const orgLinks = [...items, ...engagement, ...lfStaffOnly].map((item) => item.routerLink).filter((link): link is string => !!link);
-    expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual([]);
+    expect(orgLinks.filter((link) => !link.startsWith('/company/acme-inc/'))).toEqual([]);
     expect(itemLabels[itemLabels.length - 1]).toBe('LF Staff Only');
     expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
   });
@@ -594,10 +597,10 @@ describe('SidebarNavService', () => {
     const items = TestBed.inject(SidebarNavService).sidebarItems();
     const engagement = sectionItems(items, 'Organization Engagement');
 
-    expect(findByLink(items, '/org/acme-inc/overview')?.carryQueryParams).toBeUndefined();
-    expect(findByLink(items, '/org/acme-inc/projects')?.carryQueryParams).toEqual(['orgScope', 'teamMembers']);
-    expect(findByLink(engagement, '/org/acme-inc/people')?.carryQueryParams).toEqual(['range', 'orgScope', 'teamMembers']);
-    expect(findByLink(engagement, '/org/acme-inc/contributions')?.carryQueryParams).toEqual(['range', 'orgScope', 'teamMembers']);
+    expect(findByLink(items, '/company/acme-inc/overview')?.carryQueryParams).toBeUndefined();
+    expect(findByLink(items, '/company/acme-inc/projects')?.carryQueryParams).toEqual(['orgScope', 'teamMembers']);
+    expect(findByLink(engagement, '/company/acme-inc/people')?.carryQueryParams).toEqual(['range', 'orgScope', 'teamMembers']);
+    expect(findByLink(engagement, '/company/acme-inc/contributions')?.carryQueryParams).toEqual(['range', 'orgScope', 'teamMembers']);
   });
 
   it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected organization with the flag on', () => {
@@ -608,23 +611,23 @@ describe('SidebarNavService', () => {
     const service = TestBed.inject(SidebarNavService);
 
     orgWriterSet.set(new Set([orgUid]));
-    expect(findByLink(service.sidebarItems(), '/org/acme-inc/initiatives')).toBeUndefined();
+    expect(findByLink(service.sidebarItems(), '/company/acme-inc/initiatives')).toBeUndefined();
 
     crowdfundingAttributionEnabled.set(true);
     orgWriterSet.set(new Set(['001000000000000BBB']));
-    expect(findByLink(service.sidebarItems(), '/org/acme-inc/initiatives')).toBeUndefined();
+    expect(findByLink(service.sidebarItems(), '/company/acme-inc/initiatives')).toBeUndefined();
 
     orgWriterSet.set(new Set([orgUid]));
     const items = service.sidebarItems();
     const itemLabels = labels(items);
-    expect(findByLink(items, '/org/acme-inc/initiatives')).toEqual(
+    expect(findByLink(items, '/company/acme-inc/initiatives')).toEqual(
       expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: 'sidebar-org-initiatives' })
     );
     expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('Projects') + 1);
   });
 
   describe('the LF Staff Only section', () => {
-    const ROI_LINK = '/org/acme-inc/roi';
+    const ROI_LINK = '/company/acme-inc/roi';
 
     beforeEach(() => {
       activeLens.set('org');

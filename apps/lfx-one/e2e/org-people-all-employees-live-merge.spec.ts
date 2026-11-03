@@ -12,7 +12,7 @@ import { expect, Page, Route, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
-const PEOPLE_ALL_URL = '/org/people?tab=all';
+const PEOPLE_ALL_URL = '/company/people?tab=all';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;

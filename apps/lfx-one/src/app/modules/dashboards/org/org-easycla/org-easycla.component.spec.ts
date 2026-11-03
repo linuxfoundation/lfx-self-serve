@@ -155,7 +155,7 @@ describe('OrgEasyclaComponent', () => {
       const fixture = await render();
 
       const link = byTestId(fixture, 'org-easycla-docs-link') as HTMLAnchorElement;
-      expect(link.getAttribute('href')).toBe('/docs/organization/easycla');
+      expect(link.getAttribute('href')).toBe('/docs/company/easycla');
       expect(link.getAttribute('target')).toBe('_blank');
       expect(link.textContent?.trim()).toBe('Learn more about EasyCLA →');
     });
@@ -409,7 +409,7 @@ describe('OrgEasyclaComponent', () => {
       // The state key is spelled out rather than taken from the constant, deliberately. It is
       // written into a history entry that outlives the deployment that wrote it, so renaming it
       // silently breaks in-app back and forward into a preview opened before the deploy.
-      expect(navigate).toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
+      expect(navigate).toHaveBeenCalledWith(['/company', SELECTED_ACCOUNT.uid, 'easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
     });
 
     it('goes nowhere when no CLA group was chosen', async () => {
@@ -713,7 +713,7 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
       const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement | null;
       // Addressed by CLA Group, with this row's signature narrowing it (#2364).
-      expect(link?.getAttribute('href')).toContain(`/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=a`);
+      expect(link?.getAttribute('href')).toContain(`/company/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=a`);
     });
 
     /**
@@ -733,14 +733,14 @@ describe('OrgEasyclaComponent', () => {
       const hrefs = allByTestId(fixture, 'org-easycla-card-link').map((link) => (link as HTMLAnchorElement).getAttribute('href'));
 
       expect(hrefs).toEqual([
-        `/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-a`,
-        `/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-b`,
+        `/company/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-a`,
+        `/company/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-b`,
       ]);
     });
 
     /**
      * The contract marks the CLA Group id optional, so a card must not link to an address built
-     * from a missing one — `/org/easycla/undefined` resolves to nothing. It is card-only instead,
+     * from a missing one — `/company/easycla/undefined` resolves to nothing. It is card-only instead,
      * and deliberately does not fall back to the signature id, which would reintroduce a second
      * address shape for this page.
      */
@@ -1301,7 +1301,7 @@ describe('OrgEasyclaComponent', () => {
       expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: ACME_MOTORS.uid, accountName: ACME_MOTORS.accountName }));
     });
 
-    // Spec 050 phase 2: under `/org/{segment}/easycla` the path names the organization and the path
+    // Spec 050 phase 2: under `/company/{segment}/easycla` the path names the organization and the path
     // guard is its authority. A `?org=` there — carried over by a switch, or crafted — is not
     // adopted, but it is taken off the address so a reload or a copied link stops presenting it.
     it('ignores ?org= on the organization-addressed mount and strips it from the address', async () => {
@@ -1313,7 +1313,7 @@ describe('OrgEasyclaComponent', () => {
       expect(refreshCanonicalRecord).not.toHaveBeenCalled();
       expect(navigate).toHaveBeenCalledWith(
         [],
-        expect.objectContaining({ queryParams: { org: null, signed: null }, queryParamsHandling: 'merge', replaceUrl: true })
+        expect.objectContaining({ queryParams: { company: null, org: null, signed: null }, queryParamsHandling: 'merge', replaceUrl: true })
       );
     });
 
@@ -1381,7 +1381,7 @@ describe('OrgEasyclaComponent', () => {
     it('strips the parameter once adopted, so a reload or a copied link cannot pin a stale organization', async () => {
       const { navigate } = await renderReturnedFrom(ACME_MOTORS.uid);
 
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, replaceUrl: true }));
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { company: null, org: null, signed: null }, replaceUrl: true }));
     });
 
     // Left in place it would keep re-asserting an organization the viewer cannot have, on a page
@@ -1432,7 +1432,7 @@ describe('OrgEasyclaComponent', () => {
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(resetAndReload).not.toHaveBeenCalled();
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, replaceUrl: true }));
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { company: null, org: null, signed: null }, replaceUrl: true }));
     });
 
     it('touches nothing on an ordinary visit that carries no organization', async () => {

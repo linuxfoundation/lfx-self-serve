@@ -17,7 +17,7 @@ function foundationSlug(): string {
 }
 
 function detailUrl(): string {
-  return `/org/memberships/${foundationSlug()}`;
+  return `/company/memberships/${foundationSlug()}`;
 }
 
 function loadTimeout(): number {

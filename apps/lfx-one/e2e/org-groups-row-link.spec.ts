@@ -57,8 +57,8 @@ test.describe('Org Groups — row vs. foundation link (GH-1784)', () => {
 
   test('clicking the foundation label opens the membership detail page instead', async ({ page }) => {
     await page.getByTestId(`org-groups-item-project-${GROUP_UID}`).click();
-    await page.waitForURL((url) => url.pathname.startsWith(`/org/memberships/${PROJECT_SLUG}`));
-    expect(page.url()).toContain(`/org/memberships/${PROJECT_SLUG}`);
+    await page.waitForURL((url) => url.pathname.startsWith(`/company/memberships/${PROJECT_SLUG}`));
+    expect(page.url()).toContain(`/company/memberships/${PROJECT_SLUG}`);
   });
 
   test('clicking the second row body opens that group detail page, not the first row', async ({ page }) => {
@@ -69,8 +69,8 @@ test.describe('Org Groups — row vs. foundation link (GH-1784)', () => {
 
   test('clicking the second row foundation label opens that membership page, not the first row', async ({ page }) => {
     await page.getByTestId(`org-groups-item-project-${SECOND_GROUP_UID}`).click();
-    await page.waitForURL((url) => url.pathname.startsWith(`/org/memberships/${SECOND_PROJECT_SLUG}`));
-    expect(page.url()).toContain(`/org/memberships/${SECOND_PROJECT_SLUG}`);
+    await page.waitForURL((url) => url.pathname.startsWith(`/company/memberships/${SECOND_PROJECT_SLUG}`));
+    expect(page.url()).toContain(`/company/memberships/${SECOND_PROJECT_SLUG}`);
   });
 });
 

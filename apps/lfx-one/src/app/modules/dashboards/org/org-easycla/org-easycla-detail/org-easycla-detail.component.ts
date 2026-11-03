@@ -39,7 +39,6 @@ import {
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_CLA_STATUS_DISPLAY,
   ORG_CLA_VIEW_ONLY_COPY,
-  ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
@@ -60,6 +59,7 @@ import {
   orgClaPreviewGroup,
   orgClaReviewCopyFilename,
   isOrgClaSendByEmailChoice,
+  easyclaReturnOrgParam,
 } from '@lfx-one/shared/utils';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { MenuItem, MessageService } from 'primeng/api';
@@ -1924,7 +1924,7 @@ export class OrgEasyclaDetailComponent {
   private readReturnOrgUid(): string | null {
     if (!this.readReturnFlag()) return null;
     if (this.orgLens.isOrgAddressed(this.route.snapshot)) return this.accountContext.selectedAccount()?.uid ?? null;
-    return this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    return easyclaReturnOrgParam((name) => this.route.snapshot.queryParamMap.get(name));
   }
 
   /**
@@ -1952,7 +1952,7 @@ export class OrgEasyclaDetailComponent {
     // crafted and is not adopted — but it is taken off the address, either by the wait's settle or,
     // with no wait open, right here, so a reload or a copied link does not keep presenting a
     // parameter the page ignores. The wait, if flagged, runs against the addressed selection.
-    const carried = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    const carried = easyclaReturnOrgParam((name) => this.route.snapshot.queryParamMap.get(name));
     const addressed = this.orgLens.isOrgAddressed(this.route.snapshot);
     const named = addressed ? null : carried;
     if (!named && !this.awaitingSignedRow()) {

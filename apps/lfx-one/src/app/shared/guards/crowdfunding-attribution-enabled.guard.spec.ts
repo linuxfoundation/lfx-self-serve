@@ -131,13 +131,13 @@ describe('crowdfundingAttributionEnabledGuard', () => {
   it('denies an Org Lens route to the addressed organization overview (#348)', async () => {
     getBooleanFlag.mockReturnValue(signal(false));
     router.getCurrentNavigation.mockReturnValue({
-      extractedUrl: { root: { children: { primary: { segments: ['org', 'acme-inc', 'initiatives'].map((path) => ({ path })) } } } },
+      extractedUrl: { root: { children: { primary: { segments: ['company', 'acme-inc', 'initiatives'].map((path) => ({ path })) } } } },
     });
     router.parseUrl.mockImplementation((url: string) => ({ redirected: url }));
 
     const result = await TestBed.runInInjectionContext(() => crowdfundingAttributionEnabledGuard({ path: 'initiatives', data: { lens: 'org' } }, segments));
 
-    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
+    expect(result).toEqual({ redirected: '/company/acme-inc/overview' });
     expect(router.createUrlTree).not.toHaveBeenCalled();
   });
 });

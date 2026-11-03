@@ -5,7 +5,7 @@ import { expect, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME, SYNTHETIC_ORG_SLUG } from './fixtures/mock-data/synthetic-org.mock';
 
-const ORG_PROJECTS_URL = '/org/projects';
+const ORG_PROJECTS_URL = '/company/projects';
 const DATA_LOAD_TIMEOUT = 30_000;
 const TEST_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 const TEST_ORG_UID = TEST_ACCOUNT_ID;
@@ -233,7 +233,7 @@ test.describe('Org Projects', () => {
     await expect(contributors).toHaveAttribute('aria-label', /View 1 contributor for Kubernetes/);
     await contributors.click();
 
-    await expect(page).toHaveURL(/\/org\/projects\/kubernetes\?(?:.*&)?card=contributors/);
+    await expect(page).toHaveURL(/\/company\/projects\/kubernetes\?(?:.*&)?card=contributors/);
   });
 
   test('Participants count links to the project detail page without a drawer param', async ({ page }) => {
@@ -242,7 +242,7 @@ test.describe('Org Projects', () => {
 
     await page.getByTestId('org-projects-participants-kubernetes').click();
 
-    await expect(page).toHaveURL(/\/org\/projects\/kubernetes(?:\?|$)/);
+    await expect(page).toHaveURL(/\/company\/projects\/kubernetes(?:\?|$)/);
     expect(page.url()).not.toContain('card=');
   });
 

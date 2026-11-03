@@ -5,7 +5,7 @@ import { expect, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
-const ORG_TRAINING_URL = '/org/training';
+const ORG_TRAINING_URL = '/company/training';
 const DATA_LOAD_TIMEOUT = 30_000;
 const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 

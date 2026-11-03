@@ -154,7 +154,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
     expect(component['leaderboardDetailOpen']()).toBe(false);
   });
 
-  // Losing the organization does not unmount this page — an empty org list keeps the user under /org
+  // Losing the organization does not unmount this page — an empty org list keeps the user under /company
   // to meet the empty state — so an open drawer would sit over that empty state waiting forever on an
   // organization the page no longer has.
   it('closes the drawer when the organization is cleared underneath it', async () => {

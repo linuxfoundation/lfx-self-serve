@@ -60,7 +60,7 @@ async function chooseClaGroup(page: Page): Promise<void> {
   await page.getByTestId(`org-easycla-group-select-${CASCADE.claGroupId}`).click();
   await page.getByTestId('org-easycla-group-continue').locator('button').click();
 
-  await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${CASCADE.claGroupId}$`), { timeout: PAGE_LOAD_TIMEOUT });
+  await expect(page).toHaveURL(new RegExp(`/company/(?:[^/]+/)?easycla/${CASCADE.claGroupId}$`), { timeout: PAGE_LOAD_TIMEOUT });
 }
 
 async function openSendByEmail(page: Page): Promise<void> {
@@ -108,7 +108,7 @@ test.describe('Org Lens EasyCLA send-by-email — content', () => {
 
     await expect(page.getByTestId('org-easycla-send-by-email-sent')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-send-by-email-sent-body')).toHaveText(CCLA_SIGN_COPY.sendByEmail.successBody(SIGNATORY_EMAIL));
-    await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${CASCADE.claGroupId}$`));
+    await expect(page).toHaveURL(new RegExp(`/company/(?:[^/]+/)?easycla/${CASCADE.claGroupId}$`));
   });
 
   test('shows a refusal in the words the CLA service used, not the self-sign prepare sentence', async ({ page }) => {
@@ -126,6 +126,6 @@ test.describe('Org Lens EasyCLA send-by-email — content', () => {
     await expect(page.getByTestId('org-easycla-send-by-email-failed')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-send-by-email-failure-message')).toHaveText(refusal);
     await expect(page.getByTestId('org-easycla-send-by-email-failure-message')).not.toContainText(CCLA_SIGN_COPY.failure.body);
-    await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${CASCADE.claGroupId}$`));
+    await expect(page).toHaveURL(new RegExp(`/company/(?:[^/]+/)?easycla/${CASCADE.claGroupId}$`));
   });
 });
