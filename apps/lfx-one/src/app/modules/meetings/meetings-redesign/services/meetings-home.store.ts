@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
@@ -36,7 +36,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { catchError, combineLatest, interval, map, Observable, of, skip, startWith, Subject, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, interval, map, Observable, of, startWith, Subject, switchMap, tap } from 'rxjs';
 
 /**
  * State of the Me lens meetings home list, provided by the page component.
@@ -150,16 +150,6 @@ export class MeetingsHomeStore {
   public readonly hasActiveQuery: Signal<boolean> = computed(() => this.search().trim() !== '' || countAppliedMeetingFilters(this.filters()) > 0);
   /** One chip per applied filter. */
   public readonly filterChips: Signal<MeetingFilterChip[]> = computed(() => buildMeetingFilterChips(this.filters(), this.tabRows()));
-
-  public constructor() {
-    // The composer saves in place, so reload both feeds after each save; skip(1) drops the count replayed on subscribe.
-    toObservable(this.composer.saveCount)
-      .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => {
-        this.userService.refreshUserMeetings();
-        this.userService.refreshUserPastMeetings();
-      });
-  }
 
   /** Switches tab and clears the filters; search is kept. */
   public setTab(tab: MeetingDashboardView): void {

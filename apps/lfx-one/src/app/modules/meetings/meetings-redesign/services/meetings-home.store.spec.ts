@@ -147,8 +147,6 @@ describe('MeetingsHomeStore', () => {
       isMeetingRegistrationEnded: vi.fn(() => false),
       authenticated: signal(true),
       meetingJoinIdentity: signal({ name: 'Real Viewer', email: 'real@example.test' }),
-      refreshUserMeetings: vi.fn(),
-      refreshUserPastMeetings: vi.fn(),
     };
   });
 
@@ -352,17 +350,6 @@ describe('MeetingsHomeStore', () => {
   });
 
   describe('composer saves', () => {
-    it('reloads both feeds after a save, not on load', () => {
-      create();
-
-      expect(userService['refreshUserMeetings']).not.toHaveBeenCalled();
-      TestBed.inject(MeetingComposerService).notifySaved();
-      TestBed.tick();
-
-      expect(userService['refreshUserMeetings']).toHaveBeenCalledTimes(1);
-      expect(userService['refreshUserPastMeetings']).toHaveBeenCalledTimes(1);
-    });
-
     it("reloads the next meeting's responses after a save", () => {
       const store = create();
       upcoming$.next([buildMeeting()]);
