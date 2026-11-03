@@ -76,16 +76,14 @@ async function stubMeetingsHome(page: Page, options: MeetingsHomeStubOptions): P
   return mocks;
 }
 
-/** Skips when global setup ran without credentials and the app bounced to Auth0. */
-function skipWhenAuthMissing(page: Page): void {
-  const { hostname } = new URL(page.url());
-  if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
-    test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
-  }
+/** Skips only when no credentials are configured; a rejected or expired session must fail, not skip. */
+function skipWhenCredentialsMissing(): void {
+  test.skip(!process.env['TEST_USERNAME'] && !process.env['TEST_PASSWORD'], 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
 }
 
 /** Opens the redesigned meetings page at a fixed clock with synthetic feeds. */
 export async function gotoMeetingsHome(page: Page, options: MeetingsHomeStubOptions = {}): Promise<MeetingsHomeMocks> {
+  skipWhenCredentialsMissing();
   await suppressCookieBanner(page);
   await stubMeetingsRedesignFlag(page, true);
   await page.clock.setFixedTime(MEETINGS_HOME_NOW);
@@ -93,7 +91,7 @@ export async function gotoMeetingsHome(page: Page, options: MeetingsHomeStubOpti
   const mocks = await stubMeetingsHome(page, options);
 
   await page.goto(`/meetings${options.query ?? ''}`, { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
+  await expect(page).not.toHaveURL(/auth0\.com/);
   await expect(page.getByTestId('meetings-redesign')).toBeVisible({ timeout: MEETINGS_HOME_LOAD_TIMEOUT });
   return mocks;
 }
