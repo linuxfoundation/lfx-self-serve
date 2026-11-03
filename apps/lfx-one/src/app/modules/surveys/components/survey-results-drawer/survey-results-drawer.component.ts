@@ -13,7 +13,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { SurveyService } from '@services/survey.service';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, of, startWith, switchMap } from 'rxjs';
 
 import { SurveyResponsesListComponent } from '../survey-responses-list/survey-responses-list.component';
 
@@ -116,8 +116,11 @@ export class SurveyResultsDrawerComponent {
   // === Private Initializers ===
   private initSurvey(): Signal<Survey | null> {
     return toSignal(
-      // Same project scope as the response rows, so totals/NPS and rates/comments always match.
-      combineLatest([toObservable(this.surveyId), toObservable(this.projectUid)]).pipe(
+      // Same project scope and the same open as the response rows, so totals/NPS and rates/comments
+      // always describe the same data. Each open refetches past the short detail cache; while the
+      // drawer is closed the last survey is kept so the close animation doesn't blank out.
+      combineLatest([toObservable(this.surveyId), toObservable(this.projectUid), toObservable(this.visible)]).pipe(
+        filter(([, , visible]) => visible),
         switchMap(([id, projectUid]) => {
           if (!id) {
             this.loading.set(false);
@@ -127,7 +130,7 @@ export class SurveyResultsDrawerComponent {
           this.loading.set(true);
           const listData = this.listSurvey();
 
-          return this.surveyService.getSurvey(id, projectUid ?? undefined).pipe(
+          return this.surveyService.getSurvey(id, projectUid ?? undefined, { skipCache: true }).pipe(
             catchError(() => of(listData)),
             finalize(() => this.loading.set(false)),
             startWith(listData)

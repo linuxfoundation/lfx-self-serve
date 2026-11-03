@@ -71,4 +71,16 @@ describe('SurveyService.getAllSurveyResponses', () => {
 
     expect(error).toBeInstanceOf(Error);
   });
+
+  it('surfaces a 404 on a later page instead of discarding the rows already loaded', () => {
+    let rows: SurveyResponseItem[] | undefined;
+    let error: unknown;
+    service.getAllSurveyResponses('s-1', 'p-1').subscribe({ next: (r) => (rows = r), error: (e) => (error = e) });
+
+    expectPage(undefined).flush({ data: [{ id: 'r-1' }], meta: { page_token: 't-2' } });
+    expectPage('t-2').flush(null, { status: 404, statusText: 'Not Found' });
+
+    expect(rows).toBeUndefined();
+    expect(error).toBeDefined();
+  });
 });

@@ -305,14 +305,15 @@ export const SURVEY_RESPONSES_PAGE_SIZE = 200;
 export const SURVEY_RESPONSES_MAX_PAGES = 50;
 
 /**
- * Position of each delivery status in the email funnel (higher = further along).
- * A row at a later stage counts toward every earlier stage's rate.
+ * Position of each invitation-email status in the funnel (higher = further along).
+ * A row at a later stage counts toward every earlier stage. "Responded" is deliberately
+ * absent: someone can answer through a copied personal link after their email bounced,
+ * so a response is not evidence of delivery, opening or clicking.
  */
 export const SURVEY_RESPONSE_FUNNEL_RANK: Readonly<Record<string, number>> = {
   delivered: 1,
   opened: 2,
   clicked: 3,
-  responded: 4,
 };
 
 /**

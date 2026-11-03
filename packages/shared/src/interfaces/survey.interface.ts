@@ -421,6 +421,16 @@ export interface SurveyEngagementRates {
 }
 
 /**
+ * Which invitation-email stages one recipient reached
+ * @description Derived from SES flags and the delivery status; a later stage implies the earlier ones.
+ */
+export interface SurveyEmailStages {
+  delivered: boolean;
+  opened: boolean;
+  clicked: boolean;
+}
+
+/**
  * Project-level values substituted into a sent survey email
  * @description Values the survey row does not carry: staff names come from project settings.
  */

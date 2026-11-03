@@ -113,7 +113,13 @@ export class SurveyService {
       return this.http.get<SurveyResponsesPage>(`/api/surveys/${encodeURIComponent(surveyUid)}/responses`, { params });
     };
 
-    return fetchPage().pipe(
+    // Only the first request may 404 (upstream release not deployed yet); a 404 on a later page
+    // is a real failure and must not discard the rows already loaded.
+    const firstPage$ = fetchPage().pipe(
+      catchError((error) => (error?.status === 404 ? of({ data: [], meta: {} } as SurveyResponsesPage) : throwError(() => error)))
+    );
+
+    return firstPage$.pipe(
       expand((page) => (page.meta?.page_token ? fetchPage(page.meta.page_token) : EMPTY)),
       take(SURVEY_RESPONSES_MAX_PAGES),
       reduce((acc, page) => ({ rows: [...acc.rows, ...(page.data ?? [])], nextToken: page.meta?.page_token }), {
@@ -126,8 +132,7 @@ export class SurveyService {
           throw new Error(`Survey ${surveyUid} has more than ${SURVEY_RESPONSES_MAX_PAGES} pages of responses`);
         }
         return rows;
-      }),
-      catchError((error) => (error?.status === 404 ? of([] as SurveyResponseItem[]) : throwError(() => error)))
+      })
     );
   }
 

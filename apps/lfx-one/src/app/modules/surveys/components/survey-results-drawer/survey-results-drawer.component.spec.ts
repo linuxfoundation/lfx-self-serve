@@ -61,7 +61,7 @@ describe('SurveyResultsDrawerComponent', () => {
 
     expect(getAllSurveyResponses).toHaveBeenCalledWith('s-1', 'p-1');
     expect(component['comments']().map((c) => c.comment)).toEqual(['Newer', 'Older']);
-    expect(component['engagementRates']()).toMatchObject({ recipients: 3, delivered: 3, opened: 3, responded: 2, commentRate: 100 });
+    expect(component['engagementRates']()).toMatchObject({ recipients: 3, delivered: 1, opened: 1, responded: 2, commentRate: 100 });
   });
 
   it('retries a failed load when the drawer is closed and reopened', async () => {
@@ -114,13 +114,28 @@ describe('SurveyResultsDrawerComponent', () => {
   it('refetches the survey detail with the new project scope when the project changes', async () => {
     const { fixture, getSurvey, getAllSurveyResponses, activeContext } = await mount(true);
     current = fixture;
-    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-1');
+    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-1', { skipCache: true });
 
     activeContext.set({ uid: 'p-2' });
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-2');
+    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-2', { skipCache: true });
     expect(getAllSurveyResponses).toHaveBeenLastCalledWith('s-1', 'p-2');
+  });
+
+  it('refetches the survey detail, skipping the cache, each time the drawer is reopened', async () => {
+    const { fixture, getSurvey } = await mount(true);
+    current = fixture;
+    expect(getSurvey).toHaveBeenCalledTimes(1);
+
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getSurvey).toHaveBeenCalledTimes(2);
+    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-1', { skipCache: true });
   });
 });

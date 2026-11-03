@@ -17,7 +17,7 @@ const SURVEY = {
   survey_title: 'Board NPS',
   committees: [],
   email_subject: 'Feedback for {{.ProjectName}}',
-  email_body: '<p>Hi {{.FirstName}}, from {{.ExecutiveDirectorName}}. Visit https://lfx.dev</p>',
+  email_body: '<p>Hi {{.FirstName}}, from {{.ExecutiveDirectorName}}. Visit (https://lfx.dev).</p>',
 } as unknown as Survey;
 const RESPONSE = { id: 'r-1', first_name: 'Ana', last_name: 'Lee', committee_uid: 'c-1' } as SurveyResponseItem;
 
@@ -54,7 +54,7 @@ describe('SurveySentEmailDialogComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="survey-sent-email-subject"]').textContent).toContain('Feedback for CNCF');
     const html = component['email']()!.html;
     expect(html).toContain('Hi Ana, from Jane Doe.');
-    expect(html).toContain('<a href="https://lfx.dev" target="_blank" rel="noopener noreferrer">https://lfx.dev</a>');
+    expect(html).toContain('(<a href="https://lfx.dev" target="_blank" rel="noopener noreferrer">https://lfx.dev</a>).');
   });
 
   it("reads ED/PM names from the recipient's own project, not the active context", async () => {

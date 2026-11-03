@@ -4,7 +4,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Survey, SurveyResponseItem } from '../interfaces/survey.interface';
-import { buildSurveyFollowUpMailto, buildSurveyResponsesCsvRows, getSurveyEngagementRates, renderSurveyEmailForRecipient } from './survey.utils';
+import {
+  buildSurveyFollowUpMailto,
+  buildSurveyResponsesCsvRows,
+  getSurveyEmailStages,
+  getSurveyEngagementRates,
+  renderSurveyEmailForRecipient,
+} from './survey.utils';
 
 const survey = {
   uid: 's-1',
@@ -28,16 +34,17 @@ describe('getSurveyEngagementRates', () => {
       row({ response_status: 'Failed' }),
     ]);
 
+    // The responded row has no email evidence, so it counts as a response only.
     expect(rates).toEqual({
       recipients: 4,
-      delivered: 3,
-      opened: 3,
-      clicked: 2,
+      delivered: 2,
+      opened: 2,
+      clicked: 1,
       responded: 1,
       commented: 1,
-      deliveryRate: 75,
+      deliveryRate: 50,
       openRate: 100,
-      clickRate: 67,
+      clickRate: 50,
       commentRate: 100,
     });
   });
@@ -120,5 +127,29 @@ describe('buildSurveyResponsesCsvRows', () => {
       'Great',
     ]);
     expect(rows.flat()).not.toContain('https://www.surveymonkey.com/r/x');
+  });
+});
+
+describe('getSurveyEmailStages', () => {
+  it('rolls SES evidence up to earlier stages and never infers email stages from a response', () => {
+    expect(getSurveyEmailStages(row({ response_status: 'Pending', ses_link_clicked: true }))).toEqual({ delivered: true, opened: true, clicked: true });
+    expect(getSurveyEmailStages(row({ response_status: 'Failed', ses_email_opened: true }))).toEqual({ delivered: true, opened: true, clicked: false });
+    expect(getSurveyEmailStages(row({ response_status: 'Responded', response_datetime: '2026-11-03T10:00:00Z' }))).toEqual({
+      delivered: false,
+      opened: false,
+      clicked: false,
+    });
+  });
+
+  it('keeps the CSV columns in line with the rates for a status-only row', () => {
+    const [, csvRow] = buildSurveyResponsesCsvRows(survey, [row({ response_status: 'Clicked' })]);
+    expect(csvRow.slice(6, 9)).toEqual(['Yes', 'Yes', 'Yes']);
+  });
+});
+
+describe('renderSurveyEmailForRecipient — send quarter', () => {
+  it('fills {{Quarter}} and {{Year}} from the send date', () => {
+    const email = renderSurveyEmailForRecipient({ ...survey, survey_send_date: '2026-11-02T09:00:00Z', email_subject: '{{Quarter}} {{Year}} survey' }, row({}));
+    expect(email.subject).toBe('Q4 2026 survey');
   });
 });

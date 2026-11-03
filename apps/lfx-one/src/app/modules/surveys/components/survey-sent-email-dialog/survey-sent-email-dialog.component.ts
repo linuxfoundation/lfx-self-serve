@@ -106,7 +106,10 @@ export class SurveySentEmailDialogComponent {
       let lastIndex = 0;
 
       for (const match of text.matchAll(/(https?:\/\/[^\s<"']+)|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g)) {
-        const [fullMatch, url, address] = match;
+        const [rawMatch, rawUrl, address] = match;
+        // Like mail clients, leave sentence punctuation after a bare URL out of the link: "(…/abc)." links "…/abc".
+        const url = rawUrl?.replace(/[).,;:!?]+$/, '');
+        const fullMatch = url ?? rawMatch;
         const index = match.index ?? 0;
         if (index > lastIndex) {
           fragment.append(doc.createTextNode(text.slice(lastIndex, index)));

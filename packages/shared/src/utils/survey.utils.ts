@@ -10,6 +10,7 @@ import type {
   Survey,
   SurveyDisplayStatusInput,
   SurveyEmailRenderContext,
+  SurveyEmailStages,
   SurveyEngagementRates,
   SurveyResponseItem,
   SurveyStatusInput,
@@ -194,11 +195,25 @@ function percentOf(count: number, total: number): number {
 }
 
 /**
+ * Which invitation-email stages a recipient reached.
+ * @description A stage counts when SES flagged it or the delivery status is that stage, and a
+ * later stage implies every earlier one (a click means it was opened and delivered). A response
+ * alone proves nothing about the email: it may have come through a copied personal link.
+ * @param item - The per-recipient survey response
+ */
+export function getSurveyEmailStages(item: SurveyResponseItem): SurveyEmailStages {
+  const rank = SURVEY_RESPONSE_FUNNEL_RANK[(item.response_status ?? '').toLowerCase()] ?? 0;
+  const clicked = item.ses_link_clicked === true || rank >= 3;
+  const opened = clicked || item.ses_email_opened === true || rank >= 2;
+  const delivered = opened || item.ses_delivery_successful === true || rank >= 1;
+  return { delivered, opened, clicked };
+}
+
+/**
  * Aggregate delivery, open, click, response and comment counts across every response row.
- * @description A recipient counts for a stage when SES flagged it or when their delivery
- * status is that stage or later (a "Clicked" row was also opened and delivered). Delivery
- * rate is over all recipients; open and click rates are over delivered; comment rate is
- * over responded.
+ * @description Email stages come from getSurveyEmailStages; responses are counted separately.
+ * Delivery rate is over all recipients; open and click rates are over delivered; comment rate
+ * is over responded.
  * @param rows - Every per-recipient response row for the survey (all pages)
  * @returns Counts and whole-percentage rates
  */
@@ -210,12 +225,11 @@ export function getSurveyEngagementRates(rows: readonly SurveyResponseItem[]): S
   let commented = 0;
 
   for (const row of rows) {
-    const rank = SURVEY_RESPONSE_FUNNEL_RANK[(row.response_status ?? '').toLowerCase()] ?? 0;
-    const hasResponded = hasSurveyResponse(row);
-    if (row.ses_delivery_successful === true || rank >= 1 || hasResponded) delivered++;
-    if (row.ses_email_opened === true || rank >= 2) opened++;
-    if (row.ses_link_clicked === true || rank >= 3) clicked++;
-    if (hasResponded) {
+    const stages = getSurveyEmailStages(row);
+    if (stages.delivered) delivered++;
+    if (stages.opened) opened++;
+    if (stages.clicked) clicked++;
+    if (hasSurveyResponse(row)) {
       responded++;
       if (getResponseComment(row) !== null) commented++;
     }
@@ -239,6 +253,14 @@ export function getSurveyEngagementRates(rows: readonly SurveyResponseItem[]): S
 function formatSurveyCutoffDate(value: string | null | undefined): string {
   const date = value ? new Date(value) : null;
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '';
+}
+
+/** `{{Quarter}}` / `{{Year}}` from when the survey was sent (UTC); omitted when no date is known. */
+function surveySendQuarter(survey: Survey): Record<string, string> {
+  const raw = survey.survey_send_date || survey.created_at;
+  const date = raw ? new Date(raw) : null;
+  if (!date || Number.isNaN(date.getTime())) return {};
+  return { Quarter: `Q${Math.floor(date.getUTCMonth() / 3) + 1}`, Year: String(date.getUTCFullYear()) };
 }
 
 /** Matches `{{.Name}}` (ITX/Go templates, used by board surveys) and `{{Name}}` (Self Serve's wizard). */
@@ -268,6 +290,7 @@ export function renderSurveyEmailForRecipient(survey: Survey, item: SurveyRespon
     MembershipTier: item.membership_tier ?? '',
     SurveyLink: surveyLink,
     CutoffDate: formatSurveyCutoffDate(survey.survey_cutoff_date),
+    ...surveySendQuarter(survey),
     ExecutiveDirectorName: context.executiveDirectorName ?? '',
     ProgramManagerName: context.programManagerName ?? '',
     ProjectLogo: context.projectLogo ?? '',
@@ -316,11 +339,12 @@ export function buildSurveyFollowUpMailto(survey: Survey, item: SurveyResponseIt
  */
 export function buildSurveyResponsesCsvRows(survey: Survey, rows: readonly SurveyResponseItem[]): (string | number)[][] {
   const header = ['Name', 'Email', 'Organization', 'Committee', 'Role', 'Delivery Status', 'Delivered', 'Opened', 'Clicked', 'Responded At', 'NPS', 'Comment'];
-  const yesNo = (value: boolean | undefined): string => (value ? 'Yes' : 'No');
+  const yesNo = (value: boolean): string => (value ? 'Yes' : 'No');
 
   const body = rows.map((row) => {
     const committee = survey.committees?.find((c) => c.committee_uid === row.committee_uid);
     const responded = hasSurveyResponse(row);
+    const stages = getSurveyEmailStages(row);
     return [
       `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.username || '',
       row.email ?? '',
@@ -328,9 +352,9 @@ export function buildSurveyResponsesCsvRows(survey: Survey, rows: readonly Surve
       [committee?.project_name, committee?.committee_name].filter(Boolean).join(' | '),
       row.role ?? '',
       row.response_status ?? '',
-      yesNo(row.ses_delivery_successful),
-      yesNo(row.ses_email_opened),
-      yesNo(row.ses_link_clicked),
+      yesNo(stages.delivered),
+      yesNo(stages.opened),
+      yesNo(stages.clicked),
       responded ? (row.response_datetime ?? '') : '',
       responded && typeof row.nps_value === 'number' ? row.nps_value : '',
       getResponseComment(row) ?? '',

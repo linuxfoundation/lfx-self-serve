@@ -211,7 +211,10 @@ export class SurveyService {
 
     const [page, managedCommitteeUids] = await Promise.all([
       this.microserviceProxy.proxyRequest<SurveyResponsesPage>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/responses`, 'GET', params),
-      this.getManagedCommitteeUids(req, surveyUid).catch(() => new Set<string>()),
+      this.getManagedCommitteeUids(req, surveyUid).catch((err) => {
+        logger.warning(req, 'get_survey_responses', 'Failed to resolve managed committees; stripping personal links', { survey_uid: surveyUid, err });
+        return new Set<string>();
+      }),
     ]);
 
     // Defensive normalization: upstream is contractually { data, meta }, but guard
