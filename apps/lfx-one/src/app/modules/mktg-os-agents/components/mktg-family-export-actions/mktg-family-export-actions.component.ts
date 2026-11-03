@@ -276,7 +276,9 @@ export class MktgFamilyExportActionsComponent {
         this.writer() &&
         !this.checking() &&
         !this.lookupError() &&
-        !this.lookupRetrying() &&
+        // A failing first read holds Export; a transient re-read of a loaded lookup keeps it (law 5: the last loaded content
+        // stays and stays usable), as the Slides panel does.
+        !(this.lookupRetrying() && !this.lookup()) &&
         !!this.lookup()?.currentMembers.length &&
         !this.busy()
     );
@@ -322,6 +324,7 @@ export class MktgFamilyExportActionsComponent {
           this.partialLink.set(null);
           this.message.set('');
           this.lookupError.set('');
+          this.lookupRetrying.set(false);
           if (!target || !writer) {
             this.checking.set(false);
             return of(null);
@@ -336,7 +339,7 @@ export class MktgFamilyExportActionsComponent {
               let first = true;
               let denied = false;
               const read = () => {
-                // A refused lookup is latched for this target (RFC 9110 §15.5.4): no wake re-reads it.
+                // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
                 if (denied) return EMPTY;
                 // Only the first read shows the checking line: a retry keeps the plain line until it succeeds (no flicker).
                 if (first) {

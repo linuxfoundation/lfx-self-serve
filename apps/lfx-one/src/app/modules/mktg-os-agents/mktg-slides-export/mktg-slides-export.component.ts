@@ -57,7 +57,7 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
   selector: 'lfx-mktg-slides-export',
   imports: [DatePipe, ButtonComponent, MessageComponent, MktgSkeletonComponent],
   templateUrl: './mktg-slides-export.component.html',
-  // Document history is secondary: unknown history hides after the paint cap; failures offer retry.
+  // Document history is secondary: unknown history hides after the paint cap; a failure shows the plain line while the poller re-reads.
   host: { '[class.hidden]': '!visible()' },
 })
 export class MktgSlidesExportComponent {
@@ -152,7 +152,7 @@ export class MktgSlidesExportComponent {
   });
   /** The last export's line shows while nothing newer is on the panel. */
   protected readonly showLast = computed(() => this.last() !== null && this.phase() !== 'running' && this.phase() !== 'done');
-  /** A failed refresh retains an existing deck's retry; a first document failure offers retry after the paint cap. */
+  /** A failed lookup keeps an existing deck's plain status line; a first document failure shows it after the paint cap. */
   protected readonly showLookupFailed = computed(() => this.lookupFailed() && this.phase() === 'idle');
   protected readonly lookupPending = computed(() => Boolean(this.lastTarget()) && !this.lookupSettled() && !this.lookupFailed() && this.phase() === 'idle');
   public readonly visible = computed(
@@ -192,8 +192,8 @@ export class MktgSlidesExportComponent {
         )
         .subscribe((response) => {
           if (!response) {
-            // Keep the cap timer running so a first failure gains a reachable retry
-            // without inserting an error bar before the document's initial paint.
+            // Keep the cap timer running so a first failure shows the plain line (while the poller re-reads) only after
+            // the cap, without inserting a bar before the document's initial paint.
             this.lookupFailed.set(true);
             this.lookupAnswered.emit(JSON.stringify(this.lastTarget()));
             return;
@@ -293,14 +293,14 @@ export class MktgSlidesExportComponent {
    * (approval / Make current) and, after a transient failure, by the shared
    * poller on its capped backoff and when the tab returns, the window focuses
    * or the network is back; null while the read has failed. A failed read's
-   * line stays until a read succeeds. A refused or otherwise final read is
-   * not retried.
+   * line stays until a read succeeds. A refused read (401/403) is latched; any
+   * other final read is not retried on backoff, only on the next wake.
    */
   private readLast(target: MktgSlidesExportTarget): Observable<MktgSlidesExportLastResponse | null> {
     let denied = false;
     let first = true;
     const read = (): Observable<MktgSlidesExportLastResponse | null> => {
-      // A refused lookup is latched for this target (RFC 9110 §15.5.4): no wake re-reads it.
+      // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
       if (denied) return EMPTY;
       // The first lookup of a target, a re-check after the documents changed and a retry after a failure hold Export;
       // a wake re-read (tab return, focus, reconnect) of a settled lookup keeps it available.

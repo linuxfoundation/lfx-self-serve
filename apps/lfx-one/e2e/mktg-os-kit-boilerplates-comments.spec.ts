@@ -36,7 +36,7 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
     expect(fixture.state.adds[0]['anchor']).not.toHaveProperty('passage');
     if (agentKey === 'brand-kit') {
       await expect.poll(() => fixture.exportChecks()).toBeGreaterThan(0);
-      await expect(page.getByText('Could not check for an earlier deck', { exact: false })).toHaveCount(0);
+      await expect(page.getByTestId('mktg-slides-export-lookup-failed')).toHaveCount(0);
       // Even when the reader moves, the submitted Voice passage must be visible on landing.
       await page.getByTestId('brand-kit-web-view-tab-color').click();
     }

@@ -853,7 +853,13 @@ describe('Member360RunComponent', () => {
     } else {
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBeNull();
       if (state === 'failed') expect(navigate).toHaveBeenCalledWith(['../documents/member-360', capability().request.documentId], expect.anything());
-      if (state === 'empty') expect(fixture.nativeElement.textContent).toContain('The questions are not available yet.');
+      if (state === 'empty') {
+        // A self-updating wait is a plain status line, never an error box.
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-generating"] [role="status"]')?.textContent).toContain(
+          'The questions are not available yet.'
+        );
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+      }
       if (state === 'poll-error') {
         expect(fixture.nativeElement.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
         expect(fixture.nativeElement.querySelector('[data-testid="member-360-check-again"]')).toBeNull();
@@ -886,6 +892,19 @@ describe('Member360RunComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('could not be started');
     expect(button().disabled).toBe(false);
+  });
+  it('shows the questions-not-yet wait of a run confirmed during the first load as a status line, not an error box', async () => {
+    await render();
+    const component = fixture.componentInstance;
+    // The first confirmation is still open (the page shows its skeleton) and the owned run's turn has no questions yet.
+    component['confirmedScope'].set('');
+    component['loadingIssue'].set([component['screenScope'](), 'The questions are not available yet. Checking the same run again.', 'status']);
+    fixture.detectChanges();
+    const note = fixture.nativeElement.querySelector('[data-testid="member-360-state-note"]');
+    expect(note?.getAttribute('role')).toBe('status');
+    expect(note?.textContent).toContain('The questions are not available yet.');
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-state-retrying"]')).toBeNull();
   });
   it('does not guess a form when the initial server snapshot fails, and reads again on its own with no Refresh button', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });

@@ -172,9 +172,9 @@ describe('Family export slot', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(root.querySelector('[data-testid="family-export-lookup-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
-    // The loaded lookup stays (no flicker); Export waits only while the re-read is still failing.
+    // The loaded lookup stays and stays usable (law 5): Export is held only while a first read is failing.
     expect(fixture.componentInstance['lookup']()).not.toBeNull();
-    expect(button('slides')?.disabled).toBe(true);
+    expect(button('slides')?.disabled).toBe(false);
     api.last.mockReturnValue(of(lookup()));
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();

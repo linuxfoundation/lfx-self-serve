@@ -191,7 +191,7 @@ export class AeoGeoRunComponent {
           // The strict read keeps the failure's status: a transient one (network, 408, 429, 5xx) is retried by the shared
           // poller on its capped backoff and on tab return, focus or reconnect, behind one quiet line; a refused or missing
           // project (401/403/404, any other final) is a plain state, latched, so no wake sends the same request again
-          // (RFC 9110 §15.5.4). No Try again button.
+          // (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll). No Try again button.
           let projectFinal = false;
           const readProject = (): Observable<Project> => {
             if (projectFinal) return EMPTY;
@@ -205,9 +205,15 @@ export class AeoGeoRunComponent {
                 this.retrying.set(false);
                 this.loading.set(false);
                 this.previousLoading.set(false);
-                // A final answer after a good read retires the writer-only parts (the form, the previous reports): the plain
-                // state stands alone instead of an error line above loaded content.
+                // Defence in depth: after a good read the strict cache replays and this cannot run today, but a source that
+                // can answer again (an evicted cache, a future strict re-check) must not leave a stale writer form, an
+                // answerable question form or a live run watch behind. The plain state stands alone.
                 this.writer.set(false);
+                this.generation?.unsubscribe();
+                this.activeRun.set(null);
+                this.questions.set([]);
+                this.answerValues.set({});
+                this.busy.set(false);
                 // A refused project is the plain no-access state; anything else final is a plain load error.
                 if (status !== 401 && status !== 403) this.error.set('The project could not be loaded.');
                 return EMPTY;

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants';
 import {
@@ -48,7 +48,8 @@ export class MktgSlidesExportService {
     return this.http.get<MktgSlidesExportLastResponse>(`${MKTG_SLIDES_EXPORT_API_PATH}/last`, { params }).pipe(
       take(1),
       catchError((error: unknown) => {
-        console.error('[mktg-slides-export] last export read failed', { ...target, error });
+        // Status only, once per attempt: the poller retries this read on its own, so the whole error would repeat on every tick.
+        console.error('[mktg-slides-export] last export read failed', { ...target, status: error instanceof HttpErrorResponse ? error.status : 0 });
         return throwError(() => error);
       })
     );

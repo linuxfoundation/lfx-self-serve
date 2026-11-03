@@ -126,8 +126,8 @@ export class Member360RunComponent {
   private readonly confirmedScope = signal('');
   private readonly checkedHistoryScope = signal('');
   private readonly deniedScope = signal('');
-  /** [scope, message, retrying]: the screen-state line, and whether it is the poller's transient retry rather than a final failure. */
-  private readonly loadingIssue = signal<[string, string, boolean]>(['', '', false]);
+  /** [scope, message, kind]: the screen-state line; `retrying` is the poller's transient retry, `status` a self-updating wait, `error` a final failure. */
+  private readonly loadingIssue = signal<[string, string, 'error' | 'retrying' | 'status']>(['', '', 'error']);
   private readonly accepted = signal<[string, MktgPendingGeneration | null]>(['', null]);
   private readonly ownedContext = signal<[string, MktgDocumentRunProgress | null]>(['', null]);
   private readonly ownedRun = computed(() => (this.ownedContext()[0] === this.screenScope() ? this.ownedContext()[1] : null));
@@ -147,8 +147,10 @@ export class Member360RunComponent {
     if (this.serverDenied() || (this.context.activeContextUid() && this.context.activeProject() && !this.context.canWrite())) return false;
     return this.confirmedScope() !== this.screenScope();
   });
-  protected readonly loadingError = computed(() => (this.loadingIssue()[0] === this.screenScope() ? this.loadingIssue()[1] : ''));
-  protected readonly loadingRetrying = computed(() => this.loadingIssue()[0] === this.screenScope() && this.loadingIssue()[2]);
+  private readonly loadingState = computed(() => (this.loadingIssue()[0] === this.screenScope() ? this.loadingIssue() : null));
+  protected readonly loadingError = computed(() => (this.loadingState()?.[2] === 'error' ? this.loadingState()?.[1] : '') ?? '');
+  protected readonly loadingNote = computed(() => (this.loadingState()?.[2] === 'status' ? this.loadingState()?.[1] : '') ?? '');
+  protected readonly loadingRetrying = computed(() => this.loadingState()?.[2] === 'retrying');
   protected readonly pending = computed(() => {
     const [subject, pending] = this.accepted();
     return this.context.canWrite() && subject === this.users.user()?.sub && pending?.request.projectUid === this.context.activeContextUid() ? pending : null;
@@ -501,7 +503,7 @@ export class Member360RunComponent {
             this.confirmedScope.set('');
             this.checkedHistoryScope.set('');
             this.deniedScope.set('');
-            this.loadingIssue.set(['', '', false]);
+            this.loadingIssue.set(['', '', 'error']);
             this.retrying.set(false);
             this.historyRetrying.set(false);
             this.history.set([]);
@@ -537,7 +539,7 @@ export class Member360RunComponent {
           const fetch = (): Observable<MktgDocumentListItem[]> => {
             partialRead = false;
             if (!project || !user || !this.context.canWrite()) return of([]);
-            // A refused scope is latched (RFC 9110 §15.5.4): no scheduled poll or wake sends the same credentials again.
+            // A refused scope is latched (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no scheduled poll or wake sends the same credentials again.
             if (this.deniedScope() === key) return EMPTY;
             const poll = background;
             background = true;
@@ -601,7 +603,7 @@ export class Member360RunComponent {
           const transient = partialRead || isTransientHttpError(event.error);
           this.historyRetrying.set(transient);
           this.historyError.set(transient ? '' : 'Run history could not be loaded.');
-          this.loadingIssue.set([key, transient ? '' : 'The run state could not be checked.', transient]);
+          this.loadingIssue.set([key, transient ? '' : 'The run state could not be checked.', transient ? 'retrying' : 'error']);
           if (event.error instanceof HttpErrorResponse && (event.error.status === 401 || event.error.status === 403)) this.deniedScope.set(key);
         } else {
           this.historyRetrying.set(false);
@@ -691,6 +693,7 @@ export class Member360RunComponent {
         switchMap(({ pending, runId, state: recordedState }) => {
           if (this.resultContext()[0] !== pending) this.resultContext.set([null, null]);
           this.stillRunning.set(false);
+          this.retrying.set(false);
           if (!pending || !runId) return EMPTY;
           return slow$.pipe(
             switchMap((slow) => {
@@ -712,7 +715,7 @@ export class Member360RunComponent {
               if (event.kind === 'error') {
                 const transient = isTransientHttpError(event.error);
                 this.retrying.set(transient);
-                this.loadingIssue.set([key, transient ? '' : 'The run state could not be checked.', transient]);
+                this.loadingIssue.set([key, transient ? '' : 'The run state could not be checked.', transient ? 'retrying' : 'error']);
                 this.error.set(transient ? '' : 'The run could not be checked. No new run is started.');
                 if (event.error instanceof HttpErrorResponse && [400, 401, 403, 404].includes(event.error.status)) {
                   this.confirmedScope.set('');
@@ -722,7 +725,7 @@ export class Member360RunComponent {
                 }
                 return;
               }
-              this.loadingIssue.set(['', '', false]);
+              this.loadingIssue.set(['', '', 'error']);
               this.retrying.set(false);
               this.error.set('');
               const result = event.value;
@@ -744,7 +747,8 @@ export class Member360RunComponent {
               this.resultContext.set([pending, value]);
               if (value.status === 'needs_input') this.answersNotice.set('');
               if (value.status === 'needs_input' && (!value.questionsId || !value.questions?.length) && this.confirmedScope() !== key) {
-                this.loadingIssue.set([key, 'The questions are not available yet. Checking the same run again.', false]);
+                // A self-updating wait is a plain status line, never an alert.
+                this.loadingIssue.set([key, 'The questions are not available yet. Checking the same run again.', 'status']);
                 return;
               }
               this.confirmedScope.set(key);

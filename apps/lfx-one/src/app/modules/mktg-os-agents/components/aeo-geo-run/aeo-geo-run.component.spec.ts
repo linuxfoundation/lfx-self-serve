@@ -620,14 +620,23 @@ describe('AeoGeoRunComponent', () => {
       vi.restoreAllMocks();
     }
   });
-  it('retires the form and the reports when a later project read is final (404): the error line stands alone', async () => {
+  it('retires the form, the reports, the run watch and the question form when a later project read is final (404)', async () => {
     const getRevision = vi.fn(() => of(report(documentType(), 'doc-1')));
     TestBed.overrideProvider(MktgDocumentStoreService, { useValue: { listDocuments, getRevision } });
     listWithOneReport();
+    loadActive.mockReturnValue(run());
+    const results = new Subject<{ status: string; questionsId?: string; questions?: ReturnType<typeof aeoGeoRunQuestions> }>();
+    poll.mockReturnValue(results);
     await render();
-    expect(query('mktg-aeo-run-form')).not.toBeNull();
+    results.next({ status: 'questions', questionsId: 'questions-1', questions: aeoGeoRunQuestions(aeoGeoQuestionsFixture()) });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    // The recovered run asks its questions in place of the form; the reports are loaded.
+    expect(query('mktg-run-questions')).not.toBeNull();
     expect(fixture.componentInstance['runs']()).toHaveLength(1);
-    // The strict cache evicted the project (a role check failed elsewhere); the wake's read is final this time.
+    expect(fixture.componentInstance['questions']().length).toBeGreaterThan(0);
+    // Defence in depth: in production the strict cache replays after a good read, so this needs a source that can answer
+    // again (an evicted cache, a future strict re-check). The mock answers again here.
     getProject.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
     window.dispatchEvent(new Event('focus'));
     await fixture.whenStable();
@@ -636,6 +645,12 @@ describe('AeoGeoRunComponent', () => {
     expect(query('mktg-aeo-run-retrying')).toBeNull();
     expect(query('mktg-aeo-run-form')).toBeNull();
     expect(query('mktg-aeo-run-open-doc-1')).toBeNull();
+    // Nothing answerable or live is left behind: the run watch is closed and the question form is gone.
+    expect(fixture.componentInstance['activeRun']()).toBeNull();
+    expect(fixture.componentInstance['questions']()).toEqual([]);
+    expect(fixture.componentInstance['busy']()).toBe(false);
+    expect(results.observed).toBe(false);
+    expect(query('mktg-run-questions')).toBeNull();
   });
   it.each([401, 403])('shows the plain no-access state when a later project read is refused (%s), with no form left behind', async (status) => {
     await render();

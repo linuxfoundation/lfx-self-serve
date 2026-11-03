@@ -8,6 +8,8 @@
     <lfx-mktg-skeleton variant="run-page" />
     @if (loadingRetrying()) {
       <p role="status" class="text-xs text-gray-500" data-testid="member-360-state-retrying">{{ retryingText }}</p>
+    } @else if (loadingNote()) {
+      <p role="status" class="text-xs text-gray-500" data-testid="member-360-state-note">{{ loadingNote() }}</p>
     } @else if (loadingError()) {
       <lfx-message severity="error" [text]="loadingError()" data-testid="member-360-state-error" />
     }
