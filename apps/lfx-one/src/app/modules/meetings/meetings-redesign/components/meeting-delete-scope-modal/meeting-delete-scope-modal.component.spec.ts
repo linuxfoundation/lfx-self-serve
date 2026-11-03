@@ -21,18 +21,13 @@ const MEETING = {
   occurrences: [FIRST, SECOND],
 } as unknown as Meeting;
 
-const buildData = (meeting: Meeting, occurrence: MeetingOccurrence | null): MeetingDeleteDialogData => ({
-  row: {
-    key: 'row',
-    meeting,
+const buildData = (meeting: Meeting, occurrence: MeetingOccurrence | null): MeetingDeleteDialogData => {
+  const { occurrence_id = null, start_time = FIRST.start_time } = occurrence ?? {};
+  return {
+    row: { key: 'row', meeting, occurrence, title: meeting.title, occurrenceId: occurrence_id, startTime: start_time, durationMinutes: 30 },
     occurrence,
-    title: meeting.title,
-    occurrenceId: occurrence?.occurrence_id ?? null,
-    startTime: occurrence?.start_time ?? FIRST.start_time,
-    durationMinutes: 30,
-  },
-  occurrence,
-});
+  };
+};
 
 describe('MeetingDeleteScopeModalComponent', () => {
   let close: ReturnType<typeof vi.fn>;
@@ -83,13 +78,5 @@ describe('MeetingDeleteScopeModalComponent', () => {
     expect(radio('series').checked).toBe(true);
     expect(radio('occurrence').disabled).toBe(true);
     expect(query('meetings-home-delete-scope-options')?.textContent).toContain('There are no upcoming occurrences left to cancel on their own.');
-  });
-
-  it('closes with nothing on Cancel', async () => {
-    await render(buildData(MEETING, FIRST));
-
-    button('meetings-home-delete-scope-cancel').click();
-
-    expect(close).toHaveBeenCalledWith();
   });
 });

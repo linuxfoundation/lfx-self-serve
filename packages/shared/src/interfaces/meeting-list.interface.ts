@@ -173,9 +173,3 @@ export interface MeetingDeleteDialogData {
   /** Picker: the date it opens on. Confirmation: the date to cancel; null deletes the whole meeting. */
   occurrence: MeetingOccurrence | null;
 }
-
-/** A date cancelled from the meetings home page. */
-export interface MeetingCancelledOccurrence {
-  meetingId: string;
-  occurrenceId: string;
-}

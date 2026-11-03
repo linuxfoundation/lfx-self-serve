@@ -8,7 +8,6 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
   Meeting,
-  MeetingCancelledOccurrence,
   MeetingDashboardView,
   MeetingDayGroup,
   MeetingFilterChip,
@@ -61,7 +60,7 @@ export class MeetingsHomeStore {
   private readonly retry$ = new Subject<void>();
   // Kept for the page's lifetime, so a refetch that still lists a deleted meeting or cancelled date does not bring it back.
   private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
-  private readonly cancelledOccurrences: WritableSignal<readonly MeetingCancelledOccurrence[]> = signal([]);
+  private readonly cancelledOccurrenceIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = signal(new Map());
   /** Current time, ticking every minute so ended dates drop out and day buckets roll over. */
   public readonly now: Signal<Date> = this.initClock();
 
@@ -198,7 +197,7 @@ export class MeetingsHomeStore {
 
   /** Drops the row of one cancelled date. */
   public removeOccurrence(meetingId: string, occurrenceId: string): void {
-    this.cancelledOccurrences.update((cancelled) => [...cancelled, { meetingId, occurrenceId }]);
+    this.cancelledOccurrenceIds.update((ids) => new Map(ids).set(meetingId, [...(ids.get(meetingId) ?? []), occurrenceId]));
   }
 
   /** Keeps the Last meeting card in step after an organizer edits or approves the summary. */
@@ -323,10 +322,8 @@ export class MeetingsHomeStore {
 
   /** Marks dates cancelled here as cancelled on the meeting, so its rows and the occurrence pickers leave them out. */
   private withLocalCancellations(meeting: Meeting): Meeting {
-    const ids = this.cancelledOccurrences()
-      .filter((cancelled) => cancelled.meetingId === meeting.id)
-      .map((cancelled) => cancelled.occurrenceId);
-    return ids.length ? { ...meeting, cancelled_occurrences: [...(meeting.cancelled_occurrences ?? []), ...ids] } : meeting;
+    const ids = this.cancelledOccurrenceIds().get(meeting.id);
+    return ids ? { ...meeting, cancelled_occurrences: [...(meeting.cancelled_occurrences ?? []), ...ids] } : meeting;
   }
 
   /** Loads one artifact of the last meeting, again whenever it changes; a missing or failed lookup reads as null. */

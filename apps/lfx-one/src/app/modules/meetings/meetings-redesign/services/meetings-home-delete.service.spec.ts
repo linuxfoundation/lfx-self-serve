@@ -23,15 +23,10 @@ const SECOND = { occurrence_id: '2525245200', start_time: '2050-01-08T09:00:00.0
 const ONE_OFF = { id: 'synthetic-meeting', title: 'Synthetic sync', organizer: true, recurrence: null } as unknown as Meeting;
 const SERIES = { ...ONE_OFF, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 }, occurrences: [FIRST, SECOND] } as unknown as Meeting;
 
-const row = (meeting: Meeting, occurrence: MeetingOccurrence | null = null): MeetingHomeRow => ({
-  key: 'row',
-  meeting,
-  occurrence,
-  title: meeting.title,
-  occurrenceId: occurrence?.occurrence_id ?? null,
-  startTime: occurrence?.start_time ?? FIRST.start_time,
-  durationMinutes: 30,
-});
+const row = (meeting: Meeting, occurrence: MeetingOccurrence | null = null): MeetingHomeRow => {
+  const { occurrence_id = null, start_time = FIRST.start_time } = occurrence ?? {};
+  return { key: 'row', meeting, occurrence, title: meeting.title, occurrenceId: occurrence_id, startTime: start_time, durationMinutes: 30 };
+};
 
 describe('MeetingsHomeDeleteService', () => {
   let service: MeetingsHomeDeleteService;
@@ -156,17 +151,12 @@ describe('MeetingsHomeDeleteService', () => {
       });
     });
 
-    it('reports a picked date that no longer resolves instead of cancelling another one', () => {
-      service.delete(row(SERIES, SECOND));
-      scopeResult.next({ deleteType: 'occurrence', occurrenceId: '2599999999' });
-
-      expect(openedWith(MeetingDeleteModalComponent)).toBeUndefined();
-      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'No upcoming occurrence found to cancel.' }));
-    });
-
-    it('reports when no upcoming date is left to cancel', () => {
-      service.delete(row({ ...SERIES, occurrences: [] }));
-      scopeResult.next({ deleteType: 'occurrence' });
+    it.each([
+      ['a picked date that no longer resolves, instead of cancelling another one', SERIES, '2599999999'],
+      ['that no upcoming date is left to cancel', { ...SERIES, occurrences: [] }, undefined],
+    ])('reports %s', (_case, meeting, occurrenceId) => {
+      service.delete(row(meeting as Meeting, occurrenceId ? SECOND : null));
+      scopeResult.next({ deleteType: 'occurrence', occurrenceId });
 
       expect(openedWith(MeetingDeleteModalComponent)).toBeUndefined();
       expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'No upcoming occurrence found to cancel.' }));

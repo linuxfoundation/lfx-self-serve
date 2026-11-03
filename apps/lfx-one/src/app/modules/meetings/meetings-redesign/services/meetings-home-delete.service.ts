@@ -72,7 +72,8 @@ export class MeetingsHomeDeleteService {
           return;
         }
         // A picked date that no longer resolves is reported, never swapped for another one.
-        const occurrence = result.occurrenceId ? this.findOccurrence(row, result.occurrenceId) : opening;
+        const active = getActiveOccurrences(row.meeting.occurrences ?? [], row.meeting.cancelled_occurrences);
+        const occurrence = result.occurrenceId ? (active.find((date) => isSameOccurrenceId(date.occurrence_id, result.occurrenceId)) ?? null) : opening;
         if (!occurrence) {
           this.showError('Error', 'No upcoming occurrence found to cancel.');
           return;
@@ -93,16 +94,15 @@ export class MeetingsHomeDeleteService {
       .closed.pipe(take(1))
       .subscribe((done) => {
         if (!done) return;
-        const meetingId = getMeetingSeriesUid(row.meeting);
         if (occurrence) {
-          this.store.removeOccurrence(meetingId, occurrence.occurrence_id);
+          this.store.removeOccurrence(row.meeting.id, occurrence.occurrence_id);
           this.toast.show({
             variant: 'dark',
             message: 'Occurrence cancelled',
             description: 'This occurrence was cancelled. The rest of the series is unchanged.',
           });
         } else {
-          this.store.removeMeeting(meetingId);
+          this.store.removeMeeting(row.meeting.id);
           this.toast.show({ variant: 'dark', message: 'Success', description: 'Meeting deleted successfully.' });
         }
         this.userService.refreshUserMeetings();
@@ -119,13 +119,5 @@ export class MeetingsHomeDeleteService {
 
   private showError(message: string, description: string): void {
     this.toast.show({ variant: 'error', position: 'bottom-center', message, description });
-  }
-
-  private findOccurrence(row: MeetingHomeRow, occurrenceId: string): MeetingOccurrence | null {
-    return (
-      getActiveOccurrences(row.meeting.occurrences ?? [], row.meeting.cancelled_occurrences).find((candidate) =>
-        isSameOccurrenceId(candidate.occurrence_id, occurrenceId)
-      ) ?? null
-    );
   }
 }

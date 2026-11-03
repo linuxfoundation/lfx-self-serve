@@ -20,26 +20,19 @@
         <dt class="w-[64px] flex-none font-medium text-gray-600">Time:</dt>
         <dd class="text-gray-900">{{ time }}</dd>
       </div>
-      @if (occurrence) {
-        <div class="flex gap-[8px]">
-          <dt class="w-[64px] flex-none font-medium text-gray-600">Series:</dt>
-          <dd class="inline-flex items-center gap-[6px] text-gray-900">
-            <i class="fa-light fa-repeat text-blue-500" aria-hidden="true"></i>Part of Recurring Series
-          </dd>
-        </div>
-      } @else {
+      @if (!occurrence) {
         <div class="flex gap-[8px]">
           <dt class="w-[64px] flex-none font-medium text-gray-600">Guests:</dt>
           <dd class="text-gray-900" data-testid="meetings-home-delete-guests">{{ guestCount }} guest{{ guestCount !== 1 ? 's' : '' }}</dd>
         </div>
-        @if (recurring) {
-          <div class="flex gap-[8px]">
-            <dt class="w-[64px] flex-none font-medium text-gray-600">Type:</dt>
-            <dd class="inline-flex items-center gap-[6px] text-gray-900">
-              <i class="fa-light fa-repeat text-blue-500" aria-hidden="true"></i>Recurring Meeting
-            </dd>
-          </div>
-        }
+      }
+      @if (recurring) {
+        <div class="flex gap-[8px]">
+          <dt class="w-[64px] flex-none font-medium text-gray-600">{{ occurrence ? 'Series:' : 'Type:' }}</dt>
+          <dd class="inline-flex items-center gap-[6px] text-gray-900">
+            <i class="fa-light fa-repeat text-blue-500" aria-hidden="true"></i>{{ occurrence ? 'Part of Recurring Series' : 'Recurring Meeting' }}
+          </dd>
+        </div>
       }
     </dl>
   </div>
@@ -60,11 +53,7 @@
       This will permanently cancel this specific occurrence. Guests will be notified of the cancellation. This action cannot be undone.
     } @else {
       <span class="mb-[4px] block font-medium">You are deleting this meeting for all registrants, not just yourself.</span>
-      @if (recurring) {
-        This will permanently delete all meetings in this series. This action cannot be undone.
-      } @else {
-        This will permanently delete this meeting. This action cannot be undone.
-      }
+      {{ recurring ? 'This will permanently delete all meetings in this series.' : 'This will permanently delete this meeting.' }} This action cannot be undone.
     }
   </lfx-ui-note>
 

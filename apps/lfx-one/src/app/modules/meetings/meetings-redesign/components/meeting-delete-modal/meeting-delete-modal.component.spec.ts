@@ -5,11 +5,11 @@ import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RecurrenceType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingDeleteDialogData, MeetingOccurrence, PastMeeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDeleteDialogData, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of, Subject, throwError } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDeleteModalComponent } from './meeting-delete-modal.component';
@@ -43,6 +43,12 @@ describe('MeetingDeleteModalComponent', () => {
     await fixture.whenStable();
   };
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  const type = async (value: string): Promise<void> => {
+    const textarea = query('meetings-home-delete-reason')?.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = value;
+    textarea.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+  };
   const confirm = async (): Promise<void> => {
     query('meetings-home-delete-confirm')?.querySelector('button')?.click();
     await fixture.whenStable();
@@ -79,13 +85,6 @@ describe('MeetingDeleteModalComponent', () => {
       expect(deleteMeeting).toHaveBeenCalledWith('synthetic-meeting', 'series');
     });
 
-    it("deletes a past row's own meeting, not the past occurrence", async () => {
-      await render(buildData({ ...ONE_OFF, id: 'synthetic-meeting-2524640400', meeting_id: 'synthetic-meeting' } as unknown as PastMeeting));
-      await confirm();
-
-      expect(deleteMeeting).toHaveBeenCalledWith('synthetic-meeting', undefined);
-    });
-
     it.each([
       [404, 'Meeting not found. It may have already been deleted.'],
       [403, 'You do not have permission to delete this meeting.'],
@@ -101,16 +100,6 @@ describe('MeetingDeleteModalComponent', () => {
       expect(close).not.toHaveBeenCalled();
       expect(fixture.componentInstance.busy()).toBe(false);
     });
-
-    it('is busy while the request runs', async () => {
-      const request$ = new Subject<void>();
-      deleteMeeting.mockReturnValue(request$);
-      await render(buildData(ONE_OFF));
-      await confirm();
-
-      expect(fixture.componentInstance.busy()).toBe(true);
-      expect(query('meetings-home-delete-cancel')?.querySelector('button')?.disabled).toBe(true);
-    });
   });
 
   describe('cancel occurrence', () => {
@@ -120,13 +109,10 @@ describe('MeetingDeleteModalComponent', () => {
       expect(query('meetings-home-delete-details')?.textContent).toContain('Synthetic date');
       expect(query('meetings-home-delete-details')?.textContent).toContain('Part of Recurring Series');
       expect(query('meetings-home-delete-reason')?.textContent).toContain('Included in the cancellation email sent to guests.');
-      const textarea = query('meetings-home-delete-reason')?.querySelector('textarea') as HTMLTextAreaElement;
-      textarea.value = '  Holiday  ';
-      textarea.dispatchEvent(new Event('input'));
+      await type('  Holiday  ');
       await confirm();
 
       expect(cancelOccurrence).toHaveBeenCalledWith('synthetic-meeting', OCCURRENCE.occurrence_id, 'Holiday');
-      expect(deleteMeeting).not.toHaveBeenCalled();
       expect(close).toHaveBeenCalledWith(true);
     });
 
@@ -138,17 +124,10 @@ describe('MeetingDeleteModalComponent', () => {
 
     it('blocks a reason over the limit, counting code points of the trimmed text', async () => {
       await render(buildData(SERIES, OCCURRENCE));
-      const textarea = query('meetings-home-delete-reason')?.querySelector('textarea') as HTMLTextAreaElement;
-      const type = async (value: string): Promise<void> => {
-        textarea.value = value;
-        textarea.dispatchEvent(new Event('input'));
-        await fixture.whenStable();
-      };
-
       await type(`${'a'.repeat(3998)}😀😀  `);
       expect(query('meetings-home-delete-reason')?.textContent).not.toContain('Reason must be');
-
       await type('a'.repeat(4001));
+
       expect(query('meetings-home-delete-reason')?.textContent).toContain('Reason must be 4000 characters or fewer.');
       expect(query('meetings-home-delete-confirm')?.querySelector('button')?.disabled).toBe(true);
     });

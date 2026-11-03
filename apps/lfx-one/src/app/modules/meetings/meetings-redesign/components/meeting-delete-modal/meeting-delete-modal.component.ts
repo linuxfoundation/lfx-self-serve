@@ -8,7 +8,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signa
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingDeleteDialogData } from '@lfx-one/shared/interfaces';
-import { codePointLength, formatMeetingTimeRange, getMeetingSeriesUid, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
+import { codePointLength, formatMeetingTimeRange, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
@@ -60,7 +60,7 @@ export class MeetingDeleteModalComponent {
   protected confirm(): void {
     if (this.busy() || this.reasonError()) return;
     this.busy.set(true);
-    const meetingId = getMeetingSeriesUid(this.data.row.meeting);
+    const meetingId = this.data.row.meeting.id;
     const occurrence = this.occurrence;
     const request$: Observable<void> = occurrence
       ? this.meetingService.cancelOccurrence(meetingId, occurrence.occurrence_id, this.reason().trim() || undefined)

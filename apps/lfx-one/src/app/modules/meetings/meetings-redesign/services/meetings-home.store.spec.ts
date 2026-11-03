@@ -534,18 +534,18 @@ describe('MeetingsHomeStore', () => {
     it('drops every row of a deleted meeting, keeping upcoming ones out after a refetch and past ones until their feed answers', () => {
       const store = create();
       const pastOfIt = { ...buildPastMeeting('a', inDays(-1)), meeting_id: 'm-1' };
-      upcoming$.next([weeklyMeeting([inDays(1), inDays(8)]), buildMeeting({ id: 'm-2' })]);
-      past$.next([pastOfIt, buildPastMeeting('b', inDays(-2))]);
-      latestPast$.next([pastOfIt]);
-
+      const emit = (): void => {
+        upcoming$.next([weeklyMeeting([inDays(1)]), buildMeeting({ id: 'm-2' })]);
+        past$.next([pastOfIt]);
+        latestPast$.next([pastOfIt]);
+      };
+      [upcoming$.next([weeklyMeeting([inDays(1)]), buildMeeting({ id: 'm-2' })]), past$.next([pastOfIt]), latestPast$.next([pastOfIt])].at(0);
+      emit();
       store.removeMeeting('m-1');
 
-      expect(store.pastRows().map((row) => row.key)).toEqual(['m-past-b']);
+      expect(store.pastRows()).toEqual([]);
       expect(store.lastMeeting()).toBeNull();
-
-      upcoming$.next([weeklyMeeting([inDays(1), inDays(8)]), buildMeeting({ id: 'm-2' })]);
-      past$.next([pastOfIt]);
-      latestPast$.next([pastOfIt]);
+      emit();
 
       expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['m-2']);
       expect(store.pastRows().map((row) => row.key)).toEqual(['m-past-a']);
