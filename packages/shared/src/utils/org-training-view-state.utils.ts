@@ -1,0 +1,90 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { ORG_LENS_TIME_RANGE_QUERY_PARAM } from '../constants/org-lens-time-range.constants';
+import {
+  MAX_ORG_TRAINING_FILTER_VALUE_LENGTH,
+  ORG_TRAINING_DEFAULT_GROUP_BY,
+  ORG_TRAINING_VIEW_QUERY_PARAMS,
+  VALID_ORG_TRAINING_GROUP_BY_VALUES,
+} from '../constants/org-training-view.constants';
+import type { OrgTrainingFilters, OrgTrainingGroupBy, OrgTrainingStatsQuery, OrgTrainingViewState } from '../interfaces/org-training-view.interface';
+import { orgLensTimeRangeUrlParam, parseOrgLensTimeRange } from './org-lens-time-range.utils';
+
+const FILTER_KEYS = ['foundation', 'project', 'course', 'level', 'format'] as const;
+
+function parseFilterValue(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed.slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH);
+}
+
+/** URL query (read through `get`) → view state: absent/empty = no filter, unknown range = default, unknown groupBy = course. */
+export function parseOrgTrainingViewState(get: (param: string) => string | null | undefined): OrgTrainingViewState {
+  const groupBy = get(ORG_TRAINING_VIEW_QUERY_PARAMS.groupBy);
+  return {
+    range: parseOrgLensTimeRange(get(ORG_LENS_TIME_RANGE_QUERY_PARAM)),
+    foundation: parseFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.foundation)),
+    project: parseFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.project)),
+    course: parseFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.course)),
+    level: parseFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.level)),
+    format: parseFilterValue(get(ORG_TRAINING_VIEW_QUERY_PARAMS.format)),
+    groupBy: typeof groupBy === 'string' && VALID_ORG_TRAINING_GROUP_BY_VALUES.has(groupBy) ? (groupBy as OrgTrainingGroupBy) : ORG_TRAINING_DEFAULT_GROUP_BY,
+  };
+}
+
+/** View state → router query params; `null` (dropped from the URL) for every default. */
+export function serializeOrgTrainingViewState(state: OrgTrainingViewState): Record<string, string | null> {
+  return {
+    [ORG_LENS_TIME_RANGE_QUERY_PARAM]: orgLensTimeRangeUrlParam(state.range),
+    [ORG_TRAINING_VIEW_QUERY_PARAMS.foundation]: state.foundation,
+    [ORG_TRAINING_VIEW_QUERY_PARAMS.project]: state.project,
+    [ORG_TRAINING_VIEW_QUERY_PARAMS.course]: state.course,
+    [ORG_TRAINING_VIEW_QUERY_PARAMS.level]: state.level,
+    [ORG_TRAINING_VIEW_QUERY_PARAMS.format]: state.format,
+    [ORG_TRAINING_VIEW_QUERY_PARAMS.groupBy]: state.groupBy === ORG_TRAINING_DEFAULT_GROUP_BY ? null : state.groupBy,
+  };
+}
+
+/** The stats query (range + filters) of a view state. */
+export function orgTrainingStatsQuery(state: OrgTrainingStatsQuery): OrgTrainingStatsQuery {
+  return { range: state.range, foundation: state.foundation, project: state.project, course: state.course, level: state.level, format: state.format };
+}
+
+/** Key-safe cache/sub-resource signature of range + filters (base64url JSON, only `[A-Za-z0-9_-]`). */
+export function orgTrainingFiltersSignature(query: OrgTrainingStatsQuery): string {
+  const json = JSON.stringify([query.range, ...FILTER_KEYS.map((key) => query[key])]);
+  return btoa(String.fromCharCode(...new TextEncoder().encode(json)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+/** Whether any filter narrows the pairs. */
+export function hasOrgTrainingFilter(filters: OrgTrainingFilters): boolean {
+  return FILTER_KEYS.some((key) => filters[key] !== null);
+}
+
+/** Whether a course-level filter is set; learners outside the people list carry no course data and drop out then. */
+export function hasOrgTrainingCourseFilter(filters: OrgTrainingFilters): boolean {
+  return hasOrgTrainingFilter(filters);
+}
+
+/** Completion rate: (certifications + trainings completed) / courses taken, rounded; 0 with no courses. */
+export function orgTrainingCompletionRatePct(counts: { coursesTaken: number; certifications: number; trainingsCompleted: number }): number {
+  return counts.coursesTaken > 0 ? Math.round(((counts.certifications + counts.trainingsCompleted) / counts.coursesTaken) * 100) : 0;
+}
+
+/** Client-side match of a row's pair attributes against the filters (Trainees table rows). */
+export function matchesOrgTrainingFilters(
+  row: { foundationId: string | null; projectId: string | null; courseName: string | null; courseLevel: string | null; courseFormat: string | null },
+  filters: OrgTrainingFilters
+): boolean {
+  return (
+    (filters.foundation === null || row.foundationId === filters.foundation) &&
+    (filters.project === null || row.projectId === filters.project) &&
+    (filters.course === null || row.courseName === filters.course) &&
+    (filters.level === null || row.courseLevel === filters.level) &&
+    (filters.format === null || row.courseFormat === filters.format)
+  );
+}
