@@ -18,6 +18,7 @@ import {
   MKTG_OS_AGENTS_LABEL,
   ORG_EASYCLA_PATH,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
+  CF_ORG_DONATIONS_FLAG,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
   ORG_SCOPE_QUERY_PARAM,
   SURVEY_LABEL,
@@ -70,6 +71,8 @@ export class SidebarNavService {
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
   private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
+  /** Dark-launch gate for the Org Lens Donations entry (#415), matching `cfOrgDonationsGuard`. */
+  private readonly isCfOrgDonationsEnabled = this.featureFlagService.getBooleanFlag(CF_ORG_DONATIONS_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
   /**
@@ -248,9 +251,10 @@ export class SidebarNavService {
     // Initiatives (#348) follows a direct writer grant on the selected organization — CF lists an
     // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
     const initiativesItems = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') ? [this.orgInitiativesNavItem()] : [];
-    // Donations (#415) is shown to every org viewer, like the other org pages: CF lists them to auditors, which the
-    // lens route already requires. The page shows a 403 state otherwise.
-    const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, this.orgDonationsNavItem()]);
+    // Donations (#415) is dark-launched behind `cf-org-donations` and shown to every org viewer, like the other org
+    // pages: CF lists them to auditors, which the lens route already requires. The page shows a 403 state otherwise.
+    const donationsItems = this.isCfOrgDonationsEnabled() ? [this.orgDonationsNavItem()] : [];
+    const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, ...donationsItems]);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
     return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
   });

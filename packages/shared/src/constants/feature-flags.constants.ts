@@ -39,6 +39,12 @@ export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
  */
 export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 /**
+ * Dark-launch gate for the Org Lens Crowdfunding Donations page (lfx-crowdfunding#415): the route (`cfOrgDonationsGuard`,
+ * fail closed) and its sidebar entry. Default false. **UI-only**: the BFF stays open, and CF's auditor check on the
+ * b2b_org is the authorization boundary.
+ */
+export const CF_ORG_DONATIONS_FLAG = 'cf-org-donations';
+/**
  * Dark-launch gate for Slack-webhook sharing (LFXV2-3080) — the settings card
  * (committee-settings-tab) and the "Share to Slack" action (weekly-brief-card) both check this
  * directly. Not a strict child of 'wg-weekly-brief': weekly-brief-card does render under that

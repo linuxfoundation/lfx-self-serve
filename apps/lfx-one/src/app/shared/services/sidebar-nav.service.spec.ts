@@ -14,6 +14,7 @@ import {
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
+  CF_ORG_DONATIONS_FLAG,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
@@ -38,6 +39,7 @@ describe('SidebarNavService', () => {
   const menuLensPreview = signal<Lens | null>(null);
   const mktgOsEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
+  const cfOrgDonationsEnabled = signal(false);
   const lfStaff = signal(false);
   const impersonating = signal(false);
   const orgSegment = signal<string | null>(null);
@@ -84,6 +86,7 @@ describe('SidebarNavService', () => {
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
     orgEasyclaEnabled.set(false);
+    cfOrgDonationsEnabled.set(false);
     lfStaff.set(false);
     impersonating.set(false);
     orgSegment.set(null);
@@ -119,6 +122,7 @@ describe('SidebarNavService', () => {
             getBooleanFlag: vi.fn((key: string) => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
+              if (key === CF_ORG_DONATIONS_FLAG) return cfOrgDonationsEnabled;
               if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
               if (key === GATEWAZE_EMBED_ENABLED_FLAG) return gatewazeEmbedEnabled;
@@ -637,12 +641,16 @@ describe('SidebarNavService', () => {
     });
   });
 
-  it('shows Donations right after Projects on the org lens, without a writer grant (#415)', () => {
+  it('shows Donations right after Projects on the org lens with the flag on, without a writer grant (#415)', () => {
     activeLens.set('org');
     orgSegment.set('acme-inc');
     selectedOrgUid.set('001000000000000AAA');
+    const service = TestBed.inject(SidebarNavService);
 
-    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    expect(findByLink(service.sidebarItems(), '/org/acme-inc/donations')).toBeUndefined();
+
+    cfOrgDonationsEnabled.set(true);
+    const items = service.sidebarItems();
     expect(findByLink(items, '/org/acme-inc/donations')).toEqual(expect.objectContaining({ label: 'Crowdfunding Donations', testId: 'sidebar-org-donations' }));
     expect(findByLink(items, '/org/acme-inc/initiatives')).toBeUndefined();
     expect(labels(items).indexOf('Crowdfunding Donations')).toBe(labels(items).indexOf('Projects') + 1);

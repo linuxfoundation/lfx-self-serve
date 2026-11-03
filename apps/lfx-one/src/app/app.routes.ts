@@ -34,7 +34,7 @@ import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
-import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
+import { cfOrgDonationsGuard, orgLensClaM3EnabledGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
@@ -109,8 +109,9 @@ function orgLensPageRoutes(): Routes {
       ],
     },
     {
-      // Crowdfunding donations matched to the organization (#415).
+      // Crowdfunding donations matched to the organization (#415), dark-launched behind `cf-org-donations`.
       path: 'donations',
+      canMatch: [cfOrgDonationsGuard],
       data: {
         lens: 'org',
         title: 'Donations',
