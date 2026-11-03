@@ -13,7 +13,7 @@ The Organization section covers pages in the Organization lens. These steps appl
 ## What you can do
 
 - Open **Dashboard**, the Org Overview, to see the organization's involvement and its foundations and projects
-- Open **Projects** to see the projects the organization is involved in, its influence on each one, and how it ranks against other organizations
+- Open **Projects** to see the projects in the organization's shared workspaces, its influence on each one, and how it ranks against other organizations
 - Open **People** → **Org Lens Access** to see who can open the organization and, as an Admin, add, change or remove their access
 - Open **EasyCLA** to view and manage the corporate CLAs (Contributor License Agreements) that organization holds
 

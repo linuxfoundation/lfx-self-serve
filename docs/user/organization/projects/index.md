@@ -12,7 +12,7 @@ These steps apply to anyone who can open an organization in the Organization len
 
 ## What is the Projects page?
 
-The Projects page lists the open source projects the selected organization is involved in, with each project's health, the organization's influence on it, and how many of its people contribute and participate. Its address is `/org/<organization>/projects`.
+The Projects page lists the open source projects in one of the selected organization's workspaces, with each project's health, the organization's influence on it, and how many of its people contribute and participate. Most are projects the organization is involved in. An Admin can also add projects it has no activity in yet. Its address is `/org/<organization>/projects`.
 
 The page heading is **Projects —** followed by the organization's name. The line under it is **The open source projects your organization influences, contributes to, and depends on.** The sidebar item that opens it is **Projects**.
 
@@ -32,7 +32,7 @@ When you cannot open the organization, Projects is replaced by the same access m
 
 ## What does each column in the Projects table show?
 
-Each row is one project in the selected workspace. Select a project name to open its detail page. Hover a column heading to read what it measures.
+Each row of the Projects table shows one project's health, the organization's technical and ecosystem influence on it, its influence trend over the past year, and how many of the organization's employees contribute and participate. Select a project name to open its detail page. Hover a column heading to read what it measures.
 
 | Column                   | What it shows                                                                                                                                                                                                                     |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -41,7 +41,7 @@ Each row is one project in the selected workspace. Select a project name to open
 | **Technical influence**  | The organization's influence on the project's code activity (commits and pull requests), as a band: **Leading**, **Contributing**, **Participating**, or **Silent**                                                               |
 | **Ecosystem influence**  | The organization's influence on the project's non-code collaboration (documentation, committees, meetings, events), as the same bands. A project outside the Linux Foundation (LF) shows **Non-LF Project**                       |
 | **Influence Trend (1y)** | A line showing how the organization's combined influence changed over the rolling 12 months, and the change as a percentage                                                                                                       |
-| **Contributors**         | How many of the organization's employees contributed code to the project in the past 2 years. The number opens the project's detail page with its **Contributors** card open                                                      |
+| **Contributors**         | How many of the organization's employees contributed code to the project in the past 2 years, counted under the chosen **Organization scope**. The number opens the project's detail page with its **Contributors** card open     |
 | **Participants**         | How many of the organization's employees were involved in the project in any way in the past 2 years, including code contributions, documentation collaboration, events, and training. The number opens the project's detail page |
 
 The hover text on both influence columns says **Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).** and **Comparing our company's share of these activities to the project total indicates greater influence in the project.** Each band also shows signal bars: four filled for **Leading**, down to one for **Silent**.
@@ -74,7 +74,7 @@ On that row, the project name is not a link. **Technical influence**, **Ecosyste
 
 ## How do I filter the Projects table?
 
-Use the menus above the table. Each filter changes only the rows shown and goes back to page 1.
+You filter the Projects table with the workspace, foundation, and employee menus above it, and with **Organization scope** under **More filters**. Each filter changes only the rows shown and goes back to page 1.
 
 1. Open the workspace menu at the left, which shows the current workspace's name, and select a workspace under **Shared Workspaces**.
 2. Open the foundation menu. It starts on **All Foundations**. Type in **Search foundations…** to find one, and select it to keep only that foundation's projects.
@@ -177,7 +177,7 @@ A dash (**—**) means the fact is not available for that project.
 
 ## How do I change what the project detail page shows?
 
-Use the controls under the top of the page. Each choice is kept in the page address, so a copied link opens the same view.
+You change a project detail page with the tabs, the time range, and, on **Leaderboards**, the metric choice, all in the bar under the project's summary. Each choice is kept in the page address, so a copied link opens the same view.
 
 1. Select a tab: **Our Influence** or **Leaderboards**. **Our Influence** opens first.
 2. Select a time range: **1 year**, **2 years**, or **All time**. **2 years** is the default. The time range applies to both tabs.
@@ -242,7 +242,7 @@ When a board has no rows, it says **No ranked organizations for this project yet
 
 ## Why did Projects or a project detail page fail to load?
 
-A failed load tells you to retry. It is not the same as an empty list.
+When Projects or a project detail page fails to load, it shows a message naming what failed, usually with **Retry**. A failed load is not the same as an empty list.
 
 | What you see                                    | Where             | What to do                                                                |
 | ----------------------------------------------- | ----------------- | ------------------------------------------------------------------------- |
