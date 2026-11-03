@@ -256,13 +256,18 @@ export class CommitteeSettingsTabComponent {
   }
 
   public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
-    this.dialogService.open(MailingListSyncPreviewDialogComponent, {
+    const ref = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
       header: `Sync Now — ${ml.group_name}`,
       width: '800px',
       modal: true,
       closable: true,
       draggable: false,
       data: { mailingListUid: ml.uid, mailingListName: ml.group_name },
+    }) as DynamicDialogRef;
+
+    ref.onClose.pipe(take(1)).subscribe((result: { applied: boolean } | null) => {
+      if (!result?.applied) return;
+      this.refreshMl$.next();
     });
   }
 
