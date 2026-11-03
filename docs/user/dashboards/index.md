@@ -1,6 +1,6 @@
 ---
 title: Dashboard
-description: The LFX Self Serve dashboard provides a lens-based overview of your projects, foundation, and personal activity.
+description: The LFX Self Serve dashboard provides a lens-based overview of your personal activity, your projects and foundations, and your organization's involvement.
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, overview, lens, access, me, foundation, project, org, organization, company, employer]
@@ -70,11 +70,11 @@ On the **Projects** list the choice changes the **Contributors** column only; in
 
 ### Navigation
 
-On a larger screen, selecting **Organization** in the lens switcher opens the Org Overview of the selected organization. On a phone or small screen, selecting **Organization** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that organization is CLA Manager, you land on its **EasyCLA** page instead.
+On a larger screen, selecting **Organization** in the lens switcher opens the Org Overview of the selected organization. On a phone or small screen, selecting **Organization** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that organization is CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), you land on its **EasyCLA** page instead.
 
 ### Who can access this
 
-Everyone can open the **Organization** lens, but a company's pages show only to people who have access to that organization, directly or through a related organization. A CLA Manager with no other role on an organization sees only its **EasyCLA** page. Access is granted by the organization's own **Organization Lens administrators**, not by the Linux Foundation. Administrators manage it on the **Org Lens Access** tab; see [Manage Org Lens Access](../organization/manage-org-lens-access/). If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. Linux Foundation staff can open every organization.
+Everyone can open the **Organization** lens, but a company's pages show only to people who have access to that organization, directly or through a related organization. A CLA Manager or initial CLA Manager designee with no other role on an organization sees only its **EasyCLA** page. Admin and viewer access is granted by the organization's own **Organization Lens administrators**, not by the Linux Foundation. Administrators manage it on the **Org Lens Access** tab; see [Manage Org Lens Access](../organization/manage-org-lens-access/). If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. Linux Foundation staff can open every organization.
 
 If you do not have access, the Organization lens shows a message instead of your company's pages, such as:
 
@@ -84,7 +84,7 @@ If you do not have access, the Organization lens shows a message instead of your
 
 For the other messages, such as **Some organizations could not be loaded**, see [What do the messages on the Org Overview mean?](../organization/org-overview/#what-do-the-messages-on-the-org-overview-mean).
 
-If you are a CLA Manager, see [Why can't I see my company in the Organization lens?](../organization/faq/#why-can-t-i-see-my-company-in-the-organization-lens).
+If you are a CLA Manager or an initial CLA Manager designee, see [Why can't I see my company in the Organization lens?](../organization/faq/#why-can-t-i-see-my-company-in-the-organization-lens).
 
 ## Related sections
 

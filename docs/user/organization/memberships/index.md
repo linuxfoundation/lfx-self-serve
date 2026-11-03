@@ -8,7 +8,7 @@ last_updated: 2026-11-03
 intercom_collection: Organization
 ---
 
-These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. A CLA (Contributor License Agreement) Manager with no other role on an organization sees only its **EasyCLA** page, not **Memberships**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
+These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Memberships**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
 
 ## What is the Memberships page?
 
@@ -20,13 +20,13 @@ From the [Org Overview dashboard](../org-overview/), **View all on Memberships p
 
 ## How do I open Memberships?
 
-You open **Memberships** from the Organization lens sidebar once an organization is selected. A CLA Manager with no other role on that organization is sent to **EasyCLA** instead.
+You open **Memberships** from the Organization lens sidebar once an organization is selected. A CLA Manager or initial CLA Manager designee with no other role on that organization is sent to **EasyCLA** instead.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Organization** in the lens switcher.
 3. Select **Memberships** in the sidebar. On a phone or small screen, selecting **Organization** in the navigation menu only shows that lens's menu: select **Memberships** in it.
 
-If your only role on that organization is CLA Manager, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+If your only role on that organization is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
 When you cannot open the organization, Memberships is replaced by the same access message as the other Organization lens pages, such as **You do not have access to this organization**. Those messages are covered in [What happens when a link does not open an organization?](../choose-an-organization/#what-happens-when-a-link-does-not-open-an-organization).
 
@@ -34,11 +34,11 @@ When you cannot open the organization, Memberships is replaced by the same acces
 
 The three cards on **Active** summarize the organization's active memberships, and they stay the same when you search or filter the table.
 
-| Card                        | What it counts                                                           |
-| --------------------------- | ------------------------------------------------------------------------ |
-| **Active Memberships**      | How many active foundation memberships the organization has              |
-| **Renewing Within 90 Days** | How many of those memberships are marked as renewing within 90 days      |
-| **Governance Roles**        | The board seats and committee seats on those memberships, added together |
+| Card                        | What it counts                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Active Memberships**      | How many active foundation memberships the organization has                                                                                     |
+| **Renewing Within 90 Days** | How many of those memberships have a tier end date between today and 90 days from today. A tier end date that has already passed is not counted |
+| **Governance Roles**        | The board seats and committee seats on those memberships, added together                                                                        |
 
 While the list is loading, or when it fails to load, each card shows a dash (**—**) instead of a number. A count of zero shows **0**.
 
@@ -48,7 +48,7 @@ Use the search box and the two menus above the **Active** table. The three summa
 
 1. In **Search memberships...**, type part of a foundation name. The search matches the foundation name.
 2. Open the membership level menu. It starts on **All Membership Levels**. The other choices are the tiers on this organization's memberships.
-3. Open the renewal menu. It starts on **All Renewals**. Choose **Renewing in 90 Days** or **Renewing in 30 Days** to keep memberships whose tier end date is on or before that many days from today, including a tier end date that has already passed. A membership with no tier end date is left out.
+3. Open the renewal menu. It starts on **All Renewals**. Choose **Renewing in 90 Days** or **Renewing in 30 Days** to keep memberships whose tier end date is on or before that many days from today, including a tier end date that has already passed. A membership with no tier end date is left out. Because these choices also keep a tier end date that has already passed, **Renewing in 90 Days** can list more rows than the **Renewing Within 90 Days** card counts.
 
 When the table has no rows, including when a search or filter matches nothing, it says **No active memberships** and **This organization does not have any active memberships.** When the list fails to load, it says **Failed to load memberships** and **Please try again.** Select **Retry**.
 
@@ -101,7 +101,7 @@ When the tab has no rows, including when the search matches nothing, it says **N
 
 ## What does the Discover tab show?
 
-The **Discover** tab lists foundations the organization can join. The heading is **Discover Opportunities**.
+The **Discover** tab lists foundations where the organization's people contribute to LF projects but the organization has no active membership, including foundations where its membership has expired. The heading is **Discover Opportunities**.
 
 1. Select **Discover**.
 2. Select **Join** on a row to open the enrollment site at [enrollment.lfx.linuxfoundation.org](https://enrollment.lfx.linuxfoundation.org/) in a new tab, with that foundation selected.
@@ -110,8 +110,8 @@ The **Discover** tab lists foundations the organization can join. The heading is
 | ----------------- | ------------------------------------------------------------------------------------------------------------ |
 | **Foundation**    | The foundation name, and under it the category, a middle dot, the count, and the words **relevant projects** |
 | **Category**      | The suggested tier, with **Suggested tier** under it                                                         |
-| **Contributors**  | A count                                                                                                      |
-| **Contributions** | A count                                                                                                      |
+| **Contributors**  | How many of the organization's people contributed to that foundation's LF projects in the last 12 months     |
+| **Contributions** | How many commits the organization's people made to those projects                                            |
 | **Actions**       | **Join**                                                                                                     |
 
 When there are no rows, the tab says **No new opportunities available right now** and **Check back later for new membership opportunities.** When the list fails to load, it says **Failed to load discover opportunities** and **Please try again.** Select **Retry**.
@@ -160,7 +160,14 @@ A blue note in the dialog repeats that limit. **Representative/Voting Contact** 
 
 **Save Changes** changes to **Saving…** while it saves. **Remove Contact** changes to **Removing…**. A saved change shows **Key contact updated**, **Key contact added**, or **Key contact removed**. A change that did not save shows **Could not save changes. Please try again.**
 
-An email that is not valid shows **Enter a valid email address**. A person already on that type shows **This person is already a** followed by the type and a period, such as **This person is already a Billing Contact.** When the type is already at its maximum, **Add Another Contact** is unavailable and its hover text is **Maximum contacts reached**. When nobody can be removed, **Remove Existing Contact** is unavailable. Its hover text is **No contacts to remove** when the row is empty, and **At least one contact required** when the type must keep someone. When employee search is down, the dialog says **Employee search is unavailable. You can still enter the contact's details manually.**
+The dialog can show these messages:
+
+- **Enter a valid email address** — the email is not valid.
+- **This person is already a** followed by the type and a period, such as **This person is already a Billing Contact.** — that person already holds this type.
+- **Maximum contacts reached** — the hover text on **Add Another Contact** when it is unavailable because the type is already at its maximum.
+- **No contacts to remove** — the hover text on **Remove Existing Contact** when it is unavailable because the row is empty.
+- **At least one contact required** — the hover text on **Remove Existing Contact** when it is unavailable because the type must keep someone.
+- **Employee search is unavailable. You can still enter the contact's details manually.** — employee search is down. Type the person's details instead.
 
 Selecting a person's name on this tab, or on **Board & Committee**, opens a panel with their details.
 
