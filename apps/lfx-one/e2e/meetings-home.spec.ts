@@ -231,7 +231,7 @@ test.describe('Meetings home page', () => {
 
     test('a failed delete keeps the dialog open with an error and the row in place', async ({ page }) => {
       await gotoMeetingsHome(page, { organizer: true });
-      await page.route(/\/api\/meetings\/home-e2e-one-off$/, (route) =>
+      await page.route(/\/api\/meetings\/home-e2e-one-off(\?|$)/, (route) =>
         route.request().method() === 'DELETE' ? route.fulfill({ status: 500 }) : route.fallback()
       );
 
