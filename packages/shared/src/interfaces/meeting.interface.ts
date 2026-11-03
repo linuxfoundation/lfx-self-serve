@@ -2311,14 +2311,14 @@ export type MeetingComposerVariant = 'drawer' | 'quick';
 export type MeetingComposerLoadFailure = 'retryable' | 'denied';
 
 /**
- * What the post-create toast needs to render its actions.
- * @description Carried on the PrimeNG message's `data`, since creating no longer navigates anywhere —
- * the toast is the only route back to the meeting that was just created.
+ * What the post-create toast needs to run its actions.
+ * @description Creating no longer navigates anywhere, so the toast is the only route back to the meeting
+ * that was just created.
  */
 export interface MeetingComposerToastData {
   meetingUid: string;
   meetingTitle: string;
-  /** Router link to the meeting's public join page. */
+  /** Router URL of the meeting's public join page. */
   meetingUrl: string;
   /**
    * Router navigation state that page needs — the access password, for a private or restricted meeting.
