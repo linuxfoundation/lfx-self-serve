@@ -240,9 +240,10 @@ export function buildCampaignLiveCounters(metrics: CampaignServiceCampaignMetric
  * The live Conversions counter from campaign-service's `conversions_status`
  * (lfx-v2-campaign-service#175): the total only when `reported`, a reason otherwise, and no counter at
  * all for the email channel or a read with no status (an older campaign-service), which is how the
- * counters looked before. The total is not rounded: Google Ads and Microsoft credit partial
- * conversions, so 0.4 is a real value. A `reported` read missing its total, or a status this build
- * does not know, reads as unavailable rather than as 0.
+ * counters looked before. Google Ads and Microsoft credit partial conversions, so 0.4 is a real value:
+ * a total is shown to two decimals, and one below 0.01 to two significant digits, so a non-zero total
+ * never reads as 0. A `reported` read missing its total, or a status this build does not know, reads
+ * as unavailable rather than as 0.
  */
 function liveConversions(
   metrics: CampaignServiceCampaignMetrics,
@@ -254,7 +255,9 @@ function liveConversions(
     return { conversions: null, conversionsReported: false };
   }
   if (status === 'reported' && typeof metrics.conversions === 'number' && Number.isFinite(metrics.conversions)) {
-    return { conversions: metrics.conversions.toLocaleString('en-US', { maximumFractionDigits: 2 }), conversionsReported: true };
+    const total = metrics.conversions;
+    const format: Intl.NumberFormatOptions = total !== 0 && Math.abs(total) < 0.01 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 2 };
+    return { conversions: total.toLocaleString('en-US', format), conversionsReported: true };
   }
   if (status === 'incomplete' || status === 'no_conversions') {
     return { conversions: CAMPAIGN_CONVERSIONS_STATUS_REASONS[status], conversionsReported: false };

@@ -6294,10 +6294,10 @@ export interface CampaignServiceEmailMetrics {
   unsubscribes: number;
 }
 
-/** One campaign's measurement, as campaign-service reports it. */
-/** campaign-service's `conversions_status` on a metrics read (lfx-v2-campaign-service#175). */
+/** campaign-service's `conversions_status` on a metrics read (lfx-v2-campaign-service#452, issue #175). */
 export type CampaignConversionsStatus = 'reported' | 'unavailable' | 'incomplete' | 'no_conversions';
 
+/** One campaign's measurement, as campaign-service reports it. */
 export interface CampaignServiceCampaignMetrics {
   campaign_id: string;
   platform_campaign_id: string;
@@ -6331,16 +6331,16 @@ export interface CampaignServiceCampaignMetrics {
    * though it were complete would understate the campaign. So a consumer must not render an
    * absent value as zero or fold it into a conversion total.
    *
-   * Present ONLY when `conversions_status` is `reported` (lfx-v2-campaign-service#175). Read the
+   * Present ONLY when `conversions_status` is `reported` (lfx-v2-campaign-service#452). Read the
    * status for WHY it is absent, never the absence itself.
    */
   conversions?: number;
   /**
-   * Why `conversions` is or is not there (lfx-v2-campaign-service#175, required upstream from that
-   * release): `reported` (a complete measurement, the only status with a total), `unavailable` (the
-   * channel or this account reports none), `incomplete` (part of the window came back without it), or
-   * `no_conversions` (a zero-click window: nothing to convert, and no total). OPTIONAL here because an
-   * older campaign-service sends none, and that case keeps the previous behaviour.
+   * Why `conversions` is or is not there (required upstream since lfx-v2-campaign-service#452):
+   * `reported` (a complete measurement, the only status with a total), `unavailable` (the channel or
+   * this account reports none), `incomplete` (part of the window came back without it), or
+   * `no_conversions` (a zero-click window with no conversion reported, and no total). OPTIONAL here
+   * because an older campaign-service sends none, and that case keeps the previous behaviour.
    */
   conversions_status?: CampaignConversionsStatus;
   email?: CampaignServiceEmailMetrics;

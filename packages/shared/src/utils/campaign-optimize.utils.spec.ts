@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CAMPAIGN_SETTINGS_UNKNOWN_NOTES } from '../constants/campaign-optimize.constants';
 import type { CampaignServiceSettingsField, CampaignServiceSettingsReadback } from '../interfaces/campaign-optimize.interface';
+import type { CampaignServiceCampaignMetrics } from '../interfaces/campaign.interface';
 import {
   buildCampaignLiveCounters,
   buildCampaignSettingsDrift,
@@ -209,6 +210,11 @@ describe('buildCampaignLiveCounters — conversions status (lfx-v2-campaign-serv
     );
     // Google Ads and Microsoft credit partial conversions: 0.4 is a value, not a zero.
     expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 0.4 }, 'google-ads').conversions).toBe('0.4');
+    // A non-zero total below 0.01 must not read as 0, and a reported 0 is a measured zero.
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 0.004 }, 'google-ads').conversions).toBe('0.004');
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported', conversions: 0 }, 'linkedin-ads')).toEqual(
+      expect.objectContaining({ conversions: '0', conversionsReported: true })
+    );
   });
 
   it.each([
@@ -226,9 +232,10 @@ describe('buildCampaignLiveCounters — conversions status (lfx-v2-campaign-serv
 
   it('reads a reported status without a total, or an unknown status, as unavailable rather than 0', () => {
     expect(buildCampaignLiveCounters({ ...base, conversions_status: 'reported' }, 'linkedin-ads').conversions).toBe('Not reported by LinkedIn');
-    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'something_new' as never, conversions: 2 }, 'linkedin-ads').conversions).toBe(
-      'Not reported by LinkedIn'
-    );
+    // @ts-expect-error a status a future campaign-service may add, outside today's union
+    const unknownStatus: CampaignServiceCampaignMetrics = { ...base, conversions_status: 'something_new', conversions: 2 };
+    expect(buildCampaignLiveCounters(unknownStatus, 'linkedin-ads').conversions).toBe('Not reported by LinkedIn');
+    expect(buildCampaignLiveCounters({ ...base, conversions_status: 'unavailable' }, 'some-new-platform').conversions).toBe('Not reported by the platform');
   });
 
   it('shows no counter when the read carries no status (an older campaign-service) or on the email channel', () => {
