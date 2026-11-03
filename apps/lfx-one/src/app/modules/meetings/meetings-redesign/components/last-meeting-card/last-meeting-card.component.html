@@ -104,13 +104,14 @@
       @if (meetingType() || recurrenceTooltip() || summaryAwaitingReview()) {
         <span class="mt-[6px] flex flex-wrap items-center gap-[6px]">
           @if (meetingType(); as type) {
-            <lfx-ui-badge variant="outline" size="sm" data-testid="meetings-home-last-card-type"
+            <!-- Muted tag text per the design; the library outline badge uses neutral-900. -->
+            <lfx-ui-badge class="!text-gray-600" variant="outline" size="sm" data-testid="meetings-home-last-card-type"
               ><i [class]="type.icon" aria-hidden="true"></i>{{ type.label }}</lfx-ui-badge
             >
           }
           @if (recurrenceTooltip(); as tooltip) {
             <lfx-ui-badge
-              class="cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              class="cursor-default !text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
               variant="outline"
               size="sm"
               role="img"

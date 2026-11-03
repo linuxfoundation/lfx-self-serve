@@ -81,7 +81,8 @@ export class LastMeetingCardComponent {
   });
   protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = computed(() => {
     const row = this.row();
-    return row ? getMeetingVisibilityBadges(row.meeting) : [];
+    // Public needs no badge on the tile, as on the list rows.
+    return row ? getMeetingVisibilityBadges(row.meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC) : [];
   });
   protected readonly project: Signal<MeetingHomeRowProject | null> = this.initProject();
   protected readonly when: Signal<string> = this.initWhen();
@@ -94,8 +95,7 @@ export class LastMeetingCardComponent {
   protected readonly summaryContent: Signal<string | null> = this.initSummaryContent();
   /** Only organizers see a summary that still needs approval; tell them invitees don't yet. */
   protected readonly summaryAwaitingReview: Signal<boolean> = computed(() => !!this.summaryContent() && isPastMeetingSummaryAwaitingApproval(this.summary()));
-  protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
-    [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
+  protected readonly visibilityBg: Partial<Record<MeetingVisibilityKind, string>> = {
     [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
     [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
   };

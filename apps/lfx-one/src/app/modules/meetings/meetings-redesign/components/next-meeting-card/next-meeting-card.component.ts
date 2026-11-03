@@ -50,14 +50,17 @@ export class NextMeetingCardComponent {
   public readonly joinUrl = input<string | null>(null);
 
   protected readonly link: Signal<MeetingHomeRowLink | null> = this.fromRow((row) => getMeetingHomeRowLink(row, 'upcoming'));
-  protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = this.fromRow((row) => getMeetingVisibilityBadges(row.meeting), []);
+  // Public needs no badge on the tile, as on the list rows.
+  protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = this.fromRow(
+    (row) => getMeetingVisibilityBadges(row.meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC),
+    []
+  );
   protected readonly project: Signal<MeetingHomeRowProject | null> = this.fromRow((row) => getMeetingHomeRowProject(row.meeting));
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = this.fromRow((row) => getMeetingHomeRowType(row.meeting));
   protected readonly when: Signal<string> = this.initWhen();
   protected readonly recurrenceTooltip: Signal<string | null> = this.fromRow((row) => getMeetingRecurrenceTooltip(row.meeting, row.occurrence));
   protected readonly startsIn: Signal<string | null> = this.fromRow((row) => getMeetingStartsInLabel(row.startTime, this.now()));
-  protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
-    [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
+  protected readonly visibilityBg: Partial<Record<MeetingVisibilityKind, string>> = {
     [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
     [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
   };
