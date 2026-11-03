@@ -246,9 +246,13 @@ describe('TraineesComponent', () => {
       expect(listed().sort()).toEqual(['p-1', 'p-2', 'p-3']);
 
       getTrainingStats.mockImplementation((_orgUid: string, query: OrgTrainingStatsQuery) => of(statsFor(query)));
+      const traineeCalls = getTrainees.mock.calls.length;
       (el().querySelector('[data-testid="org-people-trainees-stats-retry"] button') as HTMLElement).click();
       await settle();
 
+      // Retrying the stats re-reads the stats only: the loaded table is neither reloaded nor replaced by a skeleton.
+      expect(getTrainees.mock.calls.length).toBe(traineeCalls);
+      expect(el().querySelector('[data-testid="org-people-trainees-table-skeleton"]')).toBeNull();
       expect(el().querySelector('[data-testid="org-people-trainees-stats-error"]')).toBeNull();
       expect(stat('courses-taken')).toBe('4');
       error.mockRestore();
@@ -337,6 +341,53 @@ describe('TraineesComponent', () => {
       expect(rows).toHaveLength(2);
       expect(rows.some((text) => text?.includes('Kubernetes Admin') && text.includes('Certification'))).toBe(true);
       expect(rows.some((text) => text?.includes('Kubernetes Basics') && text.includes('Training'))).toBe(true);
+    });
+  });
+
+  describe('course names resolved over the pair', () => {
+    const respond = (details: OrgTraineeDetailRow[]) =>
+      getTrainees.mockReturnValue(of({ ...EMPTY_ORG_TRAINEES_RESPONSE, accountId: ORG, timeRange: '730d', trainees: [PEOPLE[0]], details, asOf: null }));
+    const recent = (): string => cell('p-1', 7);
+
+    it('names the Most Recent Course and its foundation from the resolved pair, not from the latest raw row', async () => {
+      respond([
+        detail('p-1', 'c-1', 'Enrolled', {
+          courseName: 'Alpha Name',
+          foundationId: 'f-1',
+          foundationName: 'Old Foundation',
+          activityTs: '2026-01-01T00:00:00.000Z',
+        }),
+        detail('p-1', 'c-1', 'Certified', {
+          courseName: 'Zulu Name',
+          foundationId: 'f-2',
+          foundationName: 'New Foundation',
+          activityTs: '2026-09-01T00:00:00.000Z',
+        }),
+      ]);
+      await mount('/?tab=training');
+
+      expect(recent()).toContain('Zulu Name');
+      expect(recent()).toContain('New Foundation');
+      expect(recent()).not.toContain('Alpha Name');
+    });
+
+    it('lets a real name beat a row without one, so the course filter matches what the stats count', async () => {
+      respond([detail('p-1', 'c-1', 'Enrolled', { courseName: null }), detail('p-1', 'c-1', 'Certified', { courseName: 'Real Name' })]);
+      await mount('/?tab=training&course=Real%20Name');
+
+      expect(listed()).toEqual(['p-1']);
+      expect(recent()).toContain('Real Name');
+    });
+
+    it('falls back to the course id only when no row of the pair has a name, and never matches a course filter then', async () => {
+      respond([detail('p-1', 'c-orphan', 'Enrolled', { courseName: null })]);
+      await mount('/?tab=training');
+      expect(recent()).toContain('c-orphan');
+
+      TestBed.resetTestingModule();
+      respond([detail('p-1', 'c-orphan', 'Enrolled', { courseName: null })]);
+      await mount('/?tab=training&course=c-orphan');
+      expect(listed()).toEqual([]);
     });
   });
 

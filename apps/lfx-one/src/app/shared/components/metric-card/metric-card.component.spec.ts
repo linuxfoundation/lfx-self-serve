@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, input, signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ChartComponent } from '@components/chart/chart.component';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,6 +34,17 @@ class HostComponent {
 })
 class StatOnlyHostComponent {
   public readonly loading = signal(false);
+}
+
+@Component({
+  selector: 'lfx-metric-card-clickable-host',
+  imports: [MetricCardComponent],
+  templateUrl: './metric-card-clickable.test-host.html',
+})
+class ClickableHostComponent {
+  public readonly clickable = signal(true);
+  public readonly loading = signal(false);
+  public readonly clicks = signal(0);
 }
 
 const infoButton = (root: HTMLElement): HTMLButtonElement | null => root.querySelector('[data-testid="metric-card-info"]');
@@ -125,5 +136,73 @@ describe('MetricCardComponent stat-only card', () => {
     await fixture.whenStable();
 
     expect((fixture.nativeElement as HTMLElement).querySelector('.h-16')).toBeNull();
+  });
+});
+
+describe('MetricCardComponent clickable card', () => {
+  let fixture: ComponentFixture<ClickableHostComponent>;
+  const root = (): HTMLElement => fixture.nativeElement;
+  const action = (): HTMLElement | null => root().querySelector('[data-testid="card-action"]');
+  const info = (): HTMLElement | null => root().querySelector('[data-testid="card-info"]');
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({ imports: [ClickableHostComponent] });
+    TestBed.overrideComponent(MetricCardComponent, { remove: { imports: [ChartComponent] }, add: { imports: [ChartStubComponent] } });
+    fixture = TestBed.createComponent(ClickableHostComponent);
+    await fixture.whenStable();
+  });
+
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('exposes one focusable, named button entry point that is not an ancestor of the info button', () => {
+    expect(action()?.getAttribute('role')).toBe('button');
+    expect(action()?.getAttribute('tabindex')).toBe('0');
+    expect(action()?.getAttribute('aria-label')).toBe('Courses taken: 400');
+    expect(action()?.contains(info())).toBe(false);
+    expect(info()?.tagName).toBe('BUTTON');
+  });
+
+  it('puts the action before the info button in the tab order', () => {
+    const focusable = Array.from(root().querySelectorAll<HTMLElement>('[tabindex="0"], button'));
+
+    expect(focusable).toEqual([action(), info()]);
+  });
+
+  it.each(['Enter', ' '])('emits cardClick on a %j keydown and prevents the default', (key) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    action()?.dispatchEvent(event);
+
+    expect(fixture.componentInstance.clicks()).toBe(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('ignores other keys', () => {
+    action()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+
+    expect(fixture.componentInstance.clicks()).toBe(0);
+  });
+
+  it('emits cardClick on a mouse click of the card', () => {
+    root().querySelector<HTMLElement>('[data-testid="card"]')?.click();
+
+    expect(fixture.componentInstance.clicks()).toBe(1);
+  });
+
+  it('does not emit cardClick when the info button is clicked or activated by key', () => {
+    info()?.click();
+    info()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(fixture.componentInstance.clicks()).toBe(0);
+  });
+
+  it('renders no entry point when not clickable or while loading', async () => {
+    fixture.componentInstance.clickable.set(false);
+    await fixture.whenStable();
+    expect(action()).toBeNull();
+
+    fixture.componentInstance.clickable.set(true);
+    fixture.componentInstance.loading.set(true);
+    await fixture.whenStable();
+    expect(action()).toBeNull();
   });
 });

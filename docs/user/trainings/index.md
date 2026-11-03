@@ -96,7 +96,7 @@ Switch to the **Org** lens from the lens selector at the top of LFX Self Serve, 
 
 ### Who can access this
 
-Viewing your company's training activity in Org Lens requires **admin access** to your organization. If you are not yet an admin, another admin at your organization can invite you to accept an admin role. Once you accept, you will be able to access this and other Org Lens pages for your company.
+Viewing your company's training activity in Org Lens (Training & Certification and People › Trainees) requires **Viewer** access (read access) to your organization; an **Admin** can see it too. If you do not have access yet, an admin at your organization can invite you from the **Org Lens Access** tab (see [Manage Org Lens Access](../organization/manage-org-lens-access/)). Admin access is needed only to manage who has access.
 
 ## Related sections
 

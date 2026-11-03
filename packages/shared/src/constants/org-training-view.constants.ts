@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgTrainingGroupBy } from '../interfaces/org-training-view.interface';
+import type { OrgTrainingFilterOptions, OrgTrainingGroupBy, OrgTrainingGroupsResponse } from '../interfaces/org-training-view.interface';
 
 /**
  * Query parameters of the shared Training / Trainees view; `range` is ORG_LENS_TIME_RANGE_QUERY_PARAM. The project
@@ -40,4 +40,15 @@ export const ORG_TRAINING_GROUP_NONE_LABELS: Readonly<Record<OrgTrainingGroupBy,
   project: 'No project',
   level: 'No level',
   format: 'No format',
+};
+
+/** The five course-level filters, in display order. */
+export const ORG_TRAINING_FILTER_KEYS = ['foundation', 'project', 'course', 'level', 'format'] as const;
+
+export const EMPTY_ORG_TRAINING_FILTER_OPTIONS: OrgTrainingFilterOptions = { foundations: [], projects: [], courses: [], levels: [], formats: [] };
+
+export const EMPTY_ORG_TRAINING_GROUPS_RESPONSE: OrgTrainingGroupsResponse = {
+  data: [],
+  total: 0,
+  totals: { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 },
 };

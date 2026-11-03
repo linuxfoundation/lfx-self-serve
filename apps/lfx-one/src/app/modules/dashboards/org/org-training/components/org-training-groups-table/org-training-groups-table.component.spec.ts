@@ -3,6 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { MAX_ORG_CERT_EMPLOYEES } from '@lfx-one/shared/constants';
 import type {
   OrgTrainingGroupBy,
   OrgTrainingGroupEmployeesResponse,
@@ -267,6 +268,7 @@ describe('OrgTrainingGroupsTableComponent', () => {
     await settle(fixture);
 
     expect(byTestId('org-training-groups-error')).not.toBeNull();
+    expect(byTestId('org-training-groups-error')?.getAttribute('role')).toBe('alert');
     expect(error).toHaveBeenCalled();
 
     (document.querySelector('[data-testid="org-training-groups-retry"] button') as HTMLElement).click();
@@ -297,6 +299,61 @@ describe('OrgTrainingGroupsTableComponent', () => {
     expect(byTestId('org-training-group-employee-person-1')).not.toBeNull();
     expect(trainingService.getGroupEmployees).toHaveBeenCalledTimes(2);
     error.mockRestore();
+  });
+
+  describe('when the roster hits the server cap', () => {
+    const capped = (): OrgTrainingGroupEmployeesResponse => ({
+      ...EMPLOYEES,
+      total: MAX_ORG_CERT_EMPLOYEES + 40,
+      data: Array.from({ length: MAX_ORG_CERT_EMPLOYEES }, (_, index) => ({ contactId: `p-${index}`, name: `Person ${index}`, jobTitle: null })),
+    });
+
+    async function openCapped() {
+      const view = await render();
+      view.trainingService.getGroupEmployees.mockReturnValue(of(capped()));
+      (document.querySelector('[data-testid="org-training-group-completed-Course One"] button') as HTMLElement).click();
+      await settle(view.fixture);
+      return view;
+    }
+
+    const search = async (fixture: ComponentFixture<unknown>, term: string) => {
+      const input = document.querySelector('[data-test="org-training-group-employees-search"]') as HTMLInputElement;
+      input.value = term;
+      input.dispatchEvent(new Event('input'));
+      await settle(fixture);
+    };
+
+    it('states the cap above the list, and keeps it while a search narrows the rows', async () => {
+      const { fixture } = await openCapped();
+      expect(text('org-training-group-employees-cap-note')).toContain(`first ${MAX_ORG_CERT_EMPLOYEES}`);
+
+      await search(fixture, 'Person 12');
+
+      expect(byTestId('org-training-group-employee-p-12')).not.toBeNull();
+      expect(byTestId('org-training-group-employees-cap-note')).not.toBeNull();
+    });
+
+    it('qualifies the no-match message: only the loaded employees were searched', async () => {
+      const { fixture } = await openCapped();
+
+      await search(fixture, 'nobody-by-this-name');
+
+      expect(byTestId('org-training-group-employees-list')).toBeNull();
+      expect(byTestId('org-training-group-employees-cap-note')).not.toBeNull();
+      expect(document.body.textContent).toContain('No loaded employees match your search');
+      expect(document.body.textContent).toContain(`first ${MAX_ORG_CERT_EMPLOYEES}`);
+    });
+
+    it('keeps the plain no-match message for a roster below the cap', async () => {
+      const { fixture } = await render();
+      (document.querySelector('[data-testid="org-training-group-completed-Course One"] button') as HTMLElement).click();
+      await settle(fixture);
+
+      await search(fixture, 'nobody-by-this-name');
+
+      expect(byTestId('org-training-group-employees-cap-note')).toBeNull();
+      expect(document.body.textContent).toContain('No employees match your search.');
+    });
   });
 
   it('opens the person drawer on the training tab with the current range', async () => {

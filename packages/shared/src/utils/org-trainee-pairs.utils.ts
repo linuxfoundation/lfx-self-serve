@@ -1,10 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MAX_ORG_TRAINING_FILTER_VALUE_LENGTH } from '../constants/org-training-view.constants';
+import { CERTIFICATION_PRODUCT_TYPE } from '../constants/training.constants';
 import type { OrgTraineeDetailRow, OrgTraineePair, OrgTraineePairCounts } from '../interfaces/org-people-trainees.interface';
 
-/** Product type of the `Certification` products; every other product type is a `Training`. */
-const CERTIFICATION_PRODUCT_TYPE = 'Certification';
+/** The SQL's `NULLIF(LEFT(TRIM(col), 200), '')`: spaces-only trim (a tab stays), capped at the filter value length, blank → null. Applied per row before resolving. */
+function normalizeAttribute(value: string | null): string | null {
+  if (value === null) return null;
+  const normalized = value.replace(/^ +| +$/g, '').slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH);
+  return normalized === '' ? null : normalized;
+}
 
 /** Greatest non-null string (`MAX` semantics: nulls ignored, plain string comparison). */
 function maxString(current: string | null, next: string | null): string | null {
@@ -21,13 +27,19 @@ function maxById(current: { id: string | null; name: string | null }, id: string
 /**
  * Resolves each (person, course) pair's attributes from ALL of its in-range rows, exactly as the BFF's stats do, so the
  * filters can then be applied to the pair as a whole: Certified wins over Enrolled; product type, course name and level
- * are the greatest across rows (`MAX`, nulls ignored); foundation and project names come from the row with the greatest
+ * are the greatest across rows (`MAX`, nulls ignored; a row without a name never contributes one); foundation and project names come from the row with the greatest
  * id (`MAX_BY`); the format is the latest non-null one by activity timestamp.
  */
 export function resolveOrgTraineePairs(details: readonly OrgTraineeDetailRow[]): OrgTraineePair[] {
   const pairs = new Map<string, OrgTraineePair>();
   const formatTs = new Map<string, string>();
-  for (const row of details) {
+  for (const source of details) {
+    const row = {
+      ...source,
+      courseName: normalizeAttribute(source.courseName),
+      courseLevel: normalizeAttribute(source.courseLevel),
+      courseFormat: normalizeAttribute(source.courseFormat),
+    };
     const key = `${row.personKey}|${row.courseId}`;
     const pair = pairs.get(key);
     if (!pair) {
@@ -49,7 +61,7 @@ export function resolveOrgTraineePairs(details: readonly OrgTraineeDetailRow[]):
     }
     if (row.status === 'Certified') pair.status = 'Certified';
     pair.productType = maxString(pair.productType, row.productType);
-    pair.courseName = maxString(pair.courseName, row.courseName) as string;
+    pair.courseName = maxString(pair.courseName, row.courseName);
     pair.courseLevel = maxString(pair.courseLevel, row.courseLevel);
 
     const foundation = maxById({ id: pair.foundationId, name: pair.foundationName }, row.foundationId, row.foundationName);
@@ -66,6 +78,11 @@ export function resolveOrgTraineePairs(details: readonly OrgTraineeDetailRow[]):
     }
   }
   return [...pairs.values()];
+}
+
+/** What a pair's course is called on screen: the resolved real name, else the course id. Applied after resolving, so an id never competes with real names in `MAX`. */
+export function orgTraineePairCourseLabel(pair: Pick<OrgTraineePair, 'courseName' | 'courseId'>): string {
+  return pair.courseName ?? pair.courseId;
 }
 
 /** Counts of pairs: certified `Certification` pairs, certified other pairs, and enrolled-only pairs. */

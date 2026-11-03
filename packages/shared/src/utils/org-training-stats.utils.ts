@@ -21,13 +21,24 @@ export function orgTrainingRangeWindow(range: OrgLensTimeRange): string {
   return label === 'All time' ? 'all time' : label;
 }
 
+/** The parts of a stat's caption: the capitalised unit, the window (with the stat's own note, if any), and the as-of sentence (null when `asOf` is `undefined`). */
+export function orgTrainingStatCaptionParts(
+  stat: OrgTrainingStatDefinition,
+  range: OrgLensTimeRange,
+  asOf?: string | null
+): { unit: string; window: string; asOf: string | null } {
+  const window = [stat.window ?? orgTrainingRangeWindow(range), stat.caption].filter((part): part is string => !!part).join(' · ');
+  return {
+    unit: stat.unit.charAt(0).toUpperCase() + stat.unit.slice(1),
+    window,
+    asOf: asOf === undefined ? null : formatOrgTrainingAsOf(asOf),
+  };
+}
+
 /** `People · Past 2 years · as of Nov 2, 2026`; the unit and window part alone when `asOf` is `undefined`. */
 export function orgTrainingStatCaption(stat: OrgTrainingStatDefinition, range: OrgLensTimeRange, asOf?: string | null): string {
-  const unit = stat.unit.charAt(0).toUpperCase() + stat.unit.slice(1);
-  const parts = [unit, stat.window ?? orgTrainingRangeWindow(range)];
-  if (stat.caption) parts.push(stat.caption);
-  if (asOf !== undefined) parts.push(formatOrgTrainingAsOf(asOf));
-  return parts.join(' · ');
+  const parts = orgTrainingStatCaptionParts(stat, range, asOf);
+  return [parts.unit, parts.window, parts.asOf].filter((part): part is string => !!part).join(' · ');
 }
 
 /** A stat's definition, then unit and window. */

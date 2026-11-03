@@ -10,6 +10,7 @@ import {
   formatOrgTrainingAsOf,
   orgTrainingRangeWindow,
   orgTrainingStatCaption,
+  orgTrainingStatCaptionParts,
   orgTrainingStatTooltip,
   orgTrainingTableNote,
 } from './org-training-stats.utils';
@@ -50,6 +51,23 @@ describe('captions and tooltips', () => {
         expect(text).toContain('Nov 2, 2026');
       }
     }
+  });
+
+  it('exposes the unit, window and as-of date as parts that join into the caption', () => {
+    const stat = ORG_TRAINING_STAT_DEFINITIONS.certifiedPeople;
+    const parts = orgTrainingStatCaptionParts(stat, '730d', ASOF);
+
+    expect(parts).toEqual({ unit: 'People', window: 'Past 2 years', asOf: 'as of Nov 2, 2026' });
+    expect([parts.unit, parts.window, parts.asOf].join(' · ')).toBe(orgTrainingStatCaption(stat, '730d', ASOF));
+    expect(orgTrainingStatCaptionParts(stat, '90d').asOf).toBeNull();
+    expect(orgTrainingStatCaptionParts(stat, '90d').window).toBe('Past 90 days');
+  });
+
+  it('folds a stat note into the window part', () => {
+    const parts = orgTrainingStatCaptionParts(ORG_TRAINING_STAT_DEFINITIONS.rosterMembers, '30d', ASOF);
+
+    expect(parts.window).toContain('live, not filtered');
+    expect(orgTrainingStatCaption(ORG_TRAINING_STAT_DEFINITIONS.rosterMembers, '30d', ASOF)).toBe(`${parts.unit} · ${parts.window} · ${parts.asOf}`);
   });
 
   it('names the window of the selected range and "all time"', () => {

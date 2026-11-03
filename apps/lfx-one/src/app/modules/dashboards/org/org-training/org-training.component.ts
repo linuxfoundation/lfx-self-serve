@@ -13,6 +13,7 @@ import { orgTrainingFiltersSignature, orgTrainingStatsQuery, orgTrainingTableNot
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, finalize, of, skip, switchMap } from 'rxjs';
 
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -33,6 +34,7 @@ import { OrgTrainingGroupsTableComponent } from './components/org-training-group
   imports: [
     PageHeaderComponent,
     SkeletonModule,
+    ButtonComponent,
     CardComponent,
     CardTabsBarComponent,
     InputTextComponent,
@@ -58,12 +60,16 @@ export class OrgTrainingComponent {
   // Shared constants are readonly; copy into a mutable array for the component input that expects it.
   protected readonly tabs = [...ORG_TRAINING_TABS];
 
+  // ─── Forms ─────────────────────────────────────────────────────────────────
+  // The name search sits in the filter row but is table-local: it narrows the group rows, never the stat tiles.
+  protected readonly searchForm = new FormGroup({ search: new FormControl('') });
+
   // ─── Writable Signals ──────────────────────────────────────────────────────
   // Starts true: the first org emission arrives after the first render, which must not state an as-of date it lacks.
   protected readonly statsLoading = signal(true);
   protected readonly statsError = signal(false);
-  // The name search sits in the filter row but is table-local: it narrows the group rows, never the stat tiles.
-  protected readonly searchForm = new FormGroup({ search: new FormControl('') });
+  // Bumped by the stats error card's Retry: re-fetches the stats only, never the table.
+  private readonly statsRetryTrigger = signal(0);
   protected readonly searchQuery = signal('');
 
   // ─── Computed / toSignal ───────────────────────────────────────────────────
@@ -116,9 +122,15 @@ export class OrgTrainingComponent {
     });
   }
 
+  protected retryStats(): void {
+    this.statsRetryTrigger.update((value) => value + 1);
+  }
+
   // ─── Private Initializers ──────────────────────────────────────────────────
   private initTrainingStats(): Signal<OrgTrainingStats | null> {
-    const request$ = toObservable(computed(() => ({ orgUid: this.accountContext.selectedAccount()?.uid ?? null, query: this.statsQuery() })));
+    const request$ = toObservable(
+      computed(() => ({ orgUid: this.accountContext.selectedAccount()?.uid ?? null, query: this.statsQuery(), retry: this.statsRetryTrigger() }))
+    );
     return toSignal(
       request$.pipe(
         switchMap(({ orgUid, query }) => {
@@ -133,7 +145,8 @@ export class OrgTrainingComponent {
           this.statsError.set(false);
 
           return this.trainingService.getTrainingStats(orgUid, query).pipe(
-            catchError(() => {
+            catchError((error: unknown) => {
+              console.error('Failed to load training stats', error);
               this.statsError.set(true);
               return of(null);
             }),

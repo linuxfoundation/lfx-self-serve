@@ -207,6 +207,88 @@ describe('OrgTrainingFilterBarComponent', () => {
     error.mockRestore();
   });
 
+  describe('unlisted selections', () => {
+    const labelsOf = (name: 'foundationOptions' | 'projectOptions' | 'courseOptions' | 'levelOptions' | 'formatOptions') =>
+      fixture.componentInstance[name]().map((option) => option.label);
+
+    it('labels a kept foundation or project as having no rows in range, never by its raw id, and keeps it selected', async () => {
+      await mount('/?range=30d&foundation=fb&trainingProject=pk');
+
+      expect(labelsOf('foundationOptions')).toContain('Selected (no rows in range)');
+      expect(labelsOf('projectOptions')).toContain('Selected (no rows in range)');
+      for (const name of ['foundationOptions', 'projectOptions'] as const) expect(labelsOf(name)).not.toContain('fb');
+      expect(labelsOf('projectOptions')).not.toContain('pk');
+      expect(fixture.componentInstance.form.getRawValue()).toMatchObject({ foundation: 'fb', project: 'pk' });
+    });
+
+    it('labels a kept course, level or format with its value and the same suffix', async () => {
+      await mount('/?range=30d&course=Kubernetes%20Basics&format=Instructor%20Led&level=Intermediate');
+
+      expect(labelsOf('courseOptions')).toContain('Kubernetes Basics (no rows in range)');
+      expect(labelsOf('formatOptions')).toContain('Instructor Led (no rows in range)');
+      expect(labelsOf('levelOptions')).toContain('Intermediate (no rows in range)');
+    });
+
+    it('does not call a selection unlisted while the options have not loaded or failed to load', async () => {
+      getFilterOptions.mockReturnValue(new Observable((subscriber) => subscriber.error(new Error('down'))));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await mount('/?foundation=fa&course=Linux%20Intro');
+
+      expect(labelsOf('foundationOptions')).toEqual(['All Foundations', 'Selected']);
+      expect(labelsOf('courseOptions')).toEqual(['All Courses', 'Linux Intro']);
+    });
+
+    it('shows a listed selection under its own label', async () => {
+      await mount('/?range=30d&foundation=fa');
+
+      expect(labelsOf('foundationOptions')).toEqual(['All Foundations', 'Foundation A']);
+    });
+  });
+
+  describe('organization switch', () => {
+    const ALL_FILTERS = '/?tab=training&range=90d&groupBy=project&foundation=fa&trainingProject=pk&course=Linux%20Intro&level=Beginner&format=E-Learning';
+
+    it('clears the five filters from the URL and the form, keeping range, group-by and the page params', async () => {
+      await mount(ALL_FILTERS, true);
+
+      account.set({ uid: 'org-uid-2', accountName: 'Other Org' });
+      await settle();
+
+      expect(urlState()).toMatchObject({ range: '90d', groupBy: 'project', foundation: null, project: null, course: null, level: null, format: null });
+      expect(router().url).toContain('tab=training');
+      expect(fixture.componentInstance.form.getRawValue()).toMatchObject({
+        range: '90d',
+        groupBy: 'project',
+        foundation: '',
+        project: '',
+        course: '',
+        level: '',
+        format: '',
+      });
+      expect(getFilterOptions).toHaveBeenLastCalledWith('org-uid-2', '90d');
+    });
+
+    it('does not touch the URL on a switch while no filter is set', async () => {
+      await mount('/?tab=training&range=90d');
+      const navigate = vi.spyOn(router(), 'navigate');
+
+      account.set({ uid: 'org-uid-2', accountName: 'Other Org' });
+      await settle();
+
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('keeps the filters while the first organization resolves from the placeholder', async () => {
+      account.set({ uid: '', accountName: '' });
+      await mount('/?foundation=fa&format=E-Learning');
+
+      account.set({ uid: ORG, accountName: 'Synthetic Org' });
+      await settle();
+
+      expect(urlState()).toMatchObject({ foundation: 'fa', format: 'E-Learning' });
+    });
+  });
+
   it('stops writing to the URL once destroyed', async () => {
     await mount('/');
     const navigate = vi.spyOn(router(), 'navigate');

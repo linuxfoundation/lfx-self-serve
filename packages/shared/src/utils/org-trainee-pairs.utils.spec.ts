@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { OrgTraineeDetailRow } from '../interfaces/org-people-trainees.interface';
-import { countOrgTraineePairs, resolveOrgTraineePairs } from './org-trainee-pairs.utils';
+import { countOrgTraineePairs, orgTraineePairCourseLabel, resolveOrgTraineePairs } from './org-trainee-pairs.utils';
 
 function row(overrides: Partial<OrgTraineeDetailRow>): OrgTraineeDetailRow {
   return {
@@ -42,6 +42,28 @@ describe('resolveOrgTraineePairs', () => {
     expect(pair.courseName).toBe('B');
   });
 
+  it('resolves the course name over real names only: a row without one never competes, and a pair with none stays null', () => {
+    const [mixed] = resolveOrgTraineePairs([row({ courseName: null }), row({ courseName: 'Real Name' }), row({ courseName: null })]);
+    const [unnamed] = resolveOrgTraineePairs([row({ courseName: null, courseId: 'zzz' }), row({ courseName: null, courseId: 'zzz' })]);
+
+    expect(mixed.courseName).toBe('Real Name');
+    expect(unnamed.courseName).toBeNull();
+  });
+
+  it('normalizes name, level and format per row like the SQL: spaces trimmed (a tab stays), capped at 200, blank is null', () => {
+    const long = 'x'.repeat(250);
+    const [pair] = resolveOrgTraineePairs([
+      row({ courseName: '  Padded  ', courseLevel: '   ', courseFormat: '\tTabbed' }),
+      row({ courseName: long, courseLevel: 'Beginner', courseFormat: null, activityTs: '2025-01-01T00:00:00.000Z' }),
+    ]);
+
+    expect(pair.courseName).toBe('x'.repeat(200));
+    expect(pair.courseLevel).toBe('Beginner');
+    expect(pair.courseFormat).toBe('\tTabbed');
+    expect(resolveOrgTraineePairs([row({ courseName: '  Padded  ' })])[0].courseName).toBe('Padded');
+    expect(resolveOrgTraineePairs([row({ courseName: '   ' })])[0].courseName).toBeNull();
+  });
+
   it('takes foundation and project names from the row with the greatest id', () => {
     const [pair] = resolveOrgTraineePairs([
       row({ foundationId: 'f-1', foundationName: 'One', projectId: 'pr-9', projectName: 'Nine' }),
@@ -62,6 +84,13 @@ describe('resolveOrgTraineePairs', () => {
 
   it('leaves the format null when no row has one', () => {
     expect(resolveOrgTraineePairs([row({}), row({ status: 'Certified' })])[0].courseFormat).toBeNull();
+  });
+});
+
+describe('orgTraineePairCourseLabel', () => {
+  it('shows the resolved real name, and the course id only when the pair has none', () => {
+    expect(orgTraineePairCourseLabel({ courseName: 'Real Name', courseId: 'c-9' })).toBe('Real Name');
+    expect(orgTraineePairCourseLabel({ courseName: null, courseId: 'c-9' })).toBe('c-9');
   });
 });
 

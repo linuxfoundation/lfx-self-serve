@@ -4,6 +4,7 @@
 import { ApplicationRef, computed, signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { EMPTY_ORG_TRAINING_FILTER_OPTIONS, EMPTY_ORG_TRAINING_GROUPS_RESPONSE } from '@lfx-one/shared/constants';
 import type { Account, OrgLensEmptyStateName, OrgTrainingStats } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
@@ -39,9 +40,6 @@ function personDrawerStub() {
   };
 }
 
-const EMPTY_GROUPS = { data: [], total: 0, totals: { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 } };
-const EMPTY_OPTIONS = { foundations: [], projects: [], courses: [], levels: [], formats: [] };
-
 const STATS: OrgTrainingStats = {
   range: '730d',
   asOf: '2026-10-30T09:48:21.094Z',
@@ -75,8 +73,8 @@ async function render(
   const queryParamMap$ = new BehaviorSubject(convertToParamMap(params));
   const trainingService = {
     getTrainingStats: vi.fn(statsFor ?? (() => of(stats))),
-    getFilterOptions: vi.fn(() => of(EMPTY_OPTIONS)),
-    getGroups: vi.fn(() => of(EMPTY_GROUPS)),
+    getFilterOptions: vi.fn(() => of(EMPTY_ORG_TRAINING_FILTER_OPTIONS)),
+    getGroups: vi.fn(() => of(EMPTY_ORG_TRAINING_GROUPS_RESPONSE)),
     getGroupEmployees: vi.fn(() => of({ total: 0, data: [] })),
   };
 
@@ -377,6 +375,28 @@ describe('OrgTrainingComponent — stat strip', () => {
     expect(el.querySelector('[data-testid="org-training-content-card"]')).not.toBeNull();
   });
 
+  it('logs the failure, announces it as an alert and retries the stats only (not the table)', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let attempts = 0;
+    const { el, fixture, trainingService } = await render(null, {
+      statsFor: () => (++attempts === 1 ? throwError(() => new Error('boom')) : of(STATS)),
+    });
+    const groupCalls = trainingService.getGroups.mock.calls.length;
+
+    expect(error).toHaveBeenCalledWith('Failed to load training stats', expect.any(Error));
+    expect(el.querySelector('[data-testid="org-training-stats-error"]')?.getAttribute('role')).toBe('alert');
+
+    (el.querySelector('[data-testid="org-training-stats-retry"] button') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(trainingService.getTrainingStats).toHaveBeenCalledTimes(2);
+    expect(trainingService.getGroups.mock.calls.length).toBe(groupCalls);
+    expect(el.querySelector('[data-testid="org-training-stats-error"]')).toBeNull();
+    expect(el.querySelector('lfx-org-training-stats')).not.toBeNull();
+    error.mockRestore();
+  });
+
   it('hands the stats component no numbers (null) while loading and again after an organization switch', async () => {
     const responses: Record<string, Subject<OrgTrainingStats | null>> = {
       'org-uid-1': new Subject<OrgTrainingStats | null>(),
@@ -406,5 +426,28 @@ describe('OrgTrainingComponent — stat strip', () => {
     await appRef.whenStable();
     fixture.detectChanges();
     expect(rosterValue()).toBe('7');
+  });
+});
+
+describe('OrgTrainingComponent — organization switch', () => {
+  it('clears the five filters from the URL when the organization changes, keeping range, group-by and tab', async () => {
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    const selectedAccount = signal<Account>(ACME);
+    const { fixture } = await render(null, {
+      selectedAccount,
+      stats: STATS,
+      params: { range: '90d', foundation: 'fa', trainingProject: 'pk', course: 'Linux Intro', level: 'Beginner', format: 'E-Learning', tab: 'trainings' },
+    });
+    navigate.mockClear();
+
+    selectedAccount.set({ ...ACME, accountId: 'acc-2', accountName: 'Globex Corp.', uid: 'org-uid-2', slug: 'globex' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(navigate).toHaveBeenCalledTimes(1);
+    const extras = navigate.mock.calls[0][1] as { queryParams: Record<string, unknown>; queryParamsHandling: string };
+    expect(extras.queryParamsHandling).toBe('merge');
+    expect(extras.queryParams).toMatchObject({ range: '90d', foundation: null, trainingProject: null, course: null, level: null, format: null });
+    navigate.mockRestore();
   });
 });

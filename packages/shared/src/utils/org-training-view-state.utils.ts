@@ -4,14 +4,13 @@
 import { ORG_LENS_TIME_RANGE_QUERY_PARAM } from '../constants/org-lens-time-range.constants';
 import {
   MAX_ORG_TRAINING_FILTER_VALUE_LENGTH,
+  ORG_TRAINING_FILTER_KEYS,
   ORG_TRAINING_DEFAULT_GROUP_BY,
   ORG_TRAINING_VIEW_QUERY_PARAMS,
   VALID_ORG_TRAINING_GROUP_BY_VALUES,
 } from '../constants/org-training-view.constants';
 import type { OrgTrainingFilters, OrgTrainingGroupBy, OrgTrainingStatsQuery, OrgTrainingViewState } from '../interfaces/org-training-view.interface';
 import { orgLensTimeRangeUrlParam, parseOrgLensTimeRange } from './org-lens-time-range.utils';
-
-const FILTER_KEYS = ['foundation', 'project', 'course', 'level', 'format'] as const;
 
 function parseFilterValue(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
@@ -53,7 +52,7 @@ export function orgTrainingStatsQuery(state: OrgTrainingStatsQuery): OrgTraining
 
 /** Key-safe cache/sub-resource signature of range + filters (base64url JSON, only `[A-Za-z0-9_-]`). */
 export function orgTrainingFiltersSignature(query: OrgTrainingStatsQuery): string {
-  const json = JSON.stringify([query.range, ...FILTER_KEYS.map((key) => query[key])]);
+  const json = JSON.stringify([query.range, ...ORG_TRAINING_FILTER_KEYS.map((key) => query[key])]);
   return btoa(String.fromCharCode(...new TextEncoder().encode(json)))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
@@ -62,7 +61,7 @@ export function orgTrainingFiltersSignature(query: OrgTrainingStatsQuery): strin
 
 /** Whether any filter narrows the pairs. */
 export function hasOrgTrainingFilter(filters: OrgTrainingFilters): boolean {
-  return FILTER_KEYS.some((key) => filters[key] !== null);
+  return ORG_TRAINING_FILTER_KEYS.some((key) => filters[key] !== null);
 }
 
 /** Whether a course-level filter is set; learners outside the people list carry no course data and drop out then. */

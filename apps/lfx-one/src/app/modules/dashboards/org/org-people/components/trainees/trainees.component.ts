@@ -22,6 +22,7 @@ import {
   countOrgTraineePairs,
   hasOrgTrainingFilter,
   matchesOrgTrainingFilters,
+  orgTraineePairCourseLabel,
   orgTrainingFiltersSignature,
   orgTrainingStatsQuery,
   parseOrgTrainingViewState,
@@ -30,11 +31,13 @@ import {
 import { formatMonthYearUtc } from '@shared/utils/date-format.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 import {
+  CERTIFICATION_PRODUCT_TYPE,
   EMPTY_ORG_TRAINEES_RESPONSE,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_TRAINEES_INITIAL_LIMIT,
   ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE,
   ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING,
+  TRAINING_PRODUCT_TYPE,
 } from '@lfx-one/shared/constants';
 import type {
   OrgLensTimeRange,
@@ -93,7 +96,9 @@ export class TraineesComponent {
   protected readonly sortDirection = signal<OrgTraineeSortDirection>(-1);
   protected readonly limit = signal<number>(ORG_TRAINEES_INITIAL_LIMIT);
   protected readonly expansion = signal<Record<string, boolean>>({});
+  // Separate triggers: Retry on the stats card re-reads the stats only and leaves the loaded table alone.
   protected readonly retryTrigger = signal<number>(0);
+  protected readonly statsRetryTrigger = signal<number>(0);
   private readonly loadingState = signal<boolean>(true);
   private readonly fetchErrorState = signal<boolean>(false);
   private readonly statsErrorState = signal<boolean>(false);
@@ -226,6 +231,10 @@ export class TraineesComponent {
     this.retryTrigger.update((v) => v + 1);
   }
 
+  protected retryStats(): void {
+    this.statsRetryTrigger.update((v) => v + 1);
+  }
+
   private initFilteredPairs(): OrgTraineePair[] {
     const filters = this.viewState();
     const q = this.searchValue().trim().toLowerCase();
@@ -278,9 +287,11 @@ export class TraineesComponent {
       const personDetails = detailsByPerson.get(trainee.personKey);
       if (!personDetails || personDetails.length === 0) continue;
 
-      const counts = countOrgTraineePairs(pairsByPerson.get(trainee.personKey) ?? []);
-
+      const personPairs = pairsByPerson.get(trainee.personKey) ?? [];
+      const counts = countOrgTraineePairs(personPairs);
+      // Which course is the most recent follows the rows; what it is called and its foundation come from its resolved pair.
       const recent = pickMostRecent(personDetails);
+      const recentPair = recent ? personPairs.find((pair) => pair.courseId === recent.courseId) : undefined;
 
       out.push({
         personKey: trainee.personKey,
@@ -294,8 +305,8 @@ export class TraineesComponent {
         certsCount: counts.certifications,
         trainingsCompletedCount: counts.trainingsCompleted,
         inProgressCount: counts.inProgress,
-        recentCourseName: recent?.courseName ?? null,
-        recentFoundationName: recent?.foundationName ?? null,
+        recentCourseName: recentPair ? orgTraineePairCourseLabel(recentPair) : null,
+        recentFoundationName: recentPair?.foundationName ?? null,
       });
     }
 
@@ -310,35 +321,35 @@ export class TraineesComponent {
     copy.sort((a, b) => {
       switch (col) {
         case 'name':
-          return a.name.localeCompare(b.name) * dir;
+          return a.name.localeCompare(b.name, 'en-US') * dir;
         case 'status': {
           const va = a.status === 'Certified' ? 1 : 0;
           const vb = b.status === 'Certified' ? 1 : 0;
           if (va !== vb) return (va - vb) * dir;
-          return a.name.localeCompare(b.name);
+          return a.name.localeCompare(b.name, 'en-US');
         }
         case 'courses': {
           if (a.coursesCount !== b.coursesCount) return (a.coursesCount - b.coursesCount) * dir;
-          return a.name.localeCompare(b.name);
+          return a.name.localeCompare(b.name, 'en-US');
         }
         case 'certs': {
           if (a.certsCount !== b.certsCount) return (a.certsCount - b.certsCount) * dir;
-          return a.name.localeCompare(b.name);
+          return a.name.localeCompare(b.name, 'en-US');
         }
         case 'trainings': {
           if (a.trainingsCompletedCount !== b.trainingsCompletedCount) return (a.trainingsCompletedCount - b.trainingsCompletedCount) * dir;
-          return a.name.localeCompare(b.name);
+          return a.name.localeCompare(b.name, 'en-US');
         }
         case 'inProgress': {
           if (a.inProgressCount !== b.inProgressCount) return (a.inProgressCount - b.inProgressCount) * dir;
-          return a.name.localeCompare(b.name);
+          return a.name.localeCompare(b.name, 'en-US');
         }
         case 'recent': {
           const ra = (a.recentCourseName ?? '').toLowerCase();
           const rb = (b.recentCourseName ?? '').toLowerCase();
-          const cmp = ra.localeCompare(rb);
+          const cmp = ra.localeCompare(rb, 'en-US');
           if (cmp !== 0) return cmp * dir;
-          return a.name.localeCompare(b.name);
+          return a.name.localeCompare(b.name, 'en-US');
         }
       }
     });
@@ -347,7 +358,7 @@ export class TraineesComponent {
 
   private initFooterCountLabel(): string {
     const visible = Math.min(this.limit(), this.totalFiltered());
-    return `Showing ${visible.toLocaleString()} of ${this.totalFiltered().toLocaleString()}`;
+    return `Showing ${visible.toLocaleString('en-US')} of ${this.totalFiltered().toLocaleString('en-US')}`;
   }
 
   private initEmptyState(): OrgTraineesEmptyState {
@@ -448,7 +459,7 @@ export class TraineesComponent {
   private initTrainingStats(): Signal<OrgTrainingStats | null> {
     const query$ = toObservable(this.statsQuerySignature).pipe(map(() => this.statsQuery()));
     return toSignal(
-      combineLatest([this.orgUid$, query$, toObservable(this.retryTrigger)]).pipe(
+      combineLatest([this.orgUid$, query$, toObservable(this.statsRetryTrigger)]).pipe(
         switchMap(([orgUid, query]) => {
           this.statsErrorState.set(false);
           if (!orgUid) return of(null);
@@ -467,7 +478,7 @@ export class TraineesComponent {
   }
 
   private resetAllState(): void {
-    // The range and filters are page-level URL state (the filter bar prunes what the new org lacks), so an org switch keeps them.
+    // The range is page-level URL state and survives an org switch; the filter bar clears the five filters then (they were picked from the previous org's options).
     this.filterForm.patchValue({ search: '' });
     this.sortColumn.set('courses');
     this.sortDirection.set(-1);
@@ -503,7 +514,7 @@ function compareMostRecent(a: OrgTraineeDetailRow, b: OrgTraineeDetailRow): numb
   const aCert = a.status === 'Certified' ? 1 : 0;
   const bCert = b.status === 'Certified' ? 1 : 0;
   if (aCert !== bCert) return bCert - aCert;
-  return a.courseName.localeCompare(b.courseName);
+  return (a.courseName ?? a.courseId).localeCompare(b.courseName ?? b.courseId, 'en-US');
 }
 
 /** Collapse (personKey, courseId) source rows to one per course; typed by product, sorted recent-first per Item 4 tiebreak. */
@@ -525,8 +536,8 @@ function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRo
 
     out.push({
       courseId: group[0].courseId,
-      courseName: pair.courseName,
-      type: pair.productType === 'Certification' ? 'Certification' : 'Training',
+      courseName: orgTraineePairCourseLabel(pair),
+      type: pair.productType === CERTIFICATION_PRODUCT_TYPE ? CERTIFICATION_PRODUCT_TYPE : TRAINING_PRODUCT_TYPE,
       enrolledTs,
       completedTs: certifiedTs,
       enrolledLabel: enrolledTs ? formatMonthYearUtc(enrolledTs) : '—',
@@ -537,8 +548,8 @@ function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRo
 
   return out.sort((a, b) => {
     if (a.sortTs !== b.sortTs) return a.sortTs > b.sortTs ? -1 : 1;
-    if (a.type !== b.type) return a.type === 'Certification' ? -1 : 1;
-    return a.courseName.localeCompare(b.courseName);
+    if (a.type !== b.type) return a.type === CERTIFICATION_PRODUCT_TYPE ? -1 : 1;
+    return a.courseName.localeCompare(b.courseName, 'en-US');
   });
 }
 

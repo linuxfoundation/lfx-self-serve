@@ -11,6 +11,7 @@ import {
   DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD,
   DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER,
   DESCENDING_DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELDS,
+  EMPTY_ORG_TRAINING_GROUPS_RESPONSE,
   ENROLL_AGAIN_URL,
   ORG_TRAINING_GROUP_BY_OPTIONS,
   ORG_TRAINING_GROUPS_SCOPE_NOTES,
@@ -32,14 +33,6 @@ import { OrgLensTrainingService } from '@shared/services/org-lens-training.servi
 import { catchError, finalize, of, skip, switchMap } from 'rxjs';
 
 import { OrgTrainingGroupEmployeesDrawerComponent } from '../org-training-group-employees-drawer/org-training-group-employees-drawer.component';
-
-const EMPTY_GROUPS_RESPONSE: OrgTrainingGroupsResponse = { data: [], total: 0, totals: { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 } };
-
-interface PagingState {
-  /** The view (org, filters, group-by, tab, search) the offset belongs to; a different view starts on page one. */
-  viewKey: string;
-  offset: number;
-}
 
 /**
  * The Training page's one group-by table: person-course pairs of the selected range and filters, grouped by `groupBy`,
@@ -80,7 +73,8 @@ export class OrgTrainingGroupsTableComponent {
   protected readonly drawerCount = signal(0);
 
   private readonly viewKey = computed(() => JSON.stringify([this.orgUid(), this.query(), this.groupBy(), this.tab(), this.searchQuery()]));
-  private readonly paging = signal<PagingState>({ viewKey: '', offset: 0 });
+  /** The view (org, filters, group-by, tab, search) the offset belongs to; a different view starts on page one. */
+  private readonly paging = signal<{ viewKey: string; offset: number }>({ viewKey: '', offset: 0 });
   protected readonly offset = computed(() => {
     const paging = this.paging();
     return paging.viewKey === this.viewKey() ? paging.offset : 0;
@@ -217,7 +211,7 @@ export class OrgTrainingGroupsTableComponent {
           if (!orgUid) {
             this.loading.set(false);
             this.error.set(false);
-            return of(EMPTY_GROUPS_RESPONSE);
+            return of(EMPTY_ORG_TRAINING_GROUPS_RESPONSE);
           }
           this.loading.set(true);
           this.error.set(false);
@@ -226,13 +220,13 @@ export class OrgTrainingGroupsTableComponent {
             catchError((error: unknown) => {
               console.error('Failed to load training groups', error);
               this.error.set(true);
-              return of(EMPTY_GROUPS_RESPONSE);
+              return of(EMPTY_ORG_TRAINING_GROUPS_RESPONSE);
             }),
             finalize(() => this.loading.set(false))
           );
         })
       ),
-      { initialValue: EMPTY_GROUPS_RESPONSE }
+      { initialValue: EMPTY_ORG_TRAINING_GROUPS_RESPONSE }
     );
   }
 }

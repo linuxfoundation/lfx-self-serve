@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, contentChild, input, output, TemplateRef } from '@angular/core';
+import { Component, computed, contentChild, input, output, Signal, TemplateRef } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -51,6 +51,15 @@ export class MetricCardComponent {
   // Interaction
   public readonly clickable = input<boolean>(false);
   public readonly cardClick = output<void>();
+
+  /** Accessible name of the keyboard entry point: the card's title and value. */
+  protected readonly actionLabel: Signal<string> = computed(() => [this.title(), this.value()].filter(Boolean).join(': '));
+
+  protected handleKeyActivate(event: Event): void {
+    // Space would scroll the page; Enter / Space activate like a click.
+    event.preventDefault();
+    this.handleClick();
+  }
 
   protected handleClick(): void {
     if (this.clickable()) {

@@ -18,7 +18,7 @@ import {
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
   ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
-import { buildOrgTrainingStatTiles, hexToRgba, orgTrainingStatsQuery, parseOrgTrainingViewState } from '@lfx-one/shared/utils';
+import { buildOrgTrainingStatTiles, hexToRgba, orgTrainingStatCaptionParts, orgTrainingStatsQuery, parseOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
@@ -130,7 +130,7 @@ export class OrgOverviewInvolvementComponent {
     );
   }
 
-  /** The shared training stats over all time (Org Lens training route, keyed by org uid); null while loading or when the read fails. */
+  /** The shared training stats for the Training page's default range, Past 2 years (Org Lens training route, keyed by org uid); null while loading or when the read fails. */
   private initializeTrainingStats(): Signal<OrgTrainingStats | null> {
     return toSignal(
       toObservable(this.accountContextService.selectedAccount).pipe(
@@ -371,9 +371,15 @@ export class OrgOverviewInvolvementComponent {
       loading: this.trainingStatsLoading(),
       value: people.display,
       // A failed or pending stats read shows a dash, never a zero that reads as "nobody certified", and no as-of date.
-      subtitle: stats === null ? people.caption : `${certifications.display} certifications · ${people.caption.split(' · ').slice(1).join(' · ')}`,
+      subtitle: stats === null ? people.caption : this.certifiedEmployeesSubtitle(certifications.display, stats),
       tooltipText: `${people.tooltip} ${certifications.tooltip}`,
     };
+  }
+
+  /** `N certifications · Past 2 years · as of <date>`: the certifications count, then the window and as-of parts of the people caption. */
+  private certifiedEmployeesSubtitle(certifications: string, stats: OrgTrainingStats): string {
+    const caption = orgTrainingStatCaptionParts(ORG_TRAINING_STAT_DEFINITIONS.certifiedPeople, OVERVIEW_TRAINING_STATS_QUERY.range, stats.asOf);
+    return [`${certifications} certifications`, caption.window, caption.asOf].filter((part): part is string => !!part).join(' · ');
   }
 
   /** Headline: courses taken for the Training page's default range (unit, window and as-of in the subtitle). Stat-only: no chart. */
