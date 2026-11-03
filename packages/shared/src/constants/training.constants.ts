@@ -12,6 +12,17 @@ export const ORG_TRAINING_TABS: readonly { id: OrgTrainingTabId; label: string; 
   { id: 'trainings', label: 'Trainings', icon: 'fa-light fa-book-open' },
 ] as const;
 
+/**
+ * One plain line under the group table's totals row: which products the tab counts and why its In progress total can
+ * differ from the Courses in progress tile. The two tabs add up to the tile.
+ */
+export const ORG_TRAINING_GROUPS_SCOPE_NOTES: Readonly<Record<OrgTrainingTabId, string>> = {
+  certifications:
+    'This tab counts Certification products only, so its In progress total can differ from the Courses in progress tile; the Trainings tab holds the rest, and the two tabs add up to the tile.',
+  trainings:
+    'This tab counts all non-Certification products, so its In progress total can differ from the Courses in progress tile; the Certifications tab holds the rest, and the two tabs add up to the tile.',
+};
+
 export const DEFAULT_ORG_TRAINING_TAB_ID: OrgTrainingTabId = 'certifications';
 
 export const VALID_ORG_TRAINING_TAB_IDS: ReadonlySet<OrgTrainingTabId> = new Set(ORG_TRAINING_TABS.map((tab) => tab.id));

@@ -30,6 +30,7 @@ vi.mock('../services/org-lens-training.service', () => ({
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead }));
 
+import { ServiceValidationError } from '../errors';
 import { OrgLensTrainingController } from './org-lens-training.controller';
 
 const ORG_UID = '001410000000000AAA';
@@ -185,6 +186,48 @@ describe('OrgLensTrainingController', () => {
 
       expect(next).toHaveBeenCalledTimes(1);
       expect(getGroupEmployees).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a known filter value with no rows in the range', () => {
+    const ZERO_STATS = { range: '30d', rosterMembers: null, peopleWithTrainingActivity: 0, coursesTaken: 0 };
+    const ZERO_GROUPS = { data: [], total: 0, totals: { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 } };
+    const ZERO_DRAWER = { groupBy: 'course', groupValue: 'x', label: 'x', tab: 'certifications', status: 'completed', total: 0, data: [] };
+
+    it('sends the zero payloads as a normal response, never turned into an error', async () => {
+      getTrainingStats.mockResolvedValue(ZERO_STATS);
+      getGroups.mockResolvedValue(ZERO_GROUPS);
+      getGroupEmployees.mockResolvedValue(ZERO_DRAWER);
+      const next = vi.fn();
+      const [statsRes, groupsRes, drawerRes] = [buildRes(), buildRes(), buildRes()];
+
+      await controller.getTrainingStats(buildReq({ range: '30d', level: 'Beginner' }), statsRes, next);
+      await controller.getGroups(buildReq({ range: '30d', level: 'Beginner' }), groupsRes, next);
+      await controller.getGroupEmployees(buildReq({ range: '30d', level: 'Beginner', groupValue: 'x', status: 'completed' }), drawerRes, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(statsRes.json).toHaveBeenCalledWith(ZERO_STATS);
+      expect(groupsRes.json).toHaveBeenCalledWith(ZERO_GROUPS);
+      expect(drawerRes.json).toHaveBeenCalledWith(ZERO_DRAWER);
+    });
+
+    it('hands an unknown value (the service validation error) to the error handler and sends no payload', async () => {
+      const error = ServiceValidationError.forField('level', "level is not an option of this organization's training view", {
+        operation: 'validate_org_training_filters',
+      });
+      getTrainingStats.mockRejectedValue(error);
+      getGroups.mockRejectedValue(error);
+      getGroupEmployees.mockRejectedValue(error);
+      const next = vi.fn();
+      const res = buildRes();
+
+      await controller.getTrainingStats(buildReq({ level: 'Unknown' }), res, next);
+      await controller.getGroups(buildReq({ level: 'Unknown' }), res, next);
+      await controller.getGroupEmployees(buildReq({ level: 'Unknown', groupValue: 'x', status: 'completed' }), res, next);
+
+      expect(next).toHaveBeenCalledTimes(3);
+      expect(next.mock.calls.every(([e]) => e === error)).toBe(true);
+      expect(res.json).not.toHaveBeenCalled();
     });
   });
 });

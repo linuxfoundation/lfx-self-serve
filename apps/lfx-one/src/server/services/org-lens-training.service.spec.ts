@@ -367,6 +367,122 @@ describe('OrgLensTrainingService — request filter validation', () => {
   });
 });
 
+describe('OrgLensTrainingService — a filter valid for the organization but with no rows in the selected range', () => {
+  const NO_ROWS_RANGE = '30d' as const;
+  const ZERO_TOTALS = { PEOPLE: 0, COURSES_TAKEN: 0, COMPLETED: 0, IN_PROGRESS: 0 };
+  const validFilters: [string, Partial<OrgTrainingStatsQuery>][] = [
+    ['foundation', { foundation: 'f-1' }],
+    ['project', { project: 'p-1' }],
+    ['course', { course: 'Course A' }],
+    ['level', { level: 'Beginner' }],
+    ['format', { format: 'E-Learning' }],
+  ];
+
+  /**
+   * The all-time options carry every value of OPTIONS_ROWS; every range-limited statement (a DATEADD window) finds no pair:
+   * aggregates answer one zero row and the grouped statement answers no row, as the warehouse does.
+   */
+  function mockNoRowsInRange(): void {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT DISTINCT FOUNDATION_ID')) return { rows: /DATEADD/.test(sql) ? [] : OPTIONS_ROWS };
+      if (sql.includes('AS GROUP_KEY')) return { rows: [] };
+      if (sql.includes('AS COURSES_IN_PROGRESS')) {
+        return {
+          rows: [
+            { PEOPLE: 0, COURSES_TAKEN: 0, CERTIFICATIONS: 0, CERTIFIED_PEOPLE: 0, TRAININGS_COMPLETED: 0, COURSES_IN_PROGRESS: 0, PEOPLE_IN_TRAINING: 0 },
+          ],
+        };
+      }
+      if (sql.includes('COUNT(*) AS TOTAL')) return { rows: [{ TOTAL: 0, GROUP_LABEL: null }] };
+      if (sql.includes('COUNT(DISTINCT PERSON_KEY) AS PEOPLE') && !sql.includes('AS COURSES_TAKEN')) return { rows: [{ PEOPLE: 0 }] };
+      if (sql.includes('AS COURSES_TAKEN')) return { rows: [ZERO_TOTALS] };
+      return { rows: [] };
+    });
+  }
+
+  const rangeQuery = (filter: Partial<OrgTrainingStatsQuery>): OrgTrainingStatsQuery => ({ ...QUERY, range: NO_ROWS_RANGE, ...filter });
+
+  it.each(validFilters)('stats: serves zeros with a normal payload for a known %s with no rows in range, not a 400', async (_name, filter) => {
+    mockNoRowsInRange();
+
+    const stats = await service.getTrainingStats(ACCOUNT, rangeQuery(filter), 'org-grant');
+
+    expect(stats).toMatchObject({
+      range: NO_ROWS_RANGE,
+      peopleWithTrainingActivity: 0,
+      learnersOutsidePeopleList: 0,
+      coursesTaken: 0,
+      certifications: 0,
+      certifiedPeople: 0,
+      trainingsCompleted: 0,
+      completionRatePct: 0,
+      coursesInProgress: 0,
+      peopleInTraining: 0,
+    });
+  });
+
+  it.each(validFilters)('groups: serves an empty table with zero totals for a known %s with no rows in range, not a 400', async (_name, filter) => {
+    mockNoRowsInRange();
+
+    for (const tab of ['certifications', 'trainings'] as const) {
+      const response = await service.getGroups(REQ, ACCOUNT, rangeQuery(filter), { groupBy: 'course', tab }, 'org-grant');
+
+      expect(response).toEqual({ data: [], total: 0, totals: { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 } });
+    }
+  });
+
+  it.each(validFilters)(
+    'group employees: a known %s with no rows in range passes the filter check; the (absent) group is what the 400 names, never the filter',
+    async (_name, filter) => {
+      mockNoRowsInRange();
+
+      const error = await service
+        .getGroupEmployees(
+          REQ,
+          ACCOUNT,
+          rangeQuery(filter),
+          { groupBy: 'course', groupValue: 'Course A', tab: 'certifications', status: 'completed' },
+          'org-grant'
+        )
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      const body = JSON.stringify((error as ServiceValidationError).toResponse());
+      expect(body).toContain('groupValue is not a group of this table');
+      expect(body).not.toContain('is not an option');
+    }
+  );
+
+  it('group employees: serves an empty drawer with a zero total when the group exists but none of its pairs is a current employee', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT DISTINCT FOUNDATION_ID')) return { rows: OPTIONS_ROWS };
+      if (sql.includes('AS GROUP_KEY')) return { rows: GROUP_ROWS };
+      if (sql.includes('COUNT(*) AS TOTAL')) return { rows: [{ TOTAL: 0, GROUP_LABEL: null }] };
+      if (sql.includes('CONTACT_ID')) return { rows: [] };
+      return { rows: [TOTALS] };
+    });
+
+    const response = await service.getGroupEmployees(
+      REQ,
+      ACCOUNT,
+      rangeQuery({ level: 'Beginner' }),
+      { groupBy: 'course', groupValue: 'Course A', tab: 'certifications', status: 'completed' },
+      'org-grant'
+    );
+
+    expect(response).toMatchObject({ groupBy: 'course', groupValue: 'Course A', total: 0, data: [] });
+  });
+
+  it('still rejects an unknown value in the same range, so only the all-time options decide', async () => {
+    mockNoRowsInRange();
+
+    await expect(service.getTrainingStats(ACCOUNT, rangeQuery({ level: 'Unknown level' }), 'org-grant')).rejects.toBeInstanceOf(ServiceValidationError);
+    await expect(
+      service.getGroups(REQ, ACCOUNT, rangeQuery({ level: 'Unknown level' }), { groupBy: 'course', tab: 'certifications' }, 'org-grant')
+    ).rejects.toBeInstanceOf(ServiceValidationError);
+  });
+});
+
 describe('OrgLensTrainingService — access qualification and the shared caches', () => {
   it('serves an auditor-entitlement caller directly: nothing is read from or stored in the shared cache', async () => {
     mockGroups(OPTIONS_ROWS);

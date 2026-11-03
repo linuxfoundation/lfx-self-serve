@@ -288,6 +288,23 @@ export const VALKEY_CACHE = {
     // already counted through people-list rows). Re-measure it on the
     // largest organization after lf-dbt enables outside learners (rollout step 3).
     'org-lens-sf:v1:people-trainees:v9': 9 * 1_048_576,
+    // Training / Trainees shared-view caches (lfx-self-serve#4285), each far under 1 MiB: measured maximum × 1.25 rounds up to
+    // 1 MiB (the default's size), and each is an explicit entry so its measurement lives here. Measured 2026-11-03 on
+    // the dev build (ANALYTICS_DEV ORG_PEOPLE_TRAINING, All time, no filters, the five largest organizations; the largest has
+    // the most person-course pairs: 33,867) as the JSON of the stored value (`JSON.stringify` size from SQL `TO_JSON` rows,
+    // each + 1 comma byte), same filtered-pair rules as the BFF; every filter combination is a subset of these.
+    // `training-stats:v5`: one object of 13 scalar fields, 366 bytes at most (a fixed shape; no per-org growth).
+    'org-lens-sf:v1:training-stats:v5': 1_048_576,
+    // `training-filter-options:v1`: five {label, value} lists, per range; All time is the largest: 42.6 KB for the largest
+    // course dictionary (319 course names 37.4 KB, 57 projects 3.2 KB, 23 foundations 1.5 KB, 3 levels, 5 formats).
+    'org-lens-sf:v1:training-filter-options:v1': 1_048_576,
+    // `training-groups:v1`: the whole group set of one (groupBy, tab), with search, sort and paging done in memory. Largest
+    // value 68.7 KB (course grouping, Training tab, 272 groups, All time; 12.1 KB for 47 groups on the Certification tab);
+    // foundation 3.8 KB (22 groups), project 10.4 KB (55), level 0.7 KB, format 0.6 KB.
+    'org-lens-sf:v1:training-groups:v1': 1_048_576,
+    // `training-group-employees:v1`: one drawer cell, capped at MAX_ORG_CERT_EMPLOYEES (500) {contactId, name, jobTitle}
+    // rows. Largest value 43.1 KB (about 500 rows at ~85 bytes; the widest group averaged 141 bytes per row, 70.5 KB for 500).
+    'org-lens-sf:v1:training-group-employees:v1': 1_048_576,
   } as Readonly<Record<string, number>>,
 
   /**

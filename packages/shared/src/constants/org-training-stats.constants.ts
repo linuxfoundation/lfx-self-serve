@@ -13,14 +13,6 @@ export const ORG_TRAINING_NO_ROSTER_NOTE = 'No LF Education training program on 
 /** The rule behind "in progress", stated on its tiles and tooltips: no hidden snapshot. */
 export const ORG_TRAINING_IN_PROGRESS_RULE = 'Enrolled in the selected range, no certificate in the range';
 
-/**
- * Captions of the Overview Education tiles' charts. Both are decoration: they come from monthly and daily tables with
- * their own span, so each caption states the span it shows (first and last point) next to this label, and the headline
- * above follows the Training page's default range instead.
- */
-export const ORG_OVERVIEW_CERTIFICATIONS_TREND_LABEL = 'Chart: certifications per month';
-export const ORG_OVERVIEW_TRAINING_TREND_LABEL = 'Chart: training enrollments not yet certified, cumulative (enrollments, not people)';
-
 const PAIR_SCOPE =
   "for people on this organization's people list, in the selected range and matching the filters. A course retaken counts once; learners not on the people list are not counted.";
 

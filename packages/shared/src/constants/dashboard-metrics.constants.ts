@@ -404,22 +404,22 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartData: EMPTY_CHART_DATA,
   },
   {
-    // Same number and label as the Training page's "Certified people" tile at its default range (lfx-self-serve#4290).
+    // Same number and label as the Training page's "Certified people" tile at its default range (lfx-self-serve#4290). Stat-only: no chart.
     title: ORG_TRAINING_STAT_DEFINITIONS.certifiedPeople.label,
     icon: 'fa-light fa-graduation-cap',
     chartType: 'line',
+    hideChart: true,
     category: 'education',
     testId: 'org-overview-involvement-card-certified-employees',
-    chartData: EMPTY_CHART_DATA,
   },
   {
-    // Same number and label as the Training page's "Courses taken" tile at its default range (lfx-self-serve#4290).
+    // Same number and label as the Training page's "Courses taken" tile at its default range (lfx-self-serve#4290). Stat-only: no chart.
     title: ORG_TRAINING_STAT_DEFINITIONS.coursesTaken.label,
     icon: 'fa-light fa-graduation-cap',
     chartType: 'line',
+    hideChart: true,
     category: 'education',
     testId: 'org-overview-involvement-card-training-enrollments',
-    chartData: EMPTY_CHART_DATA,
   },
 ];
 
