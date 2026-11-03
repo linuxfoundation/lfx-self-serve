@@ -4,7 +4,7 @@ description: How to present a vote on screen, extend its deadline, send the resu
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, present, extend, clone, summary, qr-code, deadline]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Votes
 ---
 
@@ -65,21 +65,27 @@ The row shows the new deadline right away. You can only extend a vote that is st
 
 ## Send a summary
 
-**Send summary** emails the results to everyone who was invited to vote. It is available only on ended votes.
+**Send summary** emails the results to everyone who was invited to vote. It is available only on ended votes, to people who can manage the vote.
 
 1. Select **⋮ → Send summary** on an ended vote.
-2. Confirm. The message warns that sending can't be undone.
+2. Review who will receive it. The **Send summary** dialog shows the vote name, how many voters and how many email addresses there are, and two lists:
+   - **Ready to receive:** voters with an email address, with their name and address.
+   - **No email address:** voters who can't receive the summary because there is no email address on file.
+3. Select **Send**. To leave without sending anything, select **Cancel**.
+4. Select **Send now** to confirm. Emails can't be recalled once sent. Select **Back** to return to the list instead.
 
-After you send, LFX reports what it knows about each invited voter:
+The list is for review only. You can't add or remove voters from it. If several voters share an email address, the dialog says so, and that address receives one summary. If no voter has an email address, the dialog says **Nobody can be emailed** and **Send** stays unavailable. If the vote has no invited voters, the dialog says so. If the list can't load, select **Retry**.
 
-- **Sent:** the email service accepted the summary for sending to the voter's email address. Delivery to their inbox is not confirmed.
-- **Skipped:** the voter has no email address on file, so nothing was sent to them. Skipped voters are reported, never silently left out.
-- **Failed:** the email could not be sent to the voter.
-- **Unconfirmed:** LFX couldn't confirm whether the email went out, for example after a timeout, lost connection, or an email-service error after sending may have started. Some of these emails may already have been delivered, so check with voters before sending again. Sending again may send duplicate summaries.
+While the summary is sending, the dialog can't be closed. When it finishes, the dialog shows the results for each voter, grouped by outcome:
 
-If any voter was skipped, failed or unconfirmed, LFX does not show a complete-success message. If every attempted send fails, the error still reports how many failed and how many voters were skipped for having no email address. If none of the invited voters has an email address, LFX tells you that no summaries were sent. If you try to send before the vote has closed, LFX says the vote hasn't closed yet. The summary is sent only when you ask for it. It is never sent automatically.
+- **Sent:** the email service confirmed the send. LFX doesn't track whether the email reached the inbox or was opened.
+- **Not sent:** the email was not sent.
+- **Missing email:** the voter has no email address on file, so nothing could be sent.
+- **Unconfirmed:** LFX couldn't confirm the send, for example after a timeout, a lost connection, or an email-service error after sending may have started. The email may already have arrived, so sending again could create duplicates. Check with voters before sending again.
 
-If pre-send checks find that you need to sign in again or that the vote is no longer available, LFX says that nothing was sent and explains the issue instead of asking you to retry the same send.
+Voters who share an email address share that address's outcome. The results reflect the voters at the moment of sending, so they can differ from the list you reviewed if voters changed in between. The results stay open until you select **Close**. There is no resend action.
+
+If you try to send before the vote has closed, LFX says the vote hasn't closed yet. If pre-send checks find that you need to sign in again or that the vote is no longer available, LFX says that nothing was sent and explains the issue instead of asking you to retry the same send. The summary is sent only when you ask for it. It is never sent automatically.
 
 ## Clone a vote
 
