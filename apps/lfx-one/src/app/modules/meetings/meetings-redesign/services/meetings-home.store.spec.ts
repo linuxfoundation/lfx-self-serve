@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary, PastMeetingTranscript } from '@lfx-one/shared/interfaces';
@@ -146,6 +147,8 @@ describe('MeetingsHomeStore', () => {
       isMeetingRegistrationEnded: vi.fn(() => false),
       authenticated: signal(true),
       meetingJoinIdentity: signal({ name: 'Real Viewer', email: 'real@example.test' }),
+      refreshUserMeetings: vi.fn(),
+      refreshUserPastMeetings: vi.fn(),
     };
   });
 
@@ -345,6 +348,19 @@ describe('MeetingsHomeStore', () => {
 
       confirmed.update((answers) => [...answers, rsvp({ id: 'r-2', meeting_id: 'series', scope: 'this_and_following', occurrence_id: seconds(second) })]);
       expect(store.pendingRsvpRows()).toEqual([]);
+    });
+  });
+
+  describe('composer saves', () => {
+    it('reloads both feeds after a save, not on load', () => {
+      create();
+
+      expect(userService['refreshUserMeetings']).not.toHaveBeenCalled();
+      TestBed.inject(MeetingComposerService).notifySaved();
+      TestBed.tick();
+
+      expect(userService['refreshUserMeetings']).toHaveBeenCalledTimes(1);
+      expect(userService['refreshUserPastMeetings']).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -16,6 +16,7 @@ import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingHomeActionsComponent } from './meeting-home-actions.component';
 
 const INVITEE = {
@@ -52,6 +53,8 @@ describe('MeetingHomeActionsComponent', () => {
   let resendOwn$: ReturnType<typeof vi.fn>;
   let remove$: ReturnType<typeof vi.fn>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
+  let edit: ReturnType<typeof vi.fn>;
+  let checkingEdit: WritableSignal<boolean>;
 
   const settle = async (): Promise<void> => {
     await fixture.whenStable();
@@ -88,6 +91,8 @@ describe('MeetingHomeActionsComponent', () => {
     copy = vi.fn().mockReturnValue(true);
     resendOwn$ = vi.fn().mockReturnValue(of({ message: 'ok' }));
     refreshUserMeetings = vi.fn();
+    edit = vi.fn();
+    checkingEdit = signal(false);
     remove$ = vi.fn().mockReturnValue(of({ removed_registrant_ids: ['synthetic-reg'], remaining_registrant_ids: [] }));
 
     TestBed.configureTestingModule({
@@ -101,6 +106,7 @@ describe('MeetingHomeActionsComponent', () => {
           useValue: { resendOwn$, isResendingOwn: () => resending(), describeOwnResendFailure: () => 'Unable to resend the invitation. Please try again.' },
         },
         { provide: MeetingSelfRemovalService, useValue: { remove$, describeFailure: () => 'Unable to remove you from this meeting. Please try again.' } },
+        { provide: MeetingsHomeEditService, useValue: { edit, isChecking: () => checkingEdit() } },
       ],
     });
     overlay = TestBed.inject(OverlayContainer).getContainerElement();
@@ -154,6 +160,41 @@ describe('MeetingHomeActionsComponent', () => {
       await render(row({ ...INVITEE, invited: false }));
 
       expect(await openMenu()).toEqual(['Copy Link']);
+    });
+  });
+
+  describe('Edit Meeting', () => {
+    const ORGANIZER = { ...INVITEE, organizer: true, project_slug: 'synthetic-project' } as Meeting;
+
+    it('goes first for an organizer of an upcoming meeting', async () => {
+      await render(row(ORGANIZER));
+
+      expect(await openMenu()).toEqual(['Edit Meeting', 'Copy Link', 'Resend Invite', 'Remove Myself']);
+    });
+
+    it.each([
+      ['a past meeting', ORGANIZER, 'past' as MeetingDashboardView],
+      ['a viewer who is not an organizer', { ...ORGANIZER, organizer: false }, 'upcoming' as MeetingDashboardView],
+      ['a meeting without a project slug', { ...ORGANIZER, project_slug: undefined }, 'upcoming' as MeetingDashboardView],
+    ])('is not offered on %s', async (_case, meeting, view) => {
+      await render(row(meeting as Meeting), view);
+
+      expect(await openMenu()).not.toContain('Edit Meeting');
+    });
+
+    it('hands the row to the edit flow', async () => {
+      const value = row(ORGANIZER);
+      await render(value);
+      await choose('meetings-home-edit-meeting');
+
+      expect(edit).toHaveBeenCalledWith(value);
+    });
+
+    it('shows the trigger loading while the permission re-check runs', async () => {
+      checkingEdit.set(true);
+      await render(row(ORGANIZER));
+
+      expect(trigger().getAttribute('aria-busy')).toBe('true');
     });
   });
 
