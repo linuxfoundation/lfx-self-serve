@@ -2,12 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { DialogRef } from '@angular/cdk/dialog';
-import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, inject, Injectable } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MeetingDeleteDialogData, MeetingDeleteTypeResult, MeetingHomeRow, MeetingOccurrence } from '@lfx-one/shared/interfaces';
-import { getActiveOccurrences, getCurrentOrNextOccurrence, getMeetingSeriesUid, isPastMeetingCalendarRow, isSameOccurrenceId } from '@lfx-one/shared/utils';
-import { MeetingService } from '@services/meeting.service';
+import { getActiveOccurrences, getCurrentOrNextOccurrence, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
@@ -25,7 +23,6 @@ import { MeetingsHomeStore } from './meetings-home.store';
 @Injectable()
 export class MeetingsHomeDeleteService {
   private readonly store = inject(MeetingsHomeStore);
-  private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
@@ -38,31 +35,12 @@ export class MeetingsHomeDeleteService {
   }
 
   public delete(row: MeetingHomeRow): void {
-    if (!isPastMeetingCalendarRow(row.meeting)) {
-      this.start(row);
-      return;
-    }
-
-    // A past row is one date and rarely says whether its meeting recurs, so the flow runs on a fresh read of the meeting.
-    this.meetingService
-      .getMeetingDetail(getMeetingSeriesUid(row.meeting), { skipCache: true })
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (meeting) => this.start({ ...row, meeting, occurrence: null, occurrenceId: null }, null),
-        error: (error: unknown) => {
-          const gone = error instanceof HttpErrorResponse && error.status === 404;
-          this.showError('Delete Failed', gone ? 'Meeting not found. It may have already been deleted.' : 'Failed to delete meeting. Please try again.');
-        },
-      });
-  }
-
-  /** `opening` is the date the scope picker opens on; a past row has none, so nothing is preselected. */
-  private start(row: MeetingHomeRow, opening = row.occurrence ?? getCurrentOrNextOccurrence(row.meeting)): void {
     if (!row.meeting.recurrence) {
       this.confirm(row, null);
       return;
     }
 
+    const opening = row.occurrence ?? getCurrentOrNextOccurrence(row.meeting);
     this.track(this.modal.open<MeetingDeleteTypeResult, MeetingDeleteDialogData>(MeetingDeleteScopeModalComponent, { data: { row, occurrence: opening } }))
       .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((result) => {

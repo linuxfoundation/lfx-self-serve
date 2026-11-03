@@ -203,11 +203,18 @@ describe('MeetingHomeActionsComponent', () => {
   });
 
   describe('Delete Meeting', () => {
-    it('is offered to an organizer on a past meeting too, last and after a separator', async () => {
+    it('goes last, after a separator', async () => {
+      await render(row({ ...INVITEE, organizer: true }));
+      await openMenu();
+
+      expect(find('meetings-home-row-actions-delete')?.previousElementSibling?.tagName.toLowerCase()).toBe('lfx-ui-menu-separator');
+    });
+
+    it('is not offered on a past meeting, even to an organizer', async () => {
       await render(row({ ...INVITEE, organizer: true }), 'past');
 
-      expect(await openMenu()).toEqual(['Copy Link', 'Delete Meeting']);
-      expect(find('meetings-home-row-actions-delete')?.previousElementSibling?.tagName.toLowerCase()).toBe('lfx-ui-menu-separator');
+      expect(await openMenu()).toEqual(['Copy Link']);
+      expect(find('meetings-home-row-actions-delete')).toBeNull();
     });
 
     it('hands the row to the delete flow', async () => {
