@@ -82,9 +82,19 @@ export class OrgLensNavigationService {
    * `/org/acme/profile` would otherwise address `/org/all/profile`. Pushed, not replaced, so Back
    * returns to the organization and page the pick was made from, matching a switch between
    * organizations (US2 scenario 3).
+   *
+   * With one exception, the same one `navigateToSelectedOrg` makes: an address that names no
+   * organization — bare `/org`, or a legacy `/org/{page}` the org list has not canonicalized yet —
+   * has no pre-switch organization for Back to return to. Pushing would leave a copy of the screen
+   * the viewer just left in history, which on the way back renders under the *new* roll-up
+   * selection. That is the uncopyable form of the same page, so it is replaced (#4415, Copilot).
+   * The dead end still pushes: a pick is the one way to leave it, and Back may return there.
    */
   public navigateToRollUpHome(): void {
-    void this.router.navigate(['/org', ORG_ROLLUP_SEGMENT, 'overview']);
+    const segments = this.currentPrimarySegments();
+    const namesNoOrganization =
+      segments[0] === 'org' && (segments.length === 1 || ORG_LENS_PAGE_SEGMENTS[segments[1]] === true) && !this.isNotFoundAddress(segments);
+    void this.router.navigate(['/org', ORG_ROLLUP_SEGMENT, 'overview'], namesNoOrganization ? { replaceUrl: true } : {});
   }
 
   /** `isNotFoundAddress` for the router's current address — the one page a same-organization pick may still leave. */

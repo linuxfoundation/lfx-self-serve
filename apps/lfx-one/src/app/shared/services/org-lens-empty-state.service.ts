@@ -4,6 +4,7 @@
 import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { OrgLensContractorProbe, OrgLensContractorVerdict, OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment } from '@lfx-one/shared/utils';
 import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
@@ -115,6 +116,14 @@ export class OrgLensEmptyStateService {
     if (!uid) {
       return false;
     }
+    // The roll-up is a view mode, not an organization: it names no `b2b_org` row, so by construction
+    // it is in no grant set and a uid lookup would call it unheld. That is not a missing entitlement
+    // — it would withdraw the switcher's FR-010 partial-lookup notice and its Retry exactly when the
+    // roster is short, and send a contractor to the probe. It is held when the caller may select it,
+    // which `AccountContextService` decides from these same grant sets (#4415, Copilot).
+    if (isOrgRollUpSegment(uid)) {
+      return this.accountContext.canSelectRollUp();
+    }
     return (
       this.roleGrants.writerSet().has(uid) ||
       this.roleGrants.auditorSet().has(uid) ||
@@ -225,7 +234,7 @@ export class OrgLensEmptyStateService {
       .pipe(take(1))
       .subscribe(() => {
         if (this.orgNavigation.loaded() || this.orgNavigation.loading()) {
-          this.retryGeneration.set(this.orgNavigation.refreshList(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid()));
+          this.retryGeneration.set(this.orgNavigation.refreshList(this.accountContext.orgListPinUid()));
         }
       });
   }

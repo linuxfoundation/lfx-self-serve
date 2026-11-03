@@ -28,6 +28,7 @@ import {
   ORG_LENS_LIST_INCOMPLETE_NOTICE,
   ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL,
   ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL,
+  ROLLUP_ACCOUNT_NAME,
 } from '@lfx-one/shared/constants';
 import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
@@ -133,6 +134,8 @@ export class OrgSelectorComponent {
     return `${count} ${count === 1 ? 'organization' : 'organizations'}`;
   });
   protected readonly rollUpSubtitle: Signal<string> = computed(() => `Combined view of related organizations · ${this.rollUpTriggerSubtitle()}`);
+  /** The row's name, from the same constant the trigger and the cookie-restored selection carry, so one rename covers every surface. */
+  protected readonly rollUpName = ROLLUP_ACCOUNT_NAME;
 
   protected readonly items: Signal<OrgItem[]> = this.orgNavigationService.items;
   protected readonly loading: Signal<boolean> = this.orgNavigationService.loading;
@@ -691,7 +694,8 @@ export class OrgSelectorComponent {
   }
 
   private bootstrapOrgList(): void {
-    const restoredUid = this.accountContextService.selectedAccount().uid ?? this.accountContextService.getStoredUid();
+    // Never the roll-up sentinel: it names no organization for the list to pin (see `orgListPinUid`).
+    const restoredUid = this.accountContextService.orgListPinUid();
     // Shown only because the mobile drawer previews Org Lens (#4208): load the list without bootstrap semantics, so it
     // can't default-select an organization, clear one or navigate away — the page underneath is another lens's.
     if (this.lensService.previewingMenuLens()) {

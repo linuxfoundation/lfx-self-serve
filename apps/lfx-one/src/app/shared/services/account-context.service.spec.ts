@@ -909,6 +909,28 @@ describe('AccountContextService — All Organizations roll-up', () => {
    * fallback (`orgUrlSegment` answers the sentinel, so the re-point no-opped and the caller stayed
    * on `/org/all`), and it left the result unpinned where a persona re-seed could replace it.
    */
+  /**
+   * Cursor on PR #4415. `selected_uid` is a pin hint naming a `b2b_org` row for the org-items page
+   * to include. The roll-up names none, and both the selection and the cookie can hold the
+   * sentinel, so sending it was at best ignored and at worst rejected at the request boundary —
+   * failing the list and leaving the panel with the roll-up row and nothing to switch to.
+   */
+  describe('orgListPinUid', () => {
+    it('answers null while the roll-up is selected', () => {
+      service.initializeUserOrganizations([seedA, seedB]);
+      service.selectRollUp();
+
+      expect(service.selectedAccount().uid).toBe('all');
+      expect(service.orgListPinUid()).toBeNull();
+    });
+
+    it('answers the selected organization when one is selected', () => {
+      service.initializeUserOrganizations([seedA, seedB]);
+
+      expect(service.orgListPinUid()).toBe(UID_A);
+    });
+  });
+
   describe('demoteAddressedRollUp', () => {
     it('never answers with the roll-up itself', () => {
       service.initializeUserOrganizations([seedA, seedB]);

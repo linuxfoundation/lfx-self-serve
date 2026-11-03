@@ -494,6 +494,21 @@ export class AccountContextService {
     return this.loadUidFromStorage();
   }
 
+  /**
+   * The organization an org-items fetch should pin into its first page — the current selection, else
+   * the stored one — or `null` when there is none to pin.
+   *
+   * Never the roll-up sentinel. `selected_uid` names a `b2b_org` row for the server to guarantee is
+   * present; `all` names none, and both the selection and the cookie can hold it. Sent anyway it is
+   * at best ignored and at worst rejected at the request boundary, which fails the whole list and
+   * leaves the panel showing the pinned roll-up row and no organizations — with no way to switch
+   * away from the very mode that caused it (#4415, Cursor).
+   */
+  public orgListPinUid(): string | null {
+    const uid = this.selectedAccount().uid || this.getStoredUid();
+    return uid && !isOrgRollUpSegment(uid) ? uid : null;
+  }
+
   public clearAccount(): void {
     this.addressedUid.set(null);
     this.pinSource.set(null);

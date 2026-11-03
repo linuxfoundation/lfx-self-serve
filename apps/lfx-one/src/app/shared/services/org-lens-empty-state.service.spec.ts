@@ -3,6 +3,7 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
 import { Account, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
 import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
@@ -32,6 +33,7 @@ interface Harness {
   inheritedAuditorSet: WritableSignal<Set<string>>;
   selectedAccount: WritableSignal<Account>;
   hasOrgSelectorAccess: WritableSignal<boolean>;
+  canSelectRollUp: WritableSignal<boolean>;
   /** Organizations `OrgClaOnlyAccessService.isClaOnly` answers true for. */
   claOnlyUids: WritableSignal<Set<string>>;
   /** `OrgClaOnlyAccessService.lookupFailed` — the flag-gated CLA-manager scopes outage. */
@@ -70,6 +72,7 @@ function setup(): Harness {
   const inheritedAuditorSet = signal(new Set<string>());
   const selectedAccount = signal<Account>(account(''));
   const hasOrgSelectorAccess = signal(false);
+  const canSelectRollUp = signal(true);
   const claOnlyUids = signal(new Set<string>());
   const claLookupFailed = signal(false);
   const affiliatedToMember = signal(false);
@@ -115,7 +118,20 @@ function setup(): Harness {
         provide: OrgClaOnlyAccessService,
         useValue: { isClaOnly: (uid: string | null | undefined) => !!uid && claOnlyUids().has(uid), lookupFailed: claLookupFailed },
       },
-      { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, getStoredUid: () => 'cookie-uid' } },
+      {
+        provide: AccountContextService,
+        useValue: {
+          selectedAccount,
+          hasOrgSelectorAccess,
+          canSelectRollUp,
+          getStoredUid: () => 'cookie-uid',
+          // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
+          orgListPinUid: () => {
+            const uid = selectedAccount().uid || 'cookie-uid';
+            return uid === ORG_ROLLUP_SEGMENT ? null : uid;
+          },
+        },
+      },
       {
         provide: OrgNavigationService,
         useValue: { loaded: listLoaded, loading: listLoading, generation: listGeneration, firstPageLandedGeneration: firstPageLanded, refreshList },
@@ -137,6 +153,7 @@ function setup(): Harness {
     inheritedAuditorSet,
     selectedAccount,
     hasOrgSelectorAccess,
+    canSelectRollUp,
     claOnlyUids,
     claLookupFailed,
     affiliatedToMember,
@@ -181,6 +198,29 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBeNull();
     // FR-010: the incomplete list is the switcher's notice, not a page state.
     expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  /**
+   * Copilot on PR #4415. The roll-up names no `b2b_org` row, so a uid lookup finds it in no grant
+   * set and called it unheld — withdrawing the FR-010 notice and its Retry exactly when the roster
+   * was short, and, for a contractor, sending them to the probe instead of their page.
+   */
+  it('treats the roll-up as held while the caller may select it', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(true);
+    h.lookupOutcome.set('partial');
+
+    expect(h.service.selectedHeld()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('does not treat the roll-up as held once the caller may no longer select it', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.canSelectRollUp.set(false);
+
+    expect(h.service.selectedHeld()).toBe(false);
   });
 
   it('counts an inherited grant as holding the selection', () => {

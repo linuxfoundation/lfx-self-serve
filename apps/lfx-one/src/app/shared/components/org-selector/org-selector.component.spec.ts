@@ -4,6 +4,7 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
 import { Account, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
@@ -65,6 +66,11 @@ describe('OrgSelectorComponent.selectItem', () => {
             setAccount,
             refreshCanonicalRecord,
             getStoredUid: () => null,
+            // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
+            orgListPinUid: () => {
+              const uid = selectedAccount().uid;
+              return uid && uid !== 'all' ? uid : null;
+            },
             // Roll-up entry off by default: these suites cover the single-organization labelling
             // and the static-card rules, which #4132 must leave exactly as they were.
             canSelectRollUp: signal(false),
@@ -236,6 +242,8 @@ describe('OrgSelectorComponent navbar card', () => {
             setAccount: vi.fn(),
             refreshCanonicalRecord: vi.fn(),
             getStoredUid: () => null,
+            // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
+            orgListPinUid: () => acme.uid ?? null,
             // The roll-up entry is off here: these suites pin the single-organization labelling and
             // the static-card rules, which #4132 must leave exactly as they were.
             canSelectRollUp: signal(false),
@@ -324,6 +332,7 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
     showRollUpRow(): boolean;
     isRollUpSelected(): boolean;
     isSingleOrg(): boolean;
+    rollUpName: string;
     rollUpSubtitle(): string;
     rollUpTriggerSubtitle(): string;
     selectRollUp(): void;
@@ -362,6 +371,11 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
             setAccount: setAccountSpy,
             refreshCanonicalRecord: vi.fn(),
             getStoredUid: () => null,
+            // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
+            orgListPinUid: () => {
+              const uid = (opts.selected ?? acme).uid;
+              return uid && uid !== 'all' ? uid : null;
+            },
             canSelectRollUp: signal(opts.canSelectRollUp),
             isRollUp: signal(opts.isRollUp ?? false),
             rollUpOrganizationCount: signal(opts.count ?? 0),
@@ -404,6 +418,15 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
     await fixture.whenStable();
     return fixture.componentInstance as unknown as RollUpView;
   };
+
+  // The row used to hard-code its name while the trigger read `ROLLUP_ACCOUNT_NAME`, so a rename
+  // moved one and not the other and the two surfaces disagreed.
+  it('names the row from the same constant the trigger and the stored selection carry', async () => {
+    const view = await create({ canSelectRollUp: true, count: 4 });
+
+    expect(view.rollUpName).toBe(ROLLUP_ACCOUNT_NAME);
+    expect(rollUpAccount.accountName).toBe(ROLLUP_ACCOUNT_NAME);
+  });
 
   it('offers the entry to a caller with several organizations and hides it from a single-org caller', async () => {
     expect((await create({ canSelectRollUp: true, count: 4 })).showRollUpRow()).toBe(true);
