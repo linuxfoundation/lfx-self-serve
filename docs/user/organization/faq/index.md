@@ -1,9 +1,9 @@
 ---
 title: Organization FAQ
-description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — how to switch organizations, how to see all of them at once, what the Org Overview dashboard shows, what the Memberships page shows, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
-tags: [organization, faq, switch-organization, org-overview, dashboard, memberships, easycla, cla, ccla, cla-manager, access, remove, invite]
+tags: [organization, faq, switch-organization, all-organizations, org-overview, dashboard, memberships, easycla, cla, ccla, cla-manager, access, remove, invite]
 last_updated: 2026-11-03
 intercom_collection: Organization
 ---
@@ -11,6 +11,10 @@ intercom_collection: Organization
 ## How do I switch to a different organization?
 
 You switch organizations from the organization switcher at the top of the sidebar in the Organization lens. Select it, then select another organization from the list. You stay on the same page, now showing the organization you picked, unless your only role on that organization is CLA Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), in which case you land on its **EasyCLA** page. The browser's Back button usually returns you to the previous one. If you can open only one organization, the switcher has no list to open. See [How do I switch to a different organization?](../choose-an-organization/#how-do-i-switch-to-a-different-organization).
+
+## Can I see all my organizations at once?
+
+Yes, if you have access to two or more. The organization switcher then offers **All Organizations** as its first entry, a combined view across all of them, labelled **Combined view** with the number of organizations it covers. Select it the way you would select an organization; to leave it, open the switcher and select a single organization. Organizations where your only role is CLA Manager are not part of it. With access to only one organization the entry does not appear, because there is nothing to combine. See [What is All Organizations?](../choose-an-organization/#what-is-all-organizations).
 
 ## What does the Org Overview dashboard show?
 
