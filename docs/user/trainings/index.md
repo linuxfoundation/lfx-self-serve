@@ -4,7 +4,7 @@ description: View your Linux Foundation training enrollments and certifications 
 audience: [all]
 product_area: Trainings
 tags: [trainings, courses, enrollments, certifications, learning]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Trainings
 ---
 
@@ -44,28 +44,43 @@ The **Training & Certification** page in Org Lens (route: `/org/training`) gives
 - Certification achievements earned by people affiliated with your company
 - An overview of your organization's investment in Linux Foundation learning programs
 
+### Time range, filters and group by
+
+The Training & Certification page and People › Trainees share one filter bar and read the same numbers, so for the same selections they show the same figures. Both start on **Past 2 years**.
+
+- **Time range** — Past 30 days, Past 90 days, Past 365 days, Past 2 years (default) or All time. It applies to every number and table on the page, and it is kept in the page address (`?range=`), so a link or a reload shows the same view.
+- **Filters** — Foundation, Project, Course, Level and Format. They narrow the numbers and the table together. **Format** applies to enrollments only, since certificates carry no format. **Clear all** resets the five filters and keeps the time range and group by.
+- **Group by** (Training & Certification only) — Course (default), Foundation, Project, Level or Format. It changes how the table below is grouped and never changes the numbers at the top.
+
+The 12-month enrollment window that earlier versions of this page applied no longer applies here: the time range replaces it. A person's detail panel and an expanded row on People › All Employees keep their own 12-month rule, stated next to them.
+
 ### Numbers at the top of the page
 
-Every number states what it counts (people, certificates or enrollments), its time window, and the date of the data it reflects ("as of"), and its tooltip gives the full definition. Two numbers count learners in different ways:
+Every number states what it counts (people or person-course pairs), its window and the date of the data it reflects ("as of"), and its tooltip gives the full definition. They follow the time range and the filters, except the roster:
 
-- **Training-program roster members** — everyone LF Education's training program lists for your organization, including people who never enrolled in a course. Shows "—" and "No LF Education training program on record" when your organization has no training program.
-- **People with training activity** — people with at least one training or certification enrollment, or a certificate, at any time. It includes learners linked to your organization who are not on its people list, so it is not a subset of the roster members.
+- **Training-program roster members** — everyone LF Education's training program lists for your organization today, including people who never enrolled in a course. It is live and **does not follow the time range or the filters**, and says so. Shows "—" and "No LF Education training program on record" when your organization has no training program.
+- **People with training activity** — distinct people with at least one enrollment or certificate in the range. It includes learners linked to your organization who are not on its people list, but only while no foundation, project, course, level or format is selected, so it is not a subset of the roster members.
+- **Courses taken** — person-course pairs on your organization's people list in the range. A course a person took more than once counts once. Courses taken = **Certifications** + **Trainings completed** + **Courses in progress**.
+- **Certifications** — pairs of certification products that ended in a certificate in the range. **Certified people** counts the distinct people behind them.
+- **Trainings completed** — pairs of training products that ended in a certificate in the range.
+- **Completion rate** — (Certifications + Trainings completed) ÷ Courses taken.
+- **Courses in progress** and **People in training** — enrolled in the selected range with no certificate in the range. This is not a snapshot of today: an enrollment from before the range, or one since abandoned, is judged by the range alone. Each tile states this rule.
 
-**Certified people** and **Certifications earned** count current certificates held by people on your organization's people list, matching the Certifications tab they open. Below them, **In progress now** is a snapshot of today, not a running total: **People in training** counts people on the people list with a training course in progress today, and **Training courses in progress** counts their in-progress enrollments.
+### Certifications and Trainings tabs
 
-The **People with training activity** card on the Org Overview page shows the same all-time number; its chart shows this calendar year's training enrollments, cumulative.
+The two tabs split the same table by product type. **Certifications** lists certification products; **Trainings** lists everything else. Each row shows the group (with its logo where there is one), **People**, **Courses taken**, **Certified** (Certifications tab) or **Completed** (Trainings tab), and **In progress**.
+
+- The **Total** row at the bottom covers every row of the tab, not only the page or the search, and matches the tiles: on the Certifications tab Certified equals the **Certifications** tile, on the Trainings tab Completed equals the **Trainings completed** tile. People in the total is distinct people, not the sum of the rows.
+- The search box above the table narrows the rows only. It never changes the numbers at the top.
+- Sorting and paging happen on the full result, not only on the rows shown.
+- Switching tabs keeps the time range, filters and group by.
+- Select a **Certified**, **Completed** or **In progress** count to open the list of people behind it. The count is person-course pairs, and the list shows **current employees only**, so it can be shorter than the count.
 
 ### People › Trainees
 
-People › Trainees lists the people on your organization's people list with training activity in the selected time range. Filter by foundation, project, course, level or format, or search by name. **Format** applies to enrollments only, since certificates carry no format, so picking a format hides certificates. The cards at the top follow the time range and the filters, and state the date of the data.
+People › Trainees lists the people on your organization's people list with training activity in the selected time range, using the same filter bar (without Group by) and the same numbers as above. Search by name. The cards at the top follow the time range and the filters, and state the date of the data.
 
 Learners linked to your organization who are not on its people list appear in a separate list below the table, **Learners not on the people list**, with their name and one overall status for the time range: **Certified** if they earned a certificate in the range, **Enrolled** otherwise. No course, project or date is shown for them. The list follows the time range and the name search only, so it is hidden while a foundation, project, course, level or format is selected.
-
-**People with training activity** counts each person once: the people in the table, the learners in that list, and people whose training is on the people list but who have no current employee record, such as someone who has since left (counted, not listed). With the time range set to All time and no filter or search, it normally matches the same number at the top of the Training page. The two can differ because this card follows the time range, the filters and the search: a search leaves out people without a current employee record, and a foundation, project, course, level or format counts people-list members only. The card also skips enrollments and certificates with no date, which the Training page counts. **Courses taken**, **Certifications** and **Completion rate** count people-list members only, like the certification numbers at the top of the Training page.
-
-### Which enrollments and certificates are counted
-
-On the Certifications tab, **In Progress** counts people enrolled in the last 12 months who have no current certificate for the course. **Certified** counts people holding a current certificate, issued at any time; certificates the training system marks expired are not counted (the training system can take a while to mark a certificate expired after its expiration date). The same rule applies to the course list in a person's detail panel and in an expanded row on People › All Employees, where the course count on the row follows the page's time range instead. The Trainings tab counts people who are In Progress or Completed in a course with no 12-month limit, and People › Trainees uses its own time range.
 
 ### Navigation
 

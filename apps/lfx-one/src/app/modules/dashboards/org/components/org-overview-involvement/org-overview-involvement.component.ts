@@ -18,14 +18,7 @@ import {
   ORG_OVERVIEW_TRAINING_TREND_LABEL,
   ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
-import {
-  hexToRgba,
-  orgTrainingStatCaption,
-  orgTrainingStatDefinitionText,
-  orgTrainingStatTooltip,
-  orgTrainingStatUnitWindow,
-  tryParseLocalDateString,
-} from '@lfx-one/shared/utils';
+import { buildOrgTrainingStatTiles, hexToRgba, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
@@ -42,8 +35,12 @@ import type {
   OrgInvolvementMaintainersMonthlyResponse,
   OrgTrainingEnrollmentsResponse,
   OrgTrainingStats,
+  OrgTrainingStatsQuery,
 } from '@lfx-one/shared/interfaces';
 import type { ChartOptions, ChartType } from 'chart.js';
+
+/** The Overview tile reads the shared stats over all time with no filters. */
+const OVERVIEW_TRAINING_STATS_QUERY: OrgTrainingStatsQuery = { range: 'all', foundation: null, project: null, course: null, level: null, format: null };
 
 @Component({
   selector: 'lfx-org-overview-involvement',
@@ -144,7 +141,7 @@ export class OrgOverviewInvolvementComponent {
     );
   }
 
-  /** The Training page's stats (Org Lens training route, keyed by org uid); null while loading or when the read fails. */
+  /** The shared training stats over all time (Org Lens training route, keyed by org uid); null while loading or when the read fails. */
   private initializeTrainingStats(): Signal<OrgTrainingStats | null> {
     return toSignal(
       toObservable(this.accountContextService.selectedAccount).pipe(
@@ -157,7 +154,7 @@ export class OrgOverviewInvolvementComponent {
           }
           this.trainingStatsLoading.set(true);
           // Starts from null so the previous organization's stats never show while this one's load.
-          return this.trainingService.getTrainingStats(uid).pipe(
+          return this.trainingService.getTrainingStats(uid, OVERVIEW_TRAINING_STATS_QUERY).pipe(
             catchError((error: unknown) => {
               console.error('Failed to load org training stats for the Overview training tile:', error);
               return of(null);
@@ -405,21 +402,19 @@ export class OrgOverviewInvolvementComponent {
     };
   }
 
-  /** Headline: people with training activity, all time, as on the Training page. The chart keeps this year's cumulative enrollments, captioned as such. */
+  /** Headline: people with training activity, all time, as on the Training page and Trainees. The chart keeps this year's cumulative enrollments, captioned as such. */
   private transformTrainingEnrollments(data: OrgTrainingEnrollmentsResponse, stats: OrgTrainingStats | null, metric: DashboardMetricCard): DashboardMetricCard {
-    const activity = ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity;
-    const hasActivity = stats !== null && stats.peopleWithTrainingActivity != null;
+    // A failed or pending stats read shows a dash, never a zero that reads as "nobody trained", and no as-of date.
+    const activity = buildOrgTrainingStatTiles(stats, OVERVIEW_TRAINING_STATS_QUERY.range).find((tile) => tile.key === 'peopleWithTrainingActivity')!;
     const labels = data.dailyData.map(
       (row) => tryParseLocalDateString(row.date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) ?? row.date
     );
     return {
       ...metric,
       loading: this.trainingEnrollmentsLoading() || this.trainingStatsLoading(),
-      // A failed stats read or an older payload without the field shows a dash, never a zero that reads as "nobody trained".
-      value: hasActivity ? stats.peopleWithTrainingActivity.toLocaleString('en-US') : '—',
-      // As on the strip: no number (loading or a failed read), no as-of date.
-      subtitle: hasActivity ? orgTrainingStatCaption(activity, stats.trainingActivityAsOf) : orgTrainingStatUnitWindow(activity),
-      tooltipText: hasActivity ? orgTrainingStatTooltip(activity, stats.trainingActivityAsOf) : orgTrainingStatDefinitionText(activity),
+      value: activity.display,
+      subtitle: activity.caption,
+      tooltipText: activity.tooltip,
       chartCaption: labels.length > 0 ? `${ORG_OVERVIEW_TRAINING_TREND_LABEL}, through ${labels[labels.length - 1]}` : undefined,
       chartOptions: this.createLineChartOptions('Training enrollments'),
       chartData: {

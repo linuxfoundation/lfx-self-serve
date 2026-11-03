@@ -5,32 +5,37 @@ import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, merge, of, skip, startWith, Subject, switchMap, tap } from 'rxjs';
+import { ActivatedRoute } from '@angular/router';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, startWith, switchMap, tap } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectComponent } from '@components/select/select.component';
+import { OrgTrainingFilterBarComponent } from '@components/org-training-filter-bar/org-training-filter-bar.component';
+import { OrgTrainingStatsComponent } from '@components/org-training-stats/org-training-stats.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensTrainingService } from '@services/org-lens-training.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { avatarColorClass, orgTrainingStatCaption, orgTrainingStatTooltip } from '@lfx-one/shared/utils';
+import {
+  avatarColorClass,
+  countOrgTraineePairs,
+  groupOrgTraineePairs,
+  hasOrgTrainingFilter,
+  matchesOrgTrainingFilters,
+  orgTrainingFiltersSignature,
+  orgTrainingStatsQuery,
+  parseOrgTrainingViewState,
+} from '@lfx-one/shared/utils';
 import { formatMonthYearUtc } from '@shared/utils/date-format.util';
-import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 import {
   EMPTY_ORG_TRAINEES_RESPONSE,
-  ORG_ALL_FOUNDATIONS_LABEL,
   ORG_LENS_DEFAULT_TIME_RANGE,
-  ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_TRAINEES_INITIAL_LIMIT,
   ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE,
   ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING,
-  ORG_TRAINEES_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
 import type {
-  OrgDropdownOption,
   OrgLensTimeRange,
-  OrgLensTimeRangeOption,
   OrgTraineeDetailRow,
   OrgTraineeExpandedRowVm,
   OrgTraineeOutsideLearner,
@@ -39,44 +44,43 @@ import type {
   OrgTraineesResponse,
   OrgTraineeSortColumn,
   OrgTraineeSortDirection,
-  OrgTraineeStatsBaseline,
-  OrgTraineesStatKey,
+  OrgTrainingStats,
+  OrgTrainingStatsQuery,
+  OrgTrainingViewState,
 } from '@lfx-one/shared/interfaces';
 import { SkeletonModule } from 'primeng/skeleton';
-import { TooltipModule } from 'primeng/tooltip';
 
 import { TraineesService } from '../../services/trainees.service';
 
-/** Trainees tab body — search + foundation + project + course + level + format + range filters, four stat cards, sortable table with chevron-toggled Courses & Certifications detail, and a name-and-status list of learners not on the people list. */
+/** Trainees tab body — the shared filter bar and stat strip, a name/title search, a sortable table with chevron-toggled Courses & Certifications detail, and a name-and-status list of learners not on the people list. */
 @Component({
   selector: 'lfx-org-people-trainees',
-  imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule, TooltipModule],
+  imports: [
+    DecimalPipe,
+    ReactiveFormsModule,
+    EmptyStateComponent,
+    InputTextComponent,
+    OrgTrainingFilterBarComponent,
+    OrgTrainingStatsComponent,
+    SkeletonModule,
+  ],
   templateUrl: './trainees.component.html',
 })
 export class TraineesComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(TraineesService);
+  private readonly trainingService = inject(OrgLensTrainingService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
 
   protected readonly initialLimit = ORG_TRAINEES_INITIAL_LIMIT;
-  protected readonly timeRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
-  protected readonly statDefinitions = ORG_TRAINEES_STAT_DEFINITIONS;
-  protected readonly statSkeletonLabels: readonly string[] = Object.values(ORG_TRAINEES_STAT_DEFINITIONS).map((stat) => stat.label);
   protected readonly outsideLearnersHeading = ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING;
   protected readonly outsideLearnersFilteredNote = ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE;
 
+  /** Only the name/title search is page-local; the range and filters live in the URL, written by the shared filter bar. */
   public readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
-    foundation: new FormControl<string>('', { nonNullable: true }),
-    project: new FormControl<string>('', { nonNullable: true }),
-    course: new FormControl<string>('', { nonNullable: true }),
-    level: new FormControl<string>('', { nonNullable: true }),
-    format: new FormControl<string>('', { nonNullable: true }),
-    // Follows `?range=` (shared with every People tab and Code Contributions); the BFF reads only this range's rows.
-    timeRange: new FormControl<OrgLensTimeRange>(readOrgLensTimeRange(this.route), { nonNullable: true }),
   });
 
   // WritableSignals — keep grouped per component-organization.md (writables → computed/toSignal).
@@ -92,58 +96,36 @@ export class TraineesComponent {
   protected readonly isLoading = this.loadingState.asReadonly();
   protected readonly fetchError = this.fetchErrorState.asReadonly();
 
-  // Mirror reactive form into a signal; debounce ~150ms so per-keystroke filtering doesn't thrash through the computed graph.
-  // A selection cleared for a new range skips the debounce, so the response never renders behind it.
-  private readonly selectionsPruned$ = new Subject<void>();
-  private readonly filterValues = toSignal(
-    merge(this.filterForm.valueChanges.pipe(debounceTime(150)), this.selectionsPruned$.pipe(map(() => this.filterForm.getRawValue()))),
-    { initialValue: this.filterForm.getRawValue() }
+  // Mirror the search into a signal; debounce ~150ms so per-keystroke filtering doesn't thrash through the computed graph.
+  private readonly searchValue = toSignal(this.filterForm.controls.search.valueChanges.pipe(debounceTime(150)), { initialValue: '' });
+
+  // Range and filters, as the shared filter bar writes them to the URL.
+  private readonly viewState: Signal<OrgTrainingViewState> = toSignal(
+    this.route.queryParamMap.pipe(map((params) => parseOrgTrainingViewState((key) => params.get(key)))),
+    { initialValue: parseOrgTrainingViewState((key) => this.route.snapshot.queryParamMap.get(key)) }
   );
+  protected readonly range: Signal<OrgLensTimeRange> = computed(() => this.viewState().range);
+  private readonly statsQuery: Signal<OrgTrainingStatsQuery> = computed(() => orgTrainingStatsQuery(this.viewState()));
+  private readonly statsQuerySignature: Signal<string> = computed(() => orgTrainingFiltersSignature(this.statsQuery()));
 
   private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
     map((account) => account.uid),
     distinctUntilChanged()
   );
 
-  // The range refetches undebounced, once per distinct value.
-  private readonly timeRange$ = this.filterForm.controls.timeRange.valueChanges.pipe(
-    startWith(this.filterForm.controls.timeRange.value),
-    distinctUntilChanged()
-  );
-  // The range as a signal, undebounced like the read, so the filtering state follows the picked range at once.
-  private readonly timeRange: Signal<OrgLensTimeRange> = toSignal(this.timeRange$, { initialValue: this.filterForm.controls.timeRange.value });
-
   protected readonly response: Signal<OrgTraineesResponse> = this.initResponse();
 
-  protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => [
-    { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
-    ...this.response().filterOptions.foundations,
-  ]);
-  public readonly projectOptions: Signal<OrgDropdownOption[]> = computed(() => [
-    { label: 'All Projects', value: '' },
-    ...this.response().filterOptions.projects,
-  ]);
-  public readonly courseOptions: Signal<OrgDropdownOption[]> = computed(() => [{ label: 'All Courses', value: '' }, ...this.response().filterOptions.courses]);
-  public readonly levelOptions: Signal<OrgDropdownOption[]> = computed(() => [{ label: 'All Levels', value: '' }, ...this.response().filterOptions.levels]);
-  public readonly formatOptions: Signal<OrgDropdownOption[]> = computed(() => [{ label: 'All Formats', value: '' }, ...this.response().filterOptions.formats]);
-  // Certified rows carry no format, so a picked format leaves enrollments only; the template says so while one is picked.
-  protected readonly formatPicked: Signal<boolean> = computed(() => !!this.filterValues().format);
+  /** The shared strip's numbers for the URL's range and filters; null while loading or when the read fails. */
+  protected readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
+
   // Learners not on the people list carry no course data, so no foundation, project, course, level or format can match them.
-  protected readonly courseFilterPicked: Signal<boolean> = computed(() => {
-    const { foundation, project, course, level, format } = this.filterValues();
-    return !!(foundation || project || course || level || format);
-  });
+  protected readonly courseFilterPicked: Signal<boolean> = computed(() => hasOrgTrainingFilter(this.viewState()));
 
   // Learners not on the people list: already the range's (the BFF windows them), narrowed by the name search only, by name.
   protected readonly outsideLearners: Signal<OrgTraineeOutsideLearner[]> = computed(() => this.initOutsideLearners());
 
-  // Detail set is the canonical source — every filter-aware derivation (stats, rows, expanded section) reads it.
+  // Detail set is the canonical source of the table rows and the expanded section; the cards come from the stats call.
   protected readonly filteredDetails: Signal<OrgTraineeDetailRow[]> = computed(() => this.initFilteredDetails());
-
-  protected readonly stats: Signal<OrgTraineeStatsBaseline> = computed(() => this.initStats());
-
-  // Each card states its unit, the selected range as its window, and the date the training data reflects.
-  protected readonly statCopy: Signal<Record<OrgTraineesStatKey, { caption: string; tooltip: string }>> = computed(() => this.initStatCopy());
 
   protected readonly viewRows: Signal<OrgTraineeRowVm[]> = computed(() => this.initViewRows());
 
@@ -174,13 +156,13 @@ export class TraineesComponent {
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.limit.set(ORG_TRAINEES_INITIAL_LIMIT));
 
-    // Filter change: reset pagination + expansion (collapse so (N) tracks filter scope).
-    this.filterForm.valueChanges.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => {
-      this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
-      this.expansion.set({});
-    });
-
-    syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
+    // Search, range or filter change: reset pagination + expansion (collapse so (N) tracks the scope).
+    combineLatest([toObservable(this.searchValue), toObservable(this.statsQuerySignature)])
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
+        this.expansion.set({});
+      });
   }
 
   public onSort(column: OrgTraineeSortColumn): void {
@@ -203,7 +185,7 @@ export class TraineesComponent {
       avatarColorClass: row.avatarColorClass,
       defaultTab: 'training',
       // The Code tab's Maintainer pills follow the range this tab lists the person in.
-      range: this.timeRange(),
+      range: this.range(),
     });
   }
 
@@ -232,8 +214,8 @@ export class TraineesComponent {
   }
 
   private initFilteredDetails(): OrgTraineeDetailRow[] {
-    const { search = '', foundation = '', project = '', course = '', level = '', format = '' } = this.filterValues();
-    const q = search.trim().toLowerCase();
+    const filters = this.viewState();
+    const q = this.searchValue().trim().toLowerCase();
 
     // Build a name+title lookup so search filters details by who-the-person-is, not by per-row strings.
     const personIndex = new Map<string, { name: string; title: string | null }>();
@@ -241,14 +223,9 @@ export class TraineesComponent {
       personIndex.set(t.personKey, { name: t.name, title: t.title });
     }
 
-    // The details are already the range's (the BFF windows them), so only the dropdowns and search filter here.
+    // The details are already the range's (the BFF windows them), so only the filters and the search apply here.
     return this.response().details.filter((row) => {
-      if (foundation && row.foundationId !== foundation) return false;
-      if (project && row.projectId !== project) return false;
-      // Course options are keyed on the name, so every course id sharing it matches.
-      if (course && row.courseName !== course) return false;
-      if (level && row.courseLevel !== level) return false;
-      if (format && row.courseFormat !== format) return false;
+      if (!matchesOrgTrainingFilters(row, filters)) return false;
       if (q) {
         const person = personIndex.get(row.personKey);
         if (!person) return false;
@@ -258,48 +235,6 @@ export class TraineesComponent {
       }
       return true;
     });
-  }
-
-  private initStats(): OrgTraineeStatsBaseline {
-    // Stats always reflect the currently-filtered details so the four cards stay in sync with what the table shows (Items 5+6 of the locked design), within the range the BFF read.
-    const details = this.filteredDetails();
-    const trainees = new Set<string>();
-    const courseKeys = new Set<string>();
-    const certKeys = new Set<string>();
-    for (const d of details) {
-      trainees.add(d.personKey);
-      const composite = `${d.personKey}|${d.courseId}`;
-      courseKeys.add(composite);
-      if (d.status === 'Certified') {
-        certKeys.add(composite);
-      }
-    }
-    // The people card adds the listed learners outside the people list, as the Training page's people with training
-    // activity does; the BFF leaves out a learner already behind people-list rows, so each person counts once. The
-    // course and certification cards stay on the people list, as its certification tiles do.
-    if (!this.courseFilterPicked()) {
-      for (const learner of this.outsideLearners()) trainees.add(learner.personKey);
-    }
-    const coursesEnrolled = courseKeys.size;
-    const certifications = certKeys.size;
-    const completionRate = coursesEnrolled === 0 ? 0 : Math.round((certifications / coursesEnrolled) * 100);
-    return {
-      trainees: trainees.size,
-      coursesEnrolled,
-      certifications,
-      completionRate,
-    };
-  }
-
-  private initStatCopy(): Record<OrgTraineesStatKey, { caption: string; tooltip: string }> {
-    const range = this.timeRange();
-    const window = ORG_LENS_TIME_RANGE_OPTIONS.find((option) => option.value === range)?.label;
-    const asOf = this.response().asOf;
-    const entries = (Object.keys(ORG_TRAINEES_STAT_DEFINITIONS) as OrgTraineesStatKey[]).map((key) => {
-      const stat = ORG_TRAINEES_STAT_DEFINITIONS[key];
-      return [key, { caption: orgTrainingStatCaption(stat, asOf, window), tooltip: orgTrainingStatTooltip(stat, asOf, window) }] as const;
-    });
-    return Object.fromEntries(entries) as Record<OrgTraineesStatKey, { caption: string; tooltip: string }>;
   }
 
   private initViewRows(): OrgTraineeRowVm[] {
@@ -319,12 +254,7 @@ export class TraineesComponent {
       const personDetails = detailsByPerson.get(trainee.personKey);
       if (!personDetails || personDetails.length === 0) continue;
 
-      const courseIds = new Set<string>();
-      const certCourseIds = new Set<string>();
-      for (const d of personDetails) {
-        courseIds.add(d.courseId);
-        if (d.status === 'Certified') certCourseIds.add(d.courseId);
-      }
+      const counts = countOrgTraineePairs(groupOrgTraineePairs(personDetails));
 
       const recent = pickMostRecent(personDetails);
 
@@ -335,9 +265,11 @@ export class TraineesComponent {
         email: trainee.email,
         initials: computePersonInitials(trainee.name),
         avatarColorClass: avatarColorClass(trainee.personKey),
-        status: certCourseIds.size > 0 ? 'Certified' : 'Enrolled',
-        coursesCount: courseIds.size,
-        certsCount: certCourseIds.size,
+        status: counts.certifications + counts.trainingsCompleted > 0 ? 'Certified' : 'Enrolled',
+        coursesCount: counts.coursesTaken,
+        certsCount: counts.certifications,
+        trainingsCompletedCount: counts.trainingsCompleted,
+        inProgressCount: counts.inProgress,
         recentCourseName: recent?.courseName ?? null,
         recentFoundationName: recent?.foundationName ?? null,
       });
@@ -369,6 +301,14 @@ export class TraineesComponent {
           if (a.certsCount !== b.certsCount) return (a.certsCount - b.certsCount) * dir;
           return a.name.localeCompare(b.name);
         }
+        case 'trainings': {
+          if (a.trainingsCompletedCount !== b.trainingsCompletedCount) return (a.trainingsCompletedCount - b.trainingsCompletedCount) * dir;
+          return a.name.localeCompare(b.name);
+        }
+        case 'inProgress': {
+          if (a.inProgressCount !== b.inProgressCount) return (a.inProgressCount - b.inProgressCount) * dir;
+          return a.name.localeCompare(b.name);
+        }
         case 'recent': {
           const ra = (a.recentCourseName ?? '').toLowerCase();
           const rb = (b.recentCourseName ?? '').toLowerCase();
@@ -387,15 +327,14 @@ export class TraineesComponent {
   }
 
   private initEmptyState(): OrgTraineesEmptyState {
-    const { search = '', foundation, project, course, level, format } = this.filterValues();
-    const searching = search.trim().length > 0;
-    const hasDropdown = !!(foundation || project || course || level || format);
+    const searching = this.searchValue().trim().length > 0;
+    const hasDropdown = this.courseFilterPicked();
     // Learners outside the people list follow the range and the search, and are hidden while a dropdown is picked.
-    const outsideShown = !this.courseFilterPicked() && this.outsideLearners().length > 0;
+    const outsideShown = !hasDropdown && this.outsideLearners().length > 0;
     if (hasDropdown) return 'filters';
     if (searching) return outsideShown ? 'people-list-search' : 'filters';
     if (outsideShown) return 'people-list-range';
-    return this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE ? 'range' : 'none';
+    return this.range() !== ORG_LENS_DEFAULT_TIME_RANGE ? 'range' : 'none';
   }
 
   private initAriaSortMap(): Record<OrgTraineeSortColumn, 'ascending' | 'descending' | 'none'> {
@@ -406,6 +345,8 @@ export class TraineesComponent {
       status: active === 'status' ? direction : 'none',
       courses: active === 'courses' ? direction : 'none',
       certs: active === 'certs' ? direction : 'none',
+      trainings: active === 'trainings' ? direction : 'none',
+      inProgress: active === 'inProgress' ? direction : 'none',
       recent: active === 'recent' ? direction : 'none',
     };
   }
@@ -419,6 +360,8 @@ export class TraineesComponent {
       status: iconFor('status'),
       courses: iconFor('courses'),
       certs: iconFor('certs'),
+      trainings: iconFor('trainings'),
+      inProgress: iconFor('inProgress'),
       recent: iconFor('recent'),
     };
   }
@@ -438,7 +381,7 @@ export class TraineesComponent {
   }
 
   private initOutsideLearners(): OrgTraineeOutsideLearner[] {
-    const q = (this.filterValues().search ?? '').trim().toLowerCase();
+    const q = this.searchValue().trim().toLowerCase();
     const learners = q ? this.response().outsideLearners.filter((learner) => (learner.name ?? '').toLowerCase().includes(q)) : this.response().outsideLearners;
     // By name; a learner without one sorts last.
     return [...learners].sort((a, b) => {
@@ -450,8 +393,9 @@ export class TraineesComponent {
   }
 
   private initResponse(): Signal<OrgTraineesResponse> {
+    const range$ = toObservable(this.range);
     return toSignal(
-      combineLatest([this.orgUid$, this.timeRange$, toObservable(this.retryTrigger)]).pipe(
+      combineLatest([this.orgUid$, range$, toObservable(this.retryTrigger)]).pipe(
         tap(() => {
           this.loadingState.set(true);
           this.fetchErrorState.set(false);
@@ -462,10 +406,7 @@ export class TraineesComponent {
             return of({ ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange });
           }
           return this.dataService.getTrainees(orgUid, timeRange).pipe(
-            tap((res) => {
-              this.dropSelectionsAbsentFrom(res);
-              this.loadingState.set(false);
-            }),
+            tap(() => this.loadingState.set(false)),
             catchError(() => {
               this.fetchErrorState.set(true);
               this.loadingState.set(false);
@@ -478,24 +419,26 @@ export class TraineesComponent {
     );
   }
 
-  /** A new range rebuilds every dropdown, and filtering on a value it no longer lists would hide every row. */
-  private dropSelectionsAbsentFrom(res: OrgTraineesResponse): void {
-    const values = this.filterForm.getRawValue();
-    const { foundations, projects, courses, levels, formats } = res.filterOptions;
-    const listed = { foundation: foundations, project: projects, course: courses, level: levels, format: formats };
-    const patch: Partial<Record<keyof typeof listed, string>> = {};
-    for (const control of Object.keys(listed) as (keyof typeof listed)[]) {
-      const picked = values[control];
-      if (picked && !listed[control].some((option) => option.value === picked)) patch[control] = '';
-    }
-    if (Object.keys(patch).length === 0) return;
-    this.filterForm.patchValue(patch);
-    this.selectionsPruned$.next();
+  /** One stats call per org, range and filter set; a failed read leaves the strip on dashes rather than zeros. */
+  private initTrainingStats(): Signal<OrgTrainingStats | null> {
+    const query$ = toObservable(this.statsQuerySignature).pipe(map(() => this.statsQuery()));
+    return toSignal(
+      combineLatest([this.orgUid$, query$, toObservable(this.retryTrigger)]).pipe(
+        switchMap(([orgUid, query]) => {
+          if (!orgUid) return of(null);
+          return this.trainingService.getTrainingStats(orgUid, query).pipe(
+            catchError(() => of(null)),
+            startWith(null)
+          );
+        })
+      ),
+      { initialValue: null }
+    );
   }
 
   private resetAllState(): void {
-    // The range is page-level URL state, not per-org, so an org switch keeps it.
-    this.filterForm.patchValue({ search: '', foundation: '', project: '', course: '', level: '', format: '' });
+    // The range and filters are page-level URL state (the filter bar prunes what the new org lacks), so an org switch keeps them.
+    this.filterForm.patchValue({ search: '' });
     this.sortColumn.set('courses');
     this.sortDirection.set(-1);
     this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
@@ -533,7 +476,7 @@ function compareMostRecent(a: OrgTraineeDetailRow, b: OrgTraineeDetailRow): numb
   return a.courseName.localeCompare(b.courseName);
 }
 
-/** Collapse (personKey, courseId) source rows; Certification supersedes Course; sort recent-first per Item 4 tiebreak. */
+/** Collapse (personKey, courseId) source rows to one per course; typed by product, sorted recent-first per Item 4 tiebreak. */
 function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRowVm[] {
   const byCourse = new Map<string, OrgTraineeDetailRow[]>();
   for (const r of rows) {
@@ -546,14 +489,14 @@ function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRo
   for (const group of byCourse.values()) {
     const enrolledTs = minActivityTs(group.filter((r) => r.status === 'Enrolled'));
     const certifiedTs = minActivityTs(group.filter((r) => r.status === 'Certified'));
-    const isCertified = certifiedTs !== null;
     // MAX is defensive against rare source-data anomalies where certifiedTs < enrolledTs.
     const sortTs = maxIsoTs(enrolledTs, certifiedTs);
+    const [pair] = groupOrgTraineePairs(group);
 
     out.push({
       courseId: group[0].courseId,
       courseName: group[0].courseName,
-      type: isCertified ? 'Certification' : 'Course',
+      type: pair.productType === 'Certification' ? 'Certification' : 'Training',
       enrolledTs,
       completedTs: certifiedTs,
       enrolledLabel: enrolledTs ? formatMonthYearUtc(enrolledTs) : '—',

@@ -37,199 +37,30 @@
       descriptionTestId="org-training-subtitle"
       data-testid="org-training-header" />
 
-    <!-- Stat Strip: cumulative numbers, then the in-progress snapshot in its own labelled row. Each number states its unit, window and as-of date. -->
-    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-training-stats">
-      <!-- A failed read is stated as such, never as dashes that read like "no data". -->
-      @if (statsError()) {
+    <!-- One filter bar: range, foundation, project, course, level, format and group-by, kept in the URL. -->
+    <lfx-org-training-filter-bar [showGroupBy]="true" />
+
+    <!-- The same stat tiles as People › Trainees, for the same range and filters. A failed read is stated as such, never as dashes that read like "no data". -->
+    @if (statsError()) {
+      <lfx-card>
         <div class="flex flex-col items-center justify-center gap-2 py-8 text-center" data-testid="org-training-stats-error">
           <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500" aria-hidden="true"></i>
           <h3 class="text-gray-700 font-medium">Couldn't load training stats</h3>
           <p class="text-sm text-gray-500">Something went wrong fetching this organization's training numbers. Please try again.</p>
         </div>
-      } @else {
-        <div class="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
-          @for (tile of cumulativeStatTiles(); track tile.key) {
-            <ng-container [ngTemplateOutlet]="statTile" [ngTemplateOutletContext]="{ $implicit: tile }" />
-          }
-        </div>
-        <div class="border-t border-dashed border-gray-300 bg-gray-50" data-testid="org-training-stats-snapshot">
-          <p class="flex items-center gap-2 px-4 pt-3 text-xs font-medium text-gray-600" data-testid="org-training-stats-snapshot-heading">
-            <i class="fa-light fa-camera" aria-hidden="true"></i>
-            {{ snapshotHeading }}
-            @if (!statsLoading()) {
-              <span data-testid="org-training-stats-snapshot-as-of">· {{ snapshotAsOf() }}</span>
-            }
-          </p>
-          <div class="grid w-full grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
-            @for (tile of snapshotStatTiles(); track tile.key) {
-              <ng-container [ngTemplateOutlet]="statTile" [ngTemplateOutletContext]="{ $implicit: tile }" />
-            }
-          </div>
-        </div>
-      }
-    </lfx-card>
+      </lfx-card>
+    } @else {
+      <lfx-org-training-stats [stats]="shownStats()" [range]="range()" />
+    }
 
-    <ng-template #statTile let-tile>
-      <!-- Tiles with a list behind them open its tab; the roster and activity counts have none. -->
-      @if (tile.tab) {
-        <button
-          type="button"
-          class="flex items-center gap-3 p-4 text-left w-full hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
-          [attr.data-testid]="tile.testId"
-          [pTooltip]="tile.tooltip"
-          tooltipPosition="top"
-          tooltipEvent="both"
-          (click)="onStatCardClick(tile.tab)">
-          <ng-container [ngTemplateOutlet]="statTileBody" [ngTemplateOutletContext]="{ $implicit: tile }" />
-        </button>
-      } @else {
-        <div
-          class="flex items-center gap-3 p-4 w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
-          tabindex="0"
-          role="note"
-          [attr.aria-label]="tile.ariaLabel"
-          [attr.data-testid]="tile.testId"
-          [pTooltip]="tile.tooltip"
-          tooltipPosition="top"
-          tooltipEvent="both">
-          <ng-container [ngTemplateOutlet]="statTileBody" [ngTemplateOutletContext]="{ $implicit: tile }" />
-        </div>
-      }
-    </ng-template>
-
-    <ng-template #statTileBody let-tile>
-      <div class="flex items-center justify-center w-11 h-11 rounded-full flex-shrink-0" [class]="tile.iconClass">
-        <i [class]="tile.icon + ' text-xl'" aria-hidden="true"></i>
-      </div>
-      <div class="flex flex-col gap-0.5 min-w-0">
-        @if (tile.value === null) {
-          <p class="text-xl font-medium text-gray-400" [attr.data-testid]="tile.testId + '-value'">&mdash;</p>
-        } @else {
-          <p class="text-xl font-medium text-gray-900" [attr.data-testid]="tile.testId + '-value'">{{ tile.value | number }}</p>
-        }
-        <p class="text-sm font-normal text-gray-900">{{ tile.label }}</p>
-        @if (statsLoading()) {
-          <p-skeleton width="9rem" height="0.75rem" [attr.data-testid]="tile.testId + '-caption-skeleton'" />
-        } @else {
-          <p class="text-xs text-gray-500" [attr.data-testid]="tile.testId + '-caption'">{{ tile.caption }}</p>
-        }
-      </div>
-    </ng-template>
-
-    <!-- Content Card: tabs + search + filter + tab panels -->
+    <!-- Content Card: product-type tabs over one group table (search is local to the table) -->
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-training-content-card">
-      <!-- Tab Pills Bar -->
       <lfx-card-tabs-bar [options]="tabs" [selectedFilter]="activeTab()" (filterChange)="onActiveTabChange($event)" data-testid="org-training-tabs" />
 
-      <!-- Search + Level Filter Bar -->
-      <div class="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4 border-b border-gray-100" data-testid="org-training-filter-bar">
-        <div class="relative flex-1">
-          <lfx-input-text
-            [form]="filterForm"
-            control="search"
-            placeholder="Search by name…"
-            icon="fa-light fa-search"
-            size="small"
-            styleClass="w-full"
-            data-testid="org-training-search-input" />
-        </div>
-        <div class="w-full sm:w-44">
-          <lfx-select
-            [form]="filterForm"
-            control="level"
-            size="small"
-            [options]="levelOptions"
-            placeholder="All Levels"
-            [showClear]="true"
-            styleClass="w-full"
-            data-testid="org-training-level-filter" />
-        </div>
-      </div>
-
-      <!-- Tab Panels -->
-      @for (tab of tabs; track tab.id) {
-        @if (activeTab() === tab.id) {
-          <section [id]="'org-training-panel-' + tab.id" [attr.data-testid]="'org-training-panel-' + tab.id" class="p-5">
-            @if (tab.id === 'certifications') {
-              @if (certificationsError()) {
-                <div class="flex flex-col items-center justify-center gap-2 py-16 text-center" data-testid="org-certifications-error">
-                  <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500" aria-hidden="true"></i>
-                  <h3 class="text-gray-700 font-medium">Couldn't load certifications</h3>
-                  <p class="text-sm text-gray-500">Something went wrong fetching this organization's certifications. Please try again.</p>
-                </div>
-              } @else {
-                <p class="mb-3 text-xs text-gray-500" data-testid="org-certifications-window-note">{{ certificationsWindowNote }}</p>
-                <lfx-org-certifications-table
-                  [certificationsResponse]="certifications()"
-                  [loading]="certificationsLoading()"
-                  [sortField]="certSortField()"
-                  [sortOrder]="certSortOrder()"
-                  [emptyStateTitle]="hasActiveFilters() ? 'No certifications match these filters' : 'No certifications yet'"
-                  [emptyStateSubtitle]="
-                    hasActiveFilters() ? 'Try adjusting your search or level filter.' : 'No certifications were found for your organization.'
-                  "
-                  (pageChange)="onCertPageChange($event)"
-                  (sortChange)="onCertSortChange($event)"
-                  (certifiedClick)="onCertifiedClick($event)"
-                  (inProgressClick)="onInProgressClick($event)" />
-              }
-            } @else if (tab.id === 'trainings') {
-              @if (trainingsError()) {
-                <div class="flex flex-col items-center justify-center gap-2 py-16 text-center" data-testid="org-trainings-error">
-                  <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500" aria-hidden="true"></i>
-                  <h3 class="text-gray-700 font-medium">Couldn't load trainings</h3>
-                  <p class="text-sm text-gray-500">Something went wrong fetching this organization's trainings. Please try again.</p>
-                </div>
-              } @else {
-                <lfx-org-trainings-table
-                  [trainingsResponse]="trainings()"
-                  [loading]="trainingsLoading()"
-                  [sortField]="trainingSortField()"
-                  [sortOrder]="trainingSortOrder()"
-                  [emptyStateTitle]="hasActiveFilters() ? 'No trainings match these filters' : 'No trainings yet'"
-                  [emptyStateSubtitle]="hasActiveFilters() ? 'Try adjusting your search or level filter.' : 'No trainings were found for your organization.'"
-                  (pageChange)="onTrainingPageChange($event)"
-                  (sortChange)="onTrainingSortChange($event)"
-                  (completedClick)="onTrainingCompletedClick($event)"
-                  (inProgressClick)="onTrainingInProgressClick($event)" />
-              }
-            }
-          </section>
-        }
-      }
+      <section [id]="'org-training-panel-' + activeTab()" [attr.data-testid]="'org-training-panel-' + activeTab()" class="p-5">
+        <lfx-org-training-groups-table [orgUid]="orgUid()" [query]="statsQuery()" [groupBy]="groupBy()" [tab]="activeTab()" />
+      </section>
     </lfx-card>
-
-    <!-- Certification roster drawers -->
-    <lfx-cert-employees-drawer
-      [(visible)]="certifiedDrawerVisible"
-      [orgUid]="orgUid()"
-      [courseId]="activeCertification()?.courseId ?? ''"
-      [certificationName]="activeCertification()?.name ?? ''"
-      [count]="activeCertification()?.certifiedCount ?? 0"
-      status="certified" />
-    <lfx-cert-employees-drawer
-      [(visible)]="inProgressDrawerVisible"
-      [orgUid]="orgUid()"
-      [courseId]="activeCertification()?.courseId ?? ''"
-      [certificationName]="activeCertification()?.name ?? ''"
-      [count]="activeCertification()?.inProgressCount ?? 0"
-      status="in-progress" />
-
-    <!-- Training roster drawers -->
-    <lfx-training-employees-drawer
-      [(visible)]="trainingCompletedDrawerVisible"
-      [orgUid]="orgUid()"
-      [courseId]="activeTraining()?.courseId ?? ''"
-      [trainingName]="activeTraining()?.name ?? ''"
-      [count]="activeTraining()?.completedCount ?? 0"
-      status="completed" />
-    <lfx-training-employees-drawer
-      [(visible)]="trainingInProgressDrawerVisible"
-      [orgUid]="orgUid()"
-      [courseId]="activeTraining()?.courseId ?? ''"
-      [trainingName]="activeTraining()?.name ?? ''"
-      [count]="activeTraining()?.inProgressCount ?? 0"
-      status="in-progress" />
   }
 </div>
 

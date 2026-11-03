@@ -6,25 +6,25 @@
   position="right"
   [modal]="true"
   styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
-  data-testid="cert-employees-drawer">
+  data-testid="org-training-group-employees-drawer">
   <ng-template #header>
     <div class="flex items-start gap-3 w-full">
       <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
         <i class="fa-light fa-award text-lg" aria-hidden="true"></i>
       </div>
       <div class="flex flex-col gap-0.5 min-w-0">
-        <h2 class="text-base font-semibold text-gray-900 truncate" data-testid="cert-employees-drawer-title">{{ heading() }}</h2>
-        <p class="text-sm text-gray-500 truncate" data-testid="cert-employees-drawer-subtitle">
-          {{ certificationName() }} &middot; {{ count() }} {{ statusLabel() }}
+        <h2 class="text-base font-semibold text-gray-900 truncate" data-testid="org-training-group-employees-title">{{ heading() }}</h2>
+        <p class="text-sm text-gray-500 truncate" data-testid="org-training-group-employees-subtitle">
+          {{ label() }} &middot; {{ pairCount() | number }} {{ statusLabel().toLowerCase() }} (person-course pairs)
         </p>
       </div>
     </div>
   </ng-template>
 
   <div class="flex flex-col gap-4 h-full">
-    @if (status() === 'in-progress') {
-      <p class="text-xs text-gray-500" data-testid="cert-employees-window-note">{{ inProgressWindowNote }}</p>
-    }
+    <p class="text-xs text-gray-500" data-testid="org-training-group-employees-note">
+      The number counts person-course pairs in the selected range. The names below are current employees only, so the list can be shorter than the number.
+    </p>
 
     <!-- Search -->
     <div class="relative">
@@ -35,7 +35,7 @@
         placeholder="Search people..."
         aria-label="Search employees"
         class="w-full pl-9"
-        data-testid="cert-employees-search"
+        data-testid="org-training-group-employees-search"
         [ngModel]="searchTerm()"
         (ngModelChange)="searchTerm.set($event)" />
     </div>
@@ -52,23 +52,21 @@
           @if (searchTerm()) {
             No employees match your search.
           } @else {
-            No employees found for this certification.
+            No current employees found for this row.
           }
         </p>
       </div>
     } @else {
       @if (isRosterCapped()) {
-        <p class="text-xs text-gray-500" data-testid="cert-employees-cap-note">
-          Showing first {{ rosterCap | number }} of {{ count() | number }} {{ statusLabel() }}.
-        </p>
+        <p class="text-xs text-gray-500" data-testid="org-training-group-employees-cap-note">Showing the first {{ rosterCap | number }} current employees.</p>
       }
-      <ul class="flex flex-col divide-y divide-gray-100" data-testid="cert-employees-list">
+      <ul class="flex flex-col divide-y divide-gray-100" data-testid="org-training-group-employees-list">
         @for (employee of filteredEmployees(); track employee.contactId) {
-          <li class="flex items-center gap-3 py-3" [attr.data-testid]="'cert-employee-' + employee.contactId">
+          <li class="flex items-center gap-3 py-3" [attr.data-testid]="'org-training-group-employee-' + employee.contactId">
             <button
               type="button"
               class="flex min-w-0 flex-1 items-center gap-3 bg-transparent p-0 text-left"
-              [attr.data-testid]="'cert-employee-person-' + employee.contactId"
+              [attr.data-testid]="'org-training-group-employee-person-' + employee.contactId"
               (click)="onPersonClick(employee)">
               <!-- Avatar -->
               <div

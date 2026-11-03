@@ -1,0 +1,95 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4" data-testid="org-training-filter-bar">
+  <div class="w-full md:w-44">
+    <lfx-select
+      [form]="form"
+      control="range"
+      size="small"
+      [options]="rangeOptions"
+      styleClass="w-full"
+      ariaLabel="Filter by time range"
+      dataTest="org-training-filter-range" />
+  </div>
+  <div class="w-full md:w-48">
+    <lfx-select
+      [form]="form"
+      control="foundation"
+      size="small"
+      [filter]="true"
+      filterPlaceholder="Search foundations"
+      emptyFilterMessage="No foundations match."
+      [options]="foundationOptions()"
+      styleClass="w-full"
+      ariaLabel="Filter by foundation"
+      dataTest="org-training-filter-foundation" />
+  </div>
+  <div class="w-full md:w-48">
+    <lfx-select
+      [form]="form"
+      control="project"
+      size="small"
+      [filter]="true"
+      filterPlaceholder="Search projects"
+      emptyFilterMessage="No projects match."
+      [options]="projectOptions()"
+      styleClass="w-full"
+      ariaLabel="Filter by project"
+      dataTest="org-training-filter-project" />
+  </div>
+  <div class="w-full md:w-56">
+    <lfx-select
+      [form]="form"
+      control="course"
+      size="small"
+      [filter]="true"
+      filterPlaceholder="Search courses"
+      emptyFilterMessage="No courses match."
+      [options]="courseOptions()"
+      styleClass="w-full"
+      ariaLabel="Filter by course"
+      dataTest="org-training-filter-course" />
+  </div>
+  <div class="w-full md:w-40">
+    <lfx-select
+      [form]="form"
+      control="level"
+      size="small"
+      [options]="levelOptions()"
+      styleClass="w-full"
+      ariaLabel="Filter by course level"
+      dataTest="org-training-filter-level" />
+  </div>
+  <div class="w-full md:w-40">
+    <lfx-select
+      [form]="form"
+      control="format"
+      size="small"
+      [options]="formatOptions()"
+      styleClass="w-full"
+      ariaLabel="Filter by course format"
+      dataTest="org-training-filter-format" />
+  </div>
+  @if (showGroupBy()) {
+    <div class="w-full md:w-44">
+      <lfx-select
+        [form]="form"
+        control="groupBy"
+        size="small"
+        [options]="groupByOptions"
+        styleClass="w-full"
+        ariaLabel="Group by"
+        dataTest="org-training-filter-group-by" />
+    </div>
+  }
+  <lfx-button
+    label="Clear all"
+    icon="fa-light fa-filter-slash"
+    severity="secondary"
+    [text]="true"
+    size="small"
+    [disabled]="!hasFilter()"
+    (onClick)="clearAll()"
+    data-testid="org-training-filter-clear-all" />
+</div>

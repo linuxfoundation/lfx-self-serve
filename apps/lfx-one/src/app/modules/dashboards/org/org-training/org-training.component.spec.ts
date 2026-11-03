@@ -3,13 +3,7 @@
 
 import { ApplicationRef, computed, signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import {
-  EMPTY_ORG_CERTIFICATIONS_RESPONSE,
-  EMPTY_ORG_TRAININGS_RESPONSE,
-  ORG_CERTIFICATIONS_WINDOW_NOTE,
-  ORG_TRAINING_NO_ROSTER_NOTE,
-} from '@lfx-one/shared/constants';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import type { Account, OrgLensEmptyStateName, OrgTrainingStats } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
@@ -17,7 +11,7 @@ import { OrgLensTrainingService } from '@shared/services/org-lens-training.servi
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { OrgTrainingComponent } from './org-training.component';
@@ -44,26 +38,53 @@ function personDrawerStub() {
   };
 }
 
+const EMPTY_GROUPS = { data: [], total: 0, totals: { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 } };
+const EMPTY_OPTIONS = { foundations: [], projects: [], courses: [], levels: [], formats: [] };
+
+const STATS: OrgTrainingStats = {
+  range: '730d',
+  asOf: '2026-10-30T09:48:21.094Z',
+  rosterMembers: 1250,
+  rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
+  peopleWithTrainingActivity: 830,
+  learnersOutsidePeopleList: 12,
+  coursesTaken: 400,
+  certifications: 190,
+  certifiedPeople: 140,
+  trainingsCompleted: 90,
+  completionRatePct: 70,
+  coursesInProgress: 120,
+  peopleInTraining: 80,
+};
+
 interface RenderOptions {
   settled?: boolean;
   stats?: OrgTrainingStats | null;
   /** Answers the stats read per organization; defaults to `stats` for any. */
   statsFor?: (orgUid: string) => Observable<OrgTrainingStats | null>;
   selectedAccount?: WritableSignal<Account>;
+  params?: Record<string, string>;
 }
 
 async function render(
   state: OrgLensEmptyStateName | null,
-  { settled = true, stats = null, statsFor, selectedAccount = signal<Account>(ACME) }: RenderOptions = {}
+  { settled = true, stats = null, statsFor, selectedAccount = signal<Account>(ACME), params = {} }: RenderOptions = {}
 ) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
+  const queryParamMap$ = new BehaviorSubject(convertToParamMap(params));
+  const trainingService = {
+    getTrainingStats: vi.fn(statsFor ?? (() => of(stats))),
+    getFilterOptions: vi.fn(() => of(EMPTY_OPTIONS)),
+    getGroups: vi.fn(() => of(EMPTY_GROUPS)),
+    getGroupEmployees: vi.fn(() => of({ total: 0, data: [] })),
+  };
 
   await TestBed.configureTestingModule({
     imports: [OrgTrainingComponent],
     providers: [
       provideRouter([]),
       MessageService,
-      { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) }, queryParamMap: of(convertToParamMap({})) } },
+      { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: queryParamMap$.value }, queryParamMap: queryParamMap$.asObservable() } },
       { provide: AccountContextService, useValue: { selectedAccount } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       {
@@ -77,14 +98,7 @@ async function render(
           retry: vi.fn(),
         },
       },
-      {
-        provide: OrgLensTrainingService,
-        useValue: {
-          getTrainingStats: statsFor ?? (() => of(stats)),
-          getOrgCertifications: () => of(EMPTY_ORG_CERTIFICATIONS_RESPONSE),
-          getOrgTrainings: () => of(EMPTY_ORG_TRAININGS_RESPONSE),
-        },
-      },
+      { provide: OrgLensTrainingService, useValue: trainingService },
       { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
     ],
   }).compileComponents();
@@ -93,12 +107,12 @@ async function render(
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
-  return fixture.nativeElement as HTMLElement;
+  return { el: fixture.nativeElement as HTMLElement, trainingService, queryParamMap$, fixture };
 }
 
 describe('OrgTrainingComponent', () => {
   it('replaces the page with the contractor-no-grant state and renders none of its data sections or the org name', async () => {
-    const el = await render('contractor-no-grant');
+    const { el } = await render('contractor-no-grant');
 
     expect(el.querySelector('[data-testid="org-training-no-access-state"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-training-stats"]')).toBeNull();
@@ -107,7 +121,7 @@ describe('OrgTrainingComponent', () => {
   });
 
   it('shows a skeleton instead of a blank area while the org context is still settling, without naming the org', async () => {
-    const el = await render(null, { settled: false });
+    const { el } = await render(null, { settled: false });
 
     expect(el.querySelector('[data-testid="org-training-skeleton"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-training-stats"]')).toBeNull();
@@ -115,123 +129,103 @@ describe('OrgTrainingComponent', () => {
     expect(el.textContent).not.toContain('Acme Motors, Inc.');
   });
 
-  it('states the enrollment window above the Certifications table', async () => {
-    const el = await render(null);
+  it('renders the shared filter bar (with group-by), the shared stat tiles and the group table', async () => {
+    const { el } = await render(null, { stats: STATS });
 
-    expect(el.querySelector('[data-testid="org-certifications-window-note"]')?.textContent?.trim()).toBe(ORG_CERTIFICATIONS_WINDOW_NOTE);
+    expect(el.querySelector('lfx-org-training-filter-bar')).not.toBeNull();
+    expect(el.querySelector('lfx-org-training-stats')).not.toBeNull();
+    expect(el.querySelector('lfx-org-training-groups-table')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-training-panel-certifications"]')).not.toBeNull();
+    // The 12-month window notes are replaced by the range selector.
+    expect(el.querySelector('[data-testid="org-certifications-window-note"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-training-level-filter"]')).toBeNull();
+  });
+});
+
+describe('OrgTrainingComponent — view state from the URL', () => {
+  it('reads the stats for the URL range and filters, defaulting to Past 2 years without any', async () => {
+    const defaults = await render(null, { stats: STATS });
+    expect(defaults.trainingService.getTrainingStats).toHaveBeenCalledTimes(1);
+    expect(defaults.trainingService.getTrainingStats).toHaveBeenCalledWith('org-uid-1', {
+      range: '730d',
+      foundation: null,
+      project: null,
+      course: null,
+      level: null,
+      format: null,
+    });
+    TestBed.resetTestingModule();
+
+    const filtered = await render(null, { stats: STATS, params: { range: '365d', foundation: 'f-1', format: 'Online' } });
+    expect(filtered.trainingService.getTrainingStats).toHaveBeenCalledWith(
+      'org-uid-1',
+      expect.objectContaining({ range: '365d', foundation: 'f-1', format: 'Online', course: null })
+    );
+  });
+
+  it('feeds the table the URL group-by and loads the Trainings tab from ?tab=trainings', async () => {
+    const { trainingService } = await render(null, { stats: STATS, params: { groupBy: 'foundation', tab: 'trainings' } });
+
+    expect(trainingService.getGroups).toHaveBeenCalledWith(
+      'org-uid-1',
+      expect.anything(),
+      expect.objectContaining({ groupBy: 'foundation', tab: 'trainings' })
+    );
+  });
+
+  it('switching tabs keeps the URL filters and neither refetches the stats nor changes the filters', async () => {
+    const { el, fixture, trainingService, queryParamMap$ } = await render(null, { stats: STATS, params: { range: '365d', foundation: 'f-1' } });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    (el.querySelector('[data-testid="filter-pill-trainings"]') as HTMLElement).click();
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { tab: 'trainings' }, queryParamsHandling: 'merge', replaceUrl: true }));
+
+    queryParamMap$.next(convertToParamMap({ range: '365d', foundation: 'f-1', tab: 'trainings' }));
+    await TestBed.inject(ApplicationRef).whenStable();
+    fixture.detectChanges();
+
+    expect(trainingService.getTrainingStats).toHaveBeenCalledTimes(1);
+    expect(el.querySelector('[data-testid="org-training-panel-trainings"]')).not.toBeNull();
   });
 });
 
 describe('OrgTrainingComponent — stat strip', () => {
-  const stats: OrgTrainingStats = {
-    rosterMembers: 1250,
-    rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
-    peopleWithTrainingActivity: 830,
-    trainingActivityAsOf: '2026-10-30T09:48:21.094Z',
-    certifiedEmployees: 140,
-    certificationsEarned: 190,
-    employeesInTraining: 25,
-    trainingCoursesEnrolled: 31,
-    inProgressAsOf: '2026-11-01T10:15:00.000Z',
-  };
-
-  const value = (el: HTMLElement, testId: string) => el.querySelector(`[data-testid="${testId}-value"]`)?.textContent?.trim();
-
-  it('shows roster members and people with training activity among the cumulative numbers, and in-progress counts only in the snapshot row', async () => {
-    const el = await render(null, { stats });
-    const snapshot = el.querySelector('[data-testid="org-training-stats-snapshot"]') as HTMLElement;
-
-    expect(value(el, 'org-training-stat-roster-members')).toBe('1,250');
-    expect(value(el, 'org-training-stat-people-with-training-activity')).toBe('830');
-    expect(value(el, 'org-training-stat-certified-employees')).toBe('140');
-    expect(snapshot.querySelector('[data-testid="org-training-stat-employees-in-training"]')).not.toBeNull();
-    expect(snapshot.querySelector('[data-testid="org-training-stat-training-courses-enrolled"]')).not.toBeNull();
-    expect(snapshot.querySelector('[data-testid="org-training-stat-roster-members"]')).toBeNull();
-    expect(snapshot.querySelector('[data-testid="org-training-stat-people-with-training-activity"]')).toBeNull();
-    expect(value(el, 'org-training-stat-employees-in-training')).toBe('25');
-  });
-
-  it('states each number’s as-of date under it', async () => {
-    const el = await render(null, { stats });
-    const caption = (testId: string) => el.querySelector(`[data-testid="${testId}-caption"]`)?.textContent ?? '';
-
-    expect(caption('org-training-stat-roster-members')).toContain('Oct 29, 2026');
-    expect(caption('org-training-stat-people-with-training-activity')).toContain('Oct 30, 2026');
-    expect(caption('org-training-stat-employees-in-training')).toContain('Nov 1, 2026');
-  });
-
-  it('shows a dash, not zero, for the roster of an org without a training program', async () => {
-    const el = await render(null, { stats: { ...stats, rosterMembers: null, rosterMembersAsOf: null } });
-
-    expect(value(el, 'org-training-stat-roster-members')).toBe('—');
-    expect(el.querySelector('[data-testid="org-training-stat-roster-members-caption"]')?.textContent?.trim()).toBe(ORG_TRAINING_NO_ROSTER_NOTE);
-    expect(value(el, 'org-training-stat-people-with-training-activity')).toBe('830');
-  });
-
-  it('does not read an older payload without the roster field as an org without a training program', async () => {
-    const olderStats: OrgTrainingStats = { ...stats };
-    // @ts-expect-error an older response shape has no roster field
-    delete olderStats.rosterMembers;
-    const el = await render(null, { stats: olderStats });
-
-    expect(value(el, 'org-training-stat-roster-members')).toBe('—');
-    expect(el.textContent).not.toContain(ORG_TRAINING_NO_ROSTER_NOTE);
-  });
-
-  it('names the displayed value before the definition on the non-clickable tiles', async () => {
-    const el = await render(null, { stats });
-    const tile = el.querySelector('[data-testid="org-training-stat-roster-members"]')!;
-
-    expect(tile.getAttribute('role')).toBe('note');
-    expect(tile.getAttribute('aria-label')).toMatch(/^[^:]+: 1,250\. /);
-    expect(tile.getAttribute('aria-label')).toContain('Oct 29, 2026');
-  });
-
-  it('shows an error state instead of dashes when the stats read fails', async () => {
-    const el = await render(null, { statsFor: () => throwError(() => new Error('boom')) });
+  it('shows an error state instead of dashes when the stats read fails, leaving the table', async () => {
+    const { el } = await render(null, { statsFor: () => throwError(() => new Error('boom')) });
 
     expect(el.querySelector('[data-testid="org-training-stats-error"]')?.textContent).toContain("Couldn't load training stats");
-    expect(el.querySelector('[data-testid="org-training-stat-roster-members"]')).toBeNull();
+    expect(el.querySelector('lfx-org-training-stats')).toBeNull();
     expect(el.querySelector('[data-testid="org-training-content-card"]')).not.toBeNull();
   });
 
-  it('states no as-of date and no previous organization’s captions while the stats load, on first load and on an org switch', async () => {
+  it('hands the stats component no numbers (null) while loading and again after an organization switch', async () => {
     const responses: Record<string, Subject<OrgTrainingStats | null>> = {
       'org-uid-1': new Subject<OrgTrainingStats | null>(),
       'org-uid-2': new Subject<OrgTrainingStats | null>(),
     };
     const selectedAccount = signal<Account>(ACME);
-    const el = await render(null, { selectedAccount, statsFor: (orgUid) => responses[orgUid].asObservable() });
+    const { el, fixture } = await render(null, { selectedAccount, statsFor: (orgUid) => responses[orgUid].asObservable() });
     const appRef = TestBed.inject(ApplicationRef);
-    const captions = () => [...el.querySelectorAll('[data-testid$="-caption"]')].map((node) => node.textContent ?? '');
-    const snapshotAsOf = () => el.querySelector('[data-testid="org-training-stats-snapshot-as-of"]')?.textContent ?? null;
+    const rosterValue = () => el.querySelector('[data-testid="org-training-stat-roster-members-value"]')?.textContent?.trim();
 
-    // First load, before the stats arrive.
-    expect(el.textContent).not.toContain('as-of date unavailable');
-    expect(captions()).toEqual([]);
-    expect(snapshotAsOf()).toBeNull();
-    const loadingLabel = el.querySelector('[data-testid="org-training-stat-roster-members"]')?.getAttribute('aria-label') ?? '';
-    expect(loadingLabel).toMatch(/^[^:]+: —\. /);
-    expect(loadingLabel).not.toMatch(/as-of date unavailable/i);
+    expect(rosterValue()).toBe('—');
 
-    responses['org-uid-1'].next(stats);
+    responses['org-uid-1'].next(STATS);
     responses['org-uid-1'].complete();
     await appRef.whenStable();
-    expect(captions().join(' ')).toContain('Oct 29, 2026');
-    expect(snapshotAsOf()).toContain('Nov 1, 2026');
+    fixture.detectChanges();
+    expect(rosterValue()).toBe('1,250');
 
-    // Switch to an organization whose stats are still on their way.
+    // Switch to an organization whose stats are still on their way: the previous numbers go away.
     selectedAccount.set({ ...ACME, accountId: 'acc-2', accountName: 'Globex Corp.', uid: 'org-uid-2', slug: 'globex' });
     await appRef.whenStable();
-    expect(captions()).toEqual([]);
-    expect(snapshotAsOf()).toBeNull();
-    expect(value(el, 'org-training-stat-roster-members')).toBe('—');
-    expect(el.textContent).not.toContain('Oct 29, 2026');
+    fixture.detectChanges();
+    expect(rosterValue()).toBe('—');
 
-    responses['org-uid-2'].next({ ...stats, rosterMembersAsOf: '2026-10-31T23:00:00.000Z', inProgressAsOf: '2026-11-02T10:15:00.000Z' });
+    responses['org-uid-2'].next({ ...STATS, rosterMembers: 7 });
     responses['org-uid-2'].complete();
     await appRef.whenStable();
-    expect(el.querySelector('[data-testid="org-training-stat-roster-members-caption"]')?.textContent).toContain('Oct 31, 2026');
-    expect(snapshotAsOf()).toContain('Nov 2, 2026');
+    fixture.detectChanges();
+    expect(rosterValue()).toBe('7');
   });
 });

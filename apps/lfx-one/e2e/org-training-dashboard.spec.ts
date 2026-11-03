@@ -92,94 +92,110 @@ async function stubOrgTrainingRoutes(page: Page): Promise<void> {
     })
   );
 
-  await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/training/stats`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        rosterMembers: 40,
-        rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
-        peopleWithTrainingActivity: 25,
-        trainingActivityAsOf: '2026-10-30T09:48:21.094Z',
-        certifiedEmployees: 12,
-        certificationsEarned: 18,
-        employeesInTraining: 7,
-        trainingCoursesEnrolled: 9,
-        inProgressAsOf: '2026-10-30T10:15:00.000Z',
-      } satisfies OrgTrainingStats),
-    })
+  const trainingPath = `/api/orgs/${MOCK_ACCOUNT_ID}/lens/training`;
+  const json = (body: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+
+  await page.route(
+    (url) => url.pathname === `${trainingPath}/stats`,
+    (route) =>
+      route.fulfill(
+        json({
+          range: '730d',
+          asOf: '2026-10-30T09:48:21.094Z',
+          rosterMembers: 40,
+          rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
+          peopleWithTrainingActivity: 25,
+          learnersOutsidePeopleList: 3,
+          coursesTaken: 30,
+          certifications: 18,
+          certifiedPeople: 12,
+          trainingsCompleted: 4,
+          completionRatePct: 73,
+          coursesInProgress: 8,
+          peopleInTraining: 7,
+        } satisfies OrgTrainingStats)
+      )
   );
 
-  await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/training/certifications?**`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: [
-          {
-            courseId: 'cert-cka',
-            name: 'CKA — Certified Kubernetes Administrator',
-            foundation: 'CNCF',
-            level: 'Advanced',
-            certifiedCount: 5,
-            inProgressCount: 2,
-          },
-        ],
-        total: 1,
-        pageSize: 10,
-        offset: 0,
-      }),
-    })
+  await page.route(
+    (url) => url.pathname === `${trainingPath}/filter-options`,
+    (route) =>
+      route.fulfill(
+        json({
+          foundations: [{ label: 'CNCF', value: 'foundation-1' }],
+          projects: [],
+          courses: [{ label: 'CKA — Certified Kubernetes Administrator', value: 'CKA — Certified Kubernetes Administrator' }],
+          levels: [{ label: 'Advanced', value: 'Advanced' }],
+          formats: [{ label: 'Online', value: 'Online' }],
+        })
+      )
   );
 
-  await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/training/trainings?**`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: [
-          {
-            courseId: 'training-lfs258',
-            name: 'LFS258 — Kubernetes Fundamentals',
-            foundation: 'Linux Foundation',
-            level: 'Beginner',
-            completedCount: 4,
-            inProgressCount: 3,
-          },
-        ],
-        total: 1,
-        pageSize: 10,
-        offset: 0,
-      }),
-    })
+  await page.route(
+    (url) => url.pathname === `${trainingPath}/groups`,
+    (route) => {
+      const tab = new URL(route.request().url()).searchParams.get('tab');
+      return route.fulfill(
+        json(
+          tab === 'trainings'
+            ? {
+                data: [
+                  {
+                    key: 'LFS258 — Kubernetes Fundamentals',
+                    label: 'LFS258 — Kubernetes Fundamentals',
+                    people: 6,
+                    coursesTaken: 7,
+                    completed: 4,
+                    inProgress: 3,
+                    level: 'Beginner',
+                    foundation: 'Linux Foundation',
+                    logoUrl: null,
+                  },
+                ],
+                total: 1,
+                totals: { people: 6, coursesTaken: 7, completed: 4, inProgress: 3 },
+              }
+            : {
+                data: [
+                  {
+                    key: 'CKA — Certified Kubernetes Administrator',
+                    label: 'CKA — Certified Kubernetes Administrator',
+                    people: 7,
+                    coursesTaken: 9,
+                    completed: 5,
+                    inProgress: 2,
+                    level: 'Advanced',
+                    foundation: 'CNCF',
+                    logoUrl: null,
+                  },
+                ],
+                total: 1,
+                totals: { people: 7, coursesTaken: 9, completed: 18, inProgress: 2 },
+              }
+        )
+      );
+    }
   );
 
-  await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/training/certifications/cert-cka/employees*`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        courseId: 'cert-cka',
-        certificationName: 'CKA — Certified Kubernetes Administrator',
-        status: 'certified',
-        total: 1,
-        data: [{ contactId: 'certified@example.org', name: 'Certified Engineer', jobTitle: 'SRE' }],
-      }),
-    })
-  );
-
-  await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/training/trainings/training-lfs258/employees*`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        courseId: 'training-lfs258',
-        trainingName: 'LFS258 — Kubernetes Fundamentals',
-        status: 'completed',
-        total: 1,
-        data: [{ contactId: 'trainee@example.org', name: 'Training Graduate', jobTitle: 'Developer' }],
-      }),
-    })
+  await page.route(
+    (url) => url.pathname === `${trainingPath}/groups/employees`,
+    (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      const trainings = params.get('tab') === 'trainings';
+      return route.fulfill(
+        json({
+          groupBy: 'course',
+          groupValue: params.get('groupValue'),
+          label: params.get('groupValue'),
+          tab: params.get('tab'),
+          status: params.get('status'),
+          total: trainings ? 4 : 5,
+          data: trainings
+            ? [{ contactId: 'trainee@example.org', name: 'Training Graduate', jobTitle: 'Developer' }]
+            : [{ contactId: 'certified@example.org', name: 'Certified Engineer', jobTitle: 'SRE' }],
+        })
+      );
+    }
   );
 }
 
@@ -195,48 +211,53 @@ async function gotoOrgTrainingPage(page: Page): Promise<void> {
 }
 
 test.describe('Org Training Dashboard', () => {
-  test('renders certifications tab with stat strip and opens certified drawer', async ({ page }) => {
+  test('renders the filter bar, stat tiles and the Certifications group table, and opens the certified drawer', async ({ page }) => {
     await gotoOrgTrainingPage(page);
     await expect(page.getByTestId('org-training-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-training-filter-bar')).toBeVisible();
+    await expect(page.getByTestId('org-training-stat-certifications-value')).toHaveText('18');
     await expect(page.getByTestId('org-training-panel-certifications')).toBeVisible();
-    await expect(page.getByTestId('org-certifications-data-table')).toBeVisible();
-    await expect(page.getByTestId('org-certification-name-cert-cka')).toHaveText('CKA — Certified Kubernetes Administrator');
+    await expect(page.getByTestId('org-training-groups-data-table')).toBeVisible();
+    await expect(page.getByTestId('org-training-group-name-CKA — Certified Kubernetes Administrator')).toBeVisible();
+    // The footer Certified total is the Certifications tile.
+    await expect(page.getByTestId('org-training-groups-totals-completed')).toHaveText('18');
 
-    await page.getByTestId('org-certification-certified-cert-cka').getByRole('button').click();
-    await expect(page.getByTestId('cert-employees-drawer-title')).toBeVisible();
-    await expect(page.getByTestId('cert-employee-certified@example.org')).toBeVisible();
+    await page.getByTestId('org-training-group-completed-CKA — Certified Kubernetes Administrator').getByRole('button').click();
+    await expect(page.getByTestId('org-training-group-employees-title')).toBeVisible();
+    await expect(page.getByTestId('org-training-group-employee-certified@example.org')).toBeVisible();
   });
 
-  test('trainings tab renders completed/in-progress columns and opens training drawer', async ({ page }) => {
+  test('trainings tab keeps the URL filters, shows Completed / In progress and opens the drawer', async ({ page }) => {
     await gotoOrgTrainingPage(page);
     await expect(page.getByTestId('org-training-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    const trainingsRequest = page.waitForRequest((request) => {
+    const groupsRequest = page.waitForRequest((request) => {
       const url = new URL(request.url());
-      return url.pathname.endsWith(`/api/orgs/${MOCK_ACCOUNT_ID}/lens/training/trainings`);
+      return url.pathname.endsWith(`/api/orgs/${MOCK_ACCOUNT_ID}/lens/training/groups`) && url.searchParams.get('tab') === 'trainings';
     });
     await page.getByTestId('filter-pill-trainings').click();
-    await trainingsRequest;
+    await groupsRequest;
 
     await expect(page.getByTestId('org-training-panel-trainings')).toBeVisible();
-    await expect(page.getByTestId('org-trainings-data-table')).toBeVisible();
-    await expect(page.getByTestId('org-training-name-training-lfs258')).toHaveText('LFS258 — Kubernetes Fundamentals');
-    await expect(page.getByTestId('org-training-completed-training-lfs258')).toBeVisible();
-    await expect(page.getByTestId('org-training-in-progress-training-lfs258')).toBeVisible();
+    await expect(page.getByTestId('sort-completed')).toContainText('Completed');
+    await expect(page.getByTestId('org-training-group-name-LFS258 — Kubernetes Fundamentals')).toBeVisible();
 
-    await page.getByTestId('org-training-completed-training-lfs258').getByRole('button').click();
-    await expect(page.getByTestId('training-employees-drawer-title')).toBeVisible();
-    await expect(page.getByTestId('training-employee-trainee@example.org')).toBeVisible();
+    await page.getByTestId('org-training-group-completed-LFS258 — Kubernetes Fundamentals').getByRole('button').click();
+    await expect(page.getByTestId('org-training-group-employees-title')).toBeVisible();
+    await expect(page.getByTestId('org-training-group-employee-trainee@example.org')).toBeVisible();
   });
 
-  test('stat cards switch tabs', async ({ page }) => {
-    await gotoOrgTrainingPage(page);
-    await expect(page.getByTestId('org-training-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  test('group-by in the URL regroups the table', async ({ page }) => {
+    await seedSelectedOrgCookie(page);
+    await stubOrgTrainingRoutes(page);
+    const groupsRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/lens/training/groups') && url.searchParams.get('groupBy') === 'foundation';
+    });
+    await page.goto(`${ORG_TRAINING_URL}?groupBy=foundation&range=365d`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
 
-    await page.getByTestId('org-training-stat-employees-in-training').click();
-    await expect(page.getByTestId('org-training-panel-trainings')).toBeVisible();
-
-    await page.getByTestId('org-training-stat-certified-employees').click();
-    await expect(page.getByTestId('org-training-panel-certifications')).toBeVisible();
+    await groupsRequest;
+    await expect(page.getByTestId('sort-label')).toContainText('Foundation');
   });
 });

@@ -23,15 +23,19 @@ import { OrgOverviewInvolvementComponent } from './org-overview-involvement.comp
 const ACCOUNT_ID = 'acc-1';
 
 const TRAINING_STATS: OrgTrainingStats = {
+  range: 'all',
+  asOf: '2030-03-05T09:48:21.094Z',
   rosterMembers: 1250,
   rosterMembersAsOf: '2030-03-04T23:00:00.000Z',
   peopleWithTrainingActivity: 1830,
-  trainingActivityAsOf: '2030-03-05T09:48:21.094Z',
-  certifiedEmployees: 140,
-  certificationsEarned: 190,
-  employeesInTraining: 25,
-  trainingCoursesEnrolled: 31,
-  inProgressAsOf: '2030-03-05T10:15:00.000Z',
+  learnersOutsidePeopleList: 12,
+  coursesTaken: 400,
+  certifications: 190,
+  certifiedPeople: 140,
+  trainingsCompleted: 60,
+  completionRatePct: 63,
+  coursesInProgress: 150,
+  peopleInTraining: 25,
 };
 
 async function buildMetrics(
@@ -106,7 +110,7 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
   });
 
   // lfx-self-serve#4290: the tile shows the Training page's number for the same definition, not this year's enrollments.
-  it('headlines people with training activity, all time, with the as-of date, instead of the year-to-date enrollment total', async () => {
+  it('headlines people with training activity, all time, as the shared stat tile does, with the as-of date, instead of the year-to-date enrollment total', async () => {
     const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [{ date: '2030-03-04', count: 7, cumulativeCount: 7 }] });
     const card = trainingCard(metrics);
 
@@ -172,7 +176,7 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(getTrainingStats).toHaveBeenLastCalledWith('org-uid-2');
+    expect(getTrainingStats).toHaveBeenLastCalledWith('org-uid-2', { range: 'all', foundation: null, project: null, course: null, level: null, format: null });
     const card = trainingCard(fixture.componentInstance.primaryMetrics());
     expect(card.value).toBe('—');
     expect(card.subtitle).not.toContain('Mar 5, 2030');
