@@ -128,7 +128,7 @@ export const KEY_CONTACT_PRIMARY_CONTACT_TYPE: OrgMembershipKeyContactType = 're
 
 /** Spec 018 FR-032a: CSV header row, 9 columns, in this exact order. */
 export const MEMBERSHIP_AGREEMENT_CSV_HEADERS = [
-  'Organization',
+  'Company',
   'Foundation',
   'Agreement Name',
   'Signed Date',

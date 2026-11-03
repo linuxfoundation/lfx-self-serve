@@ -126,7 +126,7 @@ export const MEMBER_360_WINDOW_OPTIONS = [
 ] as const;
 export const MEMBER_360_RANKING_COLUMNS = [
   ['Rank', 'rank'],
-  ['Member Organization', 'member_organization'],
+  ['Member Company', 'member_organization'],
   ['Membership Tier', 'membership_tier'],
   ['Annual Value', 'annual_value'],
   ['Renewal Date', 'renewal_date'],

@@ -145,7 +145,7 @@ export class OrgLensProjectDetailController {
     const projectSlug = req.params['projectSlug'];
     const cardKey = req.params['cardKey'];
     const rawOrgName = typeof req.query['orgName'] === 'string' ? req.query['orgName'].trim() : '';
-    const orgName = rawOrgName || 'Your Organization';
+    const orgName = rawOrgName || 'Your Company';
     const rawRange = typeof req.query['range'] === 'string' ? req.query['range'] : '';
     const range: OrgLensLeaderboardTimeRange = PD_VALID_TIME_RANGES.has(rawRange) ? (rawRange as OrgLensLeaderboardTimeRange) : PD_DEFAULT_TIME_RANGE;
     const page = this.parseNonNegativeInt(req.query['page'], 0);

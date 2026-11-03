@@ -55,7 +55,7 @@ const parseInitiativesScope = (query: Request['query'], operation: string): Init
   }
   if (given(orgUid)) {
     if (typeof orgUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
-      throw ServiceValidationError.forField('orgUid', 'orgUid must be an organization account id', { operation });
+      throw ServiceValidationError.forField('orgUid', 'orgUid must be a company account id', { operation });
     }
     return { kind: 'organizations', uid: orgUid };
   }
@@ -81,7 +81,7 @@ const parseAttributionInput = (body: Record<string, unknown>, operation: string)
   }
   if (type === 'organization') {
     if (typeof entityUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(entityUid)) {
-      throw ServiceValidationError.forField('entityUid', 'entityUid must be an organization account id', { operation });
+      throw ServiceValidationError.forField('entityUid', 'entityUid must be a company account id', { operation });
     }
     return { type, entityUid };
   }

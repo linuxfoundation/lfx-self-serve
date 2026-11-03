@@ -848,7 +848,7 @@ export class CommitteeController {
         // is explicitly true; null/undefined (pre-v1.1 invites) defers to upstream.
         if (pendingInvite.organization_required === true && !hasOrg) {
           next(
-            ServiceValidationError.forField('organization.name', 'Organization is required for this group', {
+            ServiceValidationError.forField('organization.name', 'Company is required for this group', {
               operation: 'accept_committee_invite',
               service: 'committee_controller',
               path: req.path,

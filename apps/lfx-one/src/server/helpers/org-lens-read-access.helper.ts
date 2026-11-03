@@ -83,7 +83,7 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
 
 async function resolveOrgLensRead(req: Request, orgUid: string, operation: string): Promise<OrgLensReadQualification> {
   const forbidden = (): MicroserviceError =>
-    new MicroserviceError('You do not have access to Org Lens data for this organization.', 403, 'FORBIDDEN', {
+    new MicroserviceError('You do not have access to Company Lens data for this company.', 403, 'FORBIDDEN', {
       operation,
       service: 'LFX_V2_SERVICE',
     });

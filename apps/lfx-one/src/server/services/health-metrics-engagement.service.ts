@@ -494,7 +494,7 @@ export class HealthMetricsEngagementService {
       {
         view: ORG_PARTICIPATION_VIEW,
         operation: 'get_engagement_org_participation',
-        clientMessage: 'Organization participation is unavailable right now.',
+        clientMessage: 'Company participation is unavailable right now.',
       }
     );
 

@@ -80,7 +80,7 @@ export class OrganizationController {
 
     try {
       if (!name || typeof name !== 'string') {
-        const validationError = ServiceValidationError.forField('name', 'Organization name is required and must be a string', {
+        const validationError = ServiceValidationError.forField('name', 'Company name is required and must be a string', {
           operation: 'resolve_organization',
           service: 'organization_controller',
           path: req.path,
@@ -91,7 +91,7 @@ export class OrganizationController {
       }
 
       if (!domain || typeof domain !== 'string') {
-        const validationError = ServiceValidationError.forField('domain', 'Organization domain is required and must be a string', {
+        const validationError = ServiceValidationError.forField('domain', 'Company domain is required and must be a string', {
           operation: 'resolve_organization',
           service: 'organization_controller',
           path: req.path,
@@ -102,7 +102,7 @@ export class OrganizationController {
       }
 
       if (logo !== undefined && (typeof logo !== 'string' || !logo.startsWith('https://'))) {
-        const validationError = ServiceValidationError.forField('logo', 'Organization logo must be an https URL', {
+        const validationError = ServiceValidationError.forField('logo', 'Company logo must be an https URL', {
           operation: 'resolve_organization',
           service: 'organization_controller',
           path: req.path,

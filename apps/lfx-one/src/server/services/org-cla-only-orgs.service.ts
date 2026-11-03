@@ -147,7 +147,7 @@ export class OrgClaOnlyOrgsService {
       company = await gatewayFetch<EasyClaCompany>(req, `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(uid)}`, {
         operation: OPERATION,
         service: SERVICE,
-        errorMessage: 'Failed to resolve the organization in EasyCLA',
+        errorMessage: 'Failed to resolve the company in EasyCLA',
         errorCode: 'UPSTREAM_ERROR',
         redactResponseBody: true,
         bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
@@ -161,15 +161,10 @@ export class OrgClaOnlyOrgsService {
     }
 
     if (company && !company.companyExternalID?.trim()) {
-      throw new MicroserviceError(
-        'Failed to resolve the organization in EasyCLA: upstream company is missing its external id',
-        502,
-        'UPSTREAM_INVALID_RESPONSE',
-        {
-          operation: OPERATION,
-          service: SERVICE,
-        }
-      );
+      throw new MicroserviceError('Failed to resolve the company in EasyCLA: upstream company is missing its external id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: OPERATION,
+        service: SERVICE,
+      });
     }
     if (company?.companyExternalID?.trim() !== uid) {
       logger.warning(req, OPERATION, 'EasyCLA returned a different company; omitting it', { org_uid: uid, reason: 'company_mismatch' });
