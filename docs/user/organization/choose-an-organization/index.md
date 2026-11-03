@@ -17,7 +17,7 @@ The Organization lens always shows one organization at a time. The organization 
 You choose an organization from the organization switcher at the top of the sidebar, once you are in the Organization lens.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Organization** in the lens switcher. You land on the **Dashboard** of the selected organization. If your only role on that organization is CLA Manager, you land on its **EasyCLA** page instead, because that is the only page you can open for it. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+2. Select **Organization** in the lens switcher. On a larger screen, you land on the **Dashboard** of the selected organization. On a phone or small screen, selecting **Organization** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that organization is CLA Manager, you land on its **EasyCLA** page instead, because that is the only page you can open for it, and on a phone or small screen **EasyCLA** is the only page in its menu. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 3. Select the organization switcher at the top of the sidebar. It shows the organization's logo, its name, and your role on it.
 4. Select an organization from the list. A check mark marks the one you are viewing.
 
