@@ -154,7 +154,7 @@ export const ORG_CDP_TEAM_MEMBER_COLUMN = 'IS_CDP_TEAM_MEMBER';
  * events and training are not affected.
  */
 export const ORG_SCOPE_OPTIONS: readonly OrgScopeOption[] = [
-  { label: 'Insights profile', value: 'insights' },
+  { label: 'Insights company', value: 'insights' },
   { label: 'All related companies', value: 'all' },
 ] as const;
 
@@ -186,11 +186,11 @@ export const ORG_SCOPE_PROJECT_DETAIL_NOTE = "Applies to contributor, commit and
  * `HAS_INSIGHTS_ORG`), so only All related organizations is offered.
  */
 export const ORG_SCOPE_UNAVAILABLE_NOTE =
-  'This company has no LFX Insights profile with code activity in the past two years; counts include every related company.';
+  'This company has no LFX Insights page with code activity in the past two years; counts include every related company.';
 
 /** The sentence a count's caption or tooltip adds for the organization scope it counts (lfx-self-serve-ops#1219). */
 export const ORG_SCOPE_CAPTION_PHRASE: Readonly<Record<OrgScopeFilter, string>> = {
-  insights: "Only the company's LFX Insights profile, in repositories LFX Insights counts.",
+  insights: "Only the company's LFX Insights page, in repositories LFX Insights counts.",
   all: 'Every company related to this one, in every repository.',
 };
 

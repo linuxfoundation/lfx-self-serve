@@ -35,7 +35,7 @@ describe('describeContributionsCaption', () => {
 
   it('describes commits on any branch in LF projects', () => {
     expect(caption({})).toBe(
-      "Commits authored by contributors affiliated with Acme, on any branch (including pull-request commits not yet merged) in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Only the company's LFX Insights profile, in repositories LFX Insights counts. Bots excluded."
+      "Commits authored by contributors affiliated with Acme, on any branch (including pull-request commits not yet merged) in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Only the company's LFX Insights page, in repositories LFX Insights counts. Bots excluded."
     );
   });
 
@@ -45,7 +45,7 @@ describe('describeContributionsCaption', () => {
 
   it('describes only main branch commits in LF projects', () => {
     expect(caption({ commitScope: 'merged', projectScope: 'lf' })).toBe(
-      "Commits authored by contributors affiliated with Acme, only commits on the main branch in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Only the company's LFX Insights profile, in repositories LFX Insights counts. Bots excluded."
+      "Commits authored by contributors affiliated with Acme, only commits on the main branch in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Only the company's LFX Insights page, in repositories LFX Insights counts. Bots excluded."
     );
   });
 
@@ -59,7 +59,7 @@ describe('describeContributionsCaption', () => {
     ['non_lf', ' outside LF projects'],
   ] as const)('describes code contributions with projectScope=%s, ignoring the commit scope', (projectScope, phrase) => {
     expect(caption({ metric: 'code', projectScope, commitScope: 'merged' })).toBe(
-      `Code contributions (commits, pull requests, reviews and comments) by contributors affiliated with Acme${phrase}, from Oct 21, 2025 to Oct 21, 2026 (UTC). Only the company's LFX Insights profile, in repositories LFX Insights counts. Bots excluded.`
+      `Code contributions (commits, pull requests, reviews and comments) by contributors affiliated with Acme${phrase}, from Oct 21, 2025 to Oct 21, 2026 (UTC). Only the company's LFX Insights page, in repositories LFX Insights counts. Bots excluded.`
     );
   });
 
@@ -74,7 +74,7 @@ describe('describeContributorsTooltip', () => {
     expect(describeContributorsTooltip('lf', 'Acme', 'across all recorded history', 'all', 'insights')).toBe(
       'People with at least one code contribution (commit, pull request, review or comment) credited to Acme in LF projects, across all recorded history. ' +
         'Each contribution is credited to the employer the person had at the time, so people who have since left are included. ' +
-        "Only the company's LFX Insights profile, in repositories LFX Insights counts. Maintainers with code are counted here too. Bots excluded."
+        "Only the company's LFX Insights page, in repositories LFX Insights counts. Maintainers with code are counted here too. Bots excluded."
     );
   });
 

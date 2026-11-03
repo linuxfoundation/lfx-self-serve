@@ -276,7 +276,7 @@ describe('OrgContributionsComponent', () => {
 
     expect(fixture.componentInstance['filterForm'].controls.orgScope.value).toBe('insights');
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ orgScope: 'insights' }));
-    expect(fixture.componentInstance['windowCaption']()).toContain("Only the company's LFX Insights profile");
+    expect(fixture.componentInstance['windowCaption']()).toContain("Only the company's LFX Insights page");
   });
 
   it('reads ?orgScope=all from a shared link into the picker and the request', async () => {

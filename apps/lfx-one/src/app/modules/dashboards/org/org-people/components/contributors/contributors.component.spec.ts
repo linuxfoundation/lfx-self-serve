@@ -917,7 +917,7 @@ describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)
     expect(form().controls['orgScope'].value).toBe('insights');
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(el().querySelector('[data-test="org-people-contributors-org-scope-filter"] [aria-label="Company scope"]')?.textContent?.trim()).toBe(
-      'Insights profile'
+      'Insights company'
     );
     expect(router().url).toBe('/?tab=contributors');
     expect(clear()).toBeNull();
@@ -965,7 +965,7 @@ describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)
     const tooltip = (): string | undefined =>
       fixture.debugElement.query(By.css('[data-testid="org-people-contributors-stat-contributors-info"]')).injector.get(Tooltip).content as string | undefined;
 
-    expect(tooltip()).toContain("Only the company's LFX Insights profile");
+    expect(tooltip()).toContain("Only the company's LFX Insights page");
 
     form().controls['orgScope'].setValue('all');
     await settle();

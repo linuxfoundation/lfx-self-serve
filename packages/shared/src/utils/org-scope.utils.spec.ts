@@ -51,11 +51,11 @@ describe('servedOrgScopeForCaption', () => {
 
 describe('orgScopeOptions', () => {
   it('counts the related organizations on the All option', () => {
-    expect(orgScopeOptions({ relatedOrgCount: 4 }).map((option) => option.label)).toEqual(['Insights profile', 'All related companies (4)']);
+    expect(orgScopeOptions({ relatedOrgCount: 4 }).map((option) => option.label)).toEqual(['Insights company', 'All related companies (4)']);
   });
 
   it('keeps the plain labels while the count is unknown', () => {
-    expect(orgScopeOptions(null).map((option) => option.label)).toEqual(['Insights profile', 'All related companies']);
+    expect(orgScopeOptions(null).map((option) => option.label)).toEqual(['Insights company', 'All related companies']);
   });
 });
 

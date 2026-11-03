@@ -1599,7 +1599,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await mount('browser', '/?tab=employees');
 
       const labelled = el().querySelector('[data-test="org-people-all-employees-org-scope-filter"] [aria-label="Company scope"]');
-      expect(labelled?.textContent?.trim()).toBe('Insights profile');
+      expect(labelled?.textContent?.trim()).toBe('Insights company');
       expect(orgScopeControl().value).toBe('insights');
       expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
       expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');
