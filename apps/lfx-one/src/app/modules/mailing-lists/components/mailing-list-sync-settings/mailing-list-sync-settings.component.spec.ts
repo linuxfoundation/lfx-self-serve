@@ -132,13 +132,19 @@ describe('MailingListSyncSettingsComponent', () => {
     // baseList needs sync_mode already set so the attempted "off" click actually moves syncOn — with
     // no sync_mode set, the pre-click and post-revert states are both false and a broken revert
     // (e.g. reverting to the wrong value, or not reverting at all) couldn't fail this test.
+    // updateDeferred holds the PUT open on a Subject instead of resolving synchronously — a
+    // synchronous throwError (as plain updateResult: 'error' produces) completes save()'s
+    // catchError before onToggleChange() even returns, so the "immediately" assertion below would
+    // already be observing the post-revert state instead of the optimistic one.
     const syncedList = { ...baseList, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST };
-    await render(syncedList, { updateResult: 'error' });
+    await render(syncedList, { updateDeferred: true });
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     fixture.componentInstance['onToggleChange'](false);
     expect(fixture.componentInstance['syncOn']()).toBe(false);
 
+    const pendingUpdate = updateMailingList.mock.results[0].value as Subject<GroupsIOMailingList>;
+    pendingUpdate.error(new Error('upstream rejected'));
     await fixture.whenStable();
 
     // The persisted state is "on" — the revert should land back there, not stay stuck at the
