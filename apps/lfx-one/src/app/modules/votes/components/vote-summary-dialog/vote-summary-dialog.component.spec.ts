@@ -243,6 +243,54 @@ describe('VoteSummaryDialogComponent', () => {
     expect(close).toHaveBeenCalledWith(true);
   });
 
+  it.each(['sent', 'failed', 'uncertain'] as const)('counts every voter sharing an address in the %s result notice (#4830)', async (outcome) => {
+    const result: SendVoteSummaryResponse = {
+      recipient_count: outcome === 'sent' ? 2 : 1,
+      failed_count: outcome === 'failed' ? 1 : 0,
+      skipped_count: 1,
+      uncertain_count: outcome === 'uncertain' ? 1 : 0,
+      recipients: [
+        { ...AVERY, outcome: 'sent' },
+        { ...BLAKE, outcome },
+        { ...CASEY, outcome },
+        { ...DREW, outcome: 'skipped' },
+      ],
+    };
+    const { fixture } = await mount(
+      of({ ready: [AVERY, BLAKE, CASEY], missing_email: [DREW], unique_email_count: 2, shared_email_voter_count: 2 }),
+      of(result)
+    );
+    current = fixture;
+
+    await sendNow(fixture);
+
+    const detail = byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent!;
+    const group = byTestId(fixture, `vote-summary-dialog-group-${outcome}`)!;
+    expect(group.querySelectorAll('li')).toHaveLength(outcome === 'sent' ? 3 : 2);
+    expect(detail).toContain(outcome === 'sent' ? 'Sent to 3 voter(s)' : 'Sent to 1 voter(s)');
+    expect(detail).toContain('1 skipped (no email address)');
+    if (outcome === 'failed') expect(detail).toContain('2 failed');
+    if (outcome === 'uncertain') expect(detail).toContain('2 unconfirmed');
+    // Deriving display totals must not mutate the server's unique-address counters.
+    expect(result.recipient_count).toBe(outcome === 'sent' ? 2 : 1);
+    expect(result.failed_count).toBe(outcome === 'failed' ? 1 : 0);
+    expect(result.uncertain_count).toBe(outcome === 'uncertain' ? 1 : 0);
+  });
+
+  it('counts shared-address voters individually in the unconfirmed fallback notice (#4830)', async () => {
+    const { fixture } = await mount(
+      of({ ready: [AVERY, BLAKE, CASEY], missing_email: [DREW], unique_email_count: 2, shared_email_voter_count: 2 }),
+      throwError(() => new HttpErrorResponse({ status: 0 }))
+    );
+    current = fixture;
+
+    await sendNow(fixture);
+
+    expect(byTestId(fixture, 'vote-summary-dialog-group-uncertain')!.querySelectorAll('li')).toHaveLength(3);
+    expect(byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent).toContain('3 unconfirmed');
+    expect(byTestId(fixture, 'vote-summary-dialog-result-detail')!.textContent).toContain('1 skipped (no email address)');
+  });
+
   it('locks the host header and Escape only while sending', async () => {
     const pending = new Subject<SendVoteSummaryResponse>();
     const { fixture, component, config, close } = await mount(of(PREVIEW), pending);

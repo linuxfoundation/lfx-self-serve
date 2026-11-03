@@ -118,7 +118,16 @@ export class VoteSummaryDialogComponent {
   private initResultNotice(): Signal<VoteSummarySendNotice | null> {
     return computed(() => {
       const result = this.result();
-      return result ? buildVoteSummarySendNotice(result) : null;
+      if (!result) return null;
+
+      // API send counters count unique email addresses; the dialog describes each voter shown below.
+      return buildVoteSummarySendNotice({
+        ...result,
+        recipient_count: result.recipients.filter((recipient) => recipient.outcome === 'sent').length,
+        failed_count: result.recipients.filter((recipient) => recipient.outcome === 'failed').length,
+        skipped_count: result.recipients.filter((recipient) => recipient.outcome === 'skipped').length,
+        uncertain_count: result.recipients.filter((recipient) => recipient.outcome === 'uncertain').length,
+      });
     });
   }
 

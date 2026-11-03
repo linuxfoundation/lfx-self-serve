@@ -1057,10 +1057,10 @@ export function buildVoteAnswerSummary(questions: PollQuestion[], submission: Vo
 }
 
 /**
- * Builds the toast that reports the outcome of a vote summary send (#4689).
+ * Builds the summary outcome heading and detail, with legacy toast presentation hints (#4689, #4830).
  * @description Never presents an incomplete distribution as a clean success: an uncertain outcome warns that retrying may send
  * duplicates, nothing sent is reported as such, and a partial send names every known count.
- * @param result - The counts returned by POST /api/votes/:uid/summary
+ * @param result - Outcome counts in voters; the dialog derives these from per-voter results, not the API's unique-address counters.
  */
 export function buildVoteSummarySendNotice(result: SendVoteSummaryResponse): VoteSummarySendNotice {
   const { recipient_count: sent, failed_count: failed, skipped_count: skipped, uncertain_count: uncertain } = result;

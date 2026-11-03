@@ -779,13 +779,13 @@ export type VoteSummaryDialogPhase = 'review' | 'confirm' | 'sending' | 'results
 
 /** How the client reports the outcome of a vote summary send (#4689). */
 export interface VoteSummarySendNotice {
-  /** Toast severity */
+  /** Presentation severity; the persistent results dialog uses only the heading and detail */
   severity: 'success' | 'info' | 'warn';
-  /** Toast heading */
+  /** Results-summary heading */
   summary: string;
-  /** Toast body describing the known sent, skipped, failed and uncertain outcomes */
+  /** Results-summary detail describing the known sent, skipped, failed and uncertain voter outcomes */
   detail: string;
-  /** Toast lifetime in milliseconds; omitted to keep the default */
+  /** Legacy toast lifetime hint in milliseconds; ignored by the persistent results dialog */
   life?: number;
 }
 

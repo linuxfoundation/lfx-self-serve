@@ -99,7 +99,7 @@ export const VOTE_SUMMARY_NOT_ENDED = 'VOTE_SUMMARY_NOT_ENDED';
 /** The on-demand close summary (#3662) was confirmed not sent to any recipient: every attempt was rejected, none was uncertain. */
 export const VOTE_SUMMARY_SEND_FAILED = 'VOTE_SUMMARY_SEND_FAILED';
 
-/** Toast lifetime (ms) for a summary send outcome the user needs time to read (partial, unconfirmed, nothing sent). */
+/** Legacy toast lifetime hint (ms) returned by the notice helper; the persistent results dialog ignores it. */
 export const VOTE_SUMMARY_NOTICE_LIFE_MS = 8000;
 
 /** Pre-send checks failed before any summary email was attempted; nothing was sent and retrying cannot duplicate this attempt. */
