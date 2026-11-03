@@ -9643,7 +9643,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       });
 
       const writing = seq().onGenerateSurveySequence();
-      await Promise.resolve();
+      // The reminder's save is on the wire before the reset, or the reset would only stop the loop.
+      await vi.waitFor(() => expect(persistBrief).toHaveBeenCalledTimes(2));
       seq().onSurveyEmailCountChange(1);
       late.next({ enabled: true, briefId: 'old', approved: false, created: false, conflict: 'unowned-brief-exists' });
       late.complete();
