@@ -53,7 +53,7 @@ import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
+import { map, NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 
@@ -14251,6 +14251,25 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
 
     expect(tab()['googleAudienceSegmentsEnabled']()).toBe(enabled);
+  });
+
+  /** #4983 ("ss-3"): where "create another campaign" is offered travels the same path. */
+  it('hands the create-another platforms to the Implementation tab', async () => {
+    const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+    listBriefCampaigns.mockReturnValue(capability(false).pipe(map((result) => ({ ...result, multiCampaignPlatforms: ['google-ads'] }))));
+
+    page().onProceedToImplementation(withGoogle);
+    await settle();
+    expect(tab()['multiCampaignPlatforms']()).toEqual(['google-ads']);
+  });
+
+  it('hands no create-another platforms when the BFF sends none', async () => {
+    const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+    listBriefCampaigns.mockReturnValue(capability(false));
+
+    page().onProceedToImplementation(withGoogle);
+    await settle();
+    expect(tab()['multiCampaignPlatforms']()).toEqual([]);
   });
 
   /** The geo-search capability travels the same path: the real page reads it and binds it to the tab. */

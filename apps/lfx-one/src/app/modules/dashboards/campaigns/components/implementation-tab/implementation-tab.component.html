@@ -4157,6 +4157,52 @@
         </div>
       }
 
+      <!--
+        Create another campaign (#4983, "ss-3"). Shown when a selected platform already has a campaign
+        for this event and this deployment can add a deliberate second one there. The new campaign is
+        labelled by funnel stage (required) and tactic, and Create Campaign then opens a confirmation
+        that lists what exists; only confirming sends it.
+      -->
+      @if (createAnotherPlatforms().length > 0) {
+        <div class="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4" data-testid="implementation-create-another">
+          <h3 class="text-sm font-semibold text-blue-900">Create another campaign</h3>
+          <p class="text-xs text-blue-900">
+            This event already has a campaign on the selected platform. Creating again adds a separate, separately budgeted campaign, labelled by funnel stage
+            so its numbers stay apart from the first.
+          </p>
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label for="implementation-another-stage" class="text-xs font-medium text-gray-700">Funnel stage (required)</label>
+              <lfx-select
+                [form]="anotherForm"
+                control="stage"
+                [options]="funnelStageOptions"
+                optionValue="id"
+                inputId="implementation-another-stage"
+                placeholder="Choose a stage"
+                size="small"
+                data-testid="implementation-another-stage" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="implementation-another-tactic" class="text-xs font-medium text-gray-700">Tactic (optional)</label>
+              <lfx-select
+                [form]="anotherForm"
+                control="tactic"
+                [options]="tacticOptions"
+                optionValue="id"
+                inputId="implementation-another-tactic"
+                placeholder="No tactic"
+                [showClear]="true"
+                size="small"
+                data-testid="implementation-another-tactic" />
+            </div>
+          </div>
+          @if (createAnotherBlock(); as block) {
+            <p class="text-xs text-amber-800" data-testid="implementation-create-another-block">{{ block }}</p>
+          }
+        </div>
+      }
+
       <!-- Submit -->
       <div class="flex items-center gap-3">
         <lfx-button
@@ -4382,7 +4428,11 @@
                   <span class="sr-only">
                     @switch (outcome) {
                       @case ('created') {
-                        created
+                        @if (pr.reused) {
+                          existing campaign returned, nothing new created
+                        } @else {
+                          created
+                        }
                       }
                       @case ('orphaned') {
                         created upstream but not recorded — needs reconciliation
@@ -4400,6 +4450,17 @@
                   <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
                 }
               </div>
+              <!-- campaign-service handed back an existing campaign instead of creating one (#4983):
+                   a retry, or a "create another" that a double click, reload or second tab had already sent. -->
+              @if (pr.reused) {
+                <p class="mt-1 text-xs font-medium text-gray-700" data-testid="implementation-platform-result-reused">
+                  @if (pr.funnelStage) {
+                    Existing {{ funnelStageShortLabels[pr.funnelStage] }} campaign returned; nothing new was created.
+                  } @else {
+                    Existing campaign returned; nothing new was created.
+                  }
+                </p>
+              }
               @if (outcome === 'nothing-created') {
                 <p class="mt-1 text-xs font-medium text-gray-700" data-testid="implementation-platform-result-nothing-created">
                   Nothing was created on the platform.
