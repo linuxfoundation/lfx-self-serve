@@ -44,10 +44,10 @@ export function claOnlyEntryApplies(isStaff: boolean, grantedOrgCount: number, r
 
 /**
  * Lists and resolves CLA-only organizations. Which companies qualify comes from
- * `OrgClaManagerScopesService` — the caller's own `cla-manager` scopes — and the identity shown for
- * each comes from EasyCLA `GET /v4/company/external/{sfid}` with the caller's token (the target's
- * while impersonating). Query-service is not asked: its per-row read filter is the Org Lens grant
- * these callers do not hold.
+ * `OrgClaManagerScopesService` — the caller's own `cla-manager` or `cla-manager-designee` scopes —
+ * and the identity shown for each comes from EasyCLA `GET /v4/company/external/{sfid}` with the
+ * caller's token (the target's while impersonating). Query-service is not asked: its per-row read
+ * filter is the Org Lens grant these callers do not hold.
  */
 export class OrgClaOnlyOrgsService {
   private readonly scopes: OrgClaManagerScopesService;
@@ -121,9 +121,9 @@ export class OrgClaOnlyOrgsService {
 
   /**
    * One CLA-only organization for an address, or null. Null when the caller holds no `cla-manager`
-   * scope on it, when EasyCLA does not know it, and when either upstream cannot answer: an
-   * unverifiable address reads as not found, with the outage logged, rather than opening a page
-   * whose every call would then fail.
+   * or `cla-manager-designee` scope on it, when EasyCLA does not know it, and when either upstream
+   * cannot answer: an unverifiable address reads as not found, with the outage logged, rather than
+   * opening a page whose every call would then fail.
    */
   public async resolveOrg(req: Request, uid: string): Promise<OrgResolveResponse | null> {
     try {

@@ -21,7 +21,10 @@ import { buildUserCacheKey, valkeyService } from './valkey.service';
 const SERVICE = 'org_cla_manager_scopes';
 const OPERATION = 'get_cla_manager_scopes';
 
-/** Why a `cla-manager` scope named a company the lens cannot open. Logged as counts, never as values. */
+/**
+ * Why a `cla-manager` or `cla-manager-designee` scope named a company the lens cannot open. Logged
+ * as counts, never as values.
+ */
 export type ClaManagerScopeRejection = 'malformed_scope' | 'not_account_id';
 
 export interface ClaManagerCompanies {
@@ -30,10 +33,11 @@ export interface ClaManagerCompanies {
 }
 
 /**
- * Whether a company id from a `cla-manager` scope can address the lens. The lens routes key on the
- * 18-character `001…` account id (`assertOrgUid`), so anything else — a 15-character form, or an
- * Org Service `lf…` id from before the M3 import — cannot be opened and is dropped here rather than
- * listed as an entry that then fails. The one place to change if those companies get an entry.
+ * Whether a company id from a `cla-manager` or `cla-manager-designee` scope can address the lens.
+ * The lens routes key on the 18-character `001…` account id (`assertOrgUid`), so anything else — a
+ * 15-character form, or an Org Service `lf…` id from before the M3 import — cannot be opened and is
+ * dropped here rather than listed as an entry that then fails. The one place to change if those
+ * companies get an entry.
  */
 export function isLensAddressableCompanyId(companyId: string): boolean {
   return ORG_ACCOUNT_ID_PATTERN.test(companyId);
