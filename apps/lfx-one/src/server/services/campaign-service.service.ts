@@ -4,8 +4,10 @@
 import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
+  CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
@@ -2024,6 +2026,18 @@ export class CampaignServiceClient {
       }
       const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
       if (definitelyRejected) {
+        // The brief moved since this page read it (#4983): edited and saved in another tab, which
+        // resets it to `draft` and bumps its version. "Please try again" would be wrong here, because
+        // a retry from this tab is refused identically; only a refresh brings back the stored brief.
+        // Matched on the service's own wording and on the two statuses it uses for it, so nothing
+        // else upstream sends is relabelled — see `CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN`.
+        if (
+          error instanceof MicroserviceError &&
+          (error.statusCode === 409 || error.statusCode === 400) &&
+          CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN.test(error.message)
+        ) {
+          return { enabled: true, jobId: null, error: CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE };
+        }
         // The one refusal worth naming: an invalid bid (#3299). Matched on the service's own wording,
         // so nothing else upstream sends is rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN`.
         const biddingRefusal =

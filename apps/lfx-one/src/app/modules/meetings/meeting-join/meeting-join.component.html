@@ -428,7 +428,7 @@
               <!-- Right Column: Join Button (immediate meetings) or RSVP (future meetings) -->
               @if (canJoinMeeting() && authenticated()) {
                 @if (fetchedJoinUrl() && !showGuestForm()) {
-                  <div class="w-full md:w-[296px]">
+                  <div class="w-full md:w-[296px]" [ngClass]="{ 'max-sm:hidden': showStickyBar() }">
                     <lfx-button
                       styleClass="w-full h-[40px]"
                       label="Join Meeting"
@@ -466,7 +466,7 @@
                   <!-- Disabled+loading is the default while the join URL is resolving.
                      Placed last so it renders at SSR first paint (no join URL or error yet)
                      rather than depending on the client-only isLoadingJoinUrl signal. -->
-                  <div class="w-full md:w-[296px]">
+                  <div class="w-full md:w-[296px]" [ngClass]="{ 'max-sm:hidden': showStickyBar() }">
                     <lfx-button
                       styleClass="w-full h-[40px]"
                       label="Join Meeting"
@@ -504,6 +504,7 @@
                   @if (canResendInvite()) {
                     <lfx-button
                       class="w-full"
+                      [ngClass]="{ 'max-sm:hidden': stickyBarOffersResend() }"
                       styleClass="w-full"
                       icon="fa-light fa-paper-plane"
                       label="Resend Invite"
@@ -541,6 +542,7 @@
                       @if (canResendInvite()) {
                         <lfx-button
                           class="w-full"
+                          [ngClass]="{ 'max-sm:hidden': stickyBarOffersResend() }"
                           styleClass="w-full"
                           icon="fa-light fa-paper-plane"
                           label="Resend Invite"
@@ -992,6 +994,21 @@
           [canScopeToOccurrence]="canScopeToOccurrence()"
           (materialsChanged)="onMaterialsChanged($event)">
         </lfx-meeting-materials-drawer>
+      }
+
+      @if (showStickyBar()) {
+        <!-- Clears the fixed bar (two rows + safe area) so the last content is never covered on phones. -->
+        <div class="h-36 sm:hidden" aria-hidden="true"></div>
+        <lfx-meeting-join-sticky-bar
+          [canJoin]="canJoinMeeting()"
+          [joinHref]="fetchedJoinUrl()"
+          [joinUnavailable]="joinUrlError() !== null || showGuestForm()"
+          [unlockLabel]="joinUnlockLabel()"
+          [primaryAction]="stickyBarAction()"
+          [resending]="resendingInvite()"
+          [suppressed]="stickyBarSuppressed()"
+          (resendInvite)="resendInvite()"
+          (subscribeCalendar)="onSubscribeCalendar()" />
       }
     </div>
   } @else {

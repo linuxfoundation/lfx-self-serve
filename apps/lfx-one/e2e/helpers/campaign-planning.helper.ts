@@ -11,7 +11,14 @@
  */
 
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { CampaignBriefLoadResult, CampaignListResult, HubSpotUtmLookupResult, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignBriefLoadResult,
+  CampaignBriefOutput,
+  CampaignListResult,
+  HubSpotUtmLookupResult,
+  PersistedPersonaState,
+  PersonaType,
+} from '@lfx-one/shared/interfaces';
 import { expect, Frame, Locator, Page, test } from '@playwright/test';
 
 export const DATA_LOAD_TIMEOUT = 30_000;
@@ -98,6 +105,11 @@ export interface PlanningMockOptions {
   counts?: { lookups: number; creates: number };
   /** The saved-brief read-back answer (#4983). Omit for "no saved brief". */
   savedBrief?: CampaignBriefLoadResult;
+  /**
+   * Answer brief saves and record each one (#4983): the query (`brief_id`, `etag`) and the brief
+   * sent. Omit to leave the save route unmocked.
+   */
+  persisted?: { query: Record<string, string>; brief: CampaignBriefOutput }[];
   /** The brief's campaign list (`/api/campaigns/list`), for the Implement tab (#4983). Omit to leave it unmocked. */
   briefCampaigns?: CampaignListResult;
 }
@@ -120,6 +132,21 @@ export async function mockPlanningApis(page: Page, opts: PlanningMockOptions = {
     await page.route('**/api/campaigns/list?**', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(briefCampaigns) })
     );
+  }
+
+  const persisted = opts.persisted;
+  if (persisted) {
+    await page.route('**/api/campaigns/brief/persist**', (route) => {
+      const url = new URL(route.request().url());
+      const brief = route.request().postDataJSON() as CampaignBriefOutput;
+      persisted.push({ query: Object.fromEntries(url.searchParams.entries()), brief });
+      const briefId = url.searchParams.get('brief_id') ?? 'brief-e2e-new';
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ enabled: true, briefId, etag: 'W/"e2e-next"', created: !url.searchParams.has('brief_id'), approved: true }),
+      });
+    });
   }
 
   await page.route('**/api/campaigns/hubspot/utm/create**', (route) => {
