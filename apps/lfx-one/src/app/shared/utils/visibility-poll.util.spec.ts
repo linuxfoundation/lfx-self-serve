@@ -143,7 +143,7 @@ describe('createVisibilityPoll', () => {
     sub.unsubscribe();
   });
 
-  it('spreads retries with jitter so many tabs do not hit a recovering server together, never faster than the healthy interval, and never stops', () => {
+  it('spreads retries with jitter so many tabs do not hit a recovering server together, never below the base, and never stops', () => {
     const fetch = vi.fn(() => throwError(() => new Error('down')));
     const random = vi.fn(() => 0.5);
     const sub = createVisibilityPoll(doc, fetch, { ...options, random }).subscribe((e) => events.push(e));

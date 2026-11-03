@@ -94,6 +94,8 @@ export class MktgDocumentsComponent {
   // project has stored, so neither the empty states nor the nav badges may
   // assert an absence while this is set.
   protected readonly listFailed = signal(false);
+  /** The selected document's detail failed for good (404, 400 …); the next good detail read clears it and its line. */
+  protected readonly detailFailed = signal(false);
   protected readonly documents = signal<MktgDocumentsResponse | null>(null);
   protected readonly detail = signal<MktgDocumentDetailResponse | null>(null);
   protected readonly detailLoading = signal(false);
@@ -235,6 +237,7 @@ export class MktgDocumentsComponent {
             if (scope !== this.detailedScope) {
               this.detailedScope = scope;
               this.detail.set(this.detailCache.get(scope) ?? null);
+              this.detailFailed.set(false);
               if (!this.listFailed()) this.errorText.set('');
             }
           }),
@@ -251,8 +254,12 @@ export class MktgDocumentsComponent {
               // A refused read is latched for this document (RFC 9110 §15.5.4): no wake sends the same credentials again.
               if (denied) return EMPTY;
               return this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(
-                // Clears only this reader's flag; the list's own line is the list's.
-                tap(() => this.detailFailing.set(false)),
+                // Clears only this reader's flags; the list's own line is the list's.
+                tap(() => {
+                  this.detailFailing.set(false);
+                  if (this.detailFailed()) this.errorText.set('');
+                  this.detailFailed.set(false);
+                }),
                 catchError((error: HttpErrorResponse) => {
                   // Status only: no upstream payload enters diagnostics.
                   console.error('Marketing OS document detail read failed', { status: error.status });
@@ -263,6 +270,7 @@ export class MktgDocumentsComponent {
                     return throwError(() => error);
                   }
                   this.detailFailing.set(false);
+                  this.detailFailed.set(true);
                   denied = error.status === 401 || error.status === 403;
                   this.errorText.set(this.actionErrorText(error));
                   return of(null);
@@ -374,6 +382,8 @@ export class MktgDocumentsComponent {
             catchError((error: unknown) => {
               if (scope !== currentScope()) return EMPTY;
               if (!known || !isTransientHttpError(error)) return throwError(() => error);
+              // Swallowed here (the loaded list stays): status only, so the failure still reaches diagnostics.
+              console.error('Marketing OS documents list re-read failed', { status: error instanceof HttpErrorResponse ? error.status : 0 });
               unavailable();
               return of(known);
             })

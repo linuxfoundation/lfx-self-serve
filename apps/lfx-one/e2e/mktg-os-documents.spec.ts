@@ -136,8 +136,9 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-loading')).toBeVisible();
     await expect(page.getByTestId('mktg-documents-refresh-progress')).toHaveCount(0);
     await expect(page.getByTestId('mktg-documents-error')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-documents-revisions')).toBeVisible();
+    // The first retry waits a jittered [5, 10] s (pollBackoffDelayMs(1, 5 s, 30 s)): size the wait above that window.
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0, { timeout: progressReadTimeout });
+    await expect(page.getByTestId('mktg-documents-revisions')).toBeVisible({ timeout: progressReadTimeout });
     expect(reads).toBeGreaterThanOrEqual(2);
   });
 

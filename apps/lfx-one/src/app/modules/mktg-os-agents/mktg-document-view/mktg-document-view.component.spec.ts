@@ -1413,6 +1413,29 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-retry')).toBeNull();
       expect(pending.waitForStorage).not.toHaveBeenCalled();
     });
+
+    it('shows the one quiet line through a transiently failed first read of a living document, then the document, with no Retry button', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      // Jitter pinned at the floor: the retry waits exactly the healthy interval.
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      await render('/documents/brand-kit/living');
+      // The progress reader is headless while this view loads: it reports its retrying state and the view shows the line itself.
+      const line = query('mktg-document-view-refresh-warning');
+      expect(line?.getAttribute('role')).toBe('status');
+      expect(line?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(2);
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(query('mktg-document-view-loading')).toBeNull();
+      expect(query('mktg-document-view-document')).not.toBeNull();
+      vi.useRealTimers();
+    });
   });
 
   it('keeps loading while project context is unresolved', async () => {

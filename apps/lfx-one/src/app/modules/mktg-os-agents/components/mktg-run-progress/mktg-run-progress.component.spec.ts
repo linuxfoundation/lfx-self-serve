@@ -846,6 +846,38 @@ describe('MktgRunProgressComponent', () => {
     expect(text()).toContain('Writing…');
   });
 
+  it('reports its retrying state to the host on transitions only: on through failed and partial reads, off on a good or a final one', async () => {
+    await setup('browser', 1);
+    read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const retrying = vi.fn();
+    fixture.componentInstance.retrying.subscribe(retrying);
+    await fixture.whenStable();
+    // A transient first read, with nothing known yet: the host rendering this reader headless shows the one line from this.
+    expect(retrying.mock.calls).toEqual([[true]]);
+    // Jitter pinned at the ceiling: the first retry waits twice the interval; a second failure emits nothing new.
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(retrying.mock.calls).toEqual([[true]]);
+    // A partial read keeps it on; a good read turns it off.
+    read.mockReturnValue(of({ ...detail(), progressUnavailable: true }));
+    await vi.advanceTimersByTimeAsync(4 * MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(retrying.mock.calls).toEqual([[true]]);
+    read.mockReturnValue(of(detail()));
+    await vi.advanceTimersByTimeAsync(8 * MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(retrying.mock.calls).toEqual([[true], [false]]);
+    // A refused re-read is final: off, once, and the line is the plain denied copy.
+    read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(retrying.mock.calls).toEqual([[true], [false], [true]]);
+    read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(retrying.mock.calls).toEqual([[true], [false], [true], [false]]);
+    expect(fixture.componentInstance['readFailure']()).toContain('write access');
+  });
+
   it.each([401, 403])(
     'keeps a denied read (%s) terminal and latched: a plain line, no retry, no button, and no wake re-sends the same credentials',
     async (status) => {

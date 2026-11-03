@@ -731,6 +731,23 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-refresh-progress')).toBeNull();
   });
 
+  it('clears a terminal detail error on the next good detail read, and leaves a list error alone', async () => {
+    store.getDocument
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MKTG_DOCUMENT_NOT_FOUND' } })))
+      .mockReturnValue(of(detail));
+    await render();
+    expect(query('mktg-documents-error')?.textContent).toContain('This document could not be found.');
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
+    expect(query('mktg-documents-revisions')).toBeNull();
+    // A focus wake re-reads the selected document; the good read clears the detail's own error (law 5: the next state replaces it).
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.getDocument).toHaveBeenCalledTimes(2);
+    expect(query('mktg-documents-error')).toBeNull();
+    expect(query('mktg-documents-revisions')).not.toBeNull();
+  });
+
   it('keeps the one line while the list is still failing, even after a good detail read, and clears it on the next good list read', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const updated = documentsResponse();

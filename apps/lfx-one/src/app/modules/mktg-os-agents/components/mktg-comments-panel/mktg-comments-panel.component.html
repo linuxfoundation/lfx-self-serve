@@ -9,9 +9,9 @@
   @if (comments.loading() && !comments.loaded()) {
     <p role="status" class="sr-only">Loading comments…</p>
   }
-  @if (comments.loadError() === retryingText) {
+  @if (comments.retrying()) {
     <!-- A check that keeps going is one quiet status line (polite), never an alert. -->
-    <p role="status" class="text-xs text-gray-500" data-testid="mktg-comments-retrying">{{ comments.loadError() }}</p>
+    <p role="status" class="text-xs text-gray-500" data-testid="mktg-comments-retrying">{{ retryingText }}</p>
   } @else if (comments.loadError()) {
     <p role="alert" class="text-sm text-red-700" data-testid="mktg-comments-load-error">{{ comments.loadError() }}</p>
   }

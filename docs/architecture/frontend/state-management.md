@@ -452,8 +452,9 @@ resending. Identifier-like names are not echoed. A genuinely new server question
 block remains answerable; other 409/412 responses refresh the current row. The waiting state
 checks on its own (`MKTG_RUN_POLL.questionsIntervalMs`), on the run page and on the document card
 alike, and keeps a held block through polls that omit it. The run page, the document card and view, the Documents
-list and the comments panel offer no Refresh or Retry button (the re-read buttons still on the slides and family
-exports, LinkedIn, AEO/GEO, Member 360, Kit, family, downstream and dependency surfaces are the next item): a failed
+list and the comments panel offer no Refresh or Retry button; the re-read buttons that remain on other Marketing OS
+surfaces (the run page's dependency "Try again", the Kit, family, downstream and family-details pages, the LinkedIn
+load retry, and the slides, family-export, AEO/GEO and Member 360 lookups) are tracked follow-up work: a failed
 or partial read shows one plain line (`MKTG_POLL_RETRYING_TEXT`) while the shared visibility poller
 (`createVisibilityPoll`) retries with uniform jitter in [base, min(cap, base·2^n)] (cap `MKTG_POLL_MAX_BACKOFF_MS`),
 pausing while the tab is hidden and reading at once on tab return, window focus or reconnect; a 401/403 is a plain

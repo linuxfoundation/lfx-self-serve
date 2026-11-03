@@ -70,6 +70,7 @@ export function provideMktgCommentsStub(overrides: Partial<MktgDocumentCommentsS
         setLabelContent: () => undefined,
         loaded: signal(false),
         loading: signal(false),
+        retrying: signal(false),
         saving: signal(false),
         loadError: signal(''),
         saveError: signal(''),

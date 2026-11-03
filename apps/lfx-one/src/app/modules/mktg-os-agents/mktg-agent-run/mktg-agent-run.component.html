@@ -22,6 +22,10 @@
         <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-public-identity-loading" />
       } @else if (checkingRun()) {
         <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-progress-loading" />
+        @if (publicRetrying()) {
+          <!-- The reader is headless while the run is checked: its one quiet connection-state line is shown here. -->
+          <p role="status" class="text-xs text-gray-500" data-testid="mktg-run-public-retrying">{{ retryingText }}</p>
+        }
       } @else {
         <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
         <h1 class="mb-4 text-base font-semibold text-gray-900">{{ assetName }}</h1>
@@ -35,6 +39,7 @@
         [runId]="publicRunId()"
         [refreshKey]="publicRefreshKey()"
         [runPage]="true"
+        [continuous]="!!publicWaitingText()"
         [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || !!publicWaitingText() || (!!errorText() && !navigation())"
         [watchQuestions]="phase() === 'questions'"
         [errorText]="errorText()"
@@ -42,6 +47,7 @@
         (alreadyAnswered)="onAlreadyAnswered($event)"
         (observed)="onPublicObserved($event)"
         (readError)="onPublicReadError($event)"
+        (retrying)="publicRetrying.set($event)"
         (landed)="onPublicLanding()"
         (failed)="onPublicLanding(true)" />
       @if (!publicIdentityPending() && publicWaitingText()) {

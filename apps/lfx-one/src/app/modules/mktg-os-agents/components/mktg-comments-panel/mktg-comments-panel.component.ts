@@ -24,7 +24,6 @@ import { MktgCommentThreadComponent } from '../mktg-comment-thread/mktg-comment-
 export class MktgCommentsPanelComponent {
   private readonly destroyRef = inject(DestroyRef);
   protected readonly comments = inject(MktgDocumentCommentsService);
-  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   private readonly redrafts = inject(MktgDocumentRedraftClientService);
   private readonly ids = inject(_IdGenerator);
 
@@ -38,6 +37,7 @@ export class MktgCommentsPanelComponent {
   public readonly priorVersion = input<number | null>(null);
   public readonly ready = output<MktgRedraftLanding>();
   protected readonly reasonId = this.ids.getId('mktg-comments-reason-');
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
 
   protected readonly expandedThreads = signal(new Set<string>());
   protected readonly accepted = signal(false);

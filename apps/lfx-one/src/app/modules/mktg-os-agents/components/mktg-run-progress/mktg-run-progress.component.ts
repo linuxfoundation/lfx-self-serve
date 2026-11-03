@@ -96,6 +96,8 @@ export class MktgRunProgressComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
   private readonly router = inject(Router);
+  /** Last `retrying` value emitted; the output fires on transitions only. */
+  private retryingOn = false;
 
   public readonly project = input.required<string>();
   public readonly projectName = input('your project');
@@ -140,6 +142,12 @@ export class MktgRunProgressComponent {
   public readonly retry = output<void>();
   public readonly openIntake = output<void>();
   public readonly refresh = output<void>();
+  /**
+   * `true` while a read of the current request is failing on a transient error and the poller keeps retrying it, `false`
+   * once a read lands or fails for good. Emitted on transitions only, so a host that renders this reader headless (the
+   * living document view, the run page while it checks the run) can show the one quiet connection-state line itself.
+   */
+  public readonly retrying = output<boolean>();
 
   private readonly loaded = signal<MktgDocumentDetailResponse | null>(null);
   private readonly loadedSubject = signal('');
@@ -342,6 +350,7 @@ export class MktgRunProgressComponent {
           readerScope = key;
           this.warning.set('');
           this.readFailure.set('');
+          this.setRetrying(false);
           if (!isPlatformBrowser(this.platformId) || !request.polling || !request.project || !request.agentKey || !request.documentId) return EMPTY;
           if (request.runId && !MKTG_STARTED_RUN_ID_REGEX.test(request.runId)) {
             this.readFailure.set('This run could not be found. Open Documents to choose a started run.');
@@ -367,6 +376,7 @@ export class MktgRunProgressComponent {
           const unavailable = () => {
             unavailableCount++;
             this.warning.set(MKTG_POLL_RETRYING_TEXT);
+            this.setRetrying(true);
           };
           const read = (poll: boolean) => {
             // Stamp each actual read before exposing creator-only activity, not the long-lived scope.
@@ -438,6 +448,7 @@ export class MktgRunProgressComponent {
                   unavailableCount = 0;
                   this.warning.set('');
                   this.readFailure.set('');
+                  this.setRetrying(false);
                 }
               }),
               catchError((error: unknown) => {
@@ -515,6 +526,7 @@ export class MktgRunProgressComponent {
                   return throwError(() => error);
                 }
                 denied = error.status === 401 || error.status === 403;
+                this.setRetrying(false);
                 this.loaded.set(null);
                 this.readError.emit(error);
                 this.readFailure.set(denied ? 'You need write access to this project to see its Marketing OS documents.' : 'This run could not be loaded.');
@@ -566,6 +578,13 @@ export class MktgRunProgressComponent {
   public clear(): void {
     this.loaded.set(null);
     this.loadedSubject.set('');
+  }
+
+  /** Emits `retrying` on transitions only. */
+  private setRetrying(on: boolean): void {
+    if (this.retryingOn === on) return;
+    this.retryingOn = on;
+    this.retrying.emit(on);
   }
 
   protected onPublicAnswers(answers: MktgRunAnswer[]): void {

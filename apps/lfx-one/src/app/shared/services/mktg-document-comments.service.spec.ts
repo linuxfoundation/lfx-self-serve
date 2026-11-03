@@ -267,7 +267,8 @@ describe('MktgDocumentCommentsService', () => {
     http.expectOne((request) => request.method === 'GET').flush({ error: 'private reply' }, { status: 503, statusText: 'Unavailable' });
     expect(service.loaded()).toBe(false);
     expect(service.loading()).toBe(false);
-    expect(service.loadError()).toBe(MKTG_POLL_RETRYING_TEXT);
+    expect(service.retrying()).toBe(true);
+    expect(service.loadError()).toBe('');
     expect(consoleError).toHaveBeenCalledWith('Asset comments read failed', { status: 503 });
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain('private reply');
   });
@@ -284,10 +285,11 @@ describe('MktgDocumentCommentsService', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     service.select(SCOPE);
     http.expectOne((request) => request.method === 'GET').flush('', { status: 503, statusText: 'Unavailable' });
-    expect(service.loadError()).toBe(MKTG_POLL_RETRYING_TEXT);
+    expect(service.retrying()).toBe(true);
     http.expectNone((request) => request.method === 'GET');
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     finishRead([thread()]);
+    expect(service.retrying()).toBe(false);
     expect(service.loadError()).toBe('');
     expect(service.threads()).toHaveLength(1);
     vi.useRealTimers();
@@ -300,10 +302,26 @@ describe('MktgDocumentCommentsService', () => {
     http.expectOne((request) => request.method === 'GET').flush('', { status: 500, statusText: 'Error' });
     expect(service.threads()).toEqual([thread()]);
     expect(service.loaded()).toBe(true);
-    expect(service.loadError()).not.toBe('');
+    expect(service.retrying()).toBe(true);
+    expect(service.loadError()).toBe('');
     service.refresh();
     finishRead([thread(), thread('second')]);
-    expect(service.loadError()).toBe('');
+    expect(service.retrying()).toBe(false);
+    expect(service.threads()).toHaveLength(2);
+  });
+
+  it('keeps a loaded list steady through a wake re-read: loading stays false until the read lands (law 5)', () => {
+    service.select(SCOPE);
+    expect(service.loading()).toBe(true);
+    finishRead([thread()]);
+    expect(service.loading()).toBe(false);
+    window.dispatchEvent(new Event('focus'));
+    const wake = http.expectOne((request) => request.method === 'GET');
+    expect(service.loading()).toBe(false);
+    expect(service.loaded()).toBe(true);
+    expect(service.threads()).toEqual([thread()]);
+    wake.flush({ revisionId: SCOPE.revisionId, threads: [thread(), thread('second')] });
+    expect(service.loading()).toBe(false);
     expect(service.threads()).toHaveLength(2);
   });
 

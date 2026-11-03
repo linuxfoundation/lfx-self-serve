@@ -5,13 +5,7 @@ import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import {
-  MKTG_DOCUMENTS_API_PATH,
-  MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES,
-  MKTG_POLL_MAX_BACKOFF_MS,
-  MKTG_POLL_RETRYING_TEXT,
-  MKTG_RUN_POLL,
-} from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENTS_API_PATH, MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES, MKTG_POLL_MAX_BACKOFF_MS, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import type {
   MktgAddDocumentCommentRequest,
   MktgDocumentComment,
@@ -42,6 +36,7 @@ export class MktgDocumentCommentsService {
   private readonly reading = signal(false);
   private readonly writing = signal(false);
   private readonly measured = signal(false);
+  private readonly retryingRead = signal(false);
   private readonly readError = signal('');
   private readonly writeError = signal('');
   private readonly labelData = signal<unknown>(null);
@@ -72,6 +67,8 @@ export class MktgDocumentCommentsService {
   public readonly saving = computed(() => this.current() && this.writing());
   public readonly loaded = computed(() => this.current() && this.measured());
   public readonly loadError = computed(() => (this.current() ? this.readError() : ''));
+  /** A read of the current scope is failing on a transient error and the poller keeps retrying it (one quiet line, no alert). */
+  public readonly retrying = computed(() => this.current() && this.retryingRead());
   public readonly saveError = computed(() => (this.current() ? this.writeError() : ''));
 
   public constructor() {
@@ -136,9 +133,12 @@ export class MktgDocumentCommentsService {
       return;
     }
     this.readError.set('');
+    this.retryingRead.set(false);
     const read = () => {
       if (this.deniedKey === key) return EMPTY;
-      if (current()) this.reading.set(true);
+      // Loading only until the first list is measured: a wake re-read of a loaded list changes nothing on screen until it
+      // lands (law 5: no flicker, and Send stays enabled under the click that brought the window forward).
+      if (current() && !this.measured()) this.reading.set(true);
       return this.http.get<MktgDocumentCommentsResponse>(this.path(scope), { params: { project: scope.projectUid, revision: scope.revisionId } }).pipe(
         take(1),
         tap((response) => {
@@ -147,6 +147,7 @@ export class MktgDocumentCommentsService {
           this.data.set(response.threads);
           this.measured.set(true);
           this.readError.set('');
+          this.retryingRead.set(false);
           this.reading.set(false);
         }),
         catchError((error: unknown) => {
@@ -155,9 +156,10 @@ export class MktgDocumentCommentsService {
           console.error('Asset comments read failed', { status: error instanceof HttpErrorResponse ? error.status : null });
           this.reading.set(false);
           if (isTransientHttpError(error)) {
-            this.readError.set(MKTG_POLL_RETRYING_TEXT);
+            this.retryingRead.set(true);
             return throwError(() => error);
           }
+          this.retryingRead.set(false);
           this.data.set([]);
           this.measured.set(false);
           const denied = error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403);
@@ -244,6 +246,7 @@ export class MktgDocumentCommentsService {
     this.data.set([]);
     this.measured.set(false);
     this.reading.set(false);
+    this.retryingRead.set(false);
     this.writing.set(false);
     this.readError.set('');
     this.writeError.set('');

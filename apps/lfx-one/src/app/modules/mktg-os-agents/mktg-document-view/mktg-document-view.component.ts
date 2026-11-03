@@ -913,6 +913,9 @@ export class MktgDocumentViewComponent {
                   ).pipe(
                     switchMap((event) => {
                       if (event.kind === 'ok') return of(event.value);
+                      const status = event.error instanceof HttpErrorResponse ? event.error.status : 0;
+                      // Status only: no upstream payload enters diagnostics.
+                      console.error('Marketing OS document read failed', { status });
                       // A transient first read fails quietly and the poller retries it; anything else is terminal.
                       if (!isTransientHttpError(event.error)) return throwError(() => event.error);
                       unavailable();
@@ -922,6 +925,7 @@ export class MktgDocumentViewComponent {
             ).pipe(
               map((cycle) => cycle.view),
               catchError((error: HttpErrorResponse) => {
+                console.error('Marketing OS document read failed for good', { status: error.status });
                 this.localProgress.set(null);
                 this.runDetail.set(null);
                 this.errorText.set(this.loadErrorText(error.status, error.error?.code));
@@ -1188,6 +1192,15 @@ export class MktgDocumentViewComponent {
   protected onRefreshProgress(): void {
     if (this.submittingGeneration()) return;
     this.reloads.update((count) => count + 1);
+  }
+
+  /**
+   * The progress reader's own connection-state line is invisible while this view renders it headless (loading, closed run,
+   * living document): the reader reports its retrying state and this view shows the one line (and clears it) itself.
+   */
+  protected onProgressRetrying(retrying: boolean): void {
+    if (!this.publicProgressPolling()) return;
+    this.refreshWarning.set(retrying ? MKTG_POLL_RETRYING_TEXT : '');
   }
 
   protected onRunAgain(): void {

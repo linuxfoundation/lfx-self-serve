@@ -26,6 +26,7 @@ import {
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_RUN_FAILURE_REASON,
@@ -283,6 +284,9 @@ export class MktgAgentRunComponent {
   protected readonly errorText = signal('');
   /** A waiting state of the public receiver (the produced revision is not confirmed yet): a quiet status line, not an error. */
   protected readonly publicWaitingText = signal('');
+  /** The headless progress reader's retrying state while the run is checked: one quiet line, never the error box. */
+  protected readonly publicRetrying = signal(false);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly runFailed = signal(false);
   protected readonly navigation = signal<MktgRunNavigation | null>(null);
   protected readonly navigating = signal(false);
@@ -811,11 +815,13 @@ export class MktgAgentRunComponent {
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.publicRunId());
     const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
     const owned = (pending?.attempt?.runId ?? pending?.pendingQuestions?.attempt.runId) === this.publicRunId() ? pending : null;
-    // A partial read whose row still waits on the block this browser holds confirms it; any other partial read keeps the last state.
+    // A partial read whose row still waits on the block this browser holds confirms it; any other partial read keeps the last
+    // state — and a partial FIRST read is still a check in progress: the quiet line, not the error box (the reader retries it).
     if (cycle.detail.progressUnavailable && !(owned?.pendingQuestions && mktgRunHoldsQuestions(run, owned.pendingQuestions.questionsId))) {
-      if (this.checkingRun()) this.onPublicReadError();
+      if (this.checkingRun()) this.publicRetrying.set(true);
       return;
     }
+    this.publicRetrying.set(false);
     this.checkingRun.set(false);
     if (this.publicReadFailed) {
       this.publicReadFailed = false;
@@ -902,6 +908,9 @@ export class MktgAgentRunComponent {
 
   protected onPublicReadError(error?: HttpErrorResponse): void {
     this.checkingRun.set(false);
+    this.publicRetrying.set(false);
+    // The error box carries its own document link: the waiting line (and its link) goes.
+    this.publicWaitingText.set('');
     this.publicReadFailed = true;
     this.clearQuestions();
     this.phase.set('running');

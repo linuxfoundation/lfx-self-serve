@@ -1140,7 +1140,10 @@ describe('MktgAgentRunService', () => {
         resultResponses = [READY_NO_RECEIPT, new HttpErrorResponse({ status, statusText: 'Refused' }), READY_WITH_RECEIPT];
         const events: MktgGenerateProgress[] = [];
         let error: unknown;
-        service.generate(generateRequest()).subscribe({ next: (event) => events.push(event), error: (err) => (error = err) });
+        let completed = false;
+        service
+          .generate(generateRequest())
+          .subscribe({ next: (event) => events.push(event), error: (err) => (error = err), complete: () => (completed = true) });
 
         await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
         expect(events).toHaveLength(2);
@@ -1153,6 +1156,8 @@ describe('MktgAgentRunService', () => {
         expect(resultCalls()).toHaveLength(2);
         expect(error).toBeUndefined();
         expect(events.some((event) => event.type === 'persisted')).toBe(false);
+        // The watch ends on the refusal instead of idling for ever: the run page's generation subscription closes.
+        expect(completed).toBe(true);
       }
     );
 
