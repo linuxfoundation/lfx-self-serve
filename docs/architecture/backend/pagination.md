@@ -207,6 +207,23 @@ that were merely absent from a partial response. The legacy registrants manager 
 that coverage to the meeting page, which blocks both Update Meeting and invitation-only
 submission until the selected rosters resolve. Selection changes immediately invalidate
 previous coverage; a successful retry re-enables submission.
+The coverage contract also invalidates a pending member fetch explicitly. The v2 composer records
+the normalized group/filter selection alongside the covered UIDs, so a voting-status edit cannot
+reuse a saved roster after a failed fetch. Identical group/filter writes, label updates, and
+reordering do not invalidate already resolved coverage; actual selection changes do, including
+a return to an earlier selection. Saved unchanged selections remain usable for unrelated edits
+without mounting the Guests picker.
+
+`CommitteeService.getCommitteeMembers` fixes `page_size` at the supported maximum of 1,000
+for its all-pages drains, rather than accepting a caller's page size or falling back to 50.
+Strict scans still fail at the shared 100-page bound. The meeting picker identifies pagination-limit
+errors and explains Retry or removing an editable group selection; a locked context requires
+cancelling and contacting support rather than saving incomplete invitations.
+
+The group Members tab requests strict completeness as well. Failed reads retain a persistent
+error/Retry state, withhold the roster count, and block Add Member and Import Members until a
+complete read succeeds. A successful empty roster is distinct from a failed load. Roster visibility
+rules and the separate invite-only flow for callers without roster access remain unchanged.
 
 `OrgMembershipResolverService` uses `failOnPartial: true` before resolving or caching
 a membership context, so key-contact writes cannot select a membership from a partial

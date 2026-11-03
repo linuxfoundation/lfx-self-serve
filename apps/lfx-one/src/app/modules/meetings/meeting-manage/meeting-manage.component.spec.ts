@@ -17,6 +17,7 @@ import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MeetingManageComponent } from './meeting-manage.component';
+import { MeetingCommitteeManagerComponent } from '../components/meeting-committee-manager/meeting-committee-manager.component';
 
 // Regression coverage for the relation-gated-null → uncached-detail context fallback (GH-1579):
 // when the by-uid project lookup is relation-gated into null for an organizer without a viewer
@@ -184,6 +185,46 @@ describe('MeetingManageComponent', () => {
       component.onSubmitAll();
       expect(updateMeeting).not.toHaveBeenCalled();
       component.onCommitteeMembersResolved(['group-b']);
+      expect(component.committeeMembersReady()).toBe(false);
+    });
+
+    it('preserves readiness when options retry rewrites the same selected roster', async () => {
+      const { component, form } = await mountReadyForm();
+      const group = { uid: 'group-a', name: 'Example Group', enable_voting: false };
+      const committeeService = TestBed.inject(CommitteeService);
+      Object.assign(committeeService, {
+        getCommitteesByProjectOrThrow: vi
+          .fn()
+          .mockReturnValueOnce(throwError(() => new Error('options unavailable')))
+          .mockReturnValue(of([group])),
+        getCommitteeMembers: vi.fn().mockReturnValue(of([])),
+      });
+      Object.assign(TestBed.inject(ProjectContextService), { activeContextUid: () => PROJECT_UID });
+      form.get('committees')!.setValue([{ uid: group.uid }]);
+      const pickerFixture = TestBed.createComponent(MeetingCommitteeManagerComponent);
+      pickerFixture.componentRef.setInput('form', form);
+      pickerFixture.componentRef.setInput('selectedCommittees', [{ uid: group.uid }]);
+      pickerFixture.componentInstance.committeeMembersResolvedChange.subscribe((uids) => component.onCommitteeMembersResolved(uids));
+      await pickerFixture.whenStable();
+      expect(pickerFixture.componentInstance.committeeOptionsFailed()).toBe(true);
+      expect(component.committeeMembersReady()).toBe(true);
+      pickerFixture.componentInstance.retryCommitteeOptions();
+      await pickerFixture.whenStable();
+      expect(pickerFixture.componentInstance.committeeOptionsFailed()).toBe(false);
+      expect(component.committeeMembersReady()).toBe(true);
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores equivalent group/filter writes but invalidates real filter changes and pending reports', async () => {
+      const { component, form } = await mountReadyForm();
+      form.get('committees')!.setValue([{ uid: 'group-a', allowed_voting_statuses: ['voting_rep', 'observer'] }, { uid: 'group-b' }]);
+      component.onCommitteeMembersResolved(['group-a', 'group-b']);
+      form.get('committees')!.setValue([{ uid: 'group-b' }, { uid: 'group-a', name: 'New label', allowed_voting_statuses: ['Observer', 'Voting Rep'] }]);
+      expect(component.committeeMembersReady()).toBe(true);
+      form.get('committees')!.setValue([{ uid: 'group-b' }, { uid: 'group-a', allowed_voting_statuses: ['observer'] }]);
+      expect(component.committeeMembersReady()).toBe(false);
+      component.onCommitteeMembersResolved(['group-a', 'group-b']);
+      component.onCommitteeMembersResolved(null);
       expect(component.committeeMembersReady()).toBe(false);
     });
 

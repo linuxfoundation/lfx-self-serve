@@ -72,6 +72,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     ACCESS_CHECK_BATCH_SIZE: 100,
     // The real fetchAllQueryResources paginator reads its page cap from this barrel (#4964).
     QUERY_SERVICE_MAX_PAGES: apiConstants.QUERY_SERVICE_MAX_PAGES,
+    QUERY_SERVICE_MAX_PAGE_SIZE: apiConstants.QUERY_SERVICE_MAX_PAGE_SIZE,
     PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS: pending.PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
     UUID_REGEX: regex.UUID_REGEX,
   };
@@ -1341,11 +1342,17 @@ describe.each(['getCommitteeMembers', 'getCommitteeInvites'] as const)('Committe
 
     expect(await new CommitteeService()[method](req, 'committee-1', query)).toEqual([first, second]);
     expect(proxyRequest.mock.calls.map((call) => call[4])).toEqual([
-      { type: method === 'getCommitteeMembers' ? 'committee_member' : 'committee_invite', tags: 'committee_uid:committee-1', name: 'Example' },
       {
         type: method === 'getCommitteeMembers' ? 'committee_member' : 'committee_invite',
         tags: 'committee_uid:committee-1',
         name: 'Example',
+        ...(method === 'getCommitteeMembers' && { page_size: 1000 }),
+      },
+      {
+        type: method === 'getCommitteeMembers' ? 'committee_member' : 'committee_invite',
+        tags: 'committee_uid:committee-1',
+        name: 'Example',
+        ...(method === 'getCommitteeMembers' && { page_size: 1000 }),
         page_token: 'next-page',
       },
     ]);
@@ -1383,6 +1390,39 @@ describe('CommitteeService.getCommitteeMembers — internal strict pagination', 
     proxyRequest.mockResolvedValueOnce({ resources: [], page_token: 'next-page' }).mockRejectedValueOnce(failure);
 
     await expect(new CommitteeService().getCommitteeMembers(req, 'committee-1', { require_complete: 'false' }, { failOnPartial: true })).rejects.toBe(failure);
+  });
+  it('loads a complete roster exceeding 5,000 records using supported page sizes', async () => {
+    proxyRequest.mockReset();
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+    proxyRequest.mockImplementation(async (_req, _service, _path, _method, params) => {
+      const page = Number(params.page_token ?? 0);
+      return {
+        resources: Array.from({ length: 1000 }, (_, index) => ({ data: { uid: `member-${page * 1000 + index}` } })),
+        ...(page < 5 && { page_token: String(page + 1) }),
+      };
+    });
+    const rows = await new CommitteeService().getCommitteeMembers(req, 'committee-1', { require_complete: 'true', page_size: '1' });
+    expect(rows).toHaveLength(6000);
+    expect(rows.at(-1)?.uid).toBe('member-5999');
+    expect(proxyRequest).toHaveBeenCalledTimes(6);
+    expect(proxyRequest.mock.calls.every((call) => call[4].page_size === 1000)).toBe(true);
+  });
+
+  it('still rejects a continuing strict roster at the 100-page cap', async () => {
+    proxyRequest.mockReset();
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+    proxyRequest.mockImplementation(async (_req, _service, _path, _method, params) => ({
+      resources: [{ data: { uid: `member-${params.page_token ?? 'first'}` } }],
+      page_token: String(Number(params.page_token ?? 0) + 1),
+    }));
+    await expect(new CommitteeService().getCommitteeMembers(req, 'committee-1', { require_complete: 'true' })).rejects.toMatchObject({
+      code: 'QUERY_SERVICE_PAGINATION_LIMIT',
+      statusCode: 502,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(100);
+    expect(proxyRequest.mock.calls.every((call) => call[4].page_size === 1000)).toBe(true);
   });
 });
 

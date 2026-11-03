@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { HttpParams } from '@angular/common/http';
+import { HttpErrorResponse, HttpParams } from '@angular/common/http';
 import {
   afterNextRender,
   Component,
@@ -112,8 +112,9 @@ export class MeetingCommitteeManagerComponent {
    * the picker only exists while the Guests section is mounted, and a boolean it emitted before
    * unmounting describes a selection the parent may since have changed. Comparing uids lets the
    * parent re-derive the gate from its own form at any moment, mounted or not.
+   * A null report marks a new fetch pending and invalidates previously reported coverage.
    */
-  public readonly committeeMembersResolvedChange: OutputEmitterRef<string[]> = output<string[]>();
+  public readonly committeeMembersResolvedChange: OutputEmitterRef<string[] | null> = output<string[] | null>();
   /** Asks the caller to re-run the {@link committeeContext} lookup that failed. */
   public readonly retryContext: OutputEmitterRef<void> = output<void>();
 
@@ -211,6 +212,7 @@ export class MeetingCommitteeManagerComponent {
   /** Whether the last member fetch failed — blocks emission, and the template says so rather than failing silently. */
   private readonly _membersFetchError = signal(false);
   public readonly membersFetchError = this._membersFetchError.asReadonly();
+  public readonly membersPaginationLimit = signal(false);
 
   /**
    * Bumped to re-run the member fetch over a selection that has not changed.
@@ -732,6 +734,8 @@ export class MeetingCommitteeManagerComponent {
         switchMap(({ committeeIds }) => {
           this.membersResolved = false;
           this._membersFetchError.set(false);
+          this.membersPaginationLimit.set(false);
+          this.committeeMembersResolvedChange.emit(null);
 
           if (!committeeIds || committeeIds.length === 0) {
             this.membersResolved = this.selectionApplied;
@@ -751,6 +755,9 @@ export class MeetingCommitteeManagerComponent {
               catchError((error) => {
                 console.error(`Failed to load members for committee ${id}:`, error);
                 this._membersFetchError.set(true);
+                if (error instanceof HttpErrorResponse && error.error?.code === 'QUERY_SERVICE_PAGINATION_LIMIT') {
+                  this.membersPaginationLimit.set(true);
+                }
                 return of([]);
               })
             );

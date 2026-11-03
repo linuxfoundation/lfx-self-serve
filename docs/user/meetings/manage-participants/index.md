@@ -42,7 +42,9 @@ You can link a group to the meeting to invite its members. Each member is still 
 
 Guests added through a group show a **via {group name}** label in the list, so you can tell them apart from people you added directly.
 
-Wait for every selected group's members to load before saving invitation changes. If a group's members fail to load, the groups panel explains that they have not been added as guests and offers **Try again**. Saving stays disabled until loading succeeds; changing the group selection waits for the new selection to load too.
+Wait for every selected group's members to load before saving invitation changes. If a group's members fail to load, the groups panel explains that they have not been added as guests and offers **Try again**. Saving stays disabled until loading succeeds; changing the group selection or voting-status filter waits for successful reconciliation too. An unchanged saved selection does not require opening **Invite guests** just to save an unrelated meeting edit.
+
+If the roster reaches a safe loading limit, the panel explains that saving with an incomplete roster is blocked. Try again if the problem was temporary. If it persists, remove the group selection where it is editable to continue, or cancel and contact support. A group fixed by the meeting's creation context cannot be removed from that editor.
 
 #### What happens when someone leaves a group
 

@@ -72,7 +72,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
 
   // Output events for two-way binding
   public readonly registrantUpdatesChange = output<RegistrantPendingChanges>();
-  public readonly committeeMembersResolvedChange = output<string[]>();
+  public readonly committeeMembersResolvedChange = output<string[] | null>();
 
   // Writable signals for state management
   public registrantsWithState: WritableSignal<MeetingRegistrantWithState[]> = signal([]);

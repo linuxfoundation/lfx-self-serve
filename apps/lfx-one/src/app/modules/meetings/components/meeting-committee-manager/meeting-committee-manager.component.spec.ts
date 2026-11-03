@@ -131,11 +131,15 @@ async function mount(
   fixture.componentInstance.committeeMembersChange.subscribe((value) => emissions.push(value));
 
   const resolved: string[][] = [];
-  fixture.componentInstance.committeeMembersResolvedChange.subscribe((value) => resolved.push(value));
+  const reports: (string[] | null)[] = [];
+  fixture.componentInstance.committeeMembersResolvedChange.subscribe((value) => {
+    reports.push(value);
+    if (value !== null) resolved.push(value);
+  });
 
   await fixture.whenStable();
 
-  return { component: fixture.componentInstance, emissions, resolved, fixture };
+  return { component: fixture.componentInstance, emissions, resolved, reports, fixture };
 }
 
 /**
@@ -229,6 +233,27 @@ describe('MeetingCommitteeManagerComponent — committee member emissions', () =
     expect(emissions).toHaveLength(1);
     expect(emissions[0].map((entry) => entry.email)).toEqual(['chair@example.com']);
     expect(resolved.at(-1)).toEqual([BOARD.uid]);
+  });
+
+  it('invalidates prior coverage during a retry and identifies pagination-limit recovery', async () => {
+    const responses: Record<string, Observable<CommitteeMember[]>> = {
+      [BOARD.uid]: throwError(() => new HttpErrorResponse({ status: 502, error: { code: 'QUERY_SERVICE_PAGINATION_LIMIT' } })),
+    };
+    const { component, reports, emissions, fixture } = await mount([{ uid: BOARD.uid }], responses);
+    expect(reports.at(-1)).toBeNull();
+    expect(component.membersPaginationLimit()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-members-limit"]')?.textContent).toContain('remove the group');
+    const retry = new Subject<CommitteeMember[]>();
+    responses[BOARD.uid] = retry;
+    component.retryCommitteeMembers();
+    await fixture.whenStable();
+    expect(reports.at(-1)).toBeNull();
+    expect(emissions).toEqual([]);
+    retry.next([]);
+    retry.complete();
+    await fixture.whenStable();
+    expect(reports.at(-1)).toEqual([BOARD.uid]);
+    expect(component.membersPaginationLimit()).toBe(false);
   });
 
   it('offers that retry in the banner itself', async () => {
@@ -461,7 +486,9 @@ describe('MeetingCommitteeManagerComponent — reported member coverage', () => 
     const { component, fixture } = await mount([], { [BOARD.uid]: board });
 
     const order: string[] = [];
-    component.committeeMembersResolvedChange.subscribe(() => order.push('resolved'));
+    component.committeeMembersResolvedChange.subscribe((value) => {
+      if (value !== null) order.push('resolved');
+    });
     component.committeeMembersChange.subscribe(() => order.push('members'));
 
     component.committeeForm.get('committees')?.setValue([BOARD.uid]);

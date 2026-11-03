@@ -18,7 +18,7 @@ import { expect, it, vi } from 'vitest';
 import { MeetingCommitteeManagerComponent } from '../meeting-committee-manager/meeting-committee-manager.component';
 import { MeetingRegistrantsManagerComponent } from './meeting-registrants-manager.component';
 
-it('forwards only complete roster coverage to the legacy host, including recovery after a strict failure', async () => {
+it('forwards pending invalidation and only complete roster coverage to the legacy host after retry', async () => {
   const retry = new Subject<CommitteeMember[]>();
   const getCommitteeMembers = vi
     .fn()
@@ -46,12 +46,13 @@ it('forwards only complete roster coverage to the legacy host, including recover
   fixture.componentInstance.committeeMembersResolvedChange.subscribe(resolved);
   await fixture.whenStable();
 
-  expect(resolved).not.toHaveBeenCalled();
+  expect(resolved).toHaveBeenLastCalledWith(null);
+  expect(resolved.mock.calls.every(([value]) => value === null)).toBe(true);
   const picker = fixture.debugElement.query(By.directive(MeetingCommitteeManagerComponent)).componentInstance as MeetingCommitteeManagerComponent;
   expect(picker.membersFetchError()).toBe(true);
   picker.retryCommitteeMembers();
   await fixture.whenStable();
-  expect(resolved).not.toHaveBeenCalled();
+  expect(resolved).toHaveBeenLastCalledWith(null);
   retry.next([]);
   retry.complete();
   await fixture.whenStable();

@@ -50,6 +50,7 @@ import {
   generateRecurrenceObject,
   getDefaultStartDateTime,
   getEntityCommands,
+  getMeetingCommitteeSelectionKey,
   getSavedAttendeeVisibility,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
@@ -253,7 +254,12 @@ export class MeetingManageComponent {
 
     this.form()
       .get('committees')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      ?.valueChanges.pipe(
+        startWith(this.form().get('committees')?.value),
+        map((committees) => getMeetingCommitteeSelectionKey(committees)),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe(() => this.committeeMembersReady.set(false));
 
     // Subscribe to form value changes and update validation signals
@@ -438,7 +444,11 @@ export class MeetingManageComponent {
     this.pendingAttachmentDeletions.update((current) => [...current, attachmentId]);
   }
 
-  public onCommitteeMembersResolved(committeeUids: string[]): void {
+  public onCommitteeMembersResolved(committeeUids: string[] | null): void {
+    if (committeeUids === null) {
+      this.committeeMembersReady.set(false);
+      return;
+    }
     const selected = sanitizeMeetingCommittees(this.form().get('committees')?.value).map((committee) => committee.uid);
     this.committeeMembersReady.set(selected.every((uid) => committeeUids.includes(uid)) && committeeUids.every((uid) => selected.includes(uid)));
   }
