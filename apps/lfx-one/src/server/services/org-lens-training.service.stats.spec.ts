@@ -31,33 +31,24 @@ interface StatsRows {
   outside?: Record<string, unknown>[];
   asOf?: Record<string, unknown>[];
   roster?: Record<string, unknown>[];
-  options?: Record<string, unknown>[];
+  known?: Record<string, unknown>[];
 }
 
 const HOSTILE = "x' OR 1=1 --";
-const option = (overrides: Record<string, unknown>): Record<string, unknown> => ({
-  FOUNDATION_ID: null,
-  FOUNDATION_NAME: null,
-  PROJECT_ID: null,
-  PROJECT_NAME: null,
-  COURSE_NAME: null,
-  COURSE_LEVEL: null,
-  COURSE_FORMAT: null,
-  ...overrides,
-});
-/** The range's filter options: every value the specs below filter by. */
-const KNOWN_OPTIONS = [
-  option({ FOUNDATION_ID: 'f-1', FOUNDATION_NAME: 'Foundation One', PROJECT_ID: 'p-1', PROJECT_NAME: 'Project One', COURSE_NAME: HOSTILE }),
-  option({ COURSE_NAME: 'A', COURSE_LEVEL: 'Beginner', COURSE_FORMAT: 'E-Learning' }),
-  option({ COURSE_NAME: 'B' }),
-  option({ COURSE_FORMAT: 'A' }),
-  option({ COURSE_NAME: 'Course A' }),
+const known = (filterKey: string, values: string[]): Record<string, unknown>[] => values.map((value) => ({ FILTER_KEY: filterKey, FILTER_VALUE: value }));
+/** The distinct raw row values of the organization: every value the specs below filter by. */
+const KNOWN_VALUES = [
+  ...known('foundation', ['f-1']),
+  ...known('project', ['p-1']),
+  ...known('course', [HOSTILE, 'A', 'B', 'Course A']),
+  ...known('level', ['Beginner']),
+  ...known('format', ['E-Learning', 'A']),
 ];
 
 /** Answers each stats statement by the relation it reads, like Snowflake would for one account. */
 function mockStatsRows(rows: StatsRows): void {
   execute.mockImplementation(async (sql: string) => {
-    if (sql.includes('SELECT DISTINCT FOUNDATION_ID')) return { rows: rows.options ?? KNOWN_OPTIONS };
+    if (sql.includes('AS FILTER_KEY')) return { rows: rows.known ?? KNOWN_VALUES };
     if (sql.includes('ORG_TRAINING_ROSTER_MEMBERS')) return { rows: rows.roster ?? [] };
     if (sql.includes('AS AS_OF')) return { rows: rows.asOf ?? [] };
     if (sql.includes('NOT IS_ON_PEOPLE_LIST')) return { rows: rows.outside ?? [] };
@@ -66,7 +57,7 @@ function mockStatsRows(rows: StatsRows): void {
 }
 
 function pairsCall(): [string, string[]] {
-  const call = execute.mock.calls.find(([sql]) => (sql as string).includes('rows_in_range AS') && !(sql as string).includes('SELECT DISTINCT FOUNDATION_ID'));
+  const call = execute.mock.calls.find(([sql]) => (sql as string).includes('rows_in_range AS') && !(sql as string).includes('AS FILTER_KEY'));
   if (!call) throw new Error('no pairs statement');
   return call as [string, string[]];
 }

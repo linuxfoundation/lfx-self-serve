@@ -8,8 +8,9 @@ import {
   DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD,
   DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER,
   DEFAULT_ORG_TRAINING_TAB_ID,
-  MAX_ORG_TRAINING_FILTER_VALUE_LENGTH,
   MAX_ORG_TRAINING_GROUPS_PAGE_SIZE,
+  ORG_TRAINING_FILTER_KEYS,
+  ORG_TRAINING_VIEW_QUERY_PARAMS,
   VALID_ORG_TRAINING_GROUPS_SORT_FIELDS,
   VALID_ORG_TRAINING_TAB_IDS,
 } from '@lfx-one/shared/constants';
@@ -25,13 +26,23 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
+import { assertWellFormedOrgTrainingFilterValue } from '../helpers/org-training-filter.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensTrainingService } from '../services/org-lens-training.service';
 
-/** Range, filters and groupBy of the shared Training / Trainees view; the same allow-list rules as the URL. */
-function parseViewState(req: Request): OrgTrainingViewState {
+/**
+ * Range, filters and groupBy of the shared Training / Trainees view; the same allow-list rules as the URL. A filter value that
+ * can only be malformed (not one string, over the length cap, or holding a control character) is a 400 here, before the URL
+ * rules would silently cut it; any other value is the service's to compare with the organization's own values.
+ */
+function parseViewState(req: Request, operation: string): OrgTrainingViewState {
+  for (const filter of ORG_TRAINING_FILTER_KEYS) {
+    const param = ORG_TRAINING_VIEW_QUERY_PARAMS[filter];
+    const raw = req.query[param];
+    if (raw !== undefined) assertWellFormedOrgTrainingFilterValue(raw, param, operation, true);
+  }
   return parseOrgTrainingViewState((param) => getStringQueryParam(req, param));
 }
 
@@ -52,7 +63,7 @@ export class OrgLensTrainingController {
     this.service = new OrgLensTrainingService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/training/stats?range&foundation&project&course&level&format */
+  /** GET /api/orgs/:orgUid/lens/training/stats?range&foundation&trainingProject&course&level&format */
   public async getTrainingStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_training_stats';
@@ -64,7 +75,7 @@ export class OrgLensTrainingController {
       const qualification = await assertOrgLensRead(req, orgUid, operation);
 
       // Spec 002: orgUid is the canonical org account id (SFID); pass it straight to Snowflake.
-      const query: OrgTrainingStatsQuery = orgTrainingStatsQuery(parseViewState(req));
+      const query: OrgTrainingStatsQuery = orgTrainingStatsQuery(parseViewState(req, operation));
       const response = await this.service.getTrainingStats(orgUid, query, qualification);
 
       logger.success(req, operation, startTime, {
@@ -92,7 +103,7 @@ export class OrgLensTrainingController {
       assertOrgUid(orgUid, operation);
       const qualification = await assertOrgLensRead(req, orgUid, operation);
 
-      const { range } = parseViewState(req);
+      const { range } = parseViewState(req, operation);
       const response = await this.service.getFilterOptions(orgUid, range, qualification);
 
       logger.success(req, operation, startTime, { org_uid: orgUid, time_range: range, course_count: response.courses.length });
@@ -114,7 +125,7 @@ export class OrgLensTrainingController {
       assertOrgUid(orgUid, operation);
       const qualification = await assertOrgLensRead(req, orgUid, operation);
 
-      const state = parseViewState(req);
+      const state = parseViewState(req, operation);
       const tab = parseTab(req, operation);
       const { pageSize, offset } = parseOffsetPagination(req, {
         defaultPageSize: DEFAULT_ORG_TRAINING_GROUPS_PAGE_SIZE,
@@ -162,7 +173,7 @@ export class OrgLensTrainingController {
       assertOrgUid(orgUid, operation);
       const qualification = await assertOrgLensRead(req, orgUid, operation);
 
-      const state = parseViewState(req);
+      const state = parseViewState(req, operation);
       const tab = parseTab(req, operation);
 
       // '' is a real value (the group of pairs without the attribute), so only an absent param is rejected.
@@ -177,14 +188,15 @@ export class OrgLensTrainingController {
       }
       const status: OrgTrainingGroupStatus = rawStatus;
 
-      // Capped here; the service then accepts only a group of the table, so no other string reaches a cache key or SQL.
+      // Malformed is a 400; the service then accepts only a group of the table, so no other string reaches a cache key or SQL.
+      assertWellFormedOrgTrainingFilterValue(groupValue, 'groupValue', operation, false);
       const response = await this.service.getGroupEmployees(
         req,
         orgUid,
         orgTrainingStatsQuery(state),
         {
           groupBy: state.groupBy,
-          groupValue: groupValue.slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH),
+          groupValue,
           tab,
           status,
         },

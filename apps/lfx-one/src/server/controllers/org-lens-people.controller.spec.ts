@@ -15,6 +15,8 @@ const {
   getEmployeeDetailByUsername,
   getKeyContactsForPerson,
   resolveUsernameByPersonKey,
+  getTrainees,
+  assertOrgLensRead,
   logger,
 } = vi.hoisted(() => ({
   getAllEmployees: vi.fn(),
@@ -27,6 +29,8 @@ const {
   getEmployeeDetailByUsername: vi.fn(),
   getKeyContactsForPerson: vi.fn(),
   resolveUsernameByPersonKey: vi.fn(),
+  getTrainees: vi.fn(),
+  assertOrgLensRead: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
@@ -70,7 +74,12 @@ vi.mock('../services/org-people-key-contacts.service', () => ({
     public getKeyContactsForPerson = getKeyContactsForPerson;
   },
 }));
-vi.mock('../services/org-people-trainees.service', () => ({ OrgPeopleTraineesService: class {} }));
+vi.mock('../services/org-people-trainees.service', () => ({
+  OrgPeopleTraineesService: class {
+    public getTrainees = getTrainees;
+  },
+}));
+vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead }));
 
 import { ORG_TRAINEE_OUTSIDE_KEY_PREFIX } from '@lfx-one/shared/constants';
 
@@ -657,5 +666,37 @@ describe('OrgLensPeopleController Trainees outside-learner keys (lfx-self-serve#
     expect(getCompanyEmails).not.toHaveBeenCalled();
     expect(resolveUsernameByPersonKey).not.toHaveBeenCalled();
     expect(getKeyContactsForPerson).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgLensPeopleController trainees access qualification', () => {
+  const controller = new OrgLensPeopleController();
+  const EMPTY_TRAINEES = { accountId: ORG_UID, timeRange: '730d', trainees: [], details: [], outsideLearners: [], asOf: null };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getTrainees.mockResolvedValue(EMPTY_TRAINEES);
+  });
+
+  it.each(['org-grant', 'auditor-entitlement'])('passes the %s read qualification to the service with the range', async (qualification) => {
+    assertOrgLensRead.mockResolvedValue(qualification);
+    const next = vi.fn();
+
+    await controller.getTrainees(buildRosterReq({ range: '90d' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(assertOrgLensRead).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'get_org_lens_people_trainees');
+    expect(getTrainees).toHaveBeenCalledWith(ORG_UID, '90d', qualification);
+  });
+
+  it('reads nothing for a caller whose read access is denied', async () => {
+    const denied = new Error('forbidden');
+    assertOrgLensRead.mockRejectedValue(denied);
+    const next = vi.fn();
+
+    await controller.getTrainees(buildRosterReq({}), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(denied);
+    expect(getTrainees).not.toHaveBeenCalled();
   });
 });

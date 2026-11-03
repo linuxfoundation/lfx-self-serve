@@ -27,7 +27,8 @@ export interface OrgTraineeDetailRow {
   /** Enrollment or certificate id. */
   courseOrCertId: string;
   courseId: string;
-  courseName: string;
+  /** The row's `COURSE_NAME`; null when the warehouse has none. No display fallback on the wire: pair resolution takes the greatest real name, and the client falls back to the course id only after resolving. */
+  courseName: string | null;
   foundationId: string | null;
   foundationName: string | null;
   projectId: string | null;
@@ -101,8 +102,8 @@ export interface OrgTraineePair {
   status: OrgTraineeStatus;
   /** Greatest product type across the pair's rows; `Certification` or `Training`. */
   productType: string | null;
-  /** Greatest course name across the pair's rows. */
-  courseName: string;
+  /** Greatest real course name across the pair's rows; null when no row has one. Display falls back to `courseId` after resolving. */
+  courseName: string | null;
   /** Greatest course level across the pair's rows; null when no row has one. */
   courseLevel: string | null;
   /** Format of the pair's latest row that has one (by activity timestamp); null when no row has one. */

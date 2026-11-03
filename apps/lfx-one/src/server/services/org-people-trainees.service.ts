@@ -25,11 +25,12 @@ import type {
 import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
+import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
 import { orgTrainingRangePredicate } from '../helpers/org-training-pairs.sql';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCompactCache } from './valkey.service';
 
-/** Trainees tab data access — one GET per range that backs the filters, four stat cards, main row, and lazy expanded section client-side. */
+/** Trainees tab data access — one GET per range: the people-list members, their course rows and the learners outside the list. The stat cards come from the shared stats call and the dropdowns from /filter-options. */
 export class OrgPeopleTraineesService {
   private readonly snowflakeService: SnowflakeService;
 
@@ -40,8 +41,12 @@ export class OrgPeopleTraineesService {
   /**
    * The range's trainees and details: parallel Snowflake reads over enrollments and certificates dated in the range.
    * The cards come from the shared stats call and the dropdowns from /filter-options, so the server ships neither here.
+   *
+   * Cached in the shared Valkey entry for an `org-grant` caller only; a caller the roster does not list and the authorizer
+   * admitted (`auditor-entitlement`) is read directly and nothing is read from or stored in the shared cache, as on the
+   * Training endpoints.
    */
-  public async getTrainees(accountId: string, range: OrgLensTimeRange): Promise<OrgTraineesResponse> {
+  public async getTrainees(accountId: string, range: OrgLensTimeRange, qualification: OrgLensReadQualification): Promise<OrgTraineesResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange: range };
     }
@@ -53,13 +58,20 @@ export class OrgPeopleTraineesService {
     // key, so a `v6` entry, which still holds it, must miss, and reads the renamed `IS_ON_PEOPLE_LIST` column; `v8`
     // drops a learner whose warehouse key also has people-list rows in the range, so a `v7` entry may count them twice; `v9` adds the row's product type
     // (Certification | Training), so a `v8` entry without it must miss, and the dropdowns moved to /filter-options.
-    const { traineeRows, outsideLearnerRows, detailRows, asOf } = await withOrgCompactCache(
-      accountId,
-      `people-trainees:v9:${range}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchTraineesRaw(accountId, range),
-      { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
-    );
+    const { traineeRows, outsideLearnerRows, detailRows, asOf } =
+      qualification === 'org-grant'
+        ? await withOrgCompactCache(
+            accountId,
+            `people-trainees:v9:${range}`,
+            VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+            () => this.fetchTraineesRaw(accountId, range),
+            {
+              encode: encodeTraineesRaw,
+              decode: decodeTraineesRaw,
+              accept: isCompactTraineesRaw,
+            }
+          )
+        : await this.fetchTraineesRaw(accountId, range);
 
     const trainees: OrgTraineeRow[] = traineeRows.map((row) => ({
       personKey: row.PERSON_KEY,
@@ -72,10 +84,11 @@ export class OrgPeopleTraineesService {
 
     // Only people-list members keep their warehouse key, which the person drawer reads, and only their course rows are
     // sent: the cards come from /stats, so the rows of a person behind people-list training rows who has no
-    // current-employee row (a former employee) have no reader and never leave the BFF. Each learner outside the people
-    // list gets an opaque per-response key from one counter. A learner whose warehouse key also has people-list rows in
-    // the range is dropped before caching (see fetchTraineesRaw), so no course row on the wire is ever tied to an
-    // outside learner's name. The raw detail rows stay server-side for that de-duplication.
+    // current-employee row (a former employee) have no reader. fetchTraineesRaw already drops those rows (and their
+    // enrollment or certificate ids) before the cache, so this filter only guards an entry stored before that. Each learner
+    // outside the people list gets an opaque per-response key from one counter. A learner whose warehouse key also has
+    // people-list rows in the range is dropped before caching (see fetchTraineesRaw), so no course row on the wire is ever
+    // tied to an outside learner's name.
     const listedKeys = new Set(trainees.map((row) => row.personKey));
     let opaqueCount = 0;
 
@@ -94,13 +107,15 @@ export class OrgPeopleTraineesService {
       if (!activityTs || !listedKeys.has(row.PERSON_KEY)) return [];
       // COURSE_ID is 100% populated for both enrolled and certified rows (verified on a large covered organization 2026-06-01).
       // Fall back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on '' / undefined.
+      // The name is sent as the warehouse has it (null when absent): the client resolves a pair's name over real names only,
+      // as the SQL MAX does, and falls back to the course id for display afterwards.
       return [
         {
           personKey: row.PERSON_KEY,
           status: row.STATUS === 'Certified' ? 'Certified' : 'Enrolled',
           courseOrCertId: row.COURSE_OR_CERT_ID,
           courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
-          courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
+          courseName: row.COURSE_NAME,
           foundationId: row.FOUNDATION_ID,
           foundationName: row.FOUNDATION_NAME,
           projectId: row.PROJECT_ID,
@@ -133,7 +148,7 @@ export class OrgPeopleTraineesService {
     asOf: string | null;
   }> {
     const inRange = orgTrainingRangePredicate(range);
-    const [traineeRows, keyedOutsideLearnerRows, detailRows, asOf] = await Promise.all([
+    const [traineeRows, keyedOutsideLearnerRows, allDetailRows, asOf] = await Promise.all([
       this.fetchTraineeRows(accountId, inRange),
       this.fetchOutsideLearnerRows(accountId, inRange),
       this.fetchDetailRows(accountId, inRange),
@@ -143,10 +158,14 @@ export class OrgPeopleTraineesService {
     // key also has counted people-list rows in the range is that person, already counted (and, when listed, named)
     // through those rows, so their outside entry is dropped. lf-dbt keeps IS_ON_PEOPLE_LIST constant per key, so this
     // only guards against that invariant breaking. The key is used here only: never cached, never sent.
-    const countedKeys = new Set(detailRows.filter((row) => countedActivityTs(row) !== null).map((row) => row.PERSON_KEY));
+    const countedKeys = new Set(allDetailRows.filter((row) => countedActivityTs(row) !== null).map((row) => row.PERSON_KEY));
     const outsideLearnerRows = keyedOutsideLearnerRows.flatMap((row) =>
       countedKeys.has(row.PERSON_KEY) ? [] : [{ LEARNER_NAME: row.LEARNER_NAME, IS_CERTIFIED: row.IS_CERTIFIED }]
     );
+    // Course rows of people with a current-employee row only, after the de-duplication above (which needs every people-list
+    // key) and before the cache: a former employee's warehouse key and enrollment or certificate ids have no reader and are never stored.
+    const listedKeys = new Set(traineeRows.map((row) => row.PERSON_KEY));
+    const detailRows = allDetailRows.filter((row) => listedKeys.has(row.PERSON_KEY));
     return { traineeRows, outsideLearnerRows, detailRows, asOf };
   }
 

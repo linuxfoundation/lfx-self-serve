@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MAX_ORG_CERT_EMPLOYEES } from '@lfx-one/shared/constants';
+import { MAX_ORG_CERT_EMPLOYEES, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH } from '@lfx-one/shared/constants';
 import type { OrgTrainingStatsQuery } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -45,22 +45,20 @@ const GROUP_ROWS = [
 ];
 const TOTALS = { PEOPLE: 6, COURSES_TAKEN: 9, COMPLETED: 5, IN_PROGRESS: 4 };
 
-/** The range's pairs, as the filter-options statement reads them: one carrying every value the specs filter by. */
-const OPTIONS_ROWS = [
-  {
-    FOUNDATION_ID: 'f-1',
-    FOUNDATION_NAME: 'Foundation One',
-    PROJECT_ID: 'p-1',
-    PROJECT_NAME: 'Project One',
-    COURSE_NAME: 'Course A',
-    COURSE_LEVEL: 'Beginner',
-    COURSE_FORMAT: 'E-Learning',
-  },
+/** The distinct raw values of the all-time rows, as the known-values statement reads them: every value the specs filter by. */
+const KNOWN_ROWS = [
+  { FILTER_KEY: 'foundation', FILTER_VALUE: 'f-1' },
+  { FILTER_KEY: 'project', FILTER_VALUE: 'p-1' },
+  { FILTER_KEY: 'course', FILTER_VALUE: 'Course A' },
+  { FILTER_KEY: 'level', FILTER_VALUE: 'Beginner' },
+  { FILTER_KEY: 'format', FILTER_VALUE: 'E-Learning' },
 ];
 
-function mockGroups(optionRows: Record<string, unknown>[] = []): void {
+const isKnownValuesSql = (sql: string): boolean => sql.includes('AS FILTER_KEY');
+
+function mockGroups(knownRows: Record<string, unknown>[] = []): void {
   execute.mockImplementation(async (sql: string) => {
-    if (sql.includes('SELECT DISTINCT FOUNDATION_ID')) return { rows: optionRows };
+    if (isKnownValuesSql(sql)) return { rows: knownRows };
     return { rows: sql.includes('AS GROUP_KEY') ? GROUP_ROWS : [TOTALS] };
   });
 }
@@ -111,6 +109,38 @@ describe('OrgLensTrainingService — filter options', () => {
     expect(withOrgCache.mock.calls[0][1]).toBe('training-filter-options:v1:90d');
     expect(execute.mock.calls[0][1]).toEqual([ACCOUNT]);
     expect(execute.mock.calls[0][0]).toContain('DATEADD(day, -90, CURRENT_DATE())');
+  });
+});
+
+describe('OrgLensTrainingService — filter option values', () => {
+  it('normalizes option values like a URL value: trimmed, capped at the filter value length, merged and never blank', async () => {
+    const longName = 'L'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH + 50);
+    const row = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+      FOUNDATION_ID: null,
+      FOUNDATION_NAME: null,
+      PROJECT_ID: null,
+      PROJECT_NAME: null,
+      COURSE_NAME: null,
+      COURSE_LEVEL: null,
+      COURSE_FORMAT: null,
+      ...overrides,
+    });
+    execute.mockResolvedValue({
+      rows: [
+        row({ COURSE_NAME: '  Course A  ', COURSE_LEVEL: ' Beginner', COURSE_FORMAT: '   ' }),
+        row({ COURSE_NAME: 'Course A', COURSE_LEVEL: 'Beginner' }),
+        // Spaces only, as the SQL TRIM: a tab is part of the value in both.
+        row({ COURSE_NAME: '\tTabbed' }),
+        row({ COURSE_NAME: longName, FOUNDATION_ID: ' f-1 ', FOUNDATION_NAME: 'Foundation One' }),
+      ],
+    });
+
+    const options = await service.getFilterOptions(ACCOUNT, '730d', 'org-grant');
+
+    expect(options.courses.map((o) => o.value)).toEqual(['\tTabbed', 'Course A', longName.slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH)]);
+    expect(options.levels).toEqual([{ label: 'Beginner', value: 'Beginner' }]);
+    expect(options.formats).toEqual([]);
+    expect(options.foundations).toEqual([{ label: 'Foundation One', value: 'f-1' }]);
   });
 });
 
@@ -191,7 +221,7 @@ describe('OrgLensTrainingService — group-by table', () => {
   it('binds filters, and caches the full set per filter signature, group-by and tab', async () => {
     mockGroups();
     const query = { ...QUERY, level: 'Beginner' };
-    mockGroups(OPTIONS_ROWS);
+    mockGroups(KNOWN_ROWS);
 
     await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'level', tab: 'trainings' }, 'org-grant');
 
@@ -205,13 +235,9 @@ describe('OrgLensTrainingService — group-by table', () => {
 
 describe('OrgLensTrainingService — group drawer', () => {
   /** The table's groups (Course A, and the none group) plus the drawer's own count and names statements. */
-  function mockDrawer(
-    count: { TOTAL: number; GROUP_LABEL: string | null },
-    names: Record<string, unknown>[],
-    optionRows: Record<string, unknown>[] = []
-  ): void {
+  function mockDrawer(count: { TOTAL: number; GROUP_LABEL: string | null }, names: Record<string, unknown>[], knownRows: Record<string, unknown>[] = []): void {
     execute.mockImplementation(async (sql: string) => {
-      if (sql.includes('SELECT DISTINCT FOUNDATION_ID')) return { rows: optionRows };
+      if (isKnownValuesSql(sql)) return { rows: knownRows };
       if (sql.includes('AS GROUP_KEY')) return { rows: GROUP_ROWS };
       if (sql.includes('COUNT(*) AS TOTAL')) return { rows: [count] };
       if (sql.includes('CONTACT_ID')) return { rows: names };
@@ -296,7 +322,7 @@ describe('OrgLensTrainingService — group drawer', () => {
   });
 });
 
-describe('OrgLensTrainingService — request filter validation', () => {
+describe('OrgLensTrainingService — a filter value the organization never carries', () => {
   const unknownFilters: [string, Partial<OrgTrainingStatsQuery>][] = [
     ['foundation', { foundation: 'f-unknown' }],
     ['project', { project: 'p-unknown' }],
@@ -304,39 +330,84 @@ describe('OrgLensTrainingService — request filter validation', () => {
     ['level', { level: 'Unknown level' }],
     ['format', { format: 'Unknown format' }],
   ];
+  const ZERO_TOTALS = { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 };
 
-  it.each(unknownFilters)('rejects an unknown %s with a validation error and never reaches a stats/groups cache key or SQL', async (_name, filter) => {
-    mockGroups(OPTIONS_ROWS);
-    const query = { ...QUERY, ...filter };
+  it.each(unknownFilters)(
+    'answers an unknown %s with zero payloads, never an error, and reaches no stats/groups cache key or statement',
+    async (_name, filter) => {
+      mockGroups(KNOWN_ROWS);
+      const query = { ...QUERY, ...filter };
 
-    await expect(service.getTrainingStats(ACCOUNT, query, 'org-grant')).rejects.toBeInstanceOf(ServiceValidationError);
-    await expect(service.getGroups(REQ, ACCOUNT, query, { groupBy: 'course', tab: 'certifications' }, 'org-grant')).rejects.toBeInstanceOf(
-      ServiceValidationError
-    );
-    await expect(
-      service.getGroupEmployees(REQ, ACCOUNT, query, { groupBy: 'course', groupValue: 'Course A', tab: 'certifications', status: 'completed' }, 'org-grant')
-    ).rejects.toBeInstanceOf(ServiceValidationError);
+      const stats = await service.getTrainingStats(ACCOUNT, query, 'org-grant');
+      const groups = await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
+      const drawer = await service.getGroupEmployees(
+        REQ,
+        ACCOUNT,
+        query,
+        { groupBy: 'course', groupValue: 'Course A', tab: 'certifications', status: 'completed' },
+        'org-grant'
+      );
 
-    // Only the all-time options were read (their key carries the range, never a filter value); no key or statement holds the value.
-    const keys = withOrgCache.mock.calls.map(([, key]) => key as string);
-    expect(new Set(keys)).toEqual(new Set(['training-filter-options:v1:all']));
-    for (const [sql, binds] of execute.mock.calls as [string, unknown[]][]) {
-      expect(sql).toContain('SELECT DISTINCT FOUNDATION_ID');
-      expect(binds).toEqual([ACCOUNT]);
+      expect(stats).toEqual({
+        range: '730d',
+        asOf: null,
+        rosterMembers: null,
+        rosterMembersAsOf: null,
+        peopleWithTrainingActivity: 0,
+        learnersOutsidePeopleList: 0,
+        coursesTaken: 0,
+        certifications: 0,
+        certifiedPeople: 0,
+        trainingsCompleted: 0,
+        completionRatePct: 0,
+        coursesInProgress: 0,
+        peopleInTraining: 0,
+      });
+      expect(groups).toEqual({ data: [], total: 0, totals: ZERO_TOTALS });
+      expect(drawer).toEqual({
+        groupBy: 'course',
+        groupValue: 'Course A',
+        label: 'No course name',
+        tab: 'certifications',
+        status: 'completed',
+        total: 0,
+        data: [],
+      });
+
+      // Only the known-values entry was read (its key carries no request value); no key or statement holds the unknown value.
+      const keys = withOrgCache.mock.calls.map(([, key]) => key as string);
+      expect(new Set(keys)).toEqual(new Set(['training-filter-known:v1']));
+      for (const [sql, binds] of execute.mock.calls as [string, unknown[]][]) {
+        expect(isKnownValuesSql(sql)).toBe(true);
+        expect(binds).toEqual([ACCOUNT]);
+      }
     }
+  );
+
+  it('does not share the zero groups payload between responses', async () => {
+    mockGroups(KNOWN_ROWS);
+    const query = { ...QUERY, level: 'Unknown level' };
+
+    const first = await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
+    first.totals.people = 99;
+    first.data.push({ key: 'x', label: 'x', people: 1, coursesTaken: 1, completed: 1, inProgress: 0, level: null, foundation: null, logoUrl: null });
+    const second = await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
+
+    expect(second).toEqual({ data: [], total: 0, totals: ZERO_TOTALS });
   });
 
-  it('names the request parameter in the error, `trainingProject` for the project', async () => {
-    mockGroups(OPTIONS_ROWS);
+  it('serves an auditor-entitlement caller the same zeros without touching the shared cache', async () => {
+    mockGroups(KNOWN_ROWS);
 
-    const error = await service.getTrainingStats(ACCOUNT, { ...QUERY, project: 'p-unknown' }, 'org-grant').catch((e: unknown) => e);
+    const stats = await service.getTrainingStats(ACCOUNT, { ...QUERY, course: 'Unknown course' }, 'auditor-entitlement');
 
-    expect(error).toBeInstanceOf(ServiceValidationError);
-    expect(JSON.stringify((error as ServiceValidationError).toResponse())).toContain('trainingProject');
+    expect(stats.coursesTaken).toBe(0);
+    expect(withOrgCache).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it('accepts every option of the range and keeps a validated filter in the cache key', async () => {
-    mockGroups(OPTIONS_ROWS);
+  it('accepts every known value and keeps it in the cache key', async () => {
+    mockGroups(KNOWN_ROWS);
     const query: OrgTrainingStatsQuery = { range: '730d', foundation: 'f-1', project: 'p-1', course: 'Course A', level: 'Beginner', format: 'E-Learning' };
 
     await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
@@ -344,26 +415,76 @@ describe('OrgLensTrainingService — request filter validation', () => {
     expect(withOrgCache.mock.calls.map(([, key]) => key)).toContain(`training-groups:v1:${orgTrainingFiltersSignature(query)}:course:certifications`);
   });
 
-  it('validates against the all-time options, so a valid value with no rows in the selected range is not a 400', async () => {
-    execute.mockImplementation(async (sql: string) => {
-      if (sql.includes('SELECT DISTINCT FOUNDATION_ID')) return { rows: /DATEADD/.test(sql) ? [] : OPTIONS_ROWS };
-      return { rows: sql.includes('AS GROUP_KEY') ? [] : [{ PEOPLE: 0, COURSES_TAKEN: 0, COMPLETED: 0, IN_PROGRESS: 0 }] };
-    });
-    const query: OrgTrainingStatsQuery = { ...QUERY, range: '30d', level: 'Beginner' };
+  it('compares a request value with the known values the way the URL normalizes it (trimmed), so a padded warehouse value is not unknown', async () => {
+    mockGroups([{ FILTER_KEY: 'course', FILTER_VALUE: '  Course A  ' }]);
 
-    const response = await service.getGroups(REQ, ACCOUNT, query, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
+    const groups = await service.getGroups(REQ, ACCOUNT, { ...QUERY, course: 'Course A' }, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
 
-    expect(response.data).toEqual([]);
-    expect(withOrgCache.mock.calls.map(([, key]) => key)).toContain('training-filter-options:v1:all');
-    expect(withOrgCache.mock.calls.map(([, key]) => key)).not.toContain('training-filter-options:v1:30d');
+    expect(groups.data.length).toBeGreaterThan(0);
   });
 
-  it('reads no options when no filter is set', async () => {
+  it('reads the known values from the raw rows of all time, not from resolved pairs or a range', async () => {
+    mockGroups(KNOWN_ROWS);
+
+    await service.getTrainingStats(ACCOUNT, { ...QUERY, range: '30d', level: 'Beginner' }, 'org-grant');
+
+    const knownCall = (execute.mock.calls as [string, unknown[]][]).find(([sql]) => isKnownValuesSql(sql))!;
+    expect(knownCall[0]).toContain('FROM rows_in_range');
+    expect(knownCall[0]).not.toMatch(/FROM f\b/);
+    expect(knownCall[0]).not.toContain('DATEADD');
+    expect(knownCall[1]).toEqual([ACCOUNT]);
+  });
+
+  it('serves data, not zeros, for a value some raw row carries even when the pair resolves to another value all-time (30d Beginner, all-time Intermediate)', async () => {
+    // The dropdown of the 30d range offers `Beginner` (an in-range row says so); the all-time pair resolves to `Intermediate`.
+    // The known set holds the raw row values, so it still contains `Beginner`.
+    execute.mockImplementation(async (sql: string) => {
+      if (isKnownValuesSql(sql)) {
+        return {
+          rows: [
+            { FILTER_KEY: 'level', FILTER_VALUE: 'Beginner' },
+            { FILTER_KEY: 'level', FILTER_VALUE: 'Intermediate' },
+          ],
+        };
+      }
+      if (sql.includes('AS COURSES_IN_PROGRESS')) {
+        return {
+          rows: [
+            { PEOPLE: 2, COURSES_TAKEN: 3, CERTIFICATIONS: 1, CERTIFIED_PEOPLE: 1, TRAININGS_COMPLETED: 1, COURSES_IN_PROGRESS: 1, PEOPLE_IN_TRAINING: 1 },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    const stats = await service.getTrainingStats(ACCOUNT, { ...QUERY, range: '30d', level: 'Beginner' }, 'org-grant');
+
+    expect(stats).toMatchObject({ range: '30d', peopleWithTrainingActivity: 2, coursesTaken: 3 });
+  });
+
+  it('reads no known values when no filter is set', async () => {
     mockGroups();
 
     await service.getGroups(REQ, ACCOUNT, QUERY, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
 
-    expect(withOrgCache.mock.calls.map(([, key]) => key as string).some((key) => key.startsWith('training-filter-options'))).toBe(false);
+    expect(withOrgCache.mock.calls.map(([, key]) => key as string).some((key) => key.startsWith('training-filter-known'))).toBe(false);
+  });
+
+  it('still rejects a group value that is not a group of the table', async () => {
+    mockGroups(KNOWN_ROWS);
+
+    const error = await service
+      .getGroupEmployees(
+        REQ,
+        ACCOUNT,
+        { ...QUERY, level: 'Beginner' },
+        { groupBy: 'course', groupValue: 'Nope', tab: 'certifications', status: 'completed' },
+        'org-grant'
+      )
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(JSON.stringify((error as ServiceValidationError).toResponse())).toContain('groupValue is not a group of this table');
   });
 });
 
@@ -379,12 +500,12 @@ describe('OrgLensTrainingService — a filter valid for the organization but wit
   ];
 
   /**
-   * The all-time options carry every value of OPTIONS_ROWS; every range-limited statement (a DATEADD window) finds no pair:
+   * The known values carry every value of KNOWN_ROWS; every range-limited statement (a DATEADD window) finds no pair:
    * aggregates answer one zero row and the grouped statement answers no row, as the warehouse does.
    */
   function mockNoRowsInRange(): void {
     execute.mockImplementation(async (sql: string) => {
-      if (sql.includes('SELECT DISTINCT FOUNDATION_ID')) return { rows: /DATEADD/.test(sql) ? [] : OPTIONS_ROWS };
+      if (isKnownValuesSql(sql)) return { rows: KNOWN_ROWS };
       if (sql.includes('AS GROUP_KEY')) return { rows: [] };
       if (sql.includes('AS COURSES_IN_PROGRESS')) {
         return {
@@ -455,7 +576,7 @@ describe('OrgLensTrainingService — a filter valid for the organization but wit
 
   it('group employees: serves an empty drawer with a zero total when the group exists but none of its pairs is a current employee', async () => {
     execute.mockImplementation(async (sql: string) => {
-      if (sql.includes('SELECT DISTINCT FOUNDATION_ID')) return { rows: OPTIONS_ROWS };
+      if (isKnownValuesSql(sql)) return { rows: KNOWN_ROWS };
       if (sql.includes('AS GROUP_KEY')) return { rows: GROUP_ROWS };
       if (sql.includes('COUNT(*) AS TOTAL')) return { rows: [{ TOTAL: 0, GROUP_LABEL: null }] };
       if (sql.includes('CONTACT_ID')) return { rows: [] };
@@ -473,19 +594,20 @@ describe('OrgLensTrainingService — a filter valid for the organization but wit
     expect(response).toMatchObject({ groupBy: 'course', groupValue: 'Course A', total: 0, data: [] });
   });
 
-  it('still rejects an unknown value in the same range, so only the all-time options decide', async () => {
+  it('still answers an unknown value in the same range with zeros, so only the known values decide', async () => {
     mockNoRowsInRange();
 
-    await expect(service.getTrainingStats(ACCOUNT, rangeQuery({ level: 'Unknown level' }), 'org-grant')).rejects.toBeInstanceOf(ServiceValidationError);
-    await expect(
-      service.getGroups(REQ, ACCOUNT, rangeQuery({ level: 'Unknown level' }), { groupBy: 'course', tab: 'certifications' }, 'org-grant')
-    ).rejects.toBeInstanceOf(ServiceValidationError);
+    const stats = await service.getTrainingStats(ACCOUNT, rangeQuery({ level: 'Unknown level' }), 'org-grant');
+    const groups = await service.getGroups(REQ, ACCOUNT, rangeQuery({ level: 'Unknown level' }), { groupBy: 'course', tab: 'certifications' }, 'org-grant');
+
+    expect(stats.coursesTaken).toBe(0);
+    expect(groups.total).toBe(0);
   });
 });
 
 describe('OrgLensTrainingService — access qualification and the shared caches', () => {
   it('serves an auditor-entitlement caller directly: nothing is read from or stored in the shared cache', async () => {
-    mockGroups(OPTIONS_ROWS);
+    mockGroups(KNOWN_ROWS);
     const query = { ...QUERY, level: 'Beginner' };
 
     await service.getFilterOptions(ACCOUNT, '730d', 'auditor-entitlement');
@@ -504,7 +626,7 @@ describe('OrgLensTrainingService — access qualification and the shared caches'
   });
 
   it('serves an org-grant caller through the shared cache', async () => {
-    mockGroups(OPTIONS_ROWS);
+    mockGroups(KNOWN_ROWS);
 
     await service.getFilterOptions(ACCOUNT, '730d', 'org-grant');
     await service.getGroups(REQ, ACCOUNT, QUERY, { groupBy: 'course', tab: 'certifications' }, 'org-grant');

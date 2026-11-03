@@ -125,11 +125,14 @@ export interface CompactOrgEventAttendeesRawCache {
 /** Cached form of the Trainees raw warehouse reads. */
 export interface CompactOrgTraineesRawCache {
   traineeRows: ColumnarTable;
-  /** Learners outside the people list: `PERSON_KEY`, `LEARNER_NAME`, `IS_CERTIFIED` (lfx-self-serve#4287); no detail rows. */
+  /** Learners outside the people list: `LEARNER_NAME`, `IS_CERTIFIED` only (lfx-self-serve#4287). Their warehouse key is never stored, and no detail rows are read for them. */
   outsideLearnerRows: ColumnarTable;
   /** Distinct course-level field sets (course, foundation, project, level and format columns), once each. */
   courses: ColumnarTable;
-  /** Per-(person, course-or-cert) rows reduced to `PERSON_KEY`, `STATUS`, `COURSE_OR_CERT_ID`, `ACTIVITY_TS`. */
+  /**
+   * Per-(person, course-or-cert) rows reduced to `PERSON_KEY`, `STATUS`, `COURSE_OR_CERT_ID`, `ACTIVITY_TS`, for people with a current-employee
+   * row only (the trainee rows): a former employee's key and enrollment or certificate ids are never stored.
+   */
   details: ColumnarTable;
   /** Aligned to `details.r`: which entry of `courses.r` each detail row belongs to. */
   detailCourses: number[];

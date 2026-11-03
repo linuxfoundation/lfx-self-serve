@@ -7,9 +7,10 @@ import {
   DEFAULT_ORG_TRAINING_GROUPS_PAGE_SIZE,
   DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD,
   DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER,
+  EMPTY_ORG_TRAINING_GROUPS_RESPONSE,
   MAX_ORG_CERT_EMPLOYEES,
+  ORG_TRAINING_FILTER_KEYS,
   ORG_TRAINING_GROUP_NONE_LABELS,
-  ORG_TRAINING_VIEW_QUERY_PARAMS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -31,6 +32,7 @@ import type { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { toIsoTimestamp } from '../helpers/date-format.helper';
+import { normalizeOrgTrainingFilterValue } from '../helpers/org-training-filter.helper';
 import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
 import {
   buildOrgTrainingPairsCte,
@@ -110,14 +112,13 @@ interface OrgTrainingGroupCountRow {
   GROUP_LABEL: string | null;
 }
 
-/** Request filter → the filter-options list that must carry its value. */
-const FILTER_OPTION_KEYS = [
-  { filter: 'foundation', options: 'foundations' },
-  { filter: 'project', options: 'projects' },
-  { filter: 'course', options: 'courses' },
-  { filter: 'level', options: 'levels' },
-  { filter: 'format', options: 'formats' },
-] as const satisfies readonly { filter: keyof OrgTrainingFilters; options: keyof OrgTrainingFilterOptions }[];
+/** The distinct values the org's people-list training rows carry for each filter, as a request value is compared (trimmed, capped). */
+type OrgTrainingKnownFilterValues = Record<keyof OrgTrainingFilters, string[]>;
+
+interface OrgTrainingKnownValueRow {
+  FILTER_KEY: keyof OrgTrainingFilters;
+  FILTER_VALUE: string | null;
+}
 
 /**
  * Learner numbers of the shared Training / Trainees view: one pairs definition (see org-training-pairs.sql) behind stats, options, groups and drawers.
@@ -127,15 +128,16 @@ const FILTER_OPTION_KEYS = [
  * (`auditor-entitlement`) is resolved directly and nothing is read from or stored in the shared cache, so upstream stays
  * the deciding authority for that request.
  *
- * Request filter values are validated against the all-time filter options before any cache key or SQL is built (a 400 for
- * an unknown value), which keeps the key space bounded by the org's own attribute values.
+ * Request filter values are compared with the org's own known values before any stats/groups/drawer cache key or SQL is built:
+ * a value the org never carries is answered with the zero payload (never a 400, never a cache key), which keeps the key space
+ * bounded by the org's own attribute values. Only a malformed value is a 400, and the controller raises it.
  */
 export class OrgLensTrainingService {
   private readonly snowflakeService = SnowflakeService.getInstance();
 
   /** The one stats function: both pages and the Overview tile call it, so equal queries always give equal numbers. */
   public async getTrainingStats(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<OrgTrainingStats> {
-    await this.assertKnownFilters(accountId, query, qualification);
+    if (!(await this.carriesOnlyKnownFilters(accountId, query, qualification))) return emptyTrainingStats(query.range);
     return this.cached(
       qualification,
       accountId,
@@ -190,15 +192,17 @@ export class OrgLensTrainingService {
       offset,
     });
 
-    await this.assertKnownFilters(accountId, query, qualification);
+    if (!(await this.carriesOnlyKnownFilters(accountId, query, qualification))) {
+      return { data: [...EMPTY_ORG_TRAINING_GROUPS_RESPONSE.data], total: 0, totals: { ...EMPTY_ORG_TRAINING_GROUPS_RESPONSE.totals } };
+    }
     const raw = await this.getGroupsRaw(accountId, query, groupBy, tab, qualification);
 
     const needle = searchQuery?.trim().toLowerCase();
     const matching = needle ? raw.rows.filter((row) => row.label.toLowerCase().includes(needle)) : [...raw.rows];
     const direction = sortOrder === 'ASC' ? 1 : -1;
     matching.sort((a, b) => {
-      const primary = sortField === 'label' ? a.label.localeCompare(b.label) : a[sortField] - b[sortField];
-      return primary !== 0 ? primary * direction : a.label.localeCompare(b.label);
+      const primary = sortField === 'label' ? a.label.localeCompare(b.label, 'en-US') : a[sortField] - b[sortField];
+      return primary !== 0 ? primary * direction : a.label.localeCompare(b.label, 'en-US');
     });
 
     return { data: matching.slice(offset, offset + pageSize), total: matching.length, totals: raw.totals };
@@ -221,8 +225,11 @@ export class OrgLensTrainingService {
       status,
     });
 
+    // A filter value the org never carries answers an empty drawer, before any cache key or statement.
+    if (!(await this.carriesOnlyKnownFilters(accountId, query, qualification))) {
+      return { groupBy, groupValue, label: ORG_TRAINING_GROUP_NONE_LABELS[groupBy], tab, status, total: 0, data: [] };
+    }
     // The cell must be a group of this table: an unknown value never reaches a cache key or SQL.
-    await this.assertKnownFilters(accountId, query, qualification);
     const groups = await this.getGroupsRaw(accountId, query, groupBy, tab, qualification);
     if (!groups.rows.some((row) => row.key === groupValue)) {
       throw ServiceValidationError.forField('groupValue', 'groupValue is not a group of this table', { operation: 'get_org_training_group_employees' });
@@ -267,22 +274,48 @@ export class OrgLensTrainingService {
   }
 
   /**
-   * 400 for a filter value the org's pairs never carry, so no unknown string reaches a cache key or SQL. Checked against
-   * the all-time options (a superset of every range's), not the request's range: a value valid for the org but with no
-   * rows in the selected range (the filter bar keeps it selected across a range change) is served as zero data.
+   * Whether every filter the request sets names a value the org's people-list training rows carry. A value the org never
+   * carries (another org's value kept across an org switch, a stale shared URL) is not an error: the callers answer it with
+   * the zero payload before any stats/groups/drawer cache key or statement exists, which keeps that key space bounded by
+   * the org's own values. The set is the DISTINCT raw row values over all time, not the options of a range or the resolved
+   * pair attributes: a pair's attribute is the greatest value of its in-range rows, so a value that only some rows carry
+   * (a `Beginner` row of a pair that resolves to `Intermediate` all-time) is a value the dropdown of a narrower range offers
+   * and must be accepted. A value valid for the org with no rows in the selected range is served as zero data by the normal path.
    */
-  private async assertKnownFilters(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<void> {
-    const requested = FILTER_OPTION_KEYS.filter(({ filter }) => query[filter] !== null);
-    if (requested.length === 0) return;
+  private async carriesOnlyKnownFilters(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<boolean> {
+    const requested = ORG_TRAINING_FILTER_KEYS.filter((filter) => query[filter] !== null);
+    if (requested.length === 0) return true;
 
-    const options = await this.getFilterOptions(accountId, 'all', qualification);
-    for (const { filter, options: optionsKey } of requested) {
-      if (!options[optionsKey].some((option) => option.value === query[filter])) {
-        throw ServiceValidationError.forField(ORG_TRAINING_VIEW_QUERY_PARAMS[filter], `${filter} is not an option of this organization's training view`, {
-          operation: 'validate_org_training_filters',
-        });
-      }
-    }
+    const known = await this.getKnownFilterValues(accountId, qualification);
+    return requested.every((filter) => known[filter].includes(query[filter] as string));
+  }
+
+  /** The known-value set, bounded by the org's own attribute values; cached as its own entry for an `org-grant` caller only. */
+  private getKnownFilterValues(accountId: string, qualification: OrgLensReadQualification): Promise<OrgTrainingKnownFilterValues> {
+    return this.cached(
+      qualification,
+      accountId,
+      'training-filter-known:v1',
+      async () => {
+        // rows_in_range of the all-time query: the exact row set every range's pairs are resolved from.
+        const { cte, binds } = buildOrgTrainingPairsCte(accountId, { range: 'all', foundation: null, project: null, course: null, level: null, format: null });
+        const sql = `
+          WITH ${cte}
+          SELECT 'foundation' AS FILTER_KEY, FOUNDATION_ID AS FILTER_VALUE FROM rows_in_range
+          UNION
+          SELECT 'project', PROJECT_ID FROM rows_in_range
+          UNION
+          SELECT 'course', COURSE_NAME FROM rows_in_range
+          UNION
+          SELECT 'level', COURSE_LEVEL FROM rows_in_range
+          UNION
+          SELECT 'format', COURSE_FORMAT FROM rows_in_range
+        `;
+        const result = await this.snowflakeService.execute<OrgTrainingKnownValueRow>(sql, binds);
+        return buildKnownFilterValues(result.rows);
+      },
+      isKnownFilterValues
+    );
   }
 
   private async fetchTrainingStats(accountId: string, query: OrgTrainingStatsQuery): Promise<OrgTrainingStats> {
@@ -495,7 +528,10 @@ export class OrgLensTrainingService {
   }
 }
 
-/** The five dropdowns; an option exists only when a pair of the range carries it. Course options are names (versions merge). */
+/**
+ * The five dropdowns; an option exists only when a pair of the range carries it. Course options are names (versions merge).
+ * Option values are normalized like a URL value (trimmed, capped), so every option can be named by a request and compares equal to it.
+ */
 function buildFilterOptions(rows: readonly OrgTrainingOptionRow[]): OrgTrainingFilterOptions {
   const foundations = new Map<string, string>();
   const projects = new Map<string, string>();
@@ -503,20 +539,66 @@ function buildFilterOptions(rows: readonly OrgTrainingOptionRow[]): OrgTrainingF
   const levels = new Map<string, string>();
   const formats = new Map<string, string>();
   for (const row of rows) {
-    if (row.FOUNDATION_ID && row.FOUNDATION_NAME) foundations.set(row.FOUNDATION_ID, row.FOUNDATION_NAME);
-    if (row.PROJECT_ID && row.PROJECT_NAME) projects.set(row.PROJECT_ID, row.PROJECT_NAME);
-    if (row.COURSE_NAME) courses.set(row.COURSE_NAME, row.COURSE_NAME);
-    if (row.COURSE_LEVEL) levels.set(row.COURSE_LEVEL, row.COURSE_LEVEL);
-    if (row.COURSE_FORMAT) formats.set(row.COURSE_FORMAT, row.COURSE_FORMAT);
+    const foundationId = normalizeOrgTrainingFilterValue(row.FOUNDATION_ID);
+    const projectId = normalizeOrgTrainingFilterValue(row.PROJECT_ID);
+    const course = normalizeOrgTrainingFilterValue(row.COURSE_NAME);
+    const level = normalizeOrgTrainingFilterValue(row.COURSE_LEVEL);
+    const format = normalizeOrgTrainingFilterValue(row.COURSE_FORMAT);
+    if (foundationId && row.FOUNDATION_NAME) foundations.set(foundationId, row.FOUNDATION_NAME);
+    if (projectId && row.PROJECT_NAME) projects.set(projectId, row.PROJECT_NAME);
+    if (course) courses.set(course, course);
+    if (level) levels.set(level, level);
+    if (format) formats.set(format, format);
   }
   const toOptions = (entries: Map<string, string>): OrgDropdownOption[] =>
-    [...entries].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label));
+    [...entries].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label, 'en-US'));
   return {
     foundations: toOptions(foundations),
     projects: toOptions(projects),
     courses: toOptions(courses),
     levels: toOptions(levels),
     formats: toOptions(formats),
+  };
+}
+
+/** The distinct raw values of the all-time rows, one list per filter, normalized like a request value. */
+function buildKnownFilterValues(rows: readonly OrgTrainingKnownValueRow[]): OrgTrainingKnownFilterValues {
+  const known: Record<keyof OrgTrainingFilters, Set<string>> = {
+    foundation: new Set(),
+    project: new Set(),
+    course: new Set(),
+    level: new Set(),
+    format: new Set(),
+  };
+  for (const row of rows) {
+    const value = normalizeOrgTrainingFilterValue(row.FILTER_VALUE);
+    if (value !== null && row.FILTER_KEY in known) known[row.FILTER_KEY].add(value);
+  }
+  return {
+    foundation: [...known.foundation],
+    project: [...known.project],
+    course: [...known.course],
+    level: [...known.level],
+    format: [...known.format],
+  };
+}
+
+/** The stats of a filter the org carries no value for: nothing counted, and no roster or build time read (the short-circuit reads no warehouse row). */
+function emptyTrainingStats(range: OrgLensTimeRange): OrgTrainingStats {
+  return {
+    range,
+    asOf: null,
+    rosterMembers: null,
+    rosterMembersAsOf: null,
+    peopleWithTrainingActivity: 0,
+    learnersOutsidePeopleList: 0,
+    coursesTaken: 0,
+    certifications: 0,
+    certifiedPeople: 0,
+    trainingsCompleted: 0,
+    completionRatePct: 0,
+    coursesInProgress: 0,
+    peopleInTraining: 0,
   };
 }
 
@@ -548,6 +630,11 @@ function isTrainingStats(value: unknown): boolean {
 function isFilterOptions(value: unknown): boolean {
   const v = value as Partial<Record<keyof OrgTrainingFilterOptions, unknown>> | null;
   return !!v && Array.isArray(v.foundations) && Array.isArray(v.projects) && Array.isArray(v.courses) && Array.isArray(v.levels) && Array.isArray(v.formats);
+}
+
+function isKnownFilterValues(value: unknown): boolean {
+  const v = value as Partial<Record<keyof OrgTrainingFilters, unknown>> | null;
+  return !!v && ORG_TRAINING_FILTER_KEYS.every((filter) => Array.isArray(v[filter]) && (v[filter] as unknown[]).every((entry) => typeof entry === 'string'));
 }
 
 function isGroupsRaw(value: unknown): boolean {

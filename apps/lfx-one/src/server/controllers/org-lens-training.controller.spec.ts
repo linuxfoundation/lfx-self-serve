@@ -164,14 +164,28 @@ describe('OrgLensTrainingController', () => {
       expect(getGroupEmployees.mock.calls[0][2]).toMatchObject({ level: 'Beginner' });
     });
 
-    it('caps groupValue at the shared filter-value length', async () => {
-      await controller.getGroupEmployees(
-        buildReq({ groupValue: 'x'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH + 50), status: 'completed' }),
-        buildRes(),
-        vi.fn()
-      );
+    it('forwards a groupValue at the cap and rejects one over it, never cutting it', async () => {
+      const next = vi.fn();
 
+      await controller.getGroupEmployees(buildReq({ groupValue: 'x'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH), status: 'completed' }), buildRes(), next);
+      expect(next).not.toHaveBeenCalled();
       expect(getGroupEmployees.mock.calls[0][3].groupValue).toHaveLength(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH);
+
+      await controller.getGroupEmployees(buildReq({ groupValue: 'x'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH + 1), status: 'completed' }), buildRes(), next);
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(getGroupEmployees).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a groupValue with a control character or that is not one string', async () => {
+      const next = vi.fn();
+
+      await controller.getGroupEmployees(buildReq({ groupValue: 'a\u0000b', status: 'completed' }), buildRes(), next);
+      await controller.getGroupEmployees(buildReq({ groupValue: ['a', 'b'], status: 'completed' }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledTimes(2);
+      expect(next.mock.calls.every(([e]) => e instanceof ServiceValidationError)).toBe(true);
+      expect(getGroupEmployees).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -189,7 +203,38 @@ describe('OrgLensTrainingController', () => {
     });
   });
 
-  describe('a known filter value with no rows in the range', () => {
+  describe('malformed filter values', () => {
+    const params = ['foundation', 'trainingProject', 'course', 'level', 'format'];
+
+    it.each(params)('rejects a %s that is over the length cap, holds a control character, or is not one string, before any service call', async (param) => {
+      const next = vi.fn();
+      const bad = ['x'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH + 1), 'a\nb', ['a', 'b']];
+
+      for (const value of bad) {
+        await controller.getTrainingStats(buildReq({ [param]: value }), buildRes(), next);
+        await controller.getGroups(buildReq({ [param]: value }), buildRes(), next);
+        await controller.getGroupEmployees(buildReq({ [param]: value, groupValue: 'x', status: 'completed' }), buildRes(), next);
+      }
+
+      expect(next).toHaveBeenCalledTimes(bad.length * 3);
+      expect(next.mock.calls.every(([e]) => e instanceof ServiceValidationError)).toBe(true);
+      expect(getTrainingStats).not.toHaveBeenCalled();
+      expect(getGroups).not.toHaveBeenCalled();
+      expect(getGroupEmployees).not.toHaveBeenCalled();
+    });
+
+    it('accepts a value at the cap, and trims surrounding whitespace before measuring it', async () => {
+      const next = vi.fn();
+
+      await controller.getTrainingStats(buildReq({ course: 'x'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH) }), buildRes(), next);
+      await controller.getTrainingStats(buildReq({ course: `  ${'y'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH)}  ` }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(getTrainingStats.mock.calls[1][1].course).toBe('y'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH));
+    });
+  });
+
+  describe('a filter value the service answers with zeros', () => {
     const ZERO_STATS = { range: '30d', rosterMembers: null, peopleWithTrainingActivity: 0, coursesTaken: 0 };
     const ZERO_GROUPS = { data: [], total: 0, totals: { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 } };
     const ZERO_DRAWER = { groupBy: 'course', groupValue: 'x', label: 'x', tab: 'certifications', status: 'completed', total: 0, data: [] };
@@ -211,23 +256,15 @@ describe('OrgLensTrainingController', () => {
       expect(drawerRes.json).toHaveBeenCalledWith(ZERO_DRAWER);
     });
 
-    it('hands an unknown value (the service validation error) to the error handler and sends no payload', async () => {
-      const error = ServiceValidationError.forField('level', "level is not an option of this organization's training view", {
-        operation: 'validate_org_training_filters',
-      });
-      getTrainingStats.mockRejectedValue(error);
-      getGroups.mockRejectedValue(error);
-      getGroupEmployees.mockRejectedValue(error);
+    it('forwards an unknown (well-formed) filter value to the service, which answers it with zeros', async () => {
       const next = vi.fn();
-      const res = buildRes();
 
-      await controller.getTrainingStats(buildReq({ level: 'Unknown' }), res, next);
-      await controller.getGroups(buildReq({ level: 'Unknown' }), res, next);
-      await controller.getGroupEmployees(buildReq({ level: 'Unknown', groupValue: 'x', status: 'completed' }), res, next);
+      await controller.getTrainingStats(buildReq({ level: 'Unknown' }), buildRes(), next);
+      await controller.getGroups(buildReq({ level: 'Unknown' }), buildRes(), next);
+      await controller.getGroupEmployees(buildReq({ level: 'Unknown', groupValue: 'x', status: 'completed' }), buildRes(), next);
 
-      expect(next).toHaveBeenCalledTimes(3);
-      expect(next.mock.calls.every(([e]) => e === error)).toBe(true);
-      expect(res.json).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+      expect(getTrainingStats.mock.calls[0][1]).toMatchObject({ level: 'Unknown' });
     });
   });
 });

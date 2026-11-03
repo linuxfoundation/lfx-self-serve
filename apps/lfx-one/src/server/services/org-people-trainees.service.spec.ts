@@ -153,10 +153,10 @@ afterEach(() => {
 
 describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
   it('serves a cache hit that is byte-identical to the miss that populated it', async () => {
-    const fromMiss = await service.getTrainees(ACCOUNT, '365d');
+    const fromMiss = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
     const warehouseReads = execute.mock.calls.length;
 
-    const fromHit = await service.getTrainees(ACCOUNT, '365d');
+    const fromHit = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     // `toStrictEqual` distinguishes null from undefined from an absent key; the serialized
     // comparison additionally pins key order, which `getTrainees`'s object literals fix and a
@@ -166,15 +166,15 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
   });
 
-  it('rebuilds the course-level columns on the cache-hit path, including the null-course fallback', async () => {
+  it('rebuilds the course-level columns on the cache-hit path, including the null-course id fallback and the unfilled course name', async () => {
     // Deliberately the SECOND call: the first populates the cache and returns the rows the
     // warehouse handed back, so only a read-back exercises the decoder at all. A decode that
     // dropped a dictionary column would leave the expanded section blank; the null-COURSE_ID row
-    // also pins the documented fallback to COURSE_OR_CERT_ID, which the client groups on.
-    await service.getTrainees(ACCOUNT, '365d');
+    // also pins the documented fallback to COURSE_OR_CERT_ID, which the client groups on; the missing name stays null on the wire.
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
     const warehouseReads = execute.mock.calls.length;
 
-    const { details } = await service.getTrainees(ACCOUNT, '365d');
+    const { details } = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
 
@@ -193,7 +193,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
       productType: 'Certification',
       activityTs: '2026-04-12T10:30:00.000Z',
     });
-    expect(details[3]).toMatchObject({ courseId: 'enroll-two', projectId: null, courseLevel: null, courseFormat: 'Instructor Led' });
+    expect(details[3]).toMatchObject({ courseId: 'enroll-two', courseName: null, projectId: null, courseLevel: null, courseFormat: 'Instructor Led' });
     expect(details.map((row) => row.courseId)).toEqual(['course-one', 'course-one', 'course-one', 'enroll-two']);
     // Two of the four detail rows share every course-level column, so the stored dictionary has to be shorter than
     // the detail table — a `keyOf` regression that stopped collapsing them would not be.
@@ -206,14 +206,14 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into rows
     // missing data, so the guard has to reject the entry up front rather than serve a tab with
     // holes in it for the rest of the TTL.
-    await service.getTrainees(ACCOUNT, '365d');
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgTraineesRawCache;
     stored.courses.k = [...stored.courses.k].reverse();
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 
-    await service.getTrainees(ACCOUNT, '365d');
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
@@ -229,14 +229,14 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
   ])('treats a stored entry with %s as a miss', async (_label, corrupt) => {
     // The decode resolves each reference without a fallback, so an unresolvable one would emit a
     // row with no dictionary fields at all. The guard has to reject the entry instead.
-    await service.getTrainees(ACCOUNT, '365d');
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgTraineesRawCache;
     corrupt(stored);
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 
-    await service.getTrainees(ACCOUNT, '365d');
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
@@ -246,9 +246,9 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // refetch on every request forever.
     execute.mockReset();
     execute.mockResolvedValue({ rows: [] });
-    const fromMiss = await service.getTrainees(ACCOUNT, '365d');
+    const fromMiss = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
-    const fromHit = await service.getTrainees(ACCOUNT, '365d');
+    const fromHit = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
@@ -262,7 +262,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
   ])('treats a stored entry whose required COURSE_OR_CERT_ID cell is %s as a miss', async (_label, corrupt) => {
     // Exact columns prove the shape, not the value. A required cell that never arrived, or arrived
     // as the wrong type, decodes into a row the mapper then reads — so it has to be a miss.
-    await service.getTrainees(ACCOUNT, '365d');
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgTraineesRawCache;
     const index = stored.details.k.indexOf('COURSE_OR_CERT_ID');
@@ -270,7 +270,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 
-    await service.getTrainees(ACCOUNT, '365d');
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
@@ -307,10 +307,10 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
         ],
       };
     });
-    const fromMiss = await service.getTrainees(ACCOUNT, '365d');
+    const fromMiss = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
     const warehouseReads = execute.mock.calls.length;
 
-    const fromHit = await service.getTrainees(ACCOUNT, '365d');
+    const fromHit = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
     expect(fromHit).toStrictEqual(fromMiss);
@@ -322,20 +322,20 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     const legacy = { traineeRows: [], detailRows: [{ PERSON_KEY: 'stale' }], foundationRows: [], courseRows: [] };
     cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v9:365d')!, JSON.stringify(legacy));
 
-    const response = await service.getTrainees(ACCOUNT, '365d');
+    const response = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     expect(response.trainees.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
     expect(response.outsideLearners.map((row) => row.personKey)).toEqual(['outside:1']);
   });
 
   it('treats a v4-shaped entry without the build time as a miss, so the as-of date is never dropped for a TTL', async () => {
-    await service.getTrainees(ACCOUNT, '365d');
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as Partial<CompactOrgTraineesRawCache>;
     delete stored.asOf;
     cacheValues.set(key, JSON.stringify(stored));
 
-    const response = await service.getTrainees(ACCOUNT, '365d');
+    const response = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     expect(response.asOf).toBe('2026-10-30T04:15:00.000Z');
   });
@@ -353,7 +353,7 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     ['365d', 365],
     ['730d', 730],
   ] as const)('windows every read on ACTIVITY_TS for %s', async (range, days) => {
-    const response = await service.getTrainees(ACCOUNT, range);
+    const response = await service.getTrainees(ACCOUNT, range, 'org-grant');
 
     expect(response.timeRange).toBe(range);
     expect(rangedQueries()).toHaveLength(3);
@@ -363,7 +363,7 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
   });
 
   it('reads all time without a date predicate', async () => {
-    await service.getTrainees(ACCOUNT, 'all');
+    await service.getTrainees(ACCOUNT, 'all', 'org-grant');
 
     expect(execute).toHaveBeenCalledTimes(4);
     for (const sql of queries()) {
@@ -372,8 +372,8 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
   });
 
   it('states the build time of the training data whatever the range, and null when the account has none', async () => {
-    const narrow = await service.getTrainees(ACCOUNT, '30d');
-    const wide = await service.getTrainees(ACCOUNT, 'all');
+    const narrow = await service.getTrainees(ACCOUNT, '30d', 'org-grant');
+    const wide = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
     const asOfRead = queries().find((sql) => sql.includes('MAX(DBT_RUN_AT)'))!;
 
     expect(narrow.asOf).toBe('2026-10-30T04:15:00.000Z');
@@ -382,11 +382,11 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
 
     execute.mockReset();
     execute.mockResolvedValue({ rows: [] });
-    expect((await service.getTrainees('another-account', '30d')).asOf).toBeNull();
+    expect((await service.getTrainees('another-account', '30d', 'org-grant')).asOf).toBeNull();
   });
 
   it('takes identity from the all-time ranges roster, limited to people with training rows in the range', async () => {
-    await service.getTrainees(ACCOUNT, '90d');
+    await service.getTrainees(ACCOUNT, '90d', 'org-grant');
 
     const identity = queries().find((sql) => sql.includes('ORG_PEOPLE_ALL_RANGES'))!;
     expect(identity).toContain("TIME_RANGE = 'all'");
@@ -407,7 +407,7 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
       return { rows: [] };
     });
 
-    const response = await service.getTrainees(ACCOUNT, '365d');
+    const response = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     expect(response.trainees).toHaveLength(1);
     expect(response.trainees[0].email).toBe('ada@company.example');
@@ -415,9 +415,9 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
   });
 
   it('caches each range under its own key', async () => {
-    await service.getTrainees(ACCOUNT, '30d');
-    await service.getTrainees(ACCOUNT, '365d');
-    await service.getTrainees(ACCOUNT, '30d');
+    await service.getTrainees(ACCOUNT, '30d', 'org-grant');
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
+    await service.getTrainees(ACCOUNT, '30d', 'org-grant');
 
     expect(execute).toHaveBeenCalledTimes(8);
     expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v9:30d')!)).toBe(true);
@@ -479,7 +479,7 @@ describe('OrgPeopleTraineesService detail rows (lfx-self-serve#4916)', () => {
   });
 
   it('reads the project, level and format of every row', async () => {
-    await service.getTrainees(ACCOUNT, 'all');
+    await service.getTrainees(ACCOUNT, 'all', 'org-grant');
 
     const detailRead = execute.mock.calls.map(([sql]) => sql as string).find((sql) => sql.includes('COURSE_OR_CERT_ID'))!;
     for (const column of ['PROJECT_ID', 'PROJECT_NAME', 'COURSE_LEVEL', 'COURSE_FORMAT']) {
@@ -488,7 +488,7 @@ describe('OrgPeopleTraineesService detail rows (lfx-self-serve#4916)', () => {
   });
 
   it('ships the product type of every detail row, and no dropdown options (those come from /filter-options)', async () => {
-    const response = await service.getTrainees(ACCOUNT, 'all');
+    const response = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
 
     expect(response.details.length).toBeGreaterThan(0);
     expect(response.details.every((row) => row.productType === 'Certification')).toBe(true);
@@ -496,14 +496,14 @@ describe('OrgPeopleTraineesService detail rows (lfx-self-serve#4916)', () => {
   });
 
   it('reads the product type column in the detail read', async () => {
-    await service.getTrainees(ACCOUNT, 'all');
+    await service.getTrainees(ACCOUNT, 'all', 'org-grant');
 
     const detailRead = execute.mock.calls.map(([sql]) => sql as string).find((sql) => sql.includes('COURSE_OR_CERT_ID'))!;
     expect(detailRead).toContain('PRODUCT_TYPE');
   });
 
   it('keeps only the rows of the range', async () => {
-    const { details } = await service.getTrainees(ACCOUNT, '30d');
+    const { details } = await service.getTrainees(ACCOUNT, '30d', 'org-grant');
 
     expect(details.map((row) => row.courseId)).toEqual(['course-v1']);
   });
@@ -575,7 +575,7 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
   });
 
   it('ships a name and one status per learner, and no course, project, foundation, level, format, date or id', async () => {
-    const response = await service.getTrainees(ACCOUNT, 'all');
+    const response = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
 
     expect(response.outsideLearners).toEqual([
       { personKey: 'outside:1', name: 'Zoe Outside', status: 'Certified' },
@@ -588,7 +588,7 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
   });
 
   it('derives the status from the range: a certificate dated before it leaves the learner Enrolled', async () => {
-    const response = await service.getTrainees(ACCOUNT, '30d');
+    const response = await service.getTrainees(ACCOUNT, '30d', 'org-grant');
 
     expect(response.outsideLearners).toEqual([{ personKey: 'outside:1', name: 'Zoe Outside', status: 'Enrolled' }]);
   });
@@ -606,7 +606,7 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
         : { rows: [] }
     );
 
-    const { outsideLearners } = await service.getTrainees(ACCOUNT, '365d');
+    const { outsideLearners } = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
     expect(outsideLearners.map((learner) => [learner.name, learner.status])).toEqual([
       ['A', 'Certified'],
@@ -616,7 +616,7 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
   });
 
   it('ships course rows of listed people only: a former employee behind people-list rows has no wire row', async () => {
-    const response = await service.getTrainees(ACCOUNT, 'all');
+    const response = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
 
     expect([...new Set(response.details.map((row) => row.personKey))]).toEqual(['person-listed']);
     expect(response.details.find((row) => row.personKey === 'person-listed')?.courseOrCertId).toBe('enrolled:course-one');
@@ -631,7 +631,7 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
         : honest(query, binds)
     );
 
-    const response = await service.getTrainees(ACCOUNT, 'all');
+    const response = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
 
     expect(response.outsideLearners).toEqual([]);
     expect(JSON.stringify(response)).not.toMatch(/person-former|Former Learner/);
@@ -652,7 +652,7 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
       };
     });
 
-    const response = await service.getTrainees(ACCOUNT, 'all');
+    const response = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
 
     expect(response.outsideLearners).toEqual([{ personKey: 'outside:1', name: 'Zoe Outside', status: 'Enrolled' }]);
     expect(response.details.map((row) => row.personKey)).toEqual(['person-listed']);
@@ -663,8 +663,32 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
     expect(stored).not.toMatch(/ti:outside-one|Former Learner|Listed Learner/);
   });
 
+  it('caches no former employee row: the stored entry holds neither their warehouse key nor their enrollment or certificate ids', async () => {
+    await service.getTrainees(ACCOUNT, 'all', 'org-grant');
+
+    const stored = [...cacheValues.values()].join('\n');
+    expect(stored).toContain('enrolled:course-one');
+    expect(stored).not.toMatch(/person-former|enrolled:former/);
+    const entry = JSON.parse([...cacheValues.values()][0]) as CompactOrgTraineesRawCache;
+    expect(entry.details.r).toHaveLength(1);
+  });
+
+  it('still counts the former employee rows for the outside-learner dedupe before dropping them from the cache', async () => {
+    const honest = execute.getMockImplementation()!;
+    execute.mockImplementation(async (query: string, binds: unknown[]) =>
+      query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')
+        ? { rows: [{ PERSON_KEY: 'person-former', LEARNER_NAME: 'Former Learner', IS_CERTIFIED: false }] }
+        : honest(query, binds)
+    );
+
+    const response = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
+
+    expect(response.outsideLearners).toEqual([]);
+    expect(JSON.stringify([...cacheValues.values()])).not.toMatch(/person-former|Former Learner/);
+  });
+
   it('windows the learners on the range and reads their status, not their rows', async () => {
-    await service.getTrainees(ACCOUNT, '90d');
+    await service.getTrainees(ACCOUNT, '90d', 'org-grant');
 
     const queries = execute.mock.calls.map(([sql]) => sql as string);
     const outside = queries.find((sql) => sql.includes('ORG_TRAINING_OUTSIDE_LEARNERS'))!;
@@ -674,5 +698,37 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
     expect(outside).not.toMatch(/\b(EMAIL|TITLE|COURSE_ID|COURSE_NAME|PROJECT_ID|FOUNDATION_ID|COURSE_OR_CERT_ID)\b/);
     expect(queries.find((sql) => sql.includes('COURSE_OR_CERT_ID'))).toMatch(/AND IS_ON_PEOPLE_LIST\s+AND ACTIVITY_TS/);
     expect(queries.find((sql) => sql.includes('ORG_PEOPLE_ALL_RANGES'))).toMatch(/AND IS_ON_PEOPLE_LIST\s+AND ACTIVITY_TS/);
+  });
+});
+
+describe('OrgPeopleTraineesService access qualification and the shared cache', () => {
+  it('serves an org-grant caller through the shared cache: the second read does not reach the warehouse', async () => {
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
+
+    expect(cacheValues.size).toBe(1);
+    expect(execute).toHaveBeenCalledTimes(warehouseReads);
+  });
+
+  it('serves an auditor-entitlement caller directly: nothing is read from or stored in the shared cache', async () => {
+    const response = await service.getTrainees(ACCOUNT, '365d', 'auditor-entitlement');
+
+    expect(cacheValues.size).toBe(0);
+    expect(response.trainees.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
+
+    // A warm shared entry is not served to that caller either: every call reads the warehouse again.
+    await service.getTrainees(ACCOUNT, '365d', 'org-grant');
+    const warm = execute.mock.calls.length;
+    await service.getTrainees(ACCOUNT, '365d', 'auditor-entitlement');
+    expect(execute.mock.calls.length).toBeGreaterThan(warm);
+  });
+
+  it('returns the same response for both qualifications', async () => {
+    const direct = await service.getTrainees(ACCOUNT, '365d', 'auditor-entitlement');
+    const shared = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
+
+    expect(direct).toStrictEqual(shared);
   });
 });

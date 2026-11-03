@@ -3,11 +3,20 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { CERTIFICATION_PRODUCT_TYPE } from '@lfx-one/shared/constants';
+import { CERTIFICATION_PRODUCT_TYPE, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH } from '@lfx-one/shared/constants';
 import type { OrgLensTimeRange, OrgTrainingGroupBy, OrgTrainingStatsQuery, OrgTrainingTabId } from '@lfx-one/shared/interfaces';
 import { orgLensTimeRangeDays } from '@lfx-one/shared/utils';
 
 const PEOPLE_TRAINING_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING';
+
+/**
+ * A free-text attribute as a request value names it: leading and trailing spaces trimmed (Snowflake `TRIM` takes spaces only, as
+ * `normalizeOrgTrainingFilterValue`), cut to the filter value length, and blank as NULL. The pairs read the course name, level
+ * and format this way, so a pair's attribute, its filter, its group key and its dropdown option are one string.
+ */
+function normalizedAttribute(column: string): string {
+  return `NULLIF(LEFT(TRIM(${column}), ${MAX_ORG_TRAINING_FILTER_VALUE_LENGTH}), '')`;
+}
 
 /** Pair attribute column each filter narrows (all bound as params, never inlined). */
 const FILTER_COLUMNS = {
@@ -49,7 +58,7 @@ export function orgTrainingStatusPredicate(status: 'completed' | 'in-progress'):
  * The one definition of a person-course pair in a range: `WITH rows_in_range, pairs, f` where `f` is the pairs of the
  * org's people list left after the filters. Every Training / Trainees number reads `f`, so the same query always counts
  * the same pairs. A pair exists when it has a row in range; it is Certified when any of them is a certificate. The pair's
- * attributes are resolved from ALL its in-range rows first (the highest value of each, names by the highest id, the format
+ * attributes (the course name, level and format trimmed of spaces, see `normalizedAttribute`) are resolved from ALL its in-range rows first (the highest value of each, names by the highest id, the format
  * of the latest row that has one: a certificate row without a format never erases the enrollment's), and only then do the
  * filters apply, so a filter never turns a certified pair into an enrolled one. `resolveOrgTraineePairs` mirrors this.
  * Binds: `[accountId, ...set filter values in foundation, project, course, level, format order]`.
@@ -77,9 +86,9 @@ export function buildOrgTrainingPairsCte(accountId: string, query: OrgTrainingSt
         FOUNDATION_NAME,
         PROJECT_ID,
         PROJECT_NAME,
-        COURSE_NAME,
-        COURSE_LEVEL,
-        COURSE_FORMAT
+        ${normalizedAttribute('COURSE_NAME')}   AS COURSE_NAME,
+        ${normalizedAttribute('COURSE_LEVEL')}  AS COURSE_LEVEL,
+        ${normalizedAttribute('COURSE_FORMAT')} AS COURSE_FORMAT
       FROM ${PEOPLE_TRAINING_TABLE}
       WHERE ACCOUNT_ID = ?
         AND IS_ON_PEOPLE_LIST
