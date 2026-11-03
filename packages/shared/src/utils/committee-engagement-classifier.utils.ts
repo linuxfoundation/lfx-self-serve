@@ -56,9 +56,10 @@ export function isLfStaffNonVotingSeat(input: Pick<CommitteeEngagementClassifica
  *    little history to score — one meeting would otherwise decide the tier (1/1 reads `High`,
  *    0/1 reads `Inactive`). Classified `New` (neutral) until enough invites accrue.
  * 4. No invites, and been a member the whole window: a genuine no-signal veteran.
- * 5-7. Invited at least once: threshold on the real (unrounded) rate.
- * 8. Invited at least once, attended nothing: a real disengagement signal regardless of tenure —
- *    unlike case 3, they had enough opportunities and skipped every one of them.
+ * 5-7. Invited at least once (at least `COMMITTEE_ENGAGEMENT_MIN_INVITES` times for a member who
+ *    joined within the window): threshold on the real (unrounded) rate.
+ * 8. Scored as in 5-7 but attended nothing: a real disengagement signal — unlike case 3, they had
+ *    enough opportunities and skipped every one of them.
  */
 export function classifyCommitteeEngagement(input: CommitteeEngagementClassificationInput): CommitteeEngagementClassification {
   const { attended, invited, votingStatus, joinedWithinWindow } = input;
@@ -79,9 +80,10 @@ export function classifyCommitteeEngagement(input: CommitteeEngagementClassifica
 }
 
 /**
- * `Low` members are at risk by definition. A member invited within the window who attended
- * nothing is at risk too, even though `classifyCommitteeEngagement` also calls them `Inactive` —
- * that tier's other member (never invited at all) has no signal to act on, but this one does.
+ * `Low` members are at risk by definition. A scored member (not `New`) invited within the window
+ * who attended nothing is at risk too, even though `classifyCommitteeEngagement` also calls them
+ * `Inactive` — that tier's other member (never invited at all) has no signal to act on, but this
+ * one does.
  * `Emeritus`, `LF Staff`+non-voting, and `New` never match `Low` or `Inactive`,
  * so no extra exclusion logic is needed here.
  */
