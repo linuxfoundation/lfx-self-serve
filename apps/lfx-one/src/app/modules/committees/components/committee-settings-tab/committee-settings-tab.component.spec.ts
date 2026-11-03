@@ -698,11 +698,7 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
       ...overrides,
     }) as GroupsIOMailingList;
 
-  async function createFixture(options: {
-    canEdit?: boolean;
-    flagEnabled?: boolean;
-    associatedMailingLists?: GroupsIOMailingList[];
-  }): Promise<void> {
+  async function createFixture(options: { canEdit?: boolean; flagEnabled?: boolean; associatedMailingLists?: GroupsIOMailingList[] }): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [CommitteeSettingsTabComponent],
       providers: [
