@@ -43,6 +43,9 @@ router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(re
 // GET /votes/:uid/reminder-recipients - eligible voters who have not voted yet (vote#writer only)
 router.get('/:uid/reminder-recipients', (req, res, next) => voteController.getVoteReminderRecipients(req, res, next));
 
+// GET /votes/:uid/summary-recipients - summary recipient preview (vote#writer only, ended votes)
+router.get('/:uid/summary-recipients', (req, res, next) => voteController.getVoteSummaryPreview(req, res, next));
+
 // GET /votes/:uid/voters - invited voters with their current ballot, or participation only on pseudo-anonymous votes (vote#writer only)
 router.get('/:uid/voters', (req, res, next) => voteController.getVoteVoters(req, res, next));
 

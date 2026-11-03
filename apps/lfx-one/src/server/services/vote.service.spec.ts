@@ -33,8 +33,13 @@ import type {
   QueryServiceResponse,
   VoteResultsResponse,
   Vote,
+  VoteSummaryRecipient,
+  VoteSummaryRecipientOutcome,
+  VoteSummaryRecipientResult,
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
+
+import { customErrorSerializer } from '../helpers/error-serializer';
 
 // Only `@lfx-one/shared/utils` is stubbed: its barrel pulls `@angular/common/http` (HttpParams via
 // meeting.utils), which can't JIT-compile in this plain-Node env. Enums/constants resolve for real via the alias.
@@ -78,7 +83,7 @@ const {
 vi.mock('@lfx-one/shared/utils', async () => {
   // The real GH-1558 comparator — the ordering specs must exercise the service's actual sort, not
   // a stub. Deep importActual avoids the barrel's @angular/common/http graph (compiler shim above).
-  const { compareVotesByRecency, isVoteClosingSoon, computeResultPercentage } =
+  const { compareVotesByRecency, isVoteClosingSoon, computeResultPercentage, partitionVoteSummaryRecipients } =
     await vi.importActual<typeof import('@lfx-one/shared/utils/vote.utils')>('@lfx-one/shared/utils/vote.utils');
   const { countVotesByStatus, normalizePollStatus, sortCommentResponsesByText } =
     await vi.importActual<typeof import('@lfx-one/shared/utils/poll.utils')>('@lfx-one/shared/utils/poll.utils');
@@ -93,6 +98,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     normalizePollStatus,
     maskIdentifierForLogs,
     escapeHtml,
+    partitionVoteSummaryRecipients,
     sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
     sortCommentResponsesByText,
   };
@@ -3134,6 +3140,53 @@ describe('VoteService', () => {
     });
   });
 
+  describe('getVoteSummaryPreview (#4830)', () => {
+    const endedVote = { ...voteFixture, uid: CANONICAL_UID, name: 'Spring Election', status: 'ended' };
+
+    beforeEach(() => {
+      proxyRequest.mockResolvedValue(endedVote);
+      vi.spyOn(service, 'getVoteSummaryRecipients').mockResolvedValue([
+        { uid: 'r-1', user_name: 'Avery Example', user_email: 'avery@acme-motors.example' },
+        { uid: 'r-2', user_name: 'Blake Example' },
+        { uid: 'r-3', user_name: 'Casey Example', user_email: 'shared@acme-motors.example' },
+        { uid: 'r-4', user_name: 'Drew Example', user_email: 'SHARED@acme-motors.example' },
+      ]);
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it.each(['active', 'draft', 'disabled', undefined])('refuses a vote that has not ended (status %j) without reading recipients', async (status) => {
+      proxyRequest.mockResolvedValue({ ...endedVote, status });
+
+      await expect(service.getVoteSummaryPreview(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 409, code: VOTE_SUMMARY_NOT_ENDED });
+      expect(service.getVoteSummaryRecipients).not.toHaveBeenCalled();
+    });
+
+    it('splits ready and missing-email voters and counts unique and shared addresses', async () => {
+      const preview = await service.getVoteSummaryPreview(req, CANONICAL_UID);
+
+      expect(preview.ready.map(({ uid }) => uid)).toEqual(['r-1', 'r-3', 'r-4']);
+      expect(preview.missing_email.map(({ uid }) => uid)).toEqual(['r-2']);
+      expect(preview.unique_email_count).toBe(2);
+      expect(preview.shared_email_voter_count).toBe(2);
+    });
+
+    it('returns identity fields only and logs counts, never addresses', async () => {
+      const preview = await service.getVoteSummaryPreview(req, CANONICAL_UID);
+
+      expect(Object.keys(preview).sort()).toEqual(['missing_email', 'ready', 'shared_email_voter_count', 'unique_email_count']);
+      for (const recipient of [...preview.ready, ...preview.missing_email]) {
+        expect(Object.keys(recipient).every((key) => ['uid', 'user_name', 'user_email'].includes(key))).toBe(true);
+      }
+      expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('@acme-motors.example');
+    });
+
+    it('does not send anything', async () => {
+      await service.getVoteSummaryPreview(req, CANONICAL_UID);
+
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+  });
+
   describe('sendVoteSummary (#3662)', () => {
     const endedVote = { ...voteFixture, uid: CANONICAL_UID, name: 'Spring Election', status: 'ended' };
     const resultsFixture: VoteResultsResponse = {
@@ -3154,6 +3207,8 @@ describe('VoteService', () => {
       { uid: 'r-1', user_name: 'Avery Example', user_email: 'avery@acme-motors.example' },
       { uid: 'r-2', user_name: 'Blake Example', user_email: 'blake@acme-motors.example' },
     ];
+    const [avery, blake] = recipientsFixture;
+    const withOutcome = (recipient: VoteSummaryRecipient, outcome: VoteSummaryRecipientOutcome): VoteSummaryRecipientResult => ({ ...recipient, outcome });
 
     beforeEach(() => {
       proxyRequest.mockResolvedValue(endedVote);
@@ -3206,7 +3261,13 @@ describe('VoteService', () => {
       expect(service.getVoteResults).toHaveBeenCalledWith(req, CANONICAL_UID, { canWrite: true });
 
       expect(sendEmail).toHaveBeenCalledTimes(2);
-      expect(result).toEqual({ recipient_count: 2, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
+      expect(result).toEqual({
+        recipient_count: 2,
+        failed_count: 0,
+        skipped_count: 0,
+        uncertain_count: 0,
+        recipients: [withOutcome(avery, 'sent'), withOutcome(blake, 'sent')],
+      });
     });
 
     it('sends the identical rendered email to every recipient — never personalized per voter', async () => {
@@ -3226,7 +3287,13 @@ describe('VoteService', () => {
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
       expect(sendEmail).toHaveBeenCalledTimes(2);
-      expect(result).toEqual({ recipient_count: 2, failed_count: 0, skipped_count: 1, uncertain_count: 0 });
+      expect(result).toEqual({
+        recipient_count: 2,
+        failed_count: 0,
+        skipped_count: 1,
+        uncertain_count: 0,
+        recipients: [withOutcome(avery, 'sent'), withOutcome(blake, 'sent'), withOutcome({ uid: 'r-3', user_name: 'No Email' }, 'skipped')],
+      });
     });
 
     it('deduplicates recipients sharing the same email before sending', async () => {
@@ -3243,6 +3310,39 @@ describe('VoteService', () => {
       expect(result.skipped_count).toBe(0);
     });
 
+    it.each([
+      ['sent', () => sendEmail.mockResolvedValue({ email_id: 'email-sent' })],
+      ['failed', () => sendEmail.mockResolvedValueOnce({ email_id: 'email-sent' }).mockResolvedValueOnce({})],
+      [
+        'uncertain',
+        () =>
+          sendEmail
+            .mockResolvedValueOnce({ email_id: 'email-sent' })
+            .mockRejectedValueOnce(new MicroserviceError('Unable to reach the email service', 502, 'EMAIL_SEND_FAILED', { transportFailure: true })),
+      ],
+    ] as const)("gives voters sharing an address that address's %s outcome (#4830)", async (outcome, arrange) => {
+      const sharer = { uid: 'r-dup', user_name: 'Blake Alias', user_email: 'BLAKE@acme-motors.example' };
+      vi.mocked(service.getVoteSummaryRecipients).mockResolvedValue([...recipientsFixture, sharer]);
+      arrange();
+
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(sendEmail).toHaveBeenCalledTimes(2);
+      expect(result.recipients).toEqual([withOutcome(avery, 'sent'), withOutcome(blake, outcome), withOutcome(sharer, outcome)]);
+    });
+
+    it('logs counts only, never recipient names or addresses (#4830)', async () => {
+      await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(logger.info).toHaveBeenCalledWith(req, 'send_vote_summary', 'Sent vote close summary', {
+        vote_uid: CANONICAL_UID,
+        recipient_count: 2,
+        failed_count: 0,
+        skipped_count: 0,
+        uncertain_count: 0,
+      });
+    });
+
     it('counts a partial send failure without throwing, and logs a warning for the failed recipient', async () => {
       sendEmail
         .mockResolvedValueOnce({ email_id: 'email-sent' })
@@ -3250,7 +3350,13 @@ describe('VoteService', () => {
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
-      expect(result).toEqual({ recipient_count: 1, failed_count: 1, skipped_count: 0, uncertain_count: 0 });
+      expect(result).toEqual({
+        recipient_count: 1,
+        failed_count: 1,
+        skipped_count: 0,
+        uncertain_count: 0,
+        recipients: [withOutcome(avery, 'sent'), withOutcome(blake, 'failed')],
+      });
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'send_vote_summary',
@@ -3267,7 +3373,13 @@ describe('VoteService', () => {
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
-      expect(result).toEqual({ recipient_count: 1, failed_count: 1, skipped_count: 0, uncertain_count: 0 });
+      expect(result).toEqual({
+        recipient_count: 1,
+        failed_count: 1,
+        skipped_count: 0,
+        uncertain_count: 0,
+        recipients: [withOutcome(avery, 'sent'), withOutcome(blake, 'failed')],
+      });
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'send_vote_summary',
@@ -3286,6 +3398,31 @@ describe('VoteService', () => {
       });
     });
 
+    it('lists every voter in the 502 details without exposing identities to error logs (#4830)', async () => {
+      vi.mocked(service.getVoteSummaryRecipients).mockResolvedValue([...recipientsFixture, { uid: 'r-3', user_name: 'No Email' }]);
+      sendEmail.mockRejectedValue(new MicroserviceError('Rejected before sending', 502, 'EMAIL_SEND_FAILED', {}));
+
+      const error = await service.sendVoteSummary(req, CANONICAL_UID).catch((caught: unknown) => caught);
+
+      expect((error as MicroserviceError).toResponse()['details']).toEqual({
+        recipient_count: 0,
+        failed_count: 2,
+        skipped_count: 1,
+        uncertain_count: 0,
+        recipients: [withOutcome(avery, 'failed'), withOutcome(blake, 'failed'), withOutcome({ uid: 'r-3', user_name: 'No Email' }, 'skipped')],
+      });
+
+      const failure = error as MicroserviceError;
+      for (const logValue of [failure.getLogContext(), customErrorSerializer(failure), failure]) {
+        const serialized = JSON.stringify(logValue);
+        expect(serialized).not.toContain('recipients');
+        for (const recipient of recipientsFixture) {
+          expect(serialized).not.toContain(recipient.user_name);
+          expect(serialized).not.toContain(recipient.user_email);
+        }
+      }
+    });
+
     it('treats a rejected email-service reply (not marked as a transport failure) as failed, not uncertain', async () => {
       sendEmail.mockRejectedValue(new MicroserviceError('The email service rejected the email', 502, 'EMAIL_SEND_FAILED', {}));
 
@@ -3302,6 +3439,7 @@ describe('VoteService', () => {
           failed_count: 0,
           skipped_count: 0,
           uncertain_count: 2,
+          recipients: [withOutcome(avery, 'uncertain'), withOutcome(blake, 'uncertain')],
         });
         expect(sendEmail).toHaveBeenCalledTimes(2);
         expect(logger.warning).toHaveBeenCalledWith(
@@ -3320,7 +3458,13 @@ describe('VoteService', () => {
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
-      expect(result).toEqual({ recipient_count: 1, failed_count: 0, skipped_count: 0, uncertain_count: 1 });
+      expect(result).toEqual({
+        recipient_count: 1,
+        failed_count: 0,
+        skipped_count: 0,
+        uncertain_count: 1,
+        recipients: [withOutcome(avery, 'sent'), withOutcome(blake, 'uncertain')],
+      });
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'send_vote_summary',
@@ -3344,7 +3488,19 @@ describe('VoteService', () => {
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
-      expect(result).toEqual({ recipient_count: 1, failed_count: 2, skipped_count: 1, uncertain_count: 1 });
+      expect(result).toEqual({
+        recipient_count: 1,
+        failed_count: 2,
+        skipped_count: 1,
+        uncertain_count: 1,
+        recipients: [
+          withOutcome(avery, 'sent'),
+          withOutcome(blake, 'failed'),
+          withOutcome({ uid: 'r-3', user_name: 'Casey Example', user_email: 'casey@acme-motors.example' }, 'uncertain'),
+          withOutcome({ uid: 'r-4', user_name: 'Drew Example', user_email: 'drew@acme-motors.example' }, 'failed'),
+          withOutcome({ uid: 'r-5', user_name: 'No Email' }, 'skipped'),
+        ],
+      });
     });
 
     it('returns 200 with counts, not a 502, when every send is uncertain', async () => {
@@ -3352,7 +3508,13 @@ describe('VoteService', () => {
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
-      expect(result).toEqual({ recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 2 });
+      expect(result).toEqual({
+        recipient_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+        uncertain_count: 2,
+        recipients: [withOutcome(avery, 'uncertain'), withOutcome(blake, 'uncertain')],
+      });
     });
 
     it('returns skipped counts without sending when no invited voter has an email', async () => {
@@ -3364,7 +3526,13 @@ describe('VoteService', () => {
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
       expect(sendEmail).not.toHaveBeenCalled();
-      expect(result).toEqual({ recipient_count: 0, failed_count: 0, skipped_count: 2, uncertain_count: 0 });
+      expect(result).toEqual({
+        recipient_count: 0,
+        failed_count: 0,
+        skipped_count: 2,
+        uncertain_count: 0,
+        recipients: [withOutcome({ uid: 'r-1', user_name: 'No Email One' }, 'skipped'), withOutcome({ uid: 'r-2', user_name: 'No Email Two' }, 'skipped')],
+      });
     });
 
     describe('pre-send failures', () => {
@@ -3402,7 +3570,7 @@ describe('VoteService', () => {
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
       expect(sendEmail).not.toHaveBeenCalled();
-      expect(result).toEqual({ recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
+      expect(result).toEqual({ recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0, recipients: [] });
     });
 
     it('renders first-choice vote counts and percentages for a ranked-choice question', async () => {

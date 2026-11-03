@@ -18,19 +18,12 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import {
-  VOTE_CLOSE_CONFIRMATION,
-  VOTE_SUMMARY_NOT_ENDED,
-  VOTE_SUMMARY_NOTICE_LIFE_MS,
-  VOTE_SUMMARY_PRECHECK_FAILED,
-  VOTE_SUMMARY_SEND_FAILED,
-} from '@lfx-one/shared/constants';
+import { VOTE_CLOSE_CONFIRMATION } from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
   GroupsIOMailingList,
   MyVotesQuickFilter,
-  SendVoteSummaryResponse,
   Vote,
   VoteFilterState,
   VoteMailingListReminderDialogData,
@@ -40,7 +33,6 @@ import {
 import {
   buildMailtoHref,
   buildVoteMailingListReminder,
-  buildVoteSummarySendNotice,
   computeVoteRowParticipation,
   getEntityCommands,
   getMailingListEmail,
@@ -63,7 +55,6 @@ import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
-import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -72,6 +63,7 @@ import { combineLatest, debounceTime, distinctUntilChanged, finalize, map, start
 
 import { VoteMailingListReminderDialogComponent } from '../vote-mailing-list-reminder-dialog/vote-mailing-list-reminder-dialog.component';
 import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
+import { VoteSummaryDialogComponent } from '../vote-summary-dialog/vote-summary-dialog.component';
 
 @Component({
   selector: 'lfx-votes-table',
@@ -183,7 +175,6 @@ export class VotesTableComponent {
 
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
-  protected readonly isSendingSummary = signal(false);
   /** Items for the shared row "More" (⋮) menu, rebuilt for the clicked row before it opens. */
   protected readonly rowActionMenuItems = signal<MenuItem[]>([]);
   protected readonly rowActionMenuVoteUid = signal<string | null>(null);
@@ -343,8 +334,7 @@ export class VotesTableComponent {
       items.push({
         label: 'Send summary',
         icon: 'fa-light fa-chart-simple',
-        disabled: this.isSendingSummary(),
-        tooltipOptions: { tooltipLabel: 'Sends the results summary to every invited voter', tooltipPosition: 'left' },
+        tooltipOptions: { tooltipLabel: 'Review recipients and send the results summary', tooltipPosition: 'left' },
         command: () => this.onSendSummary(vote),
       });
     }
@@ -459,30 +449,15 @@ export class VotesTableComponent {
     });
   }
 
-  /** Sends the on-demand close summary to every invited voter, once confirmed (#3662). On demand only — never scheduled. */
+  /** Opens the summary dialog to review recipients, send the close summary and see each voter's outcome (#3662, #4830). On demand only — never scheduled. */
   protected onSendSummary(vote: VoteTableRow): void {
-    this.confirmationService.confirm({
-      message: `Send the results summary for "${vote.name}" to every invited voter? This cannot be undone.`,
+    this.dialogService.open(VoteSummaryDialogComponent, {
       header: 'Send summary',
-      acceptLabel: 'Send',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-info p-button-sm',
-      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => {
-        this.isSendingSummary.set(true);
-        this.voteService
-          .sendVoteSummary(vote.uid)
-          .pipe(
-            take(1),
-            finalize(() => this.isSendingSummary.set(false))
-          )
-          .subscribe({
-            next: (result) => {
-              this.messageService.add(buildVoteSummarySendNotice(result));
-            },
-            error: (error: unknown) => this.onSendSummaryFailed(error),
-          });
-      },
+      width: 'min(960px, 96vw)',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { vote },
     });
   }
 
@@ -753,59 +728,6 @@ export class VotesTableComponent {
     if (isBrowser) {
       this.document.location.href = href;
     }
-  }
-
-  /**
-   * Reports a failed summary send (#4689). Only a clear rejection or a pre-send failure invites an
-   * immediate retry; a transport failure, timeout, gateway error or unknown 5xx can leave summaries
-   * already delivered, so those warn about duplicates instead of saying nothing was sent.
-   */
-  private onSendSummaryFailed(error: unknown): void {
-    const code = error instanceof HttpErrorResponse ? (error.error?.code as string | undefined) : undefined;
-
-    if (error instanceof HttpErrorResponse && error.status === 409 && code === VOTE_SUMMARY_NOT_ENDED) {
-      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'This vote has not closed yet.' });
-      return;
-    }
-
-    if (error instanceof HttpErrorResponse && code === VOTE_SUMMARY_PRECHECK_FAILED) {
-      let detail = 'Nothing was sent. Please try again.';
-      if (error.status === 401) {
-        detail = 'Nothing was sent. Sign in again before sending a summary.';
-      } else if (error.status === 404) {
-        detail = 'Nothing was sent. This vote is no longer available.';
-      }
-      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail });
-      return;
-    }
-
-    if (error instanceof HttpErrorResponse && error.status === 502 && code === VOTE_SUMMARY_SEND_FAILED && !isBffTransportFailure(error)) {
-      const counts = error.error?.details as SendVoteSummaryResponse | undefined;
-      // Only a complete, confirmed-unsent BFF result is retry-safe. Legacy or invalid counts stay unconfirmed below.
-      if (
-        counts &&
-        counts.recipient_count === 0 &&
-        counts.uncertain_count === 0 &&
-        counts.failed_count > 0 &&
-        [counts.failed_count, counts.skipped_count].every((count) => Number.isInteger(count) && count >= 0)
-      ) {
-        this.messageService.add({ ...buildVoteSummarySendNotice(counts), severity: 'error', summary: "Couldn't send summary" });
-        return;
-      }
-    }
-
-    const rejected = error instanceof HttpErrorResponse && !isBffTransportFailure(error) && [400, 401, 403, 429].includes(error.status);
-    if (rejected) {
-      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'No summaries were sent. Please try again.' });
-      return;
-    }
-
-    this.messageService.add({
-      severity: 'warn',
-      summary: 'Summary delivery unconfirmed',
-      detail: "We couldn't confirm whether the summary was sent. Check with voters before retrying, since retrying may send duplicate summaries.",
-      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
-    });
   }
 
   private showNoMailingListToast(): void {

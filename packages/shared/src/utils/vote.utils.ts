@@ -66,6 +66,8 @@ import type {
   VoteVoterChoiceSummary,
   VoteVoterRowView,
   VoteVoterStatusCounts,
+  VoteSummaryRecipient,
+  VoteSummaryRecipientPartition,
   VoteSummarySendNotice,
 } from '../interfaces/poll.interface';
 
@@ -1100,4 +1102,28 @@ export function buildVoteSummarySendNotice(result: SendVoteSummaryResponse): Vot
   }
 
   return { severity: 'success', summary: 'Summary sent', detail: `Summary sent to ${sent} voter(s).` };
+}
+
+/**
+ * Splits vote summary recipients by whether they can be emailed (#4830).
+ * @description Shared by the recipient preview and the send so both agree on who is skipped and how many emails go out.
+ * Addresses are compared lower-cased; input order is preserved.
+ * @param recipients - Identity-only summary recipients for one vote
+ */
+export function partitionVoteSummaryRecipients(recipients: VoteSummaryRecipient[]): VoteSummaryRecipientPartition {
+  const ready = recipients.filter((recipient) => !!recipient.user_email);
+  const missingEmail = recipients.filter((recipient) => !recipient.user_email);
+
+  const votersPerEmail = new Map<string, number>();
+  const uniqueEmailRecipients: VoteSummaryRecipient[] = [];
+  for (const recipient of ready) {
+    const key = (recipient.user_email as string).toLowerCase();
+    const seen = votersPerEmail.get(key) ?? 0;
+    if (seen === 0) uniqueEmailRecipients.push(recipient);
+    votersPerEmail.set(key, seen + 1);
+  }
+
+  const sharedEmailVoterCount = ready.filter((recipient) => (votersPerEmail.get((recipient.user_email as string).toLowerCase()) ?? 0) > 1).length;
+
+  return { ready, missingEmail, uniqueEmailRecipients, sharedEmailVoterCount };
 }
