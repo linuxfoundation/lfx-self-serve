@@ -46,6 +46,15 @@ export const QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100;
 export const QUERY_SERVICE_MAX_PAGE_SIZE = 1000;
 
 /**
+ * Maximum number of query-service `/query/resources` pages one drain follows.
+ * @description Bounds `fetchAllQueryResources` and `resolveCreatedByForMeetings` so a runaway
+ * `page_token` chain cannot accumulate rows until the SSR server exhausts its heap (#4964). A drain
+ * that is still handed a token after this many pages stops: strict callers throw, others keep the
+ * rows fetched so far and log a `max_pages` warning.
+ */
+export const QUERY_SERVICE_MAX_PAGES = 100;
+
+/**
  * Maximum number of access-check tuples per POST request to the access-check service.
  * @description Bounds OpenFGA payload size and latency. When the caller has more than this many
  * tuples to check, split into chunks of this size and fan out with Promise.allSettled.

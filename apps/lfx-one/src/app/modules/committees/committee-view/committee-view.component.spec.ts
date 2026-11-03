@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpParams } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
@@ -303,6 +304,86 @@ describe('CommitteeViewComponent', () => {
     });
   });
 
+  describe('complete roster recovery', () => {
+    it.each([{ rows: [] }, { rows: [{ uid: 'member-recovered' }] }])('distinguishes a failed roster from complete retry data %j', ({ rows }) => {
+      currentCommittee = { ...committee, writer: true, member_visibility: 'basic_profile' } as Committee;
+      getCommitteeMembers.mockReturnValue(throwError(() => new Error('Pagination stopped')));
+      const component = createComponent();
+      flush();
+      expect(component.membersError()).toBe(true);
+      expect(component.membersReady()).toBe(false);
+      expect(component.tabConfig.find((tab) => tab.key === 'members')?.badge?.()).toBeNull();
+      getCommitteeMembers.mockReturnValue(of(rows));
+      component.retryMembers();
+      expect(component.membersReady()).toBe(false);
+      flush();
+      expect(component.membersError()).toBe(false);
+      expect(component.membersReady()).toBe(true);
+      expect(component.members()).toEqual(rows);
+      expect(component.tabConfig.find((tab) => tab.key === 'members')?.badge?.()).toBe(rows.length);
+      expect(getCommitteeMembers.mock.calls.every((call) => call[1].get('require_complete') === 'true')).toBe(true);
+    });
+
+    it.each([
+      { routeId: 'docs-working-group', rows: [] },
+      { routeId: 'DOCS-WORKING-GROUP', rows: [{ uid: 'member-1' }] },
+    ])('enables member actions after a complete roster loads through vanity URL $routeId', ({ routeId, rows }) => {
+      currentCommittee = { ...committee, sso_group_name: 'docs-working-group', writer: true, member_visibility: 'basic_profile' } as Committee;
+      routeParams.next(convertToParamMap({ id: routeId }));
+      getCommitteeMembers.mockReturnValue(of(rows));
+      const component = createComponent();
+      flush();
+      expect(component.membersError()).toBe(false);
+      expect(component.members()).toEqual(rows);
+      expect(component.membersReady()).toBe(true);
+    });
+
+    it('does not reuse a vanity-route roster after navigating to another group slug', () => {
+      currentCommittee = { ...committee, sso_group_name: 'first-group', writer: true, member_visibility: 'basic_profile' } as Committee;
+      routeParams.next(convertToParamMap({ id: 'first-group' }));
+      const component = createComponent();
+      flush();
+      expect(component.membersReady()).toBe(true);
+      const pending = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(pending);
+      currentCommittee = { ...currentCommittee, uid: 'committee-2', sso_group_name: 'second-group' };
+      routeParams.next(convertToParamMap({ id: 'second-group' }));
+      expect(component.membersReady()).toBe(false);
+      flush();
+      expect(component.membersReady()).toBe(false);
+      pending.next([]);
+      pending.complete();
+      flush();
+      expect(component.membersReady()).toBe(true);
+    });
+
+    it('invalidates readiness synchronously during refresh and route changes; an old request cannot restore it', () => {
+      currentCommittee = { ...committee, writer: true, member_visibility: 'basic_profile' } as Committee;
+      const component = createComponent();
+      flush();
+      expect(component.membersReady()).toBe(true);
+      const stale = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(stale);
+      component.retryMembers();
+      expect(component.membersReady()).toBe(false);
+      flush();
+      const fresh = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(fresh);
+      currentCommittee = { ...currentCommittee, uid: 'committee-2' };
+      routeParams.next(convertToParamMap({ id: 'committee-2' }));
+      expect(component.membersReady()).toBe(false);
+      flush();
+      stale.next([{ uid: 'stale' } as CommitteeMember]);
+      stale.complete();
+      expect(component.membersReady()).toBe(false);
+      fresh.next([]);
+      fresh.complete();
+      flush();
+      expect(component.membersReady()).toBe(true);
+      expect(component.members()).toEqual([]);
+    });
+  });
+
   describe('member_visibility gating', () => {
     const tabKeys = (component: CommitteeViewComponent): string[] => component.visibleTabs().map((tab) => tab.key);
 
@@ -313,7 +394,8 @@ describe('CommitteeViewComponent', () => {
       flush();
 
       expect(tabKeys(component)).toContain('members');
-      expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1');
+      expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1', expect.any(HttpParams));
+      expect(getCommitteeMembers.mock.calls.at(-1)?.[1].get('require_complete')).toBe('true');
     });
 
     it('hides the Members tab and skips the roster fetch for a member when the roster is hidden', () => {
@@ -333,7 +415,7 @@ describe('CommitteeViewComponent', () => {
       flush();
 
       expect(tabKeys(component)).toContain('members');
-      expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1');
+      expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1', expect.any(HttpParams));
     });
   });
 
