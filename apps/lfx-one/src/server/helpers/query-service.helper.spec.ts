@@ -25,11 +25,10 @@ interface Row {
   id: number;
 }
 
-const page = (ids: number[], pageToken?: string): QueryServiceResponse<Row> =>
-  ({
-    resources: ids.map((id) => ({ data: { id } })),
-    ...(pageToken && { page_token: pageToken }),
-  }) as unknown as QueryServiceResponse<Row>;
+const page = (ids: number[], pageToken?: string): QueryServiceResponse<Row> => ({
+  resources: ids.map((id) => ({ type: 'test_row', id: `test_row:${id}`, data: { id } })),
+  ...(pageToken && { page_token: pageToken }),
+});
 
 describe('fetchAllQueryResources', () => {
   const req = {} as Request;
