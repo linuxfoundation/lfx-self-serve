@@ -182,7 +182,7 @@ export const VOTE_DETAIL_SUMMARY_CARD_ACTIONS = { RESPONSES: 'responses', COMMEN
 /** Caption color for the vote detail summary tiles — darker than the grid's default `text-gray-400` to meet text contrast. */
 export const VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS = 'text-gray-600';
 
-/** Display label per voting method — read by the vote detail page's header. A missing `poll_type` reads as {@link PollType.GENERIC}. */
+/** Display label per voting method — read by the Vote details card. A missing `poll_type` reads as {@link PollType.GENERIC}. */
 export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.GENERIC]: 'Plurality vote',
   [PollType.MAJORITY]: 'Majority vote',

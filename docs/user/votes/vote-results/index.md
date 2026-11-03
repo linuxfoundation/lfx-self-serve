@@ -16,11 +16,22 @@ This article explains the vote's page, which shows how a vote is going and how i
 - In the **Me** lens list, select an ended vote. On an active vote, **Vote** and **Review** open the ballot drawer on the list instead.
 - A shared link to a vote (`/votes/:id`) opens its page. If you are invited and still have a ballot to cast, the cast drawer opens on top of it.
 
-The page header shows the vote's title, status, whether ballots are named or pseudo-anonymous, its group, voting method, close date and how many voters were invited. Select **Votes** at the top to go back to the list.
+The page header shows the vote's title, status and whether ballots are named or pseudo-anonymous. Select **Votes** at the top to go back to the list.
+
+Managers and invited voters also see a **Vote details** card beside the tab content (below it on narrow screens). It lists:
+
+- **Created**, when the vote was created.
+- **Group**, the group the vote belongs to.
+- **Voting method**, for example **Plurality vote**.
+- **Close date**, when the vote closes or closed. Hover or focus it to see the full time zone name; screen readers announce the full time zone too.
+- **Time remaining**, on an active vote, for example **Closes in 4 days**.
+- **Voters**, how many voters were invited, when that number is known.
+- **Vote questions**, how many questions voters answer on the ballot.
+- **Comments**, which reads **Active** when the vote collects written comments, and **Comment prompts**, how many comment questions it asks. **Comments** reflects whether comments are turned on, not whether the vote is still open, so it still reads **Active** after the vote closes. Both rows are hidden when the vote has no comment questions.
 
 Web links in the vote's description are blue and underlined, including plain-text addresses starting with `http://` or `https://`. Selecting one opens it in a new tab, leaving the vote's page open. Supported HTML formatting and links are preserved; descriptions mixing unsupported placeholders and HTML use the [literal fallback](../create-vote/#description-formatting). The same applies in the ballot drawer and on a personalized ballot link; your current ballot choices stay in place. Email and phone links keep their usual behavior.
 
-If a vote closed early, **Closed** in the header uses the recorded early-close time rather than the scheduled deadline, and its notice gives the early-close date. If no early-close time is recorded, the header uses the scheduled deadline. That notice does not mean every invited voter responded; use the participation figures to check how many did.
+If a vote closed early, **Closed** in **Vote details** uses the recorded early-close time rather than the scheduled deadline, and an **Ended early** row gives the early-close date. If no early-close time is recorded, **Close date** uses the scheduled deadline. That notice does not mean every invited voter responded; use the participation figures to check how many did.
 
 The vote's description keeps its paragraphs, line breaks, and lists, the same as in the cast drawer.
 
@@ -35,7 +46,7 @@ The page opens on the **Overview** tab and has these tabs:
 
 A tab shows no count when there is nothing to count.
 
-The header shows the ballot privacy badge (for example, **Named ballot**); hover over it or focus it with the keyboard to read who can see what. It also lists when the vote was created and whether comments are enabled.
+The header shows the ballot privacy badge (for example, **Named ballot**); hover over it or focus it with the keyboard to read who can see what. The **Vote details** card lists when the vote was created and whether comments are enabled.
 
 Summary cards below the tab strip show participation:
 
@@ -53,8 +64,6 @@ The buttons at the top right depend on the vote's status:
 - **Send ballots now** on active votes. It emails each member who hasn't voted a personal ballot link that doesn't need a login. LFX asks you to confirm how many members will receive it, and the button stays disabled for a couple of minutes afterwards so voters aren't emailed twice. On the vote page a **Ballots sent** message confirms how many members were emailed. When everyone has already voted, the button is disabled and says **Everyone has voted**. If LFX can't load the list of members who haven't voted, it says so and you can try again.
 - **Present** and **Copy slide** on active and ended votes. See [Present, Extend, Clone, and Send a Summary](../present-extend-clone/).
 - **Cast vote**, if you are also invited and haven't voted yet.
-
-On an active vote the header also shows how long is left, for example **Closes in 4 days**, next to the closing date. Hover or focus the closing date to see the full time zone name. Screen readers also announce the full time zone with the closing date.
 
 ### Ranked questions
 
