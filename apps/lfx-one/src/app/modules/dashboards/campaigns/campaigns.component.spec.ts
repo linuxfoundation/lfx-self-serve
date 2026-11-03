@@ -12796,7 +12796,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
   });
 
   /** #4983 ("ss-3"): where "create another campaign" is offered travels the same path. */
-  it("hands the create-another platforms to the Implementation tab, and an older BFF's silence as none", async () => {
+  it('hands the create-another platforms to the Implementation tab', async () => {
     const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
     listBriefCampaigns.mockReturnValue(capability(false).pipe(map((result) => ({ ...result, multiCampaignPlatforms: ['google-ads'] }))));
 

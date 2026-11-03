@@ -579,14 +579,6 @@ export function canCreateWithGoogleCriteria(): boolean {
 }
 
 /**
- * Whether a Microsoft create may carry `microsoftConfig.startDate` / `endDate`.
- *
- * Needs the campaign-service create path to serve the create AND the Microsoft-schedule flag.
- * Either alone is not enough, and both failures are silent: the legacy creator never reads the
- * dates, and a campaign-service older than linuxfoundation/lfx-v2-campaign-service#409 drops the
- * unknown keys. Both would create the campaign with no flight while the operator set one.
- */
-/**
  * The platforms "create another campaign" is offered on (#4983, "ss-3"): the deployment's
  * `LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS`, narrowed to the platforms campaign-service
  * accepts `new_version` and the stage/tactic labels for. Empty while the create cutover is dark, since
@@ -623,13 +615,22 @@ export function createAnotherRefusal(platforms: readonly string[], another: Camp
   const expected = another.expectedSlotVersions ?? {};
   const keys = Object.keys(expected);
   const exactKeys = keys.length === platforms.length && platforms.every((platform) => keys.includes(platform));
-  const validVersions = Object.values(expected).every((version) => Number.isInteger(version) && version >= 1);
+  // 0 is valid: "the caller saw none in the slot" (campaign-service `expected_slot_versions`).
+  const validVersions = Object.values(expected).every((version) => Number.isInteger(version) && version >= 0);
   if (!exactKeys || !validVersions) {
     return 'This page could not tell which campaigns already exist, so nothing was created. Reload and try again.';
   }
   return null;
 }
 
+/**
+ * Whether a Microsoft create may carry `microsoftConfig.startDate` / `endDate`.
+ *
+ * Needs the campaign-service create path to serve the create AND the Microsoft-schedule flag.
+ * Either alone is not enough, and both failures are silent: the legacy creator never reads the
+ * dates, and a campaign-service older than linuxfoundation/lfx-v2-campaign-service#409 drops the
+ * unknown keys. Both would create the campaign with no flight while the operator set one.
+ */
 export function canCreateMicrosoftSchedule(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMicrosoftSchedule);
 }

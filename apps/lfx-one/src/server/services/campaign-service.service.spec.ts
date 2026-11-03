@@ -6594,7 +6594,7 @@ describe('CampaignServiceClient — create another campaign', () => {
   beforeEach(() => {
     proxyRequestWithResponse.mockReset();
     isServerFeatureEnabled.mockReturnValue(true);
-    vi.stubEnv('LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS', ' microsoft-ads, google-ads , linkedin-ads');
+    vi.stubEnv('LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS', ' microsoft-ads, google-ads , hubspot');
   });
 
   afterEach(() => {
@@ -6603,7 +6603,7 @@ describe('CampaignServiceClient — create another campaign', () => {
   });
 
   it('offers it only on listed platforms campaign-service supports, and nowhere while the create cutover is dark', () => {
-    // LinkedIn is listed but campaign-service accepts no labels or new_version for it yet.
+    // The email channel is listed but campaign-service accepts no labels or new_version for it.
     expect(multiCampaignPlatforms()).toEqual(['microsoft-ads', 'google-ads']);
 
     vi.stubEnv('LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS', '');
@@ -6657,6 +6657,26 @@ describe('CampaignServiceClient — create another campaign', () => {
     expect(result.jobId).toBeNull();
     expect(result.error).toContain(message);
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('accepts 0, campaign-service\'s "saw none in the slot", as an expectation', async () => {
+    proxyRequestWithResponse.mockResolvedValue({ data: { job_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6' } });
+
+    const result = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['microsoft-ads'],
+      { microsoftConfig: {} },
+      {
+        another: { funnelStage: 'top', expectedSlotVersions: { 'microsoft-ads': 0 } },
+      }
+    );
+
+    expect(result.error).toBeNull();
+    expect((proxyRequestWithResponse.mock.calls[0][5] as { input: { expected_slot_versions: unknown } }).input.expected_slot_versions).toEqual({
+      'microsoft-ads': 0,
+    });
   });
 
   it('maps the reuse, slot and labels a job result reports', () => {

@@ -1907,6 +1907,13 @@ export class CampaignController {
         res.json({ jobId: viaService.jobId });
         return;
       }
+      // A confirmed "create another" (#4983) exists only on the cutover path. With create dark the legacy
+      // creator would drop `another` and send an unconditional create, so refuse it terminally instead.
+      if (!viaService.enabled && body?.another) {
+        logger.warning(req, 'campaign_create', 'create-another requested while the campaign-service create cutover is dark', { briefId, projectSlug });
+        res.json({ jobId: '', error: "Creating another campaign isn't available right now, so nothing was created. Reload the page and try again." });
+        return;
+      }
       if (viaService.enabled && viaService.error !== null) {
         // Enabled but refused: do NOT fall through. The legacy path would create campaigns on the
         // platforms while the user is being told creation failed, which is the one outcome worth

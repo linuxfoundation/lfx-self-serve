@@ -95,10 +95,19 @@ export const CAMPAIGN_STATUS_DELETED = 'deleted';
 /**
  * The platforms campaign-service accepts `new_version` and the funnel-stage/tactic labels for: cs
  * `ProviderNamesByStage` and `ProviderSupportsSlotVersions`, pinned together upstream (Microsoft in
- * lfx-v2-campaign-service#453, Google in #456). A platform must be on this list AND on the deployment's
- * `LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS` before "create another" is offered for it.
+ * lfx-v2-campaign-service#453, Google in #456, Reddit and Meta in #465, LinkedIn and X in #467). A
+ * platform must be on this list AND on the deployment's `LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS`
+ * before "create another" is offered for it: the env list is what tracks which campaign-service
+ * release a deployment actually runs, so a platform is listed there only once that release is out.
  */
-export const CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS: readonly string[] = ['microsoft-ads', 'google-ads'];
+export const CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS: readonly string[] = [
+  'microsoft-ads',
+  'google-ads',
+  'reddit-ads',
+  'meta-ads',
+  'linkedin-ads',
+  'twitter-ads',
+];
 
 /** The funnel stages a campaign can be labelled with (lfx-v2-campaign-service#453). */
 export const CAMPAIGN_FUNNEL_STAGE_OPTIONS: readonly CampaignLabelOption<CampaignFunnelStage>[] = [

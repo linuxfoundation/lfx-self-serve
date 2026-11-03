@@ -15289,15 +15289,15 @@ describe('ImplementationTabComponent create another campaign', () => {
   let dialogOpen: ReturnType<typeof vi.fn>;
   let createCampaign: MockInstance<CampaignService['createCampaign']>;
 
-  const doc = (id: string, slot: number, variant = 'default'): CampaignIndexDoc =>
+  const doc = (id: string, slot: number, variant = 'default', status = 'active', platformCampaignId: string | undefined = `pc-${id}`): CampaignIndexDoc =>
     ({
       id,
       project_id: 'tlf',
       brief_id: 'b-1',
       platform: 'google-ads',
-      platform_campaign_id: `pc-${id}`,
+      platform_campaign_id: platformCampaignId,
       campaign_name: `KubeCon | ${id}`,
-      status: 'active',
+      status,
       version: 1,
       slot_version: slot,
       variant,
@@ -15432,6 +15432,44 @@ describe('ImplementationTabComponent create another campaign', () => {
     dialogClose.next(true);
 
     expect(createCampaign.mock.calls[0][0].another?.expectedSlotVersions).toEqual({ 'google-ads': 3 });
+  });
+
+  it('keeps a first campaign on a new Google channel a plain create', () => {
+    // Search has a campaign; Demand Gen is a different slot with none, so there is nothing to add another to.
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().campaignForm.controls['includeSearch'].setValue(false);
+    c().campaignForm.controls['includeDemandGen'].setValue(true);
+    fixture.detectChanges();
+
+    expect(q('implementation-create-another'), 'a first Demand Gen campaign was forced into create-another').toBeNull();
+    expect(q('implementation-create-another-block')).toBeNull();
+  });
+
+  it('leaves an unfinished latest campaign to a plain retry, which is what reconciles it', () => {
+    setLists([doc('g1', 1), doc('g2', 2, 'default', 'pending', undefined)], ['google-ads']);
+
+    expect(q('implementation-create-another')).toBeNull();
+    expect(c().canSubmit()).toBe(true);
+  });
+
+  it('forgets the slots it saw when the brief changes', () => {
+    setLists([], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 1, variant: 'default' }]);
+    fixture.detectChanges();
+    expect(q('implementation-create-another')).not.toBeNull();
+
+    fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-2', message: null, approved: true } as CampaignBriefPersistenceState);
+    fixture.detectChanges();
+    expect(q('implementation-create-another'), "another brief's slot was treated as this one's").toBeNull();
+  });
+
+  it('heads the results as returned, not created, when every campaign came back existing', () => {
+    c().step.set('results');
+    c().platformResults.set([{ platform: 'google-ads', ok: true, campaignId: '9', reused: true }]);
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).toBe('Existing Campaigns Returned');
   });
 
   it('says when campaign-service returned an existing campaign instead of creating one', () => {

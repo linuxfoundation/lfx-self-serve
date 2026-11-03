@@ -593,6 +593,16 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE:
     value:
 
+  # "Create another campaign" on a platform that already has one for the event (#4983): a
+  # comma-separated list of platform ids, NOT a boolean. Empty (the default) is off. Each platform is
+  # added only after the campaign-service release that supports a second, labelled campaign on it is
+  # deployed, in this order: microsoft-ads (cs #453), google-ads (#456), reddit-ads and meta-ads (#465),
+  # linkedin-ads (#467). Keep twitter-ads OUT until X's name search is verified to match names
+  # containing '#' (otherwise a slot-2 retry could duplicate). Removing a platform is the rollback
+  # lever, and it comes BEFORE rolling campaign-service back past the release that added it.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS:
+    value:
+
   # Offers X (`twitter-ads`) in the create flow: the Plan picker lets it be chosen and the Implement
   # tab builds a `twitterConfig` — a daily budget, the flight dates, an authored promoted-only tweet
   # (never posted to the public timeline) with the brief's registration link appended, an optional

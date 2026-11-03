@@ -4204,8 +4204,6 @@
             <p class="text-xs text-amber-800" data-testid="implementation-create-another-block">{{ block }}</p>
           }
         </div>
-      } @else if (createAnotherBlock(); as block) {
-        <p class="text-xs text-amber-800" data-testid="implementation-create-another-block">{{ block }}</p>
       }
 
       <!-- Submit -->
@@ -4433,7 +4431,11 @@
                   <span class="sr-only">
                     @switch (outcome) {
                       @case ('created') {
-                        created
+                        @if (pr.reused) {
+                          existing campaign returned, nothing new created
+                        } @else {
+                          created
+                        }
                       }
                       @case ('orphaned') {
                         created upstream but not recorded — needs reconciliation

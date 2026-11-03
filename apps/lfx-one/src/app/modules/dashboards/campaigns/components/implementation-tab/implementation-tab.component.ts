@@ -1207,7 +1207,11 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly platformResultsHeading = computed(() => {
     if (this.anyPlatformCreated()) {
-      return 'Campaigns Created';
+      // Every successful row came back `reused` (#4983): campaign-service returned campaigns that
+      // already existed, so "Created" would contradict the line under each row.
+      const rows = this.platformOutcomes();
+      const createdSomething = rows.some((r) => (r.outcome === 'created' && r.reused !== true) || r.outcome === 'orphaned');
+      return createdSomething ? 'Campaigns Created' : 'Existing Campaigns Returned';
     }
     const rows = this.platformOutcomes();
     return rows.length > 0 && rows.every((r) => r.outcome === 'nothing-created') ? 'No Campaigns Created' : 'Campaign Status Unconfirmed';
@@ -5087,7 +5091,11 @@ export class ImplementationTabComponent implements OnInit {
     // it sends `new_version`; anything else sends nothing.
     if (this.createAnotherMode()) {
       const another = this.buildCreateAnother();
-      if (another === null) return;
+      if (another === null) {
+        // Unreachable while `createAnotherBlock` gates Create, and said out loud rather than dropped.
+        this.errors.set(['This page could not tell which campaigns already exist, so nothing was created. Reload and try again.']);
+        return;
+      }
       this.dialogService
         .open(CampaignCreateAnotherDialogComponent, {
           header: 'Create another campaign?',
@@ -7470,6 +7478,32 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   // === Private Initializers ===
+  /**
+   * The latest slot version of the slot a create on `platform` would claim, when that slot's latest
+   * campaign is one campaign-service would hand back (see `initOverlappingPlatforms`); `null` when the
+   * slot is empty or its latest row is unfinished. A listed row indexed before slot versions existed
+   * counts as slot 1, and one before variants existed as the default (Search) slot.
+   */
+  private slotLatest(platform: string): number | null {
+    const variant = this.createVariant(platform);
+    const seen = this.seenSlotVersions()[this.seenSlotKey(platform, variant)] ?? 0;
+    let latest: CampaignIndexDoc | null = null;
+    for (const campaign of this.briefCampaigns() ?? []) {
+      if (campaign.platform !== platform || campaign.status === CAMPAIGN_STATUS_DELETED || (campaign.variant ?? 'default') !== variant) continue;
+      if (latest === null || (campaign.slot_version ?? 1) > (latest.slot_version ?? 1)) latest = campaign;
+    }
+    const latestVersion = latest === null ? 0 : (latest.slot_version ?? 1);
+    if (seen > latestVersion) return seen;
+    if (latest === null) return null;
+    const reusable = !!latest.platform_campaign_id && !CAMPAIGN_STATUSES_NOT_REUSED.includes(latest.status);
+    return reusable ? latestVersion : null;
+  }
+
+  /** `seenSlotVersions` is keyed by brief as well, so a slot seen for one brief says nothing about another. */
+  private seenSlotKey(platform: string, variant: string): string {
+    return `${this.briefPersistence().briefId ?? ''}|${platform}|${variant}`;
+  }
+
   /** The slot variant a create on `platform` would claim: Google's channel (`default` for Search), else `default`. */
   private createVariant(platform: string): string {
     if (platform !== 'google-ads') return 'default';
@@ -7482,7 +7516,7 @@ export class ImplementationTabComponent implements OnInit {
     const seen = { ...this.seenSlotVersions() };
     for (const result of results) {
       if (result.ok && typeof result.slotVersion === 'number') {
-        const key = `${result.platform}|${result.variant ?? 'default'}`;
+        const key = this.seenSlotKey(result.platform, result.variant ?? 'default');
         seen[key] = Math.max(seen[key] ?? 0, result.slotVersion);
       }
     }
@@ -7502,17 +7536,8 @@ export class ImplementationTabComponent implements OnInit {
     if (stage === '') return null;
     const expectedSlotVersions: Record<string, number> = {};
     for (const platform of this.createAnotherPlatforms()) {
-      const variant = this.createVariant(platform);
-      let latest = this.seenSlotVersions()[`${platform}|${variant}`] ?? 0;
-      for (const campaign of this.briefCampaigns() ?? []) {
-        if (campaign.platform === platform && campaign.status !== CAMPAIGN_STATUS_DELETED && (campaign.variant ?? 'default') === variant) {
-          latest = Math.max(latest, campaign.slot_version ?? 1);
-        }
-      }
-      if (latest === 0) {
-        // The other channel of this platform has a campaign but this slot has none: nothing to add another to.
-        return null;
-      }
+      const latest = this.slotLatest(platform);
+      if (latest === null) return null;
       expectedSlotVersions[platform] = latest;
     }
     const tactic = this.anotherTactic();
@@ -7539,19 +7564,15 @@ export class ImplementationTabComponent implements OnInit {
     return CAMPAIGN_PLATFORMS.find((option) => option.id === platform)?.label ?? platform;
   }
 
+  /**
+   * A platform overlaps when the SLOT the create would claim (the platform, and for Google the
+   * channel) already holds a campaign campaign-service would hand back: its latest live row has a
+   * platform id and is not pending or a partial orphan (`CAMPAIGN_STATUSES_NOT_REUSED`), or this tab's
+   * own job just created one there. Otherwise the create stays a plain one: a first campaign on a new
+   * channel, or the retry that reconciles an unfinished row, neither of which `new_version` serves.
+   */
   private initOverlappingPlatforms(): Signal<string[]> {
-    return computed(() => {
-      const existing = new Set<string>();
-      for (const campaign of this.briefCampaigns() ?? []) {
-        if (campaign.status !== CAMPAIGN_STATUS_DELETED) {
-          existing.add(campaign.platform);
-        }
-      }
-      for (const key of Object.keys(this.seenSlotVersions())) {
-        existing.add(key.split('|')[0]);
-      }
-      return this.selectedPlatforms().filter((platform) => existing.has(platform));
-    });
+    return computed(() => this.selectedPlatforms().filter((platform) => this.slotLatest(platform) !== null));
   }
 
   private initCreateAnotherBlock(): Signal<string | null> {
@@ -7624,7 +7645,7 @@ export class ImplementationTabComponent implements OnInit {
       }
       // A platform this deployment can create another campaign on gets the stage picker instead (#4983,
       // "ss-3"), so this retry warning is only true of the others.
-      for (const platform of this.multiCampaignPlatforms() ?? []) {
+      for (const platform of this.createAnotherPlatforms()) {
         platforms.delete(platform);
       }
       if (platforms.size === 0) {
