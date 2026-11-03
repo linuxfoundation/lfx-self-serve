@@ -41,9 +41,15 @@ const loggerMocks = vi.hoisted(() => ({
 }));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
 const directoryMocks = vi.hoisted(() => ({ getUserInfo: vi.fn() }));
+const profileMocks = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock('./user.service', () => ({
   UserService: class {
     public getUserInfo = directoryMocks.getUserInfo;
+  },
+}));
+vi.mock('./linkedin-profile.service', () => ({
+  LinkedinProfileService: class {
+    public read = profileMocks.read;
   },
 }));
 
@@ -267,6 +273,7 @@ describe('MktgDocumentStoreService', () => {
       data: { name: userId === 'auth0|selector' ? 'The selector' : 'The writer' },
     }));
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
+    profileMocks.read.mockResolvedValue(null);
     service = new MktgDocumentStoreService();
   });
 
@@ -1957,6 +1964,48 @@ describe('MktgDocumentStoreService', () => {
       expect((await service.getRevision(req, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id))?.linkedinPost).not.toHaveProperty(
         'author'
       );
+    });
+
+    it('names the author by the saved profile identity the profile step shows, and other writers by the account name', async () => {
+      const persona = { name: 'Example persona', role: 'Maintainer', focus_areas: 'Open source', associated_projects: 'None', primary_audience: 'Developers' };
+      profileMocks.read.mockImplementation(async (_req: Request, user: string) =>
+        user === 'auth0|not-the-lfid' ? { profile: { about: persona, voice: {} }, profile_markdown: '# Example persona' } : null
+      );
+      const generated = {
+        ...envelope('# LinkedIn post options\n\nOriginal [LINK]\n'),
+        options: [1, 2, 3].map((number) => ({
+          number,
+          label: `Angle ${number}`,
+          text: `Original ${number} [LINK]`,
+          word_count: 3,
+          hashtags: ['#Code', '#Release', '#Community'],
+          tagging_suggestions: ['Example project'],
+        })),
+        answers: { share_link: '' },
+      };
+      const written = await service.recordGeneration(req, LINKEDIN, PROJECT, generated, 'session-identity');
+      const documentId = service.runDocumentId('session-identity');
+      // The author reads their own saved profile by the effective subject, never a client value.
+      expect((await service.getRevision(req, PROJECT, LINKEDIN, documentId, written.id))?.linkedinPost).toMatchObject({
+        author: { name: 'Example persona' },
+        isAuthor: true,
+      });
+      expect(profileMocks.read).toHaveBeenCalledExactlyOnceWith(req, 'auth0|not-the-lfid');
+      expect(JSON.stringify([...store.objects.values()])).not.toContain('Example persona');
+      // Another project writer keeps the resolved account name and never triggers a profile read.
+      const viewer = { oidc: { user: { sub: 'auth0|viewer' } } } as unknown as Request;
+      expect((await service.getRevision(viewer, PROJECT, LINKEDIN, documentId, written.id))?.linkedinPost).toMatchObject({
+        author: { name: 'The writer' },
+        isAuthor: false,
+      });
+      expect(profileMocks.read).toHaveBeenCalledTimes(1);
+      // An author whose profile cannot be read keeps the document, with the account name and one warning.
+      profileMocks.read.mockRejectedValueOnce(new Error('Synthetic profile outage'));
+      expect((await service.getRevision({ ...req } as Request, PROJECT, LINKEDIN, documentId, written.id))?.linkedinPost).toMatchObject({
+        author: { name: 'The writer' },
+        isAuthor: true,
+      });
+      expect(loggerMocks.warning.mock.calls.filter((call) => call[1] === 'linkedin_document_attribution')).toHaveLength(1);
     });
     it('seeds a late supplied link without freezing an omitted answer or overwriting a later explicit edit', async () => {
       const generated = {
