@@ -99,6 +99,10 @@ test.describe('Native FAQ document approval and header', () => {
     await expect(dialog).toBeHidden();
     await expect(page.getByTestId('mktg-document-view-readiness')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-readiness')).toHaveText('Ready — 1 of 2 sources could not be read; 1 gap.');
+    // The gaps view says what was accepted at approval and is still open; the header keeps its count.
+    await page.getByTestId('mktg-faq-view-tab-sources').click();
+    await expect(page.getByTestId('mktg-faq-view-gaps')).toContainText('How much does membership cost?');
+    await expect(page.getByTestId('mktg-faq-view-gaps-accepted')).toHaveText('Accepted when v1 was approved; still open.');
     await page.screenshot({ path: info.outputPath('approved-with-gaps.png'), fullPage: true });
   });
   for (const first of ['approve', 'restore'] as const) {
