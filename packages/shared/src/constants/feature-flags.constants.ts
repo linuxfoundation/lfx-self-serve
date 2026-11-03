@@ -3,6 +3,7 @@
 
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
+export const IT_OS_AGENTS_ENABLED_FLAG = 'it-os-agents-enabled';
 /**
  * Dark-launch gate for initiative attribution (lfx-crowdfunding #256). Crowdfunding uses the same
  * LaunchDarkly client id, so this one toggle also shows the project/org picker in its fundraise form. Here it hides the
