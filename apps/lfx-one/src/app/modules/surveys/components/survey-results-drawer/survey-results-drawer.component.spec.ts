@@ -193,4 +193,24 @@ describe('SurveyResultsDrawerComponent', () => {
     expect(openDialog).toHaveBeenCalledOnce();
     expect(getAllSurveyResponses.mock.calls.length).toBe(loads + 1);
   });
+
+  it('keeps the current survey and rows on screen while a follow-up reload runs, and if it fails', async () => {
+    const { fixture, component, getAllSurveyResponses, getSurvey } = await mount(true, of(ROWS), OPEN_SURVEY);
+    current = fixture;
+
+    const pending = new Subject<SurveyResponseItem[]>();
+    getAllSurveyResponses.mockReturnValue(pending);
+    getSurvey.mockReturnValue(new Subject<Survey>());
+    component['refresh']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component['responses']()).toEqual(ROWS);
+    expect(component['responsesLoading']()).toBe(false);
+    expect(component['loading']()).toBe(false);
+    expect(component['survey']()).toEqual(OPEN_SURVEY);
+
+    pending.error(new Error('boom'));
+    expect(component['responses']()).toEqual(ROWS);
+  });
 });

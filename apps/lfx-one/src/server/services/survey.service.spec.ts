@@ -550,6 +550,17 @@ describe('SurveyService follow-up actions (#4340)', () => {
     expect(writes()).toEqual([]);
   });
 
+  it('passes a 404 from the pre-checks through instead of reporting a retryable outage', async () => {
+    proxyRequestMock.mockImplementation(async (_req: Request, _svc: string, _path: string, method: string) => {
+      if (method !== 'GET') return undefined;
+      throw new MicroserviceError('not found', 404, 'NOT_FOUND', {});
+    });
+
+    await expect(service.sendSurveyReminders(req, 's-1', ['r-1'])).rejects.toMatchObject({ statusCode: 404, code: 'NOT_FOUND' });
+    await expect(service.resyncRecipients(req, 's-1', 'c-1')).rejects.toMatchObject({ statusCode: 404, code: 'NOT_FOUND' });
+    expect(writes()).toEqual([]);
+  });
+
   it('reports a failed recipient read before the send as a pre-check failure', async () => {
     proxyRequestMock.mockImplementation(async (_req: Request, _svc: string, path: string, method: string) => {
       if (method !== 'GET') return undefined;

@@ -676,7 +676,7 @@ export class SurveyService {
   }
 
   /**
-   * Runs the checks that precede a reminder or resync. Actionable answers (400/403/422/429) pass
+   * Runs the checks that precede a reminder or resync. Actionable answers (400/403/404/422/429) pass
    * through; any other failure means the checks couldn't run, so it becomes a retryable
    * SURVEY_FOLLOW_UP_PRECHECK_FAILED (503 unless upstream gave a 5xx). Only these checks are known
    * not to have sent anything; never wrap the send itself.
@@ -685,7 +685,7 @@ export class SurveyService {
     try {
       await checks();
     } catch (error) {
-      if (error instanceof BaseApiError && [400, 403, 422, 429].includes(error.statusCode)) {
+      if (error instanceof BaseApiError && [400, 403, 404, 422, 429].includes(error.statusCode)) {
         throw error;
       }
       const status = error instanceof BaseApiError && error.statusCode >= 500 ? error.statusCode : 503;

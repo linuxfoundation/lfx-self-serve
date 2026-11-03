@@ -98,7 +98,7 @@ export class SurveyResyncDialogComponent {
           this.messageService.add({
             severity: 'warn',
             summary: 'Resync partly sent',
-            detail: `Sent for ${sent} of ${pending.length} groups. ${this.errorMessage(error, 'send')}`,
+            detail: `Sent for ${sent} of ${pending.length} groups. ${this.errorMessage(error, 'send', sent)}`,
           });
           if (!this.destroyRef.destroyed) this.loadPreview();
         },
@@ -141,10 +141,13 @@ export class SurveyResyncDialogComponent {
       });
   }
 
-  private errorMessage(error: unknown, stage: 'load' | 'send'): string {
+  private errorMessage(error: unknown, stage: 'load' | 'send', sent = 0): string {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
+    // The precheck only vouches for the request it failed, not for groups already sent.
     if (error instanceof HttpErrorResponse && error.error?.code === SURVEY_FOLLOW_UP_PRECHECK_FAILED) {
-      return "Nothing was sent because your access couldn't be verified. Please try again.";
+      return sent > 0
+        ? "The remaining groups weren't sent because your access couldn't be verified. Please try again."
+        : "Nothing was sent because your access couldn't be verified. Please try again.";
     }
     if (status === 403) return "You don't have permission to resync this survey's recipients.";
     if (status === 429) return 'Too many requests just now. Please try again in a minute.';

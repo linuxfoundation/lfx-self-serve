@@ -30,7 +30,7 @@ import { SurveyService } from '@services/survey.service';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, filter, finalize, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, of, startWith, switchMap, tap } from 'rxjs';
 
 import { SurveyResponsesListComponent } from '../survey-responses-list/survey-responses-list.component';
 import { SurveyResyncDialogComponent } from '../survey-resync-dialog/survey-resync-dialog.component';
@@ -172,17 +172,26 @@ export class SurveyResultsDrawerComponent {
 
   // === Private Initializers ===
   private initSurvey(): Signal<Survey | null> {
+    let lastRefresh = 0;
     return toSignal(
       // Same project scope and the same open as the response rows, so totals/NPS and rates/comments
       // always describe the same data. Each open (and each reload after a reminder or resync) refetches
       // past the short detail cache; while the drawer is closed the last survey is kept so the close
-      // animation doesn't blank out.
+      // animation doesn't blank out. A reload after a follow-up runs in the background and keeps the
+      // current survey on screen until the new one arrives.
       combineLatest([toObservable(this.surveyId), toObservable(this.projectUid), toObservable(this.visible), toObservable(this.refreshCount)]).pipe(
         filter(([, , visible]) => visible),
-        switchMap(([id, projectUid]) => {
+        switchMap(([id, projectUid, , refresh]) => {
+          const isRefresh = refresh !== lastRefresh;
+          lastRefresh = refresh;
           if (!id) {
             this.loading.set(false);
             return of(null);
+          }
+
+          if (isRefresh) {
+            const current = this.survey();
+            return this.surveyService.getSurvey(id, projectUid ?? undefined, { skipCache: true }).pipe(catchError(() => of(current)));
           }
 
           this.loading.set(true);
@@ -200,6 +209,7 @@ export class SurveyResultsDrawerComponent {
   }
 
   private initResponses(): Signal<SurveyResponseItem[]> {
+    let lastRefresh = 0;
     return toSignal(
       // `visible` is a trigger so reopening the drawer refetches (and retries a failed load);
       // closing it cancels an in-flight load. `refreshCount` reloads after a reminder or resync.
@@ -210,12 +220,26 @@ export class SurveyResultsDrawerComponent {
         toObservable(this.visible),
         toObservable(this.refreshCount),
       ]).pipe(
-        switchMap(([id, projectUid, canManage, visible]) => {
-          this.responsesLoadError.set(false);
+        switchMap(([id, projectUid, canManage, visible, refresh]) => {
+          const isRefresh = refresh !== lastRefresh;
+          lastRefresh = refresh;
           if (!id || !canManage || !visible) {
+            this.responsesLoadError.set(false);
             this.responsesLoading.set(false);
             return of([] as SurveyResponseItem[]);
           }
+          // A reload after a follow-up keeps the current rows on screen (and on failure) until the new ones arrive.
+          if (isRefresh) {
+            const current = this.responses();
+            return this.surveyService.getAllSurveyResponses(id, projectUid ?? undefined).pipe(
+              tap(() => this.responsesLoadError.set(false)),
+              catchError((error) => {
+                console.error(`Failed to reload responses for survey ${id}:`, error);
+                return of(current);
+              })
+            );
+          }
+          this.responsesLoadError.set(false);
           this.responsesLoading.set(true);
           return this.surveyService.getAllSurveyResponses(id, projectUid ?? undefined).pipe(
             catchError((error) => {

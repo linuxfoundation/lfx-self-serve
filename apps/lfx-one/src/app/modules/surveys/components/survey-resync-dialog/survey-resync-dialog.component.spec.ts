@@ -142,6 +142,35 @@ describe('SurveyResyncDialogComponent', () => {
     expect(close).toHaveBeenCalledWith(true);
   });
 
+  it('does not claim nothing was sent when a later group fails its access check', async () => {
+    TestBed.resetTestingModule();
+    const getResyncPreview = vi.fn().mockReturnValue(of(PREVIEW));
+    const resyncRecipients = vi
+      .fn()
+      .mockReturnValueOnce(of(undefined))
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503, error: { code: SURVEY_FOLLOW_UP_PRECHECK_FAILED } })));
+    const add = vi.fn();
+    TestBed.configureTestingModule({
+      imports: [SurveyResyncDialogComponent],
+      providers: [
+        { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
+        { provide: DynamicDialogConfig, useValue: { data: { survey: { uid: 's-1' } as Survey, committeeUids: ['c-1', 'c-2'] } } },
+        { provide: SurveyService, useValue: { getResyncPreview, resyncRecipients } },
+        { provide: MessageService, useValue: { add } },
+      ],
+    });
+    const fixture = TestBed.createComponent(SurveyResyncDialogComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    fixture.componentInstance['send']();
+
+    const detail: string = add.mock.calls.at(-1)?.[0].detail;
+    expect(detail).toContain('Sent for 1 of 2 groups');
+    expect(detail).toContain("The remaining groups weren't sent");
+    expect(detail).not.toContain('Nothing was sent');
+  });
+
   it('asks the drawer to reload when cancelled after a partial resync', async () => {
     TestBed.resetTestingModule();
     const close = vi.fn();
