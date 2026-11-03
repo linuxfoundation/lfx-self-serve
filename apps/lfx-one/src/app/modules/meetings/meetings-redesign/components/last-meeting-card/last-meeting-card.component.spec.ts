@@ -129,6 +129,12 @@ describe('LastMeetingCardComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Steering Committee');
   });
 
+  it('shows no recurring tag for a one-off meeting', async () => {
+    const fixture = await render({ row: rowOf(buildMeeting()), summary: null });
+
+    expect(query(fixture, 'meetings-home-last-card-recurring')).toBeNull();
+  });
+
   it('opens the meeting page when the card is clicked', async () => {
     const fixture = await render({ row: rowOf(buildMeeting()), summary: null });
 
