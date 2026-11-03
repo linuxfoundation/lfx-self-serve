@@ -9,11 +9,9 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MyNewsletter, MyNewsletterFoundation, MyNewsletterFoundationsResponse, NewsletterGroupJoinStatus } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
-import { ClipboardShareService } from '@services/clipboard-share.service';
 import { SelectComponent } from '@components/select/select.component';
-import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewsletterInviteDialogComponent } from '../components/newsletter-invite-dialog/newsletter-invite-dialog.component';
@@ -64,19 +62,15 @@ describe('MyNewslettersComponent', () => {
   let params: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let routeParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let navigate: ReturnType<typeof vi.fn>;
+  let navigateByUrl: ReturnType<typeof vi.fn>;
   let scrollIntoView: typeof HTMLElement.prototype.scrollIntoView;
   const gateway = {
     getMyNewsletterFoundations: vi.fn(),
-    getNewsletter: vi.fn(),
     getNewsletterGroupJoinStatus: vi.fn(),
     joinNewsletterGroupByInvite: vi.fn(),
   };
-  const messages = { add: vi.fn() };
-  const clipboard = { copyLink: vi.fn() };
   const dialog = { open: vi.fn() };
   const find = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
-  // PrimeNG moves the drawer overlay outside the fixture into document.body.
-  const overlay = (id: string): HTMLElement | null => document.body.querySelector(`[data-testid="${id}"]`);
   const text = () => (fixture.nativeElement as HTMLElement).textContent!;
   const settle = () => fixture.whenStable();
   const respond = async (response: MyNewsletterFoundationsResponse) => {
@@ -126,7 +120,6 @@ describe('MyNewslettersComponent', () => {
     nextFeed();
     params = new BehaviorSubject(convertToParamMap({}));
     routeParams = new BehaviorSubject(convertToParamMap({ foundationSlug: 'foundation-slug' }));
-    gateway.getNewsletter.mockReturnValue(of({ body_html: '<p>Rendered body</p>' }));
     gateway.getNewsletterGroupJoinStatus.mockReturnValue(new Subject<NewsletterGroupJoinStatus>());
     await TestBed.configureTestingModule({
       imports: [MyNewslettersComponent],
@@ -140,13 +133,13 @@ describe('MyNewslettersComponent', () => {
           provide: ActivatedRoute,
           useValue: { paramMap: routeParams, queryParamMap: params, snapshot: { paramMap: routeParams.value } },
         },
-        { provide: MessageService, useValue: messages },
-        { provide: ClipboardShareService, useValue: clipboard },
       ],
     })
       .overrideComponent(MyNewslettersComponent, { set: { providers: [{ provide: DialogService, useValue: dialog }] } })
       .compileComponents();
     navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true) as unknown as ReturnType<typeof vi.fn>;
+    // RouterLink clicks also land here, so link and row clicks are both observable.
+    navigateByUrl = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true) as unknown as ReturnType<typeof vi.fn>;
     fixture = TestBed.createComponent(MyNewslettersComponent);
     await settle();
   });
@@ -162,6 +155,9 @@ describe('MyNewslettersComponent', () => {
     await respond(feedOf([row()], true));
     expect(find('my-newsletters-title')?.textContent).toContain('Foundation');
     expect(find('my-newsletters-back')?.getAttribute('href')).toBe('/newsletters/my');
+    expect(find('my-newsletters-breadcrumb')?.getAttribute('aria-label')).toBe('Breadcrumb');
+    expect(find('my-newsletters-breadcrumb-current')?.textContent?.trim()).toBe('Foundation');
+    expect(find('my-newsletters-breadcrumb-current')?.getAttribute('aria-current')).toBe('page');
   });
   it('scopes rows to the route foundation, matched by slug or uid, including foundation-owned issues', async () => {
     const response = feedOf(
@@ -335,15 +331,11 @@ describe('MyNewslettersComponent', () => {
     expect(find('my-newsletters-project-filter')?.querySelector('[role="combobox"]')?.textContent).toContain('Child');
     expect(fixture.componentInstance.searchForm.getRawValue()).toEqual({ search: 'Child', projectFilter: 'child' });
   });
-  it('clears retained rows on failed refresh and keeps URL resolution gated while pending or failed', async () => {
+  it('clears retained rows on failed refresh', async () => {
     await respond(feedOf([row()], false));
     nextFeed();
     await click('my-newsletters-retry');
-    params.next(convertToParamMap({ issue: 'absent', project: 'other' }));
-    await settle();
     expect(find('my-newsletters-row-issue')).not.toBeNull();
-    expect(navigate).not.toHaveBeenCalled();
-    expect(gateway.getNewsletter).not.toHaveBeenCalled();
     feed.error(new Error('Refresh unavailable'));
     await settle();
     expect(find('my-newsletters-error')?.textContent).toContain('Could not load newsletters');
@@ -367,65 +359,6 @@ describe('MyNewslettersComponent', () => {
     expect(find('my-newsletters-error')).not.toBeNull();
     expect(fixture.componentInstance.myNewsletters()).toEqual([]);
     expect(navigate).not.toHaveBeenCalled();
-  });
-  it('gates URL resolution during errors and recovers through the DOM Retry', async () => {
-    params.next(convertToParamMap({ issue: 'issue', project: 'child-slug', keep: 'yes' }));
-    await settle();
-    expect(navigate).not.toHaveBeenCalled();
-    feed.error(new Error('Unavailable'));
-    await settle();
-    expect(find('my-newsletters-error')!.textContent).toContain('Could not load newsletters');
-    expect(text()).not.toContain('No newsletters yet');
-    expect(navigate).not.toHaveBeenCalled();
-    nextFeed();
-    await click('my-newsletters-error');
-    expect(find('my-newsletters-error')).toBeNull();
-    expect(navigate).not.toHaveBeenCalled();
-    await respond(feedOf([row()], true));
-    expect(gateway.getMyNewsletterFoundations).toHaveBeenCalledTimes(2);
-    expect(gateway.getNewsletter).toHaveBeenCalledWith('child', 'issue');
-    expect(overlay('newsletter-preview-drawer-body')!.textContent).toContain('Rendered body');
-  });
-  it.each([false, true])('preserves a missing issue link from an incomplete feed until DOM Retry recovers (withRows=%s)', async (withRows) => {
-    params.next(convertToParamMap({ issue: 'issue', project: 'child-slug', keep: 'yes' }));
-    await settle();
-    expect(navigate).not.toHaveBeenCalled();
-    await respond(feedOf(withRows ? [row({ id: 'other', subject: 'Other news' })] : [], false));
-
-    expect(navigate).not.toHaveBeenCalled();
-    expect([params.value.get('issue'), params.value.get('project'), params.value.get('keep')]).toEqual(['issue', 'child-slug', 'yes']);
-    expect(gateway.getNewsletter).not.toHaveBeenCalled();
-    expect(overlay('newsletter-preview-drawer-body')).toBeNull();
-    expect(find('my-newsletters-completeness-notice')?.textContent).toContain('Some newsletters could not be loaded');
-    expect(find('my-newsletters-row-other') !== null).toBe(withRows);
-
-    nextFeed();
-    await click('my-newsletters-retry');
-    expect(navigate).not.toHaveBeenCalled();
-    await respond(feedOf([row()], true));
-    expect(gateway.getNewsletter).toHaveBeenCalledWith('child', 'issue');
-    expect(overlay('newsletter-preview-drawer-body')?.textContent).toContain('Rendered body');
-    expect(overlay('newsletter-preview-drawer-header')?.textContent).toContain('Child');
-    expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith(
-      [],
-      expect.objectContaining({ queryParams: { issue: 'issue', project: 'child-slug' }, queryParamsHandling: 'merge', preserveFragment: true })
-    );
-  });
-  it('opens a matching issue from an incomplete feed without waiting for completeness', async () => {
-    params.next(convertToParamMap({ issue: 'issue', project: 'child-slug', keep: 'yes' }));
-    await settle();
-    expect(gateway.getNewsletter).not.toHaveBeenCalled();
-    await respond(feedOf([row()], false));
-
-    expect(fixture.componentInstance.complete()).toBe(false);
-    expect(gateway.getNewsletter).toHaveBeenCalledWith('child', 'issue');
-    expect(overlay('newsletter-preview-drawer-body')?.textContent).toContain('Rendered body');
-    expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith(
-      [],
-      expect.objectContaining({ queryParams: { issue: 'issue', project: 'child-slug' }, queryParamsHandling: 'merge', preserveFragment: true })
-    );
   });
   it('keeps zero-row incomplete responses unconfirmed and retryable', async () => {
     await respond(feedOf([], false));
@@ -484,57 +417,80 @@ describe('MyNewslettersComponent', () => {
       { label: 'Alpha', value: 'other' },
       { label: 'Child', value: 'child' },
     ]);
-    expect(find('my-newsletters-open-unknown')!.tagName).toBe('BUTTON');
+    expect(find('my-newsletters-open-unknown')!.tagName).toBe('SPAN');
     select('my-newsletters-project-filter').onChange.emit({ value: 'other' });
     await settle();
     expect(find('my-newsletters-row-other')).not.toBeNull();
     expect(find('my-newsletters-row-issue')).toBeNull();
     expect(find('my-newsletters-row-own')).toBeNull();
   });
-  it('preserves Sent dates, native links, owner fetch, sharing, close and browser Back', async () => {
+  it('redirects a legacy ?issue=&project= drawer link to the reader permalink without waiting for the feed (#4979)', async () => {
+    params.next(convertToParamMap({ issue: 'issue', project: 'child-slug', keep: 'yes' }));
+    await settle();
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith(['/newsletters', 'child-slug', 'issue'], { replaceUrl: true });
+  });
+  it('ignores a legacy link missing either param', async () => {
+    params.next(convertToParamMap({ issue: 'issue' }));
+    await settle();
+    params.next(convertToParamMap({ project: 'child-slug' }));
+    await settle();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it('links each subject to its reader permalink and opens it on a row click, with no drawer (#4979)', async () => {
     await respond(feedOf([row()], true));
     expect(text()).toContain('Sent');
     expect(text()).not.toContain('Received');
+    expect(document.body.querySelector('[data-testid="my-newsletters-preview-drawer"]')).toBeNull();
+
     const link = find('my-newsletters-open-issue')!;
+    expect(link.tagName).toBe('A');
     expect(link.getAttribute('href')).toBe('/newsletters/child-slug/issue');
-    const modified = new MouseEvent('click', { metaKey: true, bubbles: true, cancelable: true });
-    link.dispatchEvent(modified);
-    expect(modified.defaultPrevented).toBe(false);
-    expect(gateway.getNewsletter).not.toHaveBeenCalled();
+
+    // A click on the link is the link's own navigation; it must not bubble into a second row navigation.
     link.click();
     await settle();
-    expect(gateway.getNewsletter).toHaveBeenCalledWith('child', 'issue');
-    expect(navigate).toHaveBeenCalledWith(
-      [],
-      expect.objectContaining({ queryParams: { issue: 'issue', project: 'child-slug' }, queryParamsHandling: 'merge', preserveFragment: true })
-    );
-    expect(overlay('newsletter-preview-drawer-header')!.textContent).toContain('Sent Aug 13, 2026');
-    overlay('newsletter-preview-drawer-copy-link')!.click();
-    expect(clipboard.copyLink).toHaveBeenCalledWith(expect.stringContaining('/newsletters/child-slug/issue'), 'Newsletter link copied to clipboard.');
-    expect(overlay('newsletter-preview-drawer-open-new-tab')!.getAttribute('target')).toBe('_blank');
-    overlay('newsletter-preview-drawer-close')!.click();
-    await settle();
-    expect(navigate).toHaveBeenCalledWith(
-      [],
-      expect.objectContaining({ queryParams: { issue: null, project: null }, queryParamsHandling: 'merge', preserveFragment: true })
-    );
-    params.next(convertToParamMap({ issue: 'issue', project: 'child-slug' }));
-    await settle();
-    expect(fixture.componentInstance['previewVisible']()).toBe(true);
-    params.next(convertToParamMap({}));
-    await settle();
-    expect(fixture.componentInstance['previewVisible']()).toBe(false);
+    expect(navigateByUrl).toHaveBeenCalledTimes(1);
+    expect(String(navigateByUrl.mock.calls[0][0])).toBe('/newsletters/child-slug/issue');
+
+    navigateByUrl.mockClear();
+    const cell = find('my-newsletters-row-issue')!.querySelectorAll('td')[1]!;
+    cell.dispatchEvent(new MouseEvent('click', { metaKey: true, bubbles: true, cancelable: true }));
+    expect(navigateByUrl).not.toHaveBeenCalled();
+    cell.click();
+    expect(navigateByUrl).toHaveBeenCalledWith('/newsletters/child-slug/issue');
   });
-  it('preserves canonical absence fallback and body-fetch error handling', async () => {
-    await respond(feedOf([row()], true));
-    params.next(convertToParamMap({ issue: 'absent', project: 'other' }));
+  it('shows a subject without a resolvable permalink as plain text that opens nothing', async () => {
+    await respond(feedOf([row({ id: 'unknown', project_slug: undefined })], true));
+    expect(find('my-newsletters-open-unknown')!.tagName).toBe('SPAN');
+    find('my-newsletters-row-unknown')!.querySelectorAll('td')[1]!.click();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+  it('shows share counts from the feed (#4958)', async () => {
+    await respond(
+      feedOf([row({ share_count: 3 }), row({ id: 'quiet', subject: 'Quiet news' }), row({ id: 'none', subject: 'Unshared', share_count: 0 })], true)
+    );
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('3');
+    expect(find('my-newsletters-shares-quiet')!.textContent!.trim()).toBe('—');
+    expect(find('my-newsletters-shares-none')!.textContent!.trim()).toBe('—');
+    feed.next(feedOf([row({ share_count: 10 })], true));
     await settle();
-    expect(navigate).toHaveBeenCalledWith(['/newsletters', 'other', 'absent']);
-    params.next(convertToParamMap({}));
-    gateway.getNewsletter.mockReturnValue(throwError(() => new Error('Body failure')));
-    find('my-newsletters-open-issue')!.click();
-    await settle();
-    expect(messages.add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Unable to open newsletter' }));
-    expect(fixture.componentInstance['previewVisible']()).toBe(false);
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('10');
+  });
+  it('shows views as email opens plus unique page views, and a dash when both are unknown', async () => {
+    await respond(
+      feedOf(
+        [
+          row({ total_opens: 40, page_view_count: 2 }),
+          row({ id: 'web', subject: 'Web only', page_view_count: 0 }),
+          row({ id: 'unknown', subject: 'Unknown views' }),
+        ],
+        true
+      )
+    );
+    expect(find('my-newsletters-views-issue')!.textContent!.trim()).toBe('42');
+    expect(find('my-newsletters-views-issue')!.getAttribute('aria-label')).toBe('Viewed 42 times');
+    expect(find('my-newsletters-views-web')!.textContent!.trim()).toBe('0');
+    expect(find('my-newsletters-views-unknown')!.textContent!.trim()).toBe('—');
   });
 });

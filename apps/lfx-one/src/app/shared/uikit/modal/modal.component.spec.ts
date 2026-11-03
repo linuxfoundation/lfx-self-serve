@@ -102,6 +102,7 @@ describe('UiModalComponent and UiModalService', () => {
     expect(dialog()?.getAttribute('aria-modal')).not.toBe('true');
     const title = container.querySelector('[data-testid="ui-modal-title"]') as HTMLElement;
     expect(title.textContent).toBe('Create Committee');
+    expect(Array.from(title.classList)).toEqual(expect.arrayContaining(['heading-24', 'text-[20px]', 'leading-[28px]']));
     expect(dialog()?.getAttribute('aria-labelledby')).toBe(title.id);
     expect(container.querySelector('[data-testid="ui-modal-subtitle"]')?.textContent).toBe('Committees get their own meetings.');
     expect(container.querySelector('[data-testid="ui-modal-body"] #name')).not.toBeNull();
@@ -192,6 +193,15 @@ describe('UiModalComponent and UiModalService', () => {
     expect(dialog()).not.toBeNull();
   });
 
+  it('ignores an Escape that cancels an IME composition', async () => {
+    await open();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, isComposing: true, bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 229, bubbles: true, cancelable: true }));
+    await settle();
+
+    expect(dialog()).not.toBeNull();
+  });
+
   it('closes on a backdrop click', async () => {
     await open();
     (container.querySelector('.cdk-overlay-backdrop') as HTMLElement).click();
@@ -254,6 +264,12 @@ describe('UiModalComponent and UiModalService', () => {
     expect(container.querySelector('[data-testid="ui-modal-body"] [data-testid="ui-modal-title"]')).toBeNull();
     expect(container.querySelector('[data-testid="ui-modal-title"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="ui-modal-body"]')?.className).toContain('overflow-auto');
+  });
+
+  it('right-aligns the footer actions with a 12px gap', async () => {
+    await open();
+    const actions = container.querySelector('[data-testid="ui-modal-actions"]');
+    expect(Array.from(actions?.classList ?? [])).toEqual(expect.arrayContaining(['justify-end', 'gap-[12px]']));
   });
 
   it('singleAction stretches the footer button', async () => {

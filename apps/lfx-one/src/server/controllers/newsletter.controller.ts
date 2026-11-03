@@ -6,6 +6,7 @@ import {
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH,
+  SHARE_CHANNELS,
 } from '@lfx-one/shared/constants';
 import {
   CreateNewsletterRequest,
@@ -13,6 +14,7 @@ import {
   NewsletterListParams,
   NewsletterRecipientCountPayload,
   NewsletterSchedulePayload,
+  NewsletterShareRequest,
   NewsletterStatus,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
@@ -348,6 +350,64 @@ export class NewsletterController {
   }
 
   /**
+   * POST /api/newsletters/:projectUid/:newsletterUid/share
+   * Records an in-app share (#4958). newsletter-service counts one share per user per channel and
+   * rejects drafts; the caller fires and forgets, so this only answers 204 or an error.
+   */
+  public async recordShare(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const newsletterUid = this.requireNewsletterUid(req);
+      if (!isUuid(projectUid) || !isUuid(newsletterUid)) {
+        throw ServiceValidationError.forField('newsletterUid', 'Invalid project or newsletter ID', {
+          operation: 'newsletter_share',
+          service: 'newsletter_controller',
+          path: req.path,
+        });
+      }
+      const payload = this.parseShareRequest(req);
+      const startTime = logger.startOperation(req, 'newsletter_share', { project_uid: projectUid, newsletter_id: newsletterUid, channel: payload.channel });
+      await this.newsletterService.recordShare(req, projectUid, newsletterUid, payload);
+      logger.success(req, 'newsletter_share', startTime, { newsletter_id: newsletterUid, channel: payload.channel });
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/newsletters/:projectUid/:newsletterUid/page-view
+   * Records a unique web page view. newsletter-service counts one view per user per issue and rejects
+   * drafts; the reader fires and forgets, so this only answers 204 or an error. Upstream only gates on
+   * project viewer (every signed-in user), so the reader ladder runs first: a caller who is denied the
+   * issue body gets 403 `NEWSLETTER_MEMBERS_ONLY` and is never counted.
+   */
+  public async recordPageView(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const newsletterUid = this.requireNewsletterUid(req);
+      if (!isUuid(projectUid) || !isUuid(newsletterUid)) {
+        throw ServiceValidationError.forField('newsletterUid', 'Invalid project or newsletter ID', {
+          operation: 'newsletter_page_view',
+          service: 'newsletter_controller',
+          path: req.path,
+        });
+      }
+      const startTime = logger.startOperation(req, 'newsletter_page_view', { project_uid: projectUid, newsletter_id: newsletterUid });
+      await this.memberBenefitService.getReadableNewsletter(req, projectUid, newsletterUid);
+      await this.newsletterService.recordPageView(req, projectUid, newsletterUid);
+      logger.success(req, 'newsletter_page_view', startTime, { newsletter_id: newsletterUid });
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/projects/:projectUid/newsletters/:newsletterUid/analytics
    */
   public async getAnalytics(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -496,6 +556,19 @@ export class NewsletterController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** Validates the share body: exactly `{ channel }`, with a channel the share dialog reports. */
+  private parseShareRequest(req: Request): NewsletterShareRequest {
+    const channel = (req.body as { channel?: unknown } | undefined)?.channel;
+    if (typeof channel !== 'string' || !(SHARE_CHANNELS as readonly string[]).includes(channel)) {
+      throw ServiceValidationError.forField('channel', `channel must be one of: ${SHARE_CHANNELS.join(', ')}`, {
+        operation: 'newsletter_share',
+        service: 'newsletter_controller',
+        path: req.path,
+      });
+    }
+    return { channel: channel as NewsletterShareRequest['channel'] };
   }
 
   private requireProjectUid(req: Request): string {

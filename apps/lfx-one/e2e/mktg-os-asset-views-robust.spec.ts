@@ -3,7 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
-import { columnAssetRevisionResponse, openAssetDocument, openDraftAssetRun } from './helpers/mktg-os-asset-views.helper';
+import { columnAssetRevisionResponse, openAssetDocument, openDraftAssetRun, realShapedFrameworkRevisionResponse } from './helpers/mktg-os-asset-views.helper';
 import { DOCUMENT_VIEW_URL, openDocuments, setupDocuments } from './helpers/mktg-os-documents.helper';
 
 for (const key of ['foundation-message', 'brand-kit', 'boilerplates', 'faq'] as const) {
@@ -42,6 +42,57 @@ for (const key of ['foundation-message', 'brand-kit', 'boilerplates', 'faq'] as 
     });
   }
 }
+
+// The column tests above use the one-goal, one-word fixture, which fits any width. A real framework has several goals and
+// sentence-length cells: at an iPhone 15's 393 px the page itself must not scroll sideways (#4885).
+test('a real-shaped framework fits an iPhone 15 viewport (393px) without sideways page scroll', async ({ page }, info) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse());
+  const content = page.getByTestId('mktg-document-view-page').getByRole('region', { name: 'Document content' });
+  await expect(content.getByTestId('mktg-framework-view-table')).toBeVisible();
+  // The overflow of #4885 came from the field comments' sr-only live regions in the last goal column, which render only once
+  // the comments read has answered (stubbed by openAssetDocument): measure nothing before they are in the goal table.
+  const goals = content.getByTestId('mktg-framework-view-goals');
+  const goalLiveRegions = goals.locator('[data-mktg-comment-field] span[role="status"]');
+  await expect(goalLiveRegions.last()).toBeAttached();
+  expect(await goalLiveRegions.count()).toBeGreaterThanOrEqual(1);
+  const tabs = content.getByRole('tab');
+  for (const tab of await tabs.all()) {
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(content.getByRole('tabpanel')).toBeVisible();
+    // Name the element that reaches furthest right, so a failure says what overflowed and not only by how much.
+    const widths = await page.evaluate(() => {
+      let widest = { name: '', right: 0 };
+      for (const element of Array.from(document.body.querySelectorAll<HTMLElement>('*'))) {
+        const right = element.getBoundingClientRect().right + window.scrollX;
+        if (right > widest.right) {
+          const testId = element.getAttribute('data-testid');
+          widest = { name: `${element.tagName.toLowerCase()}${testId ? `[${testId}]` : ''} class="${element.getAttribute('class') ?? ''}"`, right };
+        }
+      }
+      return { document: document.documentElement.scrollWidth, body: document.body.scrollWidth, inner: window.innerWidth, widest };
+    });
+    const diagnostic = `tab ${await tab.textContent()}, widths ${JSON.stringify(widths)}`;
+    expect(widths.document, diagnostic).toBeLessThanOrEqual(widths.inner);
+    expect(widths.body, diagnostic).toBeLessThanOrEqual(widths.inner);
+  }
+  await tabs.first().click();
+  await expect(goalLiveRegions.last()).toBeAttached();
+  // The goal table keeps its reading width per goal: four goals are wider than the column, and that scroll stays inside the
+  // table's own container, never on the page.
+  const scroller = await goals.locator('xpath=..').evaluate((element) => ({
+    overflowX: getComputedStyle(element).overflowX,
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+    right: element.getBoundingClientRect().right,
+    inner: window.innerWidth,
+  }));
+  expect(scroller.overflowX).toBe('auto');
+  expect(scroller.scrollWidth).toBeGreaterThan(scroller.clientWidth);
+  expect(scroller.right).toBeLessThanOrEqual(scroller.inner);
+  await page.screenshot({ path: info.outputPath('foundation-message-iphone-15-393.png'), fullPage: true });
+});
 
 for (const width of [1280, 390]) {
   test(`plain Markdown keeps revision details beside the content only at laptop widths (${width}px)`, async ({ page }, info) => {

@@ -81,7 +81,6 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 import { ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { getEffectiveSub } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { LinkedinDocumentPresentationService } from './linkedin-document-presentation.service';
 import { logger } from './logger.service';
@@ -832,8 +831,9 @@ export class MktgDocumentStoreService {
     };
     const cards = type.agentKey === LINKEDIN_AGENT_KEY ? readLinkedinDocumentContent(stored.record.bundle.sidecar) : null;
     const presentation = cards ? await this.linkedinPresentation.read(req, project, documentId, cards) : null;
+    // The author's by-line names the profile identity they set; see LinkedinDocumentPresentationService.attribution.
     const linkedinPost = presentation
-      ? { ...presentation, ...(stored.authorId && selected.author ? { author: selected.author, isAuthor: getEffectiveSub(req) === stored.authorId } : {}) }
+      ? { ...presentation, ...(stored.authorId && selected.author ? await this.linkedinPresentation.attribution(req, stored.authorId, selected.author) : {}) }
       : null;
     let report: MktgRevisionResponse['aeoGeoReport'];
     if (type.agentKey === 'aeo-geo') {

@@ -59,7 +59,8 @@ export class UiProgressComponent {
         error: 'bg-ui-danger-600',
         secondary: 'bg-ui-neutral-400',
       };
-      return `progress-fill absolute inset-y-0 left-0 rounded-[inherit] ${tones[this.tone()]}`;
+      // Forced colours: a Highlight fill inside the track's CanvasText border.
+      return `progress-fill absolute inset-y-0 left-0 rounded-[inherit] ${tones[this.tone()]} forced-colors:bg-[color:Highlight]`;
     });
   }
 }

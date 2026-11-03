@@ -3,7 +3,14 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import type { OrgLensProjectSearchResponse, OrgLensProjectsResponse, OrgProjectsWorkspace, OrgProjectsWorkspacesResponse } from '@lfx-one/shared/interfaces';
+import type {
+  OrgLensProjectSearchResponse,
+  OrgLensProjectsResponse,
+  OrgProjectsWorkspace,
+  OrgProjectsWorkspacesResponse,
+  OrgScopeFilter,
+  OrgTeamMembersFilter,
+} from '@lfx-one/shared/interfaces';
 import { map, Observable } from 'rxjs';
 
 @Injectable({
@@ -12,8 +19,15 @@ import { map, Observable } from 'rxjs';
 export class OrgLensProjectsService {
   private readonly http = inject(HttpClient);
 
-  public getProjects(orgUid: string, orgName: string, slugs: readonly string[] = []): Observable<OrgLensProjectsResponse> {
-    let params = new HttpParams().set('orgName', orgName);
+  /** `orgScope` (lfx-self-serve-ops#1219) and `teamMembers` (lfx-self-serve-ops#1246) apply to the contributors only. */
+  public getProjects(
+    orgUid: string,
+    orgName: string,
+    slugs: readonly string[],
+    orgScope: OrgScopeFilter,
+    teamMembers: OrgTeamMembersFilter
+  ): Observable<OrgLensProjectsResponse> {
+    let params = new HttpParams().set('orgName', orgName).set('orgScope', orgScope).set('teamMembers', teamMembers);
     if (slugs.length) {
       params = params.set('slugs', slugs.join(','));
     }

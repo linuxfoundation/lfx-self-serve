@@ -705,10 +705,26 @@ export interface VoteSummaryRecipient {
 
 /** Response for POST /api/votes/:uid/summary (#3662) */
 export interface SendVoteSummaryResponse {
-  /** Number of distinct recipients the summary was sent to */
+  /** Number of distinct recipients the summary was confirmed sent to */
   recipient_count: number;
-  /** Number of recipients the send failed for (e.g. a rejected address) — a partial send is not an error */
+  /** Number of recipients whose send was confirmed not to have happened (e.g. a rejected address) — a partial send is not an error */
   failed_count: number;
+  /** Number of invited voters with no email address on file, so nothing could be sent to them */
+  skipped_count: number;
+  /** Number of recipients whose send outcome is unknown (the request failed or timed out), so the email may already have been delivered */
+  uncertain_count: number;
+}
+
+/** How the client reports the outcome of a vote summary send (#4689). */
+export interface VoteSummarySendNotice {
+  /** Toast severity */
+  severity: 'success' | 'info' | 'warn';
+  /** Toast heading */
+  summary: string;
+  /** Toast body describing the known sent, skipped, failed and uncertain outcomes */
+  detail: string;
+  /** Toast lifetime in milliseconds; omitted to keep the default */
+  life?: number;
 }
 
 /** Data the on-demand vote-close summary email (#3662) is rendered from. */

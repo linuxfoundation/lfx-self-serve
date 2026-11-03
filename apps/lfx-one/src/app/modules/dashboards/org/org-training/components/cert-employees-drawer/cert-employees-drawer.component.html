@@ -22,6 +22,10 @@
   </ng-template>
 
   <div class="flex flex-col gap-4 h-full">
+    @if (status() === 'in-progress') {
+      <p class="text-xs text-gray-500" data-testid="cert-employees-window-note">{{ inProgressWindowNote }}</p>
+    }
+
     <!-- Search -->
     <div class="relative">
       <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden="true"></i>

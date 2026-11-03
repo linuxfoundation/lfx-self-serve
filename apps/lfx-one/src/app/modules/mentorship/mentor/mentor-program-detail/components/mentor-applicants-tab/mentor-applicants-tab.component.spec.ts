@@ -294,4 +294,24 @@ describe('MentorApplicantsTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-applicants-empty"]')?.textContent?.trim()).toBe('No applicants.');
     expect(rowIds()).toEqual([]);
   });
+
+  it('offers Contact Mentee as a mailto: link at every status, in a new tab', () => {
+    pill('all')?.click();
+    fixture.detectChanges();
+
+    for (const id of ['app_1', 'app_2', 'app_3', 'app_4']) {
+      expect(element().querySelector(`[data-testid="mentorship-mentor-applicant-contact-${id}"] a`)?.getAttribute('href')).toBe(
+        'mailto:ifeoma.adeyemi@example.com'
+      );
+    }
+    const link = element().querySelector('[data-testid="mentorship-mentor-applicant-contact-app_1"] a');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('aria-label')).toBe('Contact Mentee: Ifeoma Adeyemi');
+  });
+
+  it('drops Contact Mentee when the address is not safe to put in a mailto: link', () => {
+    setup([applicant({ email: 'ifeoma@example.com%0D%0ABcc:other@example.com' })]);
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-applicant-contact-app_1"]')).toBeNull();
+  });
 });

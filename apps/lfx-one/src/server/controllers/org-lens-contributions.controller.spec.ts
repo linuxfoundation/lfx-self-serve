@@ -5,8 +5,9 @@ import { CONTRIBUTIONS_MAX_FILTER_VALUES, MAX_SNOWFLAKE_PAGINATION_PAGE } from '
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getContributions, logger } = vi.hoisted(() => ({
+const { getContributions, getOrgScope, logger } = vi.hoisted(() => ({
   getContributions: vi.fn(),
+  getOrgScope: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
@@ -16,10 +17,12 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-team-members.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-scope.utils')),
 }));
 vi.mock('../services/org-contributions.service', () => ({
   OrgContributionsService: class {
     public getContributions = getContributions;
+    public getOrgScope = getOrgScope;
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
@@ -242,5 +245,65 @@ describe('OrgLensContributionsController team members', () => {
     expect(getContributions).not.toHaveBeenCalled();
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('OrgLensContributionsController organization scope (lfx-self-serve-ops#1219)', () => {
+  const controller = new OrgLensContributionsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
+  });
+
+  it('defaults a missing orgScope to insights and passes orgScope=all through', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({}), buildRes(), next);
+    await controller.getContributions(buildReq({ orgScope: 'all' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ orgScope: 'insights' });
+    expect(getContributions.mock.calls[1][1]).toMatchObject({ orgScope: 'all' });
+  });
+
+  it.each(['Insights', 'everyone', 'lf'])('rejects orgScope=%s with a 400 before the service', async (orgScope) => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ orgScope }), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+    expect((next.mock.calls[0][0] as Error).message).toContain('orgScope');
+  });
+
+  it("answers GET /lens/org-scope with the account's scope, uncached", async () => {
+    const scope = {
+      accountId: ORG_UID,
+      hasInsightsOrg: true,
+      insightsOrgId: 'insights-org-1',
+      insightsOrgName: 'Example Org',
+      relatedOrgCount: 3,
+    };
+    getOrgScope.mockResolvedValue(scope);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getOrgScope(buildReq({}), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getOrgScope).toHaveBeenCalledWith(ORG_UID);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.json).toHaveBeenCalledWith(scope);
+  });
+
+  it('rejects an invalid org uid before reading the scope', async () => {
+    const next = vi.fn();
+
+    await controller.getOrgScope({ params: { orgUid: 'not-an-org' }, query: {}, path: '/test' } as unknown as Request, buildRes(), next);
+
+    expect(getOrgScope).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
 });

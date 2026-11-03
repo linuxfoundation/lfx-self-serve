@@ -93,6 +93,7 @@ describe('UiSearchInputComponent', () => {
     expect(clear()).not.toBeNull();
     expect(clear()?.getAttribute('aria-label')).toBe('Clear search');
     expect(clear()?.type).toBe('button');
+    expect(clear()?.classList).toContain('cursor-pointer');
   });
 
   it('clears the text, hides the button and returns focus to the field', async () => {
@@ -140,6 +141,18 @@ describe('UiSearchInputComponent', () => {
     expect(fixture.componentInstance.value()).toBe('kube');
     expect(event.defaultPrevented).toBe(false);
     expect(outer).not.toHaveBeenCalled();
+  });
+
+  it('keeps the text on the Escape that reports keyCode 229', async () => {
+    fixture.componentInstance.value.set('kube');
+    await fixture.whenStable();
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', keyCode: 229, bubbles: true, cancelable: true });
+    input().dispatchEvent(event);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe('kube');
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it('returns focus to the field when Escape is pressed on the clear button', async () => {

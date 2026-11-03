@@ -61,7 +61,7 @@
   (detach)="onDetach()">
   <!-- Exact px, not rem; 14px root. The mousedown guard keeps focus in the input so the list stays open while a row is clicked. -->
   <div
-    class="ui-combobox-panel flex max-h-[320px] flex-1 flex-col overflow-hidden rounded-ui-md bg-ui-background-100 shadow-menu"
+    class="ui-combobox-panel flex max-h-[320px] flex-1 flex-col overflow-hidden rounded-ui-md bg-ui-background-100 shadow-menu forced-colors:border forced-colors:border-[color:CanvasText]"
     (mousedown)="$event.preventDefault()"
     data-testid="ui-combobox-panel">
     <div

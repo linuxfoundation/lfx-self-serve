@@ -76,6 +76,8 @@ import {
   MENTORSHIP_SKILL_MAX_LENGTH,
   MENTORSHIP_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_SKILLS_MAX_ITEMS,
+  MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE,
+  MENTORSHIP_TASK_FILE_VIEW_TYPES,
   MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE,
 } from '../constants/mentorship.constants';
 import type {
@@ -153,6 +155,7 @@ import type {
   MentorshipMenteeUpdatableTaskStatus,
 } from '../interfaces/mentorship-mentee.interface';
 import { formatIsoDateLabel, formatRelativeTime, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
+import { isMailtoSafeEmail } from './email.utils';
 import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
@@ -1411,6 +1414,14 @@ export function mentorshipRowActions<T extends string>(actions: readonly T[], la
 }
 
 /**
+ * The Contact Mentee `mailto:` link for a mentee's address, or null when the address is not safe
+ * to put in one, so a row with no usable address offers no Contact Mentee.
+ */
+export function mentorshipContactMenteeUrl(email: string | null | undefined): string | null {
+  return isMailtoSafeEmail(email) ? `mailto:${email}` : null;
+}
+
+/**
  * The reviewer-note line for a row. A draft edited this session wins over the note the
  * row arrived with, whitespace alone counts as no note, and an absent note falls back
  * to the "Add note" prompt. Shared so the tabs cannot disagree on what a note is.
@@ -1531,6 +1542,20 @@ export function buildMentorshipMenteeTaskView(
 export function hasMentorshipTaskFileExtension(fileName: string): boolean {
   const dot = fileName.lastIndexOf('.');
   return dot !== -1 && MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS.includes(fileName.slice(dot).toLowerCase());
+}
+
+/**
+ * The type a downloaded task file is opened as in a browser tab, or null when browsers cannot show it (DOC, DOCX, or
+ * anything unknown). A specific response type decides; a missing or generic one leaves it to the file name's extension.
+ * Only the map's own keys match, so a type such as `constructor` cannot pick up an inherited value.
+ */
+export function mentorshipTaskFileViewType(contentType: string | null | undefined, fileName: string | null | undefined): string | null {
+  const viewTypeOf = (key: string): string | null => (Object.hasOwn(MENTORSHIP_TASK_FILE_VIEW_TYPES, key) ? MENTORSHIP_TASK_FILE_VIEW_TYPES[key] : null);
+  const type = (contentType ?? '').split(';')[0].trim().toLowerCase();
+  if (type && type !== MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE) return viewTypeOf(type);
+  const dot = fileName?.lastIndexOf('.') ?? -1;
+  if (!fileName || dot === -1) return null;
+  return viewTypeOf(fileName.slice(dot).toLowerCase());
 }
 
 /**

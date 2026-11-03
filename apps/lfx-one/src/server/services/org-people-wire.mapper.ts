@@ -46,6 +46,7 @@ export function toStoredRow(row: OrgAllEmployeeRowInternal): OrgAllEmployeeCount
     coursesCount: row.coursesCount,
     engagedFoundationIds: row.engagedFoundationIds,
     ...(row.isFormer ? { isFormer: true } : {}),
+    ...(row.isUnclassified ? { isUnclassified: true } : {}),
   };
 }
 
@@ -77,6 +78,7 @@ export function toWireRow(row: OrgAllEmployeeCountedRow, filters: OrgCommitFilte
     coursesCount: row.coursesCount,
     engagedFoundationIds: row.engagedFoundationIds,
     ...(row.isFormer ? { isFormer: true } : {}),
+    ...(row.isUnclassified ? { isUnclassified: true } : {}),
   };
 }
 

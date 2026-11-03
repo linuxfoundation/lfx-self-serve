@@ -65,7 +65,7 @@
   (detach)="closePanel()">
   <!-- Exact px, not rem; 14px root. The listbox mousedown guard keeps focus on the trigger so the list stays open while a row is clicked. -->
   <div
-    class="ui-select-panel flex max-h-[320px] flex-1 flex-col overflow-hidden rounded-ui-md bg-ui-background-100 shadow-menu"
+    class="ui-select-panel flex max-h-[320px] flex-1 flex-col overflow-hidden rounded-ui-md bg-ui-background-100 shadow-menu forced-colors:border forced-colors:border-[color:CanvasText]"
     (focusout)="onPanelFocusOut($event)"
     data-testid="ui-select-panel">
     <div

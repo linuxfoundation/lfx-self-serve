@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, LowerCasePipe, SlicePipe } from '@angular/common';
+import { DecimalPipe, isPlatformBrowser, LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, PLATFORM_ID, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -69,6 +69,14 @@ import {
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_EMAIL_CHANNEL_LABEL,
+  CAMPAIGN_EMAIL_CHANNEL_PLATFORM,
+  CAMPAIGN_FUNNEL_STAGE_OPTIONS,
+  CAMPAIGN_LABEL_ABSENT,
+  CAMPAIGN_FUNNEL_STAGE_SHORT_LABELS,
+  CAMPAIGN_STATUS_DELETED,
+  CAMPAIGN_TACTIC_OPTIONS,
+  CAMPAIGN_STATUSES_NOT_REUSED,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
   GOOGLE_ADS_DECIMAL_NUMBER_PATTERN,
@@ -130,8 +138,10 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_CREATIVE_SHARED_CAPS,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+  GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_GOOGLE_DAILY_BUDGET_USD,
@@ -155,6 +165,7 @@ import {
   isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
@@ -179,6 +190,13 @@ import type {
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
   CampaignJobOutcome,
+  CampaignCreateAnother,
+  CampaignCreateAnotherDialogData,
+  CampaignExistingPlatformNotice,
+  CampaignFunnelStage,
+  CampaignTactic,
+  CampaignExistingRow,
+  CampaignIndexDoc,
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
@@ -226,6 +244,8 @@ import type {
   GoogleCreativeImageShape,
   GoogleCreativeImageSlotView,
   GoogleCreativeSection,
+  GoogleCreativeSharedCap,
+  GoogleTypedImageProbe,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
@@ -245,6 +265,7 @@ import {
   campaignBiddingError,
   campaignBiddingPayload,
   campaignFlightDays,
+  campaignLabelColumns,
   codePointLength,
   dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
@@ -256,6 +277,8 @@ import {
   googleCreativeImageRequirement,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
+  isHttpUrl,
+  isReversedCampaignFlight,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -263,6 +286,7 @@ import {
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
+import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
@@ -319,6 +343,9 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     CreativeSlotGridComponent,
     GoogleCreativeImageLibraryComponent,
   ],
+  // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
+  // also provides one at root, and this instance behaves the same.
+  providers: [DialogService],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -328,6 +355,13 @@ export class ImplementationTabComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly dialogService = inject(DialogService);
+  private readonly platformId = inject(PLATFORM_ID);
+  /**
+   * The zone a campaign's Created date is dated in: the viewer's own in the browser (`undefined`), and none
+   * during a server render (`null`, shown as "—"), so the server's UTC day is never rendered (#4983).
+   */
+  private readonly labelTimeZone: null | undefined = isPlatformBrowser(this.platformId) ? undefined : null;
 
   // === Inputs ===
   public readonly briefData = input<CampaignBriefOutput | null>(null);
@@ -650,6 +684,122 @@ export class ImplementationTabComponent implements OnInit {
   public readonly replaceSavedBriefRequested = output<void>();
 
   /**
+   * The campaigns already created from this brief, as the page's list read returned them (#4983).
+   * `null` is NOT LOADED (no saved brief yet, or a read in flight), never "none": only an answered
+   * read supports saying anything about what exists.
+   */
+  public readonly briefCampaigns = input<CampaignIndexDoc[] | null>(null);
+
+  /** The list read answered, but indexing lags a create, so recent campaigns may be missing. */
+  public readonly briefCampaignsStale = input(false);
+
+  /** The list read FAILED, which must not render as "nothing created" (failure-as-absence). */
+  public readonly briefCampaignsUnavailable = input(false);
+
+  /** A list read is in flight, so "nothing listed" means "checking", not "nothing created". */
+  public readonly briefCampaignsLoading = input(false);
+
+  /**
+   * The platforms this deployment lets an operator deliberately create ANOTHER campaign on (#4983,
+   * "ss-3"): `CampaignListResult.multiCampaignPlatforms`, already narrowed by the BFF to the platforms
+   * campaign-service supports it for. `null` (unanswered) and `[]` both mean off.
+   */
+  public readonly multiCampaignPlatforms = input<string[] | null>(null);
+
+  /** Asks the parent to read the campaign list again after a failed read. */
+  public readonly retryBriefCampaigns = output<void>();
+
+  /**
+   * A create job reached a terminal state, so the campaigns already created for this event may have
+   * changed and the parent re-reads them. Emitted on every terminal outcome, failures included: a
+   * failed or unconfirmed job may still have created something.
+   */
+  public readonly createJobSettled = output<void>();
+
+  /**
+   * Asks the parent to open the SAVED brief in Planning's editor, after the same
+   * `unowned-brief-exists` refusal (#4983). The other way out beside Replace saved brief: keep the
+   * stored brief and edit it, instead of overwriting it with this one.
+   */
+  public readonly openSavedBriefRequested = output<void>();
+
+  /** Asks the parent to reopen this tab's brief in Planning's editor — Edit brief (#4983). */
+  public readonly editBriefRequested = output<void>();
+
+  /**
+   * A create job is starting (#4983). The parent drops any Edit brief re-read still out: its answer
+   * would switch to Planning and destroy this tab, and with it the job's polling.
+   */
+  public readonly createStarted = output<void>();
+
+  /** The funnel-stage and tactic choices for a "create another" (#4983, "ss-3"). */
+  protected readonly funnelStageOptions = [...CAMPAIGN_FUNNEL_STAGE_OPTIONS];
+  protected readonly tacticOptions = [...CAMPAIGN_TACTIC_OPTIONS];
+  protected readonly funnelStageShortLabels = CAMPAIGN_FUNNEL_STAGE_SHORT_LABELS;
+
+  /**
+   * The stage (required) and tactic (optional) for the next "create another". A FormGroup behind
+   * `lfx-select`, so a picker the template removes and recreates (switching channel and back) shows the
+   * value that will be sent rather than its placeholder.
+   */
+  protected readonly anotherForm = this.fb.group({
+    stage: this.fb.control<CampaignFunnelStage | null>(null),
+    tactic: this.fb.control<CampaignTactic | null>(null),
+  });
+
+  /** The stage the operator chose for the next "create another". Required before it can be sent. */
+  protected readonly anotherStage = toSignal(this.anotherForm.controls.stage.valueChanges.pipe(map((value): CampaignFunnelStage | '' => value ?? '')), {
+    initialValue: '' as CampaignFunnelStage | '',
+  });
+
+  /** The tactic the operator chose for the next "create another". Optional. */
+  protected readonly anotherTactic = toSignal(this.anotherForm.controls.tactic.valueChanges.pipe(map((value): CampaignTactic | '' => value ?? '')), {
+    initialValue: '' as CampaignTactic | '',
+  });
+
+  /**
+   * The highest slot version this tab has SEEN per slot (`platform|variant`), from the jobs it ran. The
+   * campaign list lags a create while it is re-indexed, so the expectation sent with the next "create
+   * another" takes the higher of the two (#4983).
+   */
+  private readonly seenSlotVersions = signal<Record<string, number>>({});
+
+  /**
+   * The campaigns this tab's own jobs reported, keyed like `seenSlotVersions` plus the slot version, so
+   * the confirmation lists one the index has not caught up with yet (#4983).
+   */
+  private readonly seenCampaigns = signal<Record<string, CampaignExistingRow & { variant: string; slotVersion: number }>>({});
+
+  /**
+   * The selected platforms that already have a live campaign for this event (#4983, "ss-3"): listed, or
+   * created by a job this tab just ran.
+   */
+  protected readonly overlappingPlatforms: Signal<string[]> = this.initOverlappingPlatforms();
+
+  /** Of those, the ones a deliberate second campaign may be created on here. */
+  protected readonly createAnotherPlatforms: Signal<string[]> = computed(() => {
+    const allowed = this.multiCampaignPlatforms() ?? [];
+    return this.overlappingPlatforms().filter((platform) => allowed.includes(platform));
+  });
+
+  /** Whether the next create adds another campaign: every overlapping platform supports it, and some overlap. */
+  protected readonly createAnotherMode = computed(
+    () => this.createAnotherPlatforms().length > 0 && this.createAnotherPlatforms().length === this.overlappingPlatforms().length
+  );
+
+  /**
+   * Why a create that would add another campaign cannot go as it stands, or `null` (#4983, "ss-3").
+   *
+   * campaign-service refuses a `new_version` request as a whole when any platform in it is not being
+   * created again, so a create that adds another campaign may hold ONLY those platforms; and the new
+   * campaign must carry a funnel stage.
+   */
+  protected readonly createAnotherBlock: Signal<string | null> = this.initCreateAnotherBlock();
+
+  /** Why the last Edit brief opened nothing, from the parent, or `null` (#4983). */
+  public readonly editBriefError = input<string | null>(null);
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -661,11 +811,53 @@ export class ImplementationTabComponent implements OnInit {
   public readonly draftChange = output<CampaignImplementationDraft>();
 
   /**
+   * The live campaigns already created for this event (#4983): every listed campaign but a deleted
+   * one, which frees its slot and no longer exists on the platform. Empty while the list is not
+   * loaded or failed; the template tells those apart through the two inputs above.
+   */
+  protected readonly existingCampaigns: Signal<CampaignExistingRow[]> = this.initExistingCampaigns();
+
+  /**
+   * One line per platform that already has a live campaign: "You already have N … campaign(s) for
+   * this event." (#4983).
+   */
+  protected readonly existingPlatformNotices: Signal<CampaignExistingPlatformNotice[]> = this.initExistingPlatformNotices();
+
+  /**
+   * What Create Another would really do on a platform that already has a campaign (#4983), until a
+   * deliberate second campaign ships. Without `new_version` campaign-service treats a repeat create of
+   * the same campaign (same platform, and for Google the same campaign type) as a retry and returns the
+   * existing one, which the results then list as though created, so this says so before the click.
+   *
+   * The platforms are those with a campaign campaign-service would hand back (not a pending or partial
+   * row, see `CAMPAIGN_STATUSES_NOT_REUSED`), joined with the ones the job just created: right after a
+   * create the list is still being re-read, and the new campaign may not be indexed yet. `null` when
+   * there are none.
+   */
+  protected readonly createAnotherNotice: Signal<string | null> = this.initCreateAnotherNotice();
+
+  /**
+   * Whether Edit brief is enabled (#4983). Not while a create job is being polled: proceeding from
+   * the editor replaces the brief and resets it to `draft`, and a job already running from the
+   * approved version would then be reported against a brief that no longer matches it.
+   */
+  protected readonly canEditBrief = computed(() => this.step() !== 'creating');
+
+  /**
+   * Whether Edit brief is offered at all (#4983). Not on the `unowned-brief-exists` refusal: the brief
+   * here was refused because another brief is saved for the event, so editing THIS one and proceeding
+   * is refused again. Open to edit and Replace saved brief, in the banner, are the ways out there.
+   */
+  protected readonly showEditBrief = computed(
+    () => this.briefData() !== null && !(this.briefPersistence().status === 'error' && this.briefPersistence().conflict === 'unowned-brief-exists')
+  );
+
+  /**
    * Whether the save banner offers "Replace saved brief".
    *
-   * Only on `unowned-brief-exists`: that is the one refusal Retry cannot clear and Restore escapes
-   * only by discarding this brief. Hidden while a save is in flight, so a second click cannot queue
-   * a second replace behind the first.
+   * Only on `unowned-brief-exists`: that is the one refusal Retry cannot clear, and Restore or Open
+   * to edit (#4983) escape it only by discarding this brief. Hidden while a save is in flight, so a
+   * second click cannot queue a second replace behind the first.
    */
   protected readonly canReplaceSavedBrief = computed(
     () => this.briefPersistence().status === 'error' && this.briefPersistence().conflict === 'unowned-brief-exists' && !this.briefSaveInFlight()
@@ -1042,7 +1234,17 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly platformResultsHeading = computed(() => {
     if (this.anyPlatformCreated()) {
-      return 'Campaigns Created';
+      // Every successful row came back `reused` (#4983): campaign-service returned campaigns that
+      // already existed, so "Created" would contradict the line under each row.
+      // A reused row beside a proven pre-create failure is two confirmed outcomes, and says both. A reused
+      // row beside an unconfirmed one falls through to the headings below, which never claim more than
+      // was verified.
+      const rows = this.platformOutcomes();
+      if (rows.some((r) => (r.outcome === 'created' && r.reused !== true) || r.outcome === 'orphaned')) return 'Campaigns Created';
+      if (rows.every((r) => r.outcome === 'created' && r.reused === true)) return 'Existing Campaigns Returned';
+      if (rows.every((r) => (r.outcome === 'created' && r.reused === true) || r.outcome === 'nothing-created')) {
+        return 'Existing Campaigns Returned; Nothing Else Created';
+      }
     }
     const rows = this.platformOutcomes();
     return rows.length > 0 && rows.every((r) => r.outcome === 'nothing-created') ? 'No Campaigns Created' : 'Campaign Status Unconfirmed';
@@ -1050,6 +1252,16 @@ export class ImplementationTabComponent implements OnInit {
 
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
+  /**
+   * The brief's keywords a Google create sends (#4848): a blank term is dropped, as a blank headline
+   * line is, because campaign-service refuses it and the operator saw only the generic failure.
+   */
+  protected readonly googleSearchKeywords = computed(() => this.briefKeywords().filter((k) => typeof k.term === 'string' && k.term.trim() !== ''));
+  /**
+   * Why a Search create would make a campaign that can never serve, or `null` (#4848). With no
+   * keyword the create succeeds and LFX activation then refuses the campaign, so Create waits.
+   */
+  protected readonly googleSearchKeywordsError: Signal<string | null> = this.initGoogleSearchKeywordsError();
   protected readonly briefHsToken = signal<string | null>(null);
   protected readonly briefDriveFolderUrl = signal('');
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
@@ -1615,6 +1827,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPlacements = signal<MetaPlacement>({ ...META_DEFAULT_PLACEMENTS });
   /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
   protected readonly metaPixelId = signal('');
+  /**
+   * What the browser last learned about each pasted Google image URL, keyed by the URL itself, so a
+   * result follows the URL into any slot it is pasted into. Probed again on every blur (see
+   * `onGoogleImageFieldBlur`), best effort where the browser answers from its cache.
+   */
+  private readonly googleTypedImageProbes = signal<Readonly<Record<string, GoogleTypedImageProbe>>>({});
   /** What the last "Use suggested images" did, and for which brief, so the line never outlives a brief switch (#4825). */
   private readonly googleSuggestedApply = signal<{ briefId: string; message: string; seq: number } | null>(null);
 
@@ -2772,6 +2990,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCreativeLibrary: Signal<CreativeAssetLibraryState> = this.initGoogleCreativeLibrary();
   /** Each rendered Google image slot's library controls, keyed `<request key>.<control>`. */
   protected readonly googleImageSlots: Signal<Record<string, GoogleCreativeImageSlotView>> = this.initGoogleImageSlots();
+  /** The advisory line under a Google image slot about its pasted URLs, keyed `<request key>.<control>`; absent when there is nothing to say. */
+  protected readonly googleTypedImageWarnings: Signal<Record<string, string>> = this.initGoogleTypedImageWarnings();
+  /**
+   * Every current pasted-URL line, each named by its section and field, for the always-mounted live
+   * region. The lines arrive after focus has left the field, so the visible span alone would never be
+   * announced; the region is mounted empty and only its text changes, as the template's other
+   * announcements are. `''` when there is nothing to say.
+   */
+  protected readonly googleTypedImageAnnouncement: Signal<string> = this.initGoogleTypedImageAnnouncement();
   /**
    * The asset-plan slots "Use suggested images" can fill, as `platform/CHANNEL/slot` in the plan's own
    * vocabulary: one per plan slot name that maps onto a Google image field on screen. The grid offers
@@ -2957,6 +3184,7 @@ export class ImplementationTabComponent implements OnInit {
     // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
     // First, not last, because an early `return false` must not skip registering it.
     void this.campaignFormRevision();
+    if (this.createAnotherBlock() !== null) return false;
     const platforms = this.selectedPlatforms();
     const googleSelected = platforms.includes('google-ads');
     const linkedInSelected = platforms.includes('linkedin-ads');
@@ -3020,6 +3248,10 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
     // Countries and postal ids together over upstream's 60 — see `googleGeoTargetsOverCap`.
     if (googleSelected && this.googleGeoTargetsOverCap()) return false;
+    // An end date before the start, which Google refuses (#4848); the message is under End Date.
+    if (googleSelected && this.googleFlightError() !== null) return false;
+    // Search with no keyword, which creates a campaign that can never serve (#4848).
+    if (googleSelected && this.googleSearchKeywordsError() !== null) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -3217,6 +3449,12 @@ export class ImplementationTabComponent implements OnInit {
    * under a budget nothing else reads.
    */
   protected readonly googleBudgetInvalid: Signal<boolean> = this.initGoogleBudgetInvalid();
+  /**
+   * Why Google will refuse the flight on screen, or `null` (#4848). campaign-service refuses an end
+   * date BEFORE the start, before anything is created, but the operator saw only "platform campaign
+   * creation failed". A same-day flight is legal on Google, so it is not refused here.
+   */
+  protected readonly googleFlightError: Signal<string | null> = this.initGoogleFlightError();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
   protected readonly performanceMaxPrefillShown: Signal<boolean> = this.initPerformanceMaxPrefillShown();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
@@ -3532,6 +3770,8 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Public Methods ===
   public reset(): void {
+    // A new create starts with no stage chosen, so adding another campaign is always a fresh decision.
+    this.anotherForm.reset({ stage: null, tactic: null });
     this.jobSubscription?.unsubscribe();
     this.jobSubscription = null;
     this.step.set('form');
@@ -4878,6 +5118,38 @@ export class ImplementationTabComponent implements OnInit {
 
   protected submit(): void {
     if (!this.canSubmit()) return;
+    // Adding another campaign on a platform that already has one is confirmed every time (#4983): the
+    // dialog lists what exists and says the new campaign is separately budgeted. Only Create another in
+    // it sends `new_version`; anything else sends nothing.
+    if (this.createAnotherMode()) {
+      const another = this.buildCreateAnother();
+      if (another === null) {
+        // Unreachable while `createAnotherBlock` gates Create, and said out loud rather than dropped.
+        this.errors.set(['This page could not tell which campaigns already exist, so nothing was created. Reload and try again.']);
+        return;
+      }
+      this.dialogService
+        .open(CampaignCreateAnotherDialogComponent, {
+          header: 'Create another campaign?',
+          width: '36rem',
+          style: { maxWidth: '90vw' },
+          modal: true,
+          closable: true,
+          data: this.createAnotherDialogData(another),
+        })
+        ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+        .subscribe((confirmed: boolean | undefined) => {
+          if (confirmed === true && this.canSubmit() && this.step() === 'form') {
+            this.dispatchCreate(another);
+          }
+        });
+      return;
+    }
+    this.dispatchCreate();
+  }
+
+  /** Send the create; `another` only after the operator confirmed a deliberate second campaign. */
+  protected dispatchCreate(another?: CampaignCreateAnother): void {
     // The X start rule depends on the clock, which `canSubmit`'s memo cannot see move: a form left
     // open across midnight UTC would otherwise send a start campaign-service now refuses.
     const twitterFlightError = this.selectedPlatforms().includes('twitter-ads') ? this.twitterFlightErrorAt(Date.now()) : null;
@@ -4888,6 +5160,7 @@ export class ImplementationTabComponent implements OnInit {
 
     const platforms = this.selectedPlatforms();
     this.step.set('creating');
+    this.createStarted.emit();
     this.creationProgress.set(['Submitting campaign...']);
     this.results.set([]);
     this.platformResults.set([]);
@@ -4898,6 +5171,8 @@ export class ImplementationTabComponent implements OnInit {
     const slug = form.eventSlug || form.eventName.toLowerCase().replace(/\s+/g, '-');
 
     const request = {
+      // A confirmed "create another" (#4983). Absent otherwise, so a repeat create stays a retry.
+      ...(another === undefined ? {} : { another }),
       eventName: form.eventName,
       eventSlug: slug,
       countryCode: form.countryCode,
@@ -4908,7 +5183,7 @@ export class ImplementationTabComponent implements OnInit {
       searchBudgetPct: form.searchBudgetPct,
       startDate: form.startDate,
       endDate: form.endDate,
-      keywords: this.briefKeywords(),
+      keywords: this.googleSearchKeywords(),
       headlines: (form.headlines as string[]).filter((h) => h.trim()),
       descriptions: (form.descriptions as string[]).filter((d) => d.trim()),
       // The SAME derivation the Google section previews, for the reason `metaEffectiveGeoTargets`
@@ -5134,6 +5409,32 @@ export class ImplementationTabComponent implements OnInit {
         this.step.set('form');
       },
     });
+  }
+
+  /**
+   * Check the pasted URLs of a Google image field in the browser once the operator leaves it.
+   *
+   * Advisory only: it never blocks Create. campaign-service downloads every pasted URL and checks its
+   * format, size and shape before anything is created (`fetchSlotImages`), so a bad image already costs
+   * nothing; this only tells the operator while they are still on the field rather than at Create.
+   * A URL is probed again on every blur unless a probe for it is still running, so a host that was
+   * slow or down gets another chance. Re-checking a URL whose image was replaced in place is best
+   * effort only: the browser may answer from its cache with the old image, and busting the cache
+   * would break signed URLs. A replaced image is reliably re-checked under a new URL. A URL on this
+   * application's own host is never loaded ({@link isOwnHostUrl}).
+   */
+  protected onGoogleImageFieldBlur(groupName: string, field: GoogleCreativeFieldSpec): void {
+    if (!field.image || !isPlatformBrowser(this.platformId)) return;
+    const raw = this.campaignForm.get([groupName, field.control])?.value as string | null | undefined;
+    for (const url of this.splitCreativeLines(raw)) {
+      // Read live, not from a snapshot taken before the loop: a URL pasted on two lines is marked
+      // in flight (`checking`, or `rechecking` once it has an answer) by its first probe, so the
+      // second line starts none.
+      const probe = this.googleTypedImageProbes()[url];
+      if (probe?.state !== 'checking' && !probe?.rechecking && isHttpUrl(url, true) && !this.isOwnHostUrl(url)) {
+        this.probeGoogleTypedImage(url);
+      }
+    }
   }
 
   // === Private Methods ===
@@ -7035,7 +7336,8 @@ export class ImplementationTabComponent implements OnInit {
       this.metaGeoTargets.set(this.acceptedMetaGeos(brief.metaCopy.recommendedGeos));
     }
 
-    this.briefKeywords.set(brief.keywords);
+    // A stored brief can lack the list; every reader maps or filters it (#4848).
+    this.briefKeywords.set(Array.isArray(brief.keywords) ? brief.keywords : []);
 
     // Microsoft's seed (LFXV2-3312). The brief's own keywords feed it DIRECTLY, with no
     // translation: `CampaignKeyword.matchType` is already the PascalCase vocabulary
@@ -7183,7 +7485,9 @@ export class ImplementationTabComponent implements OnInit {
             this.results.set(outcome.campaigns);
             this.platformResults.set(outcome.platformResults ?? []);
             this.errors.set(outcome.errors);
+            this.rememberSlotVersions(outcome.platformResults ?? []);
             this.step.set('results');
+            this.createJobSettled.emit();
           }
         },
         error: (error: unknown) => {
@@ -7193,17 +7497,259 @@ export class ImplementationTabComponent implements OnInit {
               : 'Lost connection to the campaign creation process. Please try again or check your ad platforms directly.';
           this.errors.set([message]);
           this.step.set('results');
+          this.createJobSettled.emit();
         },
         complete: () => {
           if (this.step() === 'creating') {
             this.errors.set(['Campaign creation is taking longer than expected. Check your ad platforms to see if campaigns were created.']);
             this.step.set('results');
+            this.createJobSettled.emit();
           }
         },
       });
   }
 
   // === Private Initializers ===
+  /**
+   * The latest slot version of the slot a create on `platform` would claim, when that slot's latest
+   * campaign is one campaign-service would hand back (see `initOverlappingPlatforms`); `null` when the
+   * slot is empty or its latest row is unfinished. A listed row indexed before slot versions existed
+   * counts as slot 1.
+   *
+   * A Google row indexed before variants existed names no channel, and it could be any of them, so it
+   * matches none: the create stays a plain one, which campaign-service resolves against the campaign
+   * itself (reusing it on its own channel). Every other platform has the one `default` slot.
+   *
+   * A version this tab saw counts until the list shows that very campaign deleted; campaign-service
+   * compares against the latest LIVE slot, so expecting a deleted one would only ever return the older.
+   */
+  private slotLatest(platform: string): number | null {
+    const variant = this.createVariant(platform);
+    let seen = this.seenSlotVersions()[this.seenSlotKey(platform, variant)] ?? 0;
+    let latest: CampaignIndexDoc | null = null;
+    for (const campaign of this.briefCampaigns() ?? []) {
+      if (!this.inSlot(campaign, platform, variant)) continue;
+      if (campaign.status === CAMPAIGN_STATUS_DELETED) {
+        if ((campaign.slot_version ?? 1) === seen) seen = 0;
+        continue;
+      }
+      if (latest === null || (campaign.slot_version ?? 1) > (latest.slot_version ?? 1)) latest = campaign;
+    }
+    const latestVersion = latest === null ? 0 : (latest.slot_version ?? 1);
+    if (seen > latestVersion) return seen;
+    if (latest === null) return null;
+    const reusable = !!latest.platform_campaign_id && !CAMPAIGN_STATUSES_NOT_REUSED.includes(latest.status);
+    return reusable ? latestVersion : null;
+  }
+
+  /** Whether a listed campaign sits on the slot `platform`/`variant` names (see `slotLatest` for a variant-less Google row). */
+  private inSlot(campaign: CampaignIndexDoc, platform: string, variant: string): boolean {
+    if (campaign.platform !== platform) return false;
+    if (campaign.variant === undefined) return platform !== 'google-ads' && variant === 'default';
+    return campaign.variant === variant;
+  }
+
+  /** `seenSlotVersions` is keyed by brief as well, so a slot seen for one brief says nothing about another. */
+  private seenSlotKey(platform: string, variant: string): string {
+    return `${this.briefPersistence().briefId ?? ''}|${platform}|${variant}`;
+  }
+
+  /** The slot variant a create on `platform` would claim: Google's channel (`default` for Search), else `default`. */
+  private createVariant(platform: string): string {
+    if (platform !== 'google-ads') return 'default';
+    const channel = this.resolveGoogleChannel();
+    return channel === null || channel === 'search' ? 'default' : channel;
+  }
+
+  /** File the slot versions a finished job reports, so the next expectation is not behind them (#4983). */
+  private rememberSlotVersions(results: readonly CampaignPlatformResult[]): void {
+    const seen = { ...this.seenSlotVersions() };
+    const campaigns = { ...this.seenCampaigns() };
+    for (const result of results) {
+      if (result.ok && typeof result.slotVersion === 'number') {
+        const variant = result.variant ?? 'default';
+        const key = this.seenSlotKey(result.platform, variant);
+        seen[key] = Math.max(seen[key] ?? 0, result.slotVersion);
+        campaigns[`${key}|${result.slotVersion}`] = {
+          id: `seen-${result.platform}-${variant}-${result.slotVersion}`,
+          platform: result.platform,
+          platformLabel: this.existingPlatformLabel(result.platform),
+          name: 'Created here moments ago; still being listed',
+          status: result.reused === true ? 'existing' : 'created',
+          slot: String(result.slotVersion),
+          labels: campaignLabelColumns(
+            { platform: result.platform, variant: result.variant, funnel_stage: result.funnelStage, tactic: result.tactic },
+            this.labelTimeZone
+          ),
+          variant,
+          slotVersion: result.slotVersion,
+        };
+      }
+    }
+    this.seenSlotVersions.set(seen);
+    this.seenCampaigns.set(campaigns);
+  }
+
+  /**
+   * The campaigns the confirmation lists for `platforms`: the indexed ones, plus any this tab's jobs
+   * reported that the index does not show yet, so a create made moments ago is never missing (#4983).
+   */
+  private confirmationCampaigns(platforms: readonly string[]): CampaignExistingRow[] {
+    const listed = this.existingCampaigns().filter((campaign) => platforms.includes(campaign.platform));
+    const docs = this.briefCampaigns() ?? [];
+    const prefix = `${this.briefPersistence().briefId ?? ''}|`;
+    const pending = Object.entries(this.seenCampaigns())
+      .filter(([key, row]) => key.startsWith(prefix) && platforms.includes(row.platform))
+      .filter(([, row]) => !docs.some((doc) => this.inSlot(doc, row.platform, row.variant) && (doc.slot_version ?? 1) === row.slotVersion))
+      .map(([, row]) => ({
+        id: row.id,
+        platform: row.platform,
+        platformLabel: row.platformLabel,
+        name: row.name,
+        status: row.status,
+        slot: row.slot,
+        labels: row.labels,
+      }));
+    return [...listed, ...pending];
+  }
+
+  /**
+   * The "create another" payload, or `null` when it cannot be built (#4983).
+   *
+   * `expectedSlotVersions` names, per platform, the latest slot version of the SAME slot the operator
+   * saw: for Google, the channel being created, since each channel is its own slot. It is the higher of
+   * the listed campaigns and what this tab's own jobs reported; a listed campaign indexed before slot
+   * versions existed counts as slot 1.
+   */
+  private buildCreateAnother(): CampaignCreateAnother | null {
+    const stage = this.anotherStage();
+    if (stage === '') return null;
+    const expectedSlotVersions: Record<string, number> = {};
+    for (const platform of this.createAnotherPlatforms()) {
+      const latest = this.slotLatest(platform);
+      if (latest === null) return null;
+      expectedSlotVersions[platform] = latest;
+    }
+    const tactic = this.anotherTactic();
+    return { funnelStage: stage, ...(tactic === '' ? {} : { tactic }), expectedSlotVersions };
+  }
+
+  private createAnotherDialogData(another: CampaignCreateAnother): CampaignCreateAnotherDialogData {
+    const platforms = Object.keys(another.expectedSlotVersions);
+    const labels = platforms.map((platform) => this.existingPlatformLabel(platform)).join(', ');
+    const stage = CAMPAIGN_FUNNEL_STAGE_OPTIONS.find((option) => option.id === another.funnelStage)?.label ?? another.funnelStage;
+    const tactic = another.tactic === undefined ? null : (CAMPAIGN_TACTIC_OPTIONS.find((option) => option.id === another.tactic)?.label ?? another.tactic);
+    const tacticPart = tactic === null ? '' : `, ${tactic} tactic,`;
+    return {
+      summary: `This creates a separate, separately budgeted ${stage}${tacticPart} campaign on ${labels}. The campaigns already created for this event keep running.`,
+      existing: this.confirmationCampaigns(platforms),
+    };
+  }
+
+  /** A platform id as the panel names it: the picker's label, HubSpot email, or the id itself. */
+  private existingPlatformLabel(platform: string): string {
+    if (platform === CAMPAIGN_EMAIL_CHANNEL_PLATFORM) {
+      return CAMPAIGN_EMAIL_CHANNEL_LABEL;
+    }
+    return CAMPAIGN_PLATFORMS.find((option) => option.id === platform)?.label ?? platform;
+  }
+
+  /**
+   * A platform overlaps when the SLOT the create would claim (the platform, and for Google the
+   * channel) already holds a campaign campaign-service would hand back: its latest live row has a
+   * platform id and is not pending or a partial orphan (`CAMPAIGN_STATUSES_NOT_REUSED`), or this tab's
+   * own job just created one there. Otherwise the create stays a plain one: a first campaign on a new
+   * channel, or the retry that reconciles an unfinished row, neither of which `new_version` serves.
+   */
+  private initOverlappingPlatforms(): Signal<string[]> {
+    return computed(() => this.selectedPlatforms().filter((platform) => this.slotLatest(platform) !== null));
+  }
+
+  private initCreateAnotherBlock(): Signal<string | null> {
+    return computed(() => {
+      const overlapping = this.overlappingPlatforms();
+      const another = this.createAnotherPlatforms();
+      if (another.length === 0) {
+        // Nothing here can be created again: a repeat create on those platforms is a retry, as before.
+        return null;
+      }
+      if (another.length < overlapping.length) {
+        const unsupported = overlapping.filter((platform) => !another.includes(platform)).map((platform) => this.existingPlatformLabel(platform));
+        return `A second ${unsupported.join(', ')} campaign isn't supported yet. Create it separately, without the platforms you are adding another campaign on.`;
+      }
+      if (this.selectedPlatforms().length > overlapping.length) {
+        return 'Adding another campaign can only include platforms that already have one. Create the other platforms separately.';
+      }
+      if (this.anotherStage() === '') {
+        return 'Choose a funnel stage for the new campaign.';
+      }
+      return null;
+    });
+  }
+
+  private initExistingCampaigns(): Signal<CampaignExistingRow[]> {
+    return computed(() =>
+      (this.briefCampaigns() ?? [])
+        .filter((campaign) => campaign.status !== CAMPAIGN_STATUS_DELETED)
+        .map((campaign) => ({
+          id: campaign.id,
+          platform: campaign.platform,
+          platformLabel: this.existingPlatformLabel(campaign.platform),
+          name: campaign.campaign_name,
+          status: campaign.status.replace(/_/g, ' '),
+          slot: typeof campaign.slot_version === 'number' ? String(campaign.slot_version) : CAMPAIGN_LABEL_ABSENT,
+          labels: campaignLabelColumns(campaign, this.labelTimeZone),
+        }))
+    );
+  }
+
+  private initExistingPlatformNotices(): Signal<CampaignExistingPlatformNotice[]> {
+    return computed(() => {
+      const counts = new Map<string, number>();
+      for (const campaign of this.briefCampaigns() ?? []) {
+        if (campaign.status !== CAMPAIGN_STATUS_DELETED) {
+          counts.set(campaign.platform, (counts.get(campaign.platform) ?? 0) + 1);
+        }
+      }
+      return [...counts.entries()].map(([platform, count]) => {
+        const label = this.existingPlatformLabel(platform);
+        const noun = count === 1 ? 'campaign' : 'campaigns';
+        return { platform, label, count, message: `You already have ${count} ${label} ${noun} for this event.` };
+      });
+    });
+  }
+
+  private initCreateAnotherNotice(): Signal<string | null> {
+    return computed(() => {
+      const platforms = new Set<string>();
+      for (const campaign of this.briefCampaigns() ?? []) {
+        const reusable =
+          !!campaign.platform_campaign_id && campaign.status !== CAMPAIGN_STATUS_DELETED && !CAMPAIGN_STATUSES_NOT_REUSED.includes(campaign.status);
+        if (reusable) {
+          platforms.add(campaign.platform);
+        }
+      }
+      for (const result of this.platformResults()) {
+        if (result.ok) {
+          platforms.add(result.platform);
+        }
+      }
+      // A platform this deployment can create another campaign on gets the stage picker instead (#4983,
+      // "ss-3"), so this retry warning is only true of the others.
+      for (const platform of this.createAnotherPlatforms()) {
+        platforms.delete(platform);
+      }
+      if (platforms.size === 0) {
+        return null;
+      }
+      const labels = [...platforms].map((platform) => this.existingPlatformLabel(platform));
+      return (
+        `Creating the same campaign again on ${labels.join(', ')} returns the one already created there instead of making a second, ` +
+        "and the results list it again. A second campaign on the same platform isn't available here yet."
+      );
+    });
+  }
+
   /**
    * Whether the Performance Max prefill notice is true right now (#4784): some field still holds the
    * copy the brief seeded into it.
@@ -7265,6 +7811,23 @@ export class ImplementationTabComponent implements OnInit {
     const { budgetUsd, startDate, endDate } = this.campaignForm.controls;
     const read = (): GoogleBudgetInputs => ({ daily: budgetUsd.value, start: startDate.value, end: endDate.value });
     return toSignal(merge(budgetUsd.valueChanges, startDate.valueChanges, endDate.valueChanges).pipe(startWith(null), map(read)), { initialValue: read() });
+  }
+
+  private initGoogleFlightError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.selectedPlatforms().includes('google-ads')) return null;
+      const { start, end } = this.googleBudgetInputs();
+      if (!isReversedCampaignFlight(start, end)) return null;
+      return `Google needs the end date (${end}) on or after the start date (${start}).`;
+    });
+  }
+
+  private initGoogleSearchKeywordsError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.selectedGoogleChannels().includes('search') || this.googleSearchKeywords().length > 0) return null;
+      return 'Search needs at least one keyword to serve, and this brief has none filled in. Choose another campaign type, or give the brief keywords first.';
+    });
   }
 
   private initGoogleBudgetInvalid(): Signal<boolean> {
@@ -7575,6 +8138,71 @@ export class ImplementationTabComponent implements OnInit {
         }
       }
       return filled;
+    });
+  }
+
+  /**
+   * The advisory line under each rendered Google image slot about its pasted URLs (see
+   * `onGoogleImageFieldBlur`). Built from the slot's CURRENT lines, so a URL the operator removes takes
+   * its warning with it. A URL on its first probe says nothing yet, one probed again keeps its last
+   * answer until the new one settles, and no line is not a promise: a browser follows redirects and
+   * loads formats (WebP, SVG) that campaign-service refuses.
+   */
+  private initGoogleTypedImageWarnings(): Signal<Record<string, string>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const probes = this.googleTypedImageProbes();
+      const warnings: Record<string, string> = {};
+      for (const section of this.googleCreativeSections()) {
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
+        for (const field of section.fields) {
+          const shape = field.image;
+          if (!shape) continue;
+          const misfits: string[] = [];
+          const unchecked: string[] = [];
+          for (const url of this.splitCreativeLines(raw[field.control])) {
+            const probe = probes[url];
+            if (probe?.state === 'failed') {
+              unchecked.push(url);
+            } else if (probe?.state === 'loaded' && googleCreativeImageFit({ width: probe.width, height: probe.height }, shape) === 'misfit') {
+              misfits.push(`${url} (${probe.width}x${probe.height})`);
+            }
+          }
+          const lines: string[] = [];
+          if (misfits.length > 0) {
+            // "Likely", not "will": the browser applies a JPEG's EXIF rotation and campaign-service measures
+            // the raw pixels, so a rotated photo can measure differently there. Only the pixel size is
+            // measured here, so the line names that size and states the requirement (which includes the
+            // byte cap) as what the slot needs, as the library image line does.
+            lines.push(
+              `Measured here: ${misfits.join(', ')} ${misfits.length === 1 ? 'does' : 'do'} not fit. This slot needs ${googleCreativeImageRequirement(shape)}. Create will likely be refused for ${misfits.length === 1 ? 'it' : 'them'}; campaign-service checks again before anything is created.`
+            );
+          }
+          if (unchecked.length > 0) {
+            lines.push(
+              `Could not be loaded here, so not checked: ${unchecked.join(', ')}. campaign-service checks ${unchecked.length === 1 ? 'it' : 'them'} again at Create.`
+            );
+          }
+          if (lines.length > 0) {
+            warnings[`${section.groupName}.${field.control}`] = lines.join(' ');
+          }
+        }
+      }
+      return warnings;
+    });
+  }
+
+  private initGoogleTypedImageAnnouncement(): Signal<string> {
+    return computed(() => {
+      const warnings = this.googleTypedImageWarnings();
+      const lines: string[] = [];
+      for (const section of this.googleCreativeSections()) {
+        for (const field of section.fields) {
+          const warning = warnings[`${section.groupName}.${field.control}`];
+          if (warning) lines.push(`${section.label} ${field.label}: ${warning}`);
+        }
+      }
+      return lines.join(' ');
     });
   }
 
@@ -8431,9 +9059,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The first minimum a non-empty creative fails, as a clause, or null when it meets them all.
    *
-   * Three rule kinds, every one of them campaign-service's own and none of them tighter: the
-   * catalogued `min` on a list, the `requiredOnce` scalars Google marks required, and the
-   * either-or pairs no per-field bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}).
+   * Four rule kinds, every one of them Google's and none of them tighter: the catalogued `min` on
+   * a list, the `requiredOnce` scalars Google marks required, the either-or pairs no per-field
+   * bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}), and the ceilings Google shares
+   * across several image fields ({@link GOOGLE_CREATIVE_SHARED_CAPS}, #4848). campaign-service
+   * refuses each in preflight; Display's two marketing floors and its shared logo cap only from
+   * the release carrying lfx-v2-campaign-service#437, and before it Google refuses the ad itself.
    * Catalogue order is report order, so the message names the field highest in the section the
    * operator is looking at.
    */
@@ -8470,6 +9101,16 @@ export class ImplementationTabComponent implements OnInit {
         return Array.isArray(value) && value.length > 0;
       });
       if (!satisfied) return rule.message;
+    }
+    const caps: readonly GoogleCreativeSharedCap[] = GOOGLE_CREATIVE_SHARED_CAPS[channel];
+    for (const cap of caps) {
+      const count = cap.controls.reduce((sum, control) => {
+        const value = creative[control];
+        return sum + (Array.isArray(value) ? value.length : 0);
+      }, 0);
+      if (count > cap.max) {
+        return `has ${count} ${cap.label} across its fields (pasted URLs and stored images together) — ${count - cap.max} over the shared cap of ${cap.max}.`;
+      }
     }
     return null;
   }
@@ -9278,6 +9919,62 @@ export class ImplementationTabComponent implements OnInit {
       if (typeof value !== 'string') continue;
       this.campaignForm.controls[field].setValue(value, { emitEvent: false });
     }
+  }
+
+  /**
+   * Load one pasted URL as an image and record its natural size, or that it could not be loaded within
+   * `GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS`. Only ever called in the browser (`onGoogleImageFieldBlur`).
+   * A load that fails here may still succeed from campaign-service — a host can refuse hotlinking or
+   * need a referrer — so a failure is reported as "could not check", never as a wrong image.
+   */
+  private probeGoogleTypedImage(url: string): void {
+    // A settled answer stays on screen while it is checked again, so tabbing back through the field
+    // does not blank its line (or the live region) until the new probe settles.
+    this.googleTypedImageProbes.update((probes) => {
+      const previous = probes[url];
+      const next: GoogleTypedImageProbe = previous && previous.state !== 'checking' ? { ...previous, rechecking: true } : { state: 'checking' };
+      return { ...probes, [url]: next };
+    });
+    const image = new Image();
+    // The host learns nothing of where the URL was pasted; one that insists on a referrer reads as "not checked".
+    image.referrerPolicy = 'no-referrer';
+    let settled = false;
+    // Stops the probe without recording anything: the tab is gone, the time is up, or the answer is in.
+    // Dropping `src` after the handlers cancels a download still in flight, so a slow host does not keep
+    // sending an image nothing will read, and no `onerror` fires for the cancellation.
+    const stop = (): void => {
+      settled = true;
+      clearTimeout(timer);
+      image.onload = null;
+      image.onerror = null;
+      image.removeAttribute('src');
+    };
+    const unregister = this.destroyRef.onDestroy(stop);
+    const settle = (probe: GoogleTypedImageProbe): void => {
+      if (settled) return;
+      stop();
+      unregister();
+      this.googleTypedImageProbes.update((probes) => ({ ...probes, [url]: probe }));
+    };
+    const timer = setTimeout(() => settle({ state: 'failed' }), GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS);
+    image.onload = () => settle({ state: 'loaded', width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => settle({ state: 'failed' });
+    image.src = url;
+  }
+
+  /**
+   * Whether a pasted URL is on this application's own host. Such a URL is never probed: the browser
+   * would load it with the operator's session cookie, so pasting a route such as `/logout` would act on
+   * the session (Copilot, #4810). Compared by host name, not origin, because a browser upgrades an
+   * `http://` image on an HTTPS page and a cookie is not scoped by port, so neither the scheme nor the
+   * port makes such a URL safe. A trailing dot (`app.example.org.`) survives URL parsing but names the
+   * same host, so it is dropped from both sides before comparing. No image an ad uses is served from
+   * here, and campaign-service still checks every pasted URL at Create. Only called in the browser
+   * (`onGoogleImageFieldBlur`).
+   */
+  private isOwnHostUrl(url: string): boolean {
+    const bareHost = (hostname: string): string => hostname.replace(/\.+$/, '');
+    return bareHost(new URL(url).hostname) === bareHost(window.location.hostname);
   }
 
   /**

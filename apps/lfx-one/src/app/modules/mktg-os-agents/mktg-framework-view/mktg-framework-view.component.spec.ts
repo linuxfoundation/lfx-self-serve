@@ -352,9 +352,22 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-sources-read')?.textContent).toContain('testorbit.example.org');
     expect(query('mktg-framework-view-sources-failed')?.textContent).toContain('404');
     expect(query('mktg-framework-view-gaps')?.textContent).toContain('No member count.');
+    expect(query('mktg-framework-view-gaps-accepted')).toBeNull();
     expect(query('mktg-framework-view-report-notes')?.textContent).toContain('Check the dates.');
     expect(query('mktg-framework-view-findings')?.textContent).toContain('nums has 2 numbers');
     expect(query('mktg-framework-view-tab-sources')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.version.set(2);
+    host.approval.set({ approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+    await fixture.whenStable();
+
+    await tab('sources');
+    expect(query('mktg-framework-view-gaps')?.textContent).toContain('No member count.');
+    expect(query('mktg-framework-view-gaps-accepted')?.textContent?.trim()).toBe('Accepted when v2 was approved; still open.');
   });
 
   it('widens the goal table with the goal count, so the schema’s eight goals scroll sideways instead of squeezing', async () => {
@@ -362,7 +375,12 @@ describe('MktgFrameworkViewComponent', () => {
     host.state.set('ready');
     await fixture.whenStable();
     const { rowHeader, goal } = FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM;
-    expect((query('mktg-framework-view-goals') as HTMLTableElement).style.minWidth).toBe(`${rowHeader + goal * 2}rem`);
+    const table = query('mktg-framework-view-goals') as HTMLTableElement;
+    expect(table.style.minWidth).toBe(`${rowHeader + goal * 2}rem`);
+    // The wrapper scrolls and is positioned: the field comments' sr-only live regions take it as their containing block, so
+    // a column past the viewport cannot stretch the page (#4885).
+    expect(table.parentElement?.classList.contains('overflow-x-auto')).toBe(true);
+    expect(table.parentElement?.classList.contains('relative')).toBe(true);
 
     const [adoption] = ASSET.content.mf.goals;
     const eight = Array.from({ length: FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max }, (_, index) => ({ ...adoption, id: `goal-${index}`, n: index + 1 }));
@@ -426,7 +444,7 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-sources-read')).toBeNull();
     expect(query('mktg-framework-view-sources-read-empty')?.textContent).toContain('Nothing was read.');
     expect(query('mktg-framework-view-sources-failed')).toBeNull();
-    expect(query('mktg-framework-view-sources-failed-empty')?.textContent).toContain('Every source was read.');
+    expect(query('mktg-framework-view-sources-failed-empty')?.textContent).toContain('No source failed.');
     expect(query('mktg-framework-view-gaps')).toBeNull();
     expect(query('mktg-framework-view-gaps-empty')?.textContent).toContain('The sources left no gap.');
     expect(query('mktg-framework-view-report-notes')).toBeNull();

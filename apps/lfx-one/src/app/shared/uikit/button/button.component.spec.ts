@@ -49,6 +49,16 @@ class BothTooltipsHostComponent {}
 })
 class TooltipHostComponent {}
 
+@Component({
+  selector: 'lfx-ui-button-disabled-tooltip-host',
+  imports: [UiButtonComponent, UiTooltipDirective],
+  template: `<lfx-ui-button lfxUiTooltip="Copy link" [disabled]="disabled()">Copy</lfx-ui-button
+    ><span lfxUiTooltip="Saving is off while offline" tabindex="0"><lfx-ui-button [disabled]="true">Save</lfx-ui-button></span>`,
+})
+class DisabledTooltipHostComponent {
+  public readonly disabled = signal(true);
+}
+
 // Set through overrideComponent because an inline template this long trips component-max-inline-declarations.
 const MENU_HOST_TEMPLATE = `
   <lfx-ui-button [menu]="actions" ariaLabel="Project actions">Actions</lfx-ui-button>
@@ -102,26 +112,55 @@ describe('UiButtonComponent', () => {
   });
 
   it.each([
-    ['secondary', true],
-    ['secondary-accent', false],
-    ['tertiary', false],
-    ['primary', false],
-  ])('gives the %s variant the neutral edge ring: %s', async (variant, ring) => {
+    ['primary', 'border-transparent'],
+    ['secondary', 'border-ui-neutral-alpha-200'],
+    ['secondary-accent', 'border-ui-accent-300'],
+    ['tertiary', 'border-transparent'],
+    ['tertiary-accent', 'border-transparent'],
+    ['danger', 'border-transparent'],
+    ['danger-tertiary', 'border-transparent'],
+    ['recording', 'border-transparent'],
+  ])('gives the %s variant a real 1px border in %s', async (variant, border) => {
     await set('variant', variant);
-    expect(el().classList.contains('edge')).toBe(ring);
+    expect(el().classList).toContain('border');
+    expect(el().classList).toContain(border);
+    expect(el().classList).not.toContain('edge');
   });
 
   it.each([
-    ['tiny', 'h-ui-tiny', 'rounded-[8px]', 'px-[8px]', 'button-12'],
-    ['small', 'h-ui-small', 'rounded-[10px]', 'px-[10px]', 'button-14'],
-    ['medium', 'h-ui-medium', 'rounded-ui-sm', 'px-[16px]', 'button-14'],
-  ])('sizes %s with height, radius, padding and type role', async (size, height, radius, padding, type) => {
-    await set('size', size);
-    expect(Array.from(el().classList)).toEqual(expect.arrayContaining([height, radius, padding, type]));
+    ['secondary', ['hover:bg-ui-neutral-alpha-50', 'active:bg-ui-neutral-alpha-100']],
+    ['secondary-accent', ['hover:bg-ui-accent-100', 'hover:border-ui-accent-500', 'active:bg-ui-accent-200', 'active:border-ui-accent-500']],
+    ['tertiary', ['hover:bg-ui-neutral-alpha-50', 'active:bg-ui-neutral-alpha-100']],
+    ['tertiary-accent', ['hover:bg-ui-accent-100', 'active:bg-ui-accent-200']],
+  ])('gives the %s variant the library hover and pressed states', async (variant, states) => {
+    await set('variant', variant);
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(states));
   });
 
-  it('defaults to the medium 40px size', () => {
-    expect(el().classList).toContain('h-ui-medium');
+  it.each(['secondary-accent', 'tertiary-accent'])('keeps the %s label on the accent through hover and press', async (variant) => {
+    await set('variant', variant);
+    const classes = Array.from(el().classList);
+    expect(classes).toContain('text-ui-accent-500');
+    expect(classes.filter((name) => /^(hover|active):text-/.test(name))).toEqual([]);
+  });
+
+  it('shows the 4px accent halo on keyboard focus only', () => {
+    expect(Array.from(el().classList)).toEqual(
+      expect.arrayContaining(['focus:outline-none', 'focus-visible:shadow-[0_0_0_4px]', 'focus-visible:shadow-ui-accent-100'])
+    );
+  });
+
+  it.each([
+    ['small', 'h-ui-tiny', 'rounded-[10px]', 'px-[8px]', 'button-12', '[&>i]:text-[12px]'],
+    ['default', 'h-ui-small', 'rounded-ui-sm', 'px-[10px]', 'button-14', '[&>i]:text-[14px]'],
+    ['large', 'h-ui-medium', 'rounded-[14px]', 'px-[16px]', 'button-14', '[&>i]:text-[18px]'],
+  ])('sizes %s with height, radius, padding, type role and icon size', async (size, height, radius, padding, type, icon) => {
+    await set('size', size);
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining([height, radius, padding, type, icon]));
+  });
+
+  it('defaults to the 32px default size', () => {
+    expect(el().classList).toContain('h-ui-small');
   });
 
   it('renders the leading icon before the label', async () => {
@@ -173,7 +212,7 @@ describe('UiButtonComponent', () => {
     await set('iconOnly', true);
     expect(el().classList).toContain('aspect-square');
     expect(el().classList).toContain('rounded-ui-full');
-    expect(el().classList).not.toContain('px-[16px]');
+    expect(el().classList).not.toContain('px-[10px]');
     expect(el().getAttribute('aria-label')).toBe('Next');
   });
 
@@ -185,11 +224,18 @@ describe('UiButtonComponent', () => {
     expect(el().classList).not.toContain('bg-ui-accent-500');
   });
 
-  it('keeps a disabled tertiary button transparent without a ring', async () => {
+  it('gives a disabled bordered button the neutral border', async () => {
+    await set('variant', 'secondary-accent');
+    await set('disabled', true);
+    expect(el().classList).toContain('border-ui-neutral-alpha-200');
+    expect(el().classList).not.toContain('border-ui-accent-500');
+  });
+
+  it('keeps a disabled tertiary button transparent without a border', async () => {
     await set('variant', 'tertiary');
     await set('disabled', true);
     expect(el().classList).toContain('bg-transparent');
-    expect(el().classList).not.toContain('edge');
+    expect(el().classList).toContain('border-transparent');
   });
 
   it('accepts boolean attributes written as plain attributes', async () => {
@@ -199,13 +245,19 @@ describe('UiButtonComponent', () => {
     expect((host.nativeElement.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('turns off pointer events on the host so a consumer click handler cannot fire', async () => {
+  it('never calls the consumer click handler when the disabled button is clicked', async () => {
     const host = TestBed.createComponent(ClickHostComponent);
     host.componentInstance.disabled.set(true);
     await host.whenStable();
-    const button = host.nativeElement.querySelector('lfx-ui-button') as HTMLElement;
-    // jsdom ignores CSS pointer-events, so assert the host class that blocks the click in a browser.
-    expect(button.classList).toContain('pointer-events-none');
+    (host.nativeElement.querySelector('button') as HTMLButtonElement).click();
+    expect(host.componentInstance.save).not.toHaveBeenCalled();
+  });
+
+  it('shows the not-allowed cursor on a disabled button, with its children out of the hit test', async () => {
+    expect(el().classList).toContain('cursor-pointer');
+    await set('disabled', true);
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['pointer-events-auto', 'cursor-not-allowed', '[&_*]:pointer-events-none']));
+    expect(el().classList).not.toContain('cursor-pointer');
   });
 
   it('does not navigate when a disabled link is clicked', async () => {
@@ -239,6 +291,18 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('href')).toBe('/meetings/create');
   });
 
+  it('pins a link label colour in every state and never underlines it', async () => {
+    await set('variant', 'tertiary-accent');
+    await set('link', '/meetings');
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['!no-underline', '!text-ui-accent-500']));
+    await set('disabled', true);
+    expect(el().classList).toContain('!text-ui-neutral-500');
+  });
+
+  it('adds no link pins to a button', () => {
+    expect(Array.from(el().classList).filter((name) => name.startsWith('!'))).toEqual([]);
+  });
+
   it('marks a disabled link as aria-disabled and out of the tab order', async () => {
     await set('link', '/meetings');
     await set('disabled', true);
@@ -253,7 +317,7 @@ describe('UiButtonComponent', () => {
       expect(el().querySelector('i[aria-hidden="true"].fa-plus')).toBeNull();
       const spinner = el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement;
       expect(spinner.classList).toContain('text-current');
-      expect(spinner.style.width).toBe('16px');
+      expect(spinner.style.width).toBe('14px');
       expect(el().getAttribute('aria-busy')).toBe('true');
     });
 
@@ -262,10 +326,13 @@ describe('UiButtonComponent', () => {
       expect((el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement).getAttribute('aria-hidden')).toBe('true');
     });
 
-    it('uses a 12px spinner on a tiny button', async () => {
-      await set('size', 'tiny');
+    it.each([
+      ['small', '12px'],
+      ['large', '18px'],
+    ])('sizes the spinner to the icon on a %s button: %s', async (size, width) => {
+      await set('size', size);
       await set('loading', true);
-      expect((el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement).style.width).toBe('12px');
+      expect((el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement).style.width).toBe(width);
     });
 
     it('has no aria-busy and no spinner when idle', () => {
@@ -336,10 +403,25 @@ describe('UiButtonComponent', () => {
       expect(host.componentInstance.open).not.toHaveBeenCalled();
     });
 
-    it('swallows a click on a disabled link', async () => {
+    it('swallows a click on a disabled link and shows the not-allowed cursor', async () => {
       const { host, anchor } = await linkHost((instance) => instance.disabled.set(true));
+      expect(anchor.classList).toContain('cursor-not-allowed');
       anchor.click();
       expect(host.componentInstance.open).not.toHaveBeenCalled();
+    });
+
+    it('keeps a mouse press from focusing a disabled link', async () => {
+      const { anchor } = await linkHost((instance) => instance.disabled.set(true));
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+      anchor.dispatchEvent(press);
+      expect(press.defaultPrevented).toBe(true);
+    });
+
+    it('lets a mouse press focus an idle link', async () => {
+      const { anchor } = await linkHost();
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+      anchor.dispatchEvent(press);
+      expect(press.defaultPrevented).toBe(false);
     });
 
     it('passes a click on an idle link through', async () => {
@@ -387,6 +469,48 @@ describe('UiButtonComponent', () => {
       expect(describedBy).toBeTruthy();
       expect(document.getElementById(describedBy as string)?.textContent).toBe('Copy link');
       expect(wrapper.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    describe('while disabled', () => {
+      let host: ComponentFixture<DisabledTooltipHostComponent>;
+      const tooltip = () => TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="ui-tooltip"]');
+      const hover = async (target: Element) => {
+        target.dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+        await vi.advanceTimersByTimeAsync(400);
+      };
+
+      beforeEach(async () => {
+        host = TestBed.createComponent(DisabledTooltipHostComponent);
+        document.body.appendChild(host.nativeElement);
+        await host.whenStable();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      });
+
+      afterEach(() => {
+        host.destroy();
+        TestBed.inject(OverlayContainer).ngOnDestroy();
+        vi.clearAllTimers();
+        vi.useRealTimers();
+      });
+
+      it('drops the forwarded tooltip and its description, and restores them once enabled', async () => {
+        const inner = host.nativeElement.querySelector('lfx-ui-button button') as HTMLButtonElement;
+        expect(inner.getAttribute('aria-describedby')).toBeNull();
+        await hover(inner);
+        expect(tooltip()).toBeNull();
+
+        host.componentInstance.disabled.set(false);
+        await host.whenStable();
+        expect(inner.getAttribute('aria-describedby')).toBeTruthy();
+      });
+
+      it('leaves the tooltip on a wrapper around a disabled button working', async () => {
+        const wrapper = host.nativeElement.querySelector('span') as HTMLElement;
+        const describedBy = wrapper.getAttribute('aria-describedby');
+        expect(document.getElementById(describedBy as string)?.textContent).toBe('Saving is off while offline');
+        await hover(wrapper);
+        expect(tooltip()?.textContent).toContain('Saving is off while offline');
+      });
     });
   });
 });

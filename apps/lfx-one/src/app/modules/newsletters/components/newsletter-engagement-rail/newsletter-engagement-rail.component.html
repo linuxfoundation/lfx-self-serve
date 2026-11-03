@@ -1,0 +1,22 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-row items-start justify-center gap-6 lg:flex-col lg:items-center lg:gap-5" [attr.data-testid]="testId() + '-engagement-rail'">
+  @if (views() !== null) {
+    <div class="flex w-12 flex-col items-center gap-1 text-gray-500" role="img" [attr.aria-label]="viewsLabel()" [attr.data-testid]="testId() + '-views'">
+      <i class="fa-light fa-eye text-xl" aria-hidden="true"></i>
+      <span class="text-xs tabular-nums" aria-hidden="true" [attr.data-testid]="testId() + '-views-count'">{{ views() | number }}</span>
+    </div>
+  }
+  <button
+    type="button"
+    (click)="share.emit()"
+    [attr.aria-label]="shareLabel()"
+    class="flex w-12 flex-col items-center gap-1 rounded-md py-1 text-gray-500 transition-colors hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+    [attr.data-testid]="testId() + '-share'">
+    <i class="fa-light fa-paper-plane text-xl" aria-hidden="true"></i>
+    @if (visibleShares(); as count) {
+      <span class="text-xs tabular-nums" aria-hidden="true" [attr.data-testid]="testId() + '-share-count'">{{ count | number }}</span>
+    }
+  </button>
+</div>

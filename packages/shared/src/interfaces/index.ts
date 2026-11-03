@@ -50,6 +50,7 @@ export * from './permissions.interface';
 
 // Meeting interfaces
 export * from './meeting.interface';
+export * from './meeting-list.interface';
 
 // Calendar interfaces
 export * from './calendar.interface';
@@ -455,3 +456,4 @@ export * from './aeo-geo.interface';
 export * from './mktg-last-intake.interface';
 export * from './mktg-project-roles.interface';
 export * from './uikit.interface';
+export * from './social-share.interface';

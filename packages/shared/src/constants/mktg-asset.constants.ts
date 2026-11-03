@@ -17,3 +17,9 @@ export const MKTG_HOST_ASSET_STATES = {
 
 /** Shared note when no approved current is available to PDF/Slides. */
 export const MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE = 'Approve a revision first — PDF and Slides use the approved current.';
+
+/**
+ * Empty state of the report's "Could not be read" list. It describes that list
+ * alone: the notes beside it may still hold a source the agent could not reach.
+ */
+export const MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE = 'No source failed.';

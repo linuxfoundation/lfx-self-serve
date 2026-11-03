@@ -36,7 +36,7 @@ import { UiTooltipPanelComponent } from './tooltip-panel.component';
  * Put it on the focusable element itself, such as a native `<button>`: on a component that wraps a button the description lands on the
  * wrapper, which screen readers do not read when the inner button is focused. `lfx-ui-button` is the exception: the directive never
  * attaches to it, and the button forwards `lfxUiTooltip` to its inner `<button>`. `lfx-ui-menu-item` is the other: it carries the
- * directive itself and exposes it as `disabledReason`, so a template attribute never attaches a second one. A disabled button gets no pointer events, so wrap it
+ * directive itself and exposes it as `disabledReason`, so a template attribute never attaches a second one. A disabled button takes no focus, so wrap it
  * in an element that carries the directive and `tabindex="0"`.
  */
 @Directive({
@@ -230,6 +230,8 @@ export class UiTooltipDirective {
   // keyboard dispatcher is not used: subscribing to it would make this overlay the only one to receive every other key.
   private readonly onKeydown = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || hasModifierKey(event)) return;
+    // An Escape that cancels an IME composition is the input method's.
+    if (event.isComposing || event.keyCode === 229) return;
     if (this.overlayRef) {
       event.preventDefault();
       event.stopPropagation();

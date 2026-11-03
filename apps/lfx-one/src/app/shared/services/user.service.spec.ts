@@ -257,6 +257,29 @@ describe('UserService', () => {
     }
   });
 
+  it("never replays the previous viewer's past feeds before the identity effect runs", async () => {
+    const feeds = [
+      () => service.getUserPastMeetings(),
+      () => service.getUserPastMeetings({ includeArtifacts: true }),
+      () => service.getUserLatestPastMeetings(),
+    ];
+    httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-a-meeting' }] : { profile: {} }));
+    service.user.set({ sub: 'synthetic-a' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    feeds.forEach((getFeed) => getFeed().subscribe().unsubscribe());
+
+    httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-b-meeting' }] : { profile: {} }));
+    service.user.set({ sub: 'synthetic-b' } as User);
+
+    for (const getFeed of feeds) {
+      let rows: string[] = [];
+      getFeed()
+        .subscribe((meetings) => (rows = meetings.map((meeting) => meeting.id)))
+        .unsubscribe();
+      expect(rows).toEqual(['synthetic-b-meeting']);
+    }
+  });
+
   describe('retry after a failed personal-meeting fetch (GH-4780)', () => {
     // The dashboard's Retry control re-calls these getters after an error. shareReplay
     // otherwise caches and replays a failure forever, so a real retry must issue a fresh
@@ -311,6 +334,22 @@ describe('UserService', () => {
       expect(onError).toHaveBeenCalledOnce();
       expect(subscriptions).toBe(2);
       expect(rows).toEqual([{ id: 'synthetic-past-meeting' }]);
+    });
+
+    it('getUserPastMeetings caches the artifacts feed apart from the plain feed', () => {
+      httpGet.mockImplementation((url: string, options?: { params?: Record<string, string> }) =>
+        url === '/api/user/past-meetings' ? of([{ id: options?.params?.['include'] ?? 'plain' } as PastMeeting]) : of({ profile: {} })
+      );
+
+      let plain: string[] = [];
+      let withArtifacts: string[] = [];
+      service.getUserPastMeetings().subscribe((meetings) => (plain = meetings.map((meeting) => meeting.id)));
+      service.getUserPastMeetings({ includeArtifacts: true }).subscribe((meetings) => (withArtifacts = meetings.map((meeting) => meeting.id)));
+
+      expect(plain).toEqual(['plain']);
+      expect(withArtifacts).toEqual(['artifacts']);
+      expect(service.getUserPastMeetings({ includeArtifacts: true })).toBe(service.getUserPastMeetings({ includeArtifacts: true }));
+      expect(service.getUserPastMeetings()).not.toBe(service.getUserPastMeetings({ includeArtifacts: true }));
     });
 
     it('getUserLatestPastMeetings does not cache a failed request', () => {

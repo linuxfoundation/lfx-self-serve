@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSign
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
-import { MENTORSHIP_MENTEE_TASK_FILE_ACCEPT, NODE_MAX_TIMER_DELAY_MS } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_TASK_FILE_ACCEPT, MENTORSHIP_TASK_FILE_VIEW_LABEL, NODE_MAX_TIMER_DELAY_MS } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskStatusChange,
@@ -40,7 +40,7 @@ import { concat, defer, Observable, of, switchMap, timer } from 'rxjs';
  * File actions go through `MentorshipTaskFileService`. A task that needs a file shows Upload until one is
  * stored, and Submitted stays disabled until then. Upstream marks the task submitted with every upload, so the
  * row holds Submitted until the refresh that follows carries it. A submitted task can go back to In Progress until the
- * reviewer completes it. A stored file can be downloaded; it can be replaced until the reviewer completes
+ * reviewer completes it. A stored file can be viewed or downloaded; it can be replaced until the reviewer completes
  * the task, and removed only while the task is not submitted, as upstream allows.
  * Once a task is past due (the end of its due date's UTC day), Submitted and every file change are closed.
  * The row re-reads the clock whenever the due date changes and again at its cutoff, so a page left open
@@ -72,6 +72,7 @@ export class MenteeTaskRowComponent {
   /** True while a file upload or removal is in flight; blocks the file actions and shows a spinner. */
   protected readonly fileSaving = signal(false);
   protected readonly fileAccept = MENTORSHIP_MENTEE_TASK_FILE_ACCEPT;
+  protected readonly viewActionLabel = MENTORSHIP_TASK_FILE_VIEW_LABEL;
 
   // ---- 4. Computed signals --------------------------------------------------
   /**
@@ -164,6 +165,10 @@ export class MenteeTaskRowComponent {
 
   protected onDownloadFile(): void {
     this.taskFileService.download(this.task().id);
+  }
+
+  protected onViewFile(): void {
+    this.taskFileService.view(this.task().id);
   }
 
   // ---- 6. Private initializers ----------------------------------------------

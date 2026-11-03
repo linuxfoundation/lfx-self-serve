@@ -26,7 +26,7 @@ const HOST_TEMPLATE = `
 @Component({ selector: 'lfx-ui-test-host', template: '' })
 class TestHostComponent {
   public readonly variant = signal<UiSplitButtonVariant>('primary');
-  public readonly size = signal<UiButtonSize>('medium');
+  public readonly size = signal<UiButtonSize>('large');
   public readonly disabled = signal(false);
   public readonly menuLabel = signal('');
   public readonly events = signal<string[]>([]);
@@ -126,21 +126,22 @@ describe('UiSplitButtonComponent', () => {
     expect(menu()).toBeNull();
   });
 
-  it('squares the joined corners, matches the size and joins the secondary rings by 1px', async () => {
+  it('squares the joined corners, matches the size and joins the secondary borders by 1px', async () => {
     expect(main().parentElement?.className).toContain('[&>button]:rounded-r-none');
     expect(chevron().className).toContain('rounded-l-none');
     expect(chevron().className).toContain('h-ui-medium');
     expect(chevron().className).toContain('aspect-square');
     expect(chevron().className).not.toContain('-ml-px');
 
-    fixture.componentInstance.size.set('tiny');
+    fixture.componentInstance.size.set('small');
     fixture.componentInstance.variant.set('secondary');
     await fixture.whenStable();
 
     expect(chevron().className).toContain('h-ui-tiny');
-    expect(chevron().className).toContain('rounded-r-[8px]');
+    expect(chevron().className).toContain('rounded-r-[10px]');
+    expect(chevron().className).toContain('text-[12px]');
     expect(chevron().className).toContain('-ml-px');
-    expect(chevron().className).toContain('edge');
+    expect(chevron().className).toContain('border-ui-neutral-alpha-200');
   });
 
   it('draws the divider on the primary variant only', async () => {
@@ -162,6 +163,8 @@ describe('UiSplitButtonComponent', () => {
     expect(main().disabled).toBe(true);
     expect(chevron().disabled).toBe(true);
     expect(chevron().className).toContain('bg-ui-neutral-50');
+    expect(chevron().className).toContain('cursor-not-allowed');
+    expect(chevron().className).not.toContain('cursor-pointer');
 
     chevron().click();
     await fixture.whenStable();
@@ -169,8 +172,10 @@ describe('UiSplitButtonComponent', () => {
     expect(menu()).toBeNull();
   });
 
-  it('shows the library focus ring on keyboard focus of the chevron', () => {
-    expect(chevron().className).toContain('focus-visible:shadow-focus');
+  it('shows the 4px accent halo on keyboard focus of the chevron and no outline on mouse focus', () => {
+    expect(chevron().className).toContain('focus-visible:shadow-[0_0_0_4px]');
+    expect(chevron().className).toContain('focus-visible:shadow-ui-accent-100');
+    expect(chevron().className).toContain('focus:outline-none');
   });
 
   it('lines the menu up with the start edge of the whole control, measured from the chevron, and re-measures on resize', async () => {

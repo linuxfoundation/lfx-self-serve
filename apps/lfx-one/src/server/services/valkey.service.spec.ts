@@ -410,7 +410,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
   it('lets a per-sub-resource cap take precedence over a per-namespace cap for the same family', async () => {
     // No shipped namespace has both kinds of entry, so this installs a namespace cap for the
     // Snowflake family for this test only (restored in `finally`) — precedence can't be driven
-    // through the real tables. `people-all:v4` keeps its 6 MiB sub-resource cap; `projects:v7` has
+    // through the real tables. `people-all:v6` keeps its 6 MiB sub-resource cap; `projects:v7` has
     // none and falls through to the 8 MiB namespace cap.
     const tables = VALKEY_CACHE as { MAX_VALUE_BYTES_BY_NAMESPACE: Readonly<Record<string, number>> };
     const original = tables.MAX_VALUE_BYTES_BY_NAMESPACE;
@@ -419,7 +419,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
       const between = { padding: 'x'.repeat(7 * 1_048_576) };
       setMock.mockResolvedValue('OK');
 
-      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v4:365d:all')!, between, 60)).resolves.toBe(false);
+      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v6:365d:all')!, between, 60)).resolves.toBe(false);
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!, between, 60)).resolves.toBe(true);
     } finally {
       tables.MAX_VALUE_BYTES_BY_NAMESPACE = original;
@@ -433,7 +433,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     // a REAL table entry rather than one installed here: `MAX_VALUE_BYTES_BY_SUBRESOURCE` is a
     // release decision, not a runtime knob, and a test that overwrote it would be changing
     // production behaviour for every later test in the run.
-    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-all:v4:all:all')!;
+    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-all:v6:all:all')!;
     const serialized = JSON.stringify(oversized);
     expect(Buffer.byteLength(serialized, 'utf8')).toBeGreaterThan(VALKEY_CACHE.MAX_VALUE_BYTES);
     setMock.mockResolvedValue('OK');
@@ -467,10 +467,10 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     setMock.mockResolvedValue('OK');
 
     for (const subResource of [
-      'people-all:v4:365d:all',
+      'people-all:v6:365d:all',
       'people-all:v4:roster',
       'people-contributors:v5:all:all',
-      'people-former:v3:all:all',
+      'people-former:v4:all:all',
       'people-event-attendees:v2',
       'people-trainees:v4:all',
     ]) {
@@ -479,6 +479,9 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     for (const subResource of [
       UNCAPPED_SUB_RESOURCE,
       'people-all:v3:365d',
+      'people-all:v5:365d:all:all',
+      'people-former:v3:all:all:all',
+      'people-unclassified:v2:all:all',
       'people-contributors:v3:all:all',
       'people-contributors:v4:all:all',
       'people-contributors-roles:v2:all:all:exclude',
