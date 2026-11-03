@@ -78,9 +78,11 @@ export class MeetingsHomeEditService {
       return;
     }
 
+    // The fresh read wins; the row fills what it leaves out, such as a project lookup that failed.
+    const meeting: Meeting = { ...row.meeting, ...fresh };
     const occurrence = fresh.recurrence ? this.resolveOccurrence(row, fresh) : null;
     if (!occurrence) {
-      this.openSeriesEditor(row.meeting);
+      this.openSeriesEditor(meeting);
       return;
     }
 
@@ -91,11 +93,11 @@ export class MeetingsHomeEditService {
       .subscribe((result) => {
         if (!result?.proceed) return;
         if (result.scope === 'series') {
-          this.openSeriesEditor(row.meeting);
+          this.openSeriesEditor(meeting);
           return;
         }
         const picked = (result.occurrenceId ? this.findOccurrence(fresh, result.occurrenceId) : null) ?? occurrence;
-        this.openOccurrenceEditor(row.meeting, fresh, picked);
+        this.openOccurrenceEditor(meeting, picked);
       });
   }
 
@@ -114,19 +116,20 @@ export class MeetingsHomeEditService {
     void this.router.navigate(commands, { queryParams });
   }
 
-  private openOccurrenceEditor(meeting: Meeting, fresh: Meeting, occurrence: MeetingOccurrence): void {
+  private openOccurrenceEditor(meeting: Meeting, occurrence: MeetingOccurrence): void {
     if (this.meetingsV2Enabled()) {
       this.composer.open({ mode: 'edit', meetingUid: meeting.id, projectUid: meeting.project_uid, occurrenceId: occurrence.occurrence_id });
       return;
     }
 
     // The pre-v2 reschedule dialog is PrimeNG, so flag off opens the date's meeting page, which offers "Edit this occurrence".
-    const route = buildMeetingOccurrenceRoute(meeting.id, occurrence.start_time, occurrence.duration || fresh.duration || 0, {
+    const route = buildMeetingOccurrenceRoute(meeting.id, occurrence.start_time, occurrence.duration || meeting.duration || 0, {
       password: meeting.password ?? undefined,
     });
     // The home list reloads on return, showing the date at its new time.
     this.userService.refreshUserMeetings(false);
-    void this.router.navigate(route.path, { queryParams: route.queryParams });
+    // `zoom_redirect=false` keeps the page from joining a date whose join window is open.
+    void this.router.navigate(route.path, { queryParams: { ...route.queryParams, zoom_redirect: 'false' } });
   }
 
   /** The row's date in the fresh read, or the next date for a row without one. */

@@ -362,6 +362,18 @@ describe('MeetingsHomeStore', () => {
       expect(userService['refreshUserMeetings']).toHaveBeenCalledTimes(1);
       expect(userService['refreshUserPastMeetings']).toHaveBeenCalledTimes(1);
     });
+
+    it("reloads the next meeting's responses after a save", () => {
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+      expect(store.nextRowRsvps()).toEqual([]);
+
+      TestBed.inject(MeetingComposerService).notifySaved();
+      TestBed.tick();
+
+      expect(meetingService['getMeetingRsvps']).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('identity', () => {

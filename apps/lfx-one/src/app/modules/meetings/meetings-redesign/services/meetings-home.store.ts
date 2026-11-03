@@ -47,6 +47,7 @@ import { catchError, combineLatest, interval, map, Observable, of, skip, startWi
 export class MeetingsHomeStore {
   private readonly userService = inject(UserService);
   private readonly meetingService = inject(MeetingService);
+  private readonly composer = inject(MeetingComposerService);
   private readonly platformId = inject(PLATFORM_ID);
 
   private readonly tabState: WritableSignal<MeetingDashboardView> = signal<MeetingDashboardView>('upcoming');
@@ -152,7 +153,7 @@ export class MeetingsHomeStore {
 
   public constructor() {
     // The composer saves in place, so reload both feeds after each save; skip(1) drops the count replayed on subscribe.
-    toObservable(inject(MeetingComposerService).saveCount)
+    toObservable(this.composer.saveCount)
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
         this.userService.refreshUserMeetings();
@@ -244,8 +245,13 @@ export class MeetingsHomeStore {
   /** The roster as loaded, plus the viewer's answers saved since, which win as the newest; a hidden roster stays empty. */
   private initNextRowRsvps(): Signal<MeetingRsvp[] | null> {
     const loaded = toSignal(
-      toObservable(computed(() => this.nextRow()?.meeting.id ?? null)).pipe(
-        switchMap((id) =>
+      // A composer save can change the guests, so it reloads the responses too.
+      toObservable(
+        computed(() => ({ id: this.nextRow()?.meeting.id ?? null, saves: this.composer.saveCount() }), {
+          equal: (a, b) => a.id === b.id && a.saves === b.saves,
+        })
+      ).pipe(
+        switchMap(({ id }) =>
           id
             ? this.meetingService.getMeetingRsvps(id).pipe(
                 catchError((error: unknown) => {

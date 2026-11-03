@@ -144,6 +144,28 @@ describe('MeetingsHomeEditService', () => {
       expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'synthetic-meeting', projectUid: 'synthetic-project-uid' });
     });
 
+    it('opens the series without asking when no date is left to edit', () => {
+      setup(true, of({ ...SERIES, occurrences: [] }));
+
+      service.edit(row(SERIES));
+
+      expect(modalOpen).not.toHaveBeenCalled();
+      expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'synthetic-meeting', projectUid: 'synthetic-project-uid' });
+    });
+
+    it('opens the editor with what the fresh read says, the row filling the gaps', () => {
+      // A failed project lookup leaves the slug out of the payload.
+      const fresh = { ...ONE_OFF, committees: [{ uid: 'synthetic-new-committee' }] } as unknown as Meeting;
+      delete fresh.project_slug;
+      setup(false, of(fresh));
+
+      service.edit(row(ONE_OFF));
+
+      expect(navigate).toHaveBeenCalledWith(['/meetings', 'synthetic-meeting', 'edit'], {
+        queryParams: { project: 'synthetic-project', committee_uid: 'synthetic-new-committee' },
+      });
+    });
+
     it('asks the scope of a recurring edit, opening on the row date', () => {
       setup(true, of(SERIES));
 
@@ -207,7 +229,7 @@ describe('MeetingsHomeEditService', () => {
       expect(composerOpen).not.toHaveBeenCalled();
       expect(refreshUserMeetings).toHaveBeenCalledWith(false);
       expect(navigate).toHaveBeenCalledWith(['/meetings', 'synthetic-meeting'], {
-        queryParams: { password: 'synthetic-pass', occurrence: String(Date.parse(FIRST.start_time)) },
+        queryParams: { password: 'synthetic-pass', occurrence: String(Date.parse(FIRST.start_time)), zoom_redirect: 'false' },
       });
     });
   });
