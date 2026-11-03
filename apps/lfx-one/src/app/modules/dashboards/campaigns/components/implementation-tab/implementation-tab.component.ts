@@ -726,15 +726,29 @@ export class ImplementationTabComponent implements OnInit {
   public readonly createStarted = output<void>();
 
   /** The funnel-stage and tactic choices for a "create another" (#4983, "ss-3"). */
-  protected readonly funnelStageOptions = CAMPAIGN_FUNNEL_STAGE_OPTIONS;
-  protected readonly tacticOptions = CAMPAIGN_TACTIC_OPTIONS;
+  protected readonly funnelStageOptions = [...CAMPAIGN_FUNNEL_STAGE_OPTIONS];
+  protected readonly tacticOptions = [...CAMPAIGN_TACTIC_OPTIONS];
   protected readonly funnelStageShortLabels = CAMPAIGN_FUNNEL_STAGE_SHORT_LABELS;
 
+  /**
+   * The stage (required) and tactic (optional) for the next "create another". A FormGroup behind
+   * `lfx-select`, so a picker the template removes and recreates (switching channel and back) shows the
+   * value that will be sent rather than its placeholder.
+   */
+  protected readonly anotherForm = this.fb.group({
+    stage: this.fb.control<CampaignFunnelStage | null>(null),
+    tactic: this.fb.control<CampaignTactic | null>(null),
+  });
+
   /** The stage the operator chose for the next "create another". Required before it can be sent. */
-  protected readonly anotherStage = signal<CampaignFunnelStage | ''>('');
+  protected readonly anotherStage = toSignal(this.anotherForm.controls.stage.valueChanges.pipe(map((value): CampaignFunnelStage | '' => value ?? '')), {
+    initialValue: '' as CampaignFunnelStage | '',
+  });
 
   /** The tactic the operator chose for the next "create another". Optional. */
-  protected readonly anotherTactic = signal<CampaignTactic | ''>('');
+  protected readonly anotherTactic = toSignal(this.anotherForm.controls.tactic.valueChanges.pipe(map((value): CampaignTactic | '' => value ?? '')), {
+    initialValue: '' as CampaignTactic | '',
+  });
 
   /**
    * The highest slot version this tab has SEEN per slot (`platform|variant`), from the jobs it ran. The
@@ -742,6 +756,12 @@ export class ImplementationTabComponent implements OnInit {
    * another" takes the higher of the two (#4983).
    */
   private readonly seenSlotVersions = signal<Record<string, number>>({});
+
+  /**
+   * The campaigns this tab's own jobs reported, keyed like `seenSlotVersions` plus the slot version, so
+   * the confirmation lists one the index has not caught up with yet (#4983).
+   */
+  private readonly seenCampaigns = signal<Record<string, CampaignExistingRow & { variant: string; slotVersion: number }>>({});
 
   /**
    * The selected platforms that already have a live campaign for this event (#4983, "ss-3"): listed, or
@@ -1209,9 +1229,11 @@ export class ImplementationTabComponent implements OnInit {
     if (this.anyPlatformCreated()) {
       // Every successful row came back `reused` (#4983): campaign-service returned campaigns that
       // already existed, so "Created" would contradict the line under each row.
+      // A reused row beside an unconfirmed or failed one is not "every campaign already existed": that
+      // mix falls through to the headings below, which never claim more than was verified.
       const rows = this.platformOutcomes();
-      const createdSomething = rows.some((r) => (r.outcome === 'created' && r.reused !== true) || r.outcome === 'orphaned');
-      return createdSomething ? 'Campaigns Created' : 'Existing Campaigns Returned';
+      if (rows.some((r) => (r.outcome === 'created' && r.reused !== true) || r.outcome === 'orphaned')) return 'Campaigns Created';
+      if (rows.every((r) => r.outcome === 'created' && r.reused === true)) return 'Existing Campaigns Returned';
     }
     const rows = this.platformOutcomes();
     return rows.length > 0 && rows.every((r) => r.outcome === 'nothing-created') ? 'No Campaigns Created' : 'Campaign Status Unconfirmed';
@@ -3738,8 +3760,7 @@ export class ImplementationTabComponent implements OnInit {
   // === Public Methods ===
   public reset(): void {
     // A new create starts with no stage chosen, so adding another campaign is always a fresh decision.
-    this.anotherStage.set('');
-    this.anotherTactic.set('');
+    this.anotherForm.reset({ stage: null, tactic: null });
     this.jobSubscription?.unsubscribe();
     this.jobSubscription = null;
     this.step.set('form');
@@ -7482,14 +7503,25 @@ export class ImplementationTabComponent implements OnInit {
    * The latest slot version of the slot a create on `platform` would claim, when that slot's latest
    * campaign is one campaign-service would hand back (see `initOverlappingPlatforms`); `null` when the
    * slot is empty or its latest row is unfinished. A listed row indexed before slot versions existed
-   * counts as slot 1, and one before variants existed as the default (Search) slot.
+   * counts as slot 1.
+   *
+   * A Google row indexed before variants existed names no channel, and it could be any of them, so it
+   * matches none: the create stays a plain one, which campaign-service resolves against the campaign
+   * itself (reusing it on its own channel). Every other platform has the one `default` slot.
+   *
+   * A version this tab saw counts until the list shows that very campaign deleted; campaign-service
+   * compares against the latest LIVE slot, so expecting a deleted one would only ever return the older.
    */
   private slotLatest(platform: string): number | null {
     const variant = this.createVariant(platform);
-    const seen = this.seenSlotVersions()[this.seenSlotKey(platform, variant)] ?? 0;
+    let seen = this.seenSlotVersions()[this.seenSlotKey(platform, variant)] ?? 0;
     let latest: CampaignIndexDoc | null = null;
     for (const campaign of this.briefCampaigns() ?? []) {
-      if (campaign.platform !== platform || campaign.status === CAMPAIGN_STATUS_DELETED || (campaign.variant ?? 'default') !== variant) continue;
+      if (!this.inSlot(campaign, platform, variant)) continue;
+      if (campaign.status === CAMPAIGN_STATUS_DELETED) {
+        if ((campaign.slot_version ?? 1) === seen) seen = 0;
+        continue;
+      }
       if (latest === null || (campaign.slot_version ?? 1) > (latest.slot_version ?? 1)) latest = campaign;
     }
     const latestVersion = latest === null ? 0 : (latest.slot_version ?? 1);
@@ -7497,6 +7529,13 @@ export class ImplementationTabComponent implements OnInit {
     if (latest === null) return null;
     const reusable = !!latest.platform_campaign_id && !CAMPAIGN_STATUSES_NOT_REUSED.includes(latest.status);
     return reusable ? latestVersion : null;
+  }
+
+  /** Whether a listed campaign sits on the slot `platform`/`variant` names (see `slotLatest` for a variant-less Google row). */
+  private inSlot(campaign: CampaignIndexDoc, platform: string, variant: string): boolean {
+    if (campaign.platform !== platform) return false;
+    if (campaign.variant === undefined) return platform !== 'google-ads' && variant === 'default';
+    return campaign.variant === variant;
   }
 
   /** `seenSlotVersions` is keyed by brief as well, so a slot seen for one brief says nothing about another. */
@@ -7514,13 +7553,48 @@ export class ImplementationTabComponent implements OnInit {
   /** File the slot versions a finished job reports, so the next expectation is not behind them (#4983). */
   private rememberSlotVersions(results: readonly CampaignPlatformResult[]): void {
     const seen = { ...this.seenSlotVersions() };
+    const campaigns = { ...this.seenCampaigns() };
     for (const result of results) {
       if (result.ok && typeof result.slotVersion === 'number') {
-        const key = this.seenSlotKey(result.platform, result.variant ?? 'default');
+        const variant = result.variant ?? 'default';
+        const key = this.seenSlotKey(result.platform, variant);
         seen[key] = Math.max(seen[key] ?? 0, result.slotVersion);
+        campaigns[`${key}|${result.slotVersion}`] = {
+          id: `seen-${result.platform}-${variant}-${result.slotVersion}`,
+          platform: result.platform,
+          platformLabel: this.existingPlatformLabel(result.platform),
+          name: 'Created here moments ago; still being listed',
+          status: result.reused === true ? 'existing' : 'created',
+          slot: String(result.slotVersion),
+          variant,
+          slotVersion: result.slotVersion,
+        };
       }
     }
     this.seenSlotVersions.set(seen);
+    this.seenCampaigns.set(campaigns);
+  }
+
+  /**
+   * The campaigns the confirmation lists for `platforms`: the indexed ones, plus any this tab's jobs
+   * reported that the index does not show yet, so a create made moments ago is never missing (#4983).
+   */
+  private confirmationCampaigns(platforms: readonly string[]): CampaignExistingRow[] {
+    const listed = this.existingCampaigns().filter((campaign) => platforms.includes(campaign.platform));
+    const docs = this.briefCampaigns() ?? [];
+    const prefix = `${this.briefPersistence().briefId ?? ''}|`;
+    const pending = Object.entries(this.seenCampaigns())
+      .filter(([key, row]) => key.startsWith(prefix) && platforms.includes(row.platform))
+      .filter(([, row]) => !docs.some((doc) => this.inSlot(doc, row.platform, row.variant) && (doc.slot_version ?? 1) === row.slotVersion))
+      .map(([, row]) => ({
+        id: row.id,
+        platform: row.platform,
+        platformLabel: row.platformLabel,
+        name: row.name,
+        status: row.status,
+        slot: row.slot,
+      }));
+    return [...listed, ...pending];
   }
 
   /**
@@ -7552,7 +7626,7 @@ export class ImplementationTabComponent implements OnInit {
     const tacticPart = tactic === null ? '' : `, ${tactic} tactic,`;
     return {
       summary: `This creates a separate, separately budgeted ${stage}${tacticPart} campaign on ${labels}. The campaigns already created for this event keep running.`,
-      existing: this.existingCampaigns().filter((campaign) => platforms.includes(campaign.platform)),
+      existing: this.confirmationCampaigns(platforms),
     };
   }
 

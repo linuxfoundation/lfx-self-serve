@@ -15309,8 +15309,7 @@ describe('ImplementationTabComponent create another campaign', () => {
     campaignForm: { controls: Record<string, { setValue(v: unknown): void }>; get(name: string): { controls: { setValue(v: unknown): void }[] } | null };
     canSubmit(): boolean;
     submit(): void;
-    anotherStage: { set(v: string): void };
-    anotherTactic: { set(v: string): void };
+    anotherForm: { controls: { stage: { setValue(v: string | null): void; value: string | null }; tactic: { setValue(v: string | null): void } } };
     step: { set(v: string): void };
     platformResults: { set(v: unknown): void };
     rememberSlotVersions(results: unknown[]): void;
@@ -15379,14 +15378,14 @@ describe('ImplementationTabComponent create another campaign', () => {
     expect(c().canSubmit()).toBe(false);
     expect(q('implementation-create-another-block')?.textContent).toContain('Choose a funnel stage');
 
-    c().anotherStage.set('mid');
+    c().anotherForm.controls.stage.setValue('mid');
     fixture.detectChanges();
     expect(c().canSubmit()).toBe(true);
   });
 
   it('refuses a create that mixes a platform being created again with one that is not', () => {
     setLists([doc('g1', 1)], ['google-ads', 'microsoft-ads']);
-    c().anotherStage.set('mid');
+    c().anotherForm.controls.stage.setValue('mid');
     c().selectedPlatforms.set(['google-ads', 'microsoft-ads']);
     fixture.detectChanges();
 
@@ -15397,8 +15396,8 @@ describe('ImplementationTabComponent create another campaign', () => {
   it('confirms first, then sends the latest slot version of the same channel with the stage and tactic', () => {
     // Search (the default slot) is at version 2; a Demand Gen campaign on its own slot is ignored.
     setLists([doc('g1', 1), doc('g2', 2), doc('dg', 5, 'demand-gen')], ['google-ads']);
-    c().anotherStage.set('mid');
-    c().anotherTactic.set('retargeting');
+    c().anotherForm.controls.stage.setValue('mid');
+    c().anotherForm.controls.tactic.setValue('retargeting');
     fixture.detectChanges();
 
     c().submit();
@@ -15413,7 +15412,7 @@ describe('ImplementationTabComponent create another campaign', () => {
 
   it('sends nothing when the confirmation is dismissed', () => {
     setLists([doc('g1', 1)], ['google-ads']);
-    c().anotherStage.set('top');
+    c().anotherForm.controls.stage.setValue('top');
     fixture.detectChanges();
 
     c().submit();
@@ -15425,7 +15424,7 @@ describe('ImplementationTabComponent create another campaign', () => {
   it("expects past this tab's own job when the list has not caught up yet", () => {
     setLists([doc('g1', 1)], ['google-ads']);
     c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 3, variant: 'default' }]);
-    c().anotherStage.set('lower');
+    c().anotherForm.controls.stage.setValue('lower');
     fixture.detectChanges();
 
     c().submit();
@@ -15470,6 +15469,65 @@ describe('ImplementationTabComponent create another campaign', () => {
     fixture.detectChanges();
 
     expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).toBe('Existing Campaigns Returned');
+  });
+
+  it('does not head a reused row beside an unconfirmed one as if every campaign already existed', () => {
+    c().step.set('results');
+    c().platformResults.set([
+      { platform: 'google-ads', ok: true, campaignId: '9', reused: true },
+      { platform: 'microsoft-ads', ok: false, error: 'campaign-service did not answer in time' },
+    ]);
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { platformResultsHeading(): string }).platformResultsHeading()).not.toBe('Existing Campaigns Returned');
+  });
+
+  it('lists a campaign this tab just created in the confirmation, before the index shows it', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 2, variant: 'default' }]);
+    c().anotherForm.controls.stage.setValue('top');
+    fixture.detectChanges();
+
+    c().submit();
+    const existing = (dialogOpen.mock.calls[0] as unknown as [unknown, { data: { existing: { id: string; slot: string }[] } }])[1].data.existing;
+    expect(existing.map((row) => row.slot)).toEqual(['1', '2']);
+  });
+
+  it('matches a Google campaign indexed before channels were recorded to no channel, leaving a plain create', () => {
+    const legacy = { ...doc('g1', 1) } as CampaignIndexDoc;
+    delete legacy.variant;
+    setLists([legacy], ['google-ads']);
+
+    expect(q('implementation-create-another'), 'an unlabelled Google campaign was read as Search').toBeNull();
+    expect(c().canSubmit()).toBe(true);
+  });
+
+  it('stops expecting a slot this tab saw once the list shows that campaign deleted', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 2, variant: 'default' }]);
+    setLists([doc('g1', 1), doc('g2', 2, 'default', 'deleted')], ['google-ads']);
+    c().anotherForm.controls.stage.setValue('mid');
+    fixture.detectChanges();
+
+    c().submit();
+    dialogClose.next(true);
+
+    expect(createCampaign.mock.calls[0][0].another?.expectedSlotVersions).toEqual({ 'google-ads': 1 });
+  });
+
+  it('keeps the chosen stage shown when the pickers are hidden and shown again', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().anotherForm.controls.stage.setValue('lower');
+    fixture.detectChanges();
+    setLists([], ['google-ads']);
+    expect(q('implementation-create-another')).toBeNull();
+    setLists([doc('g1', 1)], ['google-ads']);
+
+    // What the picker DISPLAYS, whichever control renders it: a native select's chosen option or the select's label.
+    const host = q('implementation-another-stage');
+    const shown = host?.querySelector('select')?.selectedOptions[0]?.textContent ?? host?.querySelector('.p-select-label')?.textContent;
+    expect(shown?.trim()).toBe('Lower funnel (conversion)');
+    expect(c().canSubmit()).toBe(true);
   });
 
   it('says when campaign-service returned an existing campaign instead of creating one', () => {
