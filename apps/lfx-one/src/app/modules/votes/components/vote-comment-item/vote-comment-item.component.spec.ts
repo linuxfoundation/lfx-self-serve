@@ -189,6 +189,61 @@ describe('VoteCommentItemComponent', () => {
       expect(selection.toString()).toBe('Synthetic comment');
     });
 
+    it('does not open the ballot from the row background while this row has selected text', () => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+      const selection = selectCommentText(el);
+
+      row(el).click();
+
+      expect(emitted).toEqual([]);
+      expect(selection.toString()).toBe('Synthetic comment');
+    });
+
+    it('opens the ballot when selected text belongs to a different part of the page', () => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+      const outside = document.createElement('p');
+      outside.textContent = 'Other selected text';
+      el.prepend(outside);
+      document.body.appendChild(el);
+      const range = document.createRange();
+      range.selectNodeContents(outside);
+      const selection = document.getSelection()!;
+      selection.addRange(range);
+
+      row(el).click();
+
+      expect(emitted).toEqual(['synthetic-response-1']);
+      expect(selection.toString()).toBe('Other selected text');
+    });
+
+    it.each(['before', 'after'])('protects a selection spanning this row and text %s it', (position) => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+      const outside = document.createElement('p');
+      outside.textContent = 'Other selected text';
+      if (position === 'before') el.prepend(outside);
+      else el.appendChild(outside);
+      document.body.appendChild(el);
+      const commentText = row(el).querySelector('p')!.firstChild!;
+      const range = document.createRange();
+      if (position === 'before') {
+        range.setStart(outside.firstChild!, 0);
+        range.setEnd(commentText, 1);
+      } else {
+        range.setStart(commentText, 0);
+        range.setEnd(outside.firstChild!, 1);
+      }
+      const selection = document.getSelection()!;
+      selection.addRange(range);
+
+      row(el).click();
+
+      expect(emitted).toEqual([]);
+      expect(selection.isCollapsed).toBe(false);
+    });
+
     it('opens the ballot from the row background when the text selection is collapsed', () => {
       const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
       const emitted = collect();

@@ -45,8 +45,14 @@ export class VoteCommentItemComponent {
     if (!this.rowClickable() || !voteId) return;
     const target = event.target as Element | null;
     if (target?.closest('.comment-text, a, button')) return;
-    // Selecting a quote is not an intent to open the ballot.
-    if (target?.ownerDocument.defaultView?.getSelection()?.isCollapsed === false) return;
+    // Selecting a quote in this row is not an intent to open its ballot.
+    const selection = target?.ownerDocument.defaultView?.getSelection();
+    const row = event.currentTarget as Node | null;
+    if (selection && !selection.isCollapsed && row) {
+      for (let index = 0; index < selection.rangeCount; index++) {
+        if (selection.getRangeAt(index).intersectsNode(row)) return;
+      }
+    }
     this.viewBallot.emit(voteId);
   }
 }

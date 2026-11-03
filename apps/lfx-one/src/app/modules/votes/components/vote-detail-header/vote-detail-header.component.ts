@@ -225,7 +225,13 @@ export class VoteDetailHeaderComponent {
   private initCreatedText(): Signal<string | null> {
     return computed(() => {
       const created = this.vote().creation_time;
-      return created ? formatDate(created, 'MMM d, y', 'en-US') : null;
+      if (!created) return null;
+      return new Date(created).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: this.viewerTimezone,
+      });
     });
   }
 
