@@ -126,7 +126,8 @@
     <span class="-m-[2px] overflow-hidden p-[2px] text-label-12 text-gray-500" data-testid="meetings-home-row-meta">
       <span class="-ml-[16px] flex flex-wrap gap-y-[2px]">
         @for (part of when(); track $index) {
-          <span class="relative whitespace-nowrap pl-[16px]" data-testid="meetings-home-row-when"
+          <!-- May wrap inside on narrow rows, so the start time is never clipped. -->
+          <span class="relative pl-[16px]" data-testid="meetings-home-row-when"
             ><span class="absolute left-0 w-[16px] text-center" aria-hidden="true">·</span>{{ part }}</span
           >
         }
