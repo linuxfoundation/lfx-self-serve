@@ -22,7 +22,6 @@ import {
   NAVBAR_NO_ACCESS_GHOST_ITEMS,
   NAVBAR_PEEK_CLOSE_DELAY_MS,
   NAVBAR_PEEK_MORPH_MS,
-  NAVBAR_PEEK_OPEN_DELAY_MS,
   NAVBAR_PEEK_RECHECK_DELAY_MS,
   NAVBAR_ROLE_PREPOSITIONS,
   NAVBAR_ROLE_STYLES,
@@ -288,9 +287,9 @@ export class NavbarComponent extends NavMenuBase {
   protected readonly railDocked: Signal<boolean> = computed(() => !this.mobile() && this.collapse.effectiveCollapsed());
   /** Rail tooltips open beside the trigger; the open panel's below it. */
   protected readonly headTooltipPlacement: Signal<NavTooltipPlacement> = computed(() => (this.railVisible() ? 'right' : 'bottom'));
-  /** A peek on a wide viewport docks open on click; otherwise the toggle opens or closes the sidebar. */
+  /** The rail's toggle shows the sidebar over the page; a peek on a wide viewport docks open on click; otherwise it closes the sidebar. */
   protected readonly toggleLabel: Signal<string> = computed(() => {
-    if (this.railVisible()) return 'Open sidebar';
+    if (this.railVisible()) return 'Show sidebar';
     return this.collapse.peek() ? 'Keep sidebar open' : 'Close sidebar';
   });
   /** A menu or panel opened from the navbar is up: a peek must not close under it. */
@@ -298,7 +297,6 @@ export class NavbarComponent extends NavMenuBase {
     () => this.brandMenuOpen() || this.createMenuOpen() || this.userMenuOpen() || this.selectorPanelOpen()
   );
   private readonly panelEl = viewChild<ElementRef<HTMLElement>>('panel');
-  private peekOpenTimer: ReturnType<typeof setTimeout> | null = null;
   private peekCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private morphSettleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Last pointer position seen while peeking; null until the pointer moves (keyboard use never closes a peek). */
@@ -321,13 +319,17 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   /**
-   * The sidebar toggle: dock open or closed on wide viewports. On narrow ones it pins a peek — from the rail, or the hover
-   * peek the pointer just opened on its way to the click — and closes a pinned one. A keyboard press (no click count)
-   * keeps focus in the navbar; a pointer click drops it.
+   * The sidebar toggle. On the rail it peeks the panel open over the page, closing once the pointer leaves it — pinned on a
+   * touch device, which has no pointer to leave, so an outside tap closes it instead. From an open panel it docks open or
+   * closed on wide viewports; on narrow ones, which can't dock open, it pins the peek and closes a pinned one. A keyboard
+   * press (no click count) keeps focus in the navbar; a pointer click drops it.
    */
   protected onToggleClick(event: MouseEvent): void {
-    this.clearPeekOpenTimer();
     const focus: NavbarMorphFocus = event.detail === 0 ? 'keyboard' : 'pointer';
+    if (this.railVisible()) {
+      this.morph(() => this.collapse.openPeek(this.collapse.touch()), focus);
+      return;
+    }
     if (this.collapse.narrow()) {
       this.morph(() => (this.collapse.peekPinned() ? this.collapse.closePeek() : this.collapse.openPeek(true)), focus);
       return;
@@ -338,20 +340,6 @@ export class NavbarComponent extends NavMenuBase {
       return;
     }
     this.morph(() => this.collapse.setCollapsed(!this.collapse.collapsed()), focus);
-  }
-
-  /** Hovering the rail's toggle peeks the panel open — the only hover that does, so a collapse click never reopens it. */
-  protected onToggleEnter(): void {
-    if (!this.railVisible() || this.collapse.touch()) return;
-    this.clearPeekOpenTimer();
-    this.peekOpenTimer = setTimeout(() => {
-      this.peekOpenTimer = null;
-      if (this.railVisible()) this.morph(() => this.collapse.openPeek());
-    }, NAVBAR_PEEK_OPEN_DELAY_MS);
-  }
-
-  protected onToggleLeave(): void {
-    this.clearPeekOpenTimer();
   }
 
   /** Jump from a role chip to that project's or foundation's overview (the deep-link route the lens guards resolve). */
@@ -486,7 +474,7 @@ export class NavbarComponent extends NavMenuBase {
   /**
    * Desktop only: restores the stored preference, then keeps a peek honest — it closes once the pointer has left the
    * panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after an outside click or
-   * focus leaving it when pinned, on Escape, or on a navigation from it (from a hover peek, only once the pointer is off
+   * focus leaving it when pinned, on Escape, or on a navigation from it (from an unpinned peek, only once the pointer is off
    * it) — but never while a menu or panel opened from it is still up.
    */
   private initCollapse(): void {
@@ -522,7 +510,7 @@ export class NavbarComponent extends NavMenuBase {
         this.morph(() => this.collapse.closePeek(), 'keyboard');
       };
       // Tabbing out of a pinned peek must not leave the overlay over the page content that now holds focus.
-      // A hover peek that keyboard focus was holding open re-checks the pointer once focus leaves it.
+      // An unpinned peek that keyboard focus was holding open re-checks the pointer once focus leaves it.
       const onFocusOut = (event: FocusEvent): void => {
         const next = event.relatedTarget instanceof Element ? event.relatedTarget : null;
         if (!this.collapse.peek() || this.navbarMenuOpen()) return;
@@ -547,15 +535,14 @@ export class NavbarComponent extends NavMenuBase {
     });
 
     this.destroyRef.onDestroy(() => {
-      this.clearPeekOpenTimer();
       this.clearPeekCloseTimer();
       if (this.morphSettleTimer) clearTimeout(this.morphSettleTimer);
     });
 
     // A pick from a peek navigates under it: close it, so the overlay doesn't cover the page just opened — a pinned peek
-    // or a hover peek (keyboard focus on the picked link holds one open, see peekInUse). A hover peek the pointer is still
-    // over stays open, though — a lens tab or a link picked with the pointer — and closes once the pointer leaves, like any
-    // hover peek. As with the mobile drawer, only a navigation the viewer made counts — a page rewriting its own address in
+    // or an unpinned one (keyboard focus on the picked link holds one open, see peekInUse). An unpinned peek the pointer is
+    // still over stays open, though — a lens tab or a link picked with the pointer — and closes once the pointer leaves, like
+    // any unpinned peek. As with the mobile drawer, only a navigation the viewer made counts — a page rewriting its own address in
     // place (`replaceUrl`, e.g. Org Lens writing in the default organization) would snap a just-opened peek shut;
     // back/forward still closes it. Focus on the link the rail now hides moves to the toggle (the railVisible subscription
     // below). Desktop only: the mobile drawer's navbar stays mounted once opened but never tracks the pointer, so it would
@@ -572,7 +559,7 @@ export class NavbarComponent extends NavMenuBase {
       )
       .subscribe(() => this.morph(() => this.collapse.closePeek(), 'none'));
 
-    // A menu or panel opened from a hover peek just closed: give the pointer a moment, then close if it is outside.
+    // A menu or panel opened from an unpinned peek just closed: give the pointer a moment, then close if it is outside.
     toObservable(this.navbarMenuOpen)
       .pipe(
         pairwise(),
@@ -806,11 +793,6 @@ export class NavbarComponent extends NavMenuBase {
     if (!(active instanceof HTMLElement) || !host.contains(active)) return;
     if (active.closest('.lfxn__brand, .lfxn__head-actions > *, .lfxn__user')) return;
     host.querySelector<HTMLElement>('[data-flip="side"]')?.focus();
-  }
-
-  private clearPeekOpenTimer(): void {
-    if (this.peekOpenTimer) clearTimeout(this.peekOpenTimer);
-    this.peekOpenTimer = null;
   }
 
   private clearPeekCloseTimer(): void {
