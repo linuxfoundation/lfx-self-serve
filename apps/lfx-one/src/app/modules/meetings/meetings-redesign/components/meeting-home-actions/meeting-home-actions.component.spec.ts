@@ -8,7 +8,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { environment } from '@environments/environment';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, MeetingRegistrationRemovalResult, PastMeeting } from '@lfx-one/shared/interfaces';
-import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -102,7 +102,7 @@ describe('MeetingHomeActionsComponent', () => {
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: removedIds } },
         { provide: UserService, useValue: { authenticated: signal(true), refreshUserMeetings } },
         {
-          provide: MeetingInviteResendService,
+          provide: MeetingOwnInviteResendService,
           useValue: { resendOwn$, isResendingOwn: () => resending(), describeOwnResendFailure: () => 'Unable to resend the invitation. Please try again.' },
         },
         { provide: MeetingSelfRemovalService, useValue: { remove$, describeFailure: () => 'Unable to remove you from this meeting. Please try again.' } },

@@ -14,7 +14,7 @@ import {
   getPastMeetingResourceId,
 } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
-import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -44,7 +44,7 @@ export class MeetingHomeActionsComponent {
   private readonly clipboard = inject(Clipboard);
   private readonly toast = inject(UiToastService);
   private readonly modal = inject(UiModalService);
-  private readonly inviteResend = inject(MeetingInviteResendService);
+  private readonly inviteResend = inject(MeetingOwnInviteResendService);
   private readonly selfRemoval = inject(MeetingSelfRemovalService);
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);

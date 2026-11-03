@@ -10,7 +10,7 @@ import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
-import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { PersonaService } from '@services/persona.service';
@@ -143,7 +143,7 @@ describe('MeetingsRedesignComponent', () => {
         },
         { provide: ProjectContextService, useValue: { canWriteMeetings } },
         { provide: CreateArtifactDialogService, useValue: { open: openCreateDialog } },
-        { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
+        { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         {
           provide: MeetingService,
           useValue: {
