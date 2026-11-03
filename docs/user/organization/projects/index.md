@@ -221,7 +221,7 @@ When the metric has nothing to list, the panel says **No data available for this
 
 ## What does the Leaderboards tab show?
 
-The **Leaderboards** tab ranks every organization involved in the project, side by side for technical and ecosystem activity, with an influence trend chart under them. The selected organization's row is highlighted and marked **You**.
+The **Leaderboards** tab ranks the organizations involved in the project, side by side for technical and ecosystem activity, with an influence trend chart under them. The selected organization's row is highlighted and marked **You**.
 
 What the leaderboards rank depends on the metric you choose:
 
