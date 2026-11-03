@@ -8051,7 +8051,9 @@ export class CampaignsComponent {
    * own choice is never replaced.
    */
   private autoSelectSurveyTemplate(templates: HubSpotMarketingEmail[]): void {
-    if (!this.isSurvey() || this.selectedEmailTemplateId() !== '' || templates.length === 0) {
+    // Never from a filtered list: an Email search typed before the switch narrowed these rows,
+    // and the pick would stick -- this only fills an empty selection, and Survey has no picker.
+    if (!this.isSurvey() || this.selectedEmailTemplateId() !== '' || templates.length === 0 || this.emailTemplateSubmittedQuery() !== '') {
       return;
     }
     // The ranked order, not the raw listing: `rankTemplatesForSelectedType` puts the templates
@@ -8471,6 +8473,12 @@ export class CampaignsComponent {
 
   /** Pick the survey template from the list already loaded, when the selection is empty. */
   private ensureSurveyTemplateSelected(): void {
+    // A list filtered by an Email search is not the portal's: fetch the unfiltered one, whose
+    // success arm makes the pick.
+    if (this.isSurvey() && this.selectedEmailTemplateId() === '' && this.emailTemplateSubmittedQuery() !== '') {
+      this.searchEmailTemplates('');
+      return;
+    }
     const templates = this.emailTemplates();
     if (templates !== null) {
       this.autoSelectSurveyTemplate(templates);

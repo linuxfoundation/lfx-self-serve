@@ -9829,6 +9829,24 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().selectedEmailTemplateId(), 'the event picker only suggests (#2057)').toBe('');
     });
 
+    it('never takes the survey template from a list an Email search filtered', () => {
+      const component = fixture.componentInstance as unknown as {
+        emailTemplateSubmittedQuery: { set(q: string): void };
+        ensureSurveyTemplateSelected(): void;
+        searchEmailTemplates(q: string): void;
+      };
+      const search = vi.spyOn(component, 'searchEmailTemplates').mockImplementation(() => undefined);
+      selectSurvey();
+      seq().selectedEmailTemplateId.set('');
+      seq().emailTemplates.set([{ id: 'hs-filtered', name: 'Newsletter', subject: 'News' }] as HubSpotMarketingEmail[]);
+      component.emailTemplateSubmittedQuery.set('newsletter');
+
+      component.ensureSurveyTemplateSelected();
+
+      expect(seq().selectedEmailTemplateId(), 'a pick from filtered rows would stick').toBe('');
+      expect(search).toHaveBeenCalledWith('');
+    });
+
     it('offers Start the series over when Write all meets a send saved in an earlier session', async () => {
       stageable(3);
       seq().surveySequenceSends.set([]);
