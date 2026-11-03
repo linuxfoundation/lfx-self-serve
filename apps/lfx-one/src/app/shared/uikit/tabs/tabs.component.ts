@@ -88,7 +88,7 @@ export class UiTabsComponent {
   private initTabClasses(): Signal<string> {
     return computed(() => {
       const base =
-        'relative inline-flex items-center whitespace-nowrap border-0 bg-transparent label-14 transition-[color] duration-ui-base focus-visible:shadow-focus focus-visible:outline-none motion-reduce:transition-none aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-400 aria-disabled:hover:text-ui-neutral-400';
+        'relative inline-flex cursor-pointer items-center whitespace-nowrap border-0 bg-transparent label-14 transition-[color] duration-ui-base focus-visible:shadow-focus focus-visible:outline-none motion-reduce:transition-none aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-400 aria-disabled:hover:text-ui-neutral-400';
       if (this.variant() === 'secondary') {
         // Exact px sizes, not rem; the 10px radius is the library's radius-sm minus 2px (no token).
         return `${base} h-[32px] gap-[8px] rounded-[10px] px-[12px] text-ui-neutral-600 hover:text-ui-neutral-900 before:absolute before:inset-0 before:z-[-1] before:rounded-ui-sm before:bg-transparent before:transition-[background-color] before:duration-ui-base before:content-[''] motion-reduce:before:transition-none hover:before:bg-ui-neutral-alpha-50 aria-selected:cursor-default aria-selected:font-medium aria-selected:text-ui-accent-700 aria-selected:before:bg-ui-accent-100`;

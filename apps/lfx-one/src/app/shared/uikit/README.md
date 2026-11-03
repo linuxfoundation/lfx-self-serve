@@ -12,6 +12,8 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **Overlays** build on `@angular/cdk`.
 - **Modal** deliberately omits `aria-modal` (CDK default): overlays stay exposed to assistive technology, while the page behind still gets `aria-hidden`.
 - **Stacking:** CDK overlays sit at z-index 10000, above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. A PrimeNG overlay panel opened from inside a uikit modal renders below it unless it is appended to its own element.
+- **Cursor:** every interactive control (buttons, tabs, menu items, toggles, checkboxes, radios, labels that wrap an input) shows a pointer, and `not-allowed` when disabled. A disabled `lfx-ui-button` shows it without taking the click.
+- **Icons:** uikit components and stories follow the LFX UI Library: Font Awesome Light (`fa-light`) by default, another weight only to show a state, such as a filled star for "starred".
 - **Types:** shared interfaces such as `UiTabItem` live in `@lfx-one/shared/interfaces`.
 - **Compound components** (a menu and its items, groups and separators) share one spec and one stories file, named after the parent.
 - **Form controls:** register with `NG_VALUE_ACCESSOR` and `forwardRef`, as in `lfx-ui-checkbox`; that is the standard for new controls. The `NgControl`-based controls (input, textarea, slider, calendar, select, combobox, multi-select) convert in a dedicated follow-up PR (tracked on #4661), not in unrelated fixes.
