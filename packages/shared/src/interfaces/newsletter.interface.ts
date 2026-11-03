@@ -164,8 +164,10 @@ export interface Newsletter {
   updated_at: string;
   /** In-app share count, one per user per channel. Sent newsletters only; absent when unknown — not zero. */
   share_count?: number;
-  /** Raw open total (every open, not unique readers), shown as views. Sent newsletters from GET one only; absent when unknown — not zero. */
+  /** Raw open total (every open, not unique readers). Sent newsletters from GET one only; absent when unknown — not zero. */
   total_opens?: number;
+  /** Unique web page views, one per signed-in user, ever. Sent newsletters only; absent when unknown — not zero. Shown summed with `total_opens` as views. */
+  page_view_count?: number;
 }
 
 /**
@@ -503,6 +505,10 @@ export interface CommitteeNewsletter {
   sent_at?: string;
   /** In-app share count, one per user per channel; absent when unknown — not zero. */
   share_count?: number;
+  /** Raw open total, the same value GET one returns; absent when unknown — not zero. */
+  total_opens?: number;
+  /** Unique web page views, one per user; absent when unknown — not zero. */
+  page_view_count?: number;
 }
 
 export interface CommitteeNewsletterListResponse {
@@ -559,6 +565,8 @@ export interface MyNewsletterRow extends MyNewsletter {
   issuePath: string | null;
   /** The issue's `share_count`; null when the count is unknown. */
   shareCount: number | null;
+  /** Email opens plus unique web page views (see `combinedViewCount`); null when both are unknown. */
+  viewCount: number | null;
 }
 
 /** The issue a Share dialog was opened for — captured at open so a later navigation can't retarget it. */
@@ -676,6 +684,8 @@ export interface NewsletterAnalytics {
   total_shares?: number;
   /** `total_shares` split by channel; every channel present, `0` when unused. */
   shares_by_channel?: Partial<Record<SocialShareChannel, number>>;
+  /** Unique web page views, one per signed-in user. Absent for unsent newsletters or when the view store can't be read. */
+  total_page_views?: number;
 }
 
 /** Body of POST /api/newsletters/:projectUid/:newsletterUid/share. */

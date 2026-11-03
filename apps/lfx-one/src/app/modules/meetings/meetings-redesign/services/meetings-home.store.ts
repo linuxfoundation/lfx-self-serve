@@ -19,9 +19,7 @@ import {
   UiToastRef,
 } from '@lfx-one/shared/interfaces';
 import {
-  buildJoinUrlWithParams,
   buildMeetingFilterChips,
-  canJoinMeeting,
   countAppliedMeetingFilters,
   expandMeetingOccurrences,
   filterMeetingsHome,
@@ -39,6 +37,8 @@ import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { catchError, combineLatest, defer, interval, map, Observable, of, retry, startWith, Subject, switchMap, tap } from 'rxjs';
 
+import { MeetingsHomeJoinService } from './meetings-home-join.service';
+
 /**
  * State of the Me lens meetings home list, provided by the page component.
  * @description Loads the upcoming and past feeds up front so both tab counts show, expands upcoming meetings into one
@@ -50,6 +50,7 @@ export class MeetingsHomeStore {
   private readonly meetingService = inject(MeetingService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly toast = inject(UiToastService);
+  private readonly joinService = inject(MeetingsHomeJoinService);
 
   private readonly tabState: WritableSignal<MeetingDashboardView> = signal<MeetingDashboardView>('upcoming');
   // Search and filters go back to their defaults when the viewer changes (login, impersonation).
@@ -127,9 +128,9 @@ export class MeetingsHomeStore {
   /** The Next meeting card's date, whatever the search and filters: the soonest one not yet over, else the soonest one. */
   public readonly nextRow: Signal<MeetingHomeRow | null> = this.initNextRow();
   /** The next date is inside its join window, and is not a restricted meeting the viewer is not invited to. */
-  public readonly nextRowJoinable: Signal<boolean> = this.initNextRowJoinable();
+  public readonly nextRowJoinable: Signal<boolean> = this.joinService.joinable(this.nextRow, this.now);
   /** Join link for the next date, built for the real viewer while impersonating; null until joinable or when unavailable. */
-  public readonly nextRowJoinUrl: Signal<string | null> = this.initNextRowJoinUrl();
+  public readonly nextRowJoinUrl: Signal<string | null> = this.joinService.joinUrl(this.nextRow, this.nextRowJoinable);
   /** The active tab's rows that match the search and filters, the Next meeting card's date included. */
   public readonly matchingRows: Signal<MeetingHomeRow[]> = computed(() =>
     filterMeetingsHome(this.tabRows(), this.filters(), this.search(), this.userService.viewerUsername())
@@ -285,42 +286,6 @@ export class MeetingsHomeStore {
       const nowMs = this.now().getTime();
       return rows.find((row) => Date.parse(row.startTime) + row.durationMinutes * 60_000 > nowMs) ?? rows[0] ?? null;
     });
-  }
-
-  private initNextRowJoinable(): Signal<boolean> {
-    return computed(() => {
-      this.now();
-      const row = this.nextRow();
-      if (!row || (row.meeting.restricted && !row.meeting.invited)) return false;
-      return canJoinMeeting(row.meeting, { occurrence_id: row.occurrenceId ?? '', start_time: row.startTime, duration: row.durationMinutes });
-    });
-  }
-
-  private initNextRowJoinUrl(): Signal<string | null> {
-    const request = computed(
-      () => {
-        const meeting = this.nextRow()?.meeting;
-        const user = this.userService.meetingJoinIdentity();
-        if (!meeting || !this.nextRowJoinable() || !this.userService.authenticated() || !user?.email) return null;
-        return { id: meeting.id, password: meeting.password, user };
-      },
-      { equal: (a, b) => a?.id === b?.id && a?.password === b?.password && a?.user.email === b?.user.email && a?.user.name === b?.user.name }
-    );
-    return toSignal(
-      toObservable(request).pipe(
-        switchMap((target) =>
-          target
-            ? this.meetingService.getPublicMeetingJoinUrl(target.id, target.password, { email: target.user.email }).pipe(
-                map((response) => buildJoinUrlWithParams(response.link, target.user)),
-                catchError(() => of(null)),
-                // Never offer the previous meeting's link while this one loads.
-                startWith(null)
-              )
-            : of(null)
-        )
-      ),
-      { initialValue: null }
-    );
   }
 
   private initFilteredRows(): Signal<MeetingHomeRow[]> {

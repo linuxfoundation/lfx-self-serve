@@ -23,6 +23,8 @@ import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.com
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
+import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
+
 /**
  * Next meeting card of the meetings home page: the soonest upcoming date with Join and a countdown.
  * @description Clicking the card opens the meeting; the project eyebrow opens the project. Shows an empty card without a date.
@@ -38,6 +40,7 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 })
 export class NextMeetingCardComponent {
   private readonly router = inject(Router);
+  private readonly joinService = inject(MeetingsHomeJoinService);
 
   /** The soonest upcoming date; null shows the empty card. */
   public readonly row = input.required<MeetingHomeRow | null>();
@@ -81,14 +84,7 @@ export class NextMeetingCardComponent {
   /** Opens the join link built for the viewer, or the meeting page's join flow when it is not available. */
   protected join(): void {
     const meeting = this.row()?.meeting;
-    if (!meeting || !this.joinable()) return;
-
-    const url = this.joinUrl();
-    if (url) {
-      window.open(url, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    void this.router.navigate(['/meetings', meeting.id], { queryParams: meeting.password ? { password: meeting.password } : {} });
+    if (meeting && this.joinable()) this.joinService.join(meeting, this.joinUrl());
   }
 
   private initWhen(): Signal<string> {
