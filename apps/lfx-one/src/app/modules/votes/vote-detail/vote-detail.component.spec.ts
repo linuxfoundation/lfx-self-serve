@@ -2135,6 +2135,8 @@ describe('VoteDetailComponent', () => {
       const content = testId(fixture, 'vote-detail-panel-overview');
       expect(content?.hasAttribute('role')).toBe(false);
       expect(content?.hasAttribute('aria-labelledby')).toBe(false);
+      expect(content?.classList.contains('lg:col-span-2')).toBe(false);
+      expect(content?.parentElement?.classList.contains('lg:grid-cols-3')).toBe(false);
       expect(testId(fixture, 'vote-detail-description')).toBeNull();
       expect(testId(fixture, 'vote-detail-summary')).toBeNull();
       expect(fixture.nativeElement.querySelector('lfx-vote-comment-results')).toBeNull();
@@ -2182,6 +2184,8 @@ describe('VoteDetailComponent', () => {
         const content = testId(fixture, 'vote-detail-panel-overview');
         expect(content?.hasAttribute('role')).toBe(false);
         expect(content?.hasAttribute('aria-labelledby')).toBe(false);
+        expect(content?.classList.contains('lg:col-span-2')).toBe(false);
+        expect(content?.parentElement?.classList.contains('lg:grid-cols-3')).toBe(false);
         expect(testId(fixture, 'vote-detail-description')).toBeNull();
         expect(fixture.nativeElement.querySelector('lfx-vote-detail-facts')).toBeNull();
         expect(fixture.nativeElement.textContent).not.toContain('12 invited voters');
@@ -2255,6 +2259,9 @@ describe('VoteDetailComponent', () => {
       const row = (id: string): string => testId(fixture, `vote-detail-facts-${id}`)?.querySelector('dd')?.textContent?.trim() ?? '';
 
       expect(read(fixture, 'showVoteDetails')).toBe(true);
+      const content = testId(fixture, 'vote-detail-panel-overview');
+      expect(content?.classList.contains('lg:col-span-2')).toBe(true);
+      expect(content?.parentElement?.classList.contains('lg:grid-cols-3')).toBe(true);
       expect(testId(fixture, 'vote-detail-header-meta')).toBeNull();
       expect(testId(fixture, 'vote-detail-facts-visibility')).toBeNull();
       expect(row('group')).toBe('Synthetic Steering Committee');
