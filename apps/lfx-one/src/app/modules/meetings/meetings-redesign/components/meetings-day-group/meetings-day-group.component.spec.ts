@@ -23,7 +23,7 @@ describe('MeetingsDayGroupComponent', () => {
         { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
-        { provide: UserService, useValue: { authenticated: signal(true) } },
+        { provide: UserService, useValue: { authenticated: signal(true), viewerUsername: signal(null) } },
         { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
       ],
     });

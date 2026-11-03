@@ -17,6 +17,7 @@ import {
   formatMeetingTimeRange,
   getMeetingDayBucket,
   getMeetingHomeRowLink,
+  getMeetingHomeRowOrganizer,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingProjectUrl,
@@ -640,6 +641,22 @@ describe('getMeetingHomeRowType', () => {
     [null, null],
   ])('%s → %j', (type, expected) => {
     expect(getMeetingHomeRowType({ meeting_type: type })).toEqual(expected);
+  });
+});
+
+describe('getMeetingHomeRowOrganizer', () => {
+  const jane = { name: 'Jane Doe', username: 'jdoe', email: 'jane@example.org' };
+
+  it.each<[Pick<Meeting, 'created_by' | 'owner' | 'organizers'>, string | null]>([
+    [{ created_by: jane, organizers: [] }, 'Jane Doe'],
+    [{ created_by: jane, organizers: ['jdoe', 'auth0|JDOE'] }, 'Jane Doe'],
+    [{ created_by: jane, organizers: ['jdoe', 'asmith', 'auth0|bking', 'bking'] }, 'Jane +2'],
+    [{ created_by: { name: '', username: 'viewer', email: '' }, organizers: ['viewer', 'asmith'] }, 'you +1'],
+    [{ created_by: { name: 'Viewer', username: 'viewer', email: '' }, organizers: [] }, 'you'],
+    [{ owner: { name: 'Owen Owner', username: 'owen', email: '' }, created_by: jane, organizers: ['jdoe'] }, 'Owen +1'],
+    [{ organizers: ['asmith'] }, null],
+  ])('%j → %s', (meeting, expected) => {
+    expect(getMeetingHomeRowOrganizer(meeting, 'auth0|viewer')).toBe(expected);
   });
 });
 

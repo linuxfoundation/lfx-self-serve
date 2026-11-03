@@ -30,13 +30,16 @@ import { getEntityCommands } from './entity-route.utils';
 import {
   buildMeetingOccurrenceRoute,
   buildRecurrenceSummary,
+  collectMeetingOrganizers,
   convertRecurrenceToPattern,
   getActiveOccurrences,
   getApplicableMeetingRsvp,
+  getMeetingOrganizerDisplayName,
   getUpcomingMeetingStartTime,
   isMeetingInviteResponsesEnabled,
   isMeetingOrganizedByViewer,
   MEETING_END_BUFFER_MS,
+  normalizeUsername,
   resolveOccurrenceRecurrence,
   resolveShownOccurrenceId,
   resolveUpcomingMeetingDurationMinutes,
@@ -325,6 +328,20 @@ export function getMeetingHomeRowType(meeting: Pick<Meeting, 'meeting_type'>): M
   if (!type || type === MeetingType.NONE) return null;
   const config = MEETING_TYPE_CONFIGS[type.toLowerCase()];
   return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
+}
+
+/**
+ * "Organized by" text for a home row: the owner or creator, "you" when that is the viewer, and the first name with "+N"
+ * when the upstream `organizers` usernames list others too. Null when nobody resolves.
+ */
+export function getMeetingHomeRowOrganizer(meeting: Pick<Meeting, 'created_by' | 'owner' | 'organizers'>, viewerUsername?: string | null): string | null {
+  const [primary] = collectMeetingOrganizers(meeting);
+  if (!primary) return null;
+  const isYou = isMeetingOrganizedByViewer(meeting, viewerUsername);
+  const name = isYou ? 'you' : getMeetingOrganizerDisplayName(primary);
+  const primaryUsername = normalizeUsername(primary.username);
+  const others = new Set((meeting.organizers ?? []).map(normalizeUsername).filter((username) => username && username !== primaryUsername)).size;
+  return others ? `${name.split(/\s+/)[0]} +${others}` : name;
 }
 
 function isRsvpPending(meeting: Meeting, rsvp: MeetingRsvp | null | undefined): boolean {

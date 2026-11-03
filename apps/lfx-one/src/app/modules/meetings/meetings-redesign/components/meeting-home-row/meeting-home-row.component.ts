@@ -31,11 +31,13 @@ import {
 import {
   formatMeetingTimeRange,
   getMeetingHomeRowLink,
+  getMeetingHomeRowOrganizer,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
 } from '@lfx-one/shared/utils';
+import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
@@ -45,7 +47,8 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
 
 /**
  * One row of the meetings home list: date tile with visibility badges, project eyebrow, title and meta line.
- * @description Clicking the row opens the meeting; the project eyebrow opens the project instead.
+ * @description Clicking the row opens the meeting; the project eyebrow opens the project instead. RSVP and the row menu sit
+ * top-right; in a centre of 860px or less the row becomes a grid and past Recording / AI Summary move to a second line.
  */
 @Component({
   selector: 'lfx-meeting-home-row',
@@ -58,6 +61,7 @@ export class MeetingHomeRowComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly userService = inject(UserService);
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
   private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
 
@@ -68,14 +72,17 @@ export class MeetingHomeRowComponent {
   protected readonly projectTruncated = signal(false);
   protected readonly past: Signal<boolean> = computed(() => this.view() === 'past');
   protected readonly link: Signal<MeetingHomeRowLink> = computed(() => getMeetingHomeRowLink(this.row(), this.view()));
-  protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = computed(() => getMeetingVisibilityBadges(this.row().meeting));
+  // Public needs no badge on the tile.
+  protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = computed(() =>
+    getMeetingVisibilityBadges(this.row().meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC)
+  );
   protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => getMeetingHomeRowProject(this.row().meeting));
-  protected readonly when: Signal<string> = this.initWhen();
+  protected readonly when: Signal<string[]> = this.initWhen();
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
   protected readonly recurrenceTooltip: Signal<string | null> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence));
   protected readonly attended: Signal<boolean> = this.initAttended();
-  protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
-    [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
+  protected readonly organizer: Signal<string | null> = computed(() => getMeetingHomeRowOrganizer(this.row().meeting, this.userService.viewerUsername()));
+  protected readonly visibilityBg: Partial<Record<MeetingVisibilityKind, string>> = {
     [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
     [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
   };
@@ -121,10 +128,10 @@ export class MeetingHomeRowComponent {
     });
   }
 
-  private initWhen(): Signal<string> {
+  private initWhen(): Signal<string[]> {
     return computed(() => {
       const { startTime, durationMinutes } = this.row();
-      return [formatDate(startTime, 'EEE, MMM d', 'en-US'), formatMeetingTimeRange(startTime, durationMinutes), `${durationMinutes} min`].join(' · ');
+      return [formatDate(startTime, 'EEE, MMM d', 'en-US'), formatMeetingTimeRange(startTime, durationMinutes), `${durationMinutes} min`];
     });
   }
 }
