@@ -21,13 +21,10 @@ export type OrgTraineesEmptyState = 'filters' | 'people-list-search' | 'people-l
 
 /** One detail row from `PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING` for a people-list member — finest grain the BFF returns; client groups by `(personKey, courseId)` for the expanded row. */
 export interface OrgTraineeDetailRow {
-  /**
-   * Warehouse key of the people-list member on the matching trainee row. A people-list row whose person has no
-   * current-employee row (a former employee) carries an opaque per-response key instead: counted in the cards, not listed.
-   */
+  /** Warehouse key of the people-list member on the matching trainee row. */
   personKey: string;
   status: OrgTraineeStatus;
-  /** Enrollment or certificate id; '' under an opaque key. */
+  /** Enrollment or certificate id. */
   courseOrCertId: string;
   courseId: string;
   courseName: string;
@@ -77,9 +74,9 @@ export interface OrgTraineesResponse {
   /** People-list members with a training row in the range. */
   trainees: OrgTraineeRow[];
   /**
-   * Training rows in the range behind the cards: the people-list members in `trainees` under their warehouse key, plus
-   * people-list rows of a person with no current-employee row (an unlisted former employee) under an opaque key. None
-   * for learners outside the people list.
+   * Training rows in the range of the people-list members in `trainees`, under their warehouse key. None for a person
+   * with no current-employee row (an unlisted former employee) or for learners outside the people list; the cards come
+   * from the stats call.
    */
   details: OrgTraineeDetailRow[];
   /**
@@ -93,14 +90,29 @@ export interface OrgTraineesResponse {
 
 // Client-only view types (NOT on the wire).
 
-/** One person-course pair of the Trainees details in the selected range (the grain the stat cards count). */
+/**
+ * One person-course pair of the Trainees details in the selected range (the grain the stat cards count), with the
+ * attributes resolved from ALL of the pair's in-range rows before any filter applies — the twin of the BFF's pair rule.
+ */
 export interface OrgTraineePair {
   personKey: string;
   courseId: string;
   /** Certified when any of the pair's rows in the range is a certificate. */
   status: OrgTraineeStatus;
-  /** Product type of the course; `Certification` or `Training`. */
+  /** Greatest product type across the pair's rows; `Certification` or `Training`. */
   productType: string | null;
+  /** Greatest course name across the pair's rows. */
+  courseName: string;
+  /** Greatest course level across the pair's rows; null when no row has one. */
+  courseLevel: string | null;
+  /** Format of the pair's latest row that has one (by activity timestamp); null when no row has one. */
+  courseFormat: string | null;
+  /** Greatest foundation id across the pair's rows, and the name carried by that same row. */
+  foundationId: string | null;
+  foundationName: string | null;
+  /** Greatest project id across the pair's rows, and the name carried by that same row. */
+  projectId: string | null;
+  projectName: string | null;
 }
 
 /** Counts over a set of pairs; courses taken = certifications + trainings completed + in progress. */

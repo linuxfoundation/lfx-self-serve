@@ -615,33 +615,26 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
     ]);
   });
 
-  it('keeps a former employee behind people-list rows under its own opaque key, apart from every learner', async () => {
+  it('ships course rows of listed people only: a former employee behind people-list rows has no wire row', async () => {
     const response = await service.getTrainees(ACCOUNT, 'all');
 
-    const formerKeys = [...new Set(response.details.map((row) => row.personKey))].filter((key) => key !== 'person-listed');
-    expect(formerKeys).toEqual(['outside:3']);
-    expect(response.details.find((row) => row.personKey === 'outside:3')?.courseOrCertId).toBe('');
+    expect([...new Set(response.details.map((row) => row.personKey))]).toEqual(['person-listed']);
     expect(response.details.find((row) => row.personKey === 'person-listed')?.courseOrCertId).toBe('enrolled:course-one');
-    expect(JSON.stringify(response)).not.toContain('person-former');
+    expect(JSON.stringify(response)).not.toMatch(/person-former|enrolled:former/);
   });
 
-  it('gives an unlisted former employee row with no COURSE_ID an opaque course, never its instance id', async () => {
+  it('still reads the former employee rows server-side, so a learner sharing that key is deduplicated', async () => {
     const honest = execute.getMockImplementation()!;
-    execute.mockImplementation(async (query: string, binds: unknown[]) => {
-      const result = await honest(query, binds);
-      if (!query.includes('COURSE_OR_CERT_ID')) return result;
-      return {
-        rows: (result.rows as ReturnType<typeof trainingRow>[]).map((row) =>
-          row.PERSON_KEY === 'person-former' ? { ...row, COURSE_ID: null, COURSE_NAME: null, PROJECT_ID: 'project-former', PROJECT_NAME: 'Former Only' } : row
-        ),
-      };
-    });
+    execute.mockImplementation(async (query: string, binds: unknown[]) =>
+      query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')
+        ? { rows: [{ PERSON_KEY: 'person-former', LEARNER_NAME: 'Former Learner', IS_CERTIFIED: false }] }
+        : honest(query, binds)
+    );
 
     const response = await service.getTrainees(ACCOUNT, 'all');
 
-    const former = response.details.find((row) => row.personKey === 'outside:3')!;
-    expect(former).toMatchObject({ courseId: 'course-unavailable:1', courseName: 'Course not available', courseOrCertId: '' });
-    expect(JSON.stringify(response)).not.toContain('enrolled:former');
+    expect(response.outsideLearners).toEqual([]);
+    expect(JSON.stringify(response)).not.toMatch(/person-former|Former Learner/);
   });
 
   it('counts a learner who shares a warehouse key with people-list rows once, and never sends that key', async () => {
@@ -662,10 +655,7 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
     const response = await service.getTrainees(ACCOUNT, 'all');
 
     expect(response.outsideLearners).toEqual([{ personKey: 'outside:1', name: 'Zoe Outside', status: 'Enrolled' }]);
-    // The people card's set: distinct detail keys plus the outside learners — the listed member, the former employee
-    // and Zoe, each once.
-    const people = new Set([...response.details.map((row) => row.personKey), ...response.outsideLearners.map((row) => row.personKey)]);
-    expect(people.size).toBe(3);
+    expect(response.details.map((row) => row.personKey)).toEqual(['person-listed']);
     expect(JSON.stringify(response)).not.toMatch(/person-former|Former Learner|Listed Learner/);
     // Nor cached: the stored entry holds no learner's warehouse key and no dropped learner's name.
     const stored = [...cacheValues.values()].join('\n');

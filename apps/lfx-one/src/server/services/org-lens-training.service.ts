@@ -9,6 +9,7 @@ import {
   DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER,
   MAX_ORG_CERT_EMPLOYEES,
   ORG_TRAINING_GROUP_NONE_LABELS,
+  ORG_TRAINING_VIEW_QUERY_PARAMS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -16,6 +17,7 @@ import type {
   OrgDropdownOption,
   OrgLensTimeRange,
   OrgTrainingFilterOptions,
+  OrgTrainingFilters,
   OrgTrainingGroupEmployeesParams,
   OrgTrainingGroupEmployeesResponse,
   OrgTrainingGroupRow,
@@ -24,10 +26,12 @@ import type {
   OrgTrainingStats,
   OrgTrainingStatsQuery,
 } from '@lfx-one/shared/interfaces';
-import { hasOrgTrainingCourseFilter, orgTrainingCompletionRatePct, orgTrainingFiltersSignature } from '@lfx-one/shared/utils';
+import { hasOrgTrainingCourseFilter, isOrgLensTimeRange, orgTrainingCompletionRatePct, orgTrainingFiltersSignature } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
+import { ServiceValidationError } from '../errors';
 import { toIsoTimestamp } from '../helpers/date-format.helper';
+import type { OrgLensReadQualification } from '../helpers/org-lens-read-access.helper';
 import {
   buildOrgTrainingPairsCte,
   ORG_TRAINING_GROUP_SQL,
@@ -106,27 +110,47 @@ interface OrgTrainingGroupCountRow {
   GROUP_LABEL: string | null;
 }
 
-/** Learner numbers of the shared Training / Trainees view: one pairs definition (see org-training-pairs.sql) behind stats, options, groups and drawers. */
+/** Request filter → the filter-options list that must carry its value. */
+const FILTER_OPTION_KEYS = [
+  { filter: 'foundation', options: 'foundations' },
+  { filter: 'project', options: 'projects' },
+  { filter: 'course', options: 'courses' },
+  { filter: 'level', options: 'levels' },
+  { filter: 'format', options: 'formats' },
+] as const satisfies readonly { filter: keyof OrgTrainingFilters; options: keyof OrgTrainingFilterOptions }[];
+
+/**
+ * Learner numbers of the shared Training / Trainees view: one pairs definition (see org-training-pairs.sql) behind stats, options, groups and drawers.
+ *
+ * Caching follows the Groups page (`OrgLensGroupsService.getGroups`): the shared Valkey entries are served only to a
+ * caller whose access resolved as `org-grant` on this org. A caller the roster does not list and the authorizer admitted
+ * (`auditor-entitlement`) is resolved directly and nothing is read from or stored in the shared cache, so upstream stays
+ * the deciding authority for that request.
+ *
+ * Request filter values are validated against the all-time filter options before any cache key or SQL is built (a 400 for
+ * an unknown value), which keeps the key space bounded by the org's own attribute values.
+ */
 export class OrgLensTrainingService {
   private readonly snowflakeService = SnowflakeService.getInstance();
 
   /** The one stats function: both pages and the Overview tile call it, so equal queries always give equal numbers. */
-  public async getTrainingStats(accountId: string, query: OrgTrainingStatsQuery): Promise<OrgTrainingStats> {
-    return withOrgCache(
+  public async getTrainingStats(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<OrgTrainingStats> {
+    await this.assertKnownFilters(accountId, query, qualification);
+    return this.cached(
+      qualification,
       accountId,
       `training-stats:v5:${orgTrainingFiltersSignature(query)}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTrainingStats(accountId, query),
       isTrainingStats
     );
   }
 
   /** Dropdown options: the people-list pairs in range, unfiltered. */
-  public async getFilterOptions(accountId: string, range: OrgLensTimeRange): Promise<OrgTrainingFilterOptions> {
-    return withOrgCache(
+  public async getFilterOptions(accountId: string, range: OrgLensTimeRange, qualification: OrgLensReadQualification): Promise<OrgTrainingFilterOptions> {
+    return this.cached(
+      qualification,
       accountId,
       `training-filter-options:v1:${range}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const { cte, binds } = buildOrgTrainingPairsCte(accountId, { range, foundation: null, project: null, course: null, level: null, format: null });
         const sql = `
@@ -142,7 +166,13 @@ export class OrgLensTrainingService {
   }
 
   /** Group-by table page of one tab. The full group set is cached; search, sort and paging run in memory. */
-  public async getGroups(req: Request, accountId: string, query: OrgTrainingStatsQuery, params: OrgTrainingGroupsParams): Promise<OrgTrainingGroupsResponse> {
+  public async getGroups(
+    req: Request,
+    accountId: string,
+    query: OrgTrainingStatsQuery,
+    params: OrgTrainingGroupsParams,
+    qualification: OrgLensReadQualification
+  ): Promise<OrgTrainingGroupsResponse> {
     const { groupBy, tab, searchQuery } = params;
     const sortField = params.sortField ?? DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD;
     const sortOrder = params.sortOrder ?? DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER;
@@ -160,13 +190,8 @@ export class OrgLensTrainingService {
       offset,
     });
 
-    const raw = await withOrgCache(
-      accountId,
-      `training-groups:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${tab}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchGroups(accountId, query, groupBy, tab),
-      isGroupsRaw
-    );
+    await this.assertKnownFilters(accountId, query, qualification);
+    const raw = await this.getGroupsRaw(accountId, query, groupBy, tab, qualification);
 
     const needle = searchQuery?.trim().toLowerCase();
     const matching = needle ? raw.rows.filter((row) => row.label.toLowerCase().includes(needle)) : [...raw.rows];
@@ -184,7 +209,8 @@ export class OrgLensTrainingService {
     req: Request,
     accountId: string,
     query: OrgTrainingStatsQuery,
-    params: OrgTrainingGroupEmployeesParams
+    params: OrgTrainingGroupEmployeesParams,
+    qualification: OrgLensReadQualification
   ): Promise<OrgTrainingGroupEmployeesResponse> {
     const { groupBy, groupValue, tab, status } = params;
 
@@ -195,15 +221,68 @@ export class OrgLensTrainingService {
       status,
     });
 
-    const raw = await withOrgCache(
+    // The cell must be a group of this table: an unknown value never reaches a cache key or SQL.
+    await this.assertKnownFilters(accountId, query, qualification);
+    const groups = await this.getGroupsRaw(accountId, query, groupBy, tab, qualification);
+    if (!groups.rows.some((row) => row.key === groupValue)) {
+      throw ServiceValidationError.forField('groupValue', 'groupValue is not a group of this table', { operation: 'get_org_training_group_employees' });
+    }
+
+    const raw = await this.cached(
+      qualification,
       accountId,
       `training-group-employees:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${orgTrainingParamSignature([groupValue])}:${tab}:${status}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchGroupEmployees(accountId, query, params),
       isGroupEmployeesRaw
     );
 
     return { groupBy, groupValue, label: raw.label || ORG_TRAINING_GROUP_NONE_LABELS[groupBy], tab, status, total: raw.total, data: raw.data };
+  }
+
+  /** Shared Valkey entry for an `org-grant` caller; any other caller resolves directly and stores nothing. */
+  private cached<T>(
+    qualification: OrgLensReadQualification,
+    accountId: string,
+    subResource: string,
+    fetcher: () => Promise<T>,
+    accept: (value: unknown) => boolean
+  ): Promise<T> {
+    return qualification === 'org-grant' ? withOrgCache(accountId, subResource, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, accept) : fetcher();
+  }
+
+  private getGroupsRaw(
+    accountId: string,
+    query: OrgTrainingStatsQuery,
+    groupBy: OrgTrainingGroupsParams['groupBy'],
+    tab: OrgTrainingGroupsParams['tab'],
+    qualification: OrgLensReadQualification
+  ): Promise<OrgTrainingGroupsRaw> {
+    return this.cached(
+      qualification,
+      accountId,
+      `training-groups:v1:${orgTrainingFiltersSignature(query)}:${groupBy}:${tab}`,
+      () => this.fetchGroups(accountId, query, groupBy, tab),
+      isGroupsRaw
+    );
+  }
+
+  /**
+   * 400 for a filter value the org's pairs never carry, so no unknown string reaches a cache key or SQL. Checked against
+   * the all-time options (a superset of every range's), not the request's range: a value valid for the org but with no
+   * rows in the selected range (the filter bar keeps it selected across a range change) is served as zero data.
+   */
+  private async assertKnownFilters(accountId: string, query: OrgTrainingStatsQuery, qualification: OrgLensReadQualification): Promise<void> {
+    const requested = FILTER_OPTION_KEYS.filter(({ filter }) => query[filter] !== null);
+    if (requested.length === 0) return;
+
+    const options = await this.getFilterOptions(accountId, 'all', qualification);
+    for (const { filter, options: optionsKey } of requested) {
+      if (!options[optionsKey].some((option) => option.value === query[filter])) {
+        throw ServiceValidationError.forField(ORG_TRAINING_VIEW_QUERY_PARAMS[filter], `${filter} is not an option of this organization's training view`, {
+          operation: 'validate_org_training_filters',
+        });
+      }
+    }
   }
 
   private async fetchTrainingStats(accountId: string, query: OrgTrainingStatsQuery): Promise<OrgTrainingStats> {
@@ -379,7 +458,11 @@ export class OrgLensTrainingService {
       FROM f
       WHERE ${where}
     `;
-    // ORG_PEOPLE_ALL is unique per (account, person): current employees only; one row per person however many pairs.
+    // Identity from the all-time, all-projects ORG_PEOPLE_ALL_RANGES row of each current employee (IS_FORMER = FALSE), the
+    // read People › Trainees uses, so the roster matches the pair count for any range. ORG_PEOPLE_ALL would drop members
+    // whose only training is older than its 12-month engagement gate or reaches them through a merged learner. That row is
+    // unique per (account, person); one row per person however many pairs. No other training query joins ORG_PEOPLE_ALL:
+    // stats, options and groups read ORG_PEOPLE_TRAINING alone.
     const namesSql = `
       WITH ${cte}
       SELECT
@@ -387,8 +470,12 @@ export class OrgLensTrainingService {
         p.NAME       AS NAME,
         p.TITLE      AS JOB_TITLE
       FROM f
-      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
-        ON p.ACCOUNT_ID = ? AND p.PERSON_KEY = f.PERSON_KEY
+      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES p
+        ON p.ACCOUNT_ID = ?
+        AND p.TIME_RANGE = 'all'
+        AND p.PROJECT_SCOPE = 'all'
+        AND p.IS_FORMER = FALSE
+        AND p.PERSON_KEY = f.PERSON_KEY
       WHERE ${where}
       GROUP BY p.PERSON_KEY, p.NAME, p.TITLE
       ORDER BY p.NAME ASC NULLS LAST
@@ -433,9 +520,29 @@ function buildFilterOptions(rows: readonly OrgTrainingOptionRow[]): OrgTrainingF
   };
 }
 
+const isNumber = (value: unknown): boolean => typeof value === 'number' && Number.isFinite(value);
+const isNullableNumber = (value: unknown): boolean => value === null || isNumber(value);
+const isNullableString = (value: unknown): boolean => value === null || typeof value === 'string';
+
+/** The full OrgTrainingStats shape: a partial or stale payload misses and is refetched instead of reaching the client. */
 function isTrainingStats(value: unknown): boolean {
-  const v = value as Partial<OrgTrainingStats> | null;
-  return !!v && typeof v === 'object' && typeof v.coursesTaken === 'number' && typeof v.coursesInProgress === 'number' && typeof v.range === 'string';
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<keyof OrgTrainingStats, unknown>;
+  return (
+    isOrgLensTimeRange(v.range) &&
+    isNullableString(v.asOf) &&
+    isNullableNumber(v.rosterMembers) &&
+    isNullableString(v.rosterMembersAsOf) &&
+    isNumber(v.peopleWithTrainingActivity) &&
+    isNumber(v.learnersOutsidePeopleList) &&
+    isNumber(v.coursesTaken) &&
+    isNumber(v.certifications) &&
+    isNumber(v.certifiedPeople) &&
+    isNumber(v.trainingsCompleted) &&
+    isNumber(v.completionRatePct) &&
+    isNumber(v.coursesInProgress) &&
+    isNumber(v.peopleInTraining)
+  );
 }
 
 function isFilterOptions(value: unknown): boolean {

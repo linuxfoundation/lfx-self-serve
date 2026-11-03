@@ -79,6 +79,16 @@ export interface OrgTrainingGroupRow {
   logoUrl: string | null;
 }
 
+/** A group-by table row with its display strings resolved once (no template functions): meta line and count-button labels. */
+export interface OrgTrainingGroupRowVm extends OrgTrainingGroupRow {
+  /** Foundation (and level, for courses) under the label; empty when the grouping has no such attributes. */
+  meta: string;
+  /** Accessible name of the completed (Certified / Completed) count button: value, status and row. */
+  completedAriaLabel: string;
+  /** Accessible name of the in-progress count button: value, status and row. */
+  inProgressAriaLabel: string;
+}
+
 /** Group-by table page for one tab; `totals` are over the whole group set (not the page) and equal the stat tiles. */
 export interface OrgTrainingGroupsResponse {
   data: OrgTrainingGroupRow[];

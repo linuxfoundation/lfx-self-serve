@@ -3,10 +3,14 @@
 
 import type { OrgTrainingGroupBy } from '../interfaces/org-training-view.interface';
 
-/** Query parameters of the shared Training / Trainees view; `range` is ORG_LENS_TIME_RANGE_QUERY_PARAM. */
+/**
+ * Query parameters of the shared Training / Trainees view; `range` is ORG_LENS_TIME_RANGE_QUERY_PARAM. The project
+ * filter is `trainingProject`: a bare `project` is the app-wide project context (ProjectContextService), which
+ * would select a project lens. The other names collide with no app-wide parameter.
+ */
 export const ORG_TRAINING_VIEW_QUERY_PARAMS = {
   foundation: 'foundation',
-  project: 'project',
+  project: 'trainingProject',
   course: 'course',
   level: 'level',
   format: 'format',

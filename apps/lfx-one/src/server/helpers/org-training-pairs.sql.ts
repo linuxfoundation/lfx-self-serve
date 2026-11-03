@@ -48,7 +48,10 @@ export function orgTrainingStatusPredicate(status: 'completed' | 'in-progress'):
 /**
  * The one definition of a person-course pair in a range: `WITH rows_in_range, pairs, f` where `f` is the pairs of the
  * org's people list left after the filters. Every Training / Trainees number reads `f`, so the same query always counts
- * the same pairs. A pair exists when it has a row in range; it is Certified when any of them is a certificate.
+ * the same pairs. A pair exists when it has a row in range; it is Certified when any of them is a certificate. The pair's
+ * attributes are resolved from ALL its in-range rows first (the highest value of each, names by the highest id, the format
+ * of the latest row that has one: a certificate row without a format never erases the enrollment's), and only then do the
+ * filters apply, so a filter never turns a certified pair into an enrolled one. `resolveOrgTraineePairs` mirrors this.
  * Binds: `[accountId, ...set filter values in foundation, project, course, level, format order]`.
  */
 export function buildOrgTrainingPairsCte(accountId: string, query: OrgTrainingStatsQuery): { cte: string; binds: string[] } {
@@ -96,7 +99,7 @@ export function buildOrgTrainingPairsCte(accountId: string, query: OrgTrainingSt
         MAX_BY(PROJECT_NAME, PROJECT_ID)        AS PROJECT_NAME,
         MAX(COURSE_NAME)                        AS COURSE_NAME,
         MAX(COURSE_LEVEL)                       AS COURSE_LEVEL,
-        MAX_BY(COURSE_FORMAT, ACTIVITY_TS)      AS COURSE_FORMAT
+        MAX_BY(COURSE_FORMAT, IFF(COURSE_FORMAT IS NOT NULL, ACTIVITY_TS, NULL)) AS COURSE_FORMAT
       FROM rows_in_range
       GROUP BY PERSON_KEY, COURSE_KEY
     ),

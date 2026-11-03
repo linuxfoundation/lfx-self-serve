@@ -8,6 +8,7 @@ import {
   DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD,
   DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER,
   DEFAULT_ORG_TRAINING_TAB_ID,
+  MAX_ORG_TRAINING_FILTER_VALUE_LENGTH,
   MAX_ORG_TRAINING_GROUPS_PAGE_SIZE,
   VALID_ORG_TRAINING_GROUPS_SORT_FIELDS,
   VALID_ORG_TRAINING_TAB_IDS,
@@ -23,6 +24,7 @@ import { orgTrainingStatsQuery, parseOrgTrainingViewState } from '@lfx-one/share
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -58,10 +60,12 @@ export class OrgLensTrainingController {
 
     try {
       assertOrgUid(orgUid, operation);
+      // Memoized per request: the route gate already ran it. The qualification decides whether the shared caches may serve this caller.
+      const qualification = await assertOrgLensRead(req, orgUid, operation);
 
       // Spec 002: orgUid is the canonical org account id (SFID); pass it straight to Snowflake.
       const query: OrgTrainingStatsQuery = orgTrainingStatsQuery(parseViewState(req));
-      const response = await this.service.getTrainingStats(orgUid, query);
+      const response = await this.service.getTrainingStats(orgUid, query, qualification);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -86,9 +90,10 @@ export class OrgLensTrainingController {
 
     try {
       assertOrgUid(orgUid, operation);
+      const qualification = await assertOrgLensRead(req, orgUid, operation);
 
       const { range } = parseViewState(req);
-      const response = await this.service.getFilterOptions(orgUid, range);
+      const response = await this.service.getFilterOptions(orgUid, range, qualification);
 
       logger.success(req, operation, startTime, { org_uid: orgUid, time_range: range, course_count: response.courses.length });
 
@@ -107,6 +112,7 @@ export class OrgLensTrainingController {
 
     try {
       assertOrgUid(orgUid, operation);
+      const qualification = await assertOrgLensRead(req, orgUid, operation);
 
       const state = parseViewState(req);
       const tab = parseTab(req, operation);
@@ -121,15 +127,21 @@ export class OrgLensTrainingController {
       const rawSortOrder = String(req.query['sortOrder'] ?? DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER).toUpperCase();
       const sortOrder = rawSortOrder === 'ASC' ? 'ASC' : 'DESC';
 
-      const response = await this.service.getGroups(req, orgUid, orgTrainingStatsQuery(state), {
-        groupBy: state.groupBy,
-        tab,
-        searchQuery: getStringQueryParam(req, 'search'),
-        sortField,
-        sortOrder,
-        pageSize,
-        offset,
-      });
+      const response = await this.service.getGroups(
+        req,
+        orgUid,
+        orgTrainingStatsQuery(state),
+        {
+          groupBy: state.groupBy,
+          tab,
+          searchQuery: getStringQueryParam(req, 'search'),
+          sortField,
+          sortOrder,
+          pageSize,
+          offset,
+        },
+        qualification
+      );
 
       logger.success(req, operation, startTime, { org_uid: orgUid, group_by: state.groupBy, tab, result_count: response.data.length, total: response.total });
 
@@ -148,6 +160,7 @@ export class OrgLensTrainingController {
 
     try {
       assertOrgUid(orgUid, operation);
+      const qualification = await assertOrgLensRead(req, orgUid, operation);
 
       const state = parseViewState(req);
       const tab = parseTab(req, operation);
@@ -164,12 +177,19 @@ export class OrgLensTrainingController {
       }
       const status: OrgTrainingGroupStatus = rawStatus;
 
-      const response = await this.service.getGroupEmployees(req, orgUid, orgTrainingStatsQuery(state), {
-        groupBy: state.groupBy,
-        groupValue: groupValue.slice(0, 200),
-        tab,
-        status,
-      });
+      // Capped here; the service then accepts only a group of the table, so no other string reaches a cache key or SQL.
+      const response = await this.service.getGroupEmployees(
+        req,
+        orgUid,
+        orgTrainingStatsQuery(state),
+        {
+          groupBy: state.groupBy,
+          groupValue: groupValue.slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH),
+          tab,
+          status,
+        },
+        qualification
+      );
 
       logger.success(req, operation, startTime, { org_uid: orgUid, group_by: state.groupBy, tab, status, total: response.total });
 

@@ -8,8 +8,6 @@ import {
   ORG_TRAINEE_OUTSIDE_KEY_PREFIX,
   ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS,
   ORG_TRAINEE_ROW_COLUMNS,
-  ORG_TRAINEE_UNAVAILABLE_COURSE_NAME,
-  ORG_TRAINEE_UNAVAILABLE_COURSE_PREFIX,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -48,7 +46,7 @@ export class OrgPeopleTraineesService {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange: range };
     }
 
-    // `people-trainees:v8:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
+    // `people-trainees:v9:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
     // so the read is windowed per range here instead of shipping every row for the client to filter. `v6` added the
     // table's build time, the project, level and format columns and the learners outside the people list (name and
     // certified flag, no detail rows), and dropped the two option reads; `v7` stops caching those learners' warehouse
@@ -72,56 +70,37 @@ export class OrgPeopleTraineesService {
       email: row.EMAIL,
     }));
 
-    // Only people-list members keep their warehouse key, which the person drawer reads. Every other key gets an opaque
-    // per-response key from one counter: each learner outside the people list, and each person behind people-list
-    // training rows who has no current-employee row (a former employee; their rows still count in the cards, as on the
-    // Training page's certification tiles). The two never share a warehouse key here: a learner whose key also has
-    // people-list rows in the range is dropped before caching (see fetchTraineesRaw), so the people card counts each
-    // warehouse person once and no course row on the wire is ever tied to an outside learner's name.
+    // Only people-list members keep their warehouse key, which the person drawer reads, and only their course rows are
+    // sent: the cards come from /stats, so the rows of a person behind people-list training rows who has no
+    // current-employee row (a former employee) have no reader and never leave the BFF. Each learner outside the people
+    // list gets an opaque per-response key from one counter. A learner whose warehouse key also has people-list rows in
+    // the range is dropped before caching (see fetchTraineesRaw), so no course row on the wire is ever tied to an
+    // outside learner's name. The raw detail rows stay server-side for that de-duplication.
     const listedKeys = new Set(trainees.map((row) => row.personKey));
     let opaqueCount = 0;
-    const nextOpaqueKey = (): string => `${ORG_TRAINEE_OUTSIDE_KEY_PREFIX}${++opaqueCount}`;
-    const formerKeys = new Map<string, string>();
-    const detailKey = (personKey: string): string => {
-      if (listedKeys.has(personKey)) return personKey;
-      let opaque = formerKeys.get(personKey);
-      if (!opaque) {
-        opaque = nextOpaqueKey();
-        formerKeys.set(personKey, opaque);
-      }
-      return opaque;
-    };
 
     // Name and one overall status only (lfx-self-serve#4287): no warehouse key, ids, course, project, foundation, level,
     // format or date leaves the BFF for these learners.
     const outsideLearners: OrgTraineeOutsideLearner[] = outsideLearnerRows.map((row) => ({
-      personKey: nextOpaqueKey(),
+      personKey: `${ORG_TRAINEE_OUTSIDE_KEY_PREFIX}${++opaqueCount}`,
       name: row.LEARNER_NAME || null,
       status: row.IS_CERTIFIED === true ? 'Certified' : 'Enrolled',
     }));
 
-    // People-list rows only (the read filters on IS_ON_PEOPLE_LIST). Drop null-ACTIVITY_TS rows; coercing to '' would
+    // Listed people's rows only (the read filters on IS_ON_PEOPLE_LIST). Drop null-ACTIVITY_TS rows; coercing to '' would
     // corrupt downstream lex sorts and most-recent derivations.
-    let unavailableCourseCount = 0;
     const details: OrgTraineeDetailRow[] = detailRows.flatMap<OrgTraineeDetailRow>((row) => {
       const activityTs = countedActivityTs(row);
-      if (!activityTs) return [];
-      const listed = listedKeys.has(row.PERSON_KEY);
+      if (!activityTs || !listedKeys.has(row.PERSON_KEY)) return [];
       // COURSE_ID is 100% populated for both enrolled and certified rows (verified on a large covered organization 2026-06-01).
-      // A listed row falls back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on
-      // '' / undefined. An unlisted (former-employee) row fails closed: its enrollment / certificate id is a per-person
-      // identifier, so a missing course gets an opaque per-response token instead. Kept rather than dropped, so the cards
-      // count the row exactly as before; the token is distinct per row, as the instance id was.
-      const courseId = row.COURSE_ID ?? (listed ? row.COURSE_OR_CERT_ID : `${ORG_TRAINEE_UNAVAILABLE_COURSE_PREFIX}${++unavailableCourseCount}`);
-      const courseName = row.COURSE_NAME ?? row.COURSE_ID ?? (listed ? row.COURSE_OR_CERT_ID : ORG_TRAINEE_UNAVAILABLE_COURSE_NAME);
+      // Fall back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on '' / undefined.
       return [
         {
-          personKey: detailKey(row.PERSON_KEY),
+          personKey: row.PERSON_KEY,
           status: row.STATUS === 'Certified' ? 'Certified' : 'Enrolled',
-          // Blank without a current-employee row: the enrollment / certificate id is a per-person identifier, and no client reads it.
-          courseOrCertId: listed ? row.COURSE_OR_CERT_ID : '',
-          courseId,
-          courseName,
+          courseOrCertId: row.COURSE_OR_CERT_ID,
+          courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
+          courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
           foundationId: row.FOUNDATION_ID,
           foundationName: row.FOUNDATION_NAME,
           projectId: row.PROJECT_ID,

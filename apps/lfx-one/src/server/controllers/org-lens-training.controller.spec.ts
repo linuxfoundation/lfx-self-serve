@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/shared/constants';
+import { MAX_ORG_TRAINING_FILTER_VALUE_LENGTH, MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/shared/constants';
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getTrainingStats, getFilterOptions, getGroups, getGroupEmployees, logger } = vi.hoisted(() => ({
+const { assertOrgLensRead, getTrainingStats, getFilterOptions, getGroups, getGroupEmployees, logger } = vi.hoisted(() => ({
+  assertOrgLensRead: vi.fn(),
   getTrainingStats: vi.fn(),
   getFilterOptions: vi.fn(),
   getGroups: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('../services/org-lens-training.service', () => ({
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
+vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead }));
 
 import { OrgLensTrainingController } from './org-lens-training.controller';
 
@@ -45,6 +47,7 @@ describe('OrgLensTrainingController', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    assertOrgLensRead.mockResolvedValue('org-grant');
     getTrainingStats.mockResolvedValue({ rosterMembers: null, peopleWithTrainingActivity: 0, coursesTaken: 0 });
     getFilterOptions.mockResolvedValue({ courses: [] });
     getGroups.mockResolvedValue({ data: [], total: 0, totals: {} });
@@ -57,7 +60,35 @@ describe('OrgLensTrainingController', () => {
     await controller.getTrainingStats(buildReq({ range: 'bogus', foundation: ' f-1 ', course: '', level: 'Beginner' }), buildRes(), next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(getTrainingStats).toHaveBeenCalledWith(ORG_UID, { range: '730d', foundation: 'f-1', project: null, course: null, level: 'Beginner', format: null });
+    expect(getTrainingStats).toHaveBeenCalledWith(
+      ORG_UID,
+      { range: '730d', foundation: 'f-1', project: null, course: null, level: 'Beginner', format: null },
+      'org-grant'
+    );
+  });
+
+  it('forwards how the caller qualified, so the service can keep an entitlement-only caller off the shared caches', async () => {
+    assertOrgLensRead.mockResolvedValue('auditor-entitlement');
+
+    await controller.getTrainingStats(buildReq({}), buildRes(), vi.fn());
+    await controller.getFilterOptions(buildReq({}), buildRes(), vi.fn());
+    await controller.getGroups(buildReq({}), buildRes(), vi.fn());
+    await controller.getGroupEmployees(buildReq({ groupValue: 'x', status: 'completed' }), buildRes(), vi.fn());
+
+    expect(getTrainingStats.mock.calls[0][2]).toBe('auditor-entitlement');
+    expect(getFilterOptions.mock.calls[0][2]).toBe('auditor-entitlement');
+    expect(getGroups.mock.calls[0][4]).toBe('auditor-entitlement');
+    expect(getGroupEmployees.mock.calls[0][4]).toBe('auditor-entitlement');
+  });
+
+  it('stops before the service when the read gate denies', async () => {
+    assertOrgLensRead.mockRejectedValue(new Error('denied'));
+    const next = vi.fn();
+
+    await controller.getTrainingStats(buildReq({}), buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(getTrainingStats).not.toHaveBeenCalled();
   });
 
   it('stats: forwards an allow-listed range', async () => {
@@ -78,7 +109,7 @@ describe('OrgLensTrainingController', () => {
   it('filter-options: passes only the range', async () => {
     await controller.getFilterOptions(buildReq({ range: '90d', course: 'ignored' }), buildRes(), vi.fn());
 
-    expect(getFilterOptions).toHaveBeenCalledWith(ORG_UID, '90d');
+    expect(getFilterOptions).toHaveBeenCalledWith(ORG_UID, '90d', 'org-grant');
   });
 
   describe('groups', () => {
@@ -130,6 +161,16 @@ describe('OrgLensTrainingController', () => {
       expect(next).not.toHaveBeenCalled();
       expect(getGroupEmployees.mock.calls[0][3]).toEqual({ groupBy: 'format', groupValue: '', tab: 'trainings', status: 'in-progress' });
       expect(getGroupEmployees.mock.calls[0][2]).toMatchObject({ level: 'Beginner' });
+    });
+
+    it('caps groupValue at the shared filter-value length', async () => {
+      await controller.getGroupEmployees(
+        buildReq({ groupValue: 'x'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH + 50), status: 'completed' }),
+        buildRes(),
+        vi.fn()
+      );
+
+      expect(getGroupEmployees.mock.calls[0][3].groupValue).toHaveLength(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH);
     });
 
     it.each([

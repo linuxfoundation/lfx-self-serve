@@ -187,7 +187,7 @@ function buildOrgsRouter(): Router {
   router.put('/:orgUid/lens/access/users/:email', (req, res, next) => orgLensAccessController.changeRole(req, res, next));
   router.delete('/:orgUid/lens/access/users/:email', (req, res, next) => orgLensAccessController.removeUser(req, res, next));
 
-  // Shared Training / Trainees view: one stats call, one options call, one group-by table + drawer..
+  // Shared Training / Trainees view: one stats call, one options call, one group-by table + drawer.
   router.get('/:orgUid/lens/training/stats', (req, res, next) => orgLensTrainingController.getTrainingStats(req, res, next));
   router.get('/:orgUid/lens/training/filter-options', (req, res, next) => orgLensTrainingController.getFilterOptions(req, res, next));
   router.get('/:orgUid/lens/training/groups/employees', (req, res, next) => orgLensTrainingController.getGroupEmployees(req, res, next));

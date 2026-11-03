@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgLensTimeRange, OrgTrainingStatsQuery } from '@lfx-one/shared/interfaces';
+import type { OrgLensTimeRange, OrgTrainingStats, OrgTrainingStatsQuery } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execute, withOrgCache } = vi.hoisted(() => ({
@@ -31,11 +31,33 @@ interface StatsRows {
   outside?: Record<string, unknown>[];
   asOf?: Record<string, unknown>[];
   roster?: Record<string, unknown>[];
+  options?: Record<string, unknown>[];
 }
+
+const HOSTILE = "x' OR 1=1 --";
+const option = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+  FOUNDATION_ID: null,
+  FOUNDATION_NAME: null,
+  PROJECT_ID: null,
+  PROJECT_NAME: null,
+  COURSE_NAME: null,
+  COURSE_LEVEL: null,
+  COURSE_FORMAT: null,
+  ...overrides,
+});
+/** The range's filter options: every value the specs below filter by. */
+const KNOWN_OPTIONS = [
+  option({ FOUNDATION_ID: 'f-1', FOUNDATION_NAME: 'Foundation One', PROJECT_ID: 'p-1', PROJECT_NAME: 'Project One', COURSE_NAME: HOSTILE }),
+  option({ COURSE_NAME: 'A', COURSE_LEVEL: 'Beginner', COURSE_FORMAT: 'E-Learning' }),
+  option({ COURSE_NAME: 'B' }),
+  option({ COURSE_FORMAT: 'A' }),
+  option({ COURSE_NAME: 'Course A' }),
+];
 
 /** Answers each stats statement by the relation it reads, like Snowflake would for one account. */
 function mockStatsRows(rows: StatsRows): void {
   execute.mockImplementation(async (sql: string) => {
+    if (sql.includes('SELECT DISTINCT FOUNDATION_ID')) return { rows: rows.options ?? KNOWN_OPTIONS };
     if (sql.includes('ORG_TRAINING_ROSTER_MEMBERS')) return { rows: rows.roster ?? [] };
     if (sql.includes('AS AS_OF')) return { rows: rows.asOf ?? [] };
     if (sql.includes('NOT IS_ON_PEOPLE_LIST')) return { rows: rows.outside ?? [] };
@@ -44,7 +66,7 @@ function mockStatsRows(rows: StatsRows): void {
 }
 
 function pairsCall(): [string, string[]] {
-  const call = execute.mock.calls.find(([sql]) => (sql as string).includes('rows_in_range AS'));
+  const call = execute.mock.calls.find(([sql]) => (sql as string).includes('rows_in_range AS') && !(sql as string).includes('SELECT DISTINCT FOUNDATION_ID'));
   if (!call) throw new Error('no pairs statement');
   return call as [string, string[]];
 }
@@ -80,7 +102,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
       roster: [{ ROSTER_MEMBERS: 40, AS_OF_TS: new Date('2026-10-29T23:00:00.000Z') }],
     });
 
-    const stats = await service.getTrainingStats(ACCOUNT, QUERY);
+    const stats = await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
 
     expect(stats).toEqual({
       range: '730d',
@@ -103,7 +125,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
   it('splits certified pairs by product type and counts in progress as enrolled pairs without a certificate in range', async () => {
     mockStatsRows({});
 
-    await service.getTrainingStats(ACCOUNT, QUERY);
+    await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
 
     const [sql] = pairsCall();
     expect(sql).toMatch(/COUNT_IF\(IS_CERTIFIED AND PRODUCT_TYPE = 'Certification'\)\s+AS CERTIFICATIONS/);
@@ -122,7 +144,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
   ] as const)('windows ACTIVITY_TS to the last %s', async (range, days) => {
     mockStatsRows({});
 
-    await service.getTrainingStats(ACCOUNT, { ...QUERY, range });
+    await service.getTrainingStats(ACCOUNT, { ...QUERY, range }, 'org-grant');
 
     expect(pairsCall()[0]).toContain(`AND ACTIVITY_TS >= DATEADD(day, -${days}, CURRENT_DATE())`);
   });
@@ -130,16 +152,20 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
   it('applies no date predicate for all time', async () => {
     mockStatsRows({});
 
-    await service.getTrainingStats(ACCOUNT, { ...QUERY, range: 'all' });
+    await service.getTrainingStats(ACCOUNT, { ...QUERY, range: 'all' }, 'org-grant');
 
     expect(pairsCall()[0]).not.toContain('DATEADD');
   });
 
   it('binds every filter as a param, never inlined, in a fixed order', async () => {
     mockStatsRows({});
-    const hostile = "x' OR 1=1 --";
+    const hostile = HOSTILE;
 
-    await service.getTrainingStats(ACCOUNT, { range: '90d', foundation: 'f-1', project: 'p-1', course: hostile, level: 'Beginner', format: 'E-Learning' });
+    await service.getTrainingStats(
+      ACCOUNT,
+      { range: '90d', foundation: 'f-1', project: 'p-1', course: hostile, level: 'Beginner', format: 'E-Learning' },
+      'org-grant'
+    );
 
     const [sql, binds] = pairsCall();
     expect(binds).toEqual([ACCOUNT, 'f-1', 'p-1', hostile, 'Beginner', 'E-Learning']);
@@ -154,14 +180,14 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
   it('counts learners outside the people list only when no filter is set', async () => {
     mockStatsRows({ pairs: [PAIR_ROW], outside: [{ PEOPLE: 3 }] });
 
-    const unfiltered = await service.getTrainingStats(ACCOUNT, QUERY);
+    const unfiltered = await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
     expect(unfiltered.learnersOutsidePeopleList).toBe(3);
     expect(unfiltered.peopleWithTrainingActivity).toBe(13);
     expect(outsideCalls()).toBe(1);
 
     execute.mockClear();
     mockStatsRows({ pairs: [PAIR_ROW], outside: [{ PEOPLE: 3 }] });
-    const filtered = await service.getTrainingStats(ACCOUNT, { ...QUERY, level: 'Beginner' });
+    const filtered = await service.getTrainingStats(ACCOUNT, { ...QUERY, level: 'Beginner' }, 'org-grant');
     expect(filtered.learnersOutsidePeopleList).toBe(0);
     expect(filtered.peopleWithTrainingActivity).toBe(10);
     expect(outsideCalls()).toBe(0);
@@ -170,7 +196,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
   it('reads the outside learners without people-list rows of the same key, in the same range', async () => {
     mockStatsRows({});
 
-    await service.getTrainingStats(ACCOUNT, { ...QUERY, range: '90d' });
+    await service.getTrainingStats(ACCOUNT, { ...QUERY, range: '90d' }, 'org-grant');
 
     const sql = execute.mock.calls.map(([statement]) => statement as string).find((statement) => statement.includes('NOT IS_ON_PEOPLE_LIST'))!;
     expect(sql).toContain('PERSON_KEY NOT IN (');
@@ -179,12 +205,12 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
 
   it('reports no roster (null, not zero) without a training client row, and a roster of zero as zero', async () => {
     mockStatsRows({ pairs: [PAIR_ROW], roster: [] });
-    const none = await service.getTrainingStats(ACCOUNT, QUERY);
+    const none = await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
     expect(none.rosterMembers).toBeNull();
     expect(none.rosterMembersAsOf).toBeNull();
 
     mockStatsRows({ roster: [{ ROSTER_MEMBERS: 0, AS_OF_TS: '2026-10-29 23:00:00.000' }] });
-    const zero = await service.getTrainingStats(ACCOUNT, QUERY);
+    const zero = await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
     expect(zero.rosterMembers).toBe(0);
     expect(zero.rosterMembersAsOf).toBe('2026-10-29T23:00:00.000Z');
   });
@@ -192,7 +218,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
   it('returns zeros and no as-of time for an org without training rows', async () => {
     mockStatsRows({});
 
-    const stats = await service.getTrainingStats(ACCOUNT, QUERY);
+    const stats = await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
 
     expect(stats).toMatchObject({ asOf: null, peopleWithTrainingActivity: 0, coursesTaken: 0, completionRatePct: 0, coursesInProgress: 0 });
   });
@@ -200,7 +226,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
   it('scopes every statement to the account', async () => {
     mockStatsRows({});
 
-    await service.getTrainingStats(ACCOUNT, QUERY);
+    await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
 
     for (const [sql, binds] of execute.mock.calls as [string, string[]][]) {
       expect(sql).toContain('ACCOUNT_ID = ?');
@@ -212,8 +238,8 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
     mockStatsRows({});
     const keyOf = async (query: OrgTrainingStatsQuery): Promise<string> => {
       withOrgCache.mockClear();
-      await service.getTrainingStats(ACCOUNT, query);
-      return withOrgCache.mock.calls[0][1] as string;
+      await service.getTrainingStats(ACCOUNT, query, 'org-grant');
+      return withOrgCache.mock.calls.find(([, key]) => (key as string).startsWith('training-stats:'))![1] as string;
     };
 
     const base = await keyOf(QUERY);
@@ -228,9 +254,58 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
     expect(base).toBe(`training-stats:v5:${orgTrainingFiltersSignature(QUERY)}`);
     expect(keys.size).toBe(5);
     expect(base).toMatch(/^training-stats:v5:[A-Za-z0-9_-]+$/);
-    const accept = withOrgCache.mock.calls[0][4] as (value: unknown) => boolean;
-    expect(accept({ certRows: [], trainingRows: [], activityRows: [], rosterRows: [] })).toBe(false);
-    expect(accept({ range: '730d', coursesTaken: 0, coursesInProgress: 0 })).toBe(true);
+  });
+
+  describe('cache guard', () => {
+    const FULL: OrgTrainingStats = {
+      range: '730d',
+      asOf: null,
+      rosterMembers: null,
+      rosterMembersAsOf: null,
+      peopleWithTrainingActivity: 1,
+      learnersOutsidePeopleList: 0,
+      coursesTaken: 2,
+      certifications: 1,
+      certifiedPeople: 1,
+      trainingsCompleted: 0,
+      completionRatePct: 50,
+      coursesInProgress: 1,
+      peopleInTraining: 1,
+    };
+    const acceptOf = async (): Promise<(value: unknown) => boolean> => {
+      mockStatsRows({});
+      await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
+      return withOrgCache.mock.calls.find(([, key]) => (key as string).startsWith('training-stats:'))![4] as (value: unknown) => boolean;
+    };
+
+    it('serves a hit of the full shape, with nullable roster and as-of fields', async () => {
+      const accept = await acceptOf();
+
+      expect(accept(FULL)).toBe(true);
+      expect(accept({ ...FULL, asOf: '2026-10-30T09:48:21.094Z', rosterMembers: 40, rosterMembersAsOf: '2026-10-29T23:00:00.000Z' })).toBe(true);
+    });
+
+    it('rejects an entry of the old shape and a partial payload', async () => {
+      const accept = await acceptOf();
+
+      expect(accept({ certRows: [], trainingRows: [], activityRows: [], rosterRows: [] })).toBe(false);
+      expect(accept({ range: '730d', coursesTaken: 0, coursesInProgress: 0 })).toBe(false);
+      expect(accept(null)).toBe(false);
+      for (const key of Object.keys(FULL)) {
+        const partial: Partial<OrgTrainingStats> = { ...FULL };
+        delete partial[key as keyof OrgTrainingStats];
+        expect(accept(partial), `without ${key}`).toBe(false);
+      }
+    });
+
+    it('rejects a wrongly typed field', async () => {
+      const accept = await acceptOf();
+
+      expect(accept({ ...FULL, certifications: '5' })).toBe(false);
+      expect(accept({ ...FULL, rosterMembers: undefined })).toBe(false);
+      expect(accept({ ...FULL, range: '12d' })).toBe(false);
+      expect(accept({ ...FULL, asOf: 12 })).toBe(false);
+    });
   });
 });
 
@@ -240,10 +315,10 @@ describe('OrgLensTrainingService — Training and Trainees read the same numbers
     const query: OrgTrainingStatsQuery = { range: '365d', foundation: 'f-1', project: null, course: 'Course A', level: null, format: 'E-Learning' };
 
     // Training page and People › Trainees both call getTrainingStats with the query their URL parses to.
-    const training = await service.getTrainingStats(ACCOUNT, { ...query });
+    const training = await service.getTrainingStats(ACCOUNT, { ...query }, 'org-grant');
     const trainingCalls = execute.mock.calls.map((call) => [...call]);
     execute.mockClear();
-    const trainees = await new OrgLensTrainingService().getTrainingStats(ACCOUNT, { ...query });
+    const trainees = await new OrgLensTrainingService().getTrainingStats(ACCOUNT, { ...query }, 'org-grant');
 
     expect(trainees).toEqual(training);
     expect(execute.mock.calls).toEqual(trainingCalls);
