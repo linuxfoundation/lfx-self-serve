@@ -22,6 +22,8 @@ export interface LiveSnapshotOptions<T> {
   intervalMs: number;
   backoffBaseMs: number;
   backoffMaxMs: number;
+  /** `false` keeps the un-randomised doubling (base, 2·base, 4·base … capped); see `VisibilityPollOptions.jitter`. */
+  jitter?: boolean;
   /** False (the server) builds the signals but never subscribes, so nothing touches `document`. Defaults to true. */
   enabled?: boolean;
 }
@@ -47,7 +49,7 @@ export interface LiveSnapshot<T> {
  * Browser-only: with `enabled: false` (SSR) only the signals exist and nothing subscribes or touches `document`.
  */
 export function createLiveSnapshot<T>(options: LiveSnapshotOptions<T>): LiveSnapshot<T> {
-  const { key, fetch, doc, intervalMs, backoffBaseMs, backoffMaxMs, enabled = true } = options;
+  const { key, fetch, doc, intervalMs, backoffBaseMs, backoffMaxMs, jitter, enabled = true } = options;
   const destroyRef = inject(DestroyRef);
 
   const snapshot = signal<LiveSnapshotValue<T> | null>(null);
@@ -69,7 +71,9 @@ export function createLiveSnapshot<T>(options: LiveSnapshotOptions<T>): LiveSnap
         // A null key reaches the switchMap on purpose: it cancels the previous key's poll (and any in-flight fetch) and starts none.
         switchMap(({ key: next, generation: tagged }) =>
           next
-            ? createVisibilityPoll(doc, () => fetch(next), { intervalMs, backoffBaseMs, backoffMaxMs }).pipe(map((event) => ({ event, generation: tagged })))
+            ? createVisibilityPoll(doc, () => fetch(next), { intervalMs, backoffBaseMs, backoffMaxMs, jitter }).pipe(
+                map((event) => ({ event, generation: tagged }))
+              )
             : EMPTY
         ),
         takeUntilDestroyed(destroyRef)

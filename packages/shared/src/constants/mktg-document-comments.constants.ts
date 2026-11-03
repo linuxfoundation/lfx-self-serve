@@ -87,7 +87,7 @@ export const MKTG_DOCUMENT_COMMENTS_SCHEMA = 'mktg-document-comments/v1';
 export const MKTG_DOCUMENT_COMMENT_LIMITS = { 'foundation-message': 30, 'brand-kit': 30, boilerplates: 20, faq: 30 } as const;
 export const MKTG_DOCUMENT_COMMENT_MAX_CHARS = 4000;
 export const MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES = {
-  load: 'Comments could not be loaded. Try again.',
+  load: 'Comments could not be loaded.',
   save: 'Your comment could not be saved. Keep your text and try again.',
   scope: 'Select an asset revision before adding a comment.',
   access: 'You need write access to this project to read or add comments.',

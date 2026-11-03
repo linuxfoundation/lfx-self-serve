@@ -925,6 +925,24 @@ export const MKTG_RUN_POLL = {
 } as const;
 
 /**
+ * Ceiling between two checks while a Marketing OS read keeps failing: the shared poller retries with uniform jitter in
+ * [base, min(cap, base·2^n)] (AWS "Full Jitter" offset to a floor at the reader's base interval, by the operator's
+ * ruling; cf. Google Cloud truncated exponential backoff), up to this cap, and never stops (law 3: open screens update
+ * themselves). 30 s, the low end of the 30–60 s the product owner set, so a recovered server is noticed within half a minute.
+ */
+export const MKTG_POLL_MAX_BACKOFF_MS = 30_000;
+
+/**
+ * The one plain connection-state line every Marketing OS screen shows while a check is failing; it clears by itself
+ * on the next good read and the last loaded content stays. A 401/403 is a terminal line instead, and the readers that
+ * poll on their own latch the refused scope so that neither a scheduled poll nor a tab-return, focus or reconnect wake
+ * sends it again (RFC 9110 §15.5.4): the run progress reader, the agent-run persistence watch, the comments service, the
+ * Documents list and detail and the document view's stored-report read. The Kit and Family pages keep polling at
+ * `MKTG_RUN_POLL.intervalMs`; the Kit service latches only a 403 (a 401 there is read again on the next tick).
+ */
+export const MKTG_POLL_RETRYING_TEXT = "Can't reach the server. Trying again…";
+
+/**
  * Extra result polls spent in the background when a persisting agent's ready
  * result arrives WITHOUT its persistence receipt (dec-brand-kit-storage-v2).
  * Each poll re-runs the idempotent content-addressed server-side write, so a

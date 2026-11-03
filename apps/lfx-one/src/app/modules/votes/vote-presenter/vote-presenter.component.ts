@@ -118,6 +118,8 @@ export class VotePresenterComponent {
     intervalMs: VOTE_PRESENTER_POLL_INTERVAL_MS,
     backoffBaseMs: VOTE_PRESENTER_BACKOFF_BASE_MS,
     backoffMaxMs: VOTE_PRESENTER_BACKOFF_MAX_MS,
+    // The presenter keeps its fixed 5/10/20/30 s reconnect cadence (no jitter); Marketing OS readers take the jittered default.
+    jitter: false,
     enabled: this.isBrowser,
   });
   private readonly snapshot = computed<VotePresenterSnapshot | null>(() => {
