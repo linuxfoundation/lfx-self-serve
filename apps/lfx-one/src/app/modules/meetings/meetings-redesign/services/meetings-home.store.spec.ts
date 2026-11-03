@@ -539,7 +539,6 @@ describe('MeetingsHomeStore', () => {
         past$.next([pastOfIt]);
         latestPast$.next([pastOfIt]);
       };
-      [upcoming$.next([weeklyMeeting([inDays(1)]), buildMeeting({ id: 'm-2' })]), past$.next([pastOfIt]), latestPast$.next([pastOfIt])].at(0);
       emit();
       store.removeMeeting('m-1');
 
