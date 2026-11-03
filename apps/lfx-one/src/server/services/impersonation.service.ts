@@ -3,6 +3,8 @@
 
 import {
   ACCOUNT_COOKIE_KEY,
+  IMPERSONATION_SEARCH_FAILED_MESSAGE,
+  IMPERSONATION_SEARCH_NATS_ERROR_CODE,
   LENS_COOKIE_KEY,
   NATS_CONFIG,
   NAV_LENS_COOKIE_KEY,
@@ -109,6 +111,8 @@ export class ImpersonationService {
    * The query is never logged — it is free text that can hold a person's name or email.
    */
   public async searchUsers(req: Request, query: string, subjectToken: string, limit: number): Promise<ImpersonationUserSearchResult[]> {
+    logger.debug(req, 'impersonation_user_search', 'Searching users through auth-service', { query_length: query.length, limit });
+
     const codec = this.natsService.getCodec();
     const payload = JSON.stringify({ subject_token: subjectToken, query, limit });
 
@@ -136,7 +140,7 @@ export class ImpersonationService {
       }
 
       // Fixed message: the transport error stays in the log-only errorBody and is never returned to the browser.
-      throw new MicroserviceError('We could not search for users. Please try again.', 502, 'IMPERSONATION_SEARCH_NATS_ERROR', {
+      throw new MicroserviceError(IMPERSONATION_SEARCH_FAILED_MESSAGE, 502, IMPERSONATION_SEARCH_NATS_ERROR_CODE, {
         operation: 'impersonation_user_search',
         service: 'auth-service',
         errorBody: { transportError: error instanceof Error ? error.message : 'Unknown error' },

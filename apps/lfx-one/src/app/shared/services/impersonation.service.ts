@@ -14,7 +14,6 @@ import {
   ImpersonationUserSearchResponse,
   RecentImpersonation,
 } from '@lfx-one/shared/interfaces';
-import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, map, Observable, of, tap } from 'rxjs';
 
 @Injectable({
@@ -50,16 +49,15 @@ export class ImpersonationService {
   /**
    * People the picker can offer for the typed text: anyone with an LFID, found by username, email or name. The search
    * runs as the signed-in admin, even while impersonating. A failed search degrades to no results rather than breaking
-   * the typeahead. Strict encoding, so a plus-addressed email survives the query string.
+   * the typeahead. The text goes in the request body, not the URL, so it stays out of request logs, browser analytics
+   * and traces.
    */
   public searchUsers(query: string): Observable<ImpersonationSuggestion[]> {
-    const params = strictHttpParams().set('q', query);
-
-    return this.http.get<ImpersonationUserSearchResponse>('/api/impersonate/users', { params }).pipe(
+    return this.http.post<ImpersonationUserSearchResponse>('/api/impersonate/users/search', { q: query }).pipe(
       map((response) => response.results ?? []),
       catchError((error: unknown) => {
-        // Status and code only: the response object carries the request URL, whose query string holds the searched
-        // person's name or address, and the console override ships it to CloudWatch.
+        // Status and code only: the console override ships what is logged to CloudWatch, and the error object
+        // carries the request, so it is never logged whole.
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         const code = error instanceof HttpErrorResponse ? error.error?.code : undefined;
         console.error('Error searching users to impersonate:', { status, code });

@@ -1,6 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The controller imports the shared `utils` barrel, which statically pulls in `@angular/forms`; under
+// vitest's plain Node runtime that needs the JIT compiler loaded first.
+import '@angular/compiler';
+
 import { IMPERSONATION_SEARCH_LIMIT, IMPERSONATION_SEARCH_MAX_LENGTH } from '@lfx-one/shared/constants';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -99,9 +103,9 @@ describe('ImpersonationController.searchUsers', () => {
   let res: Response;
   let next: NextFunction;
 
-  const buildReq = (query: Record<string, unknown>, appSession: Record<string, unknown> = {}): Request =>
+  const buildReq = (body: Record<string, unknown>, appSession: Record<string, unknown> = {}): Request =>
     ({
-      query,
+      body,
       appSession,
       bearerToken: 'current-target-token',
       oidc: { accessToken: { access_token: 'real-token' } },
@@ -145,12 +149,20 @@ describe('ImpersonationController.searchUsers', () => {
     });
   });
 
-  it('leaves out a person with no username, who cannot be impersonated by selection', async () => {
-    searchUsersService.mockResolvedValue([found('', 'x@example.test'), found('jdoe')]);
+  it('leaves out a person with a blank or missing username, who cannot be impersonated by selection', async () => {
+    searchUsersService.mockResolvedValue([found('', 'x@example.test'), found('   ', 'y@example.test'), found('jdoe')]);
 
     await controller.searchUsers(buildReq({ q: 'jane' }), res, next);
 
     expect(res.json).toHaveBeenCalledWith({ results: [expect.objectContaining({ username: 'jdoe' })] });
+  });
+
+  it('offers a username without its surrounding whitespace', async () => {
+    searchUsersService.mockResolvedValue([found('  jdoe ')]);
+
+    await controller.searchUsers(buildReq({ q: 'jane' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ results: [expect.objectContaining({ targetUser: 'jdoe', username: 'jdoe' })] });
   });
 
   it('leaves out the signed-in admin, matched by username or email', async () => {
@@ -168,6 +180,15 @@ describe('ImpersonationController.searchUsers', () => {
     await controller.searchUsers(req, res, next);
 
     expect(res.json).toHaveBeenCalledWith({ results: [expect.objectContaining({ username: 'jdoe' })] });
+  });
+
+  it('reads the text from the body, not the URL', async () => {
+    const req = { ...buildReq({}), query: { q: 'from-the-url' } } as unknown as Request;
+
+    await controller.searchUsers(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(searchUsersService).not.toHaveBeenCalled();
   });
 
   it.each([

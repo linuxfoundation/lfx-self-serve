@@ -8,7 +8,7 @@ import {
   IMPERSONATION_SEARCH_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
 import { ImpersonationSuggestion } from '@lfx-one/shared/interfaces';
-import { excludeUserSearchIdentities } from '@lfx-one/shared/utils/search.utils';
+import { excludeUserSearchIdentities } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
@@ -80,19 +80,20 @@ export class ImpersonationController {
   }
 
   /**
-   * GET /api/impersonate/users?q=
+   * POST /api/impersonate/users/search  { q }
    * People the impersonation picker can offer, from an auth-service search of every user with an LFID. The search is the
    * signed-in admin's own action, so it runs with their real token (`resolveImpersonatorToken`), never the current
    * target's: the same call serves picking the first user and switching to another. Requires `can_impersonate`, and
-   * leaves out the admin and the current target, since picking either is pointless. The query is never logged.
+   * leaves out the admin and the current target, since picking either is pointless. The text is read from the body, not
+   * the URL, and is never logged: the request-log URL, browser analytics and traces would all record a query string.
    */
   public async searchUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'search_impersonation_users', {
-      has_query: typeof req.query['q'] === 'string' && req.query['q'].trim() !== '',
+      has_query: typeof req.body?.q === 'string' && req.body.q.trim() !== '',
     });
 
     try {
-      const query = req.query['q'];
+      const query = req.body?.q;
       if (typeof query !== 'string' || query.trim() === '') {
         next(
           ServiceValidationError.forField('q', 'q is required and must be a non-empty string', {
@@ -117,13 +118,13 @@ export class ImpersonationController {
       const subjectToken = await resolveImpersonatorToken(req, 'search_impersonation_users');
       const users = await this.impersonationService.searchUsers(req, text, subjectToken, IMPERSONATION_SEARCH_LIMIT);
 
-      // A person without a username cannot be impersonated by selection, so they are not offered.
+      // A person without a username (blank counts) cannot be impersonated by selection, so they are not offered.
       const suggestions = users
-        .filter((user) => !!user.username)
+        .filter((user) => !!user.username?.trim())
         .map(
           (user): ImpersonationSuggestion => ({
-            targetUser: user.username,
-            username: user.username,
+            targetUser: user.username.trim(),
+            username: user.username.trim(),
             email: user.email ?? '',
             name: user.name || undefined,
           })

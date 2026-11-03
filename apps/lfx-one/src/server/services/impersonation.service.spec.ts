@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPERSONATION_TARGET_USER_NOT_FOUND_CODE, IMPERSONATION_USER_NOT_FOUND_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  IMPERSONATION_SEARCH_FAILED_MESSAGE,
+  IMPERSONATION_SEARCH_NATS_ERROR_CODE,
+  IMPERSONATION_TARGET_USER_NOT_FOUND_CODE,
+  IMPERSONATION_USER_NOT_FOUND_MESSAGE,
+} from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -136,9 +141,18 @@ describe('ImpersonationService.searchUsers', () => {
 
     expect(error).toBeInstanceOf(MicroserviceError);
     expect(error.statusCode).toBe(502);
-    expect(error.code).toBe('IMPERSONATION_SEARCH_NATS_ERROR');
+    expect(error.code).toBe(IMPERSONATION_SEARCH_NATS_ERROR_CODE);
+    expect(error.message).toBe(IMPERSONATION_SEARCH_FAILED_MESSAGE);
     expect(error.message).not.toContain('jane.doe');
     expect(error.errorBody).toEqual({ transportError: 'timeout while searching for jane.doe@example.test' });
+  });
+
+  it('traces the search with only the length of the query', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, users: [] }) });
+
+    await service.searchUsers(req, 'jane.doe@example.test', 'admin-token', 10);
+
+    expect(logger.debug).toHaveBeenCalledWith(req, 'impersonation_user_search', expect.any(String), { query_length: 21, limit: 10 });
   });
 
   it('never logs the query', async () => {

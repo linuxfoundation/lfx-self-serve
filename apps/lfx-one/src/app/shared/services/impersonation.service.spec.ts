@@ -63,30 +63,31 @@ describe('ImpersonationService.searchUsers', () => {
 
   const collect = (query: string): Promise<ImpersonationSuggestion[]> => new Promise((resolve) => service.searchUsers(query).subscribe(resolve));
 
-  it('asks the impersonation search route for the typed text and returns its results', async () => {
+  it('posts the typed text to the impersonation search route and returns its results', async () => {
     const result = collect('jane');
 
-    const req = http.expectOne((r) => r.url === '/api/impersonate/users');
-    expect(req.request.method).toBe('GET');
-    expect(req.request.params.get('q')).toBe('jane');
+    const req = http.expectOne((r) => r.url === '/api/impersonate/users/search');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ q: 'jane' });
     const person: ImpersonationSuggestion = { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.test', name: 'Jane Doe' };
     req.flush({ results: [person] });
 
     await expect(result).resolves.toEqual([person]);
   });
 
-  it('keeps a plus-addressed email intact in the query string', () => {
+  it('sends the text in the body and keeps it out of the URL', () => {
     collect('jane+tag@example.test');
 
-    const req = http.expectOne((r) => r.url === '/api/impersonate/users');
-    expect(req.request.urlWithParams).toContain('q=jane%2Btag%40example.test');
+    const req = http.expectOne((r) => r.url === '/api/impersonate/users/search');
+    expect(req.request.body).toEqual({ q: 'jane+tag@example.test' });
+    expect(req.request.urlWithParams).toBe('/api/impersonate/users/search');
     req.flush({ results: [] });
   });
 
   it('returns no results for an empty response body', async () => {
     const result = collect('jane');
 
-    http.expectOne((r) => r.url === '/api/impersonate/users').flush({});
+    http.expectOne((r) => r.url === '/api/impersonate/users/search').flush({});
 
     await expect(result).resolves.toEqual([]);
   });
@@ -96,7 +97,7 @@ describe('ImpersonationService.searchUsers', () => {
     const result = collect('jane.doe@example.test');
 
     http
-      .expectOne((r) => r.url === '/api/impersonate/users')
+      .expectOne((r) => r.url === '/api/impersonate/users/search')
       .flush({ code: 'IMPERSONATION_SEARCH_UNAVAILABLE' }, { status: 503, statusText: 'Service Unavailable' });
 
     await expect(result).resolves.toEqual([]);
