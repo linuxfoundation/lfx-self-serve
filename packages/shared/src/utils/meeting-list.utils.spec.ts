@@ -661,6 +661,7 @@ describe('getMeetingHomeRowOrganizers', () => {
   });
 
   it.each<[Pick<Meeting, 'created_by' | 'owner' | 'organizers'>, string[]]>([
+    [{ created_by: jane, organizers: ['bob@example.org'] }, ['Jane Doe', 'bob']],
     [{ created_by: { name: 'Viewer Person', username: 'viewer', email: '' }, organizers: ['viewer', 'asmith'] }, ['You', 'asmith']],
     [{ created_by: jane, organizers: ['viewer'] }, ['Jane Doe', 'You']],
     [{ owner: { name: 'Owen Owner', username: 'owen', email: '' }, created_by: jane, organizers: ['jdoe'] }, ['Owen Owner', 'jdoe']],

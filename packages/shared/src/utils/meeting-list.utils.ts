@@ -354,7 +354,8 @@ export function getMeetingHomeRowOrganizers(
     const key = normalizeUsername(entry);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    const username = entry.trim().split('|').pop() ?? key;
+    // An email entry shows only its local part, never the full address.
+    const username = (entry.trim().split('|').pop() ?? key).split('@')[0];
     organizers.push({ key, label: key === viewer ? 'You' : username, name: username, photo: '' });
   }
   return organizers;
