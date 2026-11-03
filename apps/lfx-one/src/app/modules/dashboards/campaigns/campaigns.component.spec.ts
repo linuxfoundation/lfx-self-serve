@@ -3040,8 +3040,91 @@ describe('CampaignsComponent brief persistence', () => {
         (fixture.componentInstance as unknown as { selectTab(t: string, o: string): void }).selectTab('implementation', 'paid-marketing');
         await fixture.whenStable();
 
-        expect(list.mock.calls.length).toBe(afterFirst);
+        // One more read: the Implement tab's list-only re-read of the campaigns already created
+        // (#4983). The capability is neither cleared nor read again by it.
+        expect(list.mock.calls.length).toBe(afterFirst + 1);
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+        expect((fixture.componentInstance as unknown as { briefCampaignsCapabilityRead(): string }).briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * #4983. The Implement tab's list read (its Retry, and after a create settles) reports a failure
+       * as unavailable for the panel, and leaves the capabilities that tab gates its controls on alone.
+       */
+      /** #4983: a switch invalidates the pending read, so it must also end the "checking" state itself. */
+      it("ends the Implement list's checking state when the foundation switches during a read", async () => {
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }));
+        const pending = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(pending);
+        proceed();
+        await fixture.whenStable();
+        const loading = (): boolean => (fixture.componentInstance as unknown as { briefCampaignsLoading(): boolean }).briefCampaignsLoading();
+        expect(loading()).toBe(true);
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        expect(loading(), 'the panel would say "Checking…" for good').toBe(false);
+      });
+
+      it('marks the Implement list unavailable on a failed re-read without blanking the capability', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            enabled: true,
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        list.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        (fixture.componentInstance as unknown as { refreshImplementCampaigns(): void }).refreshImplementCampaigns();
+        await fixture.whenStable();
+
+        const page = fixture.componentInstance as unknown as {
+          briefCampaignsUnavailable(): boolean;
+          briefCampaignsDemandGenEnabled(): boolean | null;
+          briefCampaignsCapabilityRead(): string;
+        };
+        expect(page.briefCampaignsUnavailable()).toBe(true);
+        expect(page.briefCampaignsDemandGenEnabled(), 'a list-only read blanked the create capability').toBe(true);
+        expect(page.briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * #4983. Proceeding with a newly generated brief drops the PREVIOUS brief's campaign list at once,
+       * so the Implement tab never shows another brief's campaigns while (or instead of, on a refused
+       * save) this brief's own read.
+       */
+      it('drops the previous brief campaigns when a new brief is proceeded', async () => {
+        const campaigns = (): unknown => (fixture.componentInstance as unknown as { briefCampaigns(): unknown }).briefCampaigns();
+        (fixture.componentInstance as unknown as { briefCampaigns: { set(v: unknown): void } }).briefCampaigns.set([
+          { id: 'old', platform: 'google-ads', status: 'active' },
+        ]);
+        persistBrief.mockReturnValue(NEVER);
+
+        proceed(otherBrief);
+
+        expect(campaigns(), "the previous brief's campaigns stayed on Implement").toBeNull();
       });
 
       it('clears the previous brief campaigns when the foundation changes', async () => {
@@ -12633,7 +12716,9 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     page().onProceedToImplementation(brief);
     await settle();
 
+    // One read: the capability read also files the list for the Implement tab's panel (#4983).
     expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
+    expect((page() as unknown as { briefCampaigns(): unknown }).briefCampaigns(), 'the save did not file the campaign list').not.toBeNull();
     expect(page().briefCampaignsBiddingEnabled()).toBe(true);
     expect(q('implementation-bidding-capability-unsaved')).toBeNull();
     expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });
