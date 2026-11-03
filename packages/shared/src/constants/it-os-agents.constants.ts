@@ -46,7 +46,7 @@ export const IT_OS_AGENTS: ItOsAgent[] = [
     tags: ['Email', 'Forwarding'],
     via: 'Forward Email',
     description:
-      "Sets up LF's standard project addresses on your primary domain: the required ones, plus any if-needed or optional ones the project wants. Fills in where they go from LFX.",
+      "Sets up LF's recommended addresses on your primary domain, plus any others the project needs. Checks existing forwards against the guidelines and suggests fixes.",
   },
   {
     id: 'mailing-lists',

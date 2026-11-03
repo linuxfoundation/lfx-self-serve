@@ -262,6 +262,7 @@ export * from './mktg-agent.interface';
 export * from './it-os-agent.interface';
 export * from './it-os-dns.interface';
 export * from './it-os-chat.interface';
+export * from './it-os-forwarding.interface';
 export * from './it-os-github.interface';
 export * from './mktg-artifact.interface';
 export * from './mktg-chat.interface';
