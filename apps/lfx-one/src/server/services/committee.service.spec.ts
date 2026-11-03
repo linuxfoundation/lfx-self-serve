@@ -63,10 +63,15 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const pending = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/pending-action.constants')>(
     '../../../../../packages/shared/src/constants/pending-action.constants'
   );
+  const apiConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/api.constants')>(
+    '../../../../../packages/shared/src/constants/api.constants'
+  );
   return {
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
     ACCESS_CHECK_BATCH_SIZE: 100,
+    // The real fetchAllQueryResources paginator reads its page cap from this barrel (#4964).
+    QUERY_SERVICE_MAX_PAGES: apiConstants.QUERY_SERVICE_MAX_PAGES,
     PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS: pending.PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
     UUID_REGEX: regex.UUID_REGEX,
   };

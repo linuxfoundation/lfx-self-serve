@@ -701,3 +701,42 @@ describe('MeetingService.getMeetingDetail propagation-lag retry (#501)', () => {
     expect(attempts).toBe(1);
   });
 });
+
+describe('MeetingService project-lens meeting fetchers (#4964)', () => {
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    get = vi.fn();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('getUpcomingMeetingsByProject emits the page data scoped by project tag', async () => {
+    get.mockReturnValue(of({ data: [{ id: 'm-1' }], page_token: undefined }));
+
+    await expect(firstValueFrom(service.getUpcomingMeetingsByProject('project-1'))).resolves.toEqual([{ id: 'm-1' }]);
+    expect(get.mock.calls[0][0]).toBe('/api/meetings');
+    expect(get.mock.calls[0][1].params.get('tags')).toBe('project_uid:project-1');
+  });
+
+  it('getPastMeetingsByProject emits the page data scoped by project tag and sorted by name', async () => {
+    get.mockReturnValue(of({ data: [{ id: 'pm-1' }], page_token: undefined }));
+
+    await expect(firstValueFrom(service.getPastMeetingsByProject('project-1'))).resolves.toEqual([{ id: 'pm-1' }]);
+    expect(get.mock.calls[0][0]).toBe('/api/past-meetings');
+    expect(get.mock.calls[0][1].params.get('tags')).toBe('project_uid:project-1');
+    expect(get.mock.calls[0][1].params.get('sort')).toBe('name_desc');
+  });
+
+  it.each([
+    ['getUpcomingMeetingsByProject', '/api/meetings'],
+    ['getPastMeetingsByProject', '/api/past-meetings'],
+  ] as const)('%s propagates an HTTP failure instead of emitting an empty list', async (method, url) => {
+    const failure = new HttpErrorResponse({ status: 502, url });
+    get.mockReturnValue(throwError(() => failure));
+
+    await expect(firstValueFrom(service[method]('project-1'))).rejects.toBe(failure);
+  });
+});

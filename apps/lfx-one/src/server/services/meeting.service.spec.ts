@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_MAX_PAGES } from '@lfx-one/shared/constants';
 import type {
   CreateMeetingRegistrantRequest,
   Meeting,
@@ -209,6 +210,43 @@ describe('MeetingService.resolveCreatedByForMeetings', () => {
     // First chunk resolved; second chunk failed and was skipped rather than throwing.
     expect(result.size).toBe(50);
     expect(result.has('m50')).toBe(false);
+  });
+
+  it('stops a chunk on a repeated page_token and keeps the rows already mapped (#4964)', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ ...pageOf([{ id: 'a', created_by: human('a') }]), page_token: 'same' })
+      .mockResolvedValue({ ...pageOf([{ id: 'b', created_by: human('b') }]), page_token: 'same' });
+
+    const result = await service.resolveCreatedByForMeetings(req, ['a', 'b']);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(result.get('a')).toEqual({ created_by: human('a') });
+    expect(result.get('b')).toEqual({ created_by: human('b') });
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'resolve_created_by_for_meetings',
+      'Pagination stopped early for a chunk',
+      expect.objectContaining({ page: 2, reason: 'repeated_page_token' })
+    );
+  });
+
+  it('stops a chunk after QUERY_SERVICE_MAX_PAGES proxy calls of always-fresh tokens (#4964)', async () => {
+    let calls = 0;
+    proxyRequest.mockImplementation(async () => {
+      calls++;
+      return { ...pageOf([{ id: 'a', created_by: human('a') }]), page_token: `token-${calls}` };
+    });
+
+    const result = await service.resolveCreatedByForMeetings(req, ['a']);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(QUERY_SERVICE_MAX_PAGES);
+    expect(result.get('a')).toEqual({ created_by: human('a') });
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'resolve_created_by_for_meetings',
+      'Pagination stopped early for a chunk',
+      expect.objectContaining({ page: QUERY_SERVICE_MAX_PAGES, reason: 'max_pages' })
+    );
   });
 });
 

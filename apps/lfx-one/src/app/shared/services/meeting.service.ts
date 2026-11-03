@@ -198,13 +198,15 @@ export class MeetingService {
 
     // TODO: Add filter for upcoming meetings
 
-    return this.getMeetings(params).pipe(map((response) => response.data));
+    // Errors propagate (no catchError) so MyMeetingsComponent can show its error + Retry state (#4964).
+    return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(map((response) => response.data));
   }
 
   public getPastMeetingsByProject(uid: string): Observable<PastMeeting[]> {
     const params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
 
-    return this.getPastMeetings(params).pipe(map((response) => response.data));
+    // Errors propagate (no catchError) so MyMeetingsComponent can show its error + Retry state (#4964).
+    return this.http.get<PaginatedResponse<PastMeeting>>('/api/past-meetings', { params }).pipe(map((response) => response.data));
   }
 
   public getMeetingsByProjectPaginated(

@@ -172,7 +172,8 @@ const registrants = await fetchAllQueryResources<MeetingRegistrant>(req, (pageTo
 
 The helper:
 
-- Follows `page_token` automatically until all pages are fetched
+- Follows `page_token` automatically, up to `QUERY_SERVICE_MAX_PAGES` (100) pages, and stops early when upstream hands back a `page_token` it already requested. Without this bound, a runaway token chain kept accumulating rows until the SSR server ran out of heap (#4964)
+- Treats either stop like a failed later page: strict (`failOnPartial: true`) callers get a 502 `MicroserviceError` with code `QUERY_SERVICE_PAGINATION_LIMIT`, others get the rows fetched so far, an `onPartial()` call and a `warning` log carrying `reason` (`max_pages` or `repeated_page_token`), `page` and `accumulated_count`
 - Accumulates results into a single array
 - Retries on 5xx errors (up to 2 retries with 100ms delay)
 - Logs pagination progress at DEBUG level
