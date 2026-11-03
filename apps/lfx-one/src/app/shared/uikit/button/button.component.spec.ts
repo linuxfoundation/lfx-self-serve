@@ -49,6 +49,16 @@ class BothTooltipsHostComponent {}
 })
 class TooltipHostComponent {}
 
+@Component({
+  selector: 'lfx-ui-button-disabled-tooltip-host',
+  imports: [UiButtonComponent, UiTooltipDirective],
+  template: `<lfx-ui-button lfxUiTooltip="Copy link" [disabled]="disabled()">Copy</lfx-ui-button
+    ><span lfxUiTooltip="Saving is off while offline" tabindex="0"><lfx-ui-button [disabled]="true">Save</lfx-ui-button></span>`,
+})
+class DisabledTooltipHostComponent {
+  public readonly disabled = signal(true);
+}
+
 // Set through overrideComponent because an inline template this long trips component-max-inline-declarations.
 const MENU_HOST_TEMPLATE = `
   <lfx-ui-button [menu]="actions" ariaLabel="Project actions">Actions</lfx-ui-button>
@@ -235,13 +245,12 @@ describe('UiButtonComponent', () => {
     expect((host.nativeElement.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('turns off pointer events on the host so a consumer click handler cannot fire', async () => {
+  it('never calls the consumer click handler when the disabled button is clicked', async () => {
     const host = TestBed.createComponent(ClickHostComponent);
     host.componentInstance.disabled.set(true);
     await host.whenStable();
-    const button = host.nativeElement.querySelector('lfx-ui-button') as HTMLElement;
-    // jsdom ignores CSS pointer-events, so assert the host class that blocks the click in a browser.
-    expect(button.classList).toContain('pointer-events-none');
+    (host.nativeElement.querySelector('button') as HTMLButtonElement).click();
+    expect(host.componentInstance.save).not.toHaveBeenCalled();
   });
 
   it('shows the not-allowed cursor on a disabled button, with its children out of the hit test', async () => {
@@ -249,16 +258,6 @@ describe('UiButtonComponent', () => {
     await set('disabled', true);
     expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['pointer-events-auto', 'cursor-not-allowed', '[&_*]:pointer-events-none']));
     expect(el().classList).not.toContain('cursor-pointer');
-  });
-
-  it('shows the not-allowed cursor on a disabled link and still swallows its click', async () => {
-    const host = TestBed.createComponent(LinkHostComponent);
-    host.componentInstance.disabled.set(true);
-    await host.whenStable();
-    const anchor = host.nativeElement.querySelector('a') as HTMLAnchorElement;
-    expect(anchor.classList).toContain('cursor-not-allowed');
-    anchor.click();
-    expect(host.componentInstance.open).not.toHaveBeenCalled();
   });
 
   it('does not navigate when a disabled link is clicked', async () => {
@@ -404,10 +403,25 @@ describe('UiButtonComponent', () => {
       expect(host.componentInstance.open).not.toHaveBeenCalled();
     });
 
-    it('swallows a click on a disabled link', async () => {
+    it('swallows a click on a disabled link and shows the not-allowed cursor', async () => {
       const { host, anchor } = await linkHost((instance) => instance.disabled.set(true));
+      expect(anchor.classList).toContain('cursor-not-allowed');
       anchor.click();
       expect(host.componentInstance.open).not.toHaveBeenCalled();
+    });
+
+    it('keeps a mouse press from focusing a disabled link', async () => {
+      const { anchor } = await linkHost((instance) => instance.disabled.set(true));
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+      anchor.dispatchEvent(press);
+      expect(press.defaultPrevented).toBe(true);
+    });
+
+    it('lets a mouse press focus an idle link', async () => {
+      const { anchor } = await linkHost();
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+      anchor.dispatchEvent(press);
+      expect(press.defaultPrevented).toBe(false);
     });
 
     it('passes a click on an idle link through', async () => {
@@ -455,6 +469,48 @@ describe('UiButtonComponent', () => {
       expect(describedBy).toBeTruthy();
       expect(document.getElementById(describedBy as string)?.textContent).toBe('Copy link');
       expect(wrapper.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    describe('while disabled', () => {
+      let host: ComponentFixture<DisabledTooltipHostComponent>;
+      const tooltip = () => TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="ui-tooltip"]');
+      const hover = async (target: Element) => {
+        target.dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+        await vi.advanceTimersByTimeAsync(400);
+      };
+
+      beforeEach(async () => {
+        host = TestBed.createComponent(DisabledTooltipHostComponent);
+        document.body.appendChild(host.nativeElement);
+        await host.whenStable();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      });
+
+      afterEach(() => {
+        host.destroy();
+        TestBed.inject(OverlayContainer).ngOnDestroy();
+        vi.clearAllTimers();
+        vi.useRealTimers();
+      });
+
+      it('drops the forwarded tooltip and its description, and restores them once enabled', async () => {
+        const inner = host.nativeElement.querySelector('lfx-ui-button button') as HTMLButtonElement;
+        expect(inner.getAttribute('aria-describedby')).toBeNull();
+        await hover(inner);
+        expect(tooltip()).toBeNull();
+
+        host.componentInstance.disabled.set(false);
+        await host.whenStable();
+        expect(inner.getAttribute('aria-describedby')).toBeTruthy();
+      });
+
+      it('leaves the tooltip on a wrapper around a disabled button working', async () => {
+        const wrapper = host.nativeElement.querySelector('span') as HTMLElement;
+        const describedBy = wrapper.getAttribute('aria-describedby');
+        expect(document.getElementById(describedBy as string)?.textContent).toBe('Saving is off while offline');
+        await hover(wrapper);
+        expect(tooltip()?.textContent).toContain('Saving is off while offline');
+      });
     });
   });
 });
