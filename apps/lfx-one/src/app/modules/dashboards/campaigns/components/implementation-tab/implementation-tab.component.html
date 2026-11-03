@@ -4181,31 +4181,28 @@
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div class="flex flex-col gap-1">
               <label for="implementation-another-stage" class="text-xs font-medium text-gray-700">Funnel stage (required)</label>
-              <select
-                id="implementation-another-stage"
-                class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
-                [value]="anotherStage()"
-                (change)="anotherStage.set($any($event.target).value)"
-                data-testid="implementation-another-stage">
-                <option value="">Choose a stage</option>
-                @for (option of funnelStageOptions; track option.id) {
-                  <option [value]="option.id">{{ option.label }}</option>
-                }
-              </select>
+              <lfx-select
+                [form]="anotherForm"
+                control="stage"
+                [options]="funnelStageOptions"
+                optionValue="id"
+                inputId="implementation-another-stage"
+                placeholder="Choose a stage"
+                size="small"
+                data-testid="implementation-another-stage" />
             </div>
             <div class="flex flex-col gap-1">
               <label for="implementation-another-tactic" class="text-xs font-medium text-gray-700">Tactic (optional)</label>
-              <select
-                id="implementation-another-tactic"
-                class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
-                [value]="anotherTactic()"
-                (change)="anotherTactic.set($any($event.target).value)"
-                data-testid="implementation-another-tactic">
-                <option value="">No tactic</option>
-                @for (option of tacticOptions; track option.id) {
-                  <option [value]="option.id">{{ option.label }}</option>
-                }
-              </select>
+              <lfx-select
+                [form]="anotherForm"
+                control="tactic"
+                [options]="tacticOptions"
+                optionValue="id"
+                inputId="implementation-another-tactic"
+                placeholder="No tactic"
+                [showClear]="true"
+                size="small"
+                data-testid="implementation-another-tactic" />
             </div>
           </div>
           @if (createAnotherBlock(); as block) {
