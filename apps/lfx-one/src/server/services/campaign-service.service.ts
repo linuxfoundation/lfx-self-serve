@@ -1603,7 +1603,8 @@ export class CampaignServiceClient {
           // applies no sanitizer of its own, so there is nothing upstream to rely on. An
           // earlier comment in this file claimed an upstream allow-list covered it; that
           // allow-list exists only on the wizard path, which this is not.
-          return stripResourceLoadingHtml(section.html, generatedDestinations);
+          // The button is the only base a relative href may resolve against (#3306).
+          return stripResourceLoadingHtml(section.html, generatedDestinations, typeof firstButtonUrl === 'string' ? firstButtonUrl : '');
         })
         .join('');
       const buttonSection = sections.find((section) => section.type === 'button');
@@ -1661,7 +1662,7 @@ export class CampaignServiceClient {
         legacyText(legacy.ctaUrl),
         LF_OWNED_EMAIL_LINK_DOMAINS.map((domain) => `https://${domain}/`)
       );
-      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body), legacyDestinations) : '';
+      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body), legacyDestinations, legacyText(legacy.ctaUrl)) : '';
       const effectiveBody = isLegacyShape ? legacyBody : body;
       const effectiveCta = isLegacyShape ? sanitizeDisplayText(legacyText(legacy.cta)) : cta;
       const effectiveCtaUrl = isLegacyShape ? legacyText(legacy.ctaUrl) : ctaUrl;

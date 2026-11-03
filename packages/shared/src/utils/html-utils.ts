@@ -5,6 +5,7 @@ import sanitizeHtml from 'sanitize-html';
 
 import {
   EMAIL_BODY_ALLOWED_STYLE_PROPERTIES,
+  EMAIL_BODY_MARGIN_VALUE_PATTERN,
   EMAIL_BODY_STYLE_VALUE_PATTERN,
   EMAIL_SECONDARY_LINK_LIMIT,
   LF_OWNED_EMAIL_LINK_DOMAINS,
@@ -405,8 +406,9 @@ function buildAllowedHosts(destinations: readonly string[] | undefined): Set<str
   // `undefined` means "no opinion" -- the legacy behaviour, every http(s) anchor kept. An EMPTY
   // ARRAY is the opposite and is the case that matters: the caller looked for a destination and
   // found none, so nothing is vouched for and every link is dropped. The stages that withhold a
-  // button (CFP Launch, Post-Event, Final Countdown) arrive exactly this way, and they are the
-  // ones a model is most likely to invent an address for.
+  // button (CFP Launch, Post-Event, Final Countdown) are the ones a model is most likely to invent
+  // an address for; for them `emailLinkDestinations` now vouches only for LF-owned links (#3306),
+  // and a relative href is never resolved, since there is no call-to-action to resolve it against.
   if (destinations === undefined) return null;
 
   const hosts = new Set<string>();
@@ -495,20 +497,21 @@ function allowedDestinationHref(href: string, allowedHosts: Set<string>): string
  * Omitting `allowedDestinations` keeps every `http(s)` anchor -- the prior behaviour, for callers
  * that have no destination to vouch against. Pass it wherever one is known.
  */
-export function stripResourceLoadingHtml(html: string | null | undefined, allowedDestinations?: readonly string[]): string {
+export function stripResourceLoadingHtml(html: string | null | undefined, allowedDestinations?: readonly string[], relativeBase?: string): string {
   if (!html) return '';
 
   const allowedHosts = buildAllowedHosts(allowedDestinations);
-  // The base a relative href resolves against: the first destination the caller vouched for.
-  // '' when none was, which is the same "nothing is vouched for" state an empty list expresses.
+  // The base a relative href resolves against. '' resolves nothing: a relative href then loses its
+  // href, which is the same "nothing is vouched for" answer an empty list gives.
   //
-  // FIRST, not "all": a relative href has exactly one base, so a list with two hosts would have
-  // to guess which the author meant. Every caller today passes at most ONE destination -- the
-  // generator's CTA url (service), `buttonUrl` (controller), `emailCtaDestination()` (client) --
-  // so the ambiguity is not reachable. The parameter stays a list because the HOST allow-list
-  // genuinely takes several; if a caller ever vouches for two, relative resolution needs an
-  // explicit base rather than this fallback.
-  const firstAllowedBase = (allowedDestinations ?? []).map((d) => canonicalHttpUrl(d)).find((d) => d !== '') ?? '';
+  // `relativeBase` names it EXPLICITLY, and every email-body caller passes its call-to-action (or '')
+  // (#3306). Those callers vouch for several destinations now -- the CTA plus the event page's own
+  // links -- and a relative href has exactly one base, so falling back to "the first destination"
+  // would resolve `/register` against a CFP or venue page nobody meant, or against an LF root when
+  // there is no button. Omitted, the first vouched destination is the base, as before, for callers
+  // that vouch for at most one.
+  const firstAllowedBase =
+    relativeBase !== undefined ? canonicalHttpUrl(relativeBase) : ((allowedDestinations ?? []).map((d) => canonicalHttpUrl(d)).find((d) => d !== '') ?? '');
 
   return sanitizeHtml(html, {
     // Formatting only. Every resource-loading element is absent by omission rather than by
@@ -551,10 +554,23 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
     // email unstyled.
     allowedAttributes: { '*': ['style'], a: ['href'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
     // Only the declarations on `EMAIL_BODY_ALLOWED_STYLE_PROPERTIES` survive, and only with a value
-    // free of `url(`, `expression(`, `behavior`, `javascript:`, `@import` and `position`
-    // (`EMAIL_BODY_STYLE_VALUE_PATTERN`). So `background: url(...)` cannot fetch, and `position`
-    // cannot lay one element over another. A `style` left with no declarations is removed whole.
-    allowedStyles: { '*': Object.fromEntries(EMAIL_BODY_ALLOWED_STYLE_PROPERTIES.map((property) => [property, [EMAIL_BODY_STYLE_VALUE_PATTERN]])) },
+    // free of the forms `EMAIL_BODY_STYLE_VALUE_PATTERN` refuses, and a margin must not be negative.
+    // The property list is the control (none takes a url or positions anything); the value checks are
+    // defence in depth. A `style` left with no declarations is removed whole.
+    // sanitize-html keeps a declaration when ANY of its patterns matches, so the margins get one
+    // combined pattern (both conditions) rather than two alternatives.
+    allowedStyles: {
+      '*': Object.fromEntries(
+        EMAIL_BODY_ALLOWED_STYLE_PROPERTIES.map((property) => [
+          property,
+          [
+            property.startsWith('margin')
+              ? new RegExp(`(?=${EMAIL_BODY_MARGIN_VALUE_PATTERN.source})${EMAIL_BODY_STYLE_VALUE_PATTERN.source}`, 'i')
+              : EMAIL_BODY_STYLE_VALUE_PATTERN,
+          ],
+        ])
+      ),
+    },
     transformTags: {
       // Runs BEFORE `allowedSchemes` / `allowProtocolRelative`, which sanitize-html applies in
       // the attribute loop after `transformTags` has been dispatched. So `href` arrives RAW here
@@ -646,7 +662,10 @@ export function emailLinkDestinations(ctaDestination: string, extractedLinks: re
   };
   const trustedRoots = [...(cta === '' ? [] : [hostOf(cta)]), ...LF_OWNED_EMAIL_LINK_DOMAINS].filter((root) => root !== '');
   const isTrusted = (host: string): boolean => trustedRoots.some((root) => host === root || host.endsWith(`.${root}`));
+  // Bounded BEFORE the per-entry parsing, so a long list (the controller's comes from the client)
+  // costs at most a few parses; then bounded again after filtering.
   const secondary = extractedLinks
+    .slice(0, EMAIL_SECONDARY_LINK_LIMIT * 2)
     .map((link) => canonicalHttpUrl(link))
     .filter((link) => link !== '' && isTrusted(hostOf(link)))
     .slice(0, EMAIL_SECONDARY_LINK_LIMIT);

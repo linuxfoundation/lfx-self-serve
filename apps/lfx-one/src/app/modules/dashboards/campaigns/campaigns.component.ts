@@ -1682,7 +1682,9 @@ export class CampaignsComponent {
    * filter here with the validated list closes the gap and makes A's preview agree with what the
    * controller stages -- exactly as `abTestBodyHtmlBPreview` does for B.
    */
-  protected readonly emailBodyHtmlPreview = computed<string>(() => stripResourceLoadingHtml(this.emailCopy()?.body ?? '', this.generatedDestinations()));
+  protected readonly emailBodyHtmlPreview = computed<string>(() =>
+    stripResourceLoadingHtml(this.emailCopy()?.body ?? '', this.generatedDestinations(), this.emailCtaDestination())
+  );
 
   /**
    * Variant B's body with resource-loading markup removed, before the refused-CTA fold-back.
@@ -1705,7 +1707,9 @@ export class CampaignsComponent {
    * `abTestIsStageable` does read it directly, and deliberately -- see that signal for why the
    * gate judges the PRE-fold body.
    */
-  protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB(), this.generatedDestinations()));
+  protected readonly abTestBodyHtmlBPreview = computed<string>(() =>
+    stripResourceLoadingHtml(this.abTestBodyHtmlB(), this.generatedDestinations(), this.emailCtaDestination())
+  );
 
   /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
   protected readonly abTestCopyState = signal<'idle' | 'generating' | 'error'>('idle');

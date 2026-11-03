@@ -133,8 +133,9 @@ export class EmailBodyPreviewComponent {
      interpolated raw below, so anything that stripper misses reached the frame.
 
      \`default-src 'none'\` is exact rather than cautious: the stripper's allow-list carries no
-     \`img\`, no \`src\` on any element and no \`style\` attribute, so a legitimate preview loads
-     NOTHING external and has nothing to lose here. \`style-src 'unsafe-inline'\` is the one opening,
+     \`img\` and no \`src\` on any element, and the \`style\` it keeps is filtered to properties that
+     take no url (#3306), so a legitimate preview loads NOTHING external and has nothing to lose here.
+     If that filter ever missed a value, this policy is what still stops the load. \`style-src 'unsafe-inline'\` is the one opening,
      for the \`<style>\` reset below and the inline styles an email carries; it cannot fetch.
      \`form-action 'none'\` and the \`frame-src\`/\`child-src\` omissions fall out of \`default-src\`.
 

@@ -2602,6 +2602,30 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(cfg['secondaryLinkUrls'], 'the judgement-only list was forwarded to campaign-service').toBeUndefined();
   });
 
+  it('strips an LF-owned link that is not among the event page links it was sent', async () => {
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p><a href="https://training.linuxfoundation.org/invented">Invented</a></p>',
+            buttonText: 'Register',
+            buttonUrl: 'https://kubecon.example/register',
+            secondaryLinkUrls: ['https://kubecon.example/cfp'],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(cfg['bodyHtml']).not.toContain('training.linuxfoundation.org');
+    expect(cfg['bodyHtml']).toContain('Invented');
+  });
+
   it('keeps the safe inline styles of a staged body and drops the unsafe declarations', async () => {
     await controller.createCampaign(
       buildReq(

@@ -73,6 +73,7 @@ import type {
   MonitorConnectionPlatform,
 } from '@lfx-one/shared/interfaces';
 import {
+  EMAIL_SECONDARY_LINK_LIMIT,
   ACCOUNT_MONITOR_DEFAULT_DAYS,
   ACCOUNT_MONITOR_MAX_DAYS,
   ACCOUNT_MONITOR_MIN_DAYS,
@@ -7575,19 +7576,23 @@ export class CampaignController {
     // this pass vouch for a host the preview did not.
     //
     // A request that sends no `buttonUrl` -- including one whose CTA label is empty, since the
-    // client withholds the pair together -- vouches for nothing, and body links are dropped. That
-    // is the conservative direction of the same rule: absent evidence is not permission.
+    // client withholds the pair together -- vouches only for the event page's LF-owned links (#3306),
+    // and resolves no relative href, since there is no button to resolve it against. That is the
+    // conservative direction of the same rule: absent evidence is not permission.
     //
     // Plus the event page's own links the client sends as `secondaryLinkUrls` (#3306), judged rather
     // than trusted: `emailLinkDestinations` keeps only those on the button's host or an LF-owned
     // domain, and caps the list, so an injected off-host url loses its href like any other. The client
     // preview vouches with the same helper over the same list. The list is never forwarded upstream.
     const rawSecondary = body.hubspotConfig?.secondaryLinkUrls;
-    const secondaryLinkUrls = Array.isArray(rawSecondary) ? rawSecondary.filter((url): url is string => typeof url === 'string') : [];
+    // Capped before anything else touches it: the array is the client's, bounded otherwise only by the body limit.
+    const secondaryLinkUrls = Array.isArray(rawSecondary)
+      ? rawSecondary.slice(0, EMAIL_SECONDARY_LINK_LIMIT).filter((url): url is string => typeof url === 'string')
+      : [];
     const allowedBodyDestinations = emailLinkDestinations(buttonUrl, secondaryLinkUrls);
 
     const rawBody = body.hubspotConfig?.bodyHtml;
-    const bodyHtml = stripResourceLoadingHtml(typeof rawBody === 'string' ? rawBody : '', allowedBodyDestinations).trim();
+    const bodyHtml = stripResourceLoadingHtml(typeof rawBody === 'string' ? rawBody : '', allowedBodyDestinations, buttonUrl).trim();
 
     // Same allow-list gap as subject/bodyHtml above, but for the preheader: unnamed here, it
     // would stay dropped even after the AI generates one, and a staged draft would keep the
@@ -7612,7 +7617,7 @@ export class CampaignController {
     // `onGenerateAbTestCopy` calls the same `/email-copy` endpoint and writes the result straight
     // into the control, so a scraped page can steer a phishing href into B exactly as it can
     // into A. The client preview judges B against this same list, so preview and draft agree.
-    const bodyHtmlB = stripResourceLoadingHtml(typeof rawBodyB === 'string' ? rawBodyB : '', allowedBodyDestinations).trim();
+    const bodyHtmlB = stripResourceLoadingHtml(typeof rawBodyB === 'string' ? rawBodyB : '', allowedBodyDestinations, buttonUrl).trim();
     const rawPreheaderB = body.hubspotConfig?.preheaderB;
     const preheaderB = sanitizeDisplayText(typeof rawPreheaderB === 'string' ? rawPreheaderB.trim() : '');
 

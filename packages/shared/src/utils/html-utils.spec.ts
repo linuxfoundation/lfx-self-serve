@@ -989,3 +989,35 @@ describe('emailLinkDestinations — event-page links (#3306)', () => {
     ]);
   });
 });
+
+describe('stripResourceLoadingHtml — review round (#3306)', () => {
+  it('resolves no relative href when there is no call-to-action, even with LF links vouched for', () => {
+    const destinations = emailLinkDestinations('', ['https://events.linuxfoundation.org/x/cfp']);
+
+    expect(stripResourceLoadingHtml('<p><a href="/register">Register</a></p>', destinations, '')).toBe('<p><a>Register</a></p>');
+  });
+
+  it('resolves a relative href against the call-to-action, never against a secondary link', () => {
+    const destinations = emailLinkDestinations('https://kubecon.example/eu/register', ['https://training.linuxfoundation.org/venue']);
+
+    const out = stripResourceLoadingHtml('<p><a href="/eu/agenda">Agenda</a></p>', destinations, 'https://kubecon.example/eu/register');
+
+    expect(out).toContain('href="https://kubecon.example/eu/agenda"');
+  });
+
+  it('keeps a non-negative margin and drops a negative one or a calc()', () => {
+    expect(stripResourceLoadingHtml('<p style="margin: 0 0 16px">t</p>')).toBe('<p style="margin:0 0 16px">t</p>');
+    expect(stripResourceLoadingHtml('<p style="margin-top: -2000px">t</p>')).toBe('<p>t</p>');
+    expect(stripResourceLoadingHtml('<p style="margin: calc(0px - 100vh) 0">t</p>')).toBe('<p>t</p>');
+  });
+
+  it.each([
+    ['behavior in a value', 'font-family: behavior'],
+    ['@import in a value', "font-family: 'Arial' @import"],
+    ['a CSS-escaped url(', 'color: u\\72 l(https://evil.test/x)'],
+    ['image-set(', "color: image-set('https://evil.test/a.png' 1x)"],
+    ['image(', "color: image('https://evil.test/a.png')"],
+  ])('drops a declaration whose value carries %s', (_label, declaration) => {
+    expect(stripResourceLoadingHtml(`<p style="${declaration}">t</p>`)).toBe('<p>t</p>');
+  });
+});

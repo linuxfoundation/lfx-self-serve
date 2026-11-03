@@ -3950,15 +3950,18 @@ export const MAX_HUBSPOT_BODY_HTML_LENGTH = 128 * 1024;
  */
 export const LF_OWNED_EMAIL_LINK_DOMAINS: readonly string[] = ['linuxfoundation.org'];
 
-/** At most this many event-page links are vouched for in one email body, which is all a brief carries. */
-export const EMAIL_SECONDARY_LINK_LIMIT = 8;
+/** At most this many event-page links are vouched for in one email body: all a brief carries (CFP, agenda, venue, sponsorship). */
+export const EMAIL_SECONDARY_LINK_LIMIT = 4;
 
 /**
  * The inline-style properties a generated email body may keep (#3306). campaign-service styles every
  * generated section inline (`internal/service/email_body_style.go`), because mail clients drop most
  * other CSS, so stripping `style` previewed and staged the email unstyled. Only typography, colour,
- * alignment, spacing, borders and widths are kept: nothing here can position an element over another,
- * load a resource, or run code.
+ * alignment, spacing, borders and widths are kept. THIS LIST is the control: none of these properties
+ * takes a `<url>` or `<image>`, so none can load a resource, and none positions an element.
+ * `EMAIL_BODY_STYLE_VALUE_PATTERN` is defence in depth on top, and the margins are further held to
+ * non-negative values (`EMAIL_BODY_MARGIN_VALUE_PATTERN`) so a block cannot be pulled up over the copy
+ * above it.
  */
 export const EMAIL_BODY_ALLOWED_STYLE_PROPERTIES: readonly string[] = [
   'color',
@@ -3997,12 +4000,19 @@ export const EMAIL_BODY_ALLOWED_STYLE_PROPERTIES: readonly string[] = [
 ];
 
 /**
- * A kept style declaration's VALUE must not contain any of these (#3306): `url(` loads a resource,
+ * A kept style declaration's VALUE must not contain any of these (#3306). Defence in depth behind the
+ * property allow-list, which is the actual control: `url(`, `image(`, `image-set(` load a resource,
  * `expression(` and `behavior` run code in old engines, `javascript:` is a script URL, `@import` pulls in
- * a stylesheet, and `position` is refused in a value as well as a property so a shorthand cannot smuggle
- * it in.
+ * a stylesheet, `position` is refused in a value as well as a property, and a backslash is refused
+ * outright because a CSS escape (`u\72 l(`) would spell any of the others past a substring match.
  */
-export const EMAIL_BODY_STYLE_VALUE_PATTERN = /^(?!.*(?:url\s*\(|expression\s*\(|@import|behavior|javascript:|position)).*$/i;
+export const EMAIL_BODY_STYLE_VALUE_PATTERN = /^(?!.*(?:url\s*\(|image(?:-set)?\s*\(|expression\s*\(|@import|behavior|javascript:|position|\\)).*$/i;
+
+/**
+ * The margins additionally refuse a negative length and `calc(`, so a block cannot be pulled up or
+ * sideways over the copy around it (#3306).
+ */
+export const EMAIL_BODY_MARGIN_VALUE_PATTERN = /^(?!.*(?:-\s*[\d.]|calc\s*\()).*$/i;
 
 /**
  * The exact hosts whose hero image the email preview may LOAD in the operator's browser. Every

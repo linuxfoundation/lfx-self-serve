@@ -4708,6 +4708,32 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(preview).toContain('Agenda');
     });
 
+    it('strips an LF-owned link the event page did not publish: the preview narrows the service pass', () => {
+      // The service's first pass keeps any LF-owned link, since it cannot see the event page. The
+      // preview must narrow that back to the page's own links, or an invented LF address survives.
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://kubecon.example/eu/',
+          cfpUrl: 'https://kubecon.example/eu/cfp',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body: '<p><a href="https://training.linuxfoundation.org/invented">Invented</a></p>',
+        cta: 'Register now',
+        ctaUrl: 'https://kubecon.example/eu/',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      expect(internals().emailBodyHtmlPreview()).not.toContain('training.linuxfoundation.org');
+      expect(internals().emailBodyHtmlPreview()).toContain('Invented');
+    });
+
     it('shows a refused CTA as plain text instead of dropping it silently', () => {
       selectEmail();
       internals().emailBriefOutput.set({
