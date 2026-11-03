@@ -15,7 +15,7 @@ import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 
 import { CommitteeSettingsTabComponent } from './committee-settings-tab.component';
 
@@ -777,5 +777,160 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     await fixture.whenStable();
 
     expect(mlService.getMailingListsByCommittee.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  it('keeps refreshingMl locked while a superseded refresh is cancelled, only clearing it when the latest refresh actually completes (#4899 review)', async () => {
+    const requests: Subject<GroupsIOMailingList[]>[] = [];
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi.fn(() => {
+              const subject = new Subject<GroupsIOMailingList[]>();
+              requests.push(subject);
+              return subject.asObservable();
+            }),
+            getMailingListsByProject: vi.fn(() => of([])),
+            updateMailingList: vi.fn(() => of({})),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The initial committee-driven load is the first request; resolve it so the drawer tests start clean.
+    requests[0].next([makeMl({})]);
+    requests[0].complete();
+    await fixture.whenStable();
+
+    component.onSyncSettingsUpdated();
+    component.onSyncSettingsUpdated();
+    await fixture.whenStable();
+
+    // switchMap cancels the first of the two refresh requests in favor of the second — that
+    // cancellation must not clear refreshingMl while the second request is still in flight.
+    expect(requests.length).toBe(3);
+    expect(component.refreshingMl()).toBe(true);
+
+    requests[2].next([makeMl({})]);
+    requests[2].complete();
+    await fixture.whenStable();
+
+    expect(component.refreshingMl()).toBe(false);
+  });
+
+  it('leaves refreshingMl locked and shows an error toast when a refresh fails, instead of unlocking sibling cards against stale data (#4899 review)', async () => {
+    const messageAdd = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi
+              .fn()
+              .mockReturnValueOnce(of([makeMl({})]))
+              .mockReturnValueOnce(throwError(() => new Error('network error'))),
+            getMailingListsByProject: vi.fn(() => of([])),
+            updateMailingList: vi.fn(() => of({})),
+          },
+        },
+        { provide: MessageService, useValue: { add: messageAdd } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    component.onSyncSettingsUpdated();
+    await fixture.whenStable();
+
+    expect(component.refreshingMl()).toBe(true);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+    expect(component.associatedMailingLists().length).toBe(1);
+  });
+
+  it('falls back to the last-good project mailing lists on a failed refresh instead of emptying the Add List picker (#4899 review)', async () => {
+    const PROJECT_LISTS = [makeMl({ uid: 'proj-ml-1' })];
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi.fn(() => of([])),
+            getMailingListsByProject: vi
+              .fn()
+              .mockReturnValueOnce(of(PROJECT_LISTS))
+              .mockReturnValueOnce(throwError(() => new Error('network error'))),
+            updateMailingList: vi.fn(() => of({})),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect((component as any).projectMailingLists()).toEqual(PROJECT_LISTS);
+
+    component.onSyncSettingsUpdated();
+    await fixture.whenStable();
+
+    expect((component as any).projectMailingLists()).toEqual(PROJECT_LISTS);
   });
 });

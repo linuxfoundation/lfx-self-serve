@@ -73,6 +73,14 @@ export class MailingListSyncSettingsComponent {
   protected readonly isWriter = computed(() => this.mailingList().writer === true);
 
   protected readonly saving = signal(false);
+  // Tracks which mailing list uid the in-flight save belongs to, separately from `saving` itself —
+  // this component can be reused across a route navigation from one mailing list's page to another
+  // (the standalone view page binds `mailingList` directly to a router input, unlike the drawer's
+  // @for-keyed instances), and a save is fire-and-forget (take(1), not takeUntilDestroyed), so it
+  // can still be in flight when `mailingList()` switches to a different list. Without this, the
+  // mailingList()-driven effect below would read a stale `saving === true` left over from the
+  // previous list and skip syncing the toggle to the new list's persisted state (#4899 review).
+  private readonly savingUid = signal<string | null>(null);
 
   protected readonly committee = computed(() => this.mailingList().committees?.[0] ?? null);
 
@@ -97,11 +105,15 @@ export class MailingListSyncSettingsComponent {
     // through onToggleChange()/save() below, never through this input-driven effect.
     effect(() => {
       const ml = this.mailingList();
-      // Read `saving` untracked so this effect depends only on `mailingList()` — a tracked read also
-      // re-runs this effect the instant a successful save flips `saving` back to false, which still
-      // observes the pre-save `mailingList()` input (the parent's refresh hasn't landed yet) and
-      // would snap the toggle back to the old value until that refresh arrives (#4899 review).
-      if (untracked(this.saving)) return;
+      // Read `saving`/`savingUid` untracked so this effect depends only on `mailingList()` — a
+      // tracked read also re-runs this effect the instant a successful save flips `saving` back to
+      // false, which still observes the pre-save `mailingList()` input (the parent's refresh hasn't
+      // landed yet) and would snap the toggle back to the old value until that refresh arrives
+      // (#4899 review). Gated on `savingUid` matching the *current* list, not a bare `saving`
+      // boolean — otherwise a save still in flight for a previously-displayed list (this component
+      // can be reused across navigation) would suppress syncing the toggle to the newly-displayed
+      // list's actual persisted state (#4899 review).
+      if (untracked(this.saving) && untracked(this.savingUid) === ml.uid) return;
       this.syncOn.set(!!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL);
     });
 
@@ -154,6 +166,7 @@ export class MailingListSyncSettingsComponent {
   private save(syncMode: MailingListSyncMode): void {
     const ml = this.mailingList();
     this.saving.set(true);
+    this.savingUid.set(ml.uid);
     this.mailingListService
       .updateMailingList(ml.uid, this.buildUpdatePayload(ml, syncMode))
       .pipe(

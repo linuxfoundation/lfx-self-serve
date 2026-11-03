@@ -162,6 +162,25 @@ describe('MailingListSyncSettingsComponent', () => {
     expect(toggle?.disabled()).toBe(true);
   });
 
+  it("syncs the toggle to a newly-displayed list even while a previous list's save is still in flight (#4899 review)", async () => {
+    // This component can be reused across a route navigation from one mailing list's page to
+    // another (take(1), not takeUntilDestroyed, so a save survives the input swap). A guard keyed
+    // on a bare `saving` boolean would wrongly skip syncing the toggle to list-2's own persisted
+    // state because *some* save is still in flight — even though it belongs to list-1, not list-2.
+    const listOne = { ...baseList, uid: 'list-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST };
+    await render(listOne, { updateDeferred: true });
+
+    fixture.componentInstance['onToggleChange'](false);
+    expect(fixture.componentInstance['syncOn']()).toBe(false);
+
+    const listTwo = { ...baseList, uid: 'list-2', sync_mode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE };
+    fixture.componentRef.setInput('mailingList', listTwo);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance['syncOn']()).toBe(true);
+  });
+
   it('emits savingChange while a save is in flight (#4899 review)', async () => {
     await render(baseList, { updateDeferred: true });
     const savingChanges: boolean[] = [];

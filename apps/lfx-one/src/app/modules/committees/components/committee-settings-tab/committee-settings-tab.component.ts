@@ -660,13 +660,20 @@ export class CommitteeSettingsTabComponent {
         switchMap((c) => {
           this.mlLoadingInternal.set(true);
           return this.mailingListService.getMailingListsByCommittee(c!.uid).pipe(
-            finalize(() => {
-              this.mlLoadingInternal.set(false);
+            finalize(() => this.mlLoadingInternal.set(false)),
+            // Clear refreshingMl only on an actual emission, not in finalize() — finalize() also
+            // fires on unsubscribe, so a switchMap cancelling this request in favor of a newer one
+            // (another refreshMl$/committee() emission) would otherwise unlock sibling cards while
+            // the replacement request is still in flight (#4899 review).
+            tap((lists) => {
+              lastGoodLists = { uid: c!.uid, lists };
               this.refreshingMl.set(false);
             }),
-            tap((lists) => (lastGoodLists = { uid: c!.uid, lists })),
             catchError((error) => {
               console.error('Failed to refresh associated mailing lists', error);
+              // Leave refreshingMl locked rather than unlocking sibling cards against this stale
+              // fallback — it only clears again once a refresh actually succeeds (#4899 review).
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to refresh mailing lists' });
               return of(lastGoodLists?.uid === c!.uid ? lastGoodLists.lists : []);
             })
           );
@@ -682,11 +689,21 @@ export class CommitteeSettingsTabComponent {
     // (e.g. one still showing auto_c_to_ml after a drawer save turned it off) can resurrect an
     // automatic sync mode the admin just disabled the next time the picker re-associates that list
     // (#4899 review).
+    // Same keyed last-good-data fallback as initAssociatedMailingLists() above — a transient fetch
+    // error otherwise empties the Add List picker instead of just leaving it stale (#4899 review).
+    let lastGoodProjectLists: { uid: string; lists: GroupsIOMailingList[] } | null = null;
+
     return toSignal(
       merge(toObservable(this.committee), this.refreshMl$.pipe(map(() => this.committee()))).pipe(
         filter((c) => !!c?.project_uid),
         switchMap((c) => {
-          return this.mailingListService.getMailingListsByProject(c!.project_uid!).pipe(catchError(() => of([] as GroupsIOMailingList[])));
+          return this.mailingListService.getMailingListsByProject(c!.project_uid!).pipe(
+            tap((lists) => (lastGoodProjectLists = { uid: c!.project_uid!, lists })),
+            catchError((error) => {
+              console.error('Failed to refresh project mailing lists', error);
+              return of(lastGoodProjectLists?.uid === c!.project_uid ? lastGoodProjectLists.lists : []);
+            })
+          );
         })
       ),
       { initialValue: [] as GroupsIOMailingList[] }
