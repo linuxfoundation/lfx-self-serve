@@ -12,8 +12,10 @@ import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-rese
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
+import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
@@ -106,6 +108,7 @@ describe('MeetingHomeRowComponent', () => {
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: UserService, useValue: { authenticated: signal(true), viewerUsername } },
         { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
+        { provide: MeetingsHomeDeleteService, useValue: {} },
       ],
     });
   });
@@ -176,15 +179,61 @@ describe('MeetingHomeRowComponent', () => {
       expect(classes(fixture, 'meetings-home-row-menu')).toEqual(expect.arrayContaining(['col-start-4', 'row-start-1', '-my-[4px]']));
     });
 
-    it.each<[Partial<Meeting>, string | null]>([
-      [{ created_by: { name: 'Jane Doe', username: 'jdoe', email: '' } }, 'Organized by Jane Doe'],
-      [{ created_by: { name: 'Jane Doe', username: 'jdoe', email: '' }, organizers: ['jdoe', 'auth0|asmith', 'bking'] }, 'Organized by Jane +2'],
-      [{ created_by: { name: 'Viewer Person', username: 'viewer', email: '' }, organizers: ['viewer'] }, 'Organized by you'],
-      [{}, null],
-    ])('shows who organizes %j', async (overrides, expected) => {
-      const fixture = await render(buildRow(buildMeeting(overrides)));
+    describe('organized by', () => {
+      const jane = { name: 'Jane Doe', username: 'jdoe', email: '', profile_picture: 'https://example.org/jane.png' };
+      const avatars = (fixture: ComponentFixture<MeetingHomeRowComponent>): HTMLElement[] =>
+        Array.from(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-row-organizer-avatar"]'));
 
-      expect(query(fixture, 'meetings-home-row-organizer')?.textContent?.replace('·', '').trim() ?? null).toBe(expected);
+      it('shows one organizer as a labelled avatar with a tooltip, then the name', async () => {
+        const fixture = await render(buildRow(buildMeeting({ created_by: jane })));
+        const [avatar] = avatars(fixture);
+
+        expect(text(fixture, 'meetings-home-row-organizer').replace('·', '').trim()).toBe('Organized by:Jane Doe');
+        expect(text(fixture, 'meetings-home-row-organizer-name')).toBe('Jane Doe');
+        expect(avatars(fixture)).toHaveLength(1);
+        expect(avatar.getAttribute('role')).toBe('img');
+        expect(avatar.getAttribute('aria-label')).toBe('Jane Doe');
+        expect(avatar.getAttribute('tabindex')).toBe('0');
+        expect(avatar.querySelector('img')?.getAttribute('src')).toBe(jane.profile_picture);
+        expect(fixture.debugElement.query(By.css('[data-testid="meetings-home-row-organizer-avatar"]')).injector.get(UiTooltipDirective).text()).toBe(
+          'Jane Doe'
+        );
+      });
+
+      it('draws 18px avatars with the design initials, overlapping 5px after the first', async () => {
+        const fixture = await render(buildRow(buildMeeting({ created_by: { ...jane, profile_picture: undefined }, organizers: ['asmith'] })));
+        const [first, second] = avatars(fixture);
+        const avatar = second.querySelector<HTMLElement>('lfx-ui-avatar');
+
+        expect(first.style.marginLeft).toBe('0px');
+        expect(second.style.marginLeft).toBe('-5px');
+        expect(avatar?.style.width).toBe('18px');
+        expect(Array.from(avatar?.classList ?? [])).toEqual(expect.arrayContaining(['!text-[8px]', '!font-semibold', 'ring-2', 'ring-ui-background-100']));
+        expect(avatar?.getAttribute('aria-hidden')).toBe('true');
+        expect(first.textContent?.trim()).toBe('JD');
+        expect(second.textContent?.trim()).toBe('AS');
+      });
+
+      it('shows several organizers as avatars only, with no names or count', async () => {
+        const fixture = await render(buildRow(buildMeeting({ created_by: jane, organizers: ['jdoe', 'auth0|asmith', 'bking'] })));
+
+        expect(avatars(fixture).map((avatar) => avatar.getAttribute('aria-label'))).toEqual(['Jane Doe', 'asmith', 'bking']);
+        expect(query(fixture, 'meetings-home-row-organizer-name')).toBeNull();
+        expect(text(fixture, 'meetings-home-row-organizer')).not.toContain('+');
+      });
+
+      it('names the viewer "You"', async () => {
+        const fixture = await render(buildRow(buildMeeting({ created_by: { name: 'Viewer Person', username: 'viewer', email: '' }, organizers: ['viewer'] })));
+
+        expect(avatars(fixture)[0].getAttribute('aria-label')).toBe('You');
+        expect(text(fixture, 'meetings-home-row-organizer-name')).toBe('You');
+      });
+
+      it('hides the item without an owner or creator', async () => {
+        const fixture = await render(buildRow(buildMeeting()));
+
+        expect(query(fixture, 'meetings-home-row-organizer')).toBeNull();
+      });
     });
 
     it('opens the meeting page in a new tab with the password and date', async () => {

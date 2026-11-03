@@ -4,7 +4,7 @@ description: Guides for the Organization lens in LFX Self Serve, including the O
 audience: [all]
 product_area: Organization
 tags: [organization, org, switch-organization, easycla, cla, access]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Organization
 ---
 
@@ -20,7 +20,7 @@ Your own signed agreements, as a contributor, are on the [CLAs](../account/my-cl
 
 ## Who this applies to
 
-Anyone who can open an organization in the Organization lens. EasyCLA is also the only Organization lens page a CLA Manager sees when they have no other role on that organization.
+Anyone who can open an organization in the Organization lens. EasyCLA is also the only Organization lens page a CLA Manager, or an initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), sees when they have no other role on that organization.
 
 ## Navigation
 

@@ -95,6 +95,18 @@ export interface MeetingHomeRowType {
   icon: string;
 }
 
+/** One avatar in the "Organized by" stack of a meetings home row. */
+export interface MeetingHomeRowOrganizer {
+  /** Normalized username or email, unique within the row. */
+  key: string;
+  /** Accessible name and tooltip: "You" for the viewer, else the name. */
+  label: string;
+  /** Display name or username; the source of the initials. */
+  name: string;
+  /** Photo URL; empty when the feed has none. */
+  photo: string;
+}
+
 /** One date in the Pending RSVPs popover of the meetings home page, with what its row shows. */
 export interface MeetingPendingRsvpItem {
   row: MeetingHomeRow;
@@ -153,4 +165,11 @@ export interface MeetingEditScopeDialogData {
   meeting: Meeting;
   /** The date the dialog opens on. */
   occurrence: MeetingOccurrence;
+}
+
+/** What the meetings home delete dialogs open with: the recurring scope picker, and the delete or cancel confirmation. */
+export interface MeetingDeleteDialogData {
+  row: MeetingHomeRow;
+  /** Picker: the date it opens on. Confirmation: the date to cancel; null deletes the whole meeting. */
+  occurrence: MeetingOccurrence | null;
 }

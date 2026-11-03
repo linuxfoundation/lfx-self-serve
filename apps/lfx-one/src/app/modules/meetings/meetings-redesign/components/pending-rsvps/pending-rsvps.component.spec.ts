@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { RecurrenceType } from '@lfx-one/shared/enums';
+import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow, MeetingRsvp, RsvpScope } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
@@ -128,6 +128,33 @@ describe('PendingRsvpsComponent', () => {
     expect(rows[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-recurring"]')).toBeNull();
     expect(rows[1].querySelector('[data-testid="meetings-home-pending-rsvps-row-recurring"]')).not.toBeNull();
     expect(rows[0].querySelector('[data-testid="meetings-home-rsvp-accepted"] button')?.className).toContain('h-ui-tiny');
+  });
+
+  it('puts the RSVP buttons in the top-right corner of each row, wrapping right-aligned on phones', async () => {
+    await render([buildRow('a')]);
+    await open();
+
+    const row = all('meetings-home-pending-rsvps-row')[0];
+    const rsvp = row.querySelector('[data-testid="meetings-home-pending-rsvps-row-rsvp"]');
+    expect(row.classList).toContain('items-start');
+    expect(row.classList).toContain('flex-wrap');
+    expect(row.lastElementChild).toBe(rsvp);
+    expect(rsvp?.classList).toContain('ml-auto');
+    expect(rsvp?.querySelector('[data-testid="meetings-home-rsvp"]')).not.toBeNull();
+  });
+
+  it('badges only Private and Restricted meetings', async () => {
+    await render([
+      buildRow('public', { visibility: MeetingVisibility.PUBLIC, restricted: false }),
+      buildRow('private', { visibility: MeetingVisibility.PRIVATE, restricted: false }),
+      buildRow('restricted', { visibility: MeetingVisibility.PUBLIC, restricted: true }),
+    ]);
+    await open();
+
+    const badges = all('meetings-home-pending-rsvps-row').map((row) =>
+      Array.from(row.querySelectorAll('[data-testid^="meetings-home-pending-rsvps-row-visibility-"]')).map((badge) => badge.getAttribute('data-testid'))
+    );
+    expect(badges).toEqual([[], ['meetings-home-pending-rsvps-row-visibility-private'], ['meetings-home-pending-rsvps-row-visibility-restricted']]);
   });
 
   it('drops an answered date and moves focus to the date now in its place', async () => {

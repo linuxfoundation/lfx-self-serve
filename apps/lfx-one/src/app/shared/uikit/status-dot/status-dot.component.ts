@@ -48,13 +48,14 @@ export class UiStatusDotComponent {
     return computed(() => {
       // Exact px, not rem; 14px root.
       const base = 'h-[10px] w-[10px] shrink-0 rounded-ui-full';
+      // Forced colours: Highlight for work in progress, GrayText for inactive states, a square for error.
       const states = {
-        queued: 'status-dot-pulse bg-ui-neutral-400',
-        building: 'status-dot-pulse bg-ui-warning-500',
-        ready: 'bg-ui-success-600',
-        error: 'bg-ui-danger-600',
-        canceled: 'bg-ui-neutral-900',
-        deleted: 'bg-transparent ring-[1.5px] ring-inset ring-ui-neutral-400',
+        queued: 'status-dot-pulse bg-ui-neutral-400 forced-colors:border-[1.5px] forced-colors:border-[color:Highlight]',
+        building: 'status-dot-pulse bg-ui-warning-500 forced-colors:bg-[color:Highlight]',
+        ready: 'bg-ui-success-600 forced-colors:bg-[color:CanvasText]',
+        error: 'bg-ui-danger-600 forced-colors:rounded-none forced-colors:bg-[color:CanvasText]',
+        canceled: 'bg-ui-neutral-900 forced-colors:bg-[color:GrayText]',
+        deleted: 'bg-transparent ring-[1.5px] ring-inset ring-ui-neutral-400 forced-colors:border-[1.5px] forced-colors:border-[color:GrayText]',
       };
       return `${base} ${states[this.status()]}`;
     });
