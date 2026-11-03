@@ -1093,6 +1093,25 @@
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
+      <!--
+        Google Ads: demographic exclusions and excluded locations (#4991). Demographics open only on a
+        channel the shared fence accepts; excluded locations on every Google channel of the
+        campaign-service road, as upstream fences them on none. Errors are the shared refusals the BFF
+        answers the create with, and Create waits on them.
+      -->
+      @if (googleDemographicExclusionsAvailable() || googleExcludedGeoTargetsAvailable()) {
+        <lfx-campaign-google-exclusions-panel
+          [showDemographics]="googleDemographicExclusionsAvailable()"
+          [showExcludedGeos]="googleExcludedGeoTargetsAvailable()"
+          [excludedAgeRanges]="googleExcludedAgeRanges()"
+          (excludedAgeRangesChange)="onGoogleExcludedAgeRangesChange($event)"
+          [excludedGenders]="googleExcludedGenders()"
+          (excludedGendersChange)="onGoogleExcludedGendersChange($event)"
+          [excludedGeoTargets]="googleExcludedGeoTargets()"
+          (excludedGeoTargetsChange)="onGoogleExcludedGeoTargetsChange($event)"
+          [demographicsError]="googleDemographicExclusionsError()"
+          [excludedGeosError]="googleExcludedGeoTargetsError()" />
+      }
       @if (googleTargetingWithheldMessage(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-targeting-withheld">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}

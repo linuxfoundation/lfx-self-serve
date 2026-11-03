@@ -2077,6 +2077,27 @@ export const GOOGLE_ADS_AGE_RANGES = Object.keys(GOOGLE_ADS_AGE_RANGE_MAP).filte
 export const GOOGLE_ADS_GENDERS = ['MALE', 'FEMALE', 'UNDETERMINED'] as const;
 
 /**
+ * What the Implementation tab's demographic exclusion checkboxes call each friendly
+ * {@link GOOGLE_ADS_AGE_RANGES} spelling, in Google's own words. `UNDETERMINED` is Google's "Unknown".
+ */
+export const GOOGLE_ADS_AGE_RANGE_LABELS: Readonly<Record<string, string>> = {
+  '18-24': '18 to 24',
+  '25-34': '25 to 34',
+  '35-44': '35 to 44',
+  '45-54': '45 to 54',
+  '55-64': '55 to 64',
+  '65+': '65 or more',
+  UNDETERMINED: 'Unknown',
+};
+
+/** What the Implementation tab's demographic exclusion checkboxes call each {@link GOOGLE_ADS_GENDERS} value. */
+export const GOOGLE_ADS_GENDER_LABELS = {
+  MALE: 'Male',
+  FEMALE: 'Female',
+  UNDETERMINED: 'Unknown',
+} as const;
+
+/**
  * Upstream's own bound on a Google Ads callout list (`assets.go`'s `maxCallouts`).
  *
  * Unlike {@link GOOGLE_ADS_MAX_GEO_TARGETS}, this one is checked BEFORE any entry: `validateCallouts`

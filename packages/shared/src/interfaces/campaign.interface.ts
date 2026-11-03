@@ -1377,6 +1377,18 @@ export interface CampaignImplementationDraft {
    */
   googleDeviceBidModifiers?: CampaignDeviceBidModifier[];
   /**
+   * Google's excluded age ranges and genders, as the operator ticked them. Absent and empty agree:
+   * nothing is excluded. Held and restored on the same rule as {@link googleAdSchedules}, so a list
+   * saved under a channel that takes no demographic exclusions is kept, not sent.
+   */
+  googleExcludedAgeRanges?: GoogleAdsAgeRange[];
+  googleExcludedGenders?: GoogleAdsGender[];
+  /**
+   * Google's excluded locations — country codes and numeric geo target constant ids, countries
+   * first. Absent and empty agree: the campaign excludes nowhere.
+   */
+  googleExcludedGeoTargets?: string[];
+  /**
    * Google's callout extensions, as the operator typed them — already trimmed, because a callout
    * only becomes a chip once it has passed the add guards.
    *
@@ -3204,6 +3216,13 @@ export interface GoogleAdScheduleRowView {
  * the device (a `0` bid modifier, which stops the campaign serving there).
  */
 export type GoogleDeviceBidMode = 'default' | 'adjust' | 'exclude';
+
+/** One demographic exclusion checkbox on the Implementation tab: the value it writes, its label and whether it is ticked. */
+export interface GoogleExclusionOptionView {
+  value: string;
+  label: string;
+  checked: boolean;
+}
 
 /**
  * One choice in a device's mode picker. `disabled` is set only on an Adjust bid choice shown for a

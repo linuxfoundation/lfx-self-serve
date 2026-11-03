@@ -21,6 +21,7 @@ import {
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS,
   GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
   GOOGLE_ADS_MAX_PRICE_OFFERINGS,
@@ -8156,6 +8157,155 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
 
     expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
     expect(c['googleDeviceBidModifiers']()).toEqual([NO_TABLETS]);
+  });
+});
+
+/**
+ * Demographic exclusions and excluded locations (#4991). The exclusions panel's edits land in three
+ * tab signals; these pin what the create request carries for each channel, that Create waits on every
+ * shared refusal the BFF answers with (each entry branch, the cap and the targeted-and-excluded clash),
+ * and that demographics hidden by a channel switch are held and said to be held.
+ */
+describe('ImplementationTabComponent google exclusions', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  function seedExclusions(patch: Record<string, unknown>, geos: string[] = ['DE']): Record<string, any> {
+    const c = seedChannel(fixture, patch);
+    c['onGoogleExcludedAgeRangesChange'](['18-24']);
+    c['onGoogleExcludedGendersChange'](['UNDETERMINED']);
+    c['onGoogleExcludedGeoTargetsChange'](geos);
+    fixture.detectChanges();
+    return c;
+  }
+
+  it.each([
+    ['search', { includeSearch: true }, { excludedAgeRanges: ['18-24'], excludedGenders: ['UNDETERMINED'], excludedGeoTargets: ['DE'] }],
+    ['display', { includeDisplay: true }, { excludedAgeRanges: ['18-24'], excludedGenders: ['UNDETERMINED'], excludedGeoTargets: ['DE'] }],
+    ['performance-max', { includePerformanceMax: true }, { excludedGeoTargets: ['DE'] }],
+    ['demand-gen', { includeDemandGen: true }, { excludedGeoTargets: ['DE'] }],
+  ])('sends what %s accepts and holds the rest', (_channel, patch, expected) => {
+    const c = seedExclusions(patch);
+
+    expect(c['googleTargetingPayload']()).toEqual(expected);
+    expect(c['googleExcludedAgeRanges']()).toEqual(['18-24']);
+  });
+
+  it('submits all three lists on Search, copied rather than shared', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedExclusions({ includeSearch: true });
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['excludedAgeRanges']).toEqual(['18-24']);
+    expect(request['excludedGenders']).toEqual(['UNDETERMINED']);
+    expect(request['excludedGeoTargets']).toEqual(['DE']);
+    expect(request['excludedGeoTargets']).not.toBe(c['googleExcludedGeoTargets']());
+  });
+
+  it('shows both sections on Search, and on Performance Max only locations, saying the demographics are held', () => {
+    seedExclusions({ includeSearch: true });
+    expect(query('implementation-google-demographics')).not.toBeNull();
+    expect(query('implementation-google-excluded-geos')).not.toBeNull();
+    expect(query('implementation-google-targeting-withheld')).toBeNull();
+
+    (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
+    fixture.detectChanges();
+
+    expect(query('implementation-google-demographics')).toBeNull();
+    expect(query('implementation-google-excluded-geos')).not.toBeNull();
+    const held = 'Performance Max campaigns do not take demographic exclusions, so the 2 demographic exclusions you set will not be sent.';
+    expect(query('implementation-google-targeting-withheld')?.textContent).toContain(held);
+    expect(query('implementation-google-targeting-withheld-live')?.textContent).toContain(held);
+    // Held, not judged: the shared fence would refuse demographics on Performance Max, but none are sent.
+    expect((fixture.componentInstance as unknown as Record<string, any>)['googleDemographicExclusionsError']()).toBeNull();
+  });
+
+  it.each([
+    ['an unknown age range', { ageRanges: ['17-23'] }, 'googleDemographicExclusionsError', 'cannot exclude the age range 17-23'],
+    ['an unknown gender', { genders: ['OTHER'] }, 'googleDemographicExclusionsError', 'cannot exclude the gender OTHER'],
+    ['a blank location', { geos: [''] }, 'googleExcludedGeoTargetsError', 'cannot include a blank entry'],
+    ['a non-canonical geo id', { geos: ['01023191'] }, 'googleExcludedGeoTargetsError', 'is not the canonical spelling'],
+    ['an unsupported country', { geos: ['ZZ'] }, 'googleExcludedGeoTargetsError', 'cannot exclude ZZ on this path'],
+    [
+      'too many locations',
+      { geos: Array.from({ length: GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS + 1 }, (_, i) => String(1000 + i)) },
+      'googleExcludedGeoTargetsError',
+      `accepts at most ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} excluded locations`,
+    ],
+  ])('holds Create on %s and shows the shared refusal under its section', (_case, lists, signalName, message) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googleGeoTargets'].set(['GB']);
+    c['onGoogleExcludedAgeRangesChange']((lists as Record<string, string[]>)['ageRanges'] ?? []);
+    c['onGoogleExcludedGendersChange']((lists as Record<string, string[]>)['genders'] ?? []);
+    c['onGoogleExcludedGeoTargetsChange']((lists as Record<string, string[]>)['geos'] ?? []);
+    fixture.detectChanges();
+
+    expect(c[signalName]()).toContain(message);
+    expect(c['canSubmit']()).toBe(false);
+    const errorId =
+      signalName === 'googleDemographicExclusionsError' ? 'implementation-google-demographics-error' : 'implementation-google-excluded-geos-error';
+    expect(query(errorId)?.textContent).toContain(message);
+  });
+
+  it('refuses excluding a targeted place however it is spelled, and the event country the request falls back to', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googleGeoTargets'].set(['US']);
+    c['onGoogleExcludedGeoTargetsChange'](['2840']);
+    fixture.detectChanges();
+    expect(c['googleExcludedGeoTargetsError']()).toContain('cannot both target and exclude US');
+    expect(c['canSubmit']()).toBe(false);
+
+    // No country picked: the request targets the event country (US), so excluding it clashes too.
+    c['googleGeoTargets'].set([]);
+    c['onGoogleExcludedGeoTargetsChange'](['US']);
+    fixture.detectChanges();
+    expect(c['googleEffectiveGeoTargets']()).toEqual(['US']);
+    expect(c['googleExcludedGeoTargetsError']()).toContain('cannot both target and exclude US');
+
+    c['onGoogleExcludedGeoTargetsChange'](['CA']);
+    expect(c['googleExcludedGeoTargetsError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('withholds the panel and every key off the campaign-service road', () => {
+    const c = seedExclusions({ includeSearch: true }, ['ZZ']);
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+
+    expect(c['googleTargetingPayload']()).toEqual({});
+    expect(c['googleExcludedGeoTargetsError']()).toBeNull();
+    expect(query('implementation-google-exclusions-panel')).toBeNull();
+  });
+
+  it('round-trips the three lists through a draft and empties them for a new brief', () => {
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const c = seedExclusions({ includeSearch: true });
+
+    expect(emitted?.googleExcludedAgeRanges).toEqual(['18-24']);
+    expect(emitted?.googleExcludedGenders).toEqual(['UNDETERMINED']);
+    expect(emitted?.googleExcludedGeoTargets).toEqual(['DE']);
+
+    c['resetGoogleFields']();
+    expect(c['googleExcludedAgeRanges']()).toEqual([]);
+    expect(c['googleExcludedGenders']()).toEqual([]);
+    expect(c['googleExcludedGeoTargets']()).toEqual([]);
+    restoreGoogleDraft(fixture, c, { googleExcludedAgeRanges: ['65+'], googleExcludedGenders: ['MALE'], googleExcludedGeoTargets: ['DE', '1023191'] });
+
+    expect(c['googleExcludedAgeRanges']()).toEqual(['65+']);
+    expect(c['googleExcludedGenders']()).toEqual(['MALE']);
+    expect(c['googleExcludedGeoTargets']()).toEqual(['DE', '1023191']);
   });
 });
 
