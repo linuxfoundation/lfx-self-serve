@@ -48,7 +48,7 @@ Use the search box and the two menus above the **Active** table. The three summa
 
 1. In **Search memberships...**, type part of a foundation name. The search matches the foundation name.
 2. Open the membership level menu. It starts on **All Membership Levels**. The other choices are the tiers on this organization's memberships.
-3. Open the renewal menu. It starts on **All Renewals**. Choose **Renewing in 90 Days** or **Renewing in 30 Days** to keep memberships whose tier end date falls within that many days.
+3. Open the renewal menu. It starts on **All Renewals**. Choose **Renewing in 90 Days** or **Renewing in 30 Days** to keep memberships whose tier end date is on or before that many days from today, including a tier end date that has already passed. A membership with no tier end date is left out.
 
 When the table has no rows, including when a search or filter matches nothing, it says **No active memberships** and **This organization does not have any active memberships.** When the list fails to load, it says **Failed to load memberships** and **Please try again.** Select **Retry**.
 
