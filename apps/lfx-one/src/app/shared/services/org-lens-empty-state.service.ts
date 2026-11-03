@@ -119,10 +119,19 @@ export class OrgLensEmptyStateService {
     // The roll-up is a view mode, not an organization: it names no `b2b_org` row, so by construction
     // it is in no grant set and a uid lookup would call it unheld. That is not a missing entitlement
     // — it would withdraw the switcher's FR-010 partial-lookup notice and its Retry exactly when the
-    // roster is short, and send a contractor to the probe. It is held when the caller may select it,
-    // which `AccountContextService` decides from these same grant sets (#4415, Copilot).
+    // roster is short, and send a contractor to the probe with the reserved sentinel.
+    //
+    // Held whenever it is still *admitted*, which is the condition `selectRollUp` applies: the
+    // caller may select it, or the grants are only a lower bound and admission is deliberately
+    // riding that out. `canSelectRollUp` alone was not enough — a conglomerate's siblings arrive as
+    // inherited grants, so the count sits below two through the whole partial window while the
+    // selection stands (#4415, Copilot then Cursor).
+    //
+    // A failed lookup is excluded on purpose: nothing is a lower bound there, the selection is not
+    // evidence of anything, and rule 2 below owns that render — `could-not-load` with its Retry,
+    // not a page drawn over an outage.
     if (isOrgRollUpSegment(uid)) {
-      return this.accountContext.canSelectRollUp();
+      return this.accountContext.canSelectRollUp() || !this.roleGrants.loaded() || this.roleGrants.lookupOutcome() === 'partial';
     }
     return (
       this.roleGrants.writerSet().has(uid) ||

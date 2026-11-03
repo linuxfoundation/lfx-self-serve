@@ -223,6 +223,34 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.selectedHeld()).toBe(false);
   });
 
+  /**
+   * Cursor on PR #4415. Keying only on `canSelectRollUp` reopened the hole for the case the
+   * admission path exists for: a conglomerate's siblings arrive as *inherited* grants, so the count
+   * sits below two for the whole partial window while the selection legitimately stands. The notice
+   * and its Retry vanished there, and a contractor was probed with the reserved sentinel.
+   */
+  it('keeps the roll-up held through the partial window the admission path rides out', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('partial');
+
+    expect(h.service.selectedHeld()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  // A failed lookup is not a lower bound: rule 2 owns that render, rather than a page over an outage.
+  it('lets the outage win over an admitted roll-up when the lookup failed outright', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.selectedHeld()).toBe(false);
+    expect(h.service.pageState()).toBe('could-not-load');
+  });
+
   it('counts an inherited grant as holding the selection', () => {
     h.selectedAccount.set(account(HELD));
     h.inheritedAuditorSet.set(new Set([HELD]));
