@@ -17,7 +17,7 @@ import {
   formatMeetingTimeRange,
   getMeetingDayBucket,
   getMeetingHomeRowLink,
-  getMeetingHomeRowOrganizer,
+  getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingProjectUrl,
@@ -644,20 +644,37 @@ describe('getMeetingHomeRowType', () => {
   });
 });
 
-describe('getMeetingHomeRowOrganizer', () => {
-  const jane = { name: 'Jane Doe', username: 'jdoe', email: 'jane@example.org' };
+describe('getMeetingHomeRowOrganizers', () => {
+  const jane = { name: 'Jane Doe', username: 'jdoe', email: 'jane@example.org', profile_picture: 'https://example.org/jane.png' };
+  const janeAvatar = { key: 'jdoe', label: 'Jane Doe', name: 'Jane Doe', photo: 'https://example.org/jane.png' };
+  const labels = (meeting: Pick<Meeting, 'created_by' | 'owner' | 'organizers'>) => getMeetingHomeRowOrganizers(meeting, 'auth0|viewer').map((o) => o.label);
 
-  it.each<[Pick<Meeting, 'created_by' | 'owner' | 'organizers'>, string | null]>([
-    [{ created_by: jane, organizers: [] }, 'Jane Doe'],
-    [{ created_by: jane, organizers: ['jdoe', 'auth0|JDOE'] }, 'Jane Doe'],
-    [{ created_by: jane, organizers: ['Jane@Example.org', 'asmith'] }, 'Jane +1'],
-    [{ created_by: jane, organizers: ['jdoe', 'asmith', 'auth0|bking', 'bking'] }, 'Jane +2'],
-    [{ created_by: { name: '', username: 'viewer', email: '' }, organizers: ['viewer', 'asmith'] }, 'you +1'],
-    [{ created_by: { name: 'Viewer', username: 'viewer', email: '' }, organizers: [] }, 'you'],
-    [{ owner: { name: 'Owen Owner', username: 'owen', email: '' }, created_by: jane, organizers: ['jdoe'] }, 'Owen +1'],
-    [{ organizers: ['asmith'] }, null],
-  ])('%j → %s', (meeting, expected) => {
-    expect(getMeetingHomeRowOrganizer(meeting, 'auth0|viewer')).toBe(expected);
+  it('puts the owner or creator first with their name and photo', () => {
+    expect(getMeetingHomeRowOrganizers({ created_by: jane, organizers: [] }, 'auth0|viewer')).toEqual([janeAvatar]);
+  });
+
+  it('adds the other organizers by username, without the primary in either form or duplicates', () => {
+    expect(getMeetingHomeRowOrganizers({ created_by: jane, organizers: ['Jane@Example.org', 'auth0|JDOE', 'auth0|ASmith', 'asmith', ' '] }, 'viewer')).toEqual([
+      janeAvatar,
+      { key: 'asmith', label: 'ASmith', name: 'ASmith', photo: '' },
+    ]);
+  });
+
+  it.each<[Pick<Meeting, 'created_by' | 'owner' | 'organizers'>, string[]]>([
+    [{ created_by: jane, organizers: ['bob@example.org'] }, ['Jane Doe', 'bob']],
+    [{ created_by: { name: 'Viewer Person', username: 'viewer', email: '' }, organizers: ['viewer', 'asmith'] }, ['You', 'asmith']],
+    [{ created_by: jane, organizers: ['viewer'] }, ['Jane Doe', 'You']],
+    [{ owner: { name: 'Owen Owner', username: 'owen', email: '' }, created_by: jane, organizers: ['jdoe'] }, ['Owen Owner', 'jdoe']],
+    [{ organizers: ['asmith'] }, []],
+  ])('%j → %j', (meeting, expected) => {
+    expect(labels(meeting)).toEqual(expected);
+  });
+
+  it('keeps the real name behind "You" for the initials', () => {
+    expect(getMeetingHomeRowOrganizers({ created_by: { name: 'Viewer Person', username: 'viewer', email: '' }, organizers: [] }, 'viewer')[0]).toMatchObject({
+      label: 'You',
+      name: 'Viewer Person',
+    });
   });
 });
 
