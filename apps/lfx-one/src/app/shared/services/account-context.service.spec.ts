@@ -977,6 +977,31 @@ describe('AccountContextService — All Organizations roll-up', () => {
       expect(service.demoteAddressedRollUp()?.uid).toBe(UID_A);
     });
 
+    /**
+     * Copilot on PR #4415. The addressing case above kept a CLA-only organization, but the
+     * fallback that picks one did not look at `claOnlyOrgUids` at all — so a caller sitting on
+     * `/org/all` whose Org Lens grants had lapsed, with only a CLA-manager company left, demoted
+     * to `null` and landed on `/org/not-found` while still holding a page they could open.
+     */
+    it('falls back to a CLA-only organization rather than the not-found dead end', () => {
+      // On the roll-up itself, so there is no concrete selection to keep; nothing but CLA-only left.
+      service.selectRollUp({ admitWhilePending: true });
+      service.initializeUserOrganizations([]);
+      claOnlyOrgUids.set(new Set([UID_A]));
+
+      expect(service.demoteAddressedRollUp()?.uid).toBe(UID_A);
+    });
+
+    // A held grant outranks a CLA-only company: the roll-up combines the former, never the latter.
+    it('prefers a granted organization over a CLA-only one', () => {
+      service.selectRollUp({ admitWhilePending: true });
+      service.initializeUserOrganizations([]);
+      grants.writerSet.set(new Set([UID_B]));
+      claOnlyOrgUids.set(new Set([UID_A]));
+
+      expect(service.demoteAddressedRollUp()?.uid).toBe(UID_B);
+    });
+
     // A staff viewer reaches every organization with no grant of their own.
     it('keeps the current organization for a staff viewer', () => {
       grants.isStaff.set(true);
