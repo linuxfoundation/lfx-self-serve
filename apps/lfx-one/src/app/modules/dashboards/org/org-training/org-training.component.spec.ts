@@ -172,6 +172,27 @@ describe('OrgTrainingComponent', () => {
     expect(trainingService.getTrainingStats).toHaveBeenCalledTimes(1);
   });
 
+  it('gives the name search an accessible name and clears it when the organization changes', async () => {
+    const selectedAccount = signal<Account>(ACME);
+    const { el, fixture, trainingService } = await render(null, { stats: STATS, selectedAccount });
+    const input = el.querySelector('[data-testid="org-training-search-input"] input') as HTMLInputElement;
+    expect(input.getAttribute('aria-label')).toBe('Search by name');
+
+    input.value = 'kube';
+    input.dispatchEvent(new Event('input'));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(trainingService.getGroups).toHaveBeenLastCalledWith('org-uid-1', expect.anything(), expect.objectContaining({ searchQuery: 'kube' }));
+
+    selectedAccount.set({ ...ACME, accountId: 'acc-2', uid: 'org-uid-2', slug: 'globex' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(input.value).toBe('');
+    expect(trainingService.getGroups).toHaveBeenLastCalledWith('org-uid-2', expect.anything(), expect.objectContaining({ searchQuery: undefined }));
+  });
+
   it('states the selected range in the note under the card, not the old 12-month rule', async () => {
     const { el } = await render(null, { stats: STATS, params: { range: '90d' } });
     const note = el.querySelector('[data-testid="org-training-range-note"]')?.textContent ?? '';

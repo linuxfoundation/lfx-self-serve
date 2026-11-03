@@ -55,7 +55,7 @@ The Training & Certification page and People › Trainees share one filter bar a
 Search, **Time range** and (on Training & Certification) **Group by** are always visible. Foundation, Project, Course, Level and Format are behind **More filters**; the link reads **More filters (2)** when two of them are set, so a filter from a shared link is never hidden. **Fewer filters** collapses them again. Whether the row is open applies to the visit only, while the filter values stay in the page address.
 
 - **Time range** — Past 30 days, Past 90 days, Past 365 days, Past 2 years (default) or All time. It applies to every number and table on the page, and it is kept in the page address (`?range=`), so a link or a reload shows the same view.
-- **Filters** — Foundation, Project, Course, Level and Format. They narrow the numbers and the table together. **Format** applies to enrollments only, since certificates carry no format. **Clear all** resets the five filters and keeps the time range and group by.
+- **Filters** — Foundation, Project, Course, Level and Format. They narrow the numbers and the table together. Certificates carry the course's format, like enrollments. A course counts under the foundation, project, level and format it has across all of its rows in the range, so a filter keeps or drops a whole course, never a single enrollment or certificate of it. **Clear all** resets the five filters and keeps the time range and group by.
 - **Group by** (Training & Certification only) — Course (default), Foundation, Project, Level or Format. It changes how the table below is grouped and never changes the numbers at the top.
 
 The 12-month enrollment window that earlier versions of this page applied no longer applies here: the time range replaces it. A person's detail panel and an expanded row on People › All Employees keep their own 12-month rule, stated next to them.
@@ -74,7 +74,7 @@ Every number states what it counts (people or person-course pairs), its window a
 
 ### Certifications and Trainings tabs
 
-The two tabs split the same table by product type. **Certifications** lists certification products; **Trainings** lists everything else. Each row shows the group (with its logo where there is one), **People**, **Courses taken**, **Certified** (Certifications tab) or **Completed** (Trainings tab), and **In progress**.
+The two tabs split the same table by product type. **Certifications** lists certification products; **Trainings** lists everything else. Each row shows the group, **People**, **Courses taken**, **Certified** (Certifications tab) or **Completed** (Trainings tab), and **In progress**.
 
 - The **Total** row at the bottom covers every row of the tab, not only the page or the search, and matches the tiles: on the Certifications tab Certified equals the **Certifications** tile, on the Trainings tab Completed equals the **Trainings completed** tile. People in the total is distinct people, not the sum of the rows.
 - The search box in the filter row narrows the rows only. It never changes the numbers at the top.

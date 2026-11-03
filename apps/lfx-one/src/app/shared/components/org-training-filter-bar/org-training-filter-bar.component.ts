@@ -3,19 +3,24 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { Component, computed, effect, inject, input, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
 import { SelectComponent } from '@components/select/select.component';
-import { ORG_LENS_TIME_RANGE_OPTIONS, ORG_TRAINING_GROUP_BY_OPTIONS, ORG_TRAINING_VIEW_QUERY_PARAMS } from '@lfx-one/shared/constants';
+import {
+  ORG_LENS_TIME_RANGE_OPTIONS,
+  ORG_LENS_TIME_RANGE_QUERY_PARAM,
+  ORG_TRAINING_GROUP_BY_OPTIONS,
+  ORG_TRAINING_VIEW_QUERY_PARAMS,
+} from '@lfx-one/shared/constants';
 import type { OrgDropdownOption, OrgLensTimeRange, OrgTrainingFilterOptions, OrgTrainingFilters, OrgTrainingViewState } from '@lfx-one/shared/interfaces';
 import { hasOrgTrainingFilter, parseOrgTrainingViewState, serializeOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
-import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
 
 const FILTER_KEYS = ['foundation', 'project', 'course', 'level', 'format'] as const;
 const EMPTY_FILTER_OPTIONS: OrgTrainingFilterOptions = { foundations: [], projects: [], courses: [], levels: [], formats: [] };
@@ -75,24 +80,25 @@ export class OrgTrainingFilterBarComponent {
 
   public constructor() {
     // URL → form (silent: only a pick by the user writes to the URL).
-    effect(() => {
-      const state = this.state();
-      this.form.setValue(
-        {
-          range: state.range,
-          foundation: state.foundation ?? '',
-          project: state.project ?? '',
-          course: state.course ?? '',
-          level: state.level ?? '',
-          format: state.format ?? '',
-          groupBy: state.groupBy,
-        },
-        { emitEvent: false }
+    toObservable(this.state)
+      .pipe(takeUntilDestroyed())
+      .subscribe((state) =>
+        this.form.setValue(
+          {
+            range: state.range,
+            foundation: state.foundation ?? '',
+            project: state.project ?? '',
+            course: state.course ?? '',
+            level: state.level ?? '',
+            format: state.format ?? '',
+            groupBy: state.groupBy,
+          },
+          { emitEvent: false }
+        )
       );
-    });
 
     // Form → URL.
-    this.form.valueChanges.subscribe(() => this.navigate(this.stateFromForm()));
+    this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.navigate(this.stateFromForm()));
   }
 
   protected clearAll(): void {
@@ -100,8 +106,18 @@ export class OrgTrainingFilterBarComponent {
   }
 
   private stateFromForm(): OrgTrainingViewState {
-    const value: Record<string, string> = this.form.getRawValue();
-    return parseOrgTrainingViewState((key) => value[key]);
+    const value = this.form.getRawValue();
+    // The form's control names are the filter keys; the URL params (e.g. `trainingProject`) are the serializer's concern.
+    const params: Record<string, string> = {
+      [ORG_LENS_TIME_RANGE_QUERY_PARAM]: value.range,
+      [ORG_TRAINING_VIEW_QUERY_PARAMS.foundation]: value.foundation,
+      [ORG_TRAINING_VIEW_QUERY_PARAMS.project]: value.project,
+      [ORG_TRAINING_VIEW_QUERY_PARAMS.course]: value.course,
+      [ORG_TRAINING_VIEW_QUERY_PARAMS.level]: value.level,
+      [ORG_TRAINING_VIEW_QUERY_PARAMS.format]: value.format,
+      [ORG_TRAINING_VIEW_QUERY_PARAMS.groupBy]: value.groupBy,
+    };
+    return parseOrgTrainingViewState((key) => params[key]);
   }
 
   /** Writes the state to the URL, leaving every other query param (the page's `tab`, …) alone; `groupBy` only when this bar owns it. */
@@ -116,11 +132,23 @@ export class OrgTrainingFilterBarComponent {
       map((account) => account.uid),
       distinctUntilChanged()
     );
+    const range$ = toObservable(this.range);
     return toSignal(
-      combineLatest([orgUid$, toObservable(this.range)]).pipe(
-        switchMap(([orgUid, range]) => {
+      orgUid$.pipe(
+        // An org switch drops the previous org's options before the new ones load, so they are never shown for the new org.
+        switchMap((orgUid) => {
           if (!orgUid) return of(EMPTY_FILTER_OPTIONS);
-          return this.trainingService.getFilterOptions(orgUid, range).pipe(catchError(() => of(EMPTY_FILTER_OPTIONS)));
+          return range$.pipe(
+            switchMap((range) =>
+              this.trainingService.getFilterOptions(orgUid, range).pipe(
+                catchError((error: unknown) => {
+                  console.error('Failed to load training filter options', error);
+                  return of(EMPTY_FILTER_OPTIONS);
+                })
+              )
+            ),
+            startWith(EMPTY_FILTER_OPTIONS)
+          );
         })
       ),
       { initialValue: EMPTY_FILTER_OPTIONS }

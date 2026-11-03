@@ -16,6 +16,7 @@ import type {
   OrgTrainingStats,
   OrgTrainingStatsQuery,
 } from '@lfx-one/shared/interfaces';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { Observable } from 'rxjs';
 
 /** HTTP client of the shared Training / Trainees view: one stats call, one filter-options call and the group-by table. */
@@ -31,7 +32,7 @@ export class OrgLensTrainingService {
 
   public getFilterOptions(orgUid: string, range: OrgLensTimeRange): Observable<OrgTrainingFilterOptions> {
     return this.http.get<OrgTrainingFilterOptions>(`${this.baseUrl(orgUid)}/filter-options`, {
-      params: new HttpParams().set(ORG_LENS_TIME_RANGE_QUERY_PARAM, range),
+      params: strictHttpParams().set(ORG_LENS_TIME_RANGE_QUERY_PARAM, range),
     });
   }
 
@@ -66,7 +67,7 @@ export class OrgLensTrainingService {
 
   /** Range plus every filter that is set; an unset filter is left off the URL. */
   private queryParams(query: OrgTrainingStatsQuery): HttpParams {
-    let httpParams = new HttpParams().set(ORG_LENS_TIME_RANGE_QUERY_PARAM, query.range);
+    let httpParams = strictHttpParams().set(ORG_LENS_TIME_RANGE_QUERY_PARAM, query.range);
     for (const key of ['foundation', 'project', 'course', 'level', 'format'] as const) {
       const value = query[key];
       if (value !== null) httpParams = httpParams.set(ORG_TRAINING_VIEW_QUERY_PARAMS[key], value);

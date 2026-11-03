@@ -13,7 +13,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgTrainingGroupsTableComponent } from './org-training-groups-table.component';
@@ -48,9 +48,10 @@ const EMPLOYEES: OrgTrainingGroupEmployeesResponse = {
   data: [{ contactId: 'person-1', name: 'Sample Person', jobTitle: 'Engineer' }],
 };
 
-async function render(tab: OrgTrainingTabId = 'certifications', groupBy: OrgTrainingGroupBy = 'course') {
+async function render(tab: OrgTrainingTabId = 'certifications', groupBy: OrgTrainingGroupBy = 'course', response: OrgTrainingGroupsResponse = RESPONSE) {
+  const drawerOpen = vi.fn();
   const trainingService = {
-    getGroups: vi.fn(() => of(RESPONSE)),
+    getGroups: vi.fn(() => of(response)),
     getGroupEmployees: vi.fn(() => of(EMPLOYEES)),
     getTrainingStats: vi.fn(() => of(null)),
   };
@@ -60,7 +61,7 @@ async function render(tab: OrgTrainingTabId = 'certifications', groupBy: OrgTrai
     providers: [
       provideNoopAnimations(),
       { provide: OrgLensTrainingService, useValue: trainingService },
-      { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+      { provide: PersonDetailDrawerService, useValue: { open: drawerOpen } },
     ],
   }).compileComponents();
 
@@ -70,7 +71,7 @@ async function render(tab: OrgTrainingTabId = 'certifications', groupBy: OrgTrai
   fixture.componentRef.setInput('groupBy', groupBy);
   fixture.componentRef.setInput('tab', tab);
   await settle(fixture);
-  return { fixture, trainingService };
+  return { fixture, trainingService, drawerOpen };
 }
 
 async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
@@ -146,14 +147,14 @@ describe('OrgTrainingGroupsTableComponent', () => {
     expect(text('org-training-groups-totals-courses-taken')).toBe('20');
     expect(text('org-training-groups-totals-completed')).toBe('9');
     expect(text('org-training-groups-totals-in-progress')).toBe('3');
-    expect(byTestId('org-training-groups-totals-completed')?.getAttribute('aria-label')).toBe('Certified total, equals the Certifications tile');
+    expect(byTestId('org-training-groups-totals-completed')?.getAttribute('aria-label')).toBe('Certified total 9, equals the Certifications tile');
     expect(byTestId('org-training-groups-totals')?.getAttribute('title')).toContain('equals the “Certifications” tile');
   });
 
   it('names the Trainings completed tile on the Trainings tab', async () => {
     await render('trainings');
 
-    expect(byTestId('org-training-groups-totals-completed')?.getAttribute('aria-label')).toBe('Completed total, equals the Trainings completed tile');
+    expect(byTestId('org-training-groups-totals-completed')?.getAttribute('aria-label')).toBe('Completed total 9, equals the Trainings completed tile');
   });
 
   it('narrows the groups by the page search term and never reads the stats', async () => {
@@ -207,5 +208,94 @@ describe('OrgTrainingGroupsTableComponent', () => {
     await settle(fixture);
 
     expect(trainingService.getGroupEmployees).toHaveBeenCalledWith('org-1', QUERY, expect.objectContaining({ tab: 'trainings', status: 'in-progress' }));
+  });
+
+  it('gates the totals footer on the response totals, not on the searched row total', async () => {
+    await render('certifications', 'course', { data: [], total: 0, totals: { people: 11, coursesTaken: 20, completed: 9, inProgress: 3 } });
+    expect(byTestId('org-training-groups-totals')).not.toBeNull();
+    TestBed.resetTestingModule();
+    document.body.innerHTML = '';
+
+    await render('certifications', 'course', { data: [ROW], total: 1, totals: { people: 0, coursesTaken: 0, completed: 0, inProgress: 0 } });
+    expect(byTestId('org-training-groups-totals')).toBeNull();
+  });
+
+  it('names value, status and row on the count buttons', async () => {
+    await render();
+
+    expect(byTestId('org-training-group-completed-button-Course One')?.getAttribute('aria-label')).toBe('4 certified, Course One. Show people');
+    expect(byTestId('org-training-group-in-progress-button-Course One')?.getAttribute('aria-label')).toBe('2 in progress, Course One. Show people');
+  });
+
+  it('shows the foundation under a project row and nothing under other groupings', async () => {
+    await render('certifications', 'project');
+    expect(text('org-training-group-meta-Course One')).toBe('Foundation One');
+    TestBed.resetTestingModule();
+    document.body.innerHTML = '';
+
+    await render('certifications', 'level');
+    expect(byTestId('org-training-group-meta-Course One')).toBeNull();
+  });
+
+  it('states a failed groups read with a Retry that refetches, and logs it', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { fixture, trainingService } = await render();
+    trainingService.getGroups.mockReturnValueOnce(throwError(() => new Error('down')));
+    fixture.componentRef.setInput('searchQuery', 'x');
+    await settle(fixture);
+
+    expect(byTestId('org-training-groups-error')).not.toBeNull();
+    expect(error).toHaveBeenCalled();
+
+    (document.querySelector('[data-testid="org-training-groups-retry"] button') as HTMLElement).click();
+    await settle(fixture);
+
+    expect(byTestId('org-training-groups-error')).toBeNull();
+    expect(trainingService.getGroups).toHaveBeenCalledTimes(3);
+    error.mockRestore();
+  });
+
+  it('keeps the clicked count and offers Retry when the employees fetch fails, never reading it as zero data', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { fixture, trainingService } = await render();
+    trainingService.getGroupEmployees.mockReturnValueOnce(throwError(() => new Error('down')));
+
+    (document.querySelector('[data-testid="org-training-group-completed-Course One"] button') as HTMLElement).click();
+    await settle(fixture);
+
+    expect(byTestId('org-training-group-employees-error')).not.toBeNull();
+    expect(text('org-training-group-employees-subtitle')).toContain('4 certified');
+    expect(document.body.textContent).not.toContain('No current employees found');
+    expect(error).toHaveBeenCalled();
+
+    (document.querySelector('[data-testid="org-training-group-employees-retry"] button') as HTMLElement).click();
+    await settle(fixture);
+
+    expect(byTestId('org-training-group-employees-error')).toBeNull();
+    expect(byTestId('org-training-group-employee-person-1')).not.toBeNull();
+    expect(trainingService.getGroupEmployees).toHaveBeenCalledTimes(2);
+    error.mockRestore();
+  });
+
+  it('opens the person drawer on the training tab with the current range', async () => {
+    const { fixture, drawerOpen } = await render();
+    (document.querySelector('[data-testid="org-training-group-completed-Course One"] button') as HTMLElement).click();
+    await settle(fixture);
+
+    (byTestId('org-training-group-employee-person-person-1') as HTMLElement).click();
+
+    expect(drawerOpen).toHaveBeenCalledWith(expect.objectContaining({ personKey: 'person-1', defaultTab: 'training', range: QUERY.range }));
+  });
+
+  it('closes the drawer when the organization changes', async () => {
+    const { fixture } = await render();
+    (document.querySelector('[data-testid="org-training-group-completed-Course One"] button') as HTMLElement).click();
+    await settle(fixture);
+    expect(byTestId('org-training-group-employees-title')).not.toBeNull();
+
+    fixture.componentRef.setInput('orgUid', 'org-2');
+    await settle(fixture);
+
+    expect(byTestId('org-training-group-employees-title')).toBeNull();
   });
 });

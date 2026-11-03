@@ -7,10 +7,17 @@
       <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500" aria-hidden="true"></i>
       <h3 class="text-gray-700 font-medium">Couldn't load {{ tab() === 'certifications' ? 'certifications' : 'trainings' }}</h3>
       <p class="text-sm text-gray-500">Something went wrong fetching this organization's training numbers. Please try again.</p>
+      <lfx-button
+        label="Retry"
+        icon="fa-light fa-arrow-rotate-left"
+        severity="secondary"
+        size="small"
+        (onClick)="retry()"
+        data-testid="org-training-groups-retry" />
     </div>
   } @else {
     <lfx-table
-      [value]="groups().data"
+      [value]="rows()"
       [loading]="loading()"
       [lazy]="true"
       [paginator]="groups().total > 0"
@@ -80,8 +87,8 @@
               }
               <div class="flex flex-col min-w-0">
                 <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-training-group-name-' + row.key">{{ row.label }}</span>
-                @if (rowMeta(row); as meta) {
-                  <span class="text-xs text-gray-500" [attr.data-testid]="'org-training-group-meta-' + row.key">{{ meta }}</span>
+                @if (row.meta) {
+                  <span class="text-xs text-gray-500" [attr.data-testid]="'org-training-group-meta-' + row.key">{{ row.meta }}</span>
                 }
               </div>
             </div>
@@ -103,6 +110,8 @@
               <button
                 type="button"
                 class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
+                [attr.aria-label]="row.completedAriaLabel"
+                [attr.data-testid]="'org-training-group-completed-button-' + row.key"
                 (click)="openDrawer(row, 'completed')">
                 {{ row.completed | number }}
               </button>
@@ -117,6 +126,8 @@
               <button
                 type="button"
                 class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
+                [attr.aria-label]="row.inProgressAriaLabel"
+                [attr.data-testid]="'org-training-group-in-progress-button-' + row.key"
                 (click)="openDrawer(row, 'in-progress')">
                 {{ row.inProgress | number }}
               </button>
@@ -129,7 +140,7 @@
 
       <!-- Totals over the whole tab: equal to the stat tiles of the same range and filters -->
       <ng-template #footer>
-        @if (groups().total > 0) {
+        @if (groups().totals.coursesTaken > 0) {
           <tr data-testid="org-training-groups-totals" [attr.title]="totalsNote()">
             <td class="text-sm font-medium text-gray-900">
               Total
@@ -139,10 +150,7 @@
             <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-courses-taken">
               {{ groups().totals.coursesTaken | number }}
             </td>
-            <td
-              class="text-sm font-medium text-gray-900"
-              data-testid="org-training-groups-totals-completed"
-              [attr.aria-label]="completedLabel() + ' total, equals the ' + completedTileLabel() + ' tile'">
+            <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-completed" [attr.aria-label]="totalCompletedAriaLabel()">
               {{ groups().totals.completed | number }}
             </td>
             <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-in-progress">{{ groups().totals.inProgress | number }}</td>

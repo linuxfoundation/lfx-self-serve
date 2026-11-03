@@ -204,7 +204,7 @@ describe('TraineesComponent', () => {
     });
 
     it('asks the stats call for the URL filters and shows its numbers on the shared strip', async () => {
-      await mount('/?tab=training&range=all&project=proj-k8s&level=Beginner');
+      await mount('/?tab=training&range=all&trainingProject=proj-k8s&level=Beginner');
 
       expect(getTrainingStats).toHaveBeenLastCalledWith(ORG, {
         range: 'all',
@@ -234,12 +234,23 @@ describe('TraineesComponent', () => {
       expect(navigate).not.toHaveBeenCalled();
     });
 
-    it('shows dashes, not zeros, when the stats read fails, and still lists the rows', async () => {
+    it('states a failed stats read as an error with Retry (never dashes), logs it, still lists the rows, and retries', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       getTrainingStats.mockReturnValue(new Observable((subscriber) => subscriber.error(new Error('down'))));
       await mount('/?tab=training');
 
-      expect(stat('courses-taken')).toBe('—');
+      expect(el().querySelector('[data-testid="org-people-trainees-stats-error"]')).not.toBeNull();
+      expect(el().querySelector('[data-testid="org-people-trainees-stats"]')).toBeNull();
+      expect(error).toHaveBeenCalled();
       expect(listed().sort()).toEqual(['p-1', 'p-2', 'p-3']);
+
+      getTrainingStats.mockImplementation((_orgUid: string, query: OrgTrainingStatsQuery) => of(statsFor(query)));
+      (el().querySelector('[data-testid="org-people-trainees-stats-retry"] button') as HTMLElement).click();
+      await settle();
+
+      expect(el().querySelector('[data-testid="org-people-trainees-stats-error"]')).toBeNull();
+      expect(stat('courses-taken')).toBe('4');
+      error.mockRestore();
     });
 
     it('leaves the cards alone while the name search narrows the table', async () => {
@@ -261,13 +272,13 @@ describe('TraineesComponent', () => {
     });
 
     it.each([
-      ['project', 'project=proj-linux', ['p-3']],
-      ['project', 'project=proj-k8s', ['p-1', 'p-2']],
+      ['project', 'trainingProject=proj-linux', ['p-3']],
+      ['project', 'trainingProject=proj-k8s', ['p-1', 'p-2']],
       ['level', 'level=Intermediate', ['p-1']],
       ['format (certified rows carry one)', 'format=Certification%20Exam', ['p-1']],
       ['format', 'format=Instructor%20Led', ['p-2']],
       ['course name shared by two course ids', 'course=Kubernetes%20Basics', ['p-1', 'p-2']],
-      ['project and level together', 'project=proj-k8s&level=Beginner', ['p-1', 'p-2']],
+      ['project and level together', 'trainingProject=proj-k8s&level=Beginner', ['p-1', 'p-2']],
     ])('narrows the table by %s', async (_label, query, people) => {
       await mount(`/?tab=training&range=all&${query}`);
       expect(listed().sort()).toEqual(people);

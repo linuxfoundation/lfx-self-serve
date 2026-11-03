@@ -8,6 +8,8 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, startWith, switchMap, tap } from 'rxjs';
 
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrgTrainingFilterBarComponent } from '@components/org-training-filter-bar/org-training-filter-bar.component';
@@ -18,12 +20,12 @@ import { PersonDetailDrawerService } from '@services/person-detail-drawer.servic
 import {
   avatarColorClass,
   countOrgTraineePairs,
-  groupOrgTraineePairs,
   hasOrgTrainingFilter,
   matchesOrgTrainingFilters,
   orgTrainingFiltersSignature,
   orgTrainingStatsQuery,
   parseOrgTrainingViewState,
+  resolveOrgTraineePairs,
 } from '@lfx-one/shared/utils';
 import { formatMonthYearUtc } from '@shared/utils/date-format.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
@@ -39,6 +41,7 @@ import type {
   OrgTraineeDetailRow,
   OrgTraineeExpandedRowVm,
   OrgTraineeOutsideLearner,
+  OrgTraineePair,
   OrgTraineesEmptyState,
   OrgTraineeRowVm,
   OrgTraineesResponse,
@@ -58,6 +61,8 @@ import { TraineesService } from '../../services/trainees.service';
   imports: [
     DecimalPipe,
     ReactiveFormsModule,
+    ButtonComponent,
+    CardComponent,
     EmptyStateComponent,
     InputTextComponent,
     OrgTrainingFilterBarComponent,
@@ -91,10 +96,12 @@ export class TraineesComponent {
   protected readonly retryTrigger = signal<number>(0);
   private readonly loadingState = signal<boolean>(true);
   private readonly fetchErrorState = signal<boolean>(false);
+  private readonly statsErrorState = signal<boolean>(false);
 
   // Computed / readonly views.
   protected readonly isLoading = this.loadingState.asReadonly();
   protected readonly fetchError = this.fetchErrorState.asReadonly();
+  protected readonly statsError = this.statsErrorState.asReadonly();
 
   // Mirror the search into a signal; debounce ~150ms so per-keystroke filtering doesn't thrash through the computed graph.
   private readonly searchValue = toSignal(this.filterForm.controls.search.valueChanges.pipe(debounceTime(150)), { initialValue: '' });
@@ -124,7 +131,13 @@ export class TraineesComponent {
   // Learners not on the people list: already the range's (the BFF windows them), narrowed by the name search only, by name.
   protected readonly outsideLearners: Signal<OrgTraineeOutsideLearner[]> = computed(() => this.initOutsideLearners());
 
-  // Detail set is the canonical source of the table rows and the expanded section; the cards come from the stats call.
+  // Each person-course pair is resolved from ALL its in-range rows first (the BFF's pair rule); only then do the filters apply, to the pair.
+  private readonly resolvedPairs: Signal<OrgTraineePair[]> = computed(() => resolveOrgTraineePairs(this.response().details));
+
+  // Pairs that match the dropdown filters and the name search: the one source of the table rows, their counts and the expanded section.
+  private readonly filteredPairs: Signal<OrgTraineePair[]> = computed(() => this.initFilteredPairs());
+
+  // The detail rows of those pairs (the cards come from the stats call).
   protected readonly filteredDetails: Signal<OrgTraineeDetailRow[]> = computed(() => this.initFilteredDetails());
 
   protected readonly viewRows: Signal<OrgTraineeRowVm[]> = computed(() => this.initViewRows());
@@ -213,21 +226,21 @@ export class TraineesComponent {
     this.retryTrigger.update((v) => v + 1);
   }
 
-  private initFilteredDetails(): OrgTraineeDetailRow[] {
+  private initFilteredPairs(): OrgTraineePair[] {
     const filters = this.viewState();
     const q = this.searchValue().trim().toLowerCase();
 
-    // Build a name+title lookup so search filters details by who-the-person-is, not by per-row strings.
+    // Build a name+title lookup so search filters pairs by who-the-person-is, not by per-row strings.
     const personIndex = new Map<string, { name: string; title: string | null }>();
     for (const t of this.response().trainees) {
       personIndex.set(t.personKey, { name: t.name, title: t.title });
     }
 
     // The details are already the range's (the BFF windows them), so only the filters and the search apply here.
-    return this.response().details.filter((row) => {
-      if (!matchesOrgTrainingFilters(row, filters)) return false;
+    return this.resolvedPairs().filter((pair) => {
+      if (!matchesOrgTrainingFilters(pair, filters)) return false;
       if (q) {
-        const person = personIndex.get(row.personKey);
+        const person = personIndex.get(pair.personKey);
         if (!person) return false;
         const inName = person.name.toLowerCase().includes(q);
         const inTitle = (person.title ?? '').toLowerCase().includes(q);
@@ -237,16 +250,27 @@ export class TraineesComponent {
     });
   }
 
+  private initFilteredDetails(): OrgTraineeDetailRow[] {
+    const keys = new Set(this.filteredPairs().map((pair) => `${pair.personKey}|${pair.courseId}`));
+    return this.response().details.filter((row) => keys.has(`${row.personKey}|${row.courseId}`));
+  }
+
   private initViewRows(): OrgTraineeRowVm[] {
     const details = this.filteredDetails();
     if (details.length === 0) return [];
 
-    // Group details by personKey once, then map to VMs.
+    // Group details and pairs by personKey once, then map to VMs.
     const detailsByPerson = new Map<string, OrgTraineeDetailRow[]>();
     for (const d of details) {
       const list = detailsByPerson.get(d.personKey) ?? [];
       list.push(d);
       detailsByPerson.set(d.personKey, list);
+    }
+    const pairsByPerson = new Map<string, OrgTraineePair[]>();
+    for (const pair of this.filteredPairs()) {
+      const list = pairsByPerson.get(pair.personKey) ?? [];
+      list.push(pair);
+      pairsByPerson.set(pair.personKey, list);
     }
 
     const out: OrgTraineeRowVm[] = [];
@@ -254,7 +278,7 @@ export class TraineesComponent {
       const personDetails = detailsByPerson.get(trainee.personKey);
       if (!personDetails || personDetails.length === 0) continue;
 
-      const counts = countOrgTraineePairs(groupOrgTraineePairs(personDetails));
+      const counts = countOrgTraineePairs(pairsByPerson.get(trainee.personKey) ?? []);
 
       const recent = pickMostRecent(personDetails);
 
@@ -407,7 +431,8 @@ export class TraineesComponent {
           }
           return this.dataService.getTrainees(orgUid, timeRange).pipe(
             tap(() => this.loadingState.set(false)),
-            catchError(() => {
+            catchError((error: unknown) => {
+              console.error('Failed to load trainees', error);
               this.fetchErrorState.set(true);
               this.loadingState.set(false);
               return of({ ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange });
@@ -419,15 +444,20 @@ export class TraineesComponent {
     );
   }
 
-  /** One stats call per org, range and filter set; a failed read leaves the strip on dashes rather than zeros. */
+  /** One stats call per org, range and filter set; a failed read is stated as an error with Retry, never shown as dashes or zeros. */
   private initTrainingStats(): Signal<OrgTrainingStats | null> {
     const query$ = toObservable(this.statsQuerySignature).pipe(map(() => this.statsQuery()));
     return toSignal(
       combineLatest([this.orgUid$, query$, toObservable(this.retryTrigger)]).pipe(
         switchMap(([orgUid, query]) => {
+          this.statsErrorState.set(false);
           if (!orgUid) return of(null);
           return this.trainingService.getTrainingStats(orgUid, query).pipe(
-            catchError(() => of(null)),
+            catchError((error: unknown) => {
+              console.error('Failed to load training stats', error);
+              this.statsErrorState.set(true);
+              return of(null);
+            }),
             startWith(null)
           );
         })
@@ -491,11 +521,11 @@ function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRo
     const certifiedTs = minActivityTs(group.filter((r) => r.status === 'Certified'));
     // MAX is defensive against rare source-data anomalies where certifiedTs < enrolledTs.
     const sortTs = maxIsoTs(enrolledTs, certifiedTs);
-    const [pair] = groupOrgTraineePairs(group);
+    const [pair] = resolveOrgTraineePairs(group);
 
     out.push({
       courseId: group[0].courseId,
-      courseName: group[0].courseName,
+      courseName: pair.courseName,
       type: pair.productType === 'Certification' ? 'Certification' : 'Training',
       enrolledTs,
       completedTs: certifiedTs,

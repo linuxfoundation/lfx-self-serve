@@ -6,7 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { ORG_TRAINING_STAT_TILES, EMPTY_ORG_TRAINEES_RESPONSE } from '@lfx-one/shared/constants';
 import type { Account, OrgTraineeDetailRow, OrgTraineesResponse, OrgTrainingGroupsResponse, OrgTrainingStats } from '@lfx-one/shared/interfaces';
-import { countOrgTraineePairs, groupOrgTraineePairs } from '@lfx-one/shared/utils';
+import { countOrgTraineePairs, matchesOrgTrainingFilters, parseOrgTrainingViewState, resolveOrgTraineePairs } from '@lfx-one/shared/utils';
 import { OrgTrainingComponent } from '@modules/dashboards/org/org-training/org-training.component';
 import { TraineesComponent } from '@modules/dashboards/org/org-people/components/trainees/trainees.component';
 import { TraineesService } from '@modules/dashboards/org/org-people/services/trainees.service';
@@ -27,7 +27,7 @@ import { describe, expect, it, vi } from 'vitest';
 // footer total is the Certified tile. All fixtures are synthetic.
 
 const ACME: Account = { accountId: 'acc-1', accountName: 'Synthetic Org', membershipTier: '', uid: 'org-uid-1', slug: 'synthetic' };
-const QUERY = '?range=all&project=proj-k8s';
+const QUERY = '?range=all&trainingProject=proj-k8s';
 
 /** Six course pairs over three people, all in project `proj-k8s`: 2 certifications, 1 training completed, 3 in progress. */
 const DETAILS: OrgTraineeDetailRow[] = [
@@ -143,7 +143,10 @@ async function settle(fixture: { detectChanges(): void; whenStable(): Promise<un
   fixture.detectChanges();
 }
 
-async function renderTrainingPage(query: Record<string, string> = { range: 'all', project: 'proj-k8s' }, service = trainingService()): Promise<HTMLElement> {
+async function renderTrainingPage(
+  query: Record<string, string> = { range: 'all', trainingProject: 'proj-k8s' },
+  service = trainingService()
+): Promise<HTMLElement> {
   const pageState = signal(null);
   const params = convertToParamMap(query);
   await TestBed.configureTestingModule({
@@ -192,7 +195,7 @@ async function renderTrainingPage(query: Record<string, string> = { range: 'all'
   return fixture.nativeElement;
 }
 
-async function renderTraineesPage(details: OrgTraineeDetailRow[] = DETAILS): Promise<HTMLElement> {
+async function renderTraineesPage(details: OrgTraineeDetailRow[] = DETAILS, query: string = QUERY, stats: OrgTrainingStats = STATS): Promise<HTMLElement> {
   const response: OrgTraineesResponse = {
     ...EMPTY_ORG_TRAINEES_RESPONSE,
     accountId: ACME.accountId,
@@ -207,11 +210,11 @@ async function renderTraineesPage(details: OrgTraineeDetailRow[] = DETAILS): Pro
       provideRouter([]),
       { provide: AccountContextService, useValue: { selectedAccount: signal(ACME) } },
       { provide: TraineesService, useValue: { getTrainees: vi.fn(() => of(response)) } },
-      { provide: OrgLensTrainingService, useValue: trainingService() },
+      { provide: OrgLensTrainingService, useValue: trainingService(stats) },
       { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
     ],
   }).compileComponents();
-  await TestBed.inject(Router).navigateByUrl(`/${QUERY}`);
+  await TestBed.inject(Router).navigateByUrl(`/${query}`);
   const fixture = TestBed.createComponent(TraineesComponent);
   await settle(fixture);
   return fixture.nativeElement;
@@ -249,7 +252,7 @@ describe('Trainees client-derived per-person counts vs the cards', () => {
   });
 
   it('group the fixture rows into pairs (Certified wins, product-type split) that equal the stats payload', () => {
-    const pairs = groupOrgTraineePairs(DETAILS);
+    const pairs = resolveOrgTraineePairs(DETAILS);
     const counts = countOrgTraineePairs(pairs);
 
     expect(pairs).toHaveLength(6);
@@ -264,6 +267,88 @@ describe('Trainees client-derived per-person counts vs the cards', () => {
       STATS.certifiedPeople
     );
     expect(new Set(pairs.filter((pair) => pair.status === 'Enrolled').map((pair) => pair.personKey)).size).toBe(STATS.peopleInTraining);
+  });
+});
+
+// One pair whose rows disagree: the enrollment is Beginner / no format / the lower project id, the later certificate is
+// Intermediate / Certification Exam / the higher project id. The pair rule resolves the attributes across both rows BEFORE
+// any filter applies, so the pair is Intermediate / Certification Exam / proj-b everywhere, and a filter keeps or drops it whole.
+const MIXED_DETAILS: OrgTraineeDetailRow[] = [
+  {
+    ...row('p-1', 'cka', 'Enrolled', 'Certification'),
+    courseLevel: 'Beginner',
+    courseFormat: null,
+    projectId: 'proj-a',
+    projectName: 'Project A',
+    activityTs: '2026-03-01T00:00:00.000Z',
+  },
+  {
+    ...row('p-1', 'cka', 'Certified', 'Certification'),
+    courseLevel: 'Intermediate',
+    courseFormat: 'Certification Exam',
+    projectId: 'proj-b',
+    projectName: 'Project B',
+    activityTs: '2026-04-01T00:00:00.000Z',
+  },
+  { ...row('p-2', 'k8s-intro', 'Enrolled', 'Training'), courseLevel: 'Beginner', courseFormat: 'E-Learning', projectId: 'proj-a', projectName: 'Project A' },
+];
+
+/** The stats the BFF's SQL pair rule yields for a filter set, computed through the shared util (the rule both sides pin). */
+function statsForFilters(query: string): OrgTrainingStats {
+  const filters = parseOrgTrainingViewState((key) => new URLSearchParams(query).get(key));
+  const pairs = resolveOrgTraineePairs(MIXED_DETAILS).filter((pair) => matchesOrgTrainingFilters(pair, filters));
+  const counts = countOrgTraineePairs(pairs);
+  const completed = counts.certifications + counts.trainingsCompleted;
+  return {
+    ...STATS,
+    range: 'all',
+    peopleWithTrainingActivity: new Set(pairs.map((pair) => pair.personKey)).size,
+    coursesTaken: counts.coursesTaken,
+    certifications: counts.certifications,
+    trainingsCompleted: counts.trainingsCompleted,
+    coursesInProgress: counts.inProgress,
+    completionRatePct: counts.coursesTaken > 0 ? Math.round((completed / counts.coursesTaken) * 100) : 0,
+    certifiedPeople: new Set(pairs.filter((pair) => pair.status === 'Certified' && pair.productType === 'Certification').map((pair) => pair.personKey)).size,
+    peopleInTraining: new Set(pairs.filter((pair) => pair.status === 'Enrolled').map((pair) => pair.personKey)).size,
+  };
+}
+
+describe('Mixed-attribute pair: Training strip, Trainees cards and Trainees table counts agree under every filter set', () => {
+  // [filters, courses taken, certifications, trainings completed, in progress] — pinned so the pair rule cannot drift.
+  it.each<[string, number, number, number, number]>([
+    ['range=all', 2, 1, 0, 1],
+    ['range=all&level=Intermediate', 1, 1, 0, 0],
+    ['range=all&level=Beginner', 1, 0, 0, 1],
+    ['range=all&trainingProject=proj-b', 1, 1, 0, 0],
+    ['range=all&trainingProject=proj-a', 1, 0, 0, 1],
+    ['range=all&format=Certification%20Exam', 1, 1, 0, 0],
+    ['range=all&format=E-Learning', 1, 0, 0, 1],
+    ['range=all&level=Intermediate&format=Certification%20Exam&trainingProject=proj-b', 1, 1, 0, 0],
+    ['range=all&level=Beginner&trainingProject=proj-b', 0, 0, 0, 0],
+  ])('%s', async (query, coursesTaken, certifications, trainingsCompleted, inProgress) => {
+    const stats = statsForFilters(query);
+    expect([stats.coursesTaken, stats.certifications, stats.trainingsCompleted, stats.coursesInProgress]).toEqual([
+      coursesTaken,
+      certifications,
+      trainingsCompleted,
+      inProgress,
+    ]);
+
+    const training = snapshotTiles(await renderTrainingPage(Object.fromEntries(new URLSearchParams(query)), trainingService(stats)));
+    TestBed.resetTestingModule();
+    const traineesHost = await renderTraineesPage(MIXED_DETAILS, `?${query}`, stats);
+    const trainees = snapshotTiles(traineesHost);
+
+    expect(trainees).toEqual(training);
+    // columns: chevron, name, status, courses, certs, trainings, in progress, recent
+    const sums = [3, 4, 5, 6].map((index) =>
+      [...traineesHost.querySelectorAll('tbody tr[role="button"]')].reduce(
+        (sum, tr) => sum + (Number(tr.querySelectorAll('td')[index].textContent?.trim()) || 0),
+        0
+      )
+    );
+    expect(sums).toEqual([coursesTaken, certifications, trainingsCompleted, inProgress]);
+    TestBed.resetTestingModule();
   });
 });
 

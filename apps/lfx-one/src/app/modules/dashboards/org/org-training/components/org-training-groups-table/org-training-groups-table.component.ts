@@ -5,7 +5,7 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   DEFAULT_ORG_TRAINING_GROUPS_PAGE_SIZE,
   DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD,
@@ -18,15 +18,17 @@ import type {
   OrgTrainingGroupBy,
   OrgTrainingGroupEmployeesParams,
   OrgTrainingGroupRow,
+  OrgTrainingGroupRowVm,
   OrgTrainingGroupsResponse,
   OrgTrainingGroupSortField,
   OrgTrainingGroupStatus,
   OrgTrainingStatsQuery,
   OrgTrainingTabId,
 } from '@lfx-one/shared/interfaces';
+import { ButtonComponent } from '@components/button/button.component';
 import { TableComponent } from '@components/table/table.component';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { catchError, finalize, of, skip, switchMap } from 'rxjs';
 
 import { OrgTrainingGroupEmployeesDrawerComponent } from '../org-training-group-employees-drawer/org-training-group-employees-drawer.component';
 
@@ -45,7 +47,7 @@ interface PagingState {
  */
 @Component({
   selector: 'lfx-org-training-groups-table',
-  imports: [DecimalPipe, TableComponent, OrgTrainingGroupEmployeesDrawerComponent],
+  imports: [DecimalPipe, ButtonComponent, TableComponent, OrgTrainingGroupEmployeesDrawerComponent],
   templateUrl: './org-training-groups-table.component.html',
 })
 export class OrgTrainingGroupsTableComponent {
@@ -68,6 +70,7 @@ export class OrgTrainingGroupsTableComponent {
   protected readonly pageSize = signal(DEFAULT_ORG_TRAINING_GROUPS_PAGE_SIZE);
   protected readonly loading = signal(false);
   protected readonly error = signal(false);
+  private readonly retryTrigger = signal(0);
 
   // Drawer state
   protected readonly drawerVisible = signal(false);
@@ -84,12 +87,17 @@ export class OrgTrainingGroupsTableComponent {
 
   protected readonly groups: Signal<OrgTrainingGroupsResponse> = this.initGroups();
 
+  // Display strings per row, resolved once so the template calls no functions.
+  protected readonly rows: Signal<OrgTrainingGroupRowVm[]> = computed(() => this.groups().data.map((row) => this.toRowVm(row)));
   protected readonly groupLabel = computed(() => ORG_TRAINING_GROUP_BY_OPTIONS.find((option) => option.value === this.groupBy())?.label ?? 'Course');
   protected readonly completedLabel = computed(() => (this.tab() === 'certifications' ? 'Certified' : 'Completed'));
   protected readonly completedTileLabel = computed(() => (this.tab() === 'certifications' ? 'Certifications' : 'Trainings completed'));
   protected readonly totalsNote = computed(
     () =>
       `Totals cover every row of this tab, not only this page or the search. ${this.completedLabel()} equals the “${this.completedTileLabel()}” tile for the same range and filters; People is distinct people, not the sum of the rows.`
+  );
+  protected readonly totalCompletedAriaLabel = computed(
+    () => `${this.completedLabel()} total ${this.groups().totals.completed.toLocaleString('en-US')}, equals the ${this.completedTileLabel()} tile`
   );
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.groups().total > this.pageSizeOptions[0] ? this.pageSizeOptions : undefined));
   protected readonly emptyTitle = computed(() => {
@@ -112,6 +120,18 @@ export class OrgTrainingGroupsTableComponent {
     inProgress: this.sortIcon('inProgress'),
   }));
 
+  public constructor() {
+    // A different organization's numbers must not be reachable through a drawer opened on the previous one.
+    toObservable(this.orgUid)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.drawerVisible.set(false);
+        this.drawerParams.set(null);
+        this.drawerLabel.set('');
+        this.drawerCount.set(0);
+      });
+  }
+
   protected onPageChange(event: { first: number; rows: number }): void {
     this.pageSize.set(event.rows);
     this.paging.set({ viewKey: this.viewKey(), offset: event.first });
@@ -127,16 +147,37 @@ export class OrgTrainingGroupsTableComponent {
     this.paging.set({ viewKey: this.viewKey(), offset: 0 });
   }
 
-  /** Foundation and level under a course name; other groupings have no such attributes. */
-  protected rowMeta(row: OrgTrainingGroupRow): string {
-    return this.groupBy() === 'course' ? [row.foundation, row.level].filter((part) => !!part).join(' · ') : '';
+  protected retry(): void {
+    this.retryTrigger.update((value) => value + 1);
   }
 
-  protected openDrawer(row: OrgTrainingGroupRow, status: OrgTrainingGroupStatus): void {
+  protected openDrawer(row: OrgTrainingGroupRowVm, status: OrgTrainingGroupStatus): void {
     this.drawerParams.set({ groupBy: this.groupBy(), groupValue: row.key, tab: this.tab(), status });
     this.drawerLabel.set(row.label);
     this.drawerCount.set(status === 'completed' ? row.completed : row.inProgress);
     this.drawerVisible.set(true);
+  }
+
+  /** Foundation and level under a course name, the foundation under a project; other groupings have no such attributes. */
+  private rowMeta(row: OrgTrainingGroupRow): string {
+    switch (this.groupBy()) {
+      case 'course':
+        return [row.foundation, row.level].filter((part) => !!part).join(' · ');
+      case 'project':
+        return row.foundation ?? '';
+      default:
+        return '';
+    }
+  }
+
+  private toRowVm(row: OrgTrainingGroupRow): OrgTrainingGroupRowVm {
+    const completedStatus = this.completedLabel().toLowerCase();
+    return {
+      ...row,
+      meta: this.rowMeta(row),
+      completedAriaLabel: `${row.completed.toLocaleString('en-US')} ${completedStatus}, ${row.label}. Show people`,
+      inProgressAriaLabel: `${row.inProgress.toLocaleString('en-US')} in progress, ${row.label}. Show people`,
+    };
   }
 
   private ariaSort(field: OrgTrainingGroupSortField): string {
@@ -164,6 +205,7 @@ export class OrgTrainingGroupsTableComponent {
           pageSize: this.pageSize(),
           offset: this.offset(),
         },
+        retry: this.retryTrigger(),
       }))
     );
 
@@ -179,7 +221,8 @@ export class OrgTrainingGroupsTableComponent {
           this.error.set(false);
           return this.trainingService.getGroups(orgUid, query, params).pipe(
             // A real failure is stated as such, never as an empty table.
-            catchError(() => {
+            catchError((error: unknown) => {
+              console.error('Failed to load training groups', error);
               this.error.set(true);
               return of(EMPTY_GROUPS_RESPONSE);
             }),

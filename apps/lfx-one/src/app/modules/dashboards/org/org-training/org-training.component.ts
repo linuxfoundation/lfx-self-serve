@@ -11,7 +11,7 @@ import { DEFAULT_ORG_TRAINING_TAB_ID, ORG_TRAINING_TABS, VALID_ORG_TRAINING_TAB_
 import type { OrgTrainingStats, OrgTrainingStatsQuery, OrgTrainingTabId, OrgTrainingViewState } from '@lfx-one/shared/interfaces';
 import { orgTrainingFiltersSignature, orgTrainingStatsQuery, orgTrainingTableNote, parseOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, finalize, of, switchMap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, finalize, of, skip, switchMap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -92,6 +92,14 @@ export class OrgTrainingComponent {
 
   public constructor() {
     this.searchForm.controls.search.valueChanges.pipe(debounceTime(300), takeUntilDestroyed()).subscribe((value) => this.searchQuery.set((value ?? '').trim()));
+
+    // The name search belongs to the organization it was typed for: clear it (and its applied term) on a switch.
+    toObservable(this.orgUid)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.searchForm.controls.search.setValue('');
+        this.searchQuery.set('');
+      });
   }
 
   // ─── Protected Methods ─────────────────────────────────────────────────────

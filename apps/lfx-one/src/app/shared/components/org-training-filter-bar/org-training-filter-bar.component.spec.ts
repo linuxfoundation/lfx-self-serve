@@ -8,7 +8,7 @@ import type { OrgLensTimeRange, OrgTrainingFilterOptions } from '@lfx-one/shared
 import { parseOrgTrainingViewState, serializeOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
-import { Observable, of } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { OrgTrainingFilterBarComponent } from './org-training-filter-bar.component';
@@ -46,6 +46,7 @@ const RECENT_OPTIONS: OrgTrainingFilterOptions = {
 
 describe('OrgTrainingFilterBarComponent', () => {
   let fixture: ComponentFixture<OrgTrainingFilterBarComponent>;
+  let account: ReturnType<typeof signal<{ uid: string; accountName: string }>>;
   let getFilterOptions: Mock<(orgUid: string, range: OrgLensTimeRange) => Observable<OrgTrainingFilterOptions>>;
 
   const el = (): HTMLElement => fixture.nativeElement;
@@ -64,7 +65,7 @@ describe('OrgTrainingFilterBarComponent', () => {
       imports: [OrgTrainingFilterBarComponent],
       providers: [
         provideRouter([]),
-        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: 'Synthetic Org' }) } },
+        { provide: AccountContextService, useValue: { selectedAccount: account } },
         { provide: OrgLensTrainingService, useValue: { getFilterOptions } },
       ],
     }).compileComponents();
@@ -80,6 +81,7 @@ describe('OrgTrainingFilterBarComponent', () => {
   }
 
   beforeEach(() => {
+    account = signal({ uid: ORG, accountName: 'Synthetic Org' });
     getFilterOptions = vi.fn((_orgUid: string, range: OrgLensTimeRange) => of(range === '30d' ? RECENT_OPTIONS : ALL_TIME_OPTIONS));
   });
 
@@ -148,14 +150,14 @@ describe('OrgTrainingFilterBarComponent', () => {
   });
 
   it('clears every filter at once, keeping the range and other params', async () => {
-    await mount('/?tab=training&range=all&foundation=fa&project=pk&course=Linux%20Intro&level=Beginner&format=E-Learning');
+    await mount('/?tab=training&range=all&foundation=fa&trainingProject=pk&course=Linux%20Intro&level=Beginner&format=E-Learning');
 
     el().querySelector<HTMLElement>('[data-testid="org-training-filter-clear-all"] button')!.click();
     await settle();
 
     expect(router().url).toContain('range=all');
     expect(router().url).toContain('tab=training');
-    for (const key of ['foundation', 'project', 'course', 'level', 'format']) expect(router().url).not.toContain(`${key}=`);
+    for (const key of ['foundation', 'trainingProject', 'course', 'level', 'format']) expect(router().url).not.toContain(`${key}=`);
     expect(fixture.componentInstance.form.getRawValue()).toMatchObject({ foundation: '', project: '', course: '', level: '', format: '' });
   });
 
@@ -166,11 +168,11 @@ describe('OrgTrainingFilterBarComponent', () => {
   });
 
   it('keeps a selection the loaded options do not list: still in the URL, applied and shown in its dropdown', async () => {
-    await mount('/?range=30d&foundation=fb&project=pl&course=Kubernetes%20Basics&format=E-Learning');
+    await mount('/?range=30d&foundation=fb&trainingProject=pl&course=Kubernetes%20Basics&format=E-Learning');
 
     expect(router().url).toContain('foundation=fb');
     expect(router().url).toContain('course=Kubernetes');
-    expect(router().url).toContain('project=pl');
+    expect(router().url).toContain('trainingProject=pl');
     expect(router().url).toContain('format=E-Learning');
     expect(fixture.componentInstance.form.getRawValue()).toMatchObject({ foundation: 'fb', course: 'Kubernetes Basics', project: 'pl', format: 'E-Learning' });
   });
@@ -181,6 +183,36 @@ describe('OrgTrainingFilterBarComponent', () => {
 
     expect(router().url).toContain('foundation=fa');
     expect(fixture.componentInstance.form.getRawValue().foundation).toBe('fa');
+  });
+
+  it('drops the previous org options before the new org options load, and logs a failed load', async () => {
+    await mount('/');
+    expect(select('foundation')).not.toBeNull();
+    const pending = new Subject<OrgTrainingFilterOptions>();
+    getFilterOptions.mockReturnValue(pending);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    account.set({ uid: 'org-uid-2', accountName: 'Other Org' });
+    await settle();
+
+    expect(getFilterOptions).toHaveBeenLastCalledWith('org-uid-2', expect.any(String));
+    expect(fixture.componentInstance['foundationOptions']().map((option) => option.value)).toEqual(['']);
+
+    pending.error(new Error('down'));
+    await settle();
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it('stops writing to the URL once destroyed', async () => {
+    await mount('/');
+    const navigate = vi.spyOn(router(), 'navigate');
+    const form = fixture.componentInstance.form;
+
+    fixture.destroy();
+    form.patchValue({ foundation: 'fa' });
+
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   describe('More filters toggle', () => {

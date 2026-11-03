@@ -6,21 +6,22 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, model, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MAX_ORG_CERT_EMPLOYEES } from '@lfx-one/shared/constants';
-import type { OrgCertEmployeeVm, OrgTrainingGroupEmployeesParams, OrgTrainingGroupEmployeesResponse, OrgTrainingStatsQuery } from '@lfx-one/shared/interfaces';
+import type { OrgCertEmployeeVm, OrgTrainingGroupEmployeesParams, OrgTrainingStatsQuery } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 import { DrawerModule } from 'primeng/drawer';
-import { InputTextModule } from 'primeng/inputtext';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { catchError, finalize, map, of, switchMap } from 'rxjs';
 
 /** The one drill-down drawer of the Training page's group table: certified or in-progress person-course pairs of one row. */
 @Component({
   selector: 'lfx-org-training-group-employees-drawer',
-  imports: [FormsModule, DrawerModule, InputTextModule, DecimalPipe],
+  imports: [ReactiveFormsModule, DrawerModule, DecimalPipe, ButtonComponent, InputTextComponent],
   templateUrl: './org-training-group-employees-drawer.component.html',
 })
 export class OrgTrainingGroupEmployeesDrawerComponent {
@@ -38,8 +39,13 @@ export class OrgTrainingGroupEmployeesDrawerComponent {
   /** Pair count of the clicked cell. */
   public readonly count = input<number>(0);
 
-  protected readonly searchTerm = signal('');
+  protected readonly searchForm = new FormGroup({ search: new FormControl<string>('', { nonNullable: true }) });
   protected readonly loading = signal(false);
+  // A failed fetch is stated as such (with Retry), never rendered as an empty list or a zero count.
+  protected readonly error = signal(false);
+  private readonly retryTrigger = signal(0);
+
+  protected readonly searchTerm = toSignal(this.searchForm.controls.search.valueChanges.pipe(map((value) => value.trim())), { initialValue: '' });
 
   private readonly employeesData = this.initEmployeesData();
 
@@ -73,7 +79,14 @@ export class OrgTrainingGroupEmployeesDrawerComponent {
       title: employee.jobTitle,
       initials: employee.initials,
       avatarColorClass: employee.avatarColorClass,
+      defaultTab: 'training',
+      // The Code tab's Maintainer pills follow the range this drawer lists the person in.
+      range: this.query().range,
     });
+  }
+
+  protected retry(): void {
+    this.retryTrigger.update((value) => value + 1);
   }
 
   private initEmployeesData() {
@@ -84,17 +97,26 @@ export class OrgTrainingGroupEmployeesDrawerComponent {
         orgUid: this.orgUid(),
         query: this.query(),
         params: this.params(),
+        retry: this.retryTrigger(),
       }))
     );
 
     return toSignal(
       trigger$.pipe(
         switchMap(({ visible, orgUid, query, params }) => {
-          if (!visible || !orgUid || !params) return of(null);
-          this.searchTerm.set('');
+          if (!visible || !orgUid || !params) {
+            this.error.set(false);
+            return of(null);
+          }
+          this.searchForm.controls.search.setValue('');
           this.loading.set(true);
+          this.error.set(false);
           return this.trainingService.getGroupEmployees(orgUid, query, params).pipe(
-            catchError(() => of({ ...params, label: '', total: 0, data: [] } as OrgTrainingGroupEmployeesResponse)),
+            catchError((error: unknown) => {
+              console.error('Failed to load training group employees', error);
+              this.error.set(true);
+              return of(null);
+            }),
             finalize(() => this.loading.set(false))
           );
         })
