@@ -100,7 +100,7 @@ If nothing matches, you see "No respondents match your filters." If nobody has r
 
 On the **Responses** tab:
 
-- Select **Send reminders** to resend the survey email, with each person's personal link, to recipients in your project's groups who haven't responded. Everyone starts selected; clear anyone you don't want to remind. You can send to at most 1,000 people at a time. This is available while the survey is open.
+- Select **Send reminders** to resend the survey email, with each person's personal link, to recipients in your project's groups who haven't responded. Everyone starts selected; clear anyone you don't want to remind. You can send to at most 1,000 people at a time. This is available while the survey is open, to people who manage the project (a group writer who isn't a project writer doesn't see it).
 - Select **Download CSV** to export every recipient's delivery status, response and comment. The file does not include personal survey links.
 - Open the **⋮** menu on a recipient's row to:
   - **Send reminder**: resend the survey email to that recipient (open surveys, recipients who haven't responded).
@@ -112,13 +112,13 @@ Personal links are shown only to people who manage the project the recipient's g
 
 ### Resync recipients
 
-If people joined the group after the survey was sent, you can send it to them too. This needs permission to manage the project and an open survey.
+If people joined the group after the survey was sent, you can send it to them too. This needs permission to manage the project (not only the group) and an open survey.
 
 1. Open the survey's **Results** and select the **⋮** menu in the header.
 2. Select **Resync recipients**. The dialog lists the group members who would receive the survey.
 3. Select **Send** to email them.
 
-A resync only adds recipients. People who already have the survey aren't emailed again, and no one is removed. On a survey sent to several foundations' boards, it only covers your project's groups. If part of a resync fails, the dialog tells you which groups were already sent and lists who is still missing, so you can try again.
+A resync only adds recipients. People who already have the survey aren't emailed again, and no one is removed. On a survey sent to several foundations' boards, it only covers your project's groups. If part of a resync fails, the dialog tells you how many groups were already sent and lists who is still missing, so you can try again.
 
 ## Related
 

@@ -94,9 +94,14 @@ export class SurveyResultsDrawerComponent {
   protected readonly engagementRates: Signal<SurveyEngagementRates | null> = this.initEngagementRates();
   protected readonly comments: Signal<SurveyComment[]> = this.initComments();
   /** Resync is offered only while open, and only when it can be kept to this project's committee. */
+  /**
+   * Reminders and resync email recipients, and the BFF allows them only for project writers. On a group's
+   * page `hasPMOAccess` can mean group writer, which keeps the Responses tab but not these actions.
+   */
+  protected readonly canSendFollowUp: Signal<boolean> = computed(() => this.hasPMOAccess() && this.projectContextService.canWrite());
   protected readonly resyncScope: Signal<SurveyResyncScope | null> = computed(() => {
     const s = this.survey();
-    return s && this.hasPMOAccess() && isSurveyOpenForFollowUp(s) ? getSurveyResyncScope(s, this.projectUid()) : null;
+    return s && this.canSendFollowUp() && isSurveyOpenForFollowUp(s) ? getSurveyResyncScope(s, this.projectUid()) : null;
   });
   protected readonly hasComments: Signal<boolean> = computed(() => this.comments().length > 0);
   protected readonly commentsCount: Signal<number> = computed(() => this.comments().length);
@@ -156,9 +161,8 @@ export class SurveyResultsDrawerComponent {
         data,
       })
       ?.onClose.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((sent) => {
-        if (sent === true) this.refresh();
-      });
+      // Reload on every close, however it was dismissed: a partial resync may have added recipients.
+      .subscribe(() => this.refresh());
   }
 
   protected getBreakdownPercentage(count: number, total: number): number {

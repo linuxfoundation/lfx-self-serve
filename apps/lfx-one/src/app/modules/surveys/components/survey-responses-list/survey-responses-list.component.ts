@@ -57,6 +57,8 @@ export class SurveyResponsesListComponent {
   public readonly loadError = input<boolean>(false);
   /** Active project: reminders are offered only for its committees (the server refuses any other). */
   public readonly projectUid = input<string | null>(null);
+  /** Project write access: reminders are refused by the server for anyone else (e.g. group-only writers). */
+  public readonly canSendFollowUp = input<boolean>(false);
 
   // === Outputs ===
   /** Emitted after reminders were sent, so the parent can reload the rows. */
@@ -119,7 +121,7 @@ export class SurveyResponsesListComponent {
   /** Reminders only go out while the survey accepts responses. */
   protected readonly canRemind: Signal<boolean> = computed(() => {
     const survey = this.survey();
-    return !!survey && isSurveyOpenForFollowUp(survey);
+    return this.canSendFollowUp() && !!survey && isSurveyOpenForFollowUp(survey);
   });
   /** Committees of the active project on this survey. */
   private readonly projectCommitteeUids: Signal<Set<string>> = computed(() => {

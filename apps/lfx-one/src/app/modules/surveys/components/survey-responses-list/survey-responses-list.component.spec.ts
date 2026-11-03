@@ -39,7 +39,7 @@ const ROWS: SurveyResponseItem[] = Array.from(
     }) as SurveyResponseItem
 );
 
-async function mount(survey: Survey = SURVEY, rows: SurveyResponseItem[] = ROWS) {
+async function mount(survey: Survey = SURVEY, rows: SurveyResponseItem[] = ROWS, canSendFollowUp = true) {
   TestBed.resetTestingModule();
   const copyLink = vi.fn();
   const open = vi.fn();
@@ -52,6 +52,7 @@ async function mount(survey: Survey = SURVEY, rows: SurveyResponseItem[] = ROWS)
   fixture.componentRef.setInput('survey', survey);
   fixture.componentRef.setInput('responses', rows);
   fixture.componentRef.setInput('projectUid', 'p-1');
+  fixture.componentRef.setInput('canSendFollowUp', canSendFollowUp);
   fixture.detectChanges();
   await fixture.whenStable();
   return { fixture, component: fixture.componentInstance, copyLink, open };
@@ -130,5 +131,13 @@ describe('SurveyResponsesListComponent', () => {
 
     expect(component['nonRespondents']().map((r) => r.id)).toEqual([ROWS[1].id]);
     expect(openMenu(component, otherBoard).map((i) => i.label)).not.toContain('Send reminder');
+  });
+
+  it('offers no reminders without project write access', async () => {
+    const { fixture, component } = await mount(SURVEY, ROWS, false);
+    current = fixture;
+
+    expect(openMenu(component, ROWS[1]).map((i) => i.label)).not.toContain('Send reminder');
+    expect(fixture.nativeElement.querySelector('[data-testid="survey-responses-send-reminders"]')).toBeNull();
   });
 });

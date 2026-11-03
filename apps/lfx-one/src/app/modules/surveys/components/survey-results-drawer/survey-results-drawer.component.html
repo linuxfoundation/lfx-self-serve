@@ -131,6 +131,7 @@
           [loading]="responsesLoading()"
           [loadError]="responsesLoadError()"
           [projectUid]="projectUid()"
+          [canSendFollowUp]="canSendFollowUp()"
           (remindersSent)="refresh()"
           data-testid="survey-results-drawer-responses" />
       } @else {
