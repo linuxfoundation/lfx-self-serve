@@ -9847,6 +9847,52 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(search).toHaveBeenCalledWith('');
     });
 
+    it('does not pick the survey template while a search is replacing the list', () => {
+      const component = fixture.componentInstance as unknown as {
+        emailTemplatesLoading: { set(v: boolean): void };
+        ensureSurveyTemplateSelected(): void;
+      };
+      selectSurvey();
+      seq().selectedEmailTemplateId.set('');
+      seq().emailTemplates.set([{ id: 'hs-stale', name: 'Newsletter', subject: 'News' }] as HubSpotMarketingEmail[]);
+      component.emailTemplatesLoading.set(true);
+
+      component.ensureSurveyTemplateSelected();
+
+      expect(seq().selectedEmailTemplateId(), 'the rows on screen are the ones being replaced').toBe('');
+    });
+
+    it('treats a restored approved survey send as possibly staged until the series is started over', () => {
+      stageable(1);
+      const component = fixture.componentInstance as unknown as {
+        onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        canGenerateEmailCopy(): boolean;
+        surveySingleSendRestored(): boolean;
+      };
+
+      component.onRestoreSavedEmailBrief(surveyBrief, 'brief-restored', '"1"', true);
+
+      expect(component.surveySingleSendRestored()).toBe(true);
+      expect(component.canGenerateEmailCopy(), 'staging new copy would hand back the old draft').toBe(false);
+
+      seq().onStartSeriesOver();
+
+      expect(component.surveySingleSendRestored()).toBe(false);
+      expect(component.canGenerateEmailCopy()).toBe(true);
+    });
+
+    it('does not hold back a restored survey brief that was never approved, since nothing was staged from it', () => {
+      stageable(1);
+      const component = fixture.componentInstance as unknown as {
+        onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        canGenerateEmailCopy(): boolean;
+      };
+
+      component.onRestoreSavedEmailBrief(surveyBrief, 'brief-unapproved', '"1"', false);
+
+      expect(component.canGenerateEmailCopy()).toBe(true);
+    });
+
     it('offers Start the series over when Write all meets a send saved in an earlier session', async () => {
       stageable(3);
       seq().surveySequenceSends.set([]);

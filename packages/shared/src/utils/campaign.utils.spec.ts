@@ -399,6 +399,12 @@ describe('surveySourceTitle', () => {
 });
 
 describe('campaignSurveySourceTextLength', () => {
+  it('collapses whitespace as Go strings.Fields does: U+0085 is a space, U+FEFF is not', () => {
+    expect(campaignSurveySourceTextLength('a\u0085\u0085b')).toBe(3);
+    expect(campaignSurveySourceTextLength('a\uFEFF\uFEFF\uFEFFb')).toBe(5);
+    expect(campaignSurveySourceTextLength('\uFEFFa\u0085')).toBe(2);
+  });
+
   it('counts as campaign-service does: whitespace runs as one space, trimmed, in code points', () => {
     expect(campaignSurveySourceTextLength('  a \n\n\t b  ')).toBe(3);
     // One emoji is one rune upstream, though two UTF-16 units here.

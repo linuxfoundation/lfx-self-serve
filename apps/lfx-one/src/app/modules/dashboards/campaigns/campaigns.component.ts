@@ -2202,6 +2202,11 @@ export class CampaignsComponent {
   /** Every scope the single Stage button created a draft under; survives the display reset. */
   private readonly singleSendStagedScopes = signal<ReadonlySet<string>>(new Set());
   /**
+   * Approved survey briefs restored from an earlier session. Their draft may exist, and staging
+   * again would hand it back unchanged, so they are treated as staged until started over.
+   */
+  private readonly restoredSendScopes = signal<ReadonlySet<string>>(new Set());
+  /**
    * Set when Write all met a send brief saved in an earlier page session, which this page cannot
    * own. Start the series over is then the way on: it writes on new briefs instead of adopting
    * ones whose drafts this page knows nothing about.
@@ -2389,7 +2394,12 @@ export class CampaignsComponent {
     () =>
       this.isSurvey() &&
       !this.surveySeriesRestarted() &&
-      (this.emailStagingHeld() || this.singleSendStagedScopes().has(this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())))
+      (this.emailStagingHeld() || this.singleSendStagedScopes().has(this.currentStageScope()) || this.surveySingleSendRestored())
+  );
+
+  /** Whether this survey send was restored from an earlier session, so its draft may already exist. */
+  protected readonly surveySingleSendRestored = computed(
+    () => this.isSurvey() && !this.surveySeriesRestarted() && this.restoredSendScopes().has(this.currentStageScope())
   );
 
   /** A survey written as a SERIES: Write all and Stage all own its copy, so the single path hides. */
@@ -3762,6 +3772,11 @@ export class CampaignsComponent {
     // ownership is recorded above, so that save is an edit of the row just opened rather than an
     // attempt to mint a second one.
     this.onEmailProceedFromPlanning(brief, approved ? briefId : undefined);
+    // Only an approved brief can have been staged: campaign-service refuses to create from any other.
+    if (approved && this.isSurvey()) {
+      const scope = this.stageScopeKey(this.activeFoundationSlug(), briefId);
+      this.restoredSendScopes.update((scopes) => new Set(scopes).add(scope));
+    }
 
     // Read back the saved audience with the id this restore was HANDED, not with `emailBriefId`.
     // The signal is left empty for an unapproved brief on purpose (see just above), so reading it
@@ -5647,6 +5662,11 @@ export class CampaignsComponent {
   /** The `unresolvedStages` key for a project and brief. */
   private stageScopeKey(projectSlug: string, briefId: string): string {
     return `${projectSlug}|${briefId}`;
+  }
+
+  /** The stage scope of the brief on screen now. */
+  private currentStageScope(): string {
+    return this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId());
   }
 
   /** Clears the dispatch marker only if it is still THIS dispatch, never a successor's. */
@@ -8053,7 +8073,15 @@ export class CampaignsComponent {
   private autoSelectSurveyTemplate(templates: HubSpotMarketingEmail[]): void {
     // Never from a filtered list: an Email search typed before the switch narrowed these rows,
     // and the pick would stick -- this only fills an empty selection, and Survey has no picker.
-    if (!this.isSurvey() || this.selectedEmailTemplateId() !== '' || templates.length === 0 || this.emailTemplateSubmittedQuery() !== '') {
+    // Nor while a search is on the wire: the rows are still the ones it replaces, and the
+    // submitted query already names the new search, not them. Its success arm picks instead.
+    if (
+      !this.isSurvey() ||
+      this.selectedEmailTemplateId() !== '' ||
+      templates.length === 0 ||
+      this.emailTemplateSubmittedQuery() !== '' ||
+      this.emailTemplatesLoading()
+    ) {
       return;
     }
     // The ranked order, not the raw listing: `rankTemplatesForSelectedType` puts the templates

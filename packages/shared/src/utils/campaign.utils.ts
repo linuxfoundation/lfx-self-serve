@@ -218,8 +218,12 @@ export function describeCampaignDispatchFailure(error: string): CampaignDispatch
 export function campaignSurveySourceTextLength(sourceText: string): number {
   // Counted by iterating, not by spreading into an array: one array slot per character is the
   // cost a long paste should not have to pay just to be measured.
+  // Unicode White_Space, which is exactly Go's `unicode.IsSpace` behind `strings.Fields`; JS `\s`
+  // differs (it takes U+FEFF and misses U+0085). Only the spaces the collapse leaves are trimmed,
+  // since `trim()` would also strip a U+FEFF that upstream counts.
+  const collapsed = sourceText.replace(/\p{White_Space}+/gu, ' ').replace(/^ | $/g, '');
   let count = 0;
-  for (const _codePoint of sourceText.replace(/\s+/g, ' ').trim()) {
+  for (const _codePoint of collapsed) {
     count++;
   }
   return count;
