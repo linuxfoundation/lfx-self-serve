@@ -514,7 +514,8 @@ describe('MktgRunProgressComponent', () => {
     read.mockReturnValue(of(detail([{ ...run, state: 'questions' }])));
     await fixture.whenStable();
     if (runPage) {
-      expect(text()).toContain('Answering needs project write access or the browser that started this run. This page keeps checking on its own.');
+      expect(text()).toContain('Answering needs project write access or the browser that started this run.');
+      expect(text()).not.toContain('This page keeps checking on its own.');
       expect(text()).not.toContain('Open the intake form');
     } else {
       expect(text()).toContain('Open the intake form to continue with an available questions block.');
@@ -763,7 +764,8 @@ describe('MktgRunProgressComponent', () => {
     fixture.componentRef.setInput('runPage', true);
     await fixture.whenStable();
     expect(questions).toHaveBeenCalledOnce();
-    expect(text()).toContain('Answering needs project write access or the browser that started this run. This page keeps checking on its own.');
+    expect(text()).toContain('Answering needs project write access or the browser that started this run.');
+    expect(text()).not.toContain('This page keeps checking on its own.');
   });
 
   it('retains the last measured record on transient failure and fails closed on denied reads', async () => {
@@ -856,7 +858,8 @@ describe('MktgRunProgressComponent', () => {
     read.mockReturnValue(of(detail([{ ...run, state: 'questions' }])));
     await fixture.whenStable();
     expect(text()).toContain('Waiting for your answers');
-    expect(text()).toContain('This page keeps checking on its own.');
+    // The page checks on its own and says nothing about it: no explanatory note for a best practice.
+    expect(text()).not.toContain('This page keeps checking on its own.');
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-questions-refresh"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"]')).toBeNull();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
