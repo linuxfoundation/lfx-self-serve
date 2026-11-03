@@ -256,14 +256,18 @@ export class CommitteeSettingsTabComponent {
   }
 
   public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
-    const ref = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
+    // closable: false — the dialog's own close() (wired to its Close/Cancel buttons) is the only
+    // dismissal path, so a native header-X can't bypass it and drop an { applied: true } result (#4911 review).
+    const ref: DynamicDialogRef | undefined = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
       header: `Sync Now — ${ml.group_name}`,
       width: '800px',
       modal: true,
-      closable: true,
+      closable: false,
       draggable: false,
       data: { mailingListUid: ml.uid, mailingListName: ml.group_name },
-    }) as DynamicDialogRef;
+    });
+
+    if (!ref) return;
 
     ref.onClose.pipe(take(1)).subscribe((result: { applied: boolean } | null) => {
       if (!result?.applied) return;
