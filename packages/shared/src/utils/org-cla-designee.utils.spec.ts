@@ -25,7 +25,7 @@ describe('classifyOrgClaDesigneeRefusal', () => {
   });
 
   it('reads the sanctioned code off the typed 403 body before the status', () => {
-    const body = { code: 'company_sanctioned', message: 'This organization cannot sign at this time.' };
+    const body = { code: 'company_sanctioned', message: 'This company cannot sign at this time.' };
     expect(classifyOrgClaDesigneeRefusal(403, body)).toBe('sanctioned');
   });
 

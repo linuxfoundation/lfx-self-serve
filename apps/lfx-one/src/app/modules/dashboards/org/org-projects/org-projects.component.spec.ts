@@ -511,7 +511,7 @@ describe('OrgProjectsComponent — Employees filter', () => {
   it.each([
     { mount: 'legacy', url: '/org/projects?employees=p-known&utm_source=x' },
     { mount: 'organization-addressed', url: '/org/org-a/projects?employees=p-known&utm_source=x' },
-  ])('strips ?employees= when switching organization from the $mount address, and shows the new org’s projects', async ({ url }) => {
+  ])('strips ?employees= when switching company from the $mount address, and shows the new org’s projects', async ({ url }) => {
     TestBed.overrideProvider(OrgLensNavigationService, { useFactory: () => new OrgLensNavigationService() });
     TestBed.inject(Router).resetConfig([
       { path: 'org/projects', component: OrgProjectsComponent },

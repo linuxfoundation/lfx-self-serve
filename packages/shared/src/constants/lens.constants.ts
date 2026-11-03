@@ -49,8 +49,8 @@ export const ALL_LENSES: Readonly<Record<Lens, LensOption>> = {
   },
   org: {
     id: 'org',
-    label: 'Organization',
-    shortLabel: 'Organiz.',
+    label: 'Company',
+    shortLabel: 'Company',
     icon: 'fa-light fa-building',
     activeIcon: 'fa-solid fa-building',
     defaultRoute: LENS_DEFAULT_ROUTES.org,

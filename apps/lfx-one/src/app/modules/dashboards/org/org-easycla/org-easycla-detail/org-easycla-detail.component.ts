@@ -1487,11 +1487,11 @@ export class OrgEasyclaDetailComponent {
     return computed(() => {
       const state = this.pageState();
       if (state) return ORG_LENS_EMPTY_STATE_COPY[state].headline;
-      if (!this.orgContextLoaded()) return 'checking your organization access';
-      if (!this.hasCompany()) return 'select an organization first';
+      if (!this.orgContextLoaded()) return 'checking your company access';
+      if (!this.hasCompany()) return 'select a company first';
       if (this.signingOpen()) return 'a signing request is already open';
       if (this.alreadyMailedCurrentAgreement()) return 'a signature request has already been emailed';
-      if (this.previewOrgMismatch()) return 'this preview was made for a different organization';
+      if (this.previewOrgMismatch()) return 'this preview was made for a different company';
       if (!this.signingChoice()) return CCLA_SIGN_COPY.picker.multiProjectDisabledReason;
       return '';
     });

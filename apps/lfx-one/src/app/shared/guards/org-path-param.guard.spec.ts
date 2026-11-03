@@ -159,7 +159,7 @@ describe('orgPathParamGuard', () => {
       ['slug', 'acme-inc', '/org/acme-inc/overview', true],
       ['SFID (no slug)', null, `/org/${UID_A}/overview`, true],
       ['SFID (slug known — canonicalizes)', 'acme-inc', `/org/${UID_A}/overview`, '/org/acme-inc/overview'],
-    ])('pins the already-selected organization when the address names it by %s, with the shortcut outcome intact', async (_label, slug, url, expected) => {
+    ])('pins the already-selected company when the address names it by %s, with the shortcut outcome intact', async (_label, slug, url, expected) => {
       selectedAccount.set(account({ uid: UID_A, slug }));
       expect(await outcome(url.split('/')[2], url)).toBe(expected);
       expect(pinSelection).toHaveBeenCalledTimes(1);

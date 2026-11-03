@@ -76,7 +76,7 @@ export class OrgPeopleComponent {
 
   protected readonly heading: Signal<string> = computed(() => this.initHeading());
 
-  protected readonly noCompanyEmptyTitle = computed(() => `Select an organization to view ${this.activeTabConfig().noun}.`);
+  protected readonly noCompanyEmptyTitle = computed(() => `Select a company to view ${this.activeTabConfig().noun}.`);
 
   protected switchTab(tabId: PeopleTabId): void {
     if (tabId === this.activeTab()) {

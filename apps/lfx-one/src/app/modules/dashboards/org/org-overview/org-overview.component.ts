@@ -38,7 +38,7 @@ export class OrgOverviewComponent {
 
   protected readonly selectedAccount = this.accountContextService.selectedAccount;
 
-  protected readonly companyName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Your Organization');
+  protected readonly companyName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Your Company');
 
   protected readonly tierLabel: Signal<string | null> = computed(() => this.selectedAccount().membershipTier || null);
 

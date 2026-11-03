@@ -35,8 +35,8 @@
     <!-- FR-020 — inline error card with retry. -->
     <section class="flex flex-col items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-8 text-center" data-testid="org-profile-load-error">
       <i class="fa-light fa-triangle-exclamation text-2xl text-red-600"></i>
-      <h2 class="text-base font-semibold text-gray-900">Unable to load organization profile</h2>
-      <p class="text-sm text-gray-600">There was a problem reaching the organization service.</p>
+      <h2 class="text-base font-semibold text-gray-900">Unable to load company profile</h2>
+      <p class="text-sm text-gray-600">There was a problem reaching the company service.</p>
       <p-button label="Retry" icon="fa-light fa-rotate-right" severity="secondary" data-testid="org-profile-retry-button" (onClick)="retry()" />
     </section>
   } @else if (editMode() && record(); as r) {

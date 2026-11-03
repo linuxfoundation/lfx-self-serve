@@ -5,7 +5,7 @@ import { Component, computed, inject } from '@angular/core';
 import type { WhyCantEditDialogData } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
-const DEFAULT_REASON = "This seat is controlled by the foundation and cannot be edited from your organization's view.";
+const DEFAULT_REASON = "This seat is controlled by the foundation and cannot be edited from your company's view.";
 
 @Component({
   selector: 'lfx-why-cant-edit-modal',

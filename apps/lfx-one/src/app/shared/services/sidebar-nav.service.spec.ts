@@ -261,7 +261,7 @@ describe('SidebarNavService', () => {
       })
     );
     expect(findByLink(items, '/foundation/mktg-os-agents')).toBeUndefined();
-    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Participating organizations') + 1);
+    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Participating companies') + 1);
     expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
   });
 
@@ -286,7 +286,7 @@ describe('SidebarNavService', () => {
         expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: `sidebar-${lens}-initiatives` })
       );
       // On the project lens Participating organizations sits between Documents and Initiatives.
-      const anchor = lens === 'project' ? 'Participating organizations' : 'Documents';
+      const anchor = lens === 'project' ? 'Participating companies' : 'Documents';
       expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf(anchor) + 1);
     }
   });
@@ -299,9 +299,9 @@ describe('SidebarNavService', () => {
     const items = service.sidebarItems();
     const itemLabels = labels(items);
     expect(findByLink(items, '/project/participating-orgs')).toEqual(
-      expect.objectContaining({ label: 'Participating organizations', testId: 'sidebar-project-participating-orgs' })
+      expect.objectContaining({ label: 'Participating companies', testId: 'sidebar-project-participating-orgs' })
     );
-    expect(itemLabels.indexOf('Participating organizations')).toBe(itemLabels.indexOf('Documents') + 1);
+    expect(itemLabels.indexOf('Participating companies')).toBe(itemLabels.indexOf('Documents') + 1);
 
     activeLens.set('foundation');
     expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
@@ -469,7 +469,7 @@ describe('SidebarNavService', () => {
 
     expect(labels(items)).not.toContain('EasyCLA');
     expect(findByLink(items, '/org/easycla')).toBeUndefined();
-    expect(labels(sectionItems(items, 'Organization Engagement'))).not.toContain('EasyCLA');
+    expect(labels(sectionItems(items, 'Company Engagement'))).not.toContain('EasyCLA');
   });
 
   it('places EasyCLA as a top-level item directly before Organization Profile, under the org-admin divider', () => {
@@ -484,10 +484,10 @@ describe('SidebarNavService', () => {
       expect.objectContaining({ label: 'EasyCLA', icon: 'fa-light fa-file-signature', testId: 'sidebar-org-easycla', dividerBefore: true })
     );
     expect(easycla?.isSection).toBeFalsy();
-    expect(itemLabels.indexOf('EasyCLA')).toBe(itemLabels.indexOf('Organization Engagement') + 1);
-    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
-    expect(items.find((item) => item.label === 'Organization Profile')?.dividerBefore).toBe(false);
-    expect(labels(sectionItems(items, 'Organization Engagement'))).toEqual([
+    expect(itemLabels.indexOf('EasyCLA')).toBe(itemLabels.indexOf('Company Engagement') + 1);
+    expect(itemLabels.indexOf('Company Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+    expect(items.find((item) => item.label === 'Company Profile')?.dividerBefore).toBe(false);
+    expect(labels(sectionItems(items, 'Company Engagement'))).toEqual([
       'People',
       'Code Contributions',
       'Events',
@@ -525,7 +525,7 @@ describe('SidebarNavService', () => {
 
     const itemLabels = labels(TestBed.inject(SidebarNavService).sidebarItems());
 
-    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+    expect(itemLabels.indexOf('Company Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
     expect(itemLabels[itemLabels.length - 1]).toBe('LF Staff Only');
   });
 
@@ -571,7 +571,7 @@ describe('SidebarNavService', () => {
     orgSegment.set('acme-inc');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const engagement = sectionItems(items, 'Organization Engagement');
+    const engagement = sectionItems(items, 'Company Engagement');
     const lfStaffOnly = sectionItems(items, 'LF Staff Only');
     const itemLabels = labels(items);
 
@@ -583,7 +583,7 @@ describe('SidebarNavService', () => {
     const orgLinks = [...items, ...engagement, ...lfStaffOnly].map((item) => item.routerLink).filter((link): link is string => !!link);
     expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual([]);
     expect(itemLabels[itemLabels.length - 1]).toBe('LF Staff Only');
-    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+    expect(itemLabels.indexOf('Company Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
   });
 
   // lfx-self-serve-ops#1219: only the pages with an organization scope picker carry it; the Dashboard always shows the default.
@@ -592,7 +592,7 @@ describe('SidebarNavService', () => {
     orgSegment.set('acme-inc');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const engagement = sectionItems(items, 'Organization Engagement');
+    const engagement = sectionItems(items, 'Company Engagement');
 
     expect(findByLink(items, '/org/acme-inc/overview')?.carryQueryParams).toBeUndefined();
     expect(findByLink(items, '/org/acme-inc/projects')?.carryQueryParams).toEqual(['orgScope', 'teamMembers']);

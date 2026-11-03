@@ -21,7 +21,7 @@ export class OrgTrainingsTableComponent {
   public readonly sortField = input<string>('COMPLETED_COUNT');
   public readonly sortOrder = input<'ASC' | 'DESC'>('DESC');
   public readonly emptyStateTitle = input<string>('No trainings yet');
-  public readonly emptyStateSubtitle = input<string>('No trainings were found for your organization.');
+  public readonly emptyStateSubtitle = input<string>('No trainings were found for your company.');
 
   public readonly pageChange = output<PageChangeEvent>();
   public readonly sortChange = output<SortChangeEvent>();

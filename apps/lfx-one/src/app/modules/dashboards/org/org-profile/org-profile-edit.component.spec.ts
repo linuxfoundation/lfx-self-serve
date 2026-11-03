@@ -222,7 +222,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(fixture.componentInstance['logoUploading']()).toBe(false);
     expect(fixture.componentInstance['logoUrl']()).toBe(record.logoUrl);
     expect(toastAdd).toHaveBeenCalledWith(
-      expect.objectContaining({ severity: 'error', summary: 'Permission denied', detail: 'You no longer have permission to edit this organization.' })
+      expect.objectContaining({ severity: 'error', summary: 'Permission denied', detail: 'You no longer have permission to edit this company.' })
     );
   });
 
@@ -299,7 +299,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
 
   it.each([
     [413, 'Logo too large', 'Logo must be 2MB or smaller.'],
-    [403, 'Permission denied', 'You no longer have permission to edit this organization.'],
+    [403, 'Permission denied', 'You no longer have permission to edit this company.'],
   ])('maps status %i to non-retryable copy', async (status, summary, detail) => {
     fixture.detectChanges();
     fixture.componentInstance['onLogoFileSelected']({
@@ -363,8 +363,8 @@ describe('OrgProfileEditComponent — logo upload', () => {
   // would print a summary that contradicts the detail and send the user off to swap a file that
   // was never at fault (org-identity.controller.ts).
   it.each([
-    [409, 'This organization was updated elsewhere. Refresh the page and try again.'],
-    [404, 'Organization not found'],
+    [409, 'This company was updated elsewhere. Refresh the page and try again.'],
+    [404, 'Company not found'],
   ])('does not label status %i as a rejected logo', async (status, serverMessage) => {
     fixture.detectChanges();
     fixture.componentInstance['onLogoFileSelected']({

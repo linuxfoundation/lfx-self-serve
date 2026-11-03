@@ -46,7 +46,7 @@ describe('OrgLensClaService.checkPermission', () => {
     http.post.mockReturnValue(throwError(() => error));
 
     await expect(firstValueFrom(service.checkPermission(ORG, 'approval-list-update', PROJECT))).resolves.toBe(false);
-    expect(consoleError).toHaveBeenCalledWith('Organization Lens CLA permission check failed', error);
+    expect(consoleError).toHaveBeenCalledWith('Org Lens CLA permission check failed', error);
   });
 
   it('includes the foundation sfid in the body when one is supplied', async () => {

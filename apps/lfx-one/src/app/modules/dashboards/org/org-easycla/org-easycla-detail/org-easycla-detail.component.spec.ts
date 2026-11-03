@@ -61,7 +61,7 @@ const UNHELD_GROUP_ID = '7c1a9000-0000-4000-8000-000000000003';
 function roleMissingError(): HttpErrorResponse {
   return new HttpErrorResponse({
     status: 403,
-    error: { error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' },
+    error: { error: "You don't have an EasyCLA role at this company.", code: 'EASYCLA_ROLE_MISSING' },
   });
 }
 
@@ -2520,7 +2520,7 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(state).toBeTruthy();
     expect(byTestId(fixture, 'org-easycla-detail-role-missing-state')?.querySelector('h3')?.textContent?.trim()).toBe("We couldn't load your CLAs");
     expect(byTestId(fixture, 'org-easycla-detail-role-missing-description')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      "You don't have an EasyCLA role at this organization. Please contact support if you need EasyCLA assistance."
+      "You don't have an EasyCLA role at this company. Please contact support if you need EasyCLA assistance."
     );
     expect(state?.textContent).not.toContain('Refresh');
     expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
@@ -3438,7 +3438,7 @@ describe('OrgEasyclaDetailComponent', () => {
     it.each([
       ['another CLA Group', () => paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }))],
       [
-        'another organization',
+        'another company',
         () => {
           getClaGroups.mockReturnValue(of({ orgUid: ELSEWHERE.uid, claGroups: [] }));
           selectedAccount.set(ELSEWHERE);
@@ -4499,7 +4499,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
   it('rolls back and toasts with the producer sentence when the write is refused', async () => {
     const error = new HttpErrorResponse({
       status: 403,
-      error: { error: 'This organization is on the OFAC list. Contact support.' },
+      error: { error: 'This company is on the OFAC list. Contact support.' },
     });
     setAutoCreateEcla.mockReturnValue(throwError(() => error));
     const fixture = await render(row({ autoCreateEcla: false }));
@@ -4515,7 +4515,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(addMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         severity: 'error',
-        detail: 'This organization is on the OFAC list. Contact support.',
+        detail: 'This company is on the OFAC list. Contact support.',
       })
     );
   });
@@ -4598,7 +4598,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
 
     expect(component.autoEclaPending()).toBe(false);
 
-    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This company is on the OFAC list. Contact support.' } }));
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -4741,7 +4741,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     const component = returned.componentInstance as unknown as { autoEclaValue: () => boolean };
     expect(component.autoEclaValue()).toBe(false);
 
-    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This company is on the OFAC list. Contact support.' } }));
     returned.detectChanges();
 
     expect(component.autoEclaValue()).toBe(true);
@@ -4765,7 +4765,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     fixture.detectChanges();
 
     component.onAutoEclaToggle(true);
-    first.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    first.error(new HttpErrorResponse({ status: 403, error: { error: 'This company is on the OFAC list. Contact support.' } }));
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -4788,7 +4788,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This company is on the OFAC list. Contact support.' } }));
     fixture.detectChanges();
     await fixture.whenStable();
 

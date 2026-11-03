@@ -426,7 +426,7 @@ describe('OrgEasyclaSendByEmailComponent', () => {
   });
 
   it("shows a 403 refusal in the CLA service's own words", async () => {
-    const refusal = 'This organization requires additional trade compliance review.';
+    const refusal = 'This company requires additional trade compliance review.';
     requestCorporateSignature.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: refusal, code: 'FORBIDDEN' } })));
     const fixture = await render();
 

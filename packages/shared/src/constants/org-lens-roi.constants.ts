@@ -105,9 +105,9 @@ export const ORG_LENS_ROI_DONUT_REMAINDER_COLOR = lfxColors.gray[400];
 
 export const ORG_LENS_ROI_KPI_EXPLANATION = {
   totalExpenditure:
-    'We count your organization’s public contribution activity — commits, community participation, meetings, events, memberships, and training — and price it at standard rates that are the same for every organization. No salary, payroll, or invoice data is used.',
+    'We count your company’s public contribution activity — commits, community participation, meetings, events, memberships, and training — and price it at standard rates that are the same for every company. No salary, payroll, or invoice data is used.',
   totalReturn:
-    'The modelled economic value your organization received back from the projects it contributed to, estimated from the wider project ecosystem rather than measured from your own systems.',
+    'The modelled economic value your company received back from the projects it contributed to, estimated from the wider project ecosystem rather than measured from your own systems.',
   profit:
     'Total return less investment — what the modelled return is worth after the modelled cost of earning it. Negative for a project that returned less than it cost, which is a real and reasonably common outcome rather than a data problem.',
   roi: 'Net return divided by investment, shown as a percentage. 100% means you got back your investment again on top of it. Blank when there is no investment to divide by.',
@@ -155,7 +155,7 @@ export const ORG_LENS_ROI_PROJECT_SANKEY_MEASURE_LABELS: Record<(typeof ORG_LENS
 };
 
 /** The single node every investment flow passes through, on its way out to the projects. */
-export const ORG_LENS_ROI_SANKEY_ORG_NODE = 'Your organization';
+export const ORG_LENS_ROI_SANKEY_ORG_NODE = 'Your company';
 
 /**
  * Sankey identifies a node by its key, so the keys are type-prefixed ids and display names are

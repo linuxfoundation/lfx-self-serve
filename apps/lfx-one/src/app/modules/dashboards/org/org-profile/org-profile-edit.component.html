@@ -25,7 +25,7 @@
         [class.border-transparent]="!logoDragActive()"
         role="button"
         tabindex="0"
-        aria-label="Upload organization logo"
+        aria-label="Upload company logo"
         [attr.aria-disabled]="busy()"
         (click)="triggerLogoUpload()"
         (keydown.enter)="$event.preventDefault(); triggerLogoUpload()"
@@ -83,7 +83,7 @@
         <!-- Organization Name (read-only / locked, FR-011) -->
         <div data-testid="org-profile-edit-field-name">
           <div class="flex items-baseline justify-between">
-            <label class="text-sm font-semibold text-gray-900">Organization Name</label>
+            <label class="text-sm font-semibold text-gray-900">Company Name</label>
             <span class="text-xs text-gray-500">
               Need to edit?
               <button type="button" lfxOpenIntercom class="text-blue-600 hover:underline" data-testid="org-profile-edit-name-support-link">
@@ -126,7 +126,7 @@
           @if (employeesInvalid()) {
             <p class="mt-1 text-xs text-red-600" data-testid="org-profile-edit-employees-error">Number of employees must be 0 or greater.</p>
           }
-          <p class="mt-1 text-xs text-gray-500">Enter the number of employees within your organization.</p>
+          <p class="mt-1 text-xs text-gray-500">Enter the number of employees within your company.</p>
         </div>
 
         <!-- Crunchbase Profile -->
@@ -140,7 +140,7 @@
               type="text"
               pInputText
               formControlName="crunchBaseUrl"
-              placeholder="https://crunchbase.com/organization/company"
+              placeholder="https://crunchbase.com/organization/organization"
               class="flex-1 border-0 focus:ring-0"
               (blur)="onFieldBlur('crunchBaseUrl')"
               data-testid="org-profile-edit-crunchbase-input" />
@@ -150,7 +150,7 @@
               Crunchbase URL must be a valid <code>https://</code> address.
             </p>
           }
-          <p class="mt-1 text-xs text-gray-500">Please use a secure HTTPS URL (for example https://crunchbase.com/organization/company).</p>
+          <p class="mt-1 text-xs text-gray-500">Please use a secure HTTPS URL (for example https://crunchbase.com/organization/organization).</p>
         </div>
 
         <!-- Industry -->
@@ -163,7 +163,7 @@
             appendTo="body"
             styleClass="w-full"
             data-testid="org-profile-edit-industry-select" />
-          <p class="mt-1 text-xs text-gray-500">Select the primary industry that your organization is servicing.</p>
+          <p class="mt-1 text-xs text-gray-500">Select the primary industry that your company is servicing.</p>
         </div>
 
         <!-- Technology Sector -->
@@ -176,13 +176,13 @@
             appendTo="body"
             styleClass="w-full"
             data-testid="org-profile-edit-sector-select" />
-          <p class="mt-1 text-xs text-gray-500">Select the technology sector that your organization is most closely identified with.</p>
+          <p class="mt-1 text-xs text-gray-500">Select the technology sector that your company is most closely identified with.</p>
         </div>
       </div>
 
       <!-- Full-width description -->
       <div data-testid="org-profile-edit-field-description">
-        <label class="text-sm font-semibold text-gray-900">Organization Description</label>
+        <label class="text-sm font-semibold text-gray-900">Company Description</label>
         <textarea
           pTextarea
           formControlName="description"

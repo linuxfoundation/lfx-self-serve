@@ -535,8 +535,8 @@ export class OrgNavigationService {
     // state as fact the one thing the server could not determine. Reported as an outage instead.
     const toast =
       page.upstreamFailed || this.orgRoleGrantsService.degraded()
-        ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your organizations. Please try again in a moment.' }
-        : { severity: 'info', summary: 'No access', detail: 'You do not have access to any organizations.' };
+        ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your companies. Please try again in a moment.' }
+        : { severity: 'info', summary: 'No access', detail: 'You do not have access to any companies.' };
 
     this.messageService.add(toast);
     this.accountContextService.clearAccount();

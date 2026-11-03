@@ -7,7 +7,7 @@
     <div class="flex w-64 flex-shrink-0 items-center justify-center self-center rounded-lg border border-gray-200 bg-white p-4 sm:w-72">
       <img
         src="/images/org-lens-nav-pill.png"
-        alt="LFX navigation tabs showing Me, Projects, and Organization, with Organization active"
+        alt="LFX navigation tabs showing Me, Projects, and Company, with Company active"
         class="w-full"
         data-testid="org-access-info-banner-illustration" />
     </div>
@@ -21,20 +21,20 @@
           <span
             class="inline-flex flex-shrink-0 items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-blue-700"
             data-testid="org-access-info-role-editor">
-            Org Admin – Editor
+            Company Admin – Editor
           </span>
           <span class="text-xs text-gray-600">
-            Full access to manage your organization's Org Lens — can update member profiles, manage Org Lens user access, and configure organization settings.
+            Full access to manage your company's Company Lens — can update member profiles, manage Company Lens user access, and configure company settings.
           </span>
         </div>
         <div class="flex items-start gap-2 md:flex-1">
           <span
             class="inline-flex flex-shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-gray-600"
             data-testid="org-access-info-role-viewer">
-            Org Admin – Viewer
+            Company Admin – Viewer
           </span>
           <span class="text-xs text-gray-600">
-            Read-only access to the Org Lens — can view all data and reports but cannot make changes or manage access for other users.
+            Read-only access to the Company Lens — can view all data and reports but cannot make changes or manage access for other users.
           </span>
         </div>
       </div>
@@ -48,7 +48,7 @@
         type="button"
         class="inline-flex flex-shrink-0 items-center justify-center gap-2 rounded-md border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         [disabled]="isInviting()"
-        aria-label="Add users to Org Lens access"
+        aria-label="Add users to Company Lens access"
         data-testid="org-access-add-users"
         (click)="openAdd()">
         <i class="fa-light fa-plus" aria-hidden="true"></i>
@@ -63,7 +63,7 @@
           type="text"
           class="w-full pl-9"
           placeholder="Search by name, title, or email..."
-          aria-label="Search org lens access users"
+          aria-label="Search Company Lens access users"
           data-testid="org-access-search"
           [ngModel]="searchTerm()"
           (ngModelChange)="searchTerm.set($event)" />
@@ -174,7 +174,7 @@
             <p class="text-sm text-gray-700">No users match the current search or filter.</p>
             <p class="text-xs text-gray-500">Try clearing the search or changing the filters.</p>
           } @else {
-            <p class="text-sm text-gray-700">No one has elevated Org Lens access for this organization yet.</p>
+            <p class="text-sm text-gray-700">No one has elevated Company Lens access for this company yet.</p>
           }
         </div>
       } @else {

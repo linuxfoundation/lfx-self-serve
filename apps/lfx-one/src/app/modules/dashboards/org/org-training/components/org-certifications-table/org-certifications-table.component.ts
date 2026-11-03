@@ -21,7 +21,7 @@ export class OrgCertificationsTableComponent {
   public readonly sortField = input<string>('CERTIFIED_COUNT');
   public readonly sortOrder = input<'ASC' | 'DESC'>('DESC');
   public readonly emptyStateTitle = input<string>('No certifications yet');
-  public readonly emptyStateSubtitle = input<string>('No certifications were found for your organization.');
+  public readonly emptyStateSubtitle = input<string>('No certifications were found for your company.');
 
   public readonly pageChange = output<PageChangeEvent>();
   public readonly sortChange = output<SortChangeEvent>();
