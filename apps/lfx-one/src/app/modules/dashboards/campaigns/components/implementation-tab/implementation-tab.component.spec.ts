@@ -65,9 +65,10 @@ import type {
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { AutoComplete } from 'primeng/autocomplete';
 import { EMPTY, NEVER, Observable, of, Subject, throwError } from 'rxjs';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { ImplementationTabComponent } from './implementation-tab.component';
@@ -15274,5 +15275,170 @@ describe('ImplementationTabComponent already created for this event', () => {
     (fixture.componentInstance as unknown as { pollJob(jobId: string, projectSlug: string): void }).pollJob('job-1', 'tlf');
 
     expect(settled).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * #4983 ("ss-3"). A deliberate second campaign on a platform that already has one: offered only where
+ * the deployment allows it, labelled by funnel stage, confirmed every time, and sent with the slot
+ * version the operator saw for the SAME slot (for Google, the same channel).
+ */
+describe('ImplementationTabComponent create another campaign', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let dialogClose: Subject<boolean | undefined>;
+  let dialogOpen: ReturnType<typeof vi.fn>;
+  let createCampaign: MockInstance<CampaignService['createCampaign']>;
+
+  const doc = (id: string, slot: number, variant = 'default'): CampaignIndexDoc =>
+    ({
+      id,
+      project_id: 'tlf',
+      brief_id: 'b-1',
+      platform: 'google-ads',
+      platform_campaign_id: `pc-${id}`,
+      campaign_name: `KubeCon | ${id}`,
+      status: 'active',
+      version: 1,
+      slot_version: slot,
+      variant,
+    }) as CampaignIndexDoc;
+
+  type Internals = {
+    selectedPlatforms: { set(v: string[]): void };
+    briefKeywords: { set(v: unknown[]): void };
+    campaignForm: { controls: Record<string, { setValue(v: unknown): void }>; get(name: string): { controls: { setValue(v: unknown): void }[] } | null };
+    canSubmit(): boolean;
+    submit(): void;
+    anotherStage: { set(v: string): void };
+    anotherTactic: { set(v: string): void };
+    step: { set(v: string): void };
+    platformResults: { set(v: unknown): void };
+    rememberSlotVersions(results: unknown[]): void;
+  };
+  const c = (): Internals => fixture.componentInstance as unknown as Internals;
+  const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+  function makeGoogleSearchValid(): void {
+    c().selectedPlatforms.set(['google-ads']);
+    c().briefKeywords.set([SEED_KEYWORD]);
+    c().campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c().campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
+    c().campaignForm.controls['startDate'].setValue('2026-09-01');
+    c().campaignForm.controls['endDate'].setValue('2026-09-30');
+    c().campaignForm.controls['includeSearch'].setValue(true);
+    c().campaignForm.controls['includeDemandGen'].setValue(false);
+    c()
+      .campaignForm.get('headlines')
+      ?.controls.forEach((ctrl) => ctrl.setValue('Attend KubeCon'));
+    c()
+      .campaignForm.get('descriptions')
+      ?.controls.forEach((ctrl) => ctrl.setValue('Join us in September'));
+    fixture.detectChanges();
+  }
+
+  function setLists(campaigns: CampaignIndexDoc[], allowed: string[]): void {
+    fixture.componentRef.setInput('briefCampaigns', campaigns);
+    fixture.componentRef.setInput('multiCampaignPlatforms', allowed);
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    dialogClose = new Subject<boolean | undefined>();
+    dialogOpen = vi.fn(() => ({ onClose: dialogClose }));
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    })
+      .overrideComponent(ImplementationTabComponent, { set: { providers: [{ provide: DialogService, useValue: { open: dialogOpen } }] } })
+      .compileComponents();
+    createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(NEVER);
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true } as CampaignBriefPersistenceState);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    makeGoogleSearchValid();
+  });
+
+  it('offers it only on a platform the deployment allows, and leaves a plain retry alone elsewhere', () => {
+    setLists([doc('g1', 1)], []);
+    expect(q('implementation-create-another')).toBeNull();
+    expect(c().canSubmit(), 'a repeat create where another is not offered must stay a retry').toBe(true);
+
+    setLists([doc('g1', 1)], ['google-ads']);
+    expect(q('implementation-create-another')).not.toBeNull();
+  });
+
+  it('requires a funnel stage before the create can go', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    expect(c().canSubmit()).toBe(false);
+    expect(q('implementation-create-another-block')?.textContent).toContain('Choose a funnel stage');
+
+    c().anotherStage.set('mid');
+    fixture.detectChanges();
+    expect(c().canSubmit()).toBe(true);
+  });
+
+  it('refuses a create that mixes a platform being created again with one that is not', () => {
+    setLists([doc('g1', 1)], ['google-ads', 'microsoft-ads']);
+    c().anotherStage.set('mid');
+    c().selectedPlatforms.set(['google-ads', 'microsoft-ads']);
+    fixture.detectChanges();
+
+    expect(c().canSubmit()).toBe(false);
+    expect(q('implementation-create-another-block')?.textContent).toContain('can only include platforms that already have one');
+  });
+
+  it('confirms first, then sends the latest slot version of the same channel with the stage and tactic', () => {
+    // Search (the default slot) is at version 2; a Demand Gen campaign on its own slot is ignored.
+    setLists([doc('g1', 1), doc('g2', 2), doc('dg', 5, 'demand-gen')], ['google-ads']);
+    c().anotherStage.set('mid');
+    c().anotherTactic.set('retargeting');
+    fixture.detectChanges();
+
+    c().submit();
+    expect(dialogOpen).toHaveBeenCalledTimes(1);
+    expect(createCampaign, 'nothing may be sent before the operator confirms').not.toHaveBeenCalled();
+
+    dialogClose.next(true);
+
+    expect(createCampaign).toHaveBeenCalledTimes(1);
+    expect(createCampaign.mock.calls[0][0].another).toEqual({ funnelStage: 'mid', tactic: 'retargeting', expectedSlotVersions: { 'google-ads': 2 } });
+  });
+
+  it('sends nothing when the confirmation is dismissed', () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().anotherStage.set('top');
+    fixture.detectChanges();
+
+    c().submit();
+    dialogClose.next(false);
+
+    expect(createCampaign).not.toHaveBeenCalled();
+  });
+
+  it("expects past this tab's own job when the list has not caught up yet", () => {
+    setLists([doc('g1', 1)], ['google-ads']);
+    c().rememberSlotVersions([{ platform: 'google-ads', ok: true, slotVersion: 3, variant: 'default' }]);
+    c().anotherStage.set('lower');
+    fixture.detectChanges();
+
+    c().submit();
+    dialogClose.next(true);
+
+    expect(createCampaign.mock.calls[0][0].another?.expectedSlotVersions).toEqual({ 'google-ads': 3 });
+  });
+
+  it('says when campaign-service returned an existing campaign instead of creating one', () => {
+    c().step.set('results');
+    c().platformResults.set([{ platform: 'google-ads', ok: true, campaignId: '9', reused: true, funnelStage: 'mid' }]);
+    fixture.detectChanges();
+
+    expect(q('implementation-platform-result-reused')?.textContent?.trim()).toBe('Existing mid-funnel campaign returned; nothing new was created.');
   });
 });

@@ -1895,6 +1895,8 @@ export class CampaignController {
       // a concept it does not have is a category error.
       const viaService = await this.campaignServiceClient.createCampaigns(req, briefId, projectSlug, platforms, configEnvelope, {
         campaignTypes: body?.campaignTypes,
+        // A confirmed "create another" (#4983). Judged in `createCampaigns`, not trusted.
+        ...(body?.another ? { another: body.another } : {}),
       });
 
       if (viaService.enabled && viaService.jobId !== null) {
