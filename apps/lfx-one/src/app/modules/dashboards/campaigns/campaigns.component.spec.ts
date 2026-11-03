@@ -3590,6 +3590,49 @@ describe('CampaignsComponent brief persistence', () => {
       expect(editRequest()?.brief, "Implement's older copy was reopened under the newer validator").toBe(current);
     });
 
+    it('says why Edit brief opened nothing when its re-read fails, rather than reopening the older copy', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void } }).planningEditRequest.set(null);
+      vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await fixture.whenStable();
+      logged.mockRestore();
+
+      expect(editRequest(), "Implement's older copy was opened under the newer validator").toBeNull();
+      expect((fixture.componentInstance as unknown as { editBriefError(): string | null }).editBriefError()).toContain('could not be read');
+    });
+
+    it('does not re-read on Edit brief after the brief on Implement was itself saved over the row', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      // An Open to edit bumped the epoch, then Implement's own brief was saved over the row again
+      // (as Replace saved brief does), so the row holds exactly Implement's bytes.
+      openFromOffer(offer(5, 'W/"8"'));
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"9"', created: false, approved: true }));
+      (fixture.componentInstance as unknown as { persistBrief(b: CampaignBriefOutput): void }).persistBrief(
+        (fixture.componentInstance as unknown as { briefOutput(): CampaignBriefOutput }).briefOutput()
+      );
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief, briefId: 'stored-1', etag: 'W/"9"', approved: true }));
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      // A re-read would start only once the save queue drains, so wait for it before asserting none ran.
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief, 'Edit brief re-read a row that holds exactly the brief on Implement').not.toHaveBeenCalled();
+      expect(editRequest()?.brief).toEqual(brief);
+    });
+
     it('drops the X fields typed on Implement, which belong to the brief that was there', () => {
       const flag = (): boolean => (fixture.componentInstance as unknown as { twitterCarryDiscarded: boolean }).twitterCarryDiscarded;
       persistBrief.mockReturnValueOnce(NEVER);

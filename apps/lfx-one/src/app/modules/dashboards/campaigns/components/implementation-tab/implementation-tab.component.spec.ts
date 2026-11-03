@@ -14324,6 +14324,13 @@ describe('ImplementationTabComponent edit brief', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-btn"]')).toBeNull();
   });
 
+  it('says why the last Edit brief opened nothing', () => {
+    fixture.componentRef.setInput('editBriefError', 'The saved brief could not be read, so nothing was opened. Try Edit brief again.');
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-error"]')?.textContent).toContain('could not be read');
+  });
+
   it('is disabled, with the reason beside it, while a create job is polling', () => {
     (fixture.componentInstance as unknown as { step: WritableSignal<string> }).step.set('creating');
     fixture.detectChanges();

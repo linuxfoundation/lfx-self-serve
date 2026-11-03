@@ -1063,6 +1063,28 @@ describe('PlanningTabComponent editing an existing brief', () => {
     expect(proceeded[0].linkedInCopy, 'a Google-only edit rebuilt the LinkedIn copy and dropped its fields').toEqual(linkedInCopy);
   });
 
+  it('writes a Google block the brief lacked once the editor gives it text', async () => {
+    const keywordsOnly = { ...storedBrief, structuredCopy: { reddit_ads: { variants: [] } } } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('editRequest', { brief: keywordsOnly, requestId: 5 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().editSearchHeadlines.set(['A new search headline']);
+    internals().onProceedToImplementation();
+
+    expect((proceeded[0].structuredCopy?.['google_search'] as { headlines: string[] }).headlines).toEqual(['A new search headline']);
+    expect(proceeded[0].structuredCopy?.['google_display']).toBeUndefined();
+  });
+
+  it('forgets an abandoned HubSpot lookup, so the same URL can be looked up again later', async () => {
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'Kubecon Eu 2026';
+    await openInEditor(6);
+
+    expect((fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent).toBe('');
+  });
+
   it('frees the event again on New Brief', async () => {
     await openInEditor();
     internals().reset();

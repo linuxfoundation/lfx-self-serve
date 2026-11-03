@@ -615,12 +615,19 @@ export class CampaignsComponent {
   /**
    * The ownership epoch of the brief handed to Implement, taken at the handover (#4983).
    *
-   * An epoch bump means another account of the row arrived (a restore, an Open to edit, a read), whose
+   * An epoch bump means another account of the row arrived (an Open to edit or a re-read), whose
    * validator may name newer bytes than the ones Implement holds. Edit brief compares against it: when
    * the epoch has moved, it re-reads the row instead of reopening Implement's copy under that newer
-   * validator, which would replace the newer content without any conflict.
+   * validator, which would replace the newer content without any conflict. A save of Implement's own
+   * brief (Replace saved brief included) refreshes it, since the row then holds exactly those bytes.
    */
   private briefOutputEpoch: number | null = null;
+
+  /**
+   * Why Edit brief could not open the brief, shown beside the button (#4983), or `null`. Set when its
+   * re-read failed or found the row unreadable; cleared by the next Edit brief and by any handover.
+   */
+  protected readonly editBriefError = signal<string | null>(null);
 
   /**
    * True while `onRestoreSavedBrief` is adopting a restored brief's own program.
@@ -2858,17 +2865,34 @@ export class CampaignsComponent {
   /**
    * Edit brief, from the Implement tab (#4983): reopen the brief on that tab in Planning's editor.
    *
-   * Nothing is recorded: the brief on Implement already has whatever ownership this page holds — the
-   * restore that loaded it, or the save that created it — and the next Proceed resolves it from
-   * `knownBriefIds` as any second Proceed does.
+   * Two paths, decided by `briefOutputEpoch`:
+   * - The ownership epoch is unchanged since the handover: Implement's copy is reopened and nothing is
+   *   recorded. It already has whatever ownership this page holds — the restore that loaded it, or the
+   *   save that created it — and the next Proceed resolves it from `knownBriefIds` as any second
+   *   Proceed does.
+   * - Another account of the row arrived since: the row is re-read, ownership is recorded from that
+   *   read, and the READ brief is opened, so Implement's older bytes are never paired with the newer
+   *   validator. If the row is gone the brief on Implement opens (the next save creates); if the read
+   *   fails or the row cannot be shown, nothing opens and `editBriefError` says why.
    */
   protected onEditBriefFromImplement(): void {
     const brief = this.briefOutput();
     if (brief === null) return;
+    this.editBriefError.set(null);
     const key = this.ownershipKey(this.activeFoundationSlug(), brief);
     if (key !== null && this.briefOutputEpoch !== null && (this.ownershipEpochs.get(key) ?? 0) !== this.briefOutputEpoch) {
       // Another account of the row arrived after this brief was handed over (see `briefOutputEpoch`).
-      this.readAndOpenSavedBrief(brief, () => this.openInPlanningEditor(brief));
+      this.readAndOpenSavedBrief(
+        brief,
+        (status) => {
+          if (status === 'none') {
+            this.openInPlanningEditor(brief);
+            return;
+          }
+          this.editBriefError.set('The saved brief could not be opened here, so nothing was opened. Reload the page and open it from the Plan tab.');
+        },
+        () => this.editBriefError.set('The saved brief could not be read, so nothing was opened. Try Edit brief again.')
+      );
       return;
     }
     this.openInPlanningEditor(brief);
@@ -2972,6 +2996,7 @@ export class CampaignsComponent {
     this.briefOutput.set(handedOver);
     const handedKey = this.ownershipKey(this.activeFoundationSlug(), handedOver);
     this.briefOutputEpoch = handedKey === null ? null : (this.ownershipEpochs.get(handedKey) ?? 0);
+    this.editBriefError.set(null);
     this.selectedTab.set('implementation');
     if (alreadyPersisted) {
       // Bump the generation even though nothing is being saved. `persistBrief` normally does
@@ -6199,6 +6224,11 @@ export class CampaignsComponent {
           }
 
           if (generation !== this.briefPersistenceGeneration) return;
+          // The row now holds exactly the bytes on Implement (Replace saved brief included), so the
+          // epoch an earlier read or replace bumped no longer means "newer than Implement" (#4983).
+          if (result.enabled && wroteTheRow && ownershipKey !== null && this.briefOutput() === brief) {
+            this.briefOutputEpoch = this.ownershipEpochs.get(ownershipKey) ?? 0;
+          }
           if (!result.enabled) {
             this.briefPersistence.set(this.idlePersistence);
             return;

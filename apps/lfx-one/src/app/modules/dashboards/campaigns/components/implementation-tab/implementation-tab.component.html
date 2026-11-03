@@ -235,6 +235,9 @@
         Available once campaign creation finishes.
       }
     </span>
+    @if (editBriefError(); as editError) {
+      <p role="alert" class="w-full text-xs text-amber-800" data-testid="implementation-edit-brief-error">{{ editError }}</p>
+    }
   </div>
 }
 

@@ -666,6 +666,9 @@ export class ImplementationTabComponent implements OnInit {
   /** Asks the parent to reopen this tab's brief in Planning's editor — Edit brief (#4983). */
   public readonly editBriefRequested = output<void>();
 
+  /** Why the last Edit brief opened nothing, from the parent, or `null` (#4983). */
+  public readonly editBriefError = input<string | null>(null);
+
   /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.

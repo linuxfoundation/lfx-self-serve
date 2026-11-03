@@ -1926,6 +1926,9 @@ export class PlanningTabComponent implements OnInit {
     // its token is the stored brief's (and Proceed takes it from there, see `briefOverEditBase`).
     this.lookupGeneration++;
     this.hsSearching.set(false);
+    // Forgotten too, as a foundation switch forgets it: `lookupHubSpot` skips an event it last looked
+    // up, so keeping the abandoned one would stop a later lookup for the same URL from ever running.
+    this.lastLookedUpEvent = '';
     // Close any edit session first. This planner stays mounted, so a previous brief's editor and its
     // buffers would otherwise survive into a brief the editor does not open for, and Proceed would
     // write the previous brief's copy and keywords into this one.
