@@ -4,7 +4,7 @@ description: How to join a project meeting from its LFX Self Serve link, respond
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, attendee, rsvp, register, guest, zoom]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Meetings
 ---
 
@@ -103,6 +103,10 @@ The organizer's **Who can access recordings & summaries** setting decides who ca
 ## Meeting not found
 
 If you see the **Meeting Not Found** page, it's usually one of these: the link has expired or is no longer valid, the meeting was deleted or cancelled, you need access to a restricted meeting, or there's a typo in the URL. Contact the meeting organizer for a correct link, or use the **Contact Support** button on that page.
+
+## Get help
+
+The **Support** button in the page header opens the support chat. It's there for everyone, signed in or not, and it stays available on a phone when the bottom action bar or the guest list covers the round support button in the corner.
 
 ## Related
 
