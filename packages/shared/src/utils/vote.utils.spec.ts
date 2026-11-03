@@ -630,6 +630,45 @@ describe('buildVoteResultsQuestions', () => {
     expect(question.options[0].text).toBe('c9');
   });
 
+  it.each([undefined, null])('keeps absent or empty tallies empty when choices is %s', (choices) => {
+    for (const tallies of [undefined, []]) {
+      const pollResult = genericQuestion([]);
+      // Simulate an upstream payload that omits required choice metadata.
+      Object.assign(pollResult.question, { choices });
+      pollResult.generic_choice_votes = tallies;
+
+      const [question] = buildVoteResultsQuestions(resultsWith([pollResult]), false);
+
+      expect(question.options).toEqual([]);
+      expect(question.totalVotes).toBe(0);
+    }
+  });
+
+  it.each([undefined, null])('preserves tally order and uses id labels when choices is %s', (choices) => {
+    const pollResult = genericQuestion([
+      ['c2', 1, 25],
+      ['c1', 3, 75],
+    ]);
+    Object.assign(pollResult.question, { choices });
+
+    const [question] = buildVoteResultsQuestions(resultsWith([pollResult]), false);
+
+    expect(question.options.map((o) => [o.choiceId, o.text, o.voteCount, o.percentage, o.isLeading])).toEqual([
+      ['c2', 'c2', 1, 25, false],
+      ['c1', 'c1', 3, 75, true],
+    ]);
+    expect(question.totalVotes).toBe(4);
+  });
+
+  it('falls back to the choice id when the configured label is empty', () => {
+    const pollResult = genericQuestion([['c1', 1, 100]]);
+    pollResult.question.choices[0].choice_text = '';
+
+    const [question] = buildVoteResultsQuestions(resultsWith([pollResult]), false);
+
+    expect(question.options[0].text).toBe('c1');
+  });
+
   it('marks the leading option while live, without winner or tie markers', () => {
     const [question] = buildVoteResultsQuestions(
       resultsWith([

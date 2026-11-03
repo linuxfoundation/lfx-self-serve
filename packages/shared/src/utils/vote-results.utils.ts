@@ -86,8 +86,9 @@ export function buildVoteResultsQuestions(results: VoteResultsResponse | null, i
   return results.poll_results.map((pollResult) => {
     // Sort a copy by configured position; unknown ids share the position after the last choice, so the stable sort
     // keeps them in payload order.
-    const choiceIndexById = new Map(pollResult.question.choices.map((choice, index) => [choice.choice_id, index]));
-    const choicePosition = (choiceId: string): number => choiceIndexById.get(choiceId) ?? pollResult.question.choices.length;
+    const choices = pollResult.question.choices ?? [];
+    const choiceById = new Map(choices.map((choice, index) => [choice.choice_id, { index, text: choice.choice_text }]));
+    const choicePosition = (choiceId: string): number => choiceById.get(choiceId)?.index ?? choices.length;
     const choiceVotes = [...(pollResult.generic_choice_votes || [])].sort((a, b) => choicePosition(a.choice_id) - choicePosition(b.choice_id));
 
     // Per-question choice-vote sum — drives the question model's totalVotes (zero-state detection), not percentages.
@@ -96,7 +97,7 @@ export function buildVoteResultsQuestions(results: VoteResultsResponse | null, i
     // Build options with vote counts from the results API
     const optionsWithCounts: VoteResultsOption[] = choiceVotes.map((cv) => ({
       choiceId: cv.choice_id,
-      text: pollResult.question.choices.find((c) => c.choice_id === cv.choice_id)?.choice_text || cv.choice_id,
+      text: choiceById.get(cv.choice_id)?.text || cv.choice_id,
       voteCount: cv.vote_count,
       percentage: computeResultPercentage(cv.percentage, cv.vote_count, results.num_votes_cast || 0),
       isWinner: false,
