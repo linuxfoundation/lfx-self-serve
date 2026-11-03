@@ -50,7 +50,7 @@ In the list of organizations, hovering over an inherited role shows **Inherited 
 
 ## Why can't I search for an organization in the switcher?
 
-Only Linux Foundation staff can search the switcher. Everyone else sees a list of the organizations they have access to, with no search box.
+Only Linux Foundation staff can search the switcher. Everyone else sees a list of the organizations they have access to, with no search box. If you have an admin or viewer role on any organization, the list leaves out organizations where your only role is CLA Manager. Manage those organizations' corporate CLAs in the [Corporate CLA Console](https://corporate.lfcla.com).
 
 For Linux Foundation staff, the switcher opens with a **Search organizations...** box. Type at least two characters to search every organization. Until you do, an empty list shows **Search for any organization…**. When the results include organizations you are not assigned to, the ones you are assigned to are listed under **Your organizations** and the rest under **All organizations**. Each organization under **All organizations** carries a **Member** or **Non-member** label for its Linux Foundation membership.
 
