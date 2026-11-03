@@ -9650,6 +9650,16 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canGenerateSurveySequence()).toBe(false);
     });
 
+    it('holds a send whose create was accepted with nothing to track, as the single-send path does', async () => {
+      stageable(1);
+      vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: '' }) as never);
+
+      await seq().onStageSequenceSends();
+
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual(['brief-1']);
+      expect(seq().canStageSequence(), 'staging again could clone a second draft').toBe(false);
+    });
+
     it('holds a send whose failed job still created its draft, and records where it landed', async () => {
       stageable(1);
       vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);

@@ -4486,7 +4486,12 @@ export class CampaignsComponent {
           throw new Error(outcome.error);
         }
         if (!outcome.jobId) {
-          throw new Error(`HubSpot did not accept the ${send.label}.`);
+          // Accepted with nothing to track, which the single-send path holds: the draft may still
+          // be created, so a retry could clone a second one.
+          if (isCurrent()) {
+            this.holdUnresolvedSend(send.briefId);
+          }
+          throw new Error(`Staging the ${send.label} was accepted but returned nothing to track. Check HubSpot for it before staging again.`);
         }
 
         // WAIT for the job, rather than treating a job id as a draft. The create is accepted
