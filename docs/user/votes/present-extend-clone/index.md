@@ -83,7 +83,7 @@ While the summary is sending, the dialog can't be closed. When it finishes, the 
 - **Missing email:** the voter has no email address on file, so nothing could be sent.
 - **Unconfirmed:** LFX couldn't confirm the send, for example after a timeout, a lost connection, or an email-service error after sending may have started. The email may already have arrived, so sending again could create duplicates. Check with voters before sending again.
 
-Voters who share an email address share that address's outcome. The results reflect the voters at the moment of sending, so they can differ from the list you reviewed if voters changed in between. The results stay open until you select **Close**. There is no resend action.
+Voters who share an email address share that address's outcome. When LFX receives detailed send results, they reflect the voters at the moment of sending, so they can differ from the list you reviewed if voters changed in between. If LFX can't obtain the send results, for example after a lost connection or timeout, the dialog uses the earlier reviewed list: voters with an email address are shown as **Unconfirmed**, and voters without one remain under **Missing email**. In that case, LFX can't confirm the actual send-time recipients or their outcomes. The results stay open until you select **Close**. There is no resend action.
 
 If you try to send before the vote has closed, LFX says the vote hasn't closed yet. If pre-send checks find that you need to sign in again or that the vote is no longer available, LFX says that nothing was sent and explains the issue instead of asking you to retry the same send. The summary is sent only when you ask for it. It is never sent automatically.
 
