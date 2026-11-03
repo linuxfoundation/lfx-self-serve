@@ -71,13 +71,11 @@ export class AppComponent {
   );
   /**
    * Latches once the host has been in the tree, and never goes back.
-   * @description Closing is not the end of the host's job: `onSubmit()` announces a successful create
-   * on the keyed `<p-toast>` that lives *inside* the host and calls `composer.close()` in the same
-   * tick. On the flag alone those two legs both read false at that point, so the outlet is destroyed
-   * on the next change-detection pass and the toast is unsubscribed before it ever paints —
-   * `MessageService` is a plain Subject with no replay, so the message is gone for good. Creating no
-   * longer navigates, so the organizer would be left with no confirmation at all that the meeting
-   * saved. Keeping the host mounted costs almost nothing once the composer is closed — the drawer is
+   * @description Closing is not the end of the host's job: `onSubmit()` raises the sticky create toast
+   * and calls `composer.close()` in the same tick, and the host keeps the handle that retires that toast
+   * when the composer next opens. On the flag alone those two legs both read false at that point, so the
+   * outlet would be destroyed and a later remount would start without the handle, leaving the old toast
+   * over the drawer. Keeping the host mounted costs almost nothing once the composer is closed — the drawer is
    * bound to `isOpen()` and `meetingEntityContext` returns null — and it cannot let an untargeted
    * user back in: every entry point and the prefetch trigger stay on the flag alone.
    */
@@ -91,8 +89,7 @@ export class AppComponent {
    * meeting with it, while `MeetingComposerService.isOpen()` stays true because only `close()` clears the
    * context: the composer is gone from the screen but still logically open, and a later flag-on remounts a
    * host that immediately reopens that stale context. So an open composer keeps itself mounted until it
-   * closes, and `hostEverMounted` holds it there afterwards so the create toast it renders survives the
-   * close. This cannot let an untargeted user in: every entry point is gated on the same flag and the
+   * closes, and `hostEverMounted` holds it there afterwards so it can still retire the create toast it raised. This cannot let an untargeted user in: every entry point is gated on the same flag and the
    * deep-link routes render the pre-v2 screens, so `isOpen()` is false for them and neither the host nor
    * its chunk is ever reached (`canPrefetchComposer` stays on the flag alone).
    */
