@@ -580,13 +580,6 @@ export class MktgRunProgressComponent {
     this.loadedSubject.set('');
   }
 
-  /** Emits `readRetrying` on transitions only. */
-  private setRetrying(on: boolean): void {
-    if (this.readRetryingOn === on) return;
-    this.readRetryingOn = on;
-    this.readRetrying.emit(on);
-  }
-
   protected onPublicAnswers(answers: MktgRunAnswer[]): void {
     this.answerRequests.next(answers);
   }
@@ -595,6 +588,13 @@ export class MktgRunProgressComponent {
     if (this.submittingGeneration()) return;
     if (this.polling()) this.reload.update((count) => count + 1);
     else this.refresh.emit();
+  }
+
+  /** Emits `readRetrying` on transitions only. */
+  private setRetrying(on: boolean): void {
+    if (this.readRetryingOn === on) return;
+    this.readRetryingOn = on;
+    this.readRetrying.emit(on);
   }
 
   /** Only the exact scoped server conflict can retire this browser's answer form. */

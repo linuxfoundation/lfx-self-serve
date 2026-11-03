@@ -1333,6 +1333,25 @@ describe('MktgDocumentViewComponent', () => {
       vi.useRealTimers();
     });
 
+    it('drops the retrying line when a retried first read ends for good: the final error stands alone', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      store.getDocument
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-error')).toBeNull();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(2);
+      // Nothing is retrying beside a final error: one message, not two that contradict each other.
+      expect(query('mktg-document-view-error')).not.toBeNull();
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
+      vi.useRealTimers();
+    });
+
     it('keeps a loaded report on screen through a transiently failed re-read on focus: one quiet line, no error box, no Run again', async () => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
       vi.spyOn(Math, 'random').mockReturnValue(0);

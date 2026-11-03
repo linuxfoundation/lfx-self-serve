@@ -929,6 +929,7 @@ export class MktgDocumentViewComponent {
                 console.error('Marketing OS document read failed for good', { status: error.status });
                 this.localProgress.set(null);
                 this.runDetail.set(null);
+                this.refreshWarning.set(''); // Nothing is retrying beside a final error.
                 this.errorText.set(this.loadErrorText(error.status, error.error?.code));
                 return of(null);
               })
