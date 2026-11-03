@@ -30,7 +30,7 @@ export class UiEmptyStateComponent {
   public readonly heading = input.required<string>();
   /** One sentence that says what will appear here or what to do next. Up to 600px wide, with balanced line breaks. */
   public readonly description = input<string>('');
-  /** Font Awesome class string for the 48px icon tile, e.g. `fa-light fa-calendar`. Leave empty for no tile. */
+  /** Font Awesome class string for the icon tile (48px, or 40px when small), e.g. `fa-light fa-calendar`. Leave empty for no tile. */
   public readonly icon = input<string>('');
   /** Heading level (`aria-level`) of the title, 1 to 6. Pick the level that fits the page outline. */
   public readonly headingLevel = input<UiHeadingLevel>(3);
