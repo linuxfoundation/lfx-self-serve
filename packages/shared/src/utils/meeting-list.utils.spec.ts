@@ -14,6 +14,7 @@ import {
   countAppliedMeetingFilters,
   expandMeetingOccurrences,
   filterMeetingsHome,
+  formatMeetingDateTime,
   formatMeetingTimeRange,
   getMeetingDayBucket,
   getMeetingHomeRowLink,
@@ -490,6 +491,14 @@ describe('getMeetingRecurrenceTooltip', () => {
   it('returns null for one-time meetings', () => {
     expect(getMeetingRecurrenceTooltip({ ...base, recurrence: null })).toBeNull();
     expect(getMeetingRecurrenceTooltip({ ...base, recurrence: { ...WEEKLY, end_times: 1 } })).toBeNull();
+  });
+});
+
+describe('formatMeetingDateTime', () => {
+  it('shows the day with the time range, or with the start time alone without a duration', () => {
+    expect(formatMeetingDateTime('2026-10-01T13:30:00Z', 60, 'America/Los_Angeles')).toBe('Thu, Oct 1 · 6:30 – 7:30 AM PDT');
+    expect(formatMeetingDateTime('2026-10-01T13:30:00Z', undefined, 'America/Los_Angeles')).toBe('Thu, Oct 1 · 6:30 AM PDT');
+    expect(formatMeetingDateTime('not-a-date', 60)).toBe('');
   });
 });
 

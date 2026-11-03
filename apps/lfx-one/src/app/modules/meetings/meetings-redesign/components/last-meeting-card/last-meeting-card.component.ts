@@ -18,8 +18,8 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS, MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
-import { MeetingType, MeetingVisibilityKind } from '@lfx-one/shared/enums';
+import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
+import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
   MeetingHomeRow,
   MeetingHomeRowLink,
@@ -30,7 +30,8 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   getMeetingHomeRowLink,
-  getMeetingProjectUrl,
+  getMeetingHomeRowProject,
+  getMeetingHomeRowType,
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
   getPastMeetingSummaryContent,
@@ -84,13 +85,19 @@ export class LastMeetingCardComponent {
     // Public needs no badge on the tile, as on the list rows.
     return row ? getMeetingVisibilityBadges(row.meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC) : [];
   });
-  protected readonly project: Signal<MeetingHomeRowProject | null> = this.initProject();
+  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => {
+    const row = this.row();
+    return row ? getMeetingHomeRowProject(row.meeting) : null;
+  });
   protected readonly when: Signal<string> = this.initWhen();
   protected readonly recurrenceTooltip: Signal<string | null> = computed(() => {
     const row = this.row();
     return row ? getMeetingRecurrenceTooltip(row.meeting, row.occurrence) : null;
   });
-  protected readonly meetingType: Signal<MeetingHomeRowType | null> = this.initMeetingType();
+  protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => {
+    const row = this.row();
+    return row ? getMeetingHomeRowType(row.meeting) : null;
+  });
   /** Raw summary text the viewer may read; organizers also see one awaiting their approval. */
   protected readonly summaryContent: Signal<string | null> = this.initSummaryContent();
   /** Only organizers see a summary that still needs approval; tell them invitees don't yet. */
@@ -139,36 +146,11 @@ export class LastMeetingCardComponent {
     if (row && shareUrl) this.dialogs.openRecording(row, shareUrl);
   }
 
-  // shortcut: date tile, visibility badges and eyebrow repeat meeting-home-row's. revisit: when the Next card lands with the same pieces
-  private initProject(): Signal<MeetingHomeRowProject | null> {
-    return computed(() => {
-      const meeting = this.row()?.meeting;
-      const name = meeting?.project_name?.trim();
-      if (!meeting || !name) return null;
-      return {
-        name,
-        initial: Array.from(name)[0].toUpperCase(),
-        logo: meeting.project_logo_url ?? '',
-        url: getMeetingProjectUrl(meeting),
-        label: `${meeting.is_foundation ? 'Jump to foundation' : 'Jump to project'}: ${name}`,
-      };
-    });
-  }
-
   /** "Wed, 8:00 AM · 60m" in the viewer's zone, per the design. */
   private initWhen(): Signal<string> {
     return computed(() => {
       const row = this.row();
       return row ? `${formatDate(row.startTime, 'EEE, h:mm a', 'en-US')} · ${row.durationMinutes}m` : '';
-    });
-  }
-
-  private initMeetingType(): Signal<MeetingHomeRowType | null> {
-    return computed(() => {
-      const type = this.row()?.meeting.meeting_type?.trim();
-      if (!type || type === MeetingType.NONE) return null;
-      const config = MEETING_TYPE_CONFIGS[type.toLowerCase()];
-      return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
     });
   }
 

@@ -4,7 +4,8 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Meeting, MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import { MEETING_HOME_RECORDING_ARTIFACT, MEETING_HOME_SUMMARY_ARTIFACT } from '@lfx-one/shared/constants';
+import { Meeting, MeetingHomeArtifact, MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { getLargestSessionShareUrl, getPastMeetingSummaryContent } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -49,7 +50,7 @@ export class MeetingHomeArtifactsComponent {
 
   protected openRecording(): void {
     const row = this.row();
-    this.load(this.loadingRecording, this.meetingService.getPastMeetingRecording(row.key), 'recording', (recording) => {
+    this.load(this.loadingRecording, this.meetingService.getPastMeetingRecording(row.key), MEETING_HOME_RECORDING_ARTIFACT, (recording) => {
       const shareUrl = getLargestSessionShareUrl(recording);
       if (shareUrl) this.dialogs.openRecording(row, shareUrl);
       return !!shareUrl;
@@ -58,7 +59,7 @@ export class MeetingHomeArtifactsComponent {
 
   protected openSummary(): void {
     const row = this.row();
-    this.load(this.loadingSummary, this.meetingService.getPastMeetingSummary(row.key), 'summary', (summary) => {
+    this.load(this.loadingSummary, this.meetingService.getPastMeetingSummary(row.key), MEETING_HOME_SUMMARY_ARTIFACT, (summary) => {
       // The dialog leaves the visibility check to its caller.
       const visible = getPastMeetingSummaryContent(row.meeting, summary) !== null;
       // The Last meeting card shows this summary too when the row is the last meeting.
@@ -69,7 +70,7 @@ export class MeetingHomeArtifactsComponent {
   }
 
   /** Runs one artifact request; `open` returns false when the artifact turns out to be missing. */
-  private load<T>(loading: WritableSignal<boolean>, request$: Observable<T>, kind: 'recording' | 'summary', open: (value: T) => boolean): void {
+  private load<T>(loading: WritableSignal<boolean>, request$: Observable<T>, artifact: MeetingHomeArtifact, open: (value: T) => boolean): void {
     if (loading()) return;
     loading.set(true);
     request$
@@ -80,24 +81,24 @@ export class MeetingHomeArtifactsComponent {
       )
       .subscribe({
         next: (value) => {
-          if (!open(value)) this.showUnavailable(kind, false);
+          if (!open(value)) this.showUnavailable(artifact, false);
         },
         error: (error: unknown) => {
           // A 404 just means the meeting has no such artifact.
           const missing = error instanceof HttpErrorResponse && error.status === 404;
-          if (!missing) console.error(`Failed to load a past meeting ${kind}:`, error);
-          this.showUnavailable(kind, !missing);
+          if (!missing) console.error(`Failed to load a past meeting ${artifact.noun}:`, error);
+          this.showUnavailable(artifact, !missing);
         },
       });
   }
 
   /** Only a failed request is worth retrying; a missing or not-yet-visible artifact is not. */
-  private showUnavailable(kind: 'recording' | 'summary', retryable: boolean): void {
+  private showUnavailable(artifact: MeetingHomeArtifact, retryable: boolean): void {
     this.toast.show({
       variant: 'error',
       position: 'bottom-center',
-      message: kind === 'recording' ? 'Recording unavailable' : 'AI Summary unavailable',
-      description: retryable ? `We couldn't load this ${kind}. Please try again.` : `This ${kind} isn't available yet.`,
+      message: `${artifact.title} unavailable`,
+      description: retryable ? `We couldn't load this ${artifact.noun}. Please try again.` : `This ${artifact.noun} isn't available yet.`,
     });
   }
 }

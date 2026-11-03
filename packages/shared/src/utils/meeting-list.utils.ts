@@ -258,6 +258,22 @@ export function formatMeetingTimeRange(start: string | Date, durationMinutes: nu
   return `${from['hour']}:${from['minute']}${fromLabel} – ${to['hour']}:${to['minute']} ${to['dayPeriod']} ${to['timeZoneName']}`;
 }
 
+/**
+ * Date line of a meeting dialog or popover row in the viewer's zone, e.g. "Thu, Oct 1 · 6:30 – 7:30 AM PDT".
+ * @description Without a duration it shows only the start time: "Thu, Oct 1 · 6:30 AM PDT". `timeZone` defaults to the viewer's own.
+ */
+export function formatMeetingDateTime(start: string | Date, durationMinutes?: number, timeZone?: string): string {
+  const startDate = new Date(start);
+  if (Number.isNaN(startDate.getTime())) return '';
+
+  const day = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone }).format(startDate);
+  const time =
+    durationMinutes === undefined
+      ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone, timeZoneName: 'short' }).format(startDate)
+      : formatMeetingTimeRange(startDate, durationMinutes, timeZone);
+  return `${day} · ${time}`;
+}
+
 /** Countdown copy: "Meeting starts in N min" under an hour, "Meeting starts in N h" under a day, otherwise null. */
 export function getMeetingStartsInLabel(start: string | Date, now: Date = new Date()): string | null {
   const diffMs = new Date(start).getTime() - now.getTime();

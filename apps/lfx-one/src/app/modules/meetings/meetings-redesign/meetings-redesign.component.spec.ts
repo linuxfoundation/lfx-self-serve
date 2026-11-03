@@ -136,6 +136,8 @@ describe('MeetingsRedesignComponent', () => {
             getUserMeetings: () => upcoming$,
             getUserPastMeetings: () => past$,
             getUserLatestPastMeetings: () => latestPast$,
+            meetingsRefresh$: new Subject<void>(),
+            pastMeetingsRefresh$: new Subject<void>(),
             authenticated: signal(true),
             meetingJoinIdentity: signal(null),
             confirmedMeetingRsvps: () => [],
