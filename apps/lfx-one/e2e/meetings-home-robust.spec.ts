@@ -152,4 +152,19 @@ test.describe('Meetings home page - Robust Tests', () => {
       await expect(page.getByTestId('meetings-home-list')).toHaveCount(0);
     });
   });
+
+  test.describe('Folded layout at 1024px', () => {
+    test.use({ viewport: { width: 1024, height: 900 } });
+
+    test('the right column folds into the centre above the tabs', async ({ page }) => {
+      await gotoMeetingsHome(page);
+
+      const folded = page.getByTestId('meetings-redesign-folded-rail');
+      await expect(rightColumn(page)).toBeHidden();
+      await expect(folded.getByTestId('meetings-redesign-folded-next-meeting').getByTestId('meetings-home-next-card')).toBeVisible();
+      await expect(folded.getByTestId('meetings-redesign-folded-last-meeting').getByTestId('meetings-home-last-card')).toBeVisible();
+      await expect(page.getByTestId('meetings-redesign-description')).toBeHidden();
+      await expect(homeRows(page)).toHaveCount(4);
+    });
+  });
 });

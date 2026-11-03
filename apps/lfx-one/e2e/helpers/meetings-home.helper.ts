@@ -52,8 +52,7 @@ async function stubMeetingsHome(page: Page, options: MeetingsHomeStubOptions): P
   const past = buildMeetingsHomePast();
 
   // Registered first so the specific routes below take precedence (Playwright matches the newest route first).
-  await page.route('**/api/meetings/home-e2e-*/**', (route) => fulfillJson(route, {}, 404));
-  await page.route('**/api/past-meetings/home-e2e-*/**', (route) => fulfillJson(route, {}, 404));
+  await page.route(/\/api\/(past-)?meetings\/home-e2e-[^/?]+([/?]|$)/, (route) => fulfillJson(route, {}, 404));
 
   await page.route('**/api/user/personas*', (route) =>
     fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
@@ -95,9 +94,6 @@ export async function gotoMeetingsHome(page: Page, options: MeetingsHomeStubOpti
 
   await page.goto(`/meetings${options.query ?? ''}`, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
-  if (new URL(page.url()).pathname !== '/meetings') {
-    test.skip(true, 'Me lens is not available for this user — /meetings redirected away');
-  }
   await expect(page.getByTestId('meetings-redesign')).toBeVisible({ timeout: MEETINGS_HOME_LOAD_TIMEOUT });
   return mocks;
 }
