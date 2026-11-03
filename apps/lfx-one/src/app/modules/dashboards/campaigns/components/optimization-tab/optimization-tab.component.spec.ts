@@ -3786,6 +3786,14 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect(terms).toEqual(['Channel:', 'Stage:', 'Tactic:', 'Created:']);
   });
 
+  it("leaves the created date to the browser when the viewer's zone is not known (a server render)", () => {
+    (fixture.componentInstance as unknown as { labelTimeZone: null | undefined }).labelTimeZone = null;
+    render([doc({ id: 'g-2', platform: 'google-ads', variant: 'default', created_at: '2026-11-02T12:00:00Z' })]);
+
+    expect(q('optimization-campaign-created-g-2')?.textContent?.trim()).toBe('—');
+    expect(q('optimization-campaign-channel-g-2')?.textContent?.trim()).toBe('Search');
+  });
+
   function bidForm(id = 'c-1'): CampaignBidFormComponent {
     const form = fixture.debugElement.queryAll(By.directive(CampaignBidFormComponent)).find((de) => de.componentInstance.campaignId() === id);
     if (!form) {

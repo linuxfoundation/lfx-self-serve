@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Component, DestroyRef, EnvironmentProviders, input, output, Provider, type WritableSignal } from '@angular/core';
+import { Component, DestroyRef, EnvironmentProviders, input, output, PLATFORM_ID, Provider, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -15231,6 +15231,33 @@ describe('ImplementationTabComponent already created for this event', () => {
       th.textContent?.trim()
     );
     expect(headings).toEqual(['Platform', 'Name', 'Status', 'Slot', 'Channel', 'Stage', 'Tactic', 'Created']);
+  });
+
+  it('scrolls the eight-column table inside the card rather than widening the page', () => {
+    setList([doc('g1', 'google-ads', 'active', 1)]);
+    expect(q('implementation-existing-table-scroll')?.classList.contains('overflow-x-auto')).toBe(true);
+    expect(q('implementation-existing-table-scroll')?.querySelector('[data-testid="implementation-existing-table"]')).not.toBeNull();
+  });
+
+  it("leaves the created date to the browser during a server render, so the server's day is never shown", async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: PLATFORM_ID, useValue: 'server' },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.componentRef.setInput('briefData', brief);
+    setList([{ ...doc('g2', 'google-ads', 'active', 2), variant: 'default', funnel_stage: 'lower', created_at: '2026-11-02T12:00:00Z' }]);
+
+    expect(q('implementation-existing-created-g2')?.textContent?.trim()).toBe('—');
+    expect(q('implementation-existing-stage-g2')?.textContent?.trim()).toBe('Lower funnel');
   });
 
   it('says a failed read failed, with Retry, instead of rendering as "nothing created"', () => {

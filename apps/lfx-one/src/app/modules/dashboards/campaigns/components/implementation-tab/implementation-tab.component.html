@@ -282,34 +282,37 @@
           <p class="text-xs text-blue-900" [attr.data-testid]="'implementation-existing-notice-' + notice.platform">{{ notice.message }}</p>
         }
       </div>
-      <table class="w-full text-left text-xs text-gray-700" data-testid="implementation-existing-table">
-        <thead>
-          <tr class="text-gray-500">
-            <th scope="col" class="py-1 pr-3 font-medium">Platform</th>
-            <th scope="col" class="py-1 pr-3 font-medium">Name</th>
-            <th scope="col" class="py-1 pr-3 font-medium">Status</th>
-            <th scope="col" class="py-1 pr-3 font-medium">Slot</th>
-            <th scope="col" class="py-1 pr-3 font-medium">Channel</th>
-            <th scope="col" class="py-1 pr-3 font-medium">Stage</th>
-            <th scope="col" class="py-1 pr-3 font-medium">Tactic</th>
-            <th scope="col" class="py-1 font-medium">Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (campaign of existingCampaigns(); track campaign.id) {
-            <tr class="border-t border-blue-100" [attr.data-testid]="'implementation-existing-row-' + campaign.id">
-              <td class="py-1 pr-3">{{ campaign.platformLabel }}</td>
-              <td class="break-all py-1 pr-3 font-mono">{{ campaign.name }}</td>
-              <td class="py-1 pr-3">{{ campaign.status }}</td>
-              <td class="py-1 pr-3">{{ campaign.slot }}</td>
-              <td class="py-1 pr-3" [attr.data-testid]="'implementation-existing-channel-' + campaign.id">{{ campaign.labels.channel }}</td>
-              <td class="py-1 pr-3" [attr.data-testid]="'implementation-existing-stage-' + campaign.id">{{ campaign.labels.stage }}</td>
-              <td class="py-1 pr-3" [attr.data-testid]="'implementation-existing-tactic-' + campaign.id">{{ campaign.labels.tactic }}</td>
-              <td class="whitespace-nowrap py-1" [attr.data-testid]="'implementation-existing-created-' + campaign.id">{{ campaign.labels.created }}</td>
+      <!-- Eight columns are wider than a phone: the table scrolls inside the card, not the page. -->
+      <div class="overflow-x-auto" data-testid="implementation-existing-table-scroll">
+        <table class="w-full text-left text-xs text-gray-700" data-testid="implementation-existing-table">
+          <thead>
+            <tr class="text-gray-500">
+              <th scope="col" class="py-1 pr-3 font-medium">Platform</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Name</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Status</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Slot</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Channel</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Stage</th>
+              <th scope="col" class="py-1 pr-3 font-medium">Tactic</th>
+              <th scope="col" class="py-1 font-medium">Created</th>
             </tr>
-          }
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            @for (campaign of existingCampaigns(); track campaign.id) {
+              <tr class="border-t border-blue-100" [attr.data-testid]="'implementation-existing-row-' + campaign.id">
+                <td class="py-1 pr-3">{{ campaign.platformLabel }}</td>
+                <td class="break-all py-1 pr-3 font-mono">{{ campaign.name }}</td>
+                <td class="py-1 pr-3">{{ campaign.status }}</td>
+                <td class="py-1 pr-3">{{ campaign.slot }}</td>
+                <td class="py-1 pr-3" [attr.data-testid]="'implementation-existing-channel-' + campaign.id">{{ campaign.labels.channel }}</td>
+                <td class="py-1 pr-3" [attr.data-testid]="'implementation-existing-stage-' + campaign.id">{{ campaign.labels.stage }}</td>
+                <td class="py-1 pr-3" [attr.data-testid]="'implementation-existing-tactic-' + campaign.id">{{ campaign.labels.tactic }}</td>
+                <td class="whitespace-nowrap py-1" [attr.data-testid]="'implementation-existing-created-' + campaign.id">{{ campaign.labels.created }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
     </div>
   } @else if (briefCampaignsLoading()) {
     <p class="mb-4 text-xs text-gray-600" data-testid="implementation-existing-loading">

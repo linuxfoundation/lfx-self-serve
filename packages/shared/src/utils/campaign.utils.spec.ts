@@ -475,6 +475,10 @@ describe('campaignLabelColumns', () => {
     expect(labels).toEqual({ channel: 'Demand Gen', stage: 'Mid funnel', tactic: 'Content promotion', created: 'Nov 2, 2026' });
   });
 
+  it("leaves the created date to the browser when the viewer's zone is not known (a server render)", () => {
+    expect(campaignLabelColumns({ platform: 'google-ads', created_at: '2026-11-02T12:00:00Z' }, null).created).toBe('—');
+  });
+
   it('dates a campaign by the calendar day in the zone it is given', () => {
     const lateEvening = { platform: 'google-ads', created_at: '2026-11-03T03:00:00Z' };
     expect(campaignLabelColumns(lateEvening, 'UTC').created).toBe('Nov 3, 2026');

@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import { DecimalPipe, DOCUMENT, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, OnInit, output, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, OnInit, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type {
   BriefMetrics,
@@ -171,6 +171,11 @@ export class OptimizationTabComponent implements OnInit {
   // constructor, and the editor it focuses is rendered by this template a tick after it opens.
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
+  /**
+   * The zone a campaign's Created date is dated in: the viewer's own in the browser (`undefined`), and none
+   * during a server render (`null`, shown as "—"), so the server's UTC day is never rendered (#4983).
+   */
+  private readonly labelTimeZone: null | undefined = isPlatformBrowser(inject(PLATFORM_ID)) ? undefined : null;
 
   /**
    * The campaigns this brief created, or `null` when the list has not been loaded.
@@ -759,7 +764,7 @@ export class OptimizationTabComponent implements OnInit {
         status,
         action,
         conflicted,
-        labels: campaignLabelColumns(campaign),
+        labels: campaignLabelColumns(campaign, this.labelTimeZone),
         unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported, campaign.platform) : '',
         toggleLabel: CAMPAIGN_TOGGLE_LABELS[action],
         describedBy: this.describedByFor(campaign.id, action, toggleErrors, resumeAdopted),

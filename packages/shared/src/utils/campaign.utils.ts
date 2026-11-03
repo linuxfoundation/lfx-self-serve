@@ -287,18 +287,19 @@ export function dailyBudgetFromTotal(total: number, days: number): number | null
  * A created date that does not parse is "—", never "Invalid Date".
  *
  * The date is the calendar day in `timeZone`, or in the runtime's own zone when omitted, which is the
- * viewer's in the browser. A server-rendered caller must pass one, or the server's day (UTC) and the
- * browser's could differ near midnight and mismatch on hydration.
+ * viewer's in the browser. `null` means the viewer's zone is not known, as in a server render: Created is
+ * then "—", and the browser dates it once it renders, so the server's day (UTC) is never shown to a viewer
+ * whose day differs near midnight.
  */
 export function campaignLabelColumns(
   campaign: Pick<CampaignIndexDoc, 'platform' | 'variant' | 'funnel_stage' | 'tactic' | 'created_at'>,
-  timeZone?: string
+  timeZone?: string | null
 ): CampaignLabelColumns {
   return {
     channel: campaignChannelLabel(campaign.platform, campaign.variant),
     stage: lookupLabel(CAMPAIGN_FUNNEL_STAGE_COLUMN_LABELS, campaign.funnel_stage),
     tactic: CAMPAIGN_TACTIC_OPTIONS.find((option) => option.id === campaign.tactic)?.label ?? CAMPAIGN_LABEL_ABSENT,
-    created: campaignCreatedLabel(campaign.created_at, timeZone),
+    created: timeZone === null ? CAMPAIGN_LABEL_ABSENT : campaignCreatedLabel(campaign.created_at, timeZone),
   };
 }
 
