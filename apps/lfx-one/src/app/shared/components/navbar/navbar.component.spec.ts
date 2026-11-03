@@ -654,9 +654,10 @@ describe('NavbarComponent', () => {
       expect(fixture.nativeElement.classList).not.toContain('is-collapsed');
     });
 
-    it('labels the rail’s toggle Show sidebar with a bars icon, and marks it expanded once the sidebar shows', async () => {
+    it('drives the toggle’s Show sidebar label, bars icon and aria-expanded from the rail state', async () => {
       stubViewport(false);
-      // The toggle's own bindings, without the directives the empty test template leaves out.
+      // A copy of the toggle's bindings in navbar.component.html (without the tooltip directive the test module leaves out):
+      // this checks the state they read, not the real markup, which the fixture cannot render with its faked router.
       const toggleTemplate = `
         <button type="button" data-testid="navbar-collapse-toggle" [attr.aria-label]="toggleLabel()" [attr.aria-expanded]="!railVisible()">
           @if (railVisible()) {
@@ -684,7 +685,7 @@ describe('NavbarComponent', () => {
       expect(toggle.querySelector('.fa-bars')).toBeNull();
     });
 
-    it('never peeks open on hover: only a click on the rail’s toggle shows the sidebar', async () => {
+    it('never peeks open from the pointer moving over the rail: only the toggle’s click shows the sidebar', async () => {
       stubViewport(false);
       const fixture = await createNavbarFixture([], [], {}, { template: '<nav #panel><button type="button" data-flip="side">Toggle</button></nav>' });
       const collapse = TestBed.inject(NavbarCollapseService);

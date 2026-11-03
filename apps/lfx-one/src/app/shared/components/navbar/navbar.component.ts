@@ -287,7 +287,7 @@ export class NavbarComponent extends NavMenuBase {
   protected readonly railDocked: Signal<boolean> = computed(() => !this.mobile() && this.collapse.effectiveCollapsed());
   /** Rail tooltips open beside the trigger; the open panel's below it. */
   protected readonly headTooltipPlacement: Signal<NavTooltipPlacement> = computed(() => (this.railVisible() ? 'right' : 'bottom'));
-  /** The rail's toggle shows the sidebar over the page; a peek on a wide viewport docks open on click; otherwise it closes the sidebar. */
+  /** The rail's toggle shows the sidebar over the page; from a peek it docks open (wide) or pins it (narrow); otherwise it closes the sidebar. */
   protected readonly toggleLabel: Signal<string> = computed(() => {
     if (this.railVisible()) return 'Show sidebar';
     return this.collapse.peek() ? 'Keep sidebar open' : 'Close sidebar';
