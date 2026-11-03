@@ -4,7 +4,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ALLOWED_FILE_TYPES } from '../constants/file-upload.constants';
-import { downloadFromUrl, formatFileSize, isFileTypeAllowed, isSafeUploadFileName, parseContentDispositionFilename, resolveFileMimeType, sanitizeFilename, trimDotsAndWhitespace } from './file.utils';
+import {
+  downloadFromUrl,
+  formatFileSize,
+  isFileTypeAllowed,
+  isSafeUploadFileName,
+  parseContentDispositionFilename,
+  resolveFileMimeType,
+  sanitizeFilename,
+  trimDotsAndWhitespace,
+} from './file.utils';
 
 describe('resolveFileMimeType', () => {
   it.each([
