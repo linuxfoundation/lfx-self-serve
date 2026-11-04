@@ -42,6 +42,7 @@ import {
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
   MKTG_AGENTS,
+  MKTG_ASSET_APPROVE_DIALOG_HEADERS,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_PROGRESS_POLL,
   VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
@@ -82,6 +83,7 @@ import {
   mktgAssetHeaderMetadata,
   mktgKitAssetLabel,
   mktgKitRootPath,
+  mktgReportNeedsApprovalReview,
   mktgRunRouteFor,
   mktgRunModeFor,
   parseMktgLegacyRevisionId,
@@ -1329,12 +1331,13 @@ export class MktgDocumentViewComponent {
     if (!isPlatformBrowser(this.platformId) || this.confirmingApproval() || !this.mayApprove() || this.writePending()) return;
     if (!view || !project || view.project !== project || this.loading()) return;
     const report = this.viewedReport();
-    if (!report || (!report.sources_failed.length && !report.gaps.length)) return this.onApprove();
+    // A clean report approves directly; one with a source that could not be read, an open gap, a colour conflict or an LF-reference rule is shown first.
+    if (!report || !mktgReportNeedsApprovalReview(report)) return this.onApprove();
     const selection = this.revisionParam();
     const epoch = this.restoreEpoch;
     const subject = this.userService.user()?.sub;
     const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
-      header: 'Approve with open gaps?',
+      header: report.sources_failed.length || report.gaps.length ? MKTG_ASSET_APPROVE_DIALOG_HEADERS.gaps : MKTG_ASSET_APPROVE_DIALOG_HEADERS.review,
       data: report,
       modal: true,
       width: '32rem',

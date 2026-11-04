@@ -157,7 +157,17 @@
               <article [class]="card" [attr.data-testid]="'brand-kit-web-view-chapter-' + chapter.id">
                 <div class="flex items-baseline justify-between gap-2">
                   <h4 class="text-base font-semibold text-gray-900">{{ chapter.title }}</h4>
-                  <span class="text-xs text-gray-400">{{ chapter.number }}</span>
+                  <span class="flex items-center gap-2">
+                    <!-- Where the chapter's rules come from (a v2 report); nothing when the report does not say. -->
+                    @if (chapterBasisLabels().get(chapter.id); as basis) {
+                      <span
+                        class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600"
+                        [attr.data-testid]="'brand-kit-web-view-chapter-basis-' + chapter.id"
+                        >{{ basis }}</span
+                      >
+                    }
+                    <span class="text-xs text-gray-400">{{ chapter.number }}</span>
+                  </span>
                 </div>
                 <p class="grow text-sm text-gray-800">{{ chapter.summary }}</p>
               </article>

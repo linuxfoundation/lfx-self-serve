@@ -41,7 +41,16 @@ import {
   MktgRevisionApproval,
   MktgAssetHeaderMetadata,
 } from '@lfx-one/shared/interfaces';
-import { brandKitChapterSummaries, buildBrandKitBookView, describeMktgAcceptedGaps, mktgAssetHeaderFallback, mktgPrintBrand } from '@lfx-one/shared/utils';
+import {
+  brandKitChapterBasisLabel,
+  brandKitChapterRuleBases,
+  brandKitChapterSummaries,
+  brandKitReportRules,
+  buildBrandKitBookView,
+  describeMktgAcceptedGaps,
+  mktgAssetHeaderFallback,
+  mktgPrintBrand,
+} from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -121,6 +130,17 @@ export class BrandKitWebViewComponent {
   /** Existing screen sample model, also used as data by the native portrait print. */
   protected readonly view: Signal<BrandKitBookView> = computed(() => buildBrandKitBookView(this.kit(), this.versionNumber()));
   protected readonly chapters: Signal<BrandKitChapterSummary[]> = computed(() => brandKitChapterSummaries(this.kit()));
+  /**
+   * Beside each chapter's number on the overview: where its rules come from,
+   * in plain words (the project, the LF reference, or how many of them the
+   * reference supplied). Empty for a v1 report, which says nothing about it.
+   */
+  protected readonly chapterBasisLabels: Signal<ReadonlyMap<string, string>> = computed(
+    () =>
+      new Map(
+        brandKitChapterRuleBases(brandKitReportRules(this.kit().report)).map((chapter): [string, string] => [chapter.id, brandKitChapterBasisLabel(chapter)])
+      )
+  );
   protected readonly title = computed(() => `${this.kit().projectName} Brand Kit`);
   protected readonly header = computed(
     () => this.headerMetadata() ?? mktgAssetHeaderFallback('brand-kit', this.versionNumber(), this.kit().generatedAt, this.approval())

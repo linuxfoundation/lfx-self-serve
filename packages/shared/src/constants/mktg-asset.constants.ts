@@ -23,3 +23,14 @@ export const MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE = 'Approve a revision first â€
  * alone: the notes beside it may still hold a source the agent could not reach.
  */
 export const MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE = 'No source failed.';
+
+/**
+ * The approve dialog's header: `gaps` when the viewed report has a source that
+ * could not be read or an open gap (what "Approve anyway" accepts); `review`
+ * when it has only what the reviewer should see before approving (a Brand
+ * Kit's colour conflicts or LF-reference rules).
+ */
+export const MKTG_ASSET_APPROVE_DIALOG_HEADERS = {
+  gaps: 'Approve with open gaps?',
+  review: 'Approve this version?',
+} as const;

@@ -13,6 +13,7 @@ import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitReportV2Fixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2.fixture';
+import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { NEVER, of } from 'rxjs';
 import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField } from '@lfx-one/shared/utils';
@@ -339,6 +340,40 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-panel-color')).not.toBeNull();
       // Selecting a chapter tab moves focus to the new panel's start.
       expect(document.activeElement).toBe(query('brand-kit-web-view-panel-color'));
+    });
+
+    it('Overview: a pill beside each chapter’s number says where its rules come from — the project, the LF reference, or how many of them the reference supplied', async () => {
+      const kit = brandKitTestRevision();
+      kit.report = brandKitReportV2RulesFixture();
+      fixture.componentRef.setInput('kit', kit);
+      await fixture.whenStable();
+      const pills = Object.fromEntries(
+        ['logo', 'color', 'type', 'visual', 'usage', 'voice'].map((id) => [id, query(`brand-kit-web-view-chapter-basis-${id}`)?.textContent?.trim() ?? null])
+      );
+      expect(pills).toEqual({
+        logo: 'LF reference default for 20 of 21 rules',
+        color: 'LF reference default for 4 of 5 rules',
+        type: 'LF reference default for 6 of 9 rules',
+        visual: 'LF reference default',
+        usage: 'LF reference default',
+        voice: 'From the project',
+      });
+      // The pill sits in the chapter's heading row, in the mode pill's style, and the number stays.
+      const heading = query('brand-kit-web-view-chapter-logo')?.querySelector('div');
+      expect(heading?.contains(query('brand-kit-web-view-chapter-basis-logo'))).toBe(true);
+      expect(heading?.textContent).toContain('01');
+      expect(query('brand-kit-web-view-chapter-basis-logo')?.className).toBe('rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600');
+      expect(query('brand-kit-web-view-panel-overview')?.textContent).not.toContain('chapters.');
+    });
+
+    it('Overview: no basis pill for a v1 report, nor for a chapter the report lists no rule for', async () => {
+      expect(host().querySelector('[data-testid^="brand-kit-web-view-chapter-basis-"]')).toBeNull();
+      const kit = brandKitTestRevision();
+      kit.report = { ...kit.report, version: 2, rules: [{ path: 'chapters.voice', basis: 'project' }] };
+      fixture.componentRef.setInput('kit', kit);
+      await fixture.whenStable();
+      expect(queryAll('brand-kit-web-view-chapter-basis-voice').map((pill) => pill.textContent?.trim())).toEqual(['From the project']);
+      expect(host().querySelectorAll('[data-testid^="brand-kit-web-view-chapter-basis-"]')).toHaveLength(1);
     });
 
     it('Overview: a logo on a CDN is named as the logo you supplied — never its URL', async () => {

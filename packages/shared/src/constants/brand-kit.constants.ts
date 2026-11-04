@@ -313,6 +313,24 @@ export const BRAND_KIT_REPORT_RULES_MAX = 200;
 /** A colour conflict lists the values seen: at least two (or it is no conflict), at most four. */
 export const BRAND_KIT_REPORT_CONFLICT_VALUES = { min: 2, max: 4 } as const;
 
+/**
+ * The words the approve dialog and the Kit page use for a v2 report's colour
+ * conflicts and rule bases: one set, so every surface that shows them reads
+ * the same. Plain language, never a path or a basis id.
+ */
+export const BRAND_KIT_REPORT_V2_LABELS = {
+  /** The approve dialog's section of colour conflicts. */
+  colorConflicts: 'Colour conflicts',
+  /** Before the hex the kit keeps: `kept #FF702D`. */
+  kept: 'kept',
+  /** The approve dialog's section of rules the LF reference supplied. */
+  lfReferenceRules: 'Rules from the LF reference, not the project',
+  /** A chapter whose rules all come from the project's own sources. */
+  basisProject: 'From the project',
+  /** A chapter whose rules all come from the LF reference kit; with a count, `LF reference default for 20 of 21 rules`. */
+  basisLfReference: 'LF reference default',
+} as const;
+
 /** The exact lengths the chapters' fixed lists have (the agent's envelope schema). */
 export const BRAND_KIT_CHAPTER_COUNTS = {
   colorways: 4,

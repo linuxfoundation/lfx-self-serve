@@ -95,6 +95,7 @@ export * from './public-profile.utils';
 export * from './mentorship-lfx-profile-card.utils';
 export * from './boilerplates.utils';
 export * from './brand-kit-book.utils';
+export * from './brand-kit-rules.utils';
 export * from './brand-kit.utils';
 export * from './faq.utils';
 export * from './foundation-message.utils';
