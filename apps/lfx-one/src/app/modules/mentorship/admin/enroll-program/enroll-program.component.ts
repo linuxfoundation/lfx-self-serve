@@ -171,6 +171,11 @@ export class EnrollProgramComponent {
   protected readonly lockedProject = computed(() => (this.lens === 'project' ? this.lensProject() : null));
   /** The Foundation lens's foundation: the program can be for it or one of its direct sub-projects. `null` elsewhere. */
   protected readonly parentProject = computed(() => (this.lens === 'foundation' ? this.lensProject() : null));
+  /**
+   * A lens wizard waits for the lens's project or foundation before it shows the form, so the picker never lists every
+   * project while the lens context is still resolving (a hard refresh, a deep link).
+   */
+  protected readonly lensContextPending = computed(() => (this.lens === 'project' || this.lens === 'foundation') && !this.lensProject());
   /** The program being edited, `''` when enrolling a new one. */
   protected readonly editProgramId = this.route.snapshot.queryParamMap.get('programId')?.trim() ?? '';
   protected readonly editing = this.editProgramId !== '';

@@ -59,8 +59,8 @@ export class MentorshipAdminService {
 
   /**
    * Every program of one project, in any status, for the Project lens (lfx-mentorship#398), with the Admin list's filters;
-   * with `includeSubprojects`, also its sub-projects' programs (the Foundation lens). A caller who is not a writer on the
-   * project gets a 403.
+   * with `includeSubprojects`, also its sub-projects' programs (the Foundation lens). A caller without
+   * `mentorship_program_creator` on the project (its writers, or its mentorship program admins) gets a 403.
    */
   public getProjectPrograms(projectUid: string, params?: Partial<MentorshipAdminProgramListOptions>): Observable<MentorshipProgramsResponse> {
     return this.http

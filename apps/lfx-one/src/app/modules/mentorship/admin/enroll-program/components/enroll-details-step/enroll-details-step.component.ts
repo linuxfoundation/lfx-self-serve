@@ -310,7 +310,8 @@ export class EnrollDetailsStepComponent {
     const search$ = this.lfFilter$.pipe(debounceTime(300), startWith(''), distinctUntilChanged());
     // Which projects the picker offers: the Project lens's project, the Foundation lens's foundation and sub-projects, or
     // every project. toObservable first emits once the inputs are bound, so the first page never goes out unscoped from the
-    // constructor; a change of scope starts the list over.
+    // constructor (and a lens wizard renders this step only once its lens project is known); a change of scope starts the
+    // list over.
     const scope$ = toObservable(computed(() => `${this.lockedProject()?.id ?? ''}|${this.parentProject()?.id ?? ''}`)).pipe(distinctUntilChanged());
     const listStart$ = combineLatest([search$, scope$]).pipe(
       map(([search]) => search),

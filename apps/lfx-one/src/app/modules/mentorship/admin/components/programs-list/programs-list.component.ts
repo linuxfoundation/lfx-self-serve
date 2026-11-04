@@ -40,7 +40,7 @@ export class ProgramsListComponent {
   public readonly loadError = input<boolean>(false);
   /** True while a first-page read (e.g. a Retry) is in flight; the Retry button shows a spinner. */
   public readonly retrying = input<boolean>(false);
-  /** The empty state's subtitle when no filter is set; the Project lens has no Enroll button to point at. */
+  /** The empty state's subtitle when no filter is set; the Projects and Foundation lenses name their project or foundation. */
   public readonly emptyMessage = input<string>(MENTORSHIP_ADMIN_PROGRAMS_EMPTY_MESSAGE);
   public readonly searchChange = output<string>();
   public readonly statusChange = output<MentorshipProgramStatus | null>();

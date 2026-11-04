@@ -42,8 +42,10 @@ export class MentorshipService {
     return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params }).pipe(take(1));
   }
 
-  /** One lazy-load page of LF projects; pass the previous page's `page_token` as `pageToken` for the next one. Errors propagate. */
-  /** One page of LF projects; with `parentUid`, only that project's direct sub-projects (the Foundation lens wizard). */
+  /**
+   * One lazy-load page of LF projects; pass the previous page's `page_token` as `pageToken` for the next one. With
+   * `parentUid`, only that project's direct sub-projects (the Foundation lens wizard). Errors propagate.
+   */
   public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number; parentUid?: string }): Observable<MentorshipLfProjectsResponse> {
     // Strict codec: a `+` in a typed search (`C++`) or in the opaque cursor would otherwise reach Express as a space.
     let httpParams = strictHttpParams();

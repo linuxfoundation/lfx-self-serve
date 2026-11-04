@@ -71,7 +71,7 @@ export class AdminComponent {
   protected readonly loadingMore = signal(false);
   /** True when the first page of programs could not be read; the list shows an inline Retry. */
   protected readonly programsLoadError = signal(false);
-  /** True when the gateway refused a lens list (403): the caller is not a writer on the project, so no Retry. */
+  /** True when the gateway refused a lens list (403): the caller lacks `mentorship_program_creator` on the project, so no Retry. */
   protected readonly programsForbidden = signal(false);
   protected readonly searchTerm = signal<string>('');
   protected readonly statusFilter = signal<MentorshipProgramStatus | null>(null);
@@ -166,7 +166,7 @@ export class AdminComponent {
             return { ...response, reset: true as const, failed: false };
           }),
           catchError((error: unknown) => {
-            // The gateway refuses a project's list to anyone who is not a writer on it; a Retry would not change that.
+            // The gateway refuses a project's list without `mentorship_program_creator` on it; a Retry would not change that.
             const forbidden = this.isLensPage && error instanceof HttpErrorResponse && error.status === 403;
             this.programsForbidden.set(forbidden);
             this.programsLoadError.set(!forbidden);

@@ -640,7 +640,14 @@ describe('EnrollProgramComponent — edit mode', () => {
         },
         { provide: MessageService, useValue: { add: toast } },
         { provide: MentorshipAdminService, useValue: service },
-        { provide: ProjectContextService, useValue: { activeContext: signal(null), activeContextUid: signal('') } },
+        {
+          provide: ProjectContextService,
+          // A lens wizard waits for its lens project, so a Projects lens edit has one resolved; the Me lens has none.
+          useValue: {
+            activeContext: () => (routeLens ? { uid: 'proj-gridflow', name: 'GridFlow', slug: 'gridflow' } : null),
+            activeContextUid: () => (routeLens ? 'proj-gridflow' : ''),
+          },
+        },
       ],
     });
 
@@ -833,10 +840,13 @@ describe('EnrollProgramComponent — from a lens (lfx-mentorship#398)', () => {
   let fixture: ComponentFixture<EnrollProgramComponent>;
   let component: EnrollProgramComponent;
   let router: Router;
+  /** The lens context; `null` while it is still resolving. */
+  let activeContext: ReturnType<typeof signal<{ uid: string; name: string; slug: string; logoUrl: string } | null>>;
 
-  const detailsStep = (): StubDetailsStepComponent => fixture.debugElement.query(By.directive(StubDetailsStepComponent)).componentInstance;
+  const detailsStep = (): StubDetailsStepComponent => fixture.debugElement.query(By.directive(StubDetailsStepComponent))?.componentInstance;
 
-  const create = async (lens: 'project' | 'foundation'): Promise<void> => {
+  const create = async (lens: 'project' | 'foundation', resolved = true): Promise<void> => {
+    activeContext = signal(resolved ? { uid: PROJECT_UID, name: 'GridFlow', slug: 'gridflow', logoUrl: 'https://cdn.example/gridflow.png' } : null);
     TestBed.configureTestingModule({
       imports: [EnrollProgramComponent],
       providers: [
@@ -849,10 +859,7 @@ describe('EnrollProgramComponent — from a lens (lfx-mentorship#398)', () => {
         { provide: MentorshipAdminService, useValue: { createProgram: vi.fn(), uploadProgramLogo: vi.fn() } },
         {
           provide: ProjectContextService,
-          useValue: {
-            activeContext: signal({ uid: PROJECT_UID, name: 'GridFlow', slug: 'gridflow', logoUrl: 'https://cdn.example/gridflow.png' }),
-            activeContextUid: signal(PROJECT_UID),
-          },
+          useValue: { activeContext: () => activeContext(), activeContextUid: () => activeContext()?.uid ?? '' },
         },
       ],
     });
@@ -897,5 +904,20 @@ describe('EnrollProgramComponent — from a lens (lfx-mentorship#398)', () => {
 
     component['onCancel']();
     expect(router.navigate).toHaveBeenCalledWith(['/foundation/mentorship']);
+  });
+
+  it('waits for the lens’s project before it shows the form, so the picker never lists every project', async () => {
+    await create('project', false);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="mentorship-enroll-loading"]')).not.toBeNull();
+    expect(detailsStep()).toBeUndefined();
+
+    activeContext.set({ uid: PROJECT_UID, name: 'GridFlow', slug: 'gridflow', logoUrl: 'https://cdn.example/gridflow.png' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(detailsStep().lockedProject()).toEqual(LENS_PROJECT);
+    expect(component['form'].controls.projectId.value).toBe(PROJECT_UID);
   });
 });

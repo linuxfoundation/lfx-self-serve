@@ -89,11 +89,8 @@ export class MentorshipService {
    * stopped at, so a short page can still carry a cursor. A cursor that comes back unchanged ends the list (no `page_token`): following it
    * would only replay the page just read and duplicate its projects. Each read asks only for the slots still open, so the page never holds more
    * than `limit` (the cursor carries the sort position, not the page size). `limit` is held to 1–`MENTORSHIP_LF_PROJECT_MAX_LIMIT` and `search` is cut to
-   * `MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH`.
-   */
-  /**
-   * One page of LF projects for the enroll wizard's picker. With `parentUid`, only that project's direct sub-projects: the
-   * Foundation lens wizard (lfx-mentorship#398) offers its foundation, which it already has, and these sub-projects.
+   * `MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH`. With `parentUid`, only that project's direct sub-projects: the Foundation lens
+   * wizard (lfx-mentorship#398) offers its foundation, which it already has, and these sub-projects.
    */
   public async getLfProjects(req: Request, options: MentorshipLfProjectsQuery = {}): Promise<MentorshipLfProjectsResponse> {
     const search = truncateToUtf16Units(options.search?.trim() ?? '', MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH);

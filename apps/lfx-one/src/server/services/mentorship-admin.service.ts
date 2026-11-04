@@ -130,8 +130,9 @@ export class MentorshipAdminService {
   /**
    * Every program of one project, in any status, for the Project lens (lfx-mentorship#398): the same rows, filters and
    * order as {@link getPrograms}, whoever administers each program. With `includeSubprojects` (the Foundation lens), upstream
-   * also lists the programs of the project's sub-projects. The gateway answers 403 to a caller who is not a writer on the
-   * project, and that passes on, as does any other upstream error.
+   * also lists the programs of the project's sub-projects. The gateway answers 403 to a caller without
+   * `mentorship_program_creator` on the project (its writers, or its mentorship program admins), and that passes on, as
+   * does any other upstream error.
    */
   public async getProjectPrograms(req: Request, projectUid: string, options: MentorshipAdminProgramListOptions): Promise<MentorshipProgramsResponse> {
     logger.debug(req, 'mentorship_admin_get_project_programs', 'Loading a project’s mentorship programs', {

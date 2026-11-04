@@ -47,7 +47,8 @@ export const MENTORSHIP_ME_PROGRAMS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/program
 /**
  * Upstream projects root. `/{projectUid}/programs` lists every program of the project in any status, with the same rows,
  * order and filters as {@link MENTORSHIP_ME_PROGRAMS_PATH}, and with `include_subprojects=true` its sub-projects' programs
- * too; the gateway lets in the project's writers only (lfx-mentorship#398).
+ * too (lfx-mentorship#415). The gateway checks `mentorship_program_creator` on the project: its writers, or its mentorship
+ * program admins (lfx-mentorship#398).
  */
 export const MENTORSHIP_PROJECTS_PATH = '/mentorship/v1/projects';
 

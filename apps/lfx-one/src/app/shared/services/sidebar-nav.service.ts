@@ -226,7 +226,7 @@ export class SidebarNavService {
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
         // Initiatives (#347) follows canWrite — CF lists a project's initiatives to its writers only. So does Mentorship
         // Programs (lfx-mentorship#398), right after it and dark-launched behind `mentorship-enabled`: the gateway lists a
-        // project's programs to its writers only.
+        // project's programs on `mentorship_program_creator`, which its writers hold.
         const mentorshipItems = this.isMentorshipEnabled() ? [this.projectMentorshipProgramsNavItem] : [];
         const writerItems = this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem, ...mentorshipItems] : [];
         // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
@@ -591,7 +591,7 @@ export class SidebarNavService {
 
       // CF lists a project's initiatives to its writers only (403 otherwise), so the entry follows canWrite (#347). So does
       // Mentorship Programs (lfx-mentorship#398), right after it and dark-launched behind `mentorship-enabled`: the gateway
-      // lists a foundation's programs to its writers only.
+      // lists a foundation's programs on `mentorship_program_creator`, which its writers hold.
       if (this.projectContextService.menuCanWrite()) {
         items.push(this.foundationInitiativesNavItem);
         if (this.isMentorshipEnabled()) items.push(this.foundationMentorshipProgramsNavItem);

@@ -47,7 +47,13 @@ export const CF_ORG_DONATIONS_FLAG = 'cf-org-donations';
 /**
  * Dark-launch gate for the Projects and Foundation lens **Mentorship Programs** sidebar entries (lfx-mentorship#398).
  * Default false. **Sidebar only**: the `/project/mentorship` and `/foundation/mentorship` routes stay reachable by URL, the
- * BFF stays open, and the gateway's project `mentorship_program_creator` check is the authorization boundary.
+ * BFF stays open, and the gateway's `mentorship_program_creator` check on the project (its writers, or its mentorship
+ * program admins) is the authorization boundary.
+ *
+ * **Reused key.** `mentorship-enabled` once gated the whole Mentorship module; #4882 removed that gate when Mentorship went
+ * on for everyone in prod, and planned to delete the LaunchDarkly flag afterwards. This gate takes the key over, so before
+ * this ships the flag must be retargeted to what these entries should show (off, or the rollout audience), and it must not
+ * be deleted while this constant exists: a missing flag reads as `false` and hides both entries.
  */
 export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
 /**
