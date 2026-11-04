@@ -8013,6 +8013,125 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
     expect(c['canSubmit']()).toBe(false);
   });
 
+  /**
+   * campaign-service refuses any non-zero device modifier unless the EFFECTIVE strategy is manual-cpc
+   * (`validateBiddingPlan`). The tab judges with the same shared refusal, under the strategy it sends.
+   */
+  describe('device adjustments and the bidding strategy', () => {
+    const MOBILE_UP: CampaignDeviceBidModifier = { device: 'MOBILE', bidModifier: 1.25 };
+    const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+    it.each([
+      ['search', { includeSearch: true }, 'manual-cpc', true],
+      ['search', { includeSearch: true }, 'maximize-clicks', false],
+      ['search', { includeSearch: true }, 'maximize-conversions', false],
+      ['search', { includeSearch: true }, 'target-cpa', false],
+      ['search', { includeSearch: true }, 'maximize-conversion-value', false],
+      ['search', { includeSearch: true }, 'target-roas', false],
+      ['display', { includeDisplay: true }, '', false],
+      ['display', { includeDisplay: true }, 'maximize-clicks', false],
+    ])('on %s (%o) under strategy "%s", offers Adjust bid only for Manual CPC', (_channel, patch, strategy, adjustable) => {
+      const c = seedChannel(fixture, patch);
+      c['campaignForm'].controls.googleBiddingStrategy.setValue(strategy);
+      c['onGoogleDeviceBidModifiersChange']([MOBILE_UP]);
+      fixture.detectChanges();
+
+      if (adjustable) {
+        expect(c['googleDeviceAdjustBlockedReason']()).toBeNull();
+        expect(c['googleDeviceBidModifiersError']()).toBeNull();
+        expect(c['googleDeviceAdjustmentsHeldMessage']()).toBe('');
+        expect(c['canSubmit']()).toBe(true);
+      } else {
+        expect(c['googleDeviceAdjustBlockedReason']()).toContain('Google Ads applies a device bid adjustment only under Manual CPC.');
+        expect(c['googleDeviceBidModifiersError']()).toContain('gives MOBILE a bid modifier of 1.25');
+        expect(c['googleDeviceAdjustmentsHeldMessage']()).toContain('The adjustment on Mobile phones is kept for a switch back');
+        expect(c['canSubmit']()).toBe(false);
+        // Held, not dropped: the list still carries it for a switch back.
+        expect(c['googleDeviceBidModifiers']()).toEqual([MOBILE_UP]);
+      }
+    });
+
+    it('says how to get Manual CPC back on Search, and that Display has none', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
+      fixture.detectChanges();
+      expect(c['googleDeviceAdjustBlockedReason']()).toBe(
+        "Google Ads applies a device bid adjustment only under Manual CPC. Under Maximize Clicks it would ignore it, so LFX One doesn't send one. You can keep the default bid or exclude a device. Choose Manual CPC as the bidding strategy to adjust bids by device."
+      );
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true, googleBiddingStrategy: '' });
+      fixture.detectChanges();
+      expect(c['googleDeviceAdjustBlockedReason']()).toBe(
+        "Google Ads applies a device bid adjustment only under Manual CPC. Under Maximize Conversions it would ignore it, so LFX One doesn't send one. You can keep the default bid or exclude a device. Display campaigns cannot bid Manual CPC here."
+      );
+      expect(query('implementation-google-devices-hint')?.textContent).toContain('Display campaigns cannot bid Manual CPC here.');
+    });
+
+    it('holds an adjustment across a switch from Manual CPC to automated and back, blocking Create only while automated', () => {
+      const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleDeviceBidModifiersChange']([MOBILE_UP, NO_TABLETS]);
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(true);
+      expect(query('implementation-google-device-adjustments-held')).toBeNull();
+
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversions');
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(false);
+      expect(c['googleDeviceBidModifiers']()).toEqual([MOBILE_UP, NO_TABLETS]);
+      const held =
+        "Google Ads applies a device bid adjustment only under Manual CPC. Under Maximize Conversions it would ignore it, so LFX One doesn't send one. The adjustment on Mobile phones is kept for a switch back, and Create Campaign waits until you set it to Default bid or Exclude, or choose Manual CPC again.";
+      expect(query('implementation-google-device-adjustments-held')?.textContent?.trim()).toBe(held);
+      expect(query('implementation-google-device-adjustments-held-live')?.textContent?.trim()).toBe(held);
+      expect(query('implementation-google-devices-error')?.textContent).toContain('gives MOBILE a bid modifier of 1.25');
+      c['submit']();
+      expect(createCampaign).not.toHaveBeenCalled();
+
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('manual-cpc');
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(true);
+      expect(query('implementation-google-device-adjustments-held')).toBeNull();
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [MOBILE_UP, NO_TABLETS] });
+    });
+
+    it('names every held device in one list, and on Display leaves Manual CPC out of the way back', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleDeviceBidModifiersChange']([MOBILE_UP, { device: 'DESKTOP', bidModifier: 0.8 }, { device: 'TABLET', bidModifier: 1 }]);
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
+      fixture.detectChanges();
+      expect(c['googleDeviceAdjustmentsHeldMessage']()).toContain(
+        'The adjustments on Mobile phones, Computers and Tablets are kept for a switch back, and Create Campaign waits until you set them to Default bid or Exclude, or choose Manual CPC again.'
+      );
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true, googleBiddingStrategy: '' });
+      fixture.detectChanges();
+      expect(c['googleDeviceAdjustmentsHeldMessage']()).toMatch(/until you set them to Default bid or Exclude\.$/);
+      expect(c['googleDeviceBidModifiersError']()).not.toContain('bid with Manual CPC');
+    });
+
+    it('gives no Adjust bid reason while the device section is not shown', () => {
+      const c = seedChannel(fixture, { includePerformanceMax: true });
+      fixture.detectChanges();
+      expect(c['googleBiddingStrategy']()).toBe('maximize-conversions');
+      expect(c['googleDeviceAdjustBlockedReason']()).toBeNull();
+    });
+
+    it('still sends an Exclude under an automated strategy, on Search and on Display', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('target-roas');
+      c['onGoogleDeviceBidModifiersChange']([NO_TABLETS]);
+      fixture.detectChanges();
+      expect(c['googleDeviceBidModifiersError']()).toBeNull();
+      expect(c['googleDeviceAdjustmentsHeldMessage']()).toBe('');
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS] });
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true, googleBiddingStrategy: '' });
+      fixture.detectChanges();
+      expect(c['googleDeviceBidModifiersError']()).toBeNull();
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS] });
+    });
+  });
+
   it('withholds the panel and both keys off the campaign-service road', () => {
     const c = seedTargeting({ includeSearch: true });
     fixture.componentRef.setInput('googleCreativeEnabled', false);

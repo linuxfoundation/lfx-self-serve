@@ -151,6 +151,10 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-targeting-withheld-live">
   {{ googleTargetingWithheldMessage() }}
 </div>
+<!-- Device adjustments held by a bidding strategy that takes none, announced on the same terms. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-device-adjustments-held-live">
+  {{ googleDeviceAdjustmentsHeldMessage() }}
+</div>
 <!-- Postal-code and radius targets held back by the same capability. Same region shape; see the visible block. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-locations-capability-live">
   {{ googleLocationsCapabilityMessage() }}
@@ -1081,7 +1085,13 @@
           [deviceBidModifiers]="googleDeviceBidModifiers()"
           (deviceBidModifiersChange)="onGoogleDeviceBidModifiersChange($event)"
           [adSchedulesError]="googleAdSchedulesError()"
-          [devicesError]="googleDeviceBidModifiersError()" />
+          [devicesError]="googleDeviceBidModifiersError()"
+          [deviceAdjustBlockedReason]="googleDeviceAdjustBlockedReason()" />
+      }
+      @if (googleDeviceAdjustmentsHeldMessage(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-device-adjustments-held">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
       }
       @if (googleTargetingWithheldMessage(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-targeting-withheld">

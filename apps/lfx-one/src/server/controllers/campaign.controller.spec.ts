@@ -4368,16 +4368,73 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('Demand Gen');
   });
 
-  it.each([['video'], ['display']])('dispatches device bid modifiers on %s, which upstream leaves un-narrowed', async (channel) => {
+  it.each([['video'], ['display']])('dispatches a device exclusion on %s, which upstream leaves un-narrowed', async (channel) => {
     // The over-refusal guard for the channel fence: only Demand Gen and Performance Max are fenced
-    // off, so fencing the list to Search alone would refuse two creates Google takes.
+    // off, so fencing the list to Search alone would refuse two creates Google takes. An EXCLUSION,
+    // because both channels default to an automated strategy, under which only 0 is accepted.
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000021', error: null });
 
     await controller.createCampaign(
-      buildReq(googleBody({ campaignTypes: [channel], deviceBidModifiers: [MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
+      buildReq(googleBody({ campaignTypes: [channel], deviceBidModifiers: [{ device: 'MOBILE', bidModifier: 0 }] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers']).toHaveLength(1);
+  });
+
+  // `validateBiddingPlan` refuses any non-zero device modifier unless the EFFECTIVE strategy is
+  // manual-cpc: the one the request names, or the channel default when it names none.
+  // The way out names Manual CPC only where the channel offers it: Display and Video do not.
+  const WITH_MANUAL = 'Set it to 0 to exclude the device, remove it, or bid with Manual CPC, then create again.';
+  const WITHOUT_MANUAL = 'Set it to 0 to exclude the device or remove it, then create again.';
+
+  it.each([
+    ['display with no strategy, whose default is Maximize Conversions', { campaignTypes: ['display'] }, 'Maximize Conversions', WITHOUT_MANUAL],
+    ['video with no strategy, whose default is Maximize Conversions', { campaignTypes: ['video'] }, 'Maximize Conversions', WITHOUT_MANUAL],
+    ['search under Maximize Clicks', { biddingStrategy: 'maximize-clicks' }, 'Maximize Clicks', WITH_MANUAL],
+    ['search under Target CPA', { biddingStrategy: 'target-cpa', targetCpa: 20 }, 'Target CPA', WITH_MANUAL],
+  ])('refuses a device bid adjustment on %s, before the dispatcher', async (_label, overrides, strategyLabel, wayOut) => {
+    await controller.createCampaign(
+      buildReq(googleBody({ ...overrides, deviceBidModifiers: [{ device: 'TABLET', bidModifier: 0 }, MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('deviceBidModifiers');
+    expect(error.message).toBe(
+      `The Google Ads device bid modifier 2 gives MOBILE a bid modifier of 1.2. Google Ads applies a device bid adjustment only under Manual CPC. Under ${strategyLabel} it would ignore it, so LFX One doesn't send one. ${wayOut}`
+    );
+  });
+
+  it('refuses a 0% device adjustment under an automated strategy, since it is a modifier of 1', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ biddingStrategy: 'maximize-conversions', deviceBidModifiers: [{ device: 'DESKTOP', bidModifier: 1 }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('gives DESKTOP a bid modifier of 1.');
+  });
+
+  it.each([
+    ['an exclusion under Maximize Conversions', { biddingStrategy: 'maximize-conversions', deviceBidModifiers: [{ device: 'MOBILE', bidModifier: 0 }] }],
+    ['an adjustment under a padded, upper-cased Manual CPC', { biddingStrategy: ' MANUAL-CPC ', deviceBidModifiers: [MOBILE_BID] }],
+    // U+FEFF is stripped by the JS trim `googleBidding` forwards with, though not by Go's TrimSpace:
+    // judging the raw body instead of the forwarded value would refuse a create upstream accepts.
+    ['an adjustment under a U+FEFF-padded Manual CPC', { biddingStrategy: '\uFEFFmanual-cpc', deviceBidModifiers: [MOBILE_BID] }],
+  ])('dispatches %s, which upstream accepts', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000024', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers']).toHaveLength(1);

@@ -13,6 +13,7 @@ import {
   googleAdScheduleRefusal,
   googleDemographicExclusionRefusal,
   googleDeviceBidModifierRefusal,
+  googleEffectiveBiddingStrategy,
   googleExcludedAgeRangeRefusal,
   googleExcludedGenderRefusal,
   googleExcludedGeoClashRefusal,
@@ -1381,7 +1382,13 @@ export class CampaignController {
 
             // One call, not a per-entry loop: the repeated-device refusal is about an entry's
             // relationship to the entries before it and cannot be decided from the entry alone.
-            const deviceRefusal = googleDeviceBidModifierRefusal(devices);
+            // Judged under the EFFECTIVE strategy — the `biddingStrategy` `googleBidding` forwards,
+            // read from it so the two cannot drift (it JS-trims, so a U+FEFF pad is already gone), or the channel default upstream picks
+            // when it forwards none — because `validateBiddingPlan` refuses any non-zero device
+            // modifier under all but Manual CPC, and Display's default is automated.
+            const channel = googleChannel as GoogleCampaignChannel;
+            const forwardedStrategy = this.googleBidding(body)['biddingStrategy'];
+            const deviceRefusal = googleDeviceBidModifierRefusal(devices, googleEffectiveBiddingStrategy(forwardedStrategy, channel), channel);
             if (deviceRefusal) {
               refuseDevices(deviceRefusal);
               return;

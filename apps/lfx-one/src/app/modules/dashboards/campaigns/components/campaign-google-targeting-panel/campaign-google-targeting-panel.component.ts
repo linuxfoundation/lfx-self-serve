@@ -11,18 +11,23 @@ import {
   GOOGLE_ADS_SCHEDULE_DAY_LABELS,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_TIME_OPTIONS,
+  GOOGLE_DEVICE_BID_MODE_LABELS,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignAdSchedule,
   CampaignDeviceBidModifier,
+  GoogleAdScheduleEdge,
+  GoogleAdScheduleFreeSlot,
   GoogleAdScheduleRowView,
+  GoogleAdScheduleSelectOption,
+  GoogleAdScheduleSpan,
   GoogleAdsDevice,
   GoogleAdsScheduleDay,
   GoogleAdsScheduleMinute,
   GoogleDeviceBidMode,
   GoogleDeviceBidRowView,
 } from '@lfx-one/shared/interfaces';
-import { googleBidAdjustmentPercent, googleBidModifierFromPercent } from '@lfx-one/shared/utils';
+import { googleBidAdjustmentPercent, googleBidModifierFromPercent, joinAsSentenceList } from '@lfx-one/shared/utils';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 
@@ -49,29 +54,39 @@ export class CampaignGoogleTargetingPanelComponent {
   public readonly showDevices = input.required<boolean>();
   public readonly adSchedulesError = input<string | null>(null);
   public readonly devicesError = input<string | null>(null);
+  /**
+   * Why Adjust bid is not offered, or `null` while it is: the tab's sentence for an effective bidding
+   * strategy other than Manual CPC, under which campaign-service refuses a non-zero device modifier.
+   * While set, a device offers Default bid and Exclude only, and one already adjusted is shown held.
+   */
+  public readonly deviceAdjustBlockedReason = input<string | null>(null);
 
   public readonly adSchedules = model.required<CampaignAdSchedule[]>();
   public readonly deviceBidModifiers = model.required<CampaignDeviceBidModifier[]>();
 
   protected readonly maxAdSchedules = GOOGLE_ADS_MAX_AD_SCHEDULES;
-  protected readonly dayOptions = GOOGLE_ADS_SCHEDULE_DAYS.map((day) => ({ value: day, label: GOOGLE_ADS_SCHEDULE_DAY_LABELS[day] }));
+  protected readonly dayOptions: GoogleAdScheduleSelectOption[] = GOOGLE_ADS_SCHEDULE_DAYS.map((day) => ({
+    value: day,
+    label: GOOGLE_ADS_SCHEDULE_DAY_LABELS[day],
+  }));
   /**
    * Start times run 00:00 to 23:45 and end times 01:00 to 24:00, as strings for `lfx-ui-select`.
    * 24:00 can only end a window, and an end hour of 0 is always refused (`googleAdScheduleRefusal`
    * takes end hours 1 to 24), so 00:15, 00:30 and 00:45 are not offered as ends.
    */
-  protected readonly startTimeOptions = GOOGLE_ADS_SCHEDULE_TIME_OPTIONS.slice(0, -1).map((t) => ({ value: String(t.value), label: t.label }));
-  protected readonly endTimeOptions = GOOGLE_ADS_SCHEDULE_TIME_OPTIONS.filter((t) => t.value >= 60).map((t) => ({ value: String(t.value), label: t.label }));
-  protected readonly deviceModeOptions: { value: GoogleDeviceBidMode; label: string }[] = [
-    { value: 'default', label: 'Default bid' },
-    { value: 'adjust', label: 'Adjust bid' },
-    { value: 'exclude', label: 'Exclude' },
-  ];
+  protected readonly startTimeOptions: GoogleAdScheduleSelectOption[] = GOOGLE_ADS_SCHEDULE_TIME_OPTIONS.slice(0, -1).map((t) => ({
+    value: String(t.value),
+    label: t.label,
+  }));
+  protected readonly endTimeOptions: GoogleAdScheduleSelectOption[] = GOOGLE_ADS_SCHEDULE_TIME_OPTIONS.filter((t) => t.value >= 60).map((t) => ({
+    value: String(t.value),
+    label: t.label,
+  }));
 
   protected readonly scheduleRows: Signal<GoogleAdScheduleRowView[]> = this.initScheduleRows();
   protected readonly scheduleFull: Signal<boolean> = computed(() => this.adSchedules().length >= GOOGLE_ADS_MAX_AD_SCHEDULES);
-  /** Where "Add window" would put a new window, or `null` when every free stretch is gone. */
-  protected readonly freeSlot: Signal<CampaignAdSchedule | null> = this.initFreeSlot();
+  /** Where "Add window" would put a new window, or, when every free stretch is gone, which days ruled it out. */
+  protected readonly freeSlot: Signal<GoogleAdScheduleFreeSlot> = this.initFreeSlot();
   /** Why "Add window" is disabled, shown under it and linked to it, or `null` while it is enabled. */
   protected readonly addBlockedReason: Signal<string | null> = this.initAddBlockedReason();
   protected readonly deviceRows: Signal<GoogleDeviceBidRowView[]> = this.initDeviceRows();
@@ -90,7 +105,7 @@ export class CampaignGoogleTargetingPanelComponent {
    * {@link addBlockedReason}, when there is no gap.
    */
   protected addAdSchedule(): void {
-    const slot = this.freeSlot();
+    const { slot } = this.freeSlot();
     if (this.scheduleFull() || slot === null) return;
     this.adSchedules.update((list) => [...list, slot]);
   }
@@ -104,7 +119,7 @@ export class CampaignGoogleTargetingPanelComponent {
     this.updateSchedule(index, (s) => ({ ...s, dayOfWeek: day as GoogleAdsScheduleDay }));
   }
 
-  protected onScheduleTime(index: number, edge: 'start' | 'end', value: string | null): void {
+  protected onScheduleTime(index: number, edge: GoogleAdScheduleEdge, value: string | null): void {
     if (value === null) return;
     const minutes = Number(value);
     const hour = Math.floor(minutes / 60);
@@ -122,9 +137,14 @@ export class CampaignGoogleTargetingPanelComponent {
     });
   }
 
-  /** Default drops the device's entry; Exclude sends `0`; Adjust starts at 0% (a modifier of 1) until a percentage is typed. */
+  /**
+   * Default drops the device's entry; Exclude sends `0`; Adjust starts at 0% (a modifier of 1) until a
+   * percentage is typed. Adjust is ignored while {@link deviceAdjustBlockedReason} is set: even 0% is a
+   * modifier of 1, which campaign-service refuses under any strategy but Manual CPC.
+   */
   protected onDeviceMode(device: GoogleAdsDevice, mode: string | null): void {
     if (mode === null) return;
+    if (mode === 'adjust' && this.deviceAdjustBlockedReason() !== null) return;
     if (mode === 'default') {
       this.setDevice(device, null);
       return;
@@ -156,57 +176,103 @@ export class CampaignGoogleTargetingPanelComponent {
    * of the week. A day already holding {@link GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} windows is
    * skipped, and so is a gap that ends before 01:00, since an end hour of 0 is refused. Windows are
    * compared half-open, as `googleAdScheduleRefusal` compares them, so a gap starts where the window
-   * before it ends.
+   * before it ends. When nothing is found, the days skipped for each of those two reasons are
+   * returned, so {@link addBlockedReason} can say which one applies.
    */
-  private initFreeSlot(): Signal<CampaignAdSchedule | null> {
+  private initFreeSlot(): Signal<GoogleAdScheduleFreeSlot> {
     return computed(() => {
       const dayEnd = 24 * 60;
+      const fullDays: GoogleAdsScheduleDay[] = [];
+      const earlyOnlyDays: GoogleAdsScheduleDay[] = [];
       const used = new Set(this.adSchedules().map((s) => s.dayOfWeek));
       const emptyDay = GOOGLE_ADS_SCHEDULE_DAYS.find((d) => !used.has(d));
-      if (emptyDay !== undefined) return { dayOfWeek: emptyDay, startHour: 0, startMinute: 0, endHour: 24, endMinute: 0 };
+      if (emptyDay !== undefined) return { slot: { dayOfWeek: emptyDay, startHour: 0, startMinute: 0, endHour: 24, endMinute: 0 }, fullDays, earlyOnlyDays };
       for (const day of GOOGLE_ADS_SCHEDULE_DAYS) {
-        const taken = this.adSchedules()
+        const taken: GoogleAdScheduleSpan[] = this.adSchedules()
           .filter((s) => s.dayOfWeek === day)
           .map((s) => ({ start: s.startHour * 60 + s.startMinute, end: Math.min(s.endHour * 60 + s.endMinute, dayEnd) }))
           .sort((a, b) => a.start - b.start);
-        if (taken.length >= GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY) continue;
+        if (taken.length >= GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY) {
+          fullDays.push(day);
+          continue;
+        }
         let cursor = 0;
+        let earlyGap = false;
         for (const span of [...taken, { start: dayEnd, end: dayEnd }]) {
-          if (span.start > cursor && span.start >= 60) {
-            return {
-              dayOfWeek: day,
-              startHour: Math.floor(cursor / 60),
-              startMinute: (cursor % 60) as GoogleAdsScheduleMinute,
-              endHour: Math.floor(span.start / 60),
-              endMinute: (span.start % 60) as GoogleAdsScheduleMinute,
-            };
+          if (span.start > cursor) {
+            if (span.start >= 60) {
+              const slot: CampaignAdSchedule = {
+                dayOfWeek: day,
+                startHour: Math.floor(cursor / 60),
+                startMinute: (cursor % 60) as GoogleAdsScheduleMinute,
+                endHour: Math.floor(span.start / 60),
+                endMinute: (span.start % 60) as GoogleAdsScheduleMinute,
+              };
+              return { slot, fullDays, earlyOnlyDays };
+            }
+            earlyGap = true;
           }
           cursor = Math.max(cursor, span.end);
         }
+        if (earlyGap) earlyOnlyDays.push(day);
       }
-      return null;
+      return { slot: null, fullDays, earlyOnlyDays };
     });
   }
 
+  /**
+   * Why "Add window" is disabled, naming only the reasons that hold: the overall cap, days at the
+   * per-day cap, days whose only free time ends before 01:00, and days covered from 00:00 to 24:00.
+   */
   private initAddBlockedReason(): Signal<string | null> {
     return computed(() => {
       if (this.scheduleFull()) return `Google Ads takes at most ${GOOGLE_ADS_MAX_AD_SCHEDULES} windows. Remove one to add another.`;
-      if (this.freeSlot() === null) {
-        return `Every day is covered from 00:00 to 24:00 or already has ${GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} windows, so a new window would overlap one. Shorten or remove a window to add another.`;
+      const { slot, fullDays, earlyOnlyDays } = this.freeSlot();
+      if (slot !== null) return null;
+      if (fullDays.length === 0 && earlyOnlyDays.length === 0) {
+        return 'Every day is covered from 00:00 to 24:00, so a new window would overlap one. Shorten or remove a window to add another.';
       }
-      return null;
+      const parts: string[] = [];
+      if (fullDays.length > 0) {
+        parts.push(`${this.dayList(fullDays)} already ${fullDays.length === 1 ? 'has' : 'have'} ${GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} windows`);
+      }
+      if (earlyOnlyDays.length > 0) {
+        parts.push(
+          `${this.dayList(earlyOnlyDays)} only ${earlyOnlyDays.length === 1 ? 'has' : 'have'} free time before 01:00, and Google Ads cannot end a window that early`
+        );
+      }
+      if (fullDays.length + earlyOnlyDays.length < GOOGLE_ADS_SCHEDULE_DAYS.length) parts.push('every other day is covered from 00:00 to 24:00');
+      return `${parts.join('; ')}. Shorten or remove a window to add another.`;
     });
   }
 
+  /**
+   * One row per device. While {@link deviceAdjustBlockedReason} is set, Adjust bid is left out of the
+   * picker, except on a device that already holds an adjustment: there it stays, disabled, and the
+   * percentage box turns read-only (still focusable and announced), so the held value can be read
+   * and the operator moves it to Default bid or Exclude.
+   */
   private initDeviceRows(): Signal<GoogleDeviceBidRowView[]> {
     return computed(() => {
+      const blocked = this.deviceAdjustBlockedReason() !== null;
       const byDevice = new Map(this.deviceBidModifiers().map((d) => [d.device, d.bidModifier]));
       return GOOGLE_ADS_DEVICES.map((device) => {
         const modifier = byDevice.get(device);
         let mode: GoogleDeviceBidMode = 'adjust';
         if (modifier === undefined) mode = 'default';
         else if (modifier === 0) mode = 'exclude';
-        return { device, label: GOOGLE_ADS_DEVICE_LABELS[device], mode, adjustment: mode === 'adjust' ? googleBidAdjustmentPercent(modifier ?? 1) : null };
+        const held = blocked && mode === 'adjust';
+        const modeOptions = (Object.keys(GOOGLE_DEVICE_BID_MODE_LABELS) as GoogleDeviceBidMode[])
+          .filter((value) => value !== 'adjust' || !blocked || held)
+          .map((value) => ({ value, label: GOOGLE_DEVICE_BID_MODE_LABELS[value], disabled: value === 'adjust' && blocked }));
+        return {
+          device,
+          label: GOOGLE_ADS_DEVICE_LABELS[device],
+          mode,
+          adjustment: mode === 'adjust' ? googleBidAdjustmentPercent(modifier ?? 1) : null,
+          held,
+          modeOptions,
+        };
       });
     });
   }
@@ -221,6 +287,11 @@ export class CampaignGoogleTargetingPanelComponent {
     if (bidModifier === null) others.delete(device);
     else others.set(device, bidModifier);
     this.deviceBidModifiers.set(GOOGLE_ADS_DEVICES.filter((d) => others.has(d)).map((d) => ({ device: d, bidModifier: others.get(d) as number })));
+  }
+
+  /** Day names as a sentence fragment, through the shared {@link joinAsSentenceList}: "Monday, Tuesday and Friday". */
+  private dayList(days: GoogleAdsScheduleDay[]): string {
+    return joinAsSentenceList(days.map((day) => GOOGLE_ADS_SCHEDULE_DAY_LABELS[day]));
   }
 
   /**

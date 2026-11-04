@@ -3205,12 +3205,60 @@ export interface GoogleAdScheduleRowView {
  */
 export type GoogleDeviceBidMode = 'default' | 'adjust' | 'exclude';
 
-/** One device as the Implementation tab's device control renders it; `adjustment` is a whole percentage. */
+/**
+ * One choice in a device's mode picker. `disabled` is set only on an Adjust bid choice shown for a
+ * device that already holds an adjustment the bidding strategy refuses: it keeps the held value
+ * visible without offering it as something to pick.
+ */
+export interface GoogleDeviceBidModeOption {
+  value: GoogleDeviceBidMode;
+  label: string;
+  disabled: boolean;
+}
+
+/**
+ * One device as the Implementation tab's device control renders it; `adjustment` is a whole percentage.
+ *
+ * `held` is true for an adjustment the effective bidding strategy refuses (anything but Manual CPC):
+ * it stays in the list, and so blocks Create through the shared refusal, until the operator changes
+ * it or switches back. Its percentage box is read-only, not disabled, so keyboard and screen-reader
+ * users can still reach the value. `modeOptions` is what this device's picker offers.
+ */
 export interface GoogleDeviceBidRowView {
   device: GoogleAdsDevice;
   label: string;
   mode: GoogleDeviceBidMode;
   adjustment: number | null;
+  held: boolean;
+  modeOptions: GoogleDeviceBidModeOption[];
+}
+
+/** One option of an ad-schedule `lfx-ui-select`: a day, or a time as minutes since midnight written as a string. */
+export interface GoogleAdScheduleSelectOption {
+  value: string;
+  label: string;
+}
+
+/** Which end of an ad-schedule window a time picker sets. */
+export type GoogleAdScheduleEdge = 'start' | 'end';
+
+/** One window on one day as minutes since midnight, half-open: 24:00 is 1440. */
+export interface GoogleAdScheduleSpan {
+  start: number;
+  end: number;
+}
+
+/**
+ * Where the ad-schedule editor's "Add window" would put a new window, and, when it found nowhere,
+ * why. `slot` is `null` when no day has a gap a window can fill. `fullDays` are the days skipped
+ * because they already hold the per-day maximum; `earlyOnlyDays` are the days whose only free time
+ * ends before 01:00, which no window can fill because an end hour of 0 is refused. Every other day is
+ * covered from 00:00 to 24:00.
+ */
+export interface GoogleAdScheduleFreeSlot {
+  slot: CampaignAdSchedule | null;
+  fullDays: GoogleAdsScheduleDay[];
+  earlyOnlyDays: GoogleAdsScheduleDay[];
 }
 
 export interface CampaignCreateRequest {
@@ -3331,6 +3379,10 @@ export interface CampaignCreateRequest {
    * than {@link adSchedules}: Demand Gen takes no campaign-level criteria at all, and Performance
    * Max's automated bidding owns the bid and sets no device adjustment. Upstream refuses both rather
    * than dropping the list, so the BFF refuses such a create by name.
+   *
+   * A NON-ZERO modifier also needs the effective bidding strategy to be `manual-cpc`: Google would
+   * ignore it under any other, so campaign-service refuses it (see `googleDeviceBidModifierRefusal`).
+   * `0`, the exclusion, is accepted under every strategy.
    *
    * Bounded by {@link GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS}, which is the size of the accepted device
    * vocabulary: a longer list necessarily REPEATS a device, and a repeat is refused rather than

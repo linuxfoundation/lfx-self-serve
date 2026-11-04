@@ -3,13 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY, GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS } from '../constants/campaign.constants';
+import { GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY, GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS, GOOGLE_BIDDING_STRATEGY_LABELS } from '../constants/campaign.constants';
 import type { NormalizedGoogleAdSchedule } from '../interfaces/campaign.interface';
 import {
   googleAdScheduleRefusal,
   googleBidModifierRefusal,
+  googleChannelOffersManualCpc,
   googleDemographicExclusionRefusal,
   googleDeviceBidModifierRefusal,
+  googleEffectiveBiddingStrategy,
   googleExcludedAgeRangeRefusal,
   googleExcludedGenderRefusal,
   googleExcludedGeoClashRefusal,
@@ -87,24 +89,121 @@ describe('googleAdScheduleRefusal', () => {
 });
 
 describe('googleDeviceBidModifierRefusal', () => {
-  it('accepts an exclusion and an adjustment on different devices', () => {
+  it('accepts an exclusion and an adjustment on different devices under Manual CPC', () => {
     expect(
-      googleDeviceBidModifierRefusal([
-        { device: 'TABLET', bidModifier: 0 },
-        { device: 'mobile ', bidModifier: 1.2 },
-      ])
+      googleDeviceBidModifierRefusal(
+        [
+          { device: 'TABLET', bidModifier: 0 },
+          { device: 'mobile ', bidModifier: 1.2 },
+        ],
+        'manual-cpc',
+        'search'
+      )
     ).toBeNull();
   });
 
   it('refuses an unknown device, a repeated device and an out-of-range modifier', () => {
-    expect(googleDeviceBidModifierRefusal([{ device: 'TV', bidModifier: 1 }])).toContain('which is not one of MOBILE, DESKTOP, TABLET');
+    expect(googleDeviceBidModifierRefusal([{ device: 'TV', bidModifier: 1 }], 'manual-cpc', 'search')).toContain('which is not one of MOBILE, DESKTOP, TABLET');
     expect(
-      googleDeviceBidModifierRefusal([
-        { device: 'MOBILE', bidModifier: 1 },
-        { device: 'MOBILE', bidModifier: 2 },
-      ])
+      googleDeviceBidModifierRefusal(
+        [
+          { device: 'MOBILE', bidModifier: 1 },
+          { device: 'MOBILE', bidModifier: 2 },
+        ],
+        'manual-cpc',
+        'search'
+      )
     ).toContain('name MOBILE more than once');
-    expect(googleDeviceBidModifierRefusal([{ device: 'DESKTOP', bidModifier: 0.05 }])).toContain('device bid modifier 1 has a bid modifier of 0.05');
+    expect(googleDeviceBidModifierRefusal([{ device: 'DESKTOP', bidModifier: 0.05 }], 'manual-cpc', 'search')).toContain(
+      'device bid modifier 1 has a bid modifier of 0.05'
+    );
+  });
+
+  // campaign-service's `validateBiddingPlan`: under any strategy but manual-cpc, every NON-ZERO device
+  // modifier is refused, 1 (a 0% adjustment) included, and 0 (the exclusion) is not.
+  it.each(['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'])(
+    'refuses any non-zero modifier under %s on Search, 1 (0%%) included, offering Manual CPC as a way out',
+    (strategy) => {
+      for (const bidModifier of [1.2, 1]) {
+        const refusal = googleDeviceBidModifierRefusal(
+          [
+            { device: 'TABLET', bidModifier: 0 },
+            { device: ' mobile', bidModifier },
+          ],
+          strategy,
+          'search'
+        );
+        expect(refusal).toBe(
+          `The Google Ads device bid modifier 2 gives MOBILE a bid modifier of ${bidModifier}. Google Ads applies a device bid adjustment only under Manual CPC. Under ${GOOGLE_BIDDING_STRATEGY_LABELS[strategy as keyof typeof GOOGLE_BIDDING_STRATEGY_LABELS]} it would ignore it, so LFX One doesn't send one. Set it to 0 to exclude the device, remove it, or bid with Manual CPC, then create again.`
+        );
+      }
+    }
+  );
+
+  it.each(['display', 'video'] as const)('leaves Manual CPC out of the way out on %s, which does not offer it', (channel) => {
+    const refusal = googleDeviceBidModifierRefusal([{ device: 'MOBILE', bidModifier: 1.2 }], 'maximize-conversions', channel);
+    expect(refusal).toBe(
+      "The Google Ads device bid modifier 1 gives MOBILE a bid modifier of 1.2. Google Ads applies a device bid adjustment only under Manual CPC. Under Maximize Conversions it would ignore it, so LFX One doesn't send one. Set it to 0 to exclude the device or remove it, then create again."
+    );
+    expect(refusal).not.toContain('bid with Manual CPC');
+  });
+
+  it.each(['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'])(
+    'accepts exclusions under %s, which Google honours under automated bidding',
+    (strategy) => {
+      expect(
+        googleDeviceBidModifierRefusal(
+          [
+            { device: 'TABLET', bidModifier: 0 },
+            { device: 'MOBILE', bidModifier: 0 },
+          ],
+          strategy,
+          'search'
+        )
+      ).toBeNull();
+    }
+  );
+
+  it('judges every entry before the strategy, as validateCriteriaPlan runs before validateBiddingPlan', () => {
+    expect(
+      googleDeviceBidModifierRefusal(
+        [
+          { device: 'MOBILE', bidModifier: 1.2 },
+          { device: 'DESKTOP', bidModifier: 0.05 },
+        ],
+        'maximize-conversions',
+        'search'
+      )
+    ).toContain('device bid modifier 2 has a bid modifier of 0.05');
+  });
+
+  it('names an unknown strategy as written, since it is not Manual CPC either', () => {
+    expect(googleDeviceBidModifierRefusal([{ device: 'MOBILE', bidModifier: 1.2 }], 'retired-strategy', 'search')).toContain(
+      'Under retired-strategy it would ignore it'
+    );
+  });
+});
+
+describe('googleChannelOffersManualCpc', () => {
+  it('is true only where the strategy picker offers Manual CPC', () => {
+    expect(googleChannelOffersManualCpc('search')).toBe(true);
+    expect(googleChannelOffersManualCpc('display')).toBe(false);
+    expect(googleChannelOffersManualCpc('video')).toBe(false);
+    expect(googleChannelOffersManualCpc('performance-max')).toBe(false);
+    expect(googleChannelOffersManualCpc('demand-gen')).toBe(false);
+  });
+});
+
+describe('googleEffectiveBiddingStrategy', () => {
+  it('lower-cases and Go-trims the forwarded name', () => {
+    expect(googleEffectiveBiddingStrategy('\u0085 Manual-CPC ', 'display')).toBe('manual-cpc');
+    expect(googleEffectiveBiddingStrategy('target-cpa', 'search')).toBe('target-cpa');
+  });
+
+  it("falls back to the channel's default when nothing is forwarded", () => {
+    expect(googleEffectiveBiddingStrategy(undefined, 'search')).toBe('manual-cpc');
+    expect(googleEffectiveBiddingStrategy('  ', 'display')).toBe('maximize-conversions');
+    expect(googleEffectiveBiddingStrategy(42, 'video')).toBe('maximize-conversions');
   });
 });
 

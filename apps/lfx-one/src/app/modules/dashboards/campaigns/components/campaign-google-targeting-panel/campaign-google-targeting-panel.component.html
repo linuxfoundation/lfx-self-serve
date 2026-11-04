@@ -118,9 +118,18 @@
       [attr.aria-describedby]="devicesDescribedBy()"
       data-testid="implementation-google-devices">
       <legend class="float-left mb-1 text-xs font-medium text-gray-700">Devices</legend>
-      <p id="google-devices-hint" class="text-xs text-gray-500">
-        Adjust the bid on a device from -90% to +900%, or exclude it to stop serving there. Smart Bidding strategies, such as Maximize conversions, ignore
-        device adjustments but still honour an exclusion. Errors give Google's bid modifier, where -20% is 0.8.
+      <!--
+        Adjust bid is offered only under Manual CPC: campaign-service refuses a non-zero device bid modifier under any other
+        strategy, while an exclusion (a modifier of 0) is accepted under every one. The tab's reason says which strategy is in
+        force and how to get Manual CPC back.
+      -->
+      <p id="google-devices-hint" class="text-xs text-gray-500" data-testid="implementation-google-devices-hint">
+        @if (deviceAdjustBlockedReason(); as reason) {
+          {{ reason }} Excluding a device stops the campaign serving there.
+        } @else {
+          Adjust the bid on a device from -90% to +900%, or exclude it to stop serving there.
+        }
+        Errors give Google's bid modifier, where -20% is 0.8.
       </p>
       @for (row of deviceRows(); track row.device) {
         <div class="flex flex-wrap items-end gap-2" [attr.data-testid]="'implementation-google-device-' + row.device">
@@ -131,8 +140,8 @@
             [value]="row.mode"
             (valueChange)="onDeviceMode(row.device, $event)"
             [attr.data-testid]="'implementation-google-device-mode-' + row.device">
-            @for (mode of deviceModeOptions; track mode.value) {
-              <lfx-ui-option [value]="mode.value" [label]="mode.label" />
+            @for (mode of row.modeOptions; track mode.value) {
+              <lfx-ui-option [value]="mode.value" [label]="mode.label" [disabled]="mode.disabled" />
             }
           </lfx-ui-select>
           @if (row.mode === 'adjust') {
@@ -144,8 +153,10 @@
                 step="1"
                 [id]="'google-device-adjustment-' + row.device"
                 [value]="row.adjustment ?? 0"
+                [readOnly]="row.held"
+                [attr.aria-readonly]="row.held || null"
                 (change)="onDeviceAdjustment(row.device, $event)"
-                class="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                class="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 read-only:bg-gray-50 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 [attr.data-testid]="'implementation-google-device-adjustment-' + row.device" />
             </div>
           }

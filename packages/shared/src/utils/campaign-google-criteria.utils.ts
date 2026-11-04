@@ -14,6 +14,9 @@ import {
   GOOGLE_ADS_MIN_BID_MODIFIER,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
+  GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
+  GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
+  GOOGLE_BIDDING_STRATEGY_LABELS,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   googleAdsEchoed,
@@ -198,7 +201,42 @@ export function googleAdScheduleRefusal(schedules: NormalizedGoogleAdSchedule[])
 }
 
 /**
- * Why upstream would refuse a normalized device-bid-modifier LIST, or `null` when it would not.
+ * The bidding strategy campaign-service will bid a Google create with, from the value the BFF
+ * forwards as `biddingStrategy` (already JS-trimmed by `googleBidding`, so pass that value, not the
+ * raw body): `validateBiddingPlan`'s `strings.ToLower(strings.TrimSpace(...))`, and the channel
+ * default (`defaultBiddingStrategy`, {@link GOOGLE_BIDDING_DEFAULT_BY_CHANNEL}) when that leaves
+ * nothing. Not narrowed to a known strategy: an unknown name is upstream's to refuse, and it is not
+ * Manual CPC either way.
+ *
+ * Trimmed again with {@link googleAdsTrimSpace}, Go's whitespace set, because that is what upstream
+ * applies to the forwarded value: a name padded with U+0085 survives the JS trim and Go strips it.
+ */
+export function googleEffectiveBiddingStrategy(forwarded: unknown, channel: GoogleCampaignChannel): string {
+  const named = typeof forwarded === 'string' ? googleAdsTrimSpace(forwarded).toLowerCase() : '';
+  return named === '' ? GOOGLE_BIDDING_DEFAULT_BY_CHANNEL[channel] : named;
+}
+
+/**
+ * Whether this client offers Manual CPC on the channel ({@link GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL}),
+ * and so whether "bid with Manual CPC" is advice an operator can act on there. Display and Video do
+ * not offer it, so their device refusals and hints leave that way out.
+ */
+export function googleChannelOffersManualCpc(channel: GoogleCampaignChannel): boolean {
+  return (GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel] as readonly string[]).includes('manual-cpc');
+}
+
+/**
+ * The one sentence that says why a device bid adjustment is not sent under `strategyLabel`: Google
+ * Ads would accept it and ignore it, so LFX One refuses it rather than lose it silently. Shared by
+ * the refusal below and the Implementation tab's hint and held notice, so the three say the same.
+ */
+export function googleDeviceAdjustmentIgnoredSentence(strategyLabel: string): string {
+  return `Google Ads applies a device bid adjustment only under ${GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc']}. Under ${strategyLabel} it would ignore it, so LFX One doesn't send one.`;
+}
+
+/**
+ * Why upstream would refuse a normalized device-bid-modifier LIST under the effective bidding
+ * `strategy`, or `null` when it would not.
  *
  * A list-level guard rather than a per-entry one, because one of `validateDeviceBidModifiers`'
  * branches — a device named twice — is about an entry's relationship to the ones before it and is
@@ -209,13 +247,25 @@ export function googleAdScheduleRefusal(schedules: NormalizedGoogleAdSchedule[])
  * the bid modifier. A caller who writes `TABLET` twice with two different adjustments is refused
  * on the repeat and never reaches the range check, exactly as upstream.
  *
+ * THEN the strategy, in a second pass over the whole list, because upstream runs it later and
+ * separately: `validateCriteriaPlan` judges every entry before `validateBiddingPlan` refuses any
+ * NON-ZERO modifier while the strategy is anything but `manual-cpc`. Google itself would accept such
+ * an adjustment and silently ignore it under automated bidding; campaign-service refuses it so it is
+ * not lost without a word, and so does this. Non-zero includes `1`, the 0% adjustment the device
+ * control starts at, so "Adjust bid" left at 0% is refused too. `0` is not: it is the device
+ * exclusion, which Google honours under automated bidding, so refusing it would stop a create
+ * upstream accepts. `strategy` is the EFFECTIVE one — the caller resolves an omitted strategy to the
+ * channel default (see {@link googleEffectiveBiddingStrategy}), because Display's and Video's defaults
+ * are automated and a request naming no strategy is refused there all the same. `channel` decides
+ * only the wording: the refusal suggests Manual CPC only where {@link googleChannelOffersManualCpc}.
+ *
  * Entries reaching here have a modifier — the caller refuses an absent one first, where upstream
  * does, in the dispatcher and before the channel is known.
  *
  * `index` is reported from 1 so it matches what an operator counts; upstream's message numbers
  * from 0.
  */
-export function googleDeviceBidModifierRefusal(devices: NormalizedGoogleDeviceBidModifier[]): string | null {
+export function googleDeviceBidModifierRefusal(devices: NormalizedGoogleDeviceBidModifier[], strategy: string, channel: GoogleCampaignChannel): string | null {
   const seen = new Set<string>();
   for (const [index, entry] of devices.entries()) {
     const shown = `device bid modifier ${index + 1}`;
@@ -230,6 +280,17 @@ export function googleDeviceBidModifierRefusal(devices: NormalizedGoogleDeviceBi
     if (entry.bidModifier !== undefined) {
       const refusal = googleBidModifierRefusal(shown, entry.bidModifier);
       if (refusal) return refusal;
+    }
+  }
+  if (strategy === 'manual-cpc') return null;
+  for (const [index, entry] of devices.entries()) {
+    if (entry.bidModifier !== undefined && entry.bidModifier !== 0) {
+      const named = GOOGLE_BIDDING_STRATEGY_LABELS[strategy as keyof typeof GOOGLE_BIDDING_STRATEGY_LABELS] ?? googleAdsEchoed(strategy);
+      const manual = GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc'];
+      const fix = googleChannelOffersManualCpc(channel)
+        ? `Set it to 0 to exclude the device, remove it, or bid with ${manual}, then create again.`
+        : 'Set it to 0 to exclude the device or remove it, then create again.';
+      return `The Google Ads device bid modifier ${index + 1} gives ${googleAdsTrimSpace(entry.device).toUpperCase()} a bid modifier of ${entry.bidModifier}. ${googleDeviceAdjustmentIgnoredSentence(named)} ${fix}`;
     }
   }
   return null;

@@ -46,6 +46,7 @@ import type {
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
   GoogleCreativeSharedCap,
+  GoogleDeviceBidMode,
   KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
@@ -1949,10 +1950,12 @@ export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
  * refuses them with different messages for different reasons — a bid Performance Max does not set,
  * against demographics it takes as asset-group signals — and either could move without the other.
  *
- * NOT a rule about automated bidding, which is a different rule with a different shape: an automated
- * SEARCH campaign ignores a device adjustment too, and that belongs to the bidding plan, where the
- * strategy is known. Widening this fence to every automated channel would refuse the device
- * EXCLUSIONS (the 0 opt-out) that Google honours.
+ * NOT a rule about automated bidding, which is a different rule with a different shape:
+ * `validateBiddingPlan` refuses a NON-ZERO device modifier under every strategy but Manual CPC, on
+ * every channel, and `googleDeviceBidModifierRefusal` judges that with the effective strategy.
+ * Widening this fence to every automated channel would refuse the device EXCLUSIONS (the 0 opt-out)
+ * that Google honours. So on Display and Video, which offer no Manual CPC here, this list carries
+ * exclusions only.
  *
  * Video is listed because upstream accepts it there, not because this client can reach it — the
  * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
@@ -2000,6 +2003,17 @@ export const GOOGLE_ADS_DEVICE_LABELS = {
   DESKTOP: 'Computers',
   TABLET: 'Tablets',
 } as const;
+
+/**
+ * What the Implementation tab's device mode picker calls each choice, in the order it offers them.
+ * Adjust bid is offered only while the effective bidding strategy is Manual CPC: campaign-service
+ * refuses a non-zero device bid modifier under any other (`validateBiddingPlan`).
+ */
+export const GOOGLE_DEVICE_BID_MODE_LABELS = {
+  default: 'Default bid',
+  adjust: 'Adjust bid',
+  exclude: 'Exclude',
+} as const satisfies Record<GoogleDeviceBidMode, string>;
 
 /**
  * Upstream's bound on EACH demographic exclusion list

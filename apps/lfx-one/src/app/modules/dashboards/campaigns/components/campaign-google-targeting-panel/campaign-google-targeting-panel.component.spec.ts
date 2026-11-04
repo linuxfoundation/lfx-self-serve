@@ -113,7 +113,7 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
     expect(schedules.at(-1)?.[7]).toEqual({ dayOfWeek: 'WEDNESDAY', startHour: 0, startMinute: 0, endHour: 9, endMinute: 0 });
   });
 
-  it('skips a gap that would end before 01:00, since an end hour of 0 is refused', () => {
+  it('skips a gap that would end before 01:00, since an end hour of 0 is refused, and says that is why', () => {
     const allDay = { startHour: 0, startMinute: 0 as const, endHour: 24, endMinute: 0 as const };
     render({
       adSchedules: [
@@ -122,7 +122,32 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
       ],
     });
 
-    expect(query('implementation-google-ad-schedule-add-reason')).not.toBeNull();
+    // Monday is neither covered nor at the per-day cap, so the reason must not claim either of it.
+    expect(query('implementation-google-ad-schedule-add-reason')?.textContent?.trim()).toBe(
+      'Monday only has free time before 01:00, and Google Ads cannot end a window that early; every other day is covered from 00:00 to 24:00. Shorten or remove a window to add another.'
+    );
+  });
+
+  it('names the days at the per-day cap when those are what leave no room', () => {
+    const allDay = { startHour: 0, startMinute: 0 as const, endHour: 24, endMinute: 0 as const };
+    const mondayHours = Array.from({ length: 6 }, (_, hour) => ({
+      dayOfWeek: 'MONDAY' as const,
+      startHour: hour,
+      startMinute: 0 as const,
+      endHour: hour + 1,
+      endMinute: 0 as const,
+    }));
+    render({
+      adSchedules: [
+        ...mondayHours,
+        { dayOfWeek: 'TUESDAY', startHour: 0, startMinute: 15, endHour: 24, endMinute: 0 },
+        ...(['WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const).map((dayOfWeek) => ({ dayOfWeek, ...allDay })),
+      ],
+    });
+
+    expect(query('implementation-google-ad-schedule-add-reason')?.textContent?.trim()).toBe(
+      'Monday already has 6 windows; Tuesday only has free time before 01:00, and Google Ads cannot end a window that early; every other day is covered from 00:00 to 24:00. Shorten or remove a window to add another.'
+    );
   });
 
   it('offers end times from 01:00, never an end hour of 0, and start times up to 23:45', async () => {
@@ -227,6 +252,56 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
     fixture.componentRef.setInput('deviceBidModifiers', devices.at(-1));
     await pick('implementation-google-device-mode-TABLET', 'Default bid');
     expect(devices.at(-1)).toEqual([{ device: 'MOBILE', bidModifier: 1.25 }]);
+  });
+
+  it('offers Adjust bid under Manual CPC and says the adjustment range', async () => {
+    render({});
+
+    expect(await optionLabels('implementation-google-device-mode-MOBILE')).toEqual(['Default bid', 'Adjust bid', 'Exclude']);
+    expect(query('implementation-google-devices-hint')?.textContent).toContain('Adjust the bid on a device from -90% to +900%');
+  });
+
+  it('offers only Default bid and Exclude while the strategy refuses adjustments, says why, and still excludes', async () => {
+    const reason = 'Google Ads takes a device bid adjustment only under Manual CPC bidding, and this campaign bids with Maximize Conversions.';
+    render({});
+    fixture.componentRef.setInput('deviceAdjustBlockedReason', reason);
+    fixture.detectChanges();
+
+    expect(await optionLabels('implementation-google-device-mode-MOBILE')).toEqual(['Default bid', 'Exclude']);
+    expect(query('implementation-google-devices-hint')?.textContent).toContain(reason);
+    expect(query('implementation-google-devices-hint')?.textContent).not.toContain('-90% to +900%');
+
+    await pick('implementation-google-device-mode-MOBILE', 'Exclude');
+    expect(devices.at(-1)).toEqual([{ device: 'MOBILE', bidModifier: 0 }]);
+
+    // A stale Adjust choice from an option list rendered before the switch writes nothing.
+    const writes = devices.length;
+    (fixture.componentInstance as unknown as { onDeviceMode: (device: string, mode: string) => void }).onDeviceMode('TABLET', 'adjust');
+    expect(devices).toHaveLength(writes);
+  });
+
+  it('shows a held adjustment with Adjust bid disabled and its box read-only (still reachable, not disabled), so it can only be moved to Default bid or Exclude', async () => {
+    render({ devices: [{ device: 'MOBILE', bidModifier: 1.25 }] });
+    fixture.componentRef.setInput('deviceAdjustBlockedReason', 'Blocked under Target CPA.');
+    fixture.detectChanges();
+
+    expect(query('implementation-google-device-mode-MOBILE')?.querySelector('[data-testid="ui-select-value"]')?.textContent?.trim()).toBe('Adjust bid');
+    const box = query<HTMLInputElement>('implementation-google-device-adjustment-MOBILE') as HTMLInputElement;
+    expect(box.readOnly).toBe(true);
+    expect(box.getAttribute('aria-readonly')).toBe('true');
+    expect(box.disabled).toBe(false);
+    expect(box.value).toBe('25');
+
+    const trigger = query('implementation-google-device-mode-MOBILE')?.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement;
+    trigger.click();
+    await settle();
+    const adjust = Array.from(document.querySelectorAll('[data-testid="ui-option"]')).find((option) => option.textContent?.trim() === 'Adjust bid');
+    expect(adjust?.getAttribute('aria-disabled')).toBe('true');
+    trigger.click();
+    await settle();
+
+    await pick('implementation-google-device-mode-MOBILE', 'Default bid');
+    expect(devices.at(-1)).toEqual([]);
   });
 
   it('shows only the sections it is asked for', () => {

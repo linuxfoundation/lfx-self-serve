@@ -80,6 +80,7 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
   GOOGLE_ADS_DECIMAL_NUMBER_PATTERN,
+  GOOGLE_ADS_DEVICE_LABELS,
   GOOGLE_ADS_GEO_SEARCH_BOUNDS,
   GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS,
   GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT,
@@ -277,14 +278,17 @@ import {
   googleAdScheduleRefusal,
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
+  googleChannelOffersManualCpc,
   googleCreativeImageDrift,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
+  googleDeviceAdjustmentIgnoredSentence,
   googleDeviceBidModifierRefusal,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
   isHttpUrl,
   isReversedCampaignFlight,
+  joinAsSentenceList,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -3547,9 +3551,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleDeviceBidModifiersAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS));
   /** The shared refusal the BFF would answer the create with, or `null`; `canSubmit` blocks on it. */
   protected readonly googleAdSchedulesError = computed(() => (this.googleAdSchedulesAvailable() ? googleAdScheduleRefusal(this.googleAdSchedules()) : null));
-  protected readonly googleDeviceBidModifiersError = computed(() =>
-    this.googleDeviceBidModifiersAvailable() ? googleDeviceBidModifierRefusal(this.googleDeviceBidModifiers()) : null
-  );
+  protected readonly googleDeviceBidModifiersError: Signal<string | null> = this.initGoogleDeviceBidModifiersError();
+  /** Why the device control offers no Adjust bid, or `null` while the effective strategy is Manual CPC. */
+  protected readonly googleDeviceAdjustBlockedReason: Signal<string | null> = this.initGoogleDeviceAdjustBlockedReason();
+  /**
+   * The held-adjustment sentence, or `''`: device adjustments set under Manual CPC that a strategy
+   * switch now refuses. They are kept for a switch back and Create waits on the shared refusal; one
+   * string feeds the visible notice and the always-mounted live region, as for languages.
+   */
+  protected readonly googleDeviceAdjustmentsHeldMessage: Signal<string> = this.initGoogleDeviceAdjustmentsHeldMessage();
   /** The held-targeting sentence, or `''`; one string feeds the visible notice and the live region, as for languages. */
   protected readonly googleTargetingWithheldMessage: Signal<string> = this.initGoogleTargetingWithheldMessage();
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
@@ -8451,6 +8461,56 @@ export class ImplementationTabComponent implements OnInit {
       const channel = this.googleBiddingChannel();
       if (!channel || this.googleLanguagesChannel() || this.googleLanguages().length === 0) return null;
       return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
+    });
+  }
+
+  /**
+   * The shared device refusal the BFF would answer the create with, judged under the EFFECTIVE
+   * strategy — the one `googleBiddingPayload` sends, or the channel default it leaves upstream to
+   * pick — so an adjustment the strategy refuses blocks Create here rather than failing the create.
+   */
+  private initGoogleDeviceBidModifiersError(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null) return null;
+      return googleDeviceBidModifierRefusal(this.googleDeviceBidModifiers(), strategy, channel);
+    });
+  }
+
+  /**
+   * Why the device control offers only Default bid and Exclude: Google Ads would ignore a device
+   * adjustment under any strategy but Manual CPC, so campaign-service refuses a non-zero modifier
+   * there (`validateBiddingPlan`). The way back differs by channel — Search can switch to Manual CPC,
+   * Display and Video offer no Manual CPC here — so the sentence says which. `null` while the device
+   * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}.
+   */
+  private initGoogleDeviceAdjustBlockedReason(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null || strategy === 'manual-cpc') return null;
+      const manual = GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc'];
+      const lead = `${googleDeviceAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} You can keep the default bid or exclude a device.`;
+      return googleChannelOffersManualCpc(channel)
+        ? `${lead} Choose ${manual} as the bidding strategy to adjust bids by device.`
+        : `${lead} ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns cannot bid ${manual} here.`;
+    });
+  }
+
+  private initGoogleDeviceAdjustmentsHeldMessage(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null || strategy === 'manual-cpc') return '';
+      const adjusted = this.googleDeviceBidModifiers().filter((d) => d.bidModifier !== 0);
+      if (adjusted.length === 0) return '';
+      const one = adjusted.length === 1;
+      const names = joinAsSentenceList(adjusted.map((d) => GOOGLE_ADS_DEVICE_LABELS[d.device]));
+      const way = googleChannelOffersManualCpc(channel)
+        ? `Default bid or Exclude, or choose ${GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc']} again`
+        : 'Default bid or Exclude';
+      return `${googleDeviceAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The ${one ? 'adjustment' : 'adjustments'} on ${names} ${one ? 'is' : 'are'} kept for a switch back, and Create Campaign waits until you set ${one ? 'it' : 'them'} to ${way}.`;
     });
   }
 
