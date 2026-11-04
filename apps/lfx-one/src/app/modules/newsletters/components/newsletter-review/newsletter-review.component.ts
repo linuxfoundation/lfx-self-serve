@@ -62,6 +62,8 @@ export class NewsletterReviewComponent implements OnInit {
   public readonly canSendTest = input<boolean>(false);
   public readonly canPreview = input<boolean>(false);
   public readonly sending = input<boolean>(false);
+  // The newsletter's owning project, so the template list loads for it rather than the lens.
+  public readonly projectUid = input<string | null>(null);
   public readonly testSending = input<boolean>(false);
   public readonly deleting = input<boolean>(false);
   public readonly committeesError = input<string | null>(null);
@@ -155,7 +157,7 @@ export class NewsletterReviewComponent implements OnInit {
     // Ensure the template catalog is available so `templateLabel` can show the
     // curated label. Cached + browser-only in the service, so this is a cheap
     // no-op when the composer already loaded it.
-    this.manifestService.loadTemplates().pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+    this.manifestService.loadTemplates(this.projectUid()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
   }
 
   // See newsletter-send-step.component.ts's identical method — the radio cards bind

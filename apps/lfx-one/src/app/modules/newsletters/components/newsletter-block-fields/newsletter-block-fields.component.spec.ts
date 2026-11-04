@@ -37,6 +37,7 @@ describe('NewsletterBlockFieldsComponent', () => {
       addItem(e: NewsletterFieldEntry): void;
       removeItem(k: string, i: number): void;
       trackByFormKey(i: number, e: NewsletterFieldEntry): string;
+      fieldRows(): NewsletterFieldEntry[];
     };
   const setInputs = (schema: NewsletterFieldSchema | null, b: NewsletterComposerBlock | null): void => {
     fixture.componentRef.setInput('schema', schema);
@@ -104,8 +105,13 @@ describe('NewsletterBlockFieldsComponent', () => {
     const entry = priv().fieldEntries()[0];
     const firstKey = priv().trackByFormKey(0, entry);
 
+    const firstRows = priv().fieldRows();
+
     setInputs(schema, block('b2', { body: '<p>Second</p>' }));
     expect(priv().form()?.get('body')?.value).toBe('<p>Second</p>');
+    // @for only re-reads its track keys when the collection changes, so the rows
+    // must be a new array even though both blocks share one schema.
+    expect(priv().fieldRows()).not.toBe(firstRows);
     expect(priv().trackByFormKey(0, priv().fieldEntries()[0])).not.toBe(firstKey);
   });
 

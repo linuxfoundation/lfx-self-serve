@@ -96,7 +96,10 @@ export class NewsletterManifestService {
     this.templatesUid = uid;
     this.templatesStream = this.http.get<NewsletterTemplatesResponse>(`/api/projects/${encodeURIComponent(uid)}/newsletters/templates`).pipe(
       map((response) => response.templates ?? []),
-      tap((templates) => this.templatesSignal.set(templates)),
+      // A slower response for an earlier project must not overwrite the current list.
+      tap((templates) => {
+        if (this.templatesUid === uid) this.templatesSignal.set(templates);
+      }),
       catchError((err: unknown) => {
         console.warn('NewsletterManifestService: template catalog load failed; picker will show the active library only', { err });
         // Reset so a later call can retry once the endpoint is available.

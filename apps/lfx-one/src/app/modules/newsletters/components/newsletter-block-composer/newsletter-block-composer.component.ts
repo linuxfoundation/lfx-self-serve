@@ -115,9 +115,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // === Inputs ===
   // Optional initial layout to seed the canvas (e.g. editing an existing draft).
   public readonly initialLayout = input<NewsletterLayout | null>(null);
-  // The initial/fallback block library that drives the palette. A saved layout's
-  // own `template_key` takes precedence (resolved in ngOnInit); this default (the
-  // full AAIF set) applies only when a draft has no explicit key.
+  // The block library a new draft starts with (the AAIF members set by default).
+  // A saved layout's own `template_key` takes precedence, and a saved keyless
+  // layout uses the service's fallback set (resolved in ngOnInit).
   public readonly templateKey = input<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
   // The newsletter's OWNING project UID, used to scope the render-preview call.
   // Edit routes carry a `:projectUid` that can differ from the ambient lens
@@ -363,15 +363,13 @@ export class NewsletterBlockComposerComponent implements OnInit {
     this.isBrowser.set(isPlatformBrowser(this.platformId));
 
     const seed = this.initialLayout();
-    // Resolve the active library: the saved layout's key wins (a reopened draft
-    // keeps its library), then the bound input, then the default. A BLANK key is
-    // normalized to the default — the render path resolves a keyless layout to the
-    // same default library (aaif-user-community) and its chrome, and a blank key
-    // would otherwise build a `/templates//manifest` request that 404s the palette.
-    // Persisting the resolved key (toLayout) keeps save + render consistent.
-    // A saved layout with blocks but no key renders in the service's fallback
-    // set, so it opens in that set rather than the new-draft default.
-    const seededKey = seed?.template_key?.trim() || (seed?.blocks?.length ? NEWSLETTER_FALLBACK_TEMPLATE_KEY : '');
+    // Resolve the active library. A saved layout's key wins, so a reopened draft
+    // keeps its library. A saved layout with no key (saved before keys existed)
+    // renders in the service's fallback set, so it opens in that set too. A new
+    // draft (no layout) uses the bound input, then the default. The resolved key
+    // is never blank, which would build a `/templates//manifest` request, and
+    // toLayout persists it so the canvas, the save and the send agree.
+    const seededKey = seed?.template_key?.trim() || (seed ? NEWSLETTER_FALLBACK_TEMPLATE_KEY : '');
     const activeKey = seededKey || this.templateKey()?.trim() || NEWSLETTER_DEFAULT_TEMPLATE_KEY;
     this.selectedTemplateKey.set(activeKey);
     this.templateForm.controls.template.setValue(activeKey, { emitEvent: false });
@@ -870,18 +868,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * straight on the element; Angular discards and recreates the element on the
    * NEXT (non-frozen) re-render, which drops the old listeners with it.
    */
-  /** Picker options: the service's template sets, plus the active one if the list has not loaded. */
-  private initTemplateOptions(): Signal<NewsletterTemplateOption[]> {
-    return computed(() => {
-      const active = this.selectedTemplateKey();
-      const options = this.manifestService.templates().map((t) => ({ label: NEWSLETTER_TEMPLATE_LABELS[t.key] ?? t.label, value: t.key }));
-      if (!options.some((o) => o.value === active)) {
-        options.unshift({ label: NEWSLETTER_TEMPLATE_LABELS[active] ?? humanizeFieldKey(active), value: active });
-      }
-      return options;
-    });
-  }
-
   private initInlineEditingEffect(): void {
     afterRenderEffect(() => {
       if (!isPlatformBrowser(this.platformId)) return;
@@ -914,6 +900,18 @@ export class NewsletterBlockComposerComponent implements OnInit {
         // the blur commit re-renders and repositions anyway).
         if (!this.editingBlockId()) this.repositionToolbar();
       });
+    });
+  }
+
+  /** Picker options: the service's template sets, plus the active one if the list has not loaded. */
+  private initTemplateOptions(): Signal<NewsletterTemplateOption[]> {
+    return computed(() => {
+      const active = this.selectedTemplateKey();
+      const options = this.manifestService.templates().map((t) => ({ label: NEWSLETTER_TEMPLATE_LABELS[t.key] ?? t.label, value: t.key }));
+      if (!options.some((o) => o.value === active)) {
+        options.unshift({ label: NEWSLETTER_TEMPLATE_LABELS[active] ?? humanizeFieldKey(active), value: active });
+      }
+      return options;
     });
   }
 
@@ -1541,10 +1539,10 @@ export class NewsletterBlockComposerComponent implements OnInit {
    *
    * `template_key` records the block library so the newsletter renders (send and
    * preview) and reopens with the same library it was composed in. It is always
-   * persisted from `selectedTemplateKey`, which ngOnInit normalizes to the default
-   * library when a draft is keyless. The render path resolves a blank key to that
-   * same default (aaif-user-community), so persisting the resolved key keeps the
-   * canvas, the save and the send in agreement.
+   * persisted from `selectedTemplateKey`, which ngOnInit never leaves blank. The
+   * service renders a blank key in its fallback set (aaif-user-community), so
+   * persisting the key stops a new draft from silently rendering in that set and
+   * keeps the canvas, the save and the send in agreement.
    */
   private toLayout(): NewsletterLayout {
     return {

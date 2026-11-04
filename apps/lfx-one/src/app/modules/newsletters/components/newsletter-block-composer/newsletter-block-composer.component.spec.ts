@@ -220,6 +220,35 @@ describe('NewsletterBlockComposerComponent — starter blocks and template picke
     expect(emitted).toHaveLength(0);
   });
 
+  it('resolves the active template: a saved key wins, a saved keyless layout uses the fallback, a new draft the default', () => {
+    const resolve = (layout: NewsletterLayout | null): string => {
+      const f = TestBed.createComponent(NewsletterBlockComposerComponent);
+      f.componentRef.setInput('initialLayout', layout);
+      f.componentInstance.ngOnInit();
+      return (f.componentInstance as unknown as { selectedTemplateKey: () => string }).selectedTemplateKey();
+    };
+    expect(resolve({ wrapper_key: 'w', template_key: 'aaif-weekly-agentic', blocks: [] })).toBe('aaif-weekly-agentic');
+    expect(resolve({ wrapper_key: 'w', blocks: [] })).toBe('aaif-user-community');
+    expect(resolve(null)).toBe('aaif-member');
+  });
+
+  it('lists the service templates with curated labels, and keeps the active key when the list lacks it', () => {
+    const templates = TestBed.inject(NewsletterManifestService).templates as unknown as { set: (t: { key: string; label: string }[]) => void };
+    const options = () => (component as unknown as { templateOptions: () => { label: string; value: string }[] }).templateOptions();
+
+    templates.set([
+      { key: 'aaif-member', label: 'Aaif Member' },
+      { key: 'custom-set', label: 'Custom Set' },
+    ]);
+    expect(options()).toEqual([
+      { label: 'AAIF members (ED weekly)', value: 'aaif-member' },
+      { label: 'Custom Set', value: 'custom-set' },
+    ]);
+
+    templates.set([]);
+    expect(options()).toEqual([{ label: 'AAIF members (ED weekly)', value: 'aaif-member' }]);
+  });
+
   it('switches an empty canvas to the picked template without asking, and seeds its starters', () => {
     api()['onTemplatePicked']('aaif-weekly-agentic');
 

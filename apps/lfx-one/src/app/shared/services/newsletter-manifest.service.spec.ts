@@ -5,7 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { NewsletterTemplateManifest } from '@lfx-one/shared/interfaces';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewsletterManifestService } from './newsletter-manifest.service';
@@ -87,6 +87,32 @@ describe('NewsletterManifestService', () => {
     service.loadTemplates().subscribe();
 
     expect(service.templates()).toEqual([{ key: 'default', label: 'Default' }]);
+  });
+
+  it('loadTemplates loads for the owning project, caches per project, and refetches when it changes', () => {
+    httpGet.mockReturnValue(of({ templates: [{ key: 'default', label: 'Default' }] }));
+    const service = configure('browser', httpGet, 'ambient-proj');
+
+    service.loadTemplates('owning-proj').subscribe();
+    service.loadTemplates('owning-proj').subscribe();
+    expect(httpGet).toHaveBeenCalledTimes(1);
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/owning-proj/newsletters/templates');
+
+    service.loadTemplates('other-proj').subscribe();
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(httpGet).toHaveBeenLastCalledWith('/api/projects/other-proj/newsletters/templates');
+  });
+
+  it('loadTemplates ignores a late response for a project that is no longer current', () => {
+    const first = new Subject<{ templates: { key: string; label: string }[] }>();
+    httpGet.mockReturnValueOnce(first.asObservable()).mockReturnValueOnce(of({ templates: [{ key: 'b', label: 'B' }] }));
+    const service = configure('browser', httpGet, 'ambient-proj');
+
+    service.loadTemplates('proj-a').subscribe();
+    service.loadTemplates('proj-b').subscribe();
+    first.next({ templates: [{ key: 'a', label: 'A' }] });
+
+    expect(service.templates()).toEqual([{ key: 'b', label: 'B' }]);
   });
 
   it('load scopes the manifest to the owning project UID when one is passed, over the ambient lens', () => {

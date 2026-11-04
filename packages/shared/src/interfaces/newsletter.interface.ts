@@ -932,13 +932,11 @@ export interface NewsletterLayout {
    * Which embedded block library (template set) this layout was composed from.
    * The newsletter-service persists it and renders the email from that library
    * (LFXV2-2747). An omitted/empty key is NOT a neutral render: the service
-   * resolves it to the DEFAULT library (currently the sole embedded set,
-   * `aaif-user-community`) and renders it with that library's wrapper and block
-   * set — see the service's empty-key fallback. A keyless layout (a new draft or
-   * one saved before per-newsletter selection) therefore renders the default
-   * library's chrome, so clients should treat a blank key as that default rather
-   * than surface a "neutral" state. Set an explicit key when the author picks a
-   * library.
+   * resolves it to its fallback set (`aaif-user-community`,
+   * NEWSLETTER_FALLBACK_TEMPLATE_KEY) and renders that set's wrapper and blocks.
+   * Clients treat a blank key on a saved layout as that fallback, and always
+   * set an explicit key on a new layout (NEWSLETTER_DEFAULT_TEMPLATE_KEY or the
+   * author's pick).
    */
   template_key?: string;
   blocks: NewsletterBlock[];

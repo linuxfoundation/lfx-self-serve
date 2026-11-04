@@ -8,6 +8,7 @@ import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { GenerateNewsletterResponse, NewsletterEditorMode, NewsletterLayout } from '@lfx-one/shared/interfaces';
+import { NEWSLETTER_DEFAULT_TEMPLATE_KEY } from '@lfx-one/shared/constants';
 import { stripHtml } from '@lfx-one/shared/utils';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -241,7 +242,9 @@ export class NewsletterContentStepComponent implements OnInit {
       // wrapper_key as soon as a block is added (mirrors its own 'default'
       // fallback in toLayout()).
       if (this.form().get('bodyLayout')?.value == null) {
-        const emptyLayout: NewsletterLayout = { wrapper_key: 'default', blocks: [] };
+        // It carries the new-draft default key, because the composer treats a
+        // keyless layout as one saved before keys existed.
+        const emptyLayout: NewsletterLayout = { wrapper_key: 'default', template_key: NEWSLETTER_DEFAULT_TEMPLATE_KEY, blocks: [] };
         this.form().get('bodyLayout')?.setValue(emptyLayout);
       }
     }
