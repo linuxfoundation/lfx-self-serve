@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_RUN_ANSWERED_READY_CLAUSE, MKTG_RUN_ANSWERED_WRITING_CLAUSE } from '@lfx-one/shared/constants';
+
 /**
  * The one line a browser hears when the questions it shows were answered by someone else, with its draft kept read-only
  * under it. Two ways to learn it: a send that lost (the server names the answerer, or the conflict path's fallback) and a
@@ -12,10 +14,6 @@ export function mktgRunAnsweredElsewhereNotice(answeredBy: string | null, samePr
   const opening = sameProfile ? 'These were answered in another window' : `${answeredBy ?? 'Someone on your team'} already answered these`;
   return `${opening}${landed ? MKTG_RUN_ANSWERED_READY_CLAUSE : MKTG_RUN_ANSWERED_WRITING_CLAUSE} Your draft is kept below.`;
 }
-
-/** The second clause of every answered-elsewhere line, with its dash and full stop, so a rewrite anchors on the whole clause. */
-export const MKTG_RUN_ANSWERED_WRITING_CLAUSE = ' — the agent is writing.';
-export const MKTG_RUN_ANSWERED_READY_CLAUSE = ' — the asset is ready.';
 
 /** A line is true when it is read: a notice heard while the run was writing says the asset is ready once it has landed. */
 export function mktgRunAnsweredNoticeAsLanded(message: string): string {

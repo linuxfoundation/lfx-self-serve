@@ -4,8 +4,8 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import { MktgPublicRunAnswersResponse, MktgRunAnswersRequest, MktgRunAnsweredNotice, MktgDocumentRunProgress } from '@lfx-one/shared/interfaces';
+import { MKTG_RUN_ANSWERED_WRITING_CLAUSE } from '@lfx-one/shared/constants';
 import { mktgRunAnsweredBy } from '@lfx-one/shared/utils';
-import { MKTG_RUN_ANSWERED_WRITING_CLAUSE } from '@shared/utils/mktg-run-answered-notice.utils';
 import { catchError, Observable, ReplaySubject, share, take, throwError } from 'rxjs';
 
 import { UserService } from './user.service';

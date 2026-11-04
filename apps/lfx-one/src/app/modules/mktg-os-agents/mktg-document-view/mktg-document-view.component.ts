@@ -67,6 +67,7 @@ import {
   MktgDocumentRunProgress,
   MktgGenerateProgress,
   MktgPendingGeneration,
+  MktgRunAnsweredNotice,
   MktgDocumentCommentScope,
   MktgRedraftLanding,
   MktgCommentAgentKey,
@@ -283,22 +284,24 @@ export class MktgDocumentViewComponent {
   private readonly concurrentAnswers = inject(MktgRunAnswersService);
   protected readonly answeredNotice = computed(() => this.concurrentAnswers.notice(this.projectUid(), this.params().agentKey, this.params().documentId));
   /**
-   * The remembered notice as this page should show it, scoped like the reader's own: hidden once its run failed, once the
-   * run asks a newer round, or while the page follows another run; and its line true when read — once the run has landed
-   * (completed, or absent from a complete read), the asset is ready. An unavailable read changes nothing.
+   * The remembered notice as this page should show it, scoped like the reader's own: hidden once its run closed without
+   * landing (failed, discarded, superseded), once the run asks a newer round, or once the page follows another run — an
+   * explicit `run=` selection, or a genuinely newer run (one still active, or started after the notice's); an older or
+   * failed row in the history is not one. Its line is true when read: once the run has landed (completed, or absent from a
+   * complete read that lists runs), the asset is ready. An unavailable read, or one without a runs list, changes nothing.
    */
   protected readonly answeredNoticeView = computed(() => {
     const notice = this.answeredNotice();
     if (!notice) return null;
     const detail = this.runDetail();
-    if (!detail || detail.progressUnavailable) return { text: notice.message, kept: notice.kept ?? null };
-    const run = detail.runs?.find((row) => row.runId === notice.runId);
-    if (run?.state === 'failed') return null;
+    const asHeard = { text: notice.message, kept: notice.kept ?? null };
+    if (!detail || detail.progressUnavailable || !detail.runs) return asHeard;
+    const run = detail.runs.find((row) => row.runId === notice.runId);
+    if (run && (run.state === 'failed' || readMktgRetiredRunHint(run))) return null;
     if (run?.pendingQuestions && run.pendingQuestions.questionsId !== notice.questionsId) return null;
-    const selected = this.selectedRun();
-    if (selected && selected.runId !== notice.runId) return null;
+    if (this.runFollowedInstead(notice, detail)) return null;
     const landed = !run || run.state === 'completed';
-    return { text: landed ? mktgRunAnsweredNoticeAsLanded(notice.message) : notice.message, kept: notice.kept ?? null };
+    return landed ? { ...asHeard, text: mktgRunAnsweredNoticeAsLanded(notice.message) } : asHeard;
   });
 
   protected readonly params = toSignal(
@@ -1003,11 +1006,10 @@ export class MktgDocumentViewComponent {
     // A verified ACK may arrive before its run= URL replacement. The hint selects a row; only that server row authorizes the redirect.
     const selectedRunId = this.runParam() || this.handoffRunId();
     const run = cycle.detail.runs?.find((entry) => entry.runId === selectedRunId);
-    // A newer run observed here retires the notice remembered for an older one, as the run page does when it starts one.
-    const observedRunId = (run ?? (cycle.detail.progressUnavailable ? undefined : cycle.detail.runs?.[0]))?.runId;
+    // Another run followed here retires the notice remembered for the earlier one, as the run page does when it starts one.
     const remembered = this.answeredNotice();
-    if (observedRunId && remembered && remembered.runId !== observedRunId)
-      this.concurrentAnswers.observeRun(cycle.detail.project, cycle.detail.type.agentKey, cycle.detail.documentId, observedRunId);
+    const followed = remembered && !cycle.detail.progressUnavailable ? this.runFollowedInstead(remembered, cycle.detail) : null;
+    if (followed) this.concurrentAnswers.observeRun(cycle.detail.project, cycle.detail.type.agentKey, cycle.detail.documentId, followed);
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
     if (this.publicProgressPolling() && cycle.detail.progressUnavailable) {
       this.runDetail.set(cycle.detail);
@@ -1487,6 +1489,23 @@ export class MktgDocumentViewComponent {
       if (this.revisionParam() && this.revisionParam() !== view.revision.id) return null;
       return { projectUid: view.project, agentKey: view.type.agentKey as MktgCommentAgentKey, documentId: view.documentId, revisionId: view.revision.id };
     });
+  }
+
+  /**
+   * The run this page follows instead of the notice's, if any: the `run=` row when it names another run, else a genuinely
+   * newer run — one still active (an older run cannot be, once a newer one started), or one started after the notice's run
+   * when that run is still listed. Older or failed rows in the history never count.
+   */
+  private runFollowedInstead(notice: MktgRunAnsweredNotice, detail: MktgDocumentDetailResponse): string | null {
+    const selected = this.runParam();
+    if (MKTG_STARTED_RUN_ID_REGEX.test(selected) && selected !== notice.runId) return selected;
+    const own = detail.runs?.find((row) => row.runId === notice.runId);
+    const newer = detail.runs?.find(
+      (row) =>
+        row.runId !== notice.runId &&
+        (row.state === 'questions' || row.state === 'writing' || row.state === 'storing' || (!!own && Date.parse(row.startedAt) > Date.parse(own.startedAt)))
+    );
+    return newer?.runId ?? null;
   }
 
   private initSelectedRun(): Signal<MktgDocumentRunProgress | null> {

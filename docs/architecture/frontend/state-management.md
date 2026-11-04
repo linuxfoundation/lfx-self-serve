@@ -458,11 +458,14 @@ memory copy, so the attempt store reads storage for that look, and the save that
 block carries the stored answered round forward rather than erasing it), and the typed draft stays
 below; an untouched form moves on to Writing quietly. While either form's own send is open, a poll
 changes nothing: the server claims the block before it replies, so the reply, or its 409, settles
-it. A poll that finds the run already completed (or absent from a complete, non-unavailable read)
-says "the asset is ready" instead of "the agent is writing"; a line heard while writing says the
-same once the document view sees its run landed, since a line must be true when read, and the
-document view scopes the remembered line as the reader does: gone once the run failed, once it asks
-a newer round, or once the page follows a newer run. The
+it. A poll that finds the run already completed (or absent from a complete, non-unavailable read
+that lists runs) says "the asset is ready" instead of "the agent is writing"; a line heard while
+writing says the same once the document view sees its run landed, since a line must be true when
+read, and the document view scopes the remembered line as the reader does: gone once the run closed
+without landing (failed, discarded, superseded), once it asks a newer round, or once the page
+follows another run, which means a `run=` selection naming one or a genuinely newer run (still
+active, or started after the notice's); an older or failed row in the history is not one, and the
+run page likewise makes the run it follows the remembered one. The
 notice travels with the kept block (`MktgRunAnsweredNotice.kept`): the progress
 reader draws the block directly under its line on both pages, and the document the run landed on
 shows the same line with the draft beside the produced revision. One notice text builder serves

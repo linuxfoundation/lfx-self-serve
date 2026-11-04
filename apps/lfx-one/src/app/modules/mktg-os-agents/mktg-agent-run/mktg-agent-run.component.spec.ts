@@ -2530,6 +2530,31 @@ describe('MktgAgentRunComponent', () => {
         });
       });
 
+      it('remembers the notice for the run followed now even after an older run of the same asset was remembered', async () => {
+        await open();
+        const answers = TestBed.inject(MktgRunAnswersService);
+        // An earlier run of this asset left its notice in the session; this page follows a newer run, as its URL says.
+        answers.remember(PROJECT_1.uid, type.agentKey, 'living', {
+          runId: 'a'.repeat(64),
+          questionsId: 'b'.repeat(64),
+          message: 'Someone on your team already answered these — the asset is ready. Your draft is kept below.',
+        });
+        expect(answers.notice(PROJECT_1.uid, type.agentKey, 'living')?.runId).toBe('a'.repeat(64));
+        await typeAnswer('Synthetic typed goal');
+        vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('completed')));
+        window.dispatchEvent(new Event('focus'));
+        await fixture.whenStable();
+        expect(query('mktg-run-progress-answered-note')?.textContent?.trim()).toBe(
+          'Someone on your team already answered these — the asset is ready. Your draft is kept below.'
+        );
+        // The newer run's notice replaces the older one, with its kept draft: the document shows this draft, not nothing.
+        expect(answers.notice(PROJECT_1.uid, type.agentKey, 'living')).toMatchObject({
+          runId,
+          questionsId,
+          kept: { questionsId, draft: { answers: { goal: 'Synthetic typed goal' } } },
+        });
+      });
+
       it('moves an untouched form on quietly when a poll shows the block answered', async () => {
         await open();
         await typeAnswer('  Synthetic adoption ');

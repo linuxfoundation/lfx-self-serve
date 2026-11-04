@@ -3,7 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MKTG_RUN_ANSWERED_WRITING_CLAUSE, mktgRunAnsweredElsewhereNotice, mktgRunAnsweredNoticeAsLanded } from './mktg-run-answered-notice.utils';
+import { MKTG_RUN_ANSWERED_WRITING_CLAUSE } from '@lfx-one/shared/constants';
+
+import { mktgRunAnsweredElsewhereNotice, mktgRunAnsweredNoticeAsLanded } from './mktg-run-answered-notice.utils';
 
 describe('mktgRunAnsweredElsewhereNotice', () => {
   it('names the answerer a lost send reported, else the shared fallback', () => {

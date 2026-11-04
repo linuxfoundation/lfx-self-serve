@@ -813,9 +813,12 @@ export class MktgAgentRunComponent {
     const current = this.answeredNotice();
     const scoped = current?.questionsId === notice.questionsId && current.kept && !notice.kept ? { ...notice, kept: current.kept } : notice;
     this.answeredNotice.set(scoped);
-    // Remembered so the document the run lands on shows the same line, with the draft, beside the produced revision.
+    // Remembered so the document the run lands on shows the same line, with the draft, beside the produced revision. This
+    // run is the one followed now: an older run's memory for the same asset gives way to it, and nothing typed is lost.
     const projectUid = this.publicProject();
-    if (projectUid) this.concurrentAnswers.remember(projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scoped);
+    if (!projectUid) return;
+    this.concurrentAnswers.observeRun(projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scoped.runId);
+    this.concurrentAnswers.remember(projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scoped);
   }
 
   protected onRetryPublicLanding(): void {
