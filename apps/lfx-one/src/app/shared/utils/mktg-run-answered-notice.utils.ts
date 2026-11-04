@@ -10,5 +10,13 @@
  */
 export function mktgRunAnsweredElsewhereNotice(answeredBy: string | null, sameProfile = false, landed = false): string {
   const opening = sameProfile ? 'These were answered in another window' : `${answeredBy ?? 'Someone on your team'} already answered these`;
-  return `${opening} — ${landed ? 'the asset is ready' : 'the agent is writing'}. Your draft is kept below.`;
+  return `${opening} — ${landed ? MKTG_RUN_ANSWERED_READY_CLAUSE : MKTG_RUN_ANSWERED_WRITING_CLAUSE}. Your draft is kept below.`;
+}
+
+const MKTG_RUN_ANSWERED_WRITING_CLAUSE = 'the agent is writing';
+const MKTG_RUN_ANSWERED_READY_CLAUSE = 'the asset is ready';
+
+/** A line is true when it is read: a notice heard while the run was writing says the asset is ready once it has landed. */
+export function mktgRunAnsweredNoticeAsLanded(message: string): string {
+  return message.replace(MKTG_RUN_ANSWERED_WRITING_CLAUSE, MKTG_RUN_ANSWERED_READY_CLAUSE);
 }

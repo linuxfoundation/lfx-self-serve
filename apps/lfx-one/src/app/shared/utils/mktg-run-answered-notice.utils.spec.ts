@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { mktgRunAnsweredElsewhereNotice } from './mktg-run-answered-notice.utils';
+import { mktgRunAnsweredElsewhereNotice, mktgRunAnsweredNoticeAsLanded } from './mktg-run-answered-notice.utils';
 
 describe('mktgRunAnsweredElsewhereNotice', () => {
   it('names the answerer a lost send reported, else the shared fallback', () => {
@@ -15,6 +15,14 @@ describe('mktgRunAnsweredElsewhereNotice', () => {
 
   it('says another window when this profile answered the block elsewhere', () => {
     expect(mktgRunAnsweredElsewhereNotice(null, true)).toBe('These were answered in another window — the agent is writing. Your draft is kept below.');
+  });
+
+  it('rewrites a line heard while writing to say the asset is ready, whoever it names', () => {
+    expect(mktgRunAnsweredNoticeAsLanded(mktgRunAnsweredElsewhereNotice('Synthetic writer'))).toBe(
+      mktgRunAnsweredElsewhereNotice('Synthetic writer', false, true)
+    );
+    expect(mktgRunAnsweredNoticeAsLanded(mktgRunAnsweredElsewhereNotice(null, true))).toBe(mktgRunAnsweredElsewhereNotice(null, true, true));
+    expect(mktgRunAnsweredNoticeAsLanded(mktgRunAnsweredElsewhereNotice(null, false, true))).toBe(mktgRunAnsweredElsewhereNotice(null, false, true));
   });
 
   it('says the asset is ready when the poll found the run already landed', () => {

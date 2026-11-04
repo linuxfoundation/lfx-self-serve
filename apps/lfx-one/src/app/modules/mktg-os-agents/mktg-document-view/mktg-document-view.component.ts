@@ -153,6 +153,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { mktgRunAnsweredNoticeAsLanded } from '@shared/utils/mktg-run-answered-notice.utils';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 // One revision of a Marketing OS document (design of record: "Document
@@ -281,6 +282,14 @@ export class MktgDocumentViewComponent {
   private progressReadUnavailable = false;
   private readonly concurrentAnswers = inject(MktgRunAnswersService);
   protected readonly answeredNotice = computed(() => this.concurrentAnswers.notice(this.projectUid(), this.params().agentKey, this.params().documentId));
+  /** The notice's line as true when read: once its run has landed (completed, or gone from the active runs), the asset is ready. */
+  protected readonly answeredNoticeText = computed(() => {
+    const notice = this.answeredNotice();
+    if (!notice) return '';
+    const runs = this.runDetail()?.runs;
+    const run = runs?.find((row) => row.runId === notice.runId);
+    return runs && (!run || run.state === 'completed') ? mktgRunAnsweredNoticeAsLanded(notice.message) : notice.message;
+  });
 
   protected readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),

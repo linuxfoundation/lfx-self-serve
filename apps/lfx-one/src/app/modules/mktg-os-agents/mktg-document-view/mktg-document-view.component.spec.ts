@@ -825,6 +825,32 @@ describe('MktgDocumentViewComponent', () => {
     expect(component?.['view']()).toBe(body);
   });
 
+  it('flips a notice heard while writing to the asset is ready once its run has landed, and not before', async () => {
+    const run = started('writing');
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId: 'c'.repeat(64),
+      message: 'Synthetic writer already answered these — the agent is writing. Your draft is kept below.',
+    });
+    await settle();
+    // Still writing: the line stands as heard.
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('Synthetic writer already answered these — the agent is writing.');
+    // Landed (the run completed): the same line, true when read.
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [{ ...run, state: 'completed' as const }] }));
+    window.dispatchEvent(new Event('focus'));
+    await settle();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain(
+      'Synthetic writer already answered these — the asset is ready. Your draft is kept below.'
+    );
+    // Gone from the active runs altogether: landed as well.
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [] }));
+    window.dispatchEvent(new Event('focus'));
+    await settle();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the asset is ready');
+  });
+
   it('keeps the typed draft read-only beside the produced revision when the remembered notice carries it', async () => {
     await render('/documents/brand-kit/living');
     const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);

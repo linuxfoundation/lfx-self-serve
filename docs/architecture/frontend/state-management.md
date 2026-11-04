@@ -458,8 +458,10 @@ memory copy, so the attempt store reads storage for that look, and the save that
 block carries the stored answered round forward rather than erasing it), and the typed draft stays
 below; an untouched form moves on to Writing quietly. While either form's own send is open, a poll
 changes nothing: the server claims the block before it replies, so the reply, or its 409, settles
-it. A poll that finds the run already completed says "the asset is ready" instead of "the agent is
-writing", and the notice travels with the kept block (`MktgRunAnsweredNotice.kept`): the progress
+it. A poll that finds the run already completed (or gone from the active runs, which carry only
+live ones) says "the asset is ready" instead of "the agent is writing"; a line heard while writing
+says the same once the document view sees its run landed, since a line must be true when read. The
+notice travels with the kept block (`MktgRunAnsweredNotice.kept`): the progress
 reader draws the block directly under its line on both pages, and the document the run landed on
 shows the same line with the draft beside the produced revision. One notice text builder serves
 both paths and both forms, public and private. Identifier-like names are not echoed. A genuinely new server questions
