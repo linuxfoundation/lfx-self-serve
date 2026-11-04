@@ -3705,6 +3705,10 @@ describe('CampaignController.createCampaign cutover', () => {
       demandGenCreative: { headlines: ['Build with open source'] },
       performanceMaxCreative: { businessName: 'Example Foundation' },
       displayCreative: { headlines: ['Join us this spring'] },
+      path1: 'kubecon',
+      path2: 'na',
+      additionalSearchAds: [{ headlines: ['Register today'], descriptions: ['Join the community in Salt Lake City.'] }],
+      negativeKeywords: [{ text: 'free tickets', matchType: 'Exact' }],
     };
     const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
 
@@ -4855,6 +4859,148 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(config).not.toHaveProperty('deviceBidModifiers');
     expect(config).not.toHaveProperty('excludedAgeRanges');
     expect(config).not.toHaveProperty('excludedGenders');
+  });
+
+  describe('Search ads, display paths and negatives at create (#4991)', () => {
+    it('sends the one ad exactly as before when no further ad is added, with the paths at campaign level', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004991', error: null });
+
+      await controller.createCampaign(buildReq(googleBody({ path1: ' kubecon ', path2: 'na' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config['headlines']).toEqual(['H1']);
+      expect(config['descriptions']).toEqual(['D1']);
+      expect(config['path1']).toBe('kubecon');
+      expect(config['path2']).toBe('na');
+      expect(config).not.toHaveProperty('adGroups');
+      expect(config).not.toHaveProperty('negativeKeywords');
+    });
+
+    it('sends every ad as one named ad group once a second ad is added, the first built from the campaign copy', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004992', error: null });
+
+      await controller.createCampaign(
+        buildReq(
+          googleBody({
+            path1: 'kubecon',
+            additionalSearchAds: [
+              { headlines: [' Register today ', ''], descriptions: ['Join us in Salt Lake City.'], path1: '', path2: '' },
+              { headlines: ['Save the date'], descriptions: ['Four days of talks.'], path1: 'agenda', path2: 'day1' },
+            ],
+          }),
+          { project: 'tlf', brief_id: 'b-1' }
+        ),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config['adGroups']).toEqual([
+        {
+          name: 'Main',
+          ads: [
+            { headlines: ['H1'], descriptions: ['D1'], path1: 'kubecon' },
+            { headlines: ['Register today'], descriptions: ['Join us in Salt Lake City.'] },
+            { headlines: ['Save the date'], descriptions: ['Four days of talks.'], path1: 'agenda', path2: 'day1' },
+          ],
+        },
+      ]);
+      // Keywords stay at campaign level, where the one group inherits them.
+      expect(config['keywords']).toEqual([{ text: 'kubernetes', matchType: 'EXACT' }]);
+    });
+
+    it('sends the negatives with the match type upper-cased and the text normalized', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004993', error: null });
+
+      await controller.createCampaign(
+        buildReq(
+          googleBody({
+            negativeKeywords: [
+              { text: 'free  tickets', matchType: 'Exact' },
+              { text: 'jobs', matchType: 'Phrase' },
+            ],
+          }),
+          { project: 'tlf', brief_id: 'b-1' }
+        ),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['negativeKeywords']).toEqual([
+        { text: 'free tickets', matchType: 'EXACT' },
+        { text: 'jobs', matchType: 'PHRASE' },
+      ]);
+    });
+
+    it.each([
+      ['path1', { path1: 'kubecon' }],
+      ['additionalSearchAds', { additionalSearchAds: [{ headlines: ['A'], descriptions: ['B'] }] }],
+      ['negativeKeywords', { negativeKeywords: [{ text: 'jobs', matchType: 'Exact' }] }],
+    ])('refuses %s by name off Search rather than dropping it', async (field, overrides) => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['display'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.field).toBe(field);
+      expect(error.message).toContain('only on Search campaigns');
+    });
+
+    it.each([
+      ['a path over 15 characters', { path1: 'kubecon-north-america' }, 'path1', 'longer than the 15'],
+      ['a path with a slash', { path1: 'kube/con' }, 'path1', '/ ? # & ='],
+      ['path 2 without path 1', { path2: 'na' }, 'path2', 'without display path 1'],
+      ['a CJK path over 15 display width', { path1: '日本語日本語日本語' }, 'path1', 'count double'],
+      [
+        'a fourth ad',
+        { additionalSearchAds: Array.from({ length: 3 }, () => ({ headlines: ['A'], descriptions: ['B'] })) },
+        'additionalSearchAds',
+        'at most 3',
+      ],
+      ['an ad with no headline', { additionalSearchAds: [{ headlines: ['  '], descriptions: ['B'] }] }, 'additionalSearchAds', 'headline to ad 2'],
+      ['an ad with no description', { additionalSearchAds: [{ headlines: ['A'], descriptions: [] }] }, 'additionalSearchAds', 'description to ad 2'],
+      ['a malformed ad', { additionalSearchAds: [{ headlines: 'A', descriptions: ['B'] }] }, 'additionalSearchAds', 'must be a list'],
+      ['an over-long ad path', { additionalSearchAds: [{ headlines: ['A'], descriptions: ['B'], path1: 'x'.repeat(16) }] }, 'additionalSearchAds', 'on ad 2'],
+      [
+        '61 negatives',
+        { negativeKeywords: Array.from({ length: 61 }, (_, i) => ({ text: `term ${i}`, matchType: 'Exact' })) },
+        'negativeKeywords',
+        'at most 60',
+      ],
+      ['a negative with a refused character', { negativeKeywords: [{ text: 'free!', matchType: 'Exact' }] }, 'negativeKeywords', 'letters, digits'],
+      ['an unknown match type', { negativeKeywords: [{ text: 'jobs', matchType: 'Fuzzy' }] }, 'negativeKeywords', 'Exact, Phrase or Broad'],
+      [
+        'the same negative twice',
+        {
+          negativeKeywords: [
+            { text: 'Jobs', matchType: 'Exact' },
+            { text: 'jobs', matchType: 'Exact' },
+          ],
+        },
+        'negativeKeywords',
+        'more than once',
+      ],
+    ])('refuses %s on Search before dispatch', async (_label, overrides, field, fragment) => {
+      await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.field).toBe(field);
+      expect(error.message).toContain(fragment);
+    });
+
+    it('bounds the strings nested in the further ads before normalising them', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ additionalSearchAds: [{ headlines: ['x'.repeat(5000)], descriptions: ['B'] }] }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('additionalSearchAds.headlines');
+    });
   });
 
   it('dispatches the languages the operator picked, trimmed and upper-cased', async () => {
