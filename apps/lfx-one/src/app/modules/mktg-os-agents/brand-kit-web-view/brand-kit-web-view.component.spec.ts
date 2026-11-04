@@ -486,15 +486,16 @@ describe('BrandKitWebViewComponent', () => {
       expect(tab('sources').textContent?.trim()).toBe('Sources and gaps (2)');
       await open('sources');
 
-      expect(query('brand-kit-web-view-sources-read')?.querySelectorAll('li')).toHaveLength(3);
+      expect(query('brand-kit-web-view-sources-read')?.querySelectorAll('li')).toHaveLength(v2.sources_read.length);
+      expect(query('brand-kit-web-view-sources-failed')?.querySelectorAll('li')).toHaveLength(1);
       expect(query('brand-kit-web-view-sources-failed')?.textContent).toContain('HTTP 404');
       expect(query('brand-kit-web-view-gaps')?.querySelectorAll('li')).toHaveLength(1);
       const panel = query('brand-kit-web-view-panel-sources')?.textContent ?? '';
-      // Nothing from the v2 fields reaches the page yet: no plain reason, no missing asset, no warning, no conflict.
+      // Nothing from the v2 fields reaches the page yet: no plain reason, no missing asset, no warning, no conflict, no rule.
       expect(panel).not.toContain(v2.findings?.sources_failed[0].reason ?? 'fixture');
       expect(panel).not.toContain(v2.findings?.missing_assets[0].reason ?? 'fixture');
       expect(panel).not.toContain(v2.findings?.warnings[0].text ?? 'fixture');
-      expect(panel).not.toContain('Coral');
+      expect(panel).not.toContain(v2.color_conflicts?.[0].values[0].source ?? 'fixture');
       expect(panel).not.toContain('lf-reference');
     });
 

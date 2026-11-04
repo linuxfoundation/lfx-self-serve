@@ -25,7 +25,7 @@ import {
 } from '../constants/brand-kit.constants';
 import { BrandKitChapters, BrandKitEnvelope, BrandKitRedraftFormPayload, BrandKitTokens } from '../interfaces/brand-kit.interface';
 import { brandKitBuiltFrom } from './brand-kit-book.utils';
-import { brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
+import { brandKitReportV2Envelope, brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
 import {
   brandKitBookPages,
   brandKitFontStack,
@@ -785,6 +785,32 @@ describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
     expect(findBrandKitReportErrors(buildEnvelope().report)).toEqual([]);
     expect(findBrandKitReportErrors(v2())).toEqual([]);
     expect(validateBrandKitEnvelope(buildEnvelope({ report: v2() })).valid).toBe(true);
+  });
+
+  it('accepts the agent lane’s own v2 envelope whole, as an upload and as a stored sidecar, with the counts it was written with', () => {
+    const envelope = brandKitReportV2Envelope();
+    // The agent writes `check` and `revision` beside the contract's keys; an unknown top-level key never fails the envelope.
+    expect(Object.keys(envelope)).toEqual(expect.arrayContaining(['check', 'revision']));
+    expect(validateBrandKitEnvelope(envelope)).toEqual({ valid: true, errors: [] });
+    const { document_markdown, ...sidecar } = envelope;
+    void document_markdown;
+    const revision = readBrandKitRevision(sidecar);
+    expect(revision?.report).toEqual(envelope.report);
+    expect(revision?.agentVersion).toBe('2.1.12');
+    const report = envelope.report;
+    expect(report.version).toBe(2);
+    expect(report.findings?.sources_failed).toHaveLength(1);
+    expect(report.findings?.sources_failed[0]).toMatchObject({ kind: 'brand_page', detail: 'HTTP 404' });
+    expect(report.findings?.missing_assets.map((entry) => entry.asset)).toEqual(['logo_primary', 'logo_stacked', 'logo_symbol', 'logo_reversed']);
+    expect(report.findings?.warnings.map((entry) => entry.code)).toEqual(['color_conflict', 'live_type_wordmark', 'palette_from_page_text']);
+    expect(report.color_conflicts?.map((entry) => [entry.name, entry.chosen])).toEqual([
+      ['Coral', '#FF702D'],
+      ['Black', '#000000'],
+    ]);
+    expect(report.color_conflicts?.flatMap((entry) => entry.values.map((value) => value.hex))).toEqual(['#FF702D', '#FF7D2D', '#000000', '#171717']);
+    expect(report.rules).toHaveLength(47);
+    expect(report.rules?.every((rule) => rule.path.startsWith('chapters.'))).toBe(true);
+    expect(JSON.stringify(envelope)).not.toMatch(/@/); // no address, no person
   });
 
   it('accepts any one v2 field on its own, since every one is optional', () => {
