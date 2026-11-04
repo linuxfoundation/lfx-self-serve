@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Committees
 ---
 
@@ -43,6 +43,8 @@ To link directly to a tab, append `?tab=members` to the group URL for the Member
 3. Move between steps freely; in edit mode the steps are not locked in order. See [Create a Group](../create-committee/) for what each step contains.
 4. On the last step, select **Update Group** to save your changes together with any staged member changes.
 
+When you rename a group in the edit wizard, a public-facing name that matched the original group name follows the new name, including when you make the group public in the same update. A distinct public-facing alias is preserved.
+
 To change only the name, type, parent, join mode, features, or chat channel, you can also use the group's **Settings** tab, which saves with **Save Changes**. Changing the group type there asks you to confirm first; the edit wizard saves it when you select **Update Group**, without a separate confirmation. Associated mailing lists are managed on the **Settings** tab and save as soon as you confirm them, without **Save Changes**.
 
 ## Add or remove members
@@ -52,6 +54,8 @@ To change only the name, type, parent, join mode, features, or chat channel, you
 3. Each row has an actions menu with **Send Message** (opens an email to the member), **Edit** (change role, voting status, or permission), and **Remove** (asks you to confirm).
 
 The roster shows **Name**, **Email** (hidden from visitors), **Organization**, and, when the group has voting, **Role** and **Voting Status**. When engagement metrics are turned on for your account, **Meetings** and **Engagement** columns appear for people with access to them. The last column is **Permission**.
+
+The Members tab loads the complete roster before enabling **Add Member** and **Import Members**. If loading fails, a persistent error offers **Retry**, and those actions stay unavailable instead of treating a partial or failed load as an empty group. A successful empty roster still offers **Add the first member**. If Retry repeatedly reaches the safe loading limit for a very large group, contact support. The separate **Invite Someone** flow for members whose roster is hidden is unchanged.
 
 ### Pending invitations
 
@@ -73,7 +77,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 ### Import from the Members tab
 
 1. Open the group and go to its **Members** tab.
-2. Select **Import Members**, to the left of **Add Member**. The button becomes available after the group's members and pending invitations finish loading. Import refreshes both lists before opening the dialog; if either list cannot be loaded, no import opens and you can try again.
+2. Select **Import Members**, to the left of **Add Member**. The button becomes available after the complete member roster and pending invitations finish loading. If the roster fails, use **Retry** in its error message. Import also refreshes both lists before opening the dialog; if either fresh list cannot be loaded completely, no import opens and you can try again.
 3. Select **Download template**. The template contains only the columns that apply to this group. Open **Column reference** to see which columns are required and the complete accepted role and appointed-by values.
 4. Fill in one member per row and save the file as **CSV UTF-8 (comma delimited)**. Keep the template's lowercase column names; column order does not matter, and any other column is rejected.
 5. Select **Choose CSV file**. Nothing is added yet — you see a preview of every row first.

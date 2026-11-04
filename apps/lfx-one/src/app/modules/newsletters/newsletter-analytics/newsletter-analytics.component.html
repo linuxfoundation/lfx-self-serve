@@ -73,6 +73,33 @@
             <span class="text-xs text-gray-500">of delivered emails</span>
           </div>
         </lfx-card>
+        @if (a.total_page_views !== undefined) {
+          <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+            <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
+              <span class="text-xs uppercase tracking-wide text-gray-500">Page views</span>
+              <span class="text-2xl font-medium text-gray-900" data-testid="newsletter-analytics-page-views">{{ a.total_page_views }}</span>
+              <span class="text-xs text-gray-500">unique readers on the web</span>
+            </div>
+          </lfx-card>
+        }
+        @if (totalViews() !== null) {
+          <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+            <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
+              <span class="text-xs uppercase tracking-wide text-gray-500">Total views</span>
+              <span class="text-2xl font-medium text-blue-600" data-testid="newsletter-analytics-total-views">{{ totalViews() }}</span>
+              <span class="text-xs text-gray-500">email opens + page views</span>
+            </div>
+          </lfx-card>
+        }
+        @if (a.total_shares !== undefined) {
+          <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+            <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">
+              <span class="text-xs uppercase tracking-wide text-gray-500">Shares</span>
+              <span class="text-2xl font-medium text-emerald-600" data-testid="newsletter-analytics-shares">{{ a.total_shares }}</span>
+              <span class="text-xs text-gray-500" data-testid="newsletter-analytics-shares-breakdown">{{ shareBreakdown() }}</span>
+            </div>
+          </lfx-card>
+        }
         @if (hasClickData()) {
           <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
             <div class="flex flex-col gap-1 p-4 bg-gray-50 rounded-lg">

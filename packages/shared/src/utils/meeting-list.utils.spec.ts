@@ -6,22 +6,30 @@ import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
 
-import { MEETING_VISIBILITY_INFO, MEETINGS_HOME_DEFAULT_FILTERS } from '../constants';
+import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS, MEETING_VISIBILITY_INFO, MEETINGS_HOME_DEFAULT_FILTERS } from '../constants';
 import { MeetingVisibility, MeetingVisibilityKind, RecurrenceType } from '../enums';
-import type { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, MeetingsHomeFilters } from '../interfaces';
+import type { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, MeetingsHomeFilters, PastMeeting } from '../interfaces';
 import {
   buildMeetingFilterChips,
   countAppliedMeetingFilters,
   expandMeetingOccurrences,
   filterMeetingsHome,
+  formatMeetingDateTime,
   formatMeetingTimeRange,
   getMeetingDayBucket,
+  getMeetingHomeRowLink,
+  getMeetingHomeRowOrganizers,
+  getMeetingHomeRowProject,
+  getMeetingHomeRowType,
+  getMeetingProjectUrl,
   getMeetingRecurrenceTooltip,
+  getMeetingRsvpScopeLabel,
   getMeetingStartsInLabel,
-  getMeetingVisibilityInfo,
+  getMeetingVisibilityBadges,
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
   isMeetingPendingRsvp,
+  toPastMeetingHomeRow,
 } from './meeting-list.utils';
 
 // Thursday, Oct 1 2026, 09:00 in the runner's local zone; buckets are local-calendar based.
@@ -256,6 +264,38 @@ describe('expandMeetingOccurrences', () => {
   });
 });
 
+describe('toPastMeetingHomeRow', () => {
+  const pastMeeting = (overrides: Partial<PastMeeting> = {}): PastMeeting => ({
+    ...buildMeeting({ id: '123-1759334400000', title: 'Sync', duration: 45 }),
+    scheduled_start_time: '2025-10-01T16:00:00Z',
+    scheduled_end_time: '2025-10-01T16:45:00Z',
+    meeting_id: '123',
+    occurrence_id: '1759334400',
+    platform_meeting_id: '',
+    sessions: [],
+    meeting_and_occurrence_id: '123-1759334400000',
+    ...overrides,
+  });
+
+  it('keys the row by the past meeting id and starts it at the scheduled start', () => {
+    const meeting = pastMeeting();
+
+    expect(toPastMeetingHomeRow(meeting)).toEqual({
+      key: '123-1759334400000',
+      meeting,
+      occurrence: null,
+      title: 'Sync',
+      occurrenceId: '1759334400',
+      startTime: '2025-10-01T16:00:00.000Z',
+      durationMinutes: 45,
+    });
+  });
+
+  it('returns null without a valid start', () => {
+    expect(toPastMeetingHomeRow(pastMeeting({ scheduled_start_time: 'nope', start_time: '' }))).toBeNull();
+  });
+});
+
 describe('getMeetingDayBucket', () => {
   it.each([
     [local(10, 1, 15), 'Today'],
@@ -350,6 +390,17 @@ describe('filterMeetingsHome', () => {
     expect(keys(filterMeetingsHome(rows, filters({ meetingType: 'Technical' }), '', null))).toEqual(['tsc-1', 'tsc-2', 'quiet-1']);
   });
 
+  it('filters by foundation: its own meetings and its non-foundation children, with a project taking precedence', () => {
+    const foundationRows = [
+      row({ key: 'f', meeting: buildMeeting({ id: 'f', project_uid: 'f-1', is_foundation: true }) }),
+      row({ key: 'child', meeting: buildMeeting({ id: 'child', project_uid: 'p-3', parent_project_uid: 'f-1' }) }),
+      row({ key: 'sub', meeting: buildMeeting({ id: 'sub', project_uid: 'f-2', parent_project_uid: 'f-1', is_foundation: true }) }),
+      row({ key: 'other', meeting: buildMeeting({ id: 'other', project_uid: 'p-4', parent_project_uid: 'f-2' }) }),
+    ];
+    expect(keys(filterMeetingsHome(foundationRows, filters({ foundation: 'f-1' }), '', null))).toEqual(['f', 'child']);
+    expect(keys(filterMeetingsHome(foundationRows, filters({ foundation: 'f-1', project: 'p-3' }), '', null))).toEqual(['child']);
+  });
+
   it('filters by the RSVP for each date', () => {
     expect(keys(filterMeetingsHome(rows, filters({ rsvp: 'pending' }), '', null))).toEqual(['board-3']);
     expect(keys(filterMeetingsHome(rows, filters({ rsvp: 'accepted' }), '', null))).toEqual(['board-2']);
@@ -390,13 +441,15 @@ describe('filterMeetingsHome', () => {
 describe('countAppliedMeetingFilters', () => {
   it('counts each applied filter', () => {
     expect(countAppliedMeetingFilters(MEETINGS_HOME_DEFAULT_FILTERS)).toBe(0);
-    expect(countAppliedMeetingFilters(filters({ project: 'p-1', meetingType: 'Board', rsvp: 'pending', organizedByMe: true, hideDeclined: true }))).toBe(5);
+    expect(
+      countAppliedMeetingFilters(filters({ foundation: 'f-1', project: 'p-1', meetingType: 'Board', rsvp: 'pending', organizedByMe: true, hideDeclined: true }))
+    ).toBe(6);
     expect(countAppliedMeetingFilters(filters({ rsvp: 'maybe' }))).toBe(1);
   });
 });
 
 describe('buildMeetingFilterChips', () => {
-  const rows = [row()];
+  const rows = [row(), row({ meeting: buildMeeting({ id: 'f', project_uid: 'f-1', project_name: 'Foundation One', is_foundation: true }) })];
 
   it('returns no chips for the defaults', () => {
     expect(buildMeetingFilterChips(MEETINGS_HOME_DEFAULT_FILTERS, rows)).toEqual([]);
@@ -404,10 +457,11 @@ describe('buildMeetingFilterChips', () => {
 
   it('labels every applied filter in popover order', () => {
     const chips = buildMeetingFilterChips(
-      filters({ project: 'p-1', meetingType: 'Technical', rsvp: 'declined', organizedByMe: true, hideDeclined: true }),
+      filters({ foundation: 'f-1', project: 'p-1', meetingType: 'Technical', rsvp: 'declined', organizedByMe: true, hideDeclined: true }),
       rows
     );
     expect(chips).toEqual([
+      { key: 'foundation', label: 'Foundation: Foundation One' },
       { key: 'project', label: 'Project: Project One' },
       { key: 'meetingType', label: 'Meeting type: Technical' },
       { key: 'rsvp', label: 'RSVP: Not going' },
@@ -416,7 +470,8 @@ describe('buildMeetingFilterChips', () => {
     ]);
   });
 
-  it('falls back to the project UID and uses the RSVP option labels', () => {
+  it('falls back to the foundation or project UID and uses the RSVP option labels', () => {
+    expect(buildMeetingFilterChips(filters({ foundation: 'f-9' }), rows)).toEqual([{ key: 'foundation', label: 'Foundation: f-9' }]);
     expect(buildMeetingFilterChips(filters({ project: 'p-9' }), rows)).toEqual([{ key: 'project', label: 'Project: p-9' }]);
     expect(buildMeetingFilterChips(filters({ rsvp: 'pending' }), rows)[0].label).toBe('RSVP: Needs response');
     expect(buildMeetingFilterChips(filters({ rsvp: 'accepted' }), rows)[0].label).toBe('RSVP: Going');
@@ -454,6 +509,14 @@ describe('getMeetingRecurrenceTooltip', () => {
   });
 });
 
+describe('formatMeetingDateTime', () => {
+  it('shows the day with the time range, or with the start time alone without a duration', () => {
+    expect(formatMeetingDateTime('2026-10-01T13:30:00Z', 60, 'America/Los_Angeles')).toBe('Thu, Oct 1 · 6:30 – 7:30 AM PDT');
+    expect(formatMeetingDateTime('2026-10-01T13:30:00Z', undefined, 'America/Los_Angeles')).toBe('Thu, Oct 1 · 6:30 AM PDT');
+    expect(formatMeetingDateTime('not-a-date', 60)).toBe('');
+  });
+});
+
 describe('formatMeetingTimeRange', () => {
   it.each([
     ['2026-10-01T13:30:00Z', 60, 'America/Los_Angeles', '6:30 – 7:30 AM PDT'],
@@ -487,19 +550,173 @@ describe('getMeetingStartsInLabel', () => {
   });
 });
 
-describe('getMeetingVisibilityInfo', () => {
-  it.each<[MeetingVisibility | null, boolean | null, MeetingVisibilityKind]>([
-    [MeetingVisibility.PUBLIC, false, MeetingVisibilityKind.PUBLIC],
-    [null, null, MeetingVisibilityKind.PUBLIC],
-    [MeetingVisibility.PRIVATE, null, MeetingVisibilityKind.PRIVATE],
-    [MeetingVisibility.PUBLIC, true, MeetingVisibilityKind.RESTRICTED],
-    [MeetingVisibility.PRIVATE, true, MeetingVisibilityKind.RESTRICTED],
-  ])('%s, restricted %s → %s', (visibility, restricted, kind) => {
-    expect(getMeetingVisibilityInfo({ visibility, restricted })).toBe(MEETING_VISIBILITY_INFO[kind]);
+describe('getMeetingVisibilityBadges', () => {
+  it.each<[MeetingVisibility | null, boolean | null, MeetingVisibilityKind[]]>([
+    [MeetingVisibility.PUBLIC, false, [MeetingVisibilityKind.PUBLIC]],
+    [null, null, [MeetingVisibilityKind.PUBLIC]],
+    [MeetingVisibility.PRIVATE, null, [MeetingVisibilityKind.PRIVATE]],
+    [MeetingVisibility.PUBLIC, true, [MeetingVisibilityKind.RESTRICTED]],
+    [MeetingVisibility.PRIVATE, true, [MeetingVisibilityKind.PRIVATE, MeetingVisibilityKind.RESTRICTED]],
+  ])('%s, restricted %s → %j', (visibility, restricted, kinds) => {
+    expect(getMeetingVisibilityBadges({ visibility, restricted })).toEqual(kinds.map((kind) => MEETING_VISIBILITY_INFO[kind]));
   });
 
   it('carries the tooltip copy', () => {
     expect(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PUBLIC]).toMatchObject({ title: 'Public', description: null, icon: 'fa-solid fa-globe' });
     expect(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.RESTRICTED]).toMatchObject({ title: 'Restricted', description: 'Only invited people can join' });
+  });
+});
+
+describe('getMeetingHomeRowLink', () => {
+  const upcomingRow = (meeting: Meeting, start: Date): MeetingHomeRow => ({
+    key: meeting.id,
+    meeting,
+    occurrence: null,
+    title: meeting.title,
+    occurrenceId: null,
+    startTime: start.toISOString(),
+    durationMinutes: 60,
+  });
+  const pastRow = (overrides: Partial<PastMeeting>): MeetingHomeRow => {
+    const meeting: PastMeeting = {
+      ...buildMeeting({ id: '123' }),
+      scheduled_start_time: '2025-10-01T16:00:00Z',
+      scheduled_end_time: '2025-10-01T17:00:00Z',
+      meeting_id: '123',
+      occurrence_id: '1759334400',
+      platform_meeting_id: '',
+      sessions: [],
+      meeting_and_occurrence_id: '123-1759334400000',
+      ...overrides,
+    };
+    return {
+      key: '123-1759334400000',
+      meeting,
+      occurrence: null,
+      title: meeting.title,
+      occurrenceId: null,
+      startTime: '2025-10-01T16:00:00Z',
+      durationMinutes: 60,
+    };
+  };
+  const future = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+  it('opens an upcoming date in a new tab with its password and date', () => {
+    const link = getMeetingHomeRowLink(upcomingRow(buildMeeting({ id: '123', password: 'p w' }), future), 'upcoming');
+
+    expect(link).toEqual({ url: `/meetings/123?password=p+w&occurrence=${future.getTime()}`, newTab: true });
+  });
+
+  it('leaves the password out when the meeting has none', () => {
+    expect(getMeetingHomeRowLink(upcomingRow(buildMeeting({ id: '123' }), future), 'upcoming').url).toBe(`/meetings/123?occurrence=${future.getTime()}`);
+  });
+
+  it('opens a past meeting in place on its meeting page for invitees', () => {
+    expect(getMeetingHomeRowLink(pastRow({ organizer: false }), 'past')).toEqual({ url: '/meetings/123-1759334400000', newTab: false });
+  });
+
+  it('opens a past meeting on the admin details page with the project for organizers', () => {
+    expect(getMeetingHomeRowLink(pastRow({ organizer: true, is_foundation: false, project_slug: 'kubernetes' }), 'past')).toEqual({
+      url: '/project/meetings/123-1759334400000/details?project=kubernetes',
+      newTab: false,
+    });
+    expect(getMeetingHomeRowLink(pastRow({ organizer: true, is_foundation: true, project_slug: 'cncf' }), 'past').url).toBe(
+      '/foundation/meetings/123-1759334400000/details?project=cncf'
+    );
+  });
+
+  it('falls back to the flat details route when the tier is unknown', () => {
+    expect(getMeetingHomeRowLink(pastRow({ organizer: true }), 'past').url).toBe('/meetings/123-1759334400000/details');
+  });
+});
+
+describe('getMeetingProjectUrl', () => {
+  it('links to the project or foundation overview', () => {
+    expect(getMeetingProjectUrl({ project_slug: 'kubernetes', is_foundation: false })).toBe('/project/overview?project=kubernetes');
+    expect(getMeetingProjectUrl({ project_slug: 'cncf', is_foundation: true })).toBe('/foundation/overview?project=cncf');
+  });
+
+  it('has no link without a slug', () => {
+    expect(getMeetingProjectUrl({ project_slug: undefined, is_foundation: true })).toBeNull();
+  });
+});
+
+describe('getMeetingHomeRowProject', () => {
+  it('names the project with its initial, logo, link and accessible label', () => {
+    expect(getMeetingHomeRowProject({ project_name: ' cncf ', project_logo_url: 'logo.svg', project_slug: 'cncf', is_foundation: true })).toEqual({
+      name: 'cncf',
+      initial: 'C',
+      logo: 'logo.svg',
+      url: '/foundation/overview?project=cncf',
+      label: 'Jump to foundation: cncf',
+    });
+  });
+
+  it('is null without a project name', () => {
+    expect(getMeetingHomeRowProject({ project_name: ' ' })).toBeNull();
+  });
+});
+
+describe('getMeetingHomeRowType', () => {
+  it.each<[string | null, { label: string; icon: string } | null]>([
+    ['Technical', { label: 'Technical', icon: MEETING_TYPE_CONFIGS['technical'].icon }],
+    ['Custom', { label: 'Custom', icon: DEFAULT_MEETING_TYPE_CONFIG.icon }],
+    ['None', null],
+    [null, null],
+  ])('%s → %j', (type, expected) => {
+    expect(getMeetingHomeRowType({ meeting_type: type })).toEqual(expected);
+  });
+});
+
+describe('getMeetingHomeRowOrganizers', () => {
+  const jane = { name: 'Jane Doe', username: 'jdoe', email: 'jane@example.org', profile_picture: 'https://example.org/jane.png' };
+  const janeAvatar = { key: 'jdoe', label: 'Jane Doe', name: 'Jane Doe', photo: 'https://example.org/jane.png' };
+  const labels = (meeting: Pick<Meeting, 'created_by' | 'owner' | 'organizers'>) => getMeetingHomeRowOrganizers(meeting, 'auth0|viewer').map((o) => o.label);
+
+  it('puts the owner or creator first with their name and photo', () => {
+    expect(getMeetingHomeRowOrganizers({ created_by: jane, organizers: [] }, 'auth0|viewer')).toEqual([janeAvatar]);
+  });
+
+  it('adds the other organizers by username, without the primary in either form or duplicates', () => {
+    expect(getMeetingHomeRowOrganizers({ created_by: jane, organizers: ['Jane@Example.org', 'auth0|JDOE', 'auth0|ASmith', 'asmith', ' '] }, 'viewer')).toEqual([
+      janeAvatar,
+      { key: 'asmith', label: 'ASmith', name: 'ASmith', photo: '' },
+    ]);
+  });
+
+  it.each<[Pick<Meeting, 'created_by' | 'owner' | 'organizers'>, string[]]>([
+    [{ created_by: jane, organizers: ['bob@example.org'] }, ['Jane Doe', 'bob']],
+    [{ created_by: { name: 'Viewer Person', username: 'viewer', email: '' }, organizers: ['viewer', 'asmith'] }, ['You', 'asmith']],
+    [{ created_by: jane, organizers: ['viewer'] }, ['Jane Doe', 'You']],
+    [{ owner: { name: 'Owen Owner', username: 'owen', email: '' }, created_by: jane, organizers: ['jdoe'] }, ['Owen Owner', 'jdoe']],
+    [{ organizers: ['asmith'] }, []],
+  ])('%j → %j', (meeting, expected) => {
+    expect(labels(meeting)).toEqual(expected);
+  });
+
+  it('keeps the real name behind "You" for the initials', () => {
+    expect(getMeetingHomeRowOrganizers({ created_by: { name: 'Viewer Person', username: 'viewer', email: '' }, organizers: [] }, 'viewer')[0]).toMatchObject({
+      label: 'You',
+      name: 'Viewer Person',
+    });
+  });
+});
+
+describe('getMeetingRsvpScopeLabel', () => {
+  const seconds = String(NOW.getTime() / 1000);
+
+  it('names the date a single or following answer starts from', () => {
+    expect(getMeetingRsvpScopeLabel({ scope: 'single', occurrence_id: seconds })).toBe('Oct 1 only');
+    expect(getMeetingRsvpScopeLabel({ scope: 'this_and_following', occurrence_id: seconds })).toBe('Oct 1 and following');
+  });
+
+  it('reads the date from the composite id when the direct one is missing', () => {
+    expect(getMeetingRsvpScopeLabel({ scope: 'single', meeting_and_occurrence_id: `123-${seconds}` })).toBe('Oct 1 only');
+  });
+
+  it('says all dates for an all-dates answer and falls back without a date', () => {
+    expect(getMeetingRsvpScopeLabel({ scope: 'all', occurrence_id: seconds })).toBe('All dates');
+    expect(getMeetingRsvpScopeLabel({ scope: 'single' })).toBe('This date only');
+    expect(getMeetingRsvpScopeLabel({ scope: 'this_and_following' })).toBe('This date and following');
   });
 });

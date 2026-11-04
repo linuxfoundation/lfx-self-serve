@@ -5,6 +5,7 @@ import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
+  QUERY_SERVICE_MAX_PAGE_SIZE,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   UUID_REGEX,
 } from '@lfx-one/shared/constants';
@@ -929,6 +930,7 @@ export class CommitteeService {
       ...queryFilters,
       type: 'committee_member',
       tags: `committee_uid:${committeeId}`,
+      page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
     return fetchAllQueryResources<CommitteeMember>(

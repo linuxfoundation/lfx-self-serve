@@ -460,7 +460,20 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-sources-read')?.textContent).toContain('logo.svg');
       expect(query('brand-kit-web-view-sources-failed')?.textContent).toContain('HTTP 404');
       expect(query('brand-kit-web-view-gaps')?.querySelectorAll('li')).toHaveLength(2);
+      expect(query('brand-kit-web-view-gaps-accepted')).toBeNull();
       expect(query('brand-kit-web-view-report-notes')?.querySelectorAll('li')).toHaveLength(2);
+    });
+
+    it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {
+      const kit = brandKitTestRevision();
+      kit.report = { ...kit.report, gaps: ['No stacked lockup was given.'] };
+      fixture.componentRef.setInput('kit', kit);
+      fixture.componentRef.setInput('version', 3);
+      fixture.componentRef.setInput('approval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+      await open('sources');
+
+      expect(query('brand-kit-web-view-gaps')?.querySelectorAll('li')).toHaveLength(1);
+      expect(query('brand-kit-web-view-gaps-accepted')?.textContent?.trim()).toBe('Accepted when v3 was approved; still open.');
     });
 
     it('says so where the run left nothing to report, and leaves the Sources and gaps tab uncounted', async () => {
@@ -468,7 +481,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(tab('sources').textContent?.trim()).toBe('Sources and gaps');
       await open('sources');
 
-      expect(query('brand-kit-web-view-sources-failed-empty')).not.toBeNull();
+      expect(query('brand-kit-web-view-sources-failed-empty')?.textContent?.trim()).toBe('No source failed.');
       expect(query('brand-kit-web-view-gaps-empty')).not.toBeNull();
       expect(query('brand-kit-web-view-notes-empty')).not.toBeNull();
     });

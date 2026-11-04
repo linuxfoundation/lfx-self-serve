@@ -2311,6 +2311,57 @@ describe('MeetingComposerFormService \u2014 group context and member resolution 
     expect(service.hasUnreconciledGroupSelection()).toBe(false);
   });
 
+  it('invalidates a changed voting filter until successful roster reconciliation, including a return to the original filter', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    const control = service.form().get('committees')!;
+    control.setValue([{ uid: 'group-a', allowed_voting_statuses: ['voting_rep'] }]);
+    service.setResolvedCommitteeUids(['group-a']);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    control.setValue([{ uid: 'group-a', allowed_voting_statuses: ['observer'] }]);
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    expect(service.validateForSubmit()).toBe(false);
+    control.setValue([{ uid: 'group-a', allowed_voting_statuses: ['voting_rep'] }]);
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    service.setResolvedCommitteeUids(null);
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    service.syncCommitteeMembers([]);
+    service.setResolvedCommitteeUids(['group-a']);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+  });
+
+  it('keeps pending or failed roster coverage blocked across unrelated edits and a section unmount', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service
+      .form()
+      .get('committees')!
+      .setValue([{ uid: 'group-a' }]);
+    service.setResolvedCommitteeUids(['group-a']);
+    service.setResolvedCommitteeUids(null);
+    service.form().get('title')!.setValue('Unrelated edit');
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    expect(service.isSectionValid('guests')).toBe(false);
+    service.setResolvedCommitteeUids(['group-a']);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+  });
+
+  it('preserves an unchanged saved group/filter selection without opening Guests', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    (service as any).populateFormWithMeetingData({
+      id: 'meeting-1',
+      title: 'Example meeting',
+      start_time: '2030-01-01T17:00:00Z',
+      timezone: 'UTC',
+      committees: [{ uid: 'group-a', allowed_voting_statuses: ['voting_rep', 'observer'] }],
+    } as Meeting);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    service.form().get('title')!.setValue('Updated title');
+    service
+      .form()
+      .get('committees')!
+      .setValue([{ uid: 'group-a', name: 'Updated label', allowed_voting_statuses: ['Observer', 'Voting Rep'] }]);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+  });
+
   it('leaves a create that picked no group unblocked', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
 

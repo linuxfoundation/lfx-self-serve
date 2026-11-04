@@ -28,10 +28,13 @@ export class RowActionsComponent {
   public readonly actionSelect = output<MentorshipRowAction>();
 
   protected readonly menuItems = computed<MenuItem[]>(() =>
-    this.actions().map((action) => ({
-      label: action.label,
-      icon: action.icon,
-      command: () => this.actionSelect.emit(action),
-    }))
+    this.actions().map((action) =>
+      // A link entry renders as an anchor, so the browser opens it in a new tab, leaving the table in place (a `mailto:`
+      // goes to the mail handler, e.g. a Gmail draft). Always set: PrimeNG binds `target` as a property, so an unset one
+      // becomes `target="undefined"`.
+      action.url
+        ? { label: action.label, icon: action.icon, url: action.url, target: '_blank' }
+        : { label: action.label, icon: action.icon, command: () => this.actionSelect.emit(action) }
+    )
   );
 }

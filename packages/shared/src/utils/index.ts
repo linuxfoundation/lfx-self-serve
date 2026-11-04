@@ -3,6 +3,7 @@
 
 export * from './ai.utils';
 export * from './avatar.utils';
+export * from './chunk-load.utils';
 export * from './color.utils';
 export * from './date-time.utils';
 export * from './docs.utils';
@@ -159,3 +160,4 @@ export * from './mktg-run-navigation.utils';
 export * from './org-employment.utils';
 export * from './org-team-members.utils';
 export * from './org-scope.utils';
+export * from './social-share.utils';

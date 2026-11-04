@@ -13,12 +13,14 @@ import { routes } from './app.routes';
 import { HealthMetricsTrainingComponent } from './modules/dashboards/health-metrics-training/health-metrics-training.component';
 import { MyNewsletterFoundationsComponent } from './modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component';
 import { MyNewslettersComponent } from './modules/newsletters/my-newsletters/my-newsletters.component';
+import { NewsletterSharePreviewComponent } from './modules/newsletters/newsletter-share-preview/newsletter-share-preview.component';
 import { NEWSLETTER_ROUTES } from './modules/newsletters/newsletters.routes';
 import { VoteDetailComponent } from './modules/votes/vote-detail/vote-detail.component';
 import { authGuard } from './shared/guards/auth.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
+import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
 import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
@@ -67,14 +69,16 @@ describe('Personal newsletter route isolation', () => {
     const foundation = findRoute(routes, 'newsletters/my/:foundationSlug')!;
     expect(foundation).toMatchObject({ title: 'Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
     expect(await foundation.loadComponent!()).toBe(MyNewslettersComponent);
+    // Look these up in the shell: the signed-out share preview mounts its own top-level `newsletters/:projectSlug/:id`.
     for (const path of ['newsletters/:projectSlug/:id', 'newsletters']) {
-      expect(children.indexOf(personal)).toBeLessThan(children.indexOf(findRoute(routes, path)!));
-      expect(children.indexOf(foundation)).toBeLessThan(children.indexOf(findRoute(routes, path)!));
+      const later = children.find((route) => route.path === path)!;
+      expect(children.indexOf(personal)).toBeLessThan(children.indexOf(later));
+      expect(children.indexOf(foundation)).toBeLessThan(children.indexOf(later));
     }
     expect(NEWSLETTER_ROUTES.map((route) => route.path)).toEqual(['', 'list', 'create', ':projectUid/:id/edit', ':projectUid/:id/analytics']);
   });
   it('preserves reader and publisher guards', () => {
-    expect(findRoute(routes, 'newsletters/:projectSlug/:id')?.canActivate).toEqual([authGuard]);
+    expect(shellRoute.children!.find((route) => route.path === 'newsletters/:projectSlug/:id')?.canActivate).toEqual([authGuard]);
     expect(findRoute(routes, 'newsletters')?.canActivate).toEqual([lensRedirectGuard, projectQueryParamGuard]);
     for (const lens of ['foundation', 'project']) {
       expect(findRoute(routes, `${lens}/newsletters`)?.canActivate).toEqual([newsletterAccessGuard, projectQueryParamGuard]);
@@ -82,6 +86,23 @@ describe('Personal newsletter route isolation', () => {
     for (const route of NEWSLETTER_ROUTES.filter((route) => route.loadComponent)) {
       expect(route.canActivate).toEqual([authGuard, newsletterAccessGuard]);
     }
+  });
+});
+
+describe('Newsletter share preview route (#4940)', () => {
+  const preview = routes.find((route) => route.path === 'newsletters/:projectSlug/:id' && route.canMatch?.includes(newsletterAnonymousSsrMatchGuard))!;
+
+  it('mounts the signed-out share preview ahead of the authenticated shell', async () => {
+    expect(preview).toMatchObject({ pathMatch: 'full', canMatch: [newsletterAnonymousSsrMatchGuard] });
+    expect(preview.canActivate).toBeUndefined();
+    expect(routes.indexOf(preview)).toBeLessThan(routes.indexOf(shellRoute));
+    expect(await preview.loadComponent!()).toBe(NewsletterSharePreviewComponent);
+  });
+
+  it('leaves the signed-in reader in the shell behind authGuard', () => {
+    const reader = shellRoute.children!.find((route) => route.path === 'newsletters/:projectSlug/:id')!;
+    expect(reader.canActivate).toEqual([authGuard]);
+    expect(reader.canMatch).toBeUndefined();
   });
 });
 

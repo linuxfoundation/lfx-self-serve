@@ -434,7 +434,12 @@
               @if (expanded) {
                 <tr class="border-b border-gray-100" [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-detail-row'">
                   <td colspan="7" class="p-0">
-                    <lfx-org-people-all-employees-detail [detail]="detail" [loading]="detailIsLoading" [error]="detailHasError" (retry)="retryDetail(row)" />
+                    <lfx-org-people-all-employees-detail
+                      [detail]="detail"
+                      [coursesCount]="row.coursesCount"
+                      [loading]="detailIsLoading"
+                      [error]="detailHasError"
+                      (retry)="retryDetail(row)" />
                   </td>
                 </tr>
               }

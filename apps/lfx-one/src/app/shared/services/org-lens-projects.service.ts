@@ -9,6 +9,7 @@ import type {
   OrgProjectsWorkspace,
   OrgProjectsWorkspacesResponse,
   OrgScopeFilter,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
 import { map, Observable } from 'rxjs';
 
@@ -18,9 +19,15 @@ import { map, Observable } from 'rxjs';
 export class OrgLensProjectsService {
   private readonly http = inject(HttpClient);
 
-  /** `orgScope` (lfx-self-serve-ops#1219) scopes the contributors only. */
-  public getProjects(orgUid: string, orgName: string, slugs: readonly string[], orgScope: OrgScopeFilter): Observable<OrgLensProjectsResponse> {
-    let params = new HttpParams().set('orgName', orgName).set('orgScope', orgScope);
+  /** `orgScope` (lfx-self-serve-ops#1219) and `teamMembers` (lfx-self-serve-ops#1246) apply to the contributors only. */
+  public getProjects(
+    orgUid: string,
+    orgName: string,
+    slugs: readonly string[],
+    orgScope: OrgScopeFilter,
+    teamMembers: OrgTeamMembersFilter
+  ): Observable<OrgLensProjectsResponse> {
+    let params = new HttpParams().set('orgName', orgName).set('orgScope', orgScope).set('teamMembers', teamMembers);
     if (slugs.length) {
       params = params.set('slugs', slugs.join(','));
     }

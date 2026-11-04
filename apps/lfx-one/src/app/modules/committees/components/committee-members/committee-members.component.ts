@@ -126,6 +126,8 @@ export class CommitteeMembersComponent implements OnInit {
   public committee = input.required<Committee | null>();
   public members = input.required<CommitteeMember[]>();
   public membersLoading = input<boolean>(true);
+  public readonly membersError = input(false);
+  public readonly membersReady = input(false);
   public invites = input<CommitteeInvite[]>([]);
   public invitesLoading = input<boolean>(false);
   public applications = input<CommitteeJoinApplication[]>([]);
@@ -151,6 +153,7 @@ export class CommitteeMembersComponent implements OnInit {
   public engagementWindow = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
 
   public readonly refresh = output<void>();
+  public readonly retryMembers = output<void>();
   public readonly engagementWindowChange = output<CommitteeEngagementWindow>();
 
   // Simple writable signals
@@ -367,6 +370,9 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   public openAddMemberDialog(): void {
+    if (!this.membersReady() || this.membersLoading() || this.membersError() || !this.canManageMembers()) {
+      return;
+    }
     // Snapshot member count before opening — used by the poll to detect when the
     // query-service index has caught up with the write (indexing lag).
     const countBeforeAdd = this.members().length;
@@ -399,7 +405,15 @@ export class CommitteeMembersComponent implements OnInit {
    */
   public openImportMembersDialog(): void {
     const committee = this.committee();
-    if (!committee?.uid || !this.canManageMembers() || this.membersLoading() || this.invitesLoading() || this.importSnapshotsLoading()) {
+    if (
+      !committee?.uid ||
+      !this.canManageMembers() ||
+      !this.membersReady() ||
+      this.membersError() ||
+      this.membersLoading() ||
+      this.invitesLoading() ||
+      this.importSnapshotsLoading()
+    ) {
       return;
     }
     const committeeUid = committee.uid;

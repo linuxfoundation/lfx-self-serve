@@ -4,7 +4,7 @@ description: How to present a vote on screen, extend its deadline, send the resu
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, present, extend, clone, summary, qr-code, deadline]
-last_updated: 2026-10-29
+last_updated: 2026-11-03
 intercom_collection: Votes
 ---
 
@@ -23,7 +23,9 @@ You need permission to manage the vote. If you don't have it, **Present** isn't 
 
 ### While the vote is open
 
-The presenter shows the vote's title and description, a live count of how many people have voted out of how many are eligible, and when the vote closes. It does not show how the votes are splitting. Tallies stay hidden until the vote ends.
+The presenter shows the vote's title and description (with its paragraphs, line breaks, and lists kept; a long description scrolls inside its own area), a live count of how many people have voted out of how many are eligible, and when the vote closes. It does not show how the votes are splitting. Tallies stay hidden until the vote ends.
+
+Descriptions follow the same [formatting rules](../create-vote/#description-formatting) as the ballot and vote page, including a literal fallback for mixed unsupported placeholders and HTML.
 
 On the right it shows a **Copy link** button and a QR code with the text **In the room? Scan instead**, so people can open the vote on their phones. The page refreshes itself, and a line at the bottom shows how long ago it last updated. If the connection drops, it keeps trying to reconnect.
 
@@ -67,8 +69,20 @@ The row shows the new deadline right away. You can only extend a vote that is st
 
 1. Select **⋮ → Send summary** on an ended vote.
 2. Confirm. The message warns that sending can't be undone.
+3. Wait for the result. While you stay on this page, the vote's row shows a spinner and **Sending summary…** under the vote's name until LFX reports the result (on a phone, below the name and status at the top of the vote's card). Its **⋮ → Sending summary…** item is unavailable, preventing another send for that vote from this page while the request is in progress. The vote's other menu actions, and the summaries of other ended votes, stay available. Screen readers announce when sending starts and when it finishes; the result itself appears in the message described below. The indicator only shows that LFX is still working on the request. It does not mean the emails have been delivered.
 
-LFX shows how many voters received the summary, and how many failed if any did. If you try to send before the vote has closed, LFX says the vote hasn't closed yet. The summary is sent only when you ask for it. It is never sent automatically.
+The indicator and duplicate-click protection apply only while you stay on this page. Reloading, leaving and returning, or opening another tab does not preserve this state or confirm that sending stopped. Check with voters before sending again, since another send may duplicate summaries already sent.
+
+Each result message names the vote so you can distinguish summaries sent at the same time. After you send, LFX reports what it knows about each invited voter:
+
+- **Sent:** the email service accepted the summary for sending to the voter's email address. Delivery to their inbox is not confirmed.
+- **Skipped:** the voter has no email address on file, so nothing was sent to them. Skipped voters are reported, never silently left out.
+- **Failed:** the email could not be sent to the voter.
+- **Unconfirmed:** LFX couldn't confirm whether the email went out, for example after a timeout, lost connection, or an email-service error after sending may have started. Some of these emails may already have been delivered, so check with voters before sending again. Sending again may send duplicate summaries.
+
+If any voter was skipped, failed or unconfirmed, LFX does not show a complete-success message. If every attempted send fails, the error still reports how many failed and how many voters were skipped for having no email address. If none of the invited voters has an email address, LFX tells you that no summaries were sent. If you try to send before the vote has closed, LFX says the vote hasn't closed yet. The summary is sent only when you ask for it. It is never sent automatically.
+
+If pre-send checks find that you need to sign in again or that the vote is no longer available, LFX says that nothing was sent and explains the issue instead of asking you to retry the same send.
 
 ## Clone a vote
 

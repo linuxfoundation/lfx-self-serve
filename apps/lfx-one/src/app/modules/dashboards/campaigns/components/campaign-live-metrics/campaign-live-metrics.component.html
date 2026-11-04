@@ -78,6 +78,21 @@
         <dt class="text-xs text-gray-500">CTR</dt>
         <dd class="text-sm font-medium text-gray-900" [attr.data-testid]="'optimization-campaign-live-ctr-' + campaignId()">{{ counters.ctrPct | adsPct }}</dd>
       </div>
+      <!--
+        Conversions, from campaign-service's conversions_status (lfx-v2-campaign-service#175): the total
+        only when reported, otherwise the reason there is none, never a 0 standing in for it. Absent on
+        the email channel and when campaign-service sends no status (an older release), as before.
+      -->
+      @if (counters.conversions !== null) {
+        <div class="flex flex-col">
+          <dt class="text-xs text-gray-500">Conversions</dt>
+          <dd
+            [class]="counters.conversionsReported ? 'text-sm font-medium text-gray-900' : 'text-xs text-gray-500'"
+            [attr.data-testid]="'optimization-campaign-live-conversions-' + campaignId()">
+            {{ counters.conversions }}
+          </dd>
+        </div>
+      }
     </dl>
     <p class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-live-window-' + campaignId()">
       @if (counters.isEmail) {

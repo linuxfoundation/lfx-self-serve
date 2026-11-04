@@ -172,7 +172,9 @@ const registrants = await fetchAllQueryResources<MeetingRegistrant>(req, (pageTo
 
 The helper:
 
-- Follows `page_token` automatically until all pages are fetched
+- Follows `page_token` automatically, up to `QUERY_SERVICE_MAX_PAGES` (100) pages, and stops early when upstream hands back a `page_token` it already requested. This bounds token chains that could otherwise keep accumulating rows and exhaust the SSR heap (#4964); the original preview crash trigger was not reproduced locally
+- Treats either stop like a failed later page: strict (`failOnPartial: true`) callers get a 502 `MicroserviceError` with code `QUERY_SERVICE_PAGINATION_LIMIT`, others get the rows fetched so far, an `onPartial()` call and a `warning` log carrying `reason` (`max_pages` or `repeated_page_token`), `page` and `accumulated_count`
+- Counts pages, not rows: the query service's default page size of 50 allows up to 5,000 rows, while an explicit `page_size: QUERY_SERVICE_MAX_PAGE_SIZE` (1,000) allows up to 100,000 rows. A continuation token after page 100 triggers the stop even for a legitimate large dataset; a terminal page at the cap succeeds. Strict callers must handle the error, and best-effort callers must not treat a partial prefix as a complete result
 - Accumulates results into a single array
 - Retries on 5xx errors (up to 2 retries with 100ms delay)
 - Logs pagination progress at DEBUG level
@@ -195,6 +197,45 @@ before opening its collect-only preview. If any requested page still fails after
 the helper's retry policy, the request fails and the existing member-load or import
 error guard blocks the preview. This guarantees successful pagination, not immediate
 search-index consistency or an atomic snapshot across requests.
+
+### Complete rosters and membership context
+
+The meeting committee manager also requests `require_complete=true`: its existing
+error/retry gate withholds both roster emissions and resolved-group coverage when
+pagination fails or stops early, preventing reconciliation from deleting saved guests
+that were merely absent from a partial response. The legacy registrants manager forwards
+that coverage to the meeting page, which blocks both Update Meeting and invitation-only
+submission until the selected rosters resolve. Selection changes immediately invalidate
+previous coverage; a successful retry re-enables submission.
+The coverage contract also invalidates a pending member fetch explicitly. The v2 composer records
+the normalized group/filter selection alongside the covered UIDs, so a voting-status edit cannot
+reuse a saved roster after a failed fetch. Identical group/filter writes, label updates, and
+reordering do not invalidate already resolved coverage; actual selection changes do, including
+a return to an earlier selection. Saved unchanged selections remain usable for unrelated edits
+without mounting the Guests picker.
+
+`CommitteeService.getCommitteeMembers` fixes `page_size` at the supported maximum of 1,000
+for its all-pages drains, rather than accepting a caller's page size or falling back to 50.
+Strict scans still fail at the shared 100-page bound. The meeting picker identifies pagination-limit
+errors and explains Retry or removing an editable group selection; a locked context requires
+cancelling and contacting support rather than saving incomplete invitations.
+
+The group Members tab requests strict completeness as well. Failed reads retain a persistent
+error/Retry state, withhold the roster count, and block Add Member and Import Members until a
+complete read succeeds. A successful empty roster is distinct from a failed load. Roster visibility
+rules and the separate invite-only flow for callers without roster access remain unchanged.
+
+`OrgMembershipResolverService` uses `failOnPartial: true` before resolving or caching
+a membership context, so key-contact writes cannot select a membership from a partial
+scan. Its `org-membership:v2` cache namespace excludes partial arrays produced by older
+pods during rollout; those legacy entries expire under their existing TTL.
+
+`MailingListService.getMembers` likewise requires complete pagination and explicitly uses
+`QUERY_SERVICE_MAX_PAGE_SIZE` (1,000), avoiding the upstream 50-row default. Failures
+reach a persistent error message and Retry action instead of an empty-list message or a
+searchable prefix with a misleading total. The 100-page cap remains: a continuing scan
+after 100,000 raw records still fails, and access filtering can reduce the visible roster
+below that bound. These reads do not introduce user-facing cursor pagination.
 
 ### Bound multi-request dashboard sources
 

@@ -791,6 +791,20 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(res.json).toHaveBeenCalledWith({ jobId: 'job_123_abc' });
   });
 
+  /** #4983: a confirmed "create another" must never fall through to the legacy creator, which would drop it. */
+  it('refuses a create-another outright while the cutover is dark, instead of creating unconditionally', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+
+    await controller.createCampaign(
+      buildReq({ ...body, another: { funnelStage: 'mid', expectedSlotVersions: { 'google-ads': 1 } } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(legacyCreate, 'the legacy creator ran a create-another with no compare-and-set').not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ jobId: '', error: expect.stringContaining('nothing was created') }));
+  });
+
   it('does NOT run the legacy path once campaign-service accepts the job', async () => {
     // The property worth pinning: both paths create real campaigns on real ad platforms, so a
     // fall-through after an accepted 202 would double-create and spend twice.
@@ -2564,6 +2578,86 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(cfg[key]).not.toContain('\u202E');
       expect(cfg[key]).toContain('evil');
     }
+  });
+
+  /**
+   * #3306. The event page's own links (CFP, agenda, venue, sponsorship) keep their href when they are
+   * on the button's host or an LF-owned domain. The list arrives from the client and is JUDGED: an
+   * off-host url in it is refused like any other, and the list itself never goes upstream.
+   */
+  it('keeps a vetted event-page link, strips an off-host one, and never forwards the list', async () => {
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            // The button is on the event's own site; the CFP link is on an LF-owned domain, which only the
+            // judged `secondaryLinkUrls` can vouch for, so this pins that the list is actually read.
+            bodyHtml:
+              '<p><a href="https://training.linuxfoundation.org/kubecon/cfp">Submit a talk</a> ' +
+              '<a href="https://evil.example/agenda">See the agenda</a> <a href="javascript:alert(1)">x</a></p>',
+            buttonText: 'Register',
+            buttonUrl: 'https://kubecon.example/register',
+            secondaryLinkUrls: ['https://training.linuxfoundation.org/kubecon/cfp', 'https://evil.example/agenda', 'javascript:alert(1)'],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(cfg['bodyHtml']).toContain('href="https://training.linuxfoundation.org/kubecon/cfp"');
+    expect(cfg['bodyHtml']).not.toContain('evil.example');
+    expect(cfg['bodyHtml']).toContain('See the agenda');
+    expect(cfg['bodyHtml']).not.toContain('javascript:');
+    expect(cfg['secondaryLinkUrls'], 'the judgement-only list was forwarded to campaign-service').toBeUndefined();
+  });
+
+  it('strips an LF-owned link that is not among the event page links it was sent', async () => {
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p><a href="https://training.linuxfoundation.org/invented">Invented</a></p>',
+            buttonText: 'Register',
+            buttonUrl: 'https://kubecon.example/register',
+            secondaryLinkUrls: ['https://kubecon.example/cfp'],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(cfg['bodyHtml']).not.toContain('training.linuxfoundation.org');
+    expect(cfg['bodyHtml']).toContain('Invented');
+  });
+
+  it('keeps the safe inline styles of a staged body and drops the unsafe declarations', async () => {
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p style="color: #0f172a; font-size: 16px; position: fixed; background-color: url(https://evil.test/x)">Hi</p>',
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(cfg['bodyHtml']).toBe('<p style="color:#0f172a;font-size:16px">Hi</p>');
   });
 
   it.each(['bodyHtml', 'bodyHtmlB'])('refuses an oversized %s before sanitising or dispatching', async (field) => {

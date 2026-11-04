@@ -1,34 +1,52 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEETING_VISIBILITY_INFO, MEETINGS_HOME_FILTER_CHIP_LABELS, MEETINGS_HOME_RSVP_FILTER_OPTIONS, RECURRENCE_DAYS_OF_WEEK } from '../constants';
-import { MeetingVisibility, MeetingVisibilityKind } from '../enums';
+import {
+  DEFAULT_MEETING_TYPE_CONFIG,
+  MEETING_TYPE_CONFIGS,
+  MEETING_VISIBILITY_INFO,
+  MEETINGS_HOME_FILTER_CHIP_LABELS,
+  MEETINGS_HOME_RSVP_FILTER_OPTIONS,
+  RECURRENCE_DAYS_OF_WEEK,
+} from '../constants';
+import { MeetingType, MeetingVisibility, MeetingVisibilityKind } from '../enums';
 import type {
   Meeting,
   MeetingDashboardView,
   MeetingDayGroup,
   MeetingFilterChip,
   MeetingHomeRow,
+  MeetingHomeRowLink,
+  MeetingHomeRowOrganizer,
+  MeetingHomeRowProject,
+  MeetingHomeRowType,
   MeetingOccurrence,
   MeetingResponseFilter,
   MeetingRsvp,
   MeetingsHomeFilters,
   MeetingVisibilityInfo,
+  PastMeeting,
 } from '../interfaces';
+import { getEntityCommands } from './entity-route.utils';
 import {
+  buildMeetingOccurrenceRoute,
   buildRecurrenceSummary,
+  collectMeetingOrganizers,
   convertRecurrenceToPattern,
   getActiveOccurrences,
   getApplicableMeetingRsvp,
+  getMeetingOrganizerDisplayName,
   getUpcomingMeetingStartTime,
   isMeetingInviteResponsesEnabled,
   isMeetingOrganizedByViewer,
   MEETING_END_BUFFER_MS,
+  normalizeUsername,
   resolveOccurrenceRecurrence,
   resolveShownOccurrenceId,
   resolveUpcomingMeetingDurationMinutes,
 } from './meeting.utils';
-import { getRsvpTimestampMs, isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
+import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
+import { getRsvpOccurrenceId, getRsvpTimestampMs, isSameOccurrenceId, occurrenceIdToMs, selectApplicableRsvp } from './rsvp-calculator.util';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -75,6 +93,21 @@ export function expandMeetingOccurrences(meetings: readonly Meeting[], now: Date
   }
 
   return rows.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+}
+
+/** A past meeting as a home row, or null when it has no valid start. */
+export function toPastMeetingHomeRow(meeting: PastMeeting): MeetingHomeRow | null {
+  const startMs = getPastMeetingStartTimeMs(meeting);
+  if (startMs === null) return null;
+  return {
+    key: getPastMeetingResourceId(meeting),
+    meeting,
+    occurrence: null,
+    title: meeting.title,
+    occurrenceId: meeting.occurrence_id || null,
+    startTime: new Date(startMs).toISOString(),
+    durationMinutes: meeting.duration,
+  };
 }
 
 /**
@@ -144,7 +177,7 @@ export function filterMeetingsHome(
   return rows.filter((row) => {
     const meeting = row.meeting;
     if (query && !matchesMeetingSearch(row, query)) return false;
-    if (filters.project && meeting.project_uid !== filters.project) return false;
+    if (!matchesEntityFilters(meeting, filters)) return false;
     if (filters.meetingType && meeting.meeting_type !== filters.meetingType) return false;
     if (!matchesRsvpFilter(row, filters.rsvp)) return false;
     if (filters.organizedByMe && !isMeetingOrganizedByViewer(meeting, viewerUsername)) return false;
@@ -154,16 +187,19 @@ export function filterMeetingsHome(
 
 /** Number of applied filters, for the Filters button badge. Search does not count. */
 export function countAppliedMeetingFilters(filters: MeetingsHomeFilters): number {
-  return [!!filters.project, !!filters.meetingType, filters.rsvp !== 'all', filters.organizedByMe, filters.hideDeclined].filter(Boolean).length;
+  return [filters.foundation, filters.project, filters.meetingType, filters.rsvp !== 'all', filters.organizedByMe, filters.hideDeclined].filter(Boolean).length;
 }
 
-/** One chip per applied filter, in popover order; the project chip names the project from `rows`, else its UID. */
+/** One chip per applied filter, in popover order; foundation and project chips take the name from `rows`, else the UID. */
 export function buildMeetingFilterChips(filters: MeetingsHomeFilters, rows: readonly MeetingHomeRow[]): MeetingFilterChip[] {
   const chips: MeetingFilterChip[] = [];
+  const nameOf = (uid: string): string => rows.find((row) => row.meeting.project_uid === uid)?.meeting.project_name || uid;
 
+  if (filters.foundation) {
+    chips.push({ key: 'foundation', label: `${MEETINGS_HOME_FILTER_CHIP_LABELS.foundation}: ${nameOf(filters.foundation)}` });
+  }
   if (filters.project) {
-    const name = rows.find((row) => row.meeting.project_uid === filters.project)?.meeting.project_name;
-    chips.push({ key: 'project', label: `${MEETINGS_HOME_FILTER_CHIP_LABELS.project}: ${name || filters.project}` });
+    chips.push({ key: 'project', label: `${MEETINGS_HOME_FILTER_CHIP_LABELS.project}: ${nameOf(filters.project)}` });
   }
   if (filters.meetingType) {
     chips.push({ key: 'meetingType', label: `${MEETINGS_HOME_FILTER_CHIP_LABELS.meetingType}: ${filters.meetingType}` });
@@ -225,6 +261,22 @@ export function formatMeetingTimeRange(start: string | Date, durationMinutes: nu
   return `${from['hour']}:${from['minute']}${fromLabel} – ${to['hour']}:${to['minute']} ${to['dayPeriod']} ${to['timeZoneName']}`;
 }
 
+/**
+ * Date line of a meeting dialog or popover row in the viewer's zone, e.g. "Thu, Oct 1 · 6:30 – 7:30 AM PDT".
+ * @description Without a duration it shows only the start time: "Thu, Oct 1 · 6:30 AM PDT". `timeZone` defaults to the viewer's own.
+ */
+export function formatMeetingDateTime(start: string | Date, durationMinutes?: number, timeZone?: string): string {
+  const startDate = new Date(start);
+  if (Number.isNaN(startDate.getTime())) return '';
+
+  const day = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone }).format(startDate);
+  const time =
+    durationMinutes === undefined
+      ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone, timeZoneName: 'short' }).format(startDate)
+      : formatMeetingTimeRange(startDate, durationMinutes, timeZone);
+  return `${day} · ${time}`;
+}
+
 /** Countdown copy: "Meeting starts in N min" under an hour, "Meeting starts in N h" under a day, otherwise null. */
 export function getMeetingStartsInLabel(start: string | Date, now: Date = new Date()): string | null {
   const diffMs = new Date(start).getTime() - now.getTime();
@@ -235,11 +287,97 @@ export function getMeetingStartsInLabel(start: string | Date, now: Date = new Da
   return `Meeting starts in ${Math.max(1, Math.floor(diffMs / HOUR_MS))} h`;
 }
 
-/** Visibility badge for a row: restricted wins over private, otherwise public. */
-export function getMeetingVisibilityInfo(meeting: Pick<Meeting, 'visibility' | 'restricted'>): MeetingVisibilityInfo {
-  if (meeting.restricted) return MEETING_VISIBILITY_INFO[MeetingVisibilityKind.RESTRICTED];
-  if (meeting.visibility === MeetingVisibility.PRIVATE) return MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PRIVATE];
-  return MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PUBLIC];
+/** Visibility badges for a row: Private and Restricted can both show, Public only when neither applies. */
+export function getMeetingVisibilityBadges(meeting: Pick<Meeting, 'visibility' | 'restricted'>): MeetingVisibilityInfo[] {
+  const badges: MeetingVisibilityInfo[] = [];
+  if (meeting.visibility === MeetingVisibility.PRIVATE) badges.push(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PRIVATE]);
+  if (meeting.restricted) badges.push(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.RESTRICTED]);
+  return badges.length > 0 ? badges : [MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PUBLIC]];
+}
+
+/**
+ * Where a meetings home row opens.
+ * @description Upcoming dates open the meeting page in a new tab with the password and the date. Past meetings open in place:
+ * organizers on the admin details page with `?project=` so the project context follows, everyone else on the meeting page.
+ */
+export function getMeetingHomeRowLink(row: MeetingHomeRow, view: MeetingDashboardView): MeetingHomeRowLink {
+  const { meeting } = row;
+  if (view === 'past') {
+    const resourceId = getPastMeetingResourceId(meeting);
+    if (!meeting.organizer) return { url: toAppUrl(['/meetings', resourceId]), newTab: false };
+    const path = getEntityCommands('meetings', resourceId, meeting.is_foundation, 'details') ?? ['/meetings', resourceId, 'details'];
+    return { url: toAppUrl(path, meeting.project_slug ? { project: meeting.project_slug } : undefined), newTab: false };
+  }
+
+  const route = buildMeetingOccurrenceRoute(meeting.id, row.startTime, row.durationMinutes, { password: meeting.password ?? undefined });
+  return { url: toAppUrl(route.path, route.queryParams), newTab: true };
+}
+
+/** Which dates a recurring RSVP covers, in the viewer's zone: "Oct 1 only", "Oct 1 and following" or "All dates". */
+export function getMeetingRsvpScopeLabel(rsvp: Pick<MeetingRsvp, 'scope' | 'occurrence_id' | 'meeting_and_occurrence_id'>): string {
+  if (rsvp.scope === 'all') return 'All dates';
+  const startMs = occurrenceIdToMs(getRsvpOccurrenceId(rsvp));
+  const date = startMs === null ? 'This date' : new Date(startMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return rsvp.scope === 'this_and_following' ? `${date} and following` : `${date} only`;
+}
+
+/** The meeting's project or foundation overview, or null without a project slug. */
+export function getMeetingProjectUrl(meeting: Pick<Meeting, 'project_slug' | 'is_foundation'>): string | null {
+  if (!meeting.project_slug) return null;
+  return toAppUrl([meeting.is_foundation ? 'foundation' : 'project', 'overview'], { project: meeting.project_slug });
+}
+
+/** Project eyebrow of a meetings home row or card, or null when the meeting names no project. */
+export function getMeetingHomeRowProject(
+  meeting: Pick<Meeting, 'project_name' | 'project_logo_url' | 'project_slug' | 'is_foundation'>
+): MeetingHomeRowProject | null {
+  const name = meeting.project_name?.trim();
+  if (!name) return null;
+  return {
+    name,
+    initial: Array.from(name)[0].toUpperCase(),
+    logo: meeting.project_logo_url ?? '',
+    url: getMeetingProjectUrl(meeting),
+    label: `${meeting.is_foundation ? 'Jump to foundation' : 'Jump to project'}: ${name}`,
+  };
+}
+
+/** Meeting type label and icon, or null when the meeting has no type. */
+export function getMeetingHomeRowType(meeting: Pick<Meeting, 'meeting_type'>): MeetingHomeRowType | null {
+  const type = meeting.meeting_type?.trim();
+  if (!type || type === MeetingType.NONE) return null;
+  const config = MEETING_TYPE_CONFIGS[type.toLowerCase()];
+  return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
+}
+
+/** "Organized by" avatars: owner or creator first ("You" for the viewer), then the other `organizers` by username. */
+export function getMeetingHomeRowOrganizers(
+  meeting: Pick<Meeting, 'created_by' | 'owner' | 'organizers'>,
+  viewerUsername?: string | null
+): MeetingHomeRowOrganizer[] {
+  const [primary] = collectMeetingOrganizers(meeting);
+  if (!primary) return [];
+  const name = getMeetingOrganizerDisplayName(primary);
+  const viewer = normalizeUsername(viewerUsername);
+  const organizers: MeetingHomeRowOrganizer[] = [
+    {
+      key: normalizeUsername(primary.username) || normalizeUsername(primary.email) || name,
+      label: isMeetingOrganizedByViewer(meeting, viewerUsername) ? 'You' : name,
+      name,
+      photo: primary.profile_picture ?? '',
+    },
+  ];
+  // Entries are usernames on read but emails on create, so the primary is skipped in either form.
+  const seen = new Set([normalizeUsername(primary.username), normalizeUsername(primary.email)]);
+  for (const entry of meeting.organizers ?? []) {
+    const key = normalizeUsername(entry);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    // An email entry shows only its local part, never the full address.
+    const username = (entry.trim().split('|').pop() ?? key).split('@')[0];
+    organizers.push({ key, label: key === viewer ? 'You' : username, name: username, photo: '' });
+  }
+  return organizers;
 }
 
 function isRsvpPending(meeting: Meeting, rsvp: MeetingRsvp | null | undefined): boolean {
@@ -289,6 +427,13 @@ function matchesMeetingSearch(row: MeetingHomeRow, query: string): boolean {
   return (row.meeting.committees ?? []).some((committee) => committee.name?.toLowerCase().includes(query));
 }
 
+/** Project wins; a foundation matches its own meetings and its non-foundation child projects'. */
+function matchesEntityFilters(meeting: Meeting, filters: MeetingsHomeFilters): boolean {
+  if (filters.project) return meeting.project_uid === filters.project;
+  if (!filters.foundation) return true;
+  return meeting.project_uid === filters.foundation || (meeting.parent_project_uid === filters.foundation && !meeting.is_foundation);
+}
+
 function matchesRsvpFilter(row: MeetingHomeRow, filter: MeetingResponseFilter): boolean {
   if (filter === 'all') return true;
   if (filter === 'pending') return isMeetingHomeRowPendingRsvp(row);
@@ -316,4 +461,15 @@ function getWeekdayIndex(start: string, timeZone: string | null | undefined): nu
   } catch {
     return date.getDay();
   }
+}
+
+/** Joins router-style segments (with or without slashes) into one app URL. */
+function toAppUrl(segments: readonly string[], queryParams?: Record<string, string>): string {
+  const path = segments
+    .flatMap((segment) => segment.split('/'))
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join('/');
+  const query = new URLSearchParams(queryParams).toString();
+  return `/${path}${query ? `?${query}` : ''}`;
 }

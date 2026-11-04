@@ -12,6 +12,7 @@ import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants/persona.constants'
 import { SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants/project-context.constants';
 import type { BoilerplatesEnvelope } from '@lfx-one/shared/interfaces/boilerplates.interface';
 import type { FaqEnvelope } from '@lfx-one/shared/interfaces/faq.interface';
+import type { FoundationMessageGoal } from '@lfx-one/shared/interfaces/foundation-message.interface';
 import type { MktgFrameworkAsset, MktgRunResultResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
 import type { MktgRevisionResponse, MktgRevisionSummary } from '@lfx-one/shared/interfaces/mktg-document-store.interface';
 import type { MktgDocumentRunProgress } from '@lfx-one/shared/interfaces/mktg-document-run.interface';
@@ -188,6 +189,204 @@ export function draftFrameworkAsset(): MktgFrameworkAsset {
     },
     report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
     checks: { findings: [] },
+  };
+}
+
+/**
+ * Synthetic framework shaped like a real run (four goals, sentence-length cells, many chips, long sources), for the
+ * narrow-viewport checks: the one-goal `draftFrameworkAsset()` fits any width and so proves nothing about overflow.
+ */
+export function realShapedFrameworkAsset(): MktgFrameworkAsset {
+  const goals: FoundationMessageGoal[] = [
+    {
+      id: 'adoption',
+      n: 1,
+      t: 'Adoption by platform teams',
+      vp: 'Platform teams ship a compliant toolchain in weeks instead of quarters, because every component is already vetted together.',
+      key: 'The toolkit is the fastest route from an empty repository to a production-grade, compliant platform.',
+      proof: [
+        ['Downloaded 1,200,000 times across 94 countries in the last twelve months', 'Website'],
+        ['Adopted as the default toolchain by 38 public-sector platform teams since 2025', 'Press release'],
+        ['Reference deployments documented for six cloud providers and bare metal', 'Docs'],
+      ],
+      bite: 'From an empty repository to a compliant platform before the quarter ends.',
+      icps: ['platform-teams'],
+    },
+    {
+      id: 'community',
+      n: 2,
+      t: 'A contributor base that outgrows any one vendor',
+      vp: 'Contributors join a neutral project where their work is reviewed quickly and credited publicly, whoever employs them.',
+      key: 'No single company steers the roadmap; the contributors who show up do.',
+      proof: [
+        ['3,400 contributors from 210 organisations merged a change in the last year', 'Plan'],
+        ['Median time from pull request to first review is under nineteen hours', 'Docs'],
+      ],
+      bite: 'The roadmap belongs to whoever shows up to build it.',
+      icps: ['contributors'],
+    },
+    {
+      id: 'membership',
+      n: 3,
+      t: 'Membership that funds the shared foundations',
+      vp: 'Members fund the security audits, release engineering and events that every downstream product depends on, at a fraction of building them alone.',
+      key: 'Membership is the cheapest way to keep the foundations every product stands on healthy.',
+      proof: [
+        ['Two independent security audits funded and published every year since 2024', 'Deck'],
+        ['Release cadence held at every eight weeks for three consecutive years', 'Website'],
+        ['Forty-one member organisations across five continents', 'LFX field'],
+      ],
+      bite: 'Pay for the foundations once, together, instead of again and again alone.',
+      icps: ['members'],
+    },
+    {
+      id: 'events',
+      n: 4,
+      t: 'Events where the roadmap is decided in the open',
+      vp: 'Attendees leave with the decisions, the people and the demos that shape the next release, not a marketing keynote.',
+      key: 'Every release is planned face to face, in public, at the project summit.',
+      proof: [
+        ['2,800 attendees at the last summit, a third of them first-time participants', 'Press release'],
+        ['Fourteen roadmap sessions recorded and published within a week of the summit', 'Web'],
+      ],
+      bite: 'The next release is decided in a room you can walk into.',
+      icps: ['platform-teams', 'contributors'],
+    },
+  ];
+  return {
+    kind: 'messaging-framework',
+    mode: 'draft',
+    content: {
+      mf: {
+        vision:
+          'A world where every organisation can build on infrastructure that is open, audited and governed by the people who depend on it. Nobody has to choose between moving fast and knowing what they run on.',
+        mission:
+          'We maintain a neutral, production-grade toolkit for building platforms, fund the security and release work that keeps it trustworthy, and bring its contributors and adopters together to decide its direction in the open.',
+        positioning:
+          'For platform teams and the organisations that rely on them, the toolkit is the open foundation that turns a compliance checklist into a working platform. Unlike single-vendor stacks, it is governed by its contributors and audited in public, so adopting it is a decision that outlasts any one supplier.',
+        tagline: 'Open foundations, audited in public, governed by the people who build on them.',
+        goals,
+        crosscut:
+          'Every goal reinforces the others: adoption brings contributors, contributors bring members, and members fund the audits and events that make the next wave of adoption safe.',
+        say: [
+          'open foundations',
+          'audited in public',
+          'governed by contributors',
+          'production-grade toolkit',
+          'neutral home',
+          'compliance by default',
+          'from an empty repository',
+          'decided in the open',
+          'vendor-neutral',
+          'shared release engineering',
+        ],
+        avoid: [
+          ['the fastest platform on the market', 'the fastest route from an empty repository to a compliant platform'],
+          ['enterprise-ready', 'audited in public and adopted by regulated platform teams'],
+          ['backed by the biggest vendors', 'governed by the contributors who show up, whoever employs them'],
+          ['our community', 'the contributors and the organisations that depend on the toolkit'],
+          ['cutting-edge innovation', 'a release every eight weeks, planned in the open'],
+        ],
+        anchor: ['Which goal does this serve?', 'Which segment is it for?', 'Which key message does it carry?'],
+        notes:
+          'The adoption figures come from the [download statistics page](https://www.example.org/metrics/downloads) and the audit cadence from the [security programme overview](https://www.example.org/security/programme); both were read on the day of the run.',
+      },
+      icp: [
+        {
+          id: 'platform-teams',
+          name: 'Platform teams',
+          kind: 'Organization',
+          who: 'Teams of five to fifty engineers who run the internal platform other product teams deploy to.',
+          goals: ['adoption', 'events'],
+          need: 'A compliant toolchain they can stand behind without assembling and auditing it themselves.',
+          value: 'A vetted toolkit with documented reference deployments and a predictable release cadence.',
+          lead: 'The fastest route from an empty repository to a compliant platform.',
+          proof: [['Adopted as the default toolchain by 38 public-sector platform teams since 2025', 'Press release']],
+          cta: 'Deploy the reference stack for your cloud provider.',
+          channels: ['Docs', 'Summit'],
+          objection: ['Will this survive if the largest contributor leaves?', 'Governance by contributors, audited in public.'],
+          personas: [['Platform lead', 'predictability']],
+          basis: 'Website',
+        },
+        {
+          id: 'contributors',
+          name: 'Contributors',
+          kind: 'Individual',
+          who: 'Engineers who maintain a component or want their work reviewed and credited in a neutral project.',
+          goals: ['community'],
+          need: 'Fast reviews and public credit for the work they do.',
+          value: 'A median first review under nineteen hours and a public contributor record.',
+          lead: 'The roadmap belongs to whoever shows up to build it.',
+          proof: [['Median time from pull request to first review is under nineteen hours', 'Docs']],
+          cta: 'Pick up a good first issue.',
+          channels: ['Docs'],
+          objection: ['Is my work going to be credited?', null],
+          personas: [['Maintainer', 'recognition']],
+          basis: 'Plan',
+        },
+        {
+          id: 'members',
+          name: 'Member organisations',
+          kind: 'Organization',
+          who: 'Organisations whose products depend on the toolkit and who fund its shared work.',
+          goals: ['membership'],
+          need: 'Security audits and release engineering they would otherwise fund alone.',
+          value: 'Two published audits a year and a release every eight weeks, funded together.',
+          lead: 'Pay for the foundations once, together.',
+          proof: [['Two independent security audits funded and published every year since 2024', 'Deck']],
+          cta: 'Join as a member.',
+          channels: ['Summit'],
+          objection: ['What do we get that non-members do not?', 'A seat where the audit scope and the release plan are decided.'],
+          personas: [['Open source programme office lead', 'risk']],
+          basis: 'Deck',
+        },
+      ],
+      mh: {
+        umbrella: 'Open foundations, audited in public.',
+        line: 'Governed by the people who build on them.',
+        pillars: [
+          { t: 'Open', m: 'Every component is developed and audited in public.', p: [['Two independent security audits published every year', 'Deck']] },
+          { t: 'Governed', m: 'Contributors steer the roadmap, not a single vendor.', p: [['3,400 contributors from 210 organisations', 'Plan']] },
+        ],
+        found: 'A Linux Foundation project.',
+        aud: [
+          ['Platform teams', 'The fastest route from an empty repository to a compliant platform.'],
+          ['Contributors', 'The roadmap belongs to whoever shows up to build it.'],
+        ],
+      },
+      nums: [
+        ['1,200,000', 'downloads in the last twelve months'],
+        ['3,400', 'contributors from 210 organisations'],
+        ['41', 'member organisations across five continents'],
+        ['2,800', 'attendees at the last summit'],
+      ],
+    },
+    report: {
+      sources_read: [
+        'https://www.example.org/metrics/downloads/annual-report-2026/by-country-and-platform/summary',
+        'https://www.example.org/security/programme/independent-audits/2025-second-half/findings-and-remediation',
+        'https://docs.example.org/reference-deployments/cloud-providers/compared/with-bare-metal-notes',
+      ],
+      sources_failed: [
+        { name: 'https://www.example.org/summit/2026/roadmap-sessions/recordings', reason: 'The page answered with a sign-in wall and no readable text.' },
+      ],
+      gaps: [
+        'No source states how many of the public-sector adopters run the toolkit in production rather than in a pilot.',
+        'The member count by region is only given for three of the five continents.',
+      ],
+      notes: '',
+    },
+    checks: { findings: [] },
+  };
+}
+
+/** The approved framework document with the real-shaped asset, for the narrow-viewport checks. */
+export function realShapedFrameworkRevisionResponse(): MktgRevisionResponse {
+  const framework = realShapedFrameworkAsset();
+  return {
+    ...columnAssetRevisionResponse('foundation-message'),
+    markdown: JSON.stringify(framework.content),
+    sidecar: { mode: framework.mode, report: framework.report, checks: framework.checks },
   };
 }
 

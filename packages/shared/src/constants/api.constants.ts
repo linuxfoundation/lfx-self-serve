@@ -46,6 +46,15 @@ export const QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100;
 export const QUERY_SERVICE_MAX_PAGE_SIZE = 1000;
 
 /**
+ * Maximum number of query-service `/query/resources` pages one drain follows.
+ * @description Bounds `fetchAllQueryResources` and `resolveCreatedByForMeetings` so a runaway
+ * `page_token` chain cannot accumulate rows until the SSR server exhausts its heap (#4964). A drain
+ * that is still handed a token after this many pages stops: strict callers throw, others keep the
+ * rows fetched so far and log a `max_pages` warning.
+ */
+export const QUERY_SERVICE_MAX_PAGES = 100;
+
+/**
  * Maximum number of access-check tuples per POST request to the access-check service.
  * @description Bounds OpenFGA payload size and latency. When the caller has more than this many
  * tuples to check, split into chunks of this size and fan out with Promise.allSettled.
@@ -135,6 +144,30 @@ export const NATS_CONFIG = {
    */
   LOOKUP_BATCH_BUDGET_MS: 15000,
 } as const;
+
+/** Email service replies whose contract guarantees rejection before any SMTP attempt. */
+export const EMAIL_SERVICE_PRE_SEND_REJECTIONS: readonly string[] = [
+  'invalid request payload',
+  'to, subject, html, and text are required',
+  'to address too long',
+  'from address too long',
+  'reply_to address too long',
+  'subject too long',
+  'from_display_name too long',
+  'invalid from address',
+  'from address domain not allowed',
+  'invalid reply_to address',
+  'reply_to address domain not allowed',
+  'invalid group_id',
+  'group is full',
+  'internal error',
+];
+
+/** Fixed SMTP-attempt error reply; safe to log, but it does not prove that nothing was sent. */
+export const EMAIL_SERVICE_DELIVERY_FAILED_REASON = 'email delivery failed';
+
+/** An email-service error reply after SMTP may have started; not proof of non-delivery. */
+export const EMAIL_SEND_UNCONFIRMED = 'EMAIL_SEND_UNCONFIRMED';
 
 /**
  * Changelog (lfx-changelog) configuration constants

@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, Signal, signal } from '@angular/core';
 import { RSVP_RESPONSES } from '@lfx-one/shared/constants';
 import { CreateMeetingRsvpRequest, Meeting, MeetingRsvp, MeetingRsvpSubmitError, RsvpResponse, RsvpScope } from '@lfx-one/shared/interfaces';
 import { occurrenceIdToSeconds } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { catchError, defer, filter, map, Observable, tap, throwError } from 'rxjs';
+import { catchError, defer, filter, finalize, map, Observable, tap, throwError } from 'rxjs';
 
 /**
  * Submits the signed-in user's RSVP and records the confirmed answer, with no UI of its own.
@@ -21,6 +21,10 @@ export class MeetingRsvpService {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
+  private readonly submittingIds = signal<ReadonlySet<string>>(new Set());
+
+  /** Meetings with an RSVP write in flight; a second write to the same series could be confirmed out of order. */
+  public readonly submittingMeetingIds: Signal<ReadonlySet<string>> = this.submittingIds.asReadonly();
 
   /**
    * RSVPs to `meeting`. `single` and `this_and_following` need `occurrenceId`; `all` ignores it.
@@ -41,6 +45,7 @@ export class MeetingRsvpService {
         request.occurrence_id = scopedOccurrenceId;
       }
 
+      this.submittingIds.update((ids) => new Set(ids).add(meeting.id));
       return this.meetingService.createMeetingRsvp(meeting.id, request).pipe(
         map((rsvp: MeetingRsvp) => {
           const acknowledged = {
@@ -57,7 +62,8 @@ export class MeetingRsvpService {
         filter((savedRsvp) => this.userService.isMeetingRsvpCurrent(savedRsvp, meeting, subject)),
         // Defer personal refetches outside Me without keeping a stale replay on return.
         tap(() => this.userService.refreshUserMeetings(this.lensService.activeLens() === 'me')),
-        catchError((error: HttpErrorResponse) => throwError((): MeetingRsvpSubmitError => this.describeFailure(error)))
+        catchError((error: HttpErrorResponse) => throwError((): MeetingRsvpSubmitError => this.describeFailure(error))),
+        finalize(() => this.submittingIds.update((ids) => new Set([...ids].filter((id) => id !== meeting.id))))
       );
     });
   }

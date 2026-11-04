@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Project } from './project.interface';
+import { SocialShareChannel } from './social-share.interface';
 
 export type NewsletterStatusTabId = 'draft' | 'scheduled' | 'sent' | 'optout';
 
@@ -161,6 +162,12 @@ export interface Newsletter {
   version: number;
   created_at: string;
   updated_at: string;
+  /** In-app share count, one per user per channel. Sent newsletters only; absent when unknown — not zero. */
+  share_count?: number;
+  /** Raw open total (every open, not unique readers). Sent newsletters from GET one only; absent when unknown — not zero. */
+  total_opens?: number;
+  /** Unique web page views, one per signed-in user, ever. Sent newsletters only; absent when unknown — not zero. Shown summed with `total_opens` as views. */
+  page_view_count?: number;
 }
 
 /**
@@ -336,6 +343,34 @@ export interface NewsletterInviteResult {
   foundation_name: string;
 }
 
+/** Response of GET /public/api/newsletters/:projectSlug/:newsletterUid/preview — what a link preview may show of a sent issue. */
+export interface NewsletterSharePreview {
+  subject: string;
+}
+
+/** Load state of the signed-out share-preview page; `preview` is null while loading or when nothing may be shown. */
+export interface NewsletterSharePreviewState {
+  loading: boolean;
+  preview: NewsletterSharePreview | null;
+}
+
+/** What the newsletter reader page looks up to decide whether to show the invite CTA. */
+export interface NewsletterInviteLookup {
+  projectUid: string;
+  newsletterId: string;
+  /** The member benefit just added the reader to the group (or found them already on it). */
+  joined: boolean;
+}
+
+/** The newsletter reader breadcrumb's middle crumb: where "back to the list" goes. */
+export interface NewsletterReaderCrumb {
+  label: string;
+  /** Rendered href, so modified clicks open the same page in a new tab. */
+  href: string;
+  /** Router commands for a plain click. */
+  commands: string[];
+}
+
 /** DynamicDialog data of the My Newsletters invite dialog. */
 export interface NewsletterInviteDialogData {
   foundation: MyNewsletterFoundation;
@@ -468,6 +503,12 @@ export interface CommitteeNewsletter {
   project_uid: string;
   subject: string;
   sent_at?: string;
+  /** In-app share count, one per user per channel; absent when unknown — not zero. */
+  share_count?: number;
+  /** Raw open total, the same value GET one returns; absent when unknown — not zero. */
+  total_opens?: number;
+  /** Unique web page views, one per user; absent when unknown — not zero. */
+  page_view_count?: number;
 }
 
 export interface CommitteeNewsletterListResponse {
@@ -522,6 +563,29 @@ export interface MyNewslettersState {
  */
 export interface MyNewsletterRow extends MyNewsletter {
   issuePath: string | null;
+  /** The issue's `share_count`; null when the count is unknown. */
+  shareCount: number | null;
+  /** Email opens plus unique web page views (see `combinedViewCount`); null when both are unknown. */
+  viewCount: number | null;
+}
+
+/** The issue a Share dialog was opened for — captured at open so a later navigation can't retarget it. */
+export interface NewsletterShareTarget {
+  projectUid: string;
+  newsletterId: string;
+}
+
+/** A share made from the reader drawer's dialog, bound to the issue it was opened for. */
+export interface NewsletterShareEvent extends NewsletterShareTarget {
+  channel: SocialShareChannel;
+}
+
+/** Share count shown beside a newsletter's Share button, bumped locally after each accepted share. */
+export interface NewsletterShareTally {
+  /** Null when the server did not return a count (unknown, not zero). */
+  count: number | null;
+  /** Channels already counted on this page — the server counts each channel once per user. */
+  channels: SocialShareChannel[];
 }
 
 export interface NewsletterListParams {
@@ -616,6 +680,17 @@ export interface NewsletterAnalytics {
   click_to_open_rate?: number;
   daily_clicks?: NewsletterDailyClicks[];
   top_links?: NewsletterLinkClicks[];
+  /** In-app shares, one per user per channel. Absent when the share store can't be read. */
+  total_shares?: number;
+  /** `total_shares` split by channel; every channel present, `0` when unused. */
+  shares_by_channel?: Partial<Record<SocialShareChannel, number>>;
+  /** Unique web page views, one per signed-in user. Absent for unsent newsletters or when the view store can't be read. */
+  total_page_views?: number;
+}
+
+/** Body of POST /api/newsletters/:projectUid/:newsletterUid/share. */
+export interface NewsletterShareRequest {
+  channel: SocialShareChannel;
 }
 
 /**

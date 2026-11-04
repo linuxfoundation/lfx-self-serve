@@ -9,6 +9,8 @@ import {
   MENTORSHIP_ADD_NOTE_LABEL,
   MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL,
   MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL,
+  MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS,
+  MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
   MENTORSHIP_CURRENT_MENTEE_STATUSES,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_STATUS_LABELS,
@@ -29,6 +31,7 @@ import {
 import {
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
+  mentorshipContactMenteeUrl,
   mentorshipMenteeTaskCompletion,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
@@ -69,6 +72,8 @@ export class MentorMenteesTabComponent {
   protected readonly createGroupTaskLabel = MENTORSHIP_MENTOR_CREATE_GROUP_TASK_LABEL;
   protected readonly viewTasksLabel = MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL;
   protected readonly minimizeTasksLabel = MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL;
+  protected readonly contactLabel = MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS['contact-mentee'];
+  protected readonly contactIcon = MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS['contact-mentee'];
 
   /**
    * Paginator offset. Tracked so that a shrinking list can send the table back to the
@@ -149,6 +154,8 @@ export class MentorMenteesTabComponent {
       ...mentorshipNoteDisplay({}, person, MENTORSHIP_ADD_NOTE_LABEL),
       hasTasks: mentorshipApplicantHasTasks(person),
       taskRows: mentorshipApplicantTaskRows(person.tasks ?? []),
+      // Offered at every status; null drops the link when the address is not safe to put in a `mailto:`.
+      contactUrl: mentorshipContactMenteeUrl(person.email),
     };
   }
 

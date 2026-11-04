@@ -767,7 +767,7 @@
               }
             </ul>
           } @else {
-            <p [class]="caption" data-testid="brand-kit-web-view-sources-failed-empty">Every source was read.</p>
+            <p [class]="caption" data-testid="brand-kit-web-view-sources-failed-empty">{{ noSourceFailedNote }}</p>
           }
         </div>
         <div [class]="card">
@@ -778,6 +778,9 @@
                 <li>{{ gap }}</li>
               }
             </ul>
+            @if (acceptedGapsNote(); as accepted) {
+              <p [class]="caption" data-testid="brand-kit-web-view-gaps-accepted">{{ accepted }}</p>
+            }
           } @else {
             <p [class]="caption" data-testid="brand-kit-web-view-gaps-empty">The sources left no gap.</p>
           }

@@ -4,6 +4,7 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
+  NewsletterSharePreview,
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
   GenerateNewsletterResponse,
@@ -26,10 +27,12 @@ import {
   NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterStatusCounts,
+  SocialShareChannel,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, take, throwError } from 'rxjs';
+import { PlausibleService } from '@services/plausible.service';
+import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -47,6 +50,7 @@ import { catchError, Observable, take, throwError } from 'rxjs';
 })
 export class NewsletterService {
   private readonly http = inject(HttpClient);
+  private readonly plausible = inject(PlausibleService);
 
   public getRecipientCount(projectUid: string, payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientCount> {
     return this.http.post<NewsletterRecipientCount>(`/api/projects/${this.enc(projectUid)}/newsletters/recipient-count`, payload).pipe(take(1));
@@ -134,6 +138,40 @@ export class NewsletterService {
   }
 
   /**
+   * Records an in-app share of a sent issue (#4958) and, once the server accepts it, sends the matching
+   * Plausible event — so Plausible and `total_shares` count the same accepted shares. Emits `true` when
+   * the server accepted the share, `false` when it did not (the 403 while impersonating, a 404 for a
+   * draft, a network error). It never errors: sharing must not fail because tracking did.
+   */
+  public recordShare(projectUid: string, newsletterUid: string, channel: SocialShareChannel): Observable<boolean> {
+    return this.http.post<void>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/share`, { channel }).pipe(
+      take(1),
+      tap(() => this.plausible.trackEvent('newsletter_shared', { newsletterId: newsletterUid, channel })),
+      map(() => true),
+      catchError((error) => {
+        console.warn('[NewsletterService] Failed to record newsletter share', error);
+        return of(false);
+      })
+    );
+  }
+
+  /**
+   * Records a unique web page view of a sent issue (one per user per issue, counted server-side). Emits
+   * `true` when the server accepted it and `false` otherwise (the 403 while impersonating, a 404 for a
+   * draft, a network error). It never errors: reading must not fail because tracking did.
+   */
+  public recordPageView(projectUid: string, newsletterUid: string): Observable<boolean> {
+    return this.http.post<void>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/page-view`, {}).pipe(
+      take(1),
+      map(() => true),
+      catchError((error) => {
+        console.warn('[NewsletterService] Failed to record newsletter page view', error);
+        return of(false);
+      })
+    );
+  }
+
+  /**
    * Me-lens My Newsletters by foundation (#3483): one card per foundation plus the full feed (tagged
    * with its foundation) and whether the user may invite colleagues. Errors propagate to the page.
    */
@@ -145,6 +183,14 @@ export class NewsletterService {
         return throwError(() => error);
       })
     );
+  }
+
+  /**
+   * Signed-out link preview of a permalink (#4940): the subject of a sent issue, nothing else. 404 for
+   * an unknown or unsent issue; the caller falls back to a neutral card.
+   */
+  public getNewsletterSharePreview(projectSlug: string, newsletterUid: string): Observable<NewsletterSharePreview> {
+    return this.http.get<NewsletterSharePreview>(`/public/api/newsletters/${this.enc(projectSlug)}/${this.enc(newsletterUid)}/preview`).pipe(take(1));
   }
 
   /** Emails a colleague an invitation to a foundation's newsletter (server checks sender and invitee eligibility). */

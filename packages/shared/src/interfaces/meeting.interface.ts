@@ -213,6 +213,9 @@ export interface MeetingOrganizerChipModel {
   overflow: MeetingOrganizerLink[];
 }
 
+/** Visible status wording for a guest row. `Invite declined` is a calendar/Zoom invite decline, not an RSVP. */
+export type RegistrantStatusLabel = 'Accepted' | 'Declined' | 'Invite declined' | 'Maybe' | 'Pending';
+
 /** Role label a guest carries in the guest panel: a listed organizer, a Meeting Host who isn't one, or neither. */
 export type MeetingGuestRole = 'organizer' | 'host' | null;
 
@@ -2308,14 +2311,14 @@ export type MeetingComposerVariant = 'drawer' | 'quick';
 export type MeetingComposerLoadFailure = 'retryable' | 'denied';
 
 /**
- * What the post-create toast needs to render its actions.
- * @description Carried on the PrimeNG message's `data`, since creating no longer navigates anywhere —
- * the toast is the only route back to the meeting that was just created.
+ * What the post-create toast needs to run its actions.
+ * @description Creating no longer navigates anywhere, so the toast is the only route back to the meeting
+ * that was just created.
  */
 export interface MeetingComposerToastData {
   meetingUid: string;
   meetingTitle: string;
-  /** Router link to the meeting's public join page. */
+  /** Router URL of the meeting's public join page. */
   meetingUrl: string;
   /**
    * Router navigation state that page needs — the access password, for a private or restricted meeting.
@@ -2372,11 +2375,3 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
-
-/** A placeholder block in the meetings redesign's right column. */
-export interface MeetingsRailBlock {
-  /** Stable key, also used in the block's test ids. */
-  key: string;
-  /** Uppercase kicker shown above the block. */
-  label: string;
-}

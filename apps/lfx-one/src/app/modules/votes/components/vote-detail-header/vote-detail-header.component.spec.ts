@@ -11,7 +11,7 @@ import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { of } from 'rxjs';
 import { MessageService } from 'primeng/api';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteDetailHeaderComponent } from './vote-detail-header.component';
 
@@ -54,6 +54,7 @@ describe('VoteDetailHeaderComponent', () => {
       canSendBallots?: boolean;
       slideBusy?: boolean;
       limited?: boolean;
+      resultsHeld?: boolean;
     } = {}
   ): void {
     fixture = TestBed.createComponent(VoteDetailHeaderComponent);
@@ -64,6 +65,7 @@ describe('VoteDetailHeaderComponent', () => {
     fixture.componentRef.setInput('canSendBallots', inputs.canSendBallots ?? false);
     fixture.componentRef.setInput('slideBusy', inputs.slideBusy ?? false);
     fixture.componentRef.setInput('limited', inputs.limited ?? false);
+    fixture.componentRef.setInput('resultsHeld', inputs.resultsHeld ?? false);
     fixture.componentRef.setInput('activeTab', 'overview');
     fixture.componentRef.setInput('tabs', VOTE_DETAIL_TABS);
     fixture.detectChanges();
@@ -83,27 +85,23 @@ describe('VoteDetailHeaderComponent', () => {
     expect(title.classList).toContain('break-words');
   });
 
-  it('renders the title, status, group, method, privacy, close date and invited voters', () => {
+  it('renders the title, status and privacy tags', () => {
     render();
 
     expect(text('vote-detail-header-title')).toBe('Synthetic roadmap approval');
     expect(text('vote-detail-header-status')).toContain('Active');
-    expect(text('vote-detail-header-group')).toContain('Synthetic Steering Committee');
-    expect(text('vote-detail-header-method')).toContain('Plurality vote');
     expect(text('vote-detail-header-privacy')).toContain('Named ballot');
-    expect(text('vote-detail-header-close-date')).toMatch(/^Closes /);
-    expect(text('vote-detail-header-invited')).toBe('12 invited voters');
   });
 
-  it('renders group and method as plain meta-row text, not chips', () => {
-    render();
+  // Group, method, close date, countdown and invited voters live in the Vote details card (#5022).
+  it.each([false, true])('renders no metadata strip (limited: %s)', (limited) => {
+    render({ limited, vote: makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-20T12:00:00Z' }) });
 
-    const meta = fixture.nativeElement.querySelector('[data-testid="vote-detail-header-meta"]') as HTMLElement;
-    expect(meta.querySelector('[data-testid="vote-detail-header-group"]')?.textContent).toContain('Synthetic Steering Committee');
-    expect(meta.querySelector('[data-testid="vote-detail-header-method"]')?.textContent).toContain('Plurality vote');
-    expect(exists('vote-detail-header-tags')).toBe(false);
-    expect(fixture.nativeElement.querySelector('lfx-tag[data-testid="vote-detail-header-group"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('lfx-tag[data-testid="vote-detail-header-method"]')).toBeNull();
+    for (const suffix of ['meta', 'group', 'method', 'close-date', 'time-remaining', 'ended-early', 'invited', 'created', 'comments']) {
+      expect(exists(`vote-detail-header-${suffix}`)).toBe(false);
+    }
+    expect(fixture.nativeElement.textContent).not.toContain('Synthetic Steering Committee');
+    expect(fixture.nativeElement.textContent).not.toContain('invited voters');
   });
 
   it.each([undefined, null])('shows unavailable privacy for missing metadata (%s)', (privacy) => {
@@ -115,209 +113,23 @@ describe('VoteDetailHeaderComponent', () => {
     expect(text('vote-detail-header-privacy')).toBe('Ballot privacy unavailable');
   });
 
-  it('labels a majority vote as majority, not as a ranked method', () => {
-    render({ vote: makeVote({ poll_type: PollType.MAJORITY }) });
-
-    expect(text('vote-detail-header-method')).toBe('Majority vote');
-  });
-
   it('labels a pseudo-anonymous ended vote', () => {
-    render({ vote: makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true, total_voting_request_invitations: 1 }) });
+    render({ vote: makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true }) });
 
     expect(text('vote-detail-header-privacy')).toContain('Pseudo-anonymous ballot');
-    expect(text('vote-detail-header-close-date')).toMatch(/^Closed /);
-    expect(text('vote-detail-header-invited')).toBe('1 invited voter');
-    expect(exists('vote-detail-header-ended-early')).toBe(false);
   });
 
-  it('notes an early close without claiming full participation', () => {
-    render({
-      vote: makeVote({
-        status: PollStatus.ENDED,
-        early_end_time: '2026-10-20T12:00:00Z',
-        total_voting_request_invitations: 10,
-        num_response_received: 3,
-      }),
-    });
-
-    expect(text('vote-detail-header-close-date')).toMatch(/^Closed /);
-    expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026.');
-  });
-
-  it.each([
-    [PollStatus.ENDED, '2026-10-20T12:00:00Z', '2026-10-30T16:00:00Z', 'Closed Oct 20, 2026 12:00 PM UTC'],
-    ['Ended' as PollStatus, '2026-10-20T12:00:00Z', '2026-10-30T16:00:00Z', 'Closed Oct 20, 2026 12:00 PM UTC'],
-    [PollStatus.ENDED, undefined, '2026-10-30T16:00:00Z', 'Closed Oct 30, 2026 4:00 PM UTC'],
-    [PollStatus.ENDED, '', '2026-10-30T16:00:00Z', 'Closed Oct 30, 2026 4:00 PM UTC'],
-    [PollStatus.ENDED, '2026-10-20T12:00:00Z', '', 'Closed Oct 20, 2026 12:00 PM UTC'],
-    [PollStatus.ACTIVE, '2026-10-20T12:00:00Z', '2026-10-30T16:00:00Z', 'Closes Oct 30, 2026 4:00 PM UTC'],
-    [PollStatus.ENDED, undefined, '', ''],
-    [PollStatus.ACTIVE, '2026-10-20T12:00:00Z', '', ''],
-  ] as const)('formats the %s close date with early time %s and deadline %s', (status, earlyEndTime, endTime, expected) => {
-    render({ vote: makeVote({ status, early_end_time: earlyEndTime, end_time: endTime }) });
-
-    expect(text('vote-detail-header-close-date')).toBe(expected);
-  });
-
-  it('updates the close date when the vote ends early', () => {
-    render();
-    expect(text('vote-detail-header-close-date')).toBe('Closes Oct 30, 2026 4:00 PM UTC');
-
-    fixture.componentRef.setInput('vote', makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-20T12:00:00Z' }));
-    fixture.detectChanges();
-
-    expect(text('vote-detail-header-close-date')).toBe('Closed Oct 20, 2026 12:00 PM UTC');
-    expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026.');
-  });
-
-  it.each(['creator', 'voter'] as const)('exposes the full closing time zone to screen readers for a %s', (audience) => {
-    render({ audience });
-    const closeDate: HTMLElement = fixture.nativeElement.querySelector('[data-testid="vote-detail-header-close-date"]');
-
-    expect(closeDate.getAttribute('aria-label')).toBe('Closes Oct 30, 2026 4:00 PM UTC (Coordinated Universal Time)');
-
-    fixture.componentRef.setInput('vote', makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-20T12:00:00Z' }));
-    fixture.detectChanges();
-
-    expect(closeDate.getAttribute('aria-label')).toBe('Closed Oct 20, 2026 12:00 PM UTC (Coordinated Universal Time)');
-  });
-
-  describe('time remaining (#4767)', () => {
-    beforeEach(() => {
-      vi.useFakeTimers({ toFake: ['Date'] });
-      vi.setSystemTime(new Date('2026-10-26T16:00:00Z'));
-    });
-    afterEach(() => vi.useRealTimers());
-
-    it('shows how long an active vote has left, beside the unchanged close date', () => {
+  it('schedules no countdown timer now that the Vote details card owns it', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'browser' });
+    try {
       render();
 
-      expect(text('vote-detail-header-time-remaining')).toBe('Closes in 4 days');
-      expect(text('vote-detail-header-close-date')).toBe('Closes Oct 30, 2026 4:00 PM UTC');
-    });
-
-    it('shows no time remaining for an ended vote', () => {
-      render({ vote: makeVote({ status: PollStatus.ENDED }) });
-
-      expect(exists('vote-detail-header-time-remaining')).toBe(false);
-    });
-
-    it.each(['2026-10-20T16:00:00Z', '2026-10-26T15:00:00Z', '2026-10-26T16:00:00Z'])('shows no time remaining at or after the deadline (%s)', (endTime) => {
-      render({ vote: makeVote({ end_time: endTime }) });
-
-      expect(exists('vote-detail-header-time-remaining')).toBe(false);
-    });
-
-    it('still shows time remaining for a deadline later today', () => {
-      render({ vote: makeVote({ end_time: '2026-10-26T17:00:00Z' }) });
-
-      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
-    });
-
-    it('shows none while limited', () => {
-      render({ limited: true });
-
-      expect(exists('vote-detail-header-time-remaining')).toBe(false);
-    });
-  });
-
-  describe('mounted countdown clock (#4767)', () => {
-    beforeEach(() => {
-      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
-      vi.stubEnv('TZ', 'UTC');
-      vi.setSystemTime(new Date('2026-10-26T16:00:00Z'));
-      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'browser' });
-    });
-
-    afterEach(() => {
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
       fixture.destroy();
       vi.useRealTimers();
-      vi.unstubAllEnvs();
-    });
-
-    // Flush scheduled zoneless rendering, not fixture.detectChanges: elapsed time must update the DOM itself.
-    async function tick(ms: number): Promise<void> {
-      await vi.advanceTimersByTimeAsync(ms);
-      await fixture.whenStable();
     }
-
-    it('removes the countdown when the mounted vote reaches its deadline', async () => {
-      render({ vote: makeVote({ end_time: '2026-10-26T16:00:01Z' }) });
-      await fixture.whenStable();
-      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
-
-      await tick(999);
-      expect(exists('vote-detail-header-time-remaining')).toBe(true);
-      await tick(2);
-
-      expect(exists('vote-detail-header-time-remaining')).toBe(false);
-      expect(text('vote-detail-header-close-date')).toBe('Closes Oct 26, 2026 4:00 PM UTC');
-    });
-
-    it('refreshes the relative label at midnight without changing vote inputs', async () => {
-      vi.setSystemTime(new Date('2026-10-26T23:59:59Z'));
-      render({ vote: makeVote({ end_time: '2026-10-28T16:00:00Z' }) });
-      await fixture.whenStable();
-      expect(text('vote-detail-header-time-remaining')).toBe('Closes in 2 days');
-
-      await tick(1_001);
-
-      expect(text('vote-detail-header-time-remaining')).toBe('Closes tomorrow');
-    });
-
-    it('uses the viewer-local midnight across a daylight-saving transition', async () => {
-      vi.stubEnv('TZ', 'America/New_York');
-      vi.setSystemTime(new Date('2026-03-08T05:00:00Z')); // Midnight EST; the next midnight is only 23 hours away.
-      render({ vote: makeVote({ end_time: '2026-03-09T16:00:00Z' }) });
-      await fixture.whenStable();
-      expect(text('vote-detail-header-time-remaining')).toBe('Closes tomorrow');
-
-      await tick(23 * 60 * 60 * 1_000 + 1);
-
-      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
-    });
-
-    it('reschedules expiry when the deadline changes on the mounted header', async () => {
-      render({ vote: makeVote({ end_time: '2026-10-26T16:00:01Z' }) });
-      await fixture.whenStable();
-      fixture.componentRef.setInput('vote', makeVote({ end_time: '2026-10-26T16:00:02Z' }));
-      await tick(1);
-
-      await tick(1_000);
-      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
-      await tick(1_000);
-
-      expect(exists('vote-detail-header-time-remaining')).toBe(false);
-    });
-
-    it('cancels the clock when the vote ends early', async () => {
-      render();
-      await fixture.whenStable();
-      fixture.componentRef.setInput('vote', makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-26T16:00:00Z' }));
-      await tick(1);
-
-      expect(exists('vote-detail-header-time-remaining')).toBe(false);
-      expect(vi.getTimerCount()).toBe(0);
-    });
-
-    it('cleans up the pending countdown timeout when destroyed', async () => {
-      render();
-      await fixture.whenStable();
-      expect(vi.getTimerCount()).toBe(1);
-
-      fixture.destroy();
-
-      expect(vi.getTimerCount()).toBe(0);
-    });
-
-    it('does not schedule a countdown timeout during SSR', async () => {
-      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
-      render();
-      await fixture.whenStable();
-
-      expect(text('vote-detail-header-time-remaining')).toBe('Closes in 4 days');
-      expect(vi.getTimerCount()).toBe(0);
-    });
   });
 
   describe('actions', () => {
@@ -458,13 +270,36 @@ describe('VoteDetailHeaderComponent', () => {
   it.each([PollStatus.ACTIVE, PollStatus.ENDED])('shows only title, status and back navigation when limited on a %s vote (#4330)', (status) => {
     render({ limited: true, vote: makeVote({ status, early_end_time: '2026-10-20T12:00:00Z' }) });
 
-    for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+    for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'created', 'comments', 'view-results', 'tabs']) {
       expect(exists(`vote-detail-header-${suffix}`)).toBe(false);
     }
     expect(fixture.nativeElement.querySelector('[data-testid^="vote-detail-header-tab-"]')).toBeNull();
     expect(text('vote-detail-header-title')).toBe('Synthetic roadmap approval');
     expect(exists('vote-detail-header-status')).toBe(true);
     expect(exists('vote-detail-header-back')).toBe(true);
+  });
+
+  describe('visibility tooltip', () => {
+    const privacyTooltip = (): string => fixture.debugElement.query(By.css('[data-testid="vote-detail-header-privacy"]')).componentInstance.tooltip();
+
+    it('explains the visibility rules to a manager on an open named vote', () => {
+      render({ audience: 'creator', vote: makeVote({ pseudo_anonymity: false }) });
+
+      expect(privacyTooltip()).toContain('Voters see only their own response until the vote closes.');
+      expect(privacyTooltip()).toContain("You can see each voter's ballot on the Voters tab.");
+    });
+
+    it('explains the final visibility on a closed vote', () => {
+      render({ audience: 'creator', vote: makeVote({ status: PollStatus.ENDED }) });
+
+      expect(privacyTooltip()).toContain('As a manager, you can see the final totals and comments.');
+    });
+
+    it('explains held totals when results are still being finalized', () => {
+      render({ audience: 'creator', resultsHeld: true, vote: makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true }) });
+
+      expect(privacyTooltip()).toContain('Totals and comments will appear once they are finalized.');
+    });
   });
 
   it('renders the tab strip and emits the clicked tab', () => {

@@ -4,18 +4,22 @@
 import { NgClass } from '@angular/common';
 import { NO_ERRORS_SCHEMA, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
+import { ActivatedRoute, NavigationEnd, NavigationError, Router } from '@angular/router';
 import { ALL_LENSES } from '@lfx-one/shared/constants';
 import { AppService } from '@services/app.service';
+import { ChunkLoadRecoveryService } from '@services/chunk-load-recovery.service';
+import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
 import { FocusTrap } from 'primeng/focustrap';
+import { MessageService } from 'primeng/api';
 import { Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MainLayoutComponent } from './main-layout.component';
+import { ChunkLoadRecoveryComponent } from '../../shared/components/chunk-load-recovery/chunk-load-recovery.component';
 
 interface LayoutHarness {
   fixture: ComponentFixture<MainLayoutComponent>;
@@ -38,8 +42,10 @@ const createLayout = async (): Promise<LayoutHarness> => {
   const route = { snapshot: { data: {}, queryParamMap: new Map() }, firstChild: null };
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
-    imports: [MainLayoutComponent],
+    imports: [MainLayoutComponent, ChunkLoadRecoveryComponent],
     providers: [
+      MessageService,
+      { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
       { provide: Router, useValue: { url: '/org/acme/overview', events: routerEvents, currentNavigation } },
       { provide: ActivatedRoute, useValue: route },
       {
@@ -76,6 +82,72 @@ const createLayout = async (): Promise<LayoutHarness> => {
 };
 
 describe('MainLayoutComponent mobile drawer', () => {
+  it.each([
+    ['guard-active', 'field'],
+    ['guard-active', 'navigation'],
+    ['storage-blocked', 'field'],
+    ['storage-blocked', 'navigation'],
+  ])('exposes recovery after failed navigation with %s and %s focus without discarding the drawer', async (reason, focusTarget) => {
+    const { fixture, appService, panel, routerEvents } = await createLayout();
+    const recoveryFixture = TestBed.createComponent(ChunkLoadRecoveryComponent);
+    document.body.append(fixture.nativeElement, recoveryFixture.nativeElement);
+    const recovery = TestBed.inject(ChunkLoadRecoveryService);
+    const readGuard = vi.spyOn(Storage.prototype, 'getItem');
+    if (reason === 'storage-blocked') {
+      readGuard.mockImplementation(() => {
+        throw new Error('Storage blocked');
+      });
+    } else {
+      readGuard.mockReturnValue(String(Date.now()));
+    }
+    const reload = vi.spyOn(recovery, 'reload').mockImplementation(() => undefined);
+    try {
+      appService.openMobileSidebar();
+      await fixture.whenStable();
+      const drawer = panel();
+      const navbar = drawer.querySelector('lfx-navbar');
+      const draft = document.createElement('input');
+      draft.value = 'Unsaved drawer input';
+      const navigationLink = document.createElement('a');
+      navigationLink.href = '/votes';
+      navigationLink.textContent = 'Votes';
+      drawer.append(draft, navigationLink);
+      if (focusTarget === 'field') draft.focus();
+      else navigationLink.focus();
+      expect(drawer.querySelectorAll('[data-p-hidden-focusable="true"]')).toHaveLength(2);
+      expect(drawer.getAttribute('aria-modal')).toBe('true');
+
+      const error = new Error('Failed to fetch dynamically imported module');
+      routerEvents.next(new NavigationError(2, '/votes', error));
+      recovery.handleError(error);
+      await fixture.whenStable();
+      await recoveryFixture.whenStable();
+
+      expect(appService.showMobileSidebar()).toBe(true);
+      expect(panel()).toBe(drawer);
+      expect(drawer.querySelector('lfx-navbar')).toBe(navbar);
+      expect(drawer.contains(draft)).toBe(true);
+      expect(draft.value).toBe('Unsaved drawer input');
+      expect(drawer.querySelectorAll('[data-p-hidden-focusable="true"]')).toHaveLength(0);
+      expect(drawer.hasAttribute('aria-modal')).toBe(false);
+      const banner = recoveryFixture.nativeElement.querySelector('[role="alert"]') as HTMLElement;
+      const reloadButton = recoveryFixture.nativeElement.querySelector('[data-testid="chunk-load-recovery-reload"] button') as HTMLButtonElement;
+      expect(document.activeElement).toBe(focusTarget === 'field' ? draft : banner);
+      expect(reload).not.toHaveBeenCalled();
+      reloadButton.focus();
+      expect(document.activeElement).toBe(reloadButton);
+      reloadButton.click();
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      readGuard.mockRestore();
+      reload.mockRestore();
+      recoveryFixture.destroy();
+      fixture.destroy();
+      recoveryFixture.nativeElement.remove();
+      fixture.nativeElement.remove();
+    }
+  });
+
   it('opens the drawer and its backdrop from the hamburger', async () => {
     const { fixture, appService, menuButton, backdrop } = await createLayout();
 

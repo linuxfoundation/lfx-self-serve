@@ -4,7 +4,7 @@ description: How to create a group (committee) in LFX Self Serve with the four-s
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, create, wizard, join-mode, governance]
-last_updated: 2026-10-28
+last_updated: 2026-11-02
 intercom_collection: Committees
 ---
 
@@ -24,6 +24,8 @@ Switch to the **Foundation** or **Project** lens that should own the group. **Cr
 ### Step 1: Group Type
 
 Choose the type that best describes the group, such as Technical Steering Committee, Working Group, Special Interest Group, or Other. The list depends on your role; maintainers see a shorter list than executive directors (for example, Board and Maintainers aren't offered). The type organizes and identifies the group within the project. You can change it later in [Group Settings](../group-settings/). The step bar labels this step **Category**.
+
+Choose **Newsletter** for a group that receives a newsletter. A newsletter can only be sent to a group of this type, and its members are the recipients. See [Newsletters](../../mailing-lists/newsletters/).
 
 ### Step 2: Basic Information
 

@@ -45,7 +45,7 @@ export const Rich: Story = {
 export const Bottom: Story = { args: { side: 'bottom' } };
 export const Left: Story = { args: { side: 'left' } };
 export const Right: Story = { args: { side: 'right' } };
-/** Tooltips can explain why a control is off. A disabled button gets no pointer events, so the directive sits on a wrapper. */
+/** Tooltips can explain why a control is off. A disabled button takes no focus, so the directive sits on a focusable wrapper. */
 export const OnDisabledControl: Story = {
   render: () => ({
     template: `

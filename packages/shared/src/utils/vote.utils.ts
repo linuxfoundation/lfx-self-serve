@@ -19,6 +19,7 @@ import {
   VOTE_VOTER_NOT_VOTED_LABELS,
   VOTE_VOTER_STATUS_FILTER_LABELS,
   VOTE_PRESENTER_TITLE_MAX_CHARS,
+  VOTE_SUMMARY_NOTICE_LIFE_MS,
   VOTES_STATS_WINDOW_DAYS,
 } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
@@ -47,6 +48,7 @@ import type {
   PollCommentResult,
   PollQuestion,
   QuestionFormValue,
+  SendVoteSummaryResponse,
   UpdateVoteRequest,
   UserChoice,
   Vote,
@@ -64,6 +66,7 @@ import type {
   VoteVoterChoiceSummary,
   VoteVoterRowView,
   VoteVoterStatusCounts,
+  VoteSummarySendNotice,
 } from '../interfaces/poll.interface';
 
 // Node-safe participation and result shaping live in their own files; re-exported so every existing import path is unchanged.
@@ -73,6 +76,7 @@ export {
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
   computeResultPercentage,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   isRankedPollType,
   votePermalinkPath,
@@ -233,7 +237,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
  * @param fallbackTimezone - Zone to reset an elapsed deadline into; defaults to `getUserTimezone()` for
  * non-Angular callers (e.g. tests), but an Angular caller that may run this during SSR must pass an
  * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`), matching
- * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-detail-header,
+ * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-detail-facts,
  * newsletter-list): the reset falls back to UTC on the server and is replaced by the real zone on client
  * hydration — this does not prevent a server/client difference, it just makes the server side
  * deterministic instead of resolving a second, possibly different, non-UTC zone there (GH-3781)
@@ -449,6 +453,11 @@ function resolveDraftEndTimeTimezone(formValue: VoteFormValue): string {
   return formValue.timezone || LEGACY_VOTE_TIMEZONE;
 }
 
+/** Keeps a non-empty description byte-for-byte (indentation, blank lines) so display surfaces can preserve it; blank-only becomes ''. */
+function normalizeDescription(description: string | null | undefined): string {
+  return description?.trim() ? description : '';
+}
+
 /**
  * Builds a CreateVoteRequest from form values
  * @param formValue - The vote form values
@@ -458,7 +467,7 @@ function resolveDraftEndTimeTimezone(formValue: VoteFormValue): string {
 export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: string): CreateVoteRequest {
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: formValue.close_date ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone) : '',
     end_time_timezone: formValue.timezone,
     project_uid: projectUid,
@@ -477,7 +486,7 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
 
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: resolveDraftEndTime(formValue),
     end_time_timezone: resolveDraftEndTimeTimezone(formValue),
     project_uid: projectUid,
@@ -498,7 +507,7 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
 export function buildUpdateVoteRequest(formValue: VoteFormValue, projectUid: string): UpdateVoteRequest {
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: formValue.close_date ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone) : '',
     end_time_timezone: formValue.timezone,
     project_uid: projectUid,
@@ -517,7 +526,7 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
 
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: resolveDraftEndTime(formValue),
     end_time_timezone: resolveDraftEndTimeTimezone(formValue),
     project_uid: projectUid,
@@ -685,10 +694,10 @@ export function canVoterFetchVoteResults(
 }
 
 /**
- * Copy for the vote detail page's "Visibility at a glance" card — describes who sees what today (managers see live
- * totals and comments on a named vote, and participation only on a pseudo-anonymous one until close; voters see their
- * own response, and totals and comments only after close), never a new rule. Ballot privacy itself is shown by the page header's
- * privacy tag, so it is not repeated here.
+ * Visibility explanation for the vote detail header's ballot privacy badge tooltip — describes who sees what today
+ * (managers see live totals and comments on a named vote, and participation only on a pseudo-anonymous one until close;
+ * voters see their own response, and totals and comments only after close), never a new rule. The badge itself labels
+ * ballot privacy, so the tooltip does not repeat that label.
  * @param audience - `creator` for a project or committee writer, `voter` for everyone else
  * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting; missing metadata never promises access to individual ballots
  * @param isClosed - Whether the vote has ended. A draft is not closed.
@@ -1043,4 +1052,52 @@ export function buildVoteAnswerSummary(questions: PollQuestion[], submission: Vo
         : (answer?.choice_ids ?? []).map((id) => textById.get(id) ?? id).join(', ');
     return { question_id: question.question_id, prompt: question.prompt, answer: text };
   });
+}
+
+/**
+ * Builds the toast that reports the outcome of a vote summary send (#4689).
+ * @description Never presents an incomplete distribution as a clean success: an uncertain outcome warns that retrying may send
+ * duplicates, nothing sent is reported as such, and a partial send names every known count.
+ * @param result - The counts returned by POST /api/votes/:uid/summary
+ */
+export function buildVoteSummarySendNotice(result: SendVoteSummaryResponse): VoteSummarySendNotice {
+  const { recipient_count: sent, failed_count: failed, skipped_count: skipped, uncertain_count: uncertain } = result;
+
+  const counts = [`sent to ${sent} voter(s)`];
+  if (skipped > 0) counts.push(`${skipped} skipped (no email address)`);
+  if (failed > 0) counts.push(`${failed} failed`);
+  if (uncertain > 0) counts.push(`${uncertain} unconfirmed`);
+  const countsText = `${counts[0].charAt(0).toUpperCase()}${counts[0].slice(1)}${counts.length > 1 ? `; ${counts.slice(1).join('; ')}` : ''}.`;
+
+  if (uncertain > 0) {
+    return {
+      severity: 'warn',
+      summary: 'Summary delivery unconfirmed',
+      detail: `${countsText} Unconfirmed summaries may already have been delivered, so retrying may send duplicate summaries. Check with voters before retrying.`,
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    };
+  }
+
+  if (sent === 0) {
+    const reasons: string[] = [];
+    if (skipped > 0) reasons.push(`${skipped} invited voter(s) have no email address`);
+    if (failed > 0) reasons.push(`${failed} send(s) failed`);
+    return {
+      severity: 'info',
+      summary: 'No summaries sent',
+      detail: reasons.length > 0 ? `No summaries were sent: ${reasons.join('; ')}.` : 'No summaries were sent because no invited voters have an email address.',
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    };
+  }
+
+  if (failed > 0 || skipped > 0) {
+    return {
+      severity: 'warn',
+      summary: 'Summary partially sent',
+      detail: `${countsText} Not every invited voter received the summary.`,
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    };
+  }
+
+  return { severity: 'success', summary: 'Summary sent', detail: `Summary sent to ${sent} voter(s).` };
 }

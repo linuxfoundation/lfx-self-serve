@@ -3,8 +3,8 @@ title: Mailing Lists
 description: Find, join, create, and manage the mailing lists for your Linux Foundation projects in LFX Self Serve.
 audience: [all]
 product_area: Mailing Lists
-tags: [mailing-lists, email, join, leave, groups, subscribers, communication]
-last_updated: 2026-10-28
+tags: [mailing-lists, email, join, leave, groups, subscribers, communication, newsletters]
+last_updated: 2026-11-02
 intercom_collection: Mailing Lists
 ---
 
@@ -25,6 +25,8 @@ If you manage mailing lists for a project or foundation:
 - [Choose the settings](mailing-list-settings/): who can join, who can post, and who can read the archive
 - [Manage subscribers](manage-subscribers/): add people, set how they receive email, and make moderators
 - [Edit a list](manage-mailing-lists/) and change its linked group
+
+Newsletters are separate from mailing lists. A newsletter is sent from the **Newsletters** page to the members of a group whose type is **Newsletter**. See [Newsletters](newsletters/).
 
 ## Where to find Mailing Lists
 
@@ -47,5 +49,6 @@ Creating a list needs permission to manage mailing lists for the project, and th
 
 ## Related sections
 
+- [Newsletters](newsletters/): send a newsletter to a Newsletter group and see who opened it
 - [Committees](../committees/): link a group to a mailing list so its members are subscribed
 - [Meetings](../meetings/): meeting invitations are often sent through mailing lists

@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
+import { USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
 import {
   CdpProjectAffiliation,
   ChangePasswordRequest,
@@ -125,6 +126,10 @@ export class UserService {
   // shared GET) so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
   private readonly userIdentitiesRefresh$ = new Subject<void>();
   public readonly identitiesRefresh$: Observable<void> = this.userIdentitiesRefresh$.asObservable();
+  /** Emits on every refreshUserMeetings() fetch, so a consumer whose feed failed can subscribe again. */
+  public readonly meetingsRefresh$: Observable<void> = this.userMeetingsRefresh$.asObservable();
+  /** Emits on every refreshUserPastMeetings() call. */
+  public readonly pastMeetingsRefresh$: Observable<void> = this.userPastMeetingsRefresh$.asObservable();
   // One shared identities GET for every consumer on the page: the endpoint reconciles into CDP, so
   // each extra concurrent GET re-sends the same CDP identity writes (#4523).
   private userIdentities$: Observable<EnrichedIdentity[]> | null = null;
@@ -138,7 +143,10 @@ export class UserService {
   private userMeetingsDirty = false;
   private userMeetingsSubject: string | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
+  private userPastMeetingsWithArtifacts$: Observable<PastMeeting[]> | null = null;
+  private userPastMeetingsSubject: string | null = null;
   private userLatestPastMeetings$: Observable<PastMeeting[]> | null = null;
+  private userLatestPastMeetingsSubject: string | null = null;
 
   public constructor() {
     // A late LFID claim changes meeting identity, not the effective subject's uploaded avatar.
@@ -166,6 +174,7 @@ export class UserService {
         this.userMeetings$ = null;
         this.userMeetingsDirty = false;
         this.userPastMeetings$ = null;
+        this.userPastMeetingsWithArtifacts$ = null;
         this.userLatestPastMeetings$ = null;
         this.userIdentities$ = null;
       });
@@ -496,29 +505,42 @@ export class UserService {
   /**
    * Gets past meetings for the current authenticated user.
    * Call refreshUserPastMeetings() to re-fetch.
+   * @param options - `includeArtifacts` adds `has_recording` / `has_ai_summary`, cached apart from the plain feed
    */
-  public getUserPastMeetings(): Observable<PastMeeting[]> {
-    if (!this.userPastMeetings$) {
-      const destroy$ = this.userPastMeetingsDestroy$;
-      const dropIfCurrent = (): void => {
-        if (this.userPastMeetings$ === pastMeetings$) {
-          this.userPastMeetings$ = null;
-        }
-      };
-      const pastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
-        startWith(undefined),
-        switchMap(() => this.http.get<PastMeeting[]>('/api/user/past-meetings')),
-        takeUntil(destroy$),
-        // Never cache a failure — see getUserMeetings() for why.
-        catchError((error: unknown) => {
-          dropIfCurrent();
-          return throwError(() => error);
-        }),
-        shareReplay({ bufferSize: 1, refCount: false })
-      );
-      this.userPastMeetings$ = pastMeetings$;
+  public getUserPastMeetings(options?: { includeArtifacts?: boolean }): Observable<PastMeeting[]> {
+    const includeArtifacts = options?.includeArtifacts === true;
+    const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
+    // Rebuilt for a new viewer here too, so a read before the identity effect runs never replays the previous viewer's rows.
+    if (this.userPastMeetingsSubject !== subject) {
+      this.userPastMeetingsDestroy$.next();
+      this.userPastMeetingsDestroy$ = new Subject<void>();
+      this.userPastMeetings$ = null;
+      this.userPastMeetingsWithArtifacts$ = null;
+      this.userPastMeetingsSubject = subject;
     }
-    return this.userPastMeetings$;
+    const cached = includeArtifacts ? this.userPastMeetingsWithArtifacts$ : this.userPastMeetings$;
+    if (cached) return cached;
+
+    // Both caches share the destroy signal, so a viewer change tears down either chain.
+    const destroy$ = this.userPastMeetingsDestroy$;
+    const params = includeArtifacts ? { include: USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } : undefined;
+    const setCache = (value: Observable<PastMeeting[]> | null): void => {
+      if (includeArtifacts) this.userPastMeetingsWithArtifacts$ = value;
+      else this.userPastMeetings$ = value;
+    };
+    const pastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
+      startWith(undefined),
+      switchMap(() => this.http.get<PastMeeting[]>('/api/user/past-meetings', { params })),
+      takeUntil(destroy$),
+      // Never cache a failure — see getUserMeetings() for why.
+      catchError((error: unknown) => {
+        if ((includeArtifacts ? this.userPastMeetingsWithArtifacts$ : this.userPastMeetings$) === pastMeetings$) setCache(null);
+        return throwError(() => error);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    setCache(pastMeetings$);
+    return pastMeetings$;
   }
 
   /**
@@ -529,6 +551,13 @@ export class UserService {
    * rows when many concurrently-ongoing meetings sit at the head of the sort.
    */
   public getUserLatestPastMeetings(): Observable<PastMeeting[]> {
+    const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
+    if (this.userLatestPastMeetingsSubject !== subject) {
+      this.userLatestPastMeetingsDestroy$.next();
+      this.userLatestPastMeetingsDestroy$ = new Subject<void>();
+      this.userLatestPastMeetings$ = null;
+      this.userLatestPastMeetingsSubject = subject;
+    }
     if (!this.userLatestPastMeetings$) {
       const destroy$ = this.userLatestPastMeetingsDestroy$;
       const dropIfCurrent = (): void => {

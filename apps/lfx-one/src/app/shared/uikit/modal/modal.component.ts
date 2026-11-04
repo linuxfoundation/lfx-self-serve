@@ -59,7 +59,8 @@ export class UiModalComponent {
   private initHostClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem; 14px root. Max height leaves 32px above and below, as in the library.
-      const base = 'flex max-h-[calc(100vh-64px)] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-ui-lg bg-ui-background-100 shadow-modal';
+      const base =
+        'flex max-h-[calc(100vh-64px)] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-ui-lg bg-ui-background-100 shadow-modal forced-colors:border forced-colors:border-[color:CanvasText]';
       return `${base} ${this.size() === 'sm' ? 'w-[420px]' : 'w-[540px]'}`;
     });
   }

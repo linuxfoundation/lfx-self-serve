@@ -28,7 +28,8 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   hostDirectives: [CdkMenu],
   host: {
     // Exact px, not rem; 14px root. The library's 200px default width has no Tailwind width utility. Scrolls when taller than the window.
-    class: 'flex max-h-[calc(100vh-32px)] w-[200px] flex-col overflow-y-auto rounded-ui-md bg-ui-background-100 p-[6px] shadow-menu',
+    class:
+      'flex max-h-[calc(100vh-32px)] w-[200px] flex-col overflow-y-auto rounded-ui-md bg-ui-background-100 p-[6px] shadow-menu forced-colors:border forced-colors:border-[color:CanvasText]',
     '[attr.aria-label]': 'ariaLabel() || null',
     'data-testid': 'ui-menu',
   },

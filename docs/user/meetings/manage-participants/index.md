@@ -4,7 +4,7 @@ description: How to invite guests, add a group, resend invitations, remove peopl
 audience: [all]
 product_area: Meetings
 tags: [meetings, participants, guests, invite, registrants, groups, resend invite]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Meetings
 ---
 
@@ -42,6 +42,10 @@ You can link a group to the meeting to invite its members. Each member is still 
 
 Guests added through a group show a **via {group name}** label in the list, so you can tell them apart from people you added directly.
 
+Wait for every selected group's members to load before saving invitation changes. If a group's members fail to load, the groups panel explains that they have not been added as guests and offers **Try again**. Saving stays disabled until loading succeeds; changing the group selection or voting-status filter waits for successful reconciliation too. An unchanged saved selection does not require opening **Invite guests** just to save an unrelated meeting edit.
+
+If the roster reaches a safe loading limit, the panel explains that saving with an incomplete roster is blocked. Try again if the problem was temporary. If it persists, remove the group selection where it is editable to continue, or cancel and contact support. A group fixed by the meeting's creation context cannot be removed from that editor.
+
 #### What happens when someone leaves a group
 
 For a public meeting, **Registration on group removal** controls what happens to a guest's registration when they're removed from a linked group:
@@ -60,6 +64,8 @@ Marking a guest as a host is separate from being an organizer. Only organizers c
 
 The **Invited** card shows how many people are invited. When the meeting collects RSVPs, it also shows how many have accepted, for example "6 of 10 accepted". Hover over that line (or focus it with the keyboard) to see the full breakdown of accepted, declined, and awaiting a reply.
 
+On a phone, each guest's row shows their status as text: **Accepted**, **Declined**, **Invite declined** (they declined the calendar invitation without replying to the RSVP), **Maybe**, or **Pending**. A guest with no name on file appears as **Guest**.
+
 Use **Search people...** to filter a long list by name or email. In the guest list on the meeting card, the role filter shows only **Organizers**, or only **Hosts**, meaning guests marked as a Meeting Host who aren't organizers. Organizers are hosts already, so they appear under **Organizers** and not under **Hosts**.
 
 ## Resend an invitation
@@ -67,7 +73,7 @@ Use **Search people...** to filter a long list by name or email. In the guest li
 To send someone their invitation again:
 
 1. Edit the meeting and open **Invite guests**.
-2. Select the paper plane icon (**Resend invite**) next to the guest.
+2. Select the paper plane icon (**Resend invite**) next to the guest. On a phone, open the **⋮** menu on the guest's row and choose **Resend invite**.
 3. Confirm in the **Resend invitation** dialog.
 
 Resend is only available once the meeting is saved and the guest has been saved to it, so you won't see it for guests you've just added but haven't saved.
@@ -76,7 +82,7 @@ Guests can also resend their own invitation: it's the **Resend Invite** button o
 
 ## Remove a guest
 
-Select the **×** next to the guest to remove them from the list.
+Select the **×** next to the guest to remove them from the list. On a phone, open the **⋮** menu on the guest's row and choose **Remove**.
 
 - When you're creating a meeting, the guest is simply taken off the list. To invite them again, add them again.
 - When you're editing a saved meeting, the removal takes effect when you save. Until then, an **Undo** notice appears above the list, so you can bring them back.

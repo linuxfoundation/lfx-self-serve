@@ -1358,6 +1358,20 @@ export function getMeetingOrganizerDisplayName(organizer: MeetingUserInfo | null
   return organizer.name?.trim() || organizer.username?.trim() || organizer.email?.trim() || '';
 }
 
+/**
+ * Single display name for a meeting's organizer; never blank. Resolution order:
+ * `owner.name`, `created_by.name`, the local part of `owner.email`, then "Linux Foundation".
+ * Service-account and zero-valued identities are skipped (see {@link resolveMeetingOwner}), so a
+ * webhook-created meeting reads as "Linux Foundation" rather than `zoom.webhooks`.
+ */
+export function organizerDisplayName(meeting: Pick<Meeting, 'created_by' | 'owner'> | null | undefined): string {
+  const owner = resolveMeetingOwner(meeting);
+  const createdBy = resolveMeetingOrganizer({ created_by: meeting?.created_by });
+  const emailLocalPart = owner?.email?.split('@')[0]?.trim();
+
+  return owner?.name?.trim() || createdBy?.name?.trim() || emailLocalPart || 'Linux Foundation';
+}
+
 /** Maps a host registrant/participant candidate to the organizer display shape. */
 function hostToOrganizer(host: MeetingHostCandidate): MeetingUserInfo {
   const name = `${host.first_name ?? ''} ${host.last_name ?? ''}`.trim();
@@ -1477,7 +1491,7 @@ export function buildMeetingOrganizerMailto(params: {
  * Normalizes a username for viewer-identity comparison — lowercased and stripped of any
  * auth-provider prefix (e.g. `auth0|`), so an OIDC `sub` still matches a plain LFID.
  */
-function normalizeUsername(username: string | null | undefined): string {
+export function normalizeUsername(username: string | null | undefined): string {
   return (username ?? '').trim().toLowerCase().split('|').pop() ?? '';
 }
 
@@ -1686,6 +1700,15 @@ export function fromMeetingApiVotingStatuses(statuses: ReadonlyArray<string | nu
 /** Canonicalizes a stored status list to the deduped meeting-API vocabulary, mapping pre-migration display values. */
 export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): MeetingAllowedVotingStatus[] {
   return toMeetingApiVotingStatuses(fromMeetingApiVotingStatuses(statuses));
+}
+
+/** Stable roster-selection identity: group order, labels, and equivalent status spellings do not change coverage. */
+export function getMeetingCommitteeSelectionKey(committees: ReadonlyArray<MeetingCommittee | null | undefined> | null | undefined): string {
+  return JSON.stringify(
+    sanitizeMeetingCommittees(committees)
+      .map((committee) => JSON.stringify([committee.uid, normalizeMeetingApiVotingStatuses(committee.allowed_voting_statuses).sort()]))
+      .sort()
+  );
 }
 
 /**

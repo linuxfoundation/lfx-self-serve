@@ -107,11 +107,11 @@ export class UiSplitButtonComponent {
       // Exact px: the button's 4px ui-accent-100 focus halo.
       const base =
         'relative inline-flex aspect-square shrink-0 items-center justify-center rounded-l-none border p-0 leading-none transition-[background-color,border-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus:outline-none focus-visible:z-10 focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight] hover:z-10';
-      // Same heights, corner radii and glyph sizes as the matching lfx-ui-button size. Exact px: the 8px and 10px radii have no ui-* utility.
+      // Same heights, corner radii and glyph sizes as the matching lfx-ui-button size. Exact px: the 10px and 14px radii have no ui-* utility.
       const sizes = {
-        small: 'h-ui-tiny rounded-r-[8px] text-[12px]',
-        default: 'h-ui-small rounded-r-[10px] text-[14px]',
-        large: 'h-ui-medium rounded-r-ui-sm text-[16px]',
+        small: 'h-ui-tiny rounded-r-[10px] text-[12px]',
+        default: 'h-ui-small rounded-r-ui-sm text-[14px]',
+        large: 'h-ui-medium rounded-r-[14px] text-[18px]',
       };
       // The borders of two neighbouring halves overlap by 1px; the primary fill has a transparent border and gets a divider instead.
       // shortcut: hover/active mixes spelled out with var(), matching lfx-ui-button. revisit: when the library ships hover/active mix tokens.
@@ -120,7 +120,8 @@ export class UiSplitButtonComponent {
           'border-transparent bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
         secondary: '-ml-px border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
       };
-      const disabled = '-ml-px pointer-events-none border-ui-neutral-alpha-200 bg-ui-neutral-50 text-ui-neutral-500';
+      // The glyph takes no pointer, so a click lands on the native disabled button, which never dispatches it.
+      const disabled = '-ml-px cursor-not-allowed [&_*]:pointer-events-none border-ui-neutral-alpha-200 bg-ui-neutral-50 text-ui-neutral-500';
       return [base, sizes[this.size()], this.disabled() ? disabled : `cursor-pointer ${variants[this.variant()]}`].join(' ');
     });
   }
