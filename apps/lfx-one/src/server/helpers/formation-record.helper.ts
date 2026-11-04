@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  FORMATION_RECORD_DISSOLUTION_DATE_REQUIRED_CODE,
   FORMATION_RECORD_EDITABLE_KEYS,
   FORMATION_RECORD_ERROR_MESSAGES,
   FORMATION_RECORD_MAX_LENGTHS,
@@ -68,7 +69,7 @@ export function validateFormationRecordBody(body: unknown): UpdateFormationRecor
   // upstream read; an absent one may already be stored, so that case is checked on the merged record by
   // `assertMergedRecordValid`, after the read and before the PUT.
   if (result['stage'] === ProjectStage.Archived && 'entity_dissolution_date' in result && !result['entity_dissolution_date']) {
-    throw ServiceValidationError.forField('entity_dissolution_date', FORMATION_RECORD_ERROR_MESSAGES.archivedNeedsDissolutionDate);
+    throw dissolutionDateRequiredError();
   }
 
   if (result['legal_entity_type'] && !PROJECT_LEGAL_ENTITY_TYPES.includes(result['legal_entity_type'])) {
@@ -95,7 +96,7 @@ export function validateFormationRecordBody(body: unknown): UpdateFormationRecor
  */
 export function assertMergedRecordValid(merged: Record<string, unknown>): void {
   if (merged['stage'] === ProjectStage.Archived && !merged['entity_dissolution_date']) {
-    throw ServiceValidationError.forField('entity_dissolution_date', FORMATION_RECORD_ERROR_MESSAGES.archivedNeedsDissolutionDate);
+    throw dissolutionDateRequiredError();
   }
 }
 
@@ -128,6 +129,20 @@ export function mergeFormationRecord(stored: Record<string, unknown>, edits: Upd
   }
 
   return merged;
+}
+
+/** The Archived rule's 400, carrying its own `errors[].code` so clients can tell it from a malformed date on the same field. */
+function dissolutionDateRequiredError(): ServiceValidationError {
+  return new ServiceValidationError(
+    [
+      {
+        field: 'entity_dissolution_date',
+        message: FORMATION_RECORD_ERROR_MESSAGES.archivedNeedsDissolutionDate,
+        code: FORMATION_RECORD_DISSOLUTION_DATE_REQUIRED_CODE,
+      },
+    ],
+    'Validation failed for entity_dissolution_date'
+  );
 }
 
 function isValidIsoDate(value: string): boolean {

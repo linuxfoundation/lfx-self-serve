@@ -7,6 +7,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signa
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   FORMATION_RECORD_CONFIRM_STAGES,
+  FORMATION_RECORD_DISSOLUTION_DATE_REQUIRED_CODE,
   FORMATION_RECORD_EDITABLE_KEYS,
   FORMATION_RECORD_ERROR_MESSAGES,
   FORMATION_RECORD_SELECTABLE_STAGES,
@@ -226,9 +227,9 @@ export class FormationRecordEditDrawerComponent {
       return code === FORMATION_TEAM_REQUIRED_CODE ? FORMATION_RECORD_ERROR_MESSAGES.notFormationTeam : FORMATION_RECORD_ERROR_MESSAGES.notWriter;
     }
     if (error.status === 400) {
-      // The BFF reports the Archived rule as a field error on the merged record (e.g. another writer cleared the stored date).
-      const errors = (error.error as { errors?: { field?: string }[] } | null)?.errors;
-      return errors?.some((entry) => entry.field === 'entity_dissolution_date')
+      // Only the Archived rule (e.g. another writer cleared the stored date) has its own code; a malformed date on the same field stays generic.
+      const errors = (error.error as { errors?: { code?: string }[] } | null)?.errors;
+      return errors?.some((entry) => entry.code === FORMATION_RECORD_DISSOLUTION_DATE_REQUIRED_CODE)
         ? FORMATION_RECORD_ERROR_MESSAGES.archivedNeedsDissolutionDate
         : FORMATION_RECORD_ERROR_MESSAGES.invalidValue;
     }

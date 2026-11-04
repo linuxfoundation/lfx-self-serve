@@ -77,6 +77,8 @@ export const FORMATION_RECORD_MAX_LENGTHS = { legal_entity_name: 255, entity_for
 export const NOT_PROJECT_WRITER_CODE = 'NOT_PROJECT_WRITER';
 export const FORMATION_TEAM_REQUIRED_CODE = 'FORMATION_TEAM_REQUIRED';
 export const FORMATION_RECORD_CONFLICT_CODE = 'FORMATION_RECORD_CONFLICT';
+/** `errors[].code` on the 400 for the Archived rule only — a malformed date keeps the generic field-validation code. */
+export const FORMATION_RECORD_DISSOLUTION_DATE_REQUIRED_CODE = 'DISSOLUTION_DATE_REQUIRED';
 
 /** Success toast copy, including the propagation note from #5134: the checklist is updated asynchronously by formation-service. */
 export const FORMATION_RECORD_SUCCESS_MESSAGE = 'Updated. The checklist may take a minute to reflect the new stage.';

@@ -284,7 +284,10 @@ describe('FormationRecordEditDrawerComponent', () => {
         () =>
           new HttpErrorResponse({
             status: 400,
-            error: { code: 'VALIDATION_ERROR', errors: [{ field: 'entity_dissolution_date', message: 'Archiving needs a dissolution date.' }] },
+            error: {
+              code: 'VALIDATION_ERROR',
+              errors: [{ field: 'entity_dissolution_date', message: 'Archiving needs a dissolution date.', code: 'DISSOLUTION_DATE_REQUIRED' }],
+            },
           })
       )
     );
@@ -295,6 +298,33 @@ describe('FormationRecordEditDrawerComponent', () => {
     await save();
 
     expect(query('[data-testid="formation-record-edit-error"]')?.textContent).toContain('Archiving needs a dissolution date.');
+  });
+
+  it('keeps the generic invalid-value copy for a malformed date on the same field', async () => {
+    const update = vi.fn(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: {
+              code: 'VALIDATION_ERROR',
+              errors: [
+                { field: 'entity_dissolution_date', message: "That value can't be saved. Check the fields and try again.", code: 'FIELD_VALIDATION_ERROR' },
+              ],
+            },
+          })
+      )
+    );
+    await render({ update, project: stored({ entity_dissolution_date: '2026-09-30' }) });
+    state().stage.set('Archived');
+    state().dissolutionDate.set('2026-10-31');
+
+    await save();
+    await save();
+
+    const text = query('[data-testid="formation-record-edit-error"]')?.textContent ?? '';
+    expect(text).toContain("That value can't be saved. Check the fields and try again.");
+    expect(text).not.toContain('Archiving needs a dissolution date.');
   });
 
   it('marks the save in flight so the card can refuse dismissal, and disables Cancel meanwhile', async () => {

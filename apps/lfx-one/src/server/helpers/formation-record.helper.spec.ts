@@ -53,6 +53,18 @@ describe('validateFormationRecordBody', () => {
     expect(() => validateFormationRecordBody({ formation_date: '2026-02-31' })).toThrowError(/formation_date/);
   });
 
+  it('gives a malformed dissolution date the generic field code, not the Archived-rule code', () => {
+    try {
+      validateFormationRecordBody({ stage: 'Archived', entity_dissolution_date: '2026-02-31' });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as { validationErrors: { field: string; code: string }[] }).validationErrors[0]).toMatchObject({
+        field: 'entity_dissolution_date',
+        code: 'FIELD_VALIDATION_ERROR',
+      });
+    }
+  });
+
   it('defers the Archived requirement to the merged record when the body omits the date', () => {
     expect(validateFormationRecordBody({ stage: 'Archived' })).toEqual({ stage: 'Archived' });
   });
@@ -62,7 +74,9 @@ describe('validateFormationRecordBody', () => {
       validateFormationRecordBody({ stage: 'Archived', entity_dissolution_date: null });
       expect.unreachable();
     } catch (error) {
-      expect((error as { validationErrors: { message: string }[] }).validationErrors[0].message).toBe('Archiving needs a dissolution date.');
+      const entry = (error as { validationErrors: { message: string; code: string }[] }).validationErrors[0];
+      expect(entry.message).toBe('Archiving needs a dissolution date.');
+      expect(entry.code).toBe('DISSOLUTION_DATE_REQUIRED');
     }
   });
 });
@@ -108,8 +122,13 @@ describe('mergeFormationRecord', () => {
 });
 
 describe('assertMergedRecordValid', () => {
-  it('rejects an Archived record whose dissolution date was cleared', () => {
+  it('rejects an Archived record whose dissolution date was cleared, with the Archived-rule code', () => {
     expect(() => assertMergedRecordValid({ stage: 'Archived' })).toThrowError(/entity_dissolution_date/);
+    try {
+      assertMergedRecordValid({ stage: 'Archived' });
+    } catch (error) {
+      expect((error as { validationErrors: { code: string }[] }).validationErrors[0].code).toBe('DISSOLUTION_DATE_REQUIRED');
+    }
   });
 
   it('accepts Archived with a date and any non-Archived record', () => {
