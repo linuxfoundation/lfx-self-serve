@@ -8,16 +8,25 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getPersonas, checkProjectWriter, getProjectIdBySlug, getProjectWithM2M, canGroupMemberViewSocialListening, getUsernameFromAuth, computeIsFoundation } =
-  vi.hoisted(() => ({
-    getPersonas: vi.fn(),
-    checkProjectWriter: vi.fn(),
-    getProjectIdBySlug: vi.fn(),
-    getProjectWithM2M: vi.fn(),
-    computeIsFoundation: vi.fn(),
-    canGroupMemberViewSocialListening: vi.fn(),
-    getUsernameFromAuth: vi.fn(),
-  }));
+const {
+  getPersonas,
+  checkProjectWriter,
+  getProjectIdBySlug,
+  getProjectWithM2M,
+  getProjectSfidByUid,
+  canGroupMemberViewSocialListening,
+  getUsernameFromAuth,
+  computeIsFoundation,
+} = vi.hoisted(() => ({
+  getPersonas: vi.fn(),
+  checkProjectWriter: vi.fn(),
+  getProjectIdBySlug: vi.fn(),
+  getProjectWithM2M: vi.fn(),
+  getProjectSfidByUid: vi.fn(),
+  computeIsFoundation: vi.fn(),
+  canGroupMemberViewSocialListening: vi.fn(),
+  getUsernameFromAuth: vi.fn(),
+}));
 
 vi.mock('../utils/persona-helper', () => ({
   personaDetectionService: { getPersonas: () => getPersonas(), checkProjectWriter: (...args: unknown[]) => checkProjectWriter(...args) },
@@ -27,6 +36,7 @@ vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectIdBySlug = getProjectIdBySlug;
     public getProjectWithM2M = getProjectWithM2M;
+    public getProjectSfidByUid = getProjectSfidByUid;
   },
 }));
 vi.mock('./committee.service', () => ({
@@ -42,7 +52,12 @@ const { SOCIAL_LISTENING_GROUP_ACCESS_CACHE_TTL_MS } = await import('../../../..
 
 const req = {} as Request;
 // Identity fields only: the M2M record's other fields never reach the caller.
-const GROUP_MEMBER = { canView: true, reason: 'group-member', foundation: { uid: 'tlf-uid', name: 'TLF', slug: 'tlf', parent_uid: undefined, logoUrl: 'https://logo' } };
+const GROUP_MEMBER = {
+  canView: true,
+  reason: 'group-member',
+  foundation: { uid: 'tlf-uid', name: 'TLF', slug: 'tlf', parent_uid: undefined, logoUrl: 'https://logo' },
+  foundationSfid: 'tlf-sfid',
+};
 
 function personas(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return { personas: ['board-member'], personaProjects: {}, isRootWriter: false, isLFStaff: false, ...overrides };
@@ -55,6 +70,7 @@ describe('SocialListeningAccessService.getAccess', () => {
     getPersonas.mockReset().mockResolvedValue(personas());
     checkProjectWriter.mockReset().mockResolvedValue(false);
     getProjectIdBySlug.mockReset().mockResolvedValue({ uid: 'tlf-uid', slug: 'tlf', exists: true });
+    getProjectSfidByUid.mockReset().mockResolvedValue('tlf-sfid');
     getProjectWithM2M.mockReset().mockResolvedValue({ uid: 'tlf-uid', name: 'TLF', slug: 'tlf', logo_url: 'https://logo', description: 'not returned' });
     computeIsFoundation.mockReset().mockReturnValue(true);
     canGroupMemberViewSocialListening.mockReset().mockResolvedValue(true);

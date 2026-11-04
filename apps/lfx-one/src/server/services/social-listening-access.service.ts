@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { SOCIAL_LISTENING_GROUP_ACCESS_CACHE_SWEEP_THRESHOLD, SOCIAL_LISTENING_GROUP_ACCESS_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import type { ProjectContext, SocialListeningAccessResponse } from '@lfx-one/shared/interfaces';
+import type { SocialListeningAccessResponse, SocialListeningGroupGrant } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -25,12 +25,12 @@ import { ProjectService } from './project.service';
  * answers are cached; a failed lookup denies and is retried on the next request.
  *
  * Group members may lack project viewer access on a non-public foundation, so the foundation is read with
- * M2M and, on a grant, returned as the page's foundation context (identity fields only).
+ * M2M and, on a grant, returned as the page's foundation context (identity fields only) with its Salesforce ID.
  */
 export class SocialListeningAccessService {
   private readonly committeeService = new CommitteeService();
   private readonly projectService = new ProjectService();
-  private readonly groupAccessCache = new Map<string, { foundation: ProjectContext | null; expiresAt: number }>();
+  private readonly groupAccessCache = new Map<string, { grant: SocialListeningGroupGrant | null; expiresAt: number }>();
 
   public async getAccess(req: Request, foundationSlug: string): Promise<SocialListeningAccessResponse> {
     const personas = await personaDetectionService.getPersonas(req);
@@ -43,12 +43,12 @@ export class SocialListeningAccessService {
       return { canView: false, reason: 'none' };
     }
 
-    const foundation = await this.getGroupMemberFoundation(req, foundationSlug);
-    return foundation ? { canView: true, reason: 'group-member', foundation } : { canView: false, reason: 'none' };
+    const grant = await this.getGroupMemberGrant(req, foundationSlug);
+    return grant ? { canView: true, reason: 'group-member', ...grant } : { canView: false, reason: 'none' };
   }
 
   /** The foundation's context when one of its opted-in groups grants the caller access, otherwise null. */
-  private async getGroupMemberFoundation(req: Request, foundationSlug: string): Promise<ProjectContext | null> {
+  private async getGroupMemberGrant(req: Request, foundationSlug: string): Promise<SocialListeningGroupGrant | null> {
     const username = await getUsernameFromAuth(req);
     if (!username) {
       return null;
@@ -58,7 +58,7 @@ export class SocialListeningAccessService {
     const cacheKey = `${username}:${foundationSlug.toLowerCase()}`;
     const cached = this.groupAccessCache.get(cacheKey);
     if (cached && Date.now() < cached.expiresAt) {
-      return cached.foundation;
+      return cached.grant;
     }
 
     return singleFlight(`social-listening-group-access:${cacheKey}`, async () => {
@@ -73,11 +73,15 @@ export class SocialListeningAccessService {
         // project's opted-in group must not pass by naming the child's slug.
         const record = await this.projectService.getProjectWithM2M(req, project.uid);
         const canView = computeIsFoundation(record) && (await this.committeeService.canGroupMemberViewSocialListening(req, project.uid));
-        const foundation: ProjectContext | null = canView
-          ? { uid: record.uid, name: record.name, slug: record.slug, parent_uid: record.parent_uid, logoUrl: record.logo_url }
+        const grant: SocialListeningGroupGrant | null = canView
+          ? {
+              foundation: { uid: record.uid, name: record.name, slug: record.slug, parent_uid: record.parent_uid, logoUrl: record.logo_url },
+              // NATS mapping lookup, not viewer-gated like /api/projects/:uid/sfid.
+              foundationSfid: await this.projectService.getProjectSfidByUid(req, project.uid),
+            }
           : null;
-        this.remember(cacheKey, foundation);
-        return foundation;
+        this.remember(cacheKey, grant);
+        return grant;
       } catch (error) {
         logger.warning(req, 'social_listening_group_access', 'Group access lookup failed, denying', {
           err: error,
@@ -88,7 +92,7 @@ export class SocialListeningAccessService {
     });
   }
 
-  private remember(cacheKey: string, foundation: ProjectContext | null): void {
+  private remember(cacheKey: string, grant: SocialListeningGroupGrant | null): void {
     const now = Date.now();
     if (this.groupAccessCache.size >= SOCIAL_LISTENING_GROUP_ACCESS_CACHE_SWEEP_THRESHOLD) {
       for (const [key, entry] of this.groupAccessCache) {
@@ -102,7 +106,7 @@ export class SocialListeningAccessService {
         this.groupAccessCache.delete(oldest.value);
       }
     }
-    this.groupAccessCache.set(cacheKey, { foundation, expiresAt: now + SOCIAL_LISTENING_GROUP_ACCESS_CACHE_TTL_MS });
+    this.groupAccessCache.set(cacheKey, { grant, expiresAt: now + SOCIAL_LISTENING_GROUP_ACCESS_CACHE_TTL_MS });
   }
 }
 

@@ -482,7 +482,7 @@ export class SocialListeningComponent {
     // Preference state is per user + foundation: reload it as either resolves or changes (PCC port).
     effect(() => {
       const userId = this.userService.user()?.sub;
-      const projectId = this.projectContextService.selectedFoundationSfid();
+      const projectId = this.socialListeningService.foundationSfid();
       const ctx = userId && projectId ? { userId, projectId } : null;
       untracked(() => {
         this.mentionBookmarkService.setContext(ctx);
@@ -545,7 +545,7 @@ export class SocialListeningComponent {
     // Foreign-view detector (PCC port): gated on !savedFiltersLoading() so a cold ?view= id isn't wiped
     // before the list arrives. Not-found + non-default state → clear id + banner; found-but-drifted → silent clear.
     effect(() => {
-      const projectId = this.projectContextService.selectedFoundationSfid();
+      const projectId = this.socialListeningService.foundationSfid();
       const userId = this.userService.user()?.sub;
       if (!projectId || !userId) return;
       if (this.savedFiltersLoading()) return;

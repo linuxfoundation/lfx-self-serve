@@ -546,4 +546,9 @@ export interface SocialListeningAccessResponse {
    * viewer access, so the page can't load the foundation through the viewer-gated project lookup.
    */
   foundation?: ProjectContext;
+  /** The foundation's Salesforce ID, set alongside `foundation`; keys the page's per-user preferences. */
+  foundationSfid?: string | null;
 }
+
+/** What a `group-member` grant hands the page: the foundation it may not otherwise be able to load. */
+export type SocialListeningGroupGrant = Required<Pick<SocialListeningAccessResponse, 'foundation' | 'foundationSfid'>>;

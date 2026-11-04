@@ -19,7 +19,8 @@ import { projectQueryParamGuard } from './project-query-param.guard';
  * selected foundation) via `/api/social-listening/access`, the same policy the API enforces.
  *
  * It also seeds the foundation context. ED and staff go through `projectQueryParamGuard`; a group member
- * may lack project viewer access, which that lookup needs, so the access response carries the context.
+ * may lack project viewer access, which that lookup needs, so the access response carries the context
+ * and the Salesforce ID that keys the page's preferences.
  */
 export const socialListeningAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => {
   const personaService = inject(PersonaService);
@@ -59,6 +60,7 @@ export const socialListeningAccessGuard: CanActivateFn = (route: ActivatedRouteS
           }
           projectContextService.setRouteLensKind('foundation');
           projectContextService.setFoundation(access.foundation);
+          socialListeningService.groupGrant.set({ foundation: access.foundation, foundationSfid: access.foundationSfid ?? null });
           return of(true);
         })
       );

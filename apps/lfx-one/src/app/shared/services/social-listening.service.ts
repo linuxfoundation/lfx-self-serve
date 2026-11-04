@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { computed, inject, Injectable, signal } from '@angular/core';
 import { catchError, map, Observable, of } from 'rxjs';
 
 import { ProjectContextService } from './project-context.service';
 
 import type {
+  SocialListeningGroupGrant,
   PreferenceReadResponse,
   PreferenceUpsertRequest,
   SocialListeningAccessResponse,
@@ -42,6 +43,16 @@ export class SocialListeningService {
   private readonly http = inject(HttpClient);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly baseUrl = '/api/social-listening';
+
+  /** Set by `socialListeningAccessGuard` on a `group-member` grant, whose holder may not be able to load the foundation itself. */
+  public readonly groupGrant = signal<SocialListeningGroupGrant | null>(null);
+
+  /** The selected foundation's Salesforce ID (keys per-user preferences), falling back to the group grant's. */
+  public readonly foundationSfid = computed(() => {
+    const grant = this.groupGrant();
+    const fallback = grant && grant.foundation.uid === this.projectContextService.selectedFoundation()?.uid ? grant.foundationSfid : null;
+    return this.projectContextService.selectedFoundationSfid() ?? fallback;
+  });
 
   /** Whether the current user can view Social Listening for `foundationSlug`; any failure reads as no access. */
   public getAccess(foundationSlug: string): Observable<SocialListeningAccessResponse> {

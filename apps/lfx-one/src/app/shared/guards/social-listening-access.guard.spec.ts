@@ -21,6 +21,7 @@ describe('socialListeningAccessGuard', () => {
   let setFoundation: ReturnType<typeof vi.fn>;
   let setRouteLensKind: ReturnType<typeof vi.fn>;
   let resolveProject: ReturnType<typeof vi.fn>;
+  let groupGrant: { set: ReturnType<typeof vi.fn> };
 
   const route = (params: Record<string, string> = {}): ActivatedRouteSnapshot =>
     ({ queryParamMap: convertToParamMap(params), data: { lens: 'foundation' } }) as unknown as ActivatedRouteSnapshot;
@@ -37,13 +38,14 @@ describe('socialListeningAccessGuard', () => {
     getAccess = vi.fn().mockReturnValue(of({ canView: false, reason: 'none' }));
     setFoundation = vi.fn();
     setRouteLensKind = vi.fn();
+    groupGrant = { set: vi.fn() };
     resolveProject = vi.fn().mockReturnValue(of({ uid: 'tlf-uid', name: 'TLF', slug: 'tlf' }));
 
     TestBed.configureTestingModule({
       providers: [
         { provide: PersonaService, useValue: { currentPersona, canViewExecutiveDashboards, refreshEnrichedPersonas: vi.fn(() => of(null)) } },
         { provide: ProjectContextService, useValue: { selectedFoundation, setFoundation, setRouteLensKind } },
-        { provide: SocialListeningService, useValue: { getAccess } },
+        { provide: SocialListeningService, useValue: { getAccess, groupGrant } },
         { provide: ProjectRecoveryService, useValue: { resolve: resolveProject, unavailable: vi.fn() } },
         {
           provide: Router,
@@ -82,12 +84,13 @@ describe('socialListeningAccessGuard', () => {
 
   it('admits a group member and seeds the foundation from the access response, without the viewer-gated lookup', async () => {
     const foundation = { uid: 'tlf-uid', name: 'TLF', slug: 'tlf' };
-    getAccess.mockReturnValue(of({ canView: true, reason: 'group-member', foundation }));
+    getAccess.mockReturnValue(of({ canView: true, reason: 'group-member', foundation, foundationSfid: 'tlf-sfid' }));
 
     await expect(runGuard(route({ project: 'tlf' }))).resolves.toBe(true);
     expect(getAccess).toHaveBeenCalledWith('tlf');
     expect(setRouteLensKind).toHaveBeenCalledWith('foundation');
     expect(setFoundation).toHaveBeenCalledWith(foundation);
+    expect(groupGrant.set).toHaveBeenCalledWith({ foundation, foundationSfid: 'tlf-sfid' });
     expect(resolveProject).not.toHaveBeenCalled();
   });
 
