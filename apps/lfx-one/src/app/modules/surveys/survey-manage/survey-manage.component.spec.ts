@@ -6,7 +6,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, DefaultUrlSerializer, NavigationEnd, Router, UrlTree } from '@angular/router';
 import { SURVEY_EMAIL_DRAFTS } from '@lfx-one/shared/constants';
-import { Committee, Project, ProjectContext, Survey } from '@lfx-one/shared/interfaces';
+import { Committee, Project, ProjectContext, Survey, SurveyTemplate } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -196,6 +196,8 @@ describe('SurveyManageComponent write-access eviction', () => {
     );
     await mountEditor();
     await loadSurvey();
+    expect(getSurveyTemplates).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.surveyTemplates().status).toBe('loading');
     await settleProject(false);
     expect(fetchCommittee).toHaveBeenCalledExactlyOnceWith(PRIMARY_UID);
     expectEditorRetained();
@@ -203,12 +205,14 @@ describe('SurveyManageComponent write-access eviction', () => {
     await settleCommittee(primaryResponse$, PRIMARY_UID, false);
     expect(fetchCommittee.mock.calls).toEqual([[PRIMARY_UID], [SECONDARY_UID]]);
     expectEditorRetained();
+    expect(getSurveyTemplates).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.surveyTemplates().status).toBe('loading');
 
     await settleCommittee(secondaryResponse$, SECONDARY_UID, true);
     expectEditorRetained();
     // The active project's own write flag stays false: committee admission must survive it.
     expect(getProject).toHaveBeenCalledTimes(1);
-    expect(getSurveyTemplates).toHaveBeenLastCalledWith(PROJECT_UID, SECONDARY_UID);
+    expect(getSurveyTemplates).toHaveBeenCalledExactlyOnceWith(PROJECT_UID, SECONDARY_UID);
     expect(fixture.componentInstance.surveyTemplates()).toEqual({ status: 'ready', options: [{ label: 'Board Survey', value: 'template-1' }] });
     expect(fixture.componentInstance.form().get('surveyTemplate')?.enabled).toBe(true);
   });
@@ -372,6 +376,32 @@ describe('SurveyManageComponent survey templates (#5124)', () => {
     expect(getSurveyTemplates).toHaveBeenCalledTimes(2);
     expect(component.surveyTemplates()).toEqual({ status: 'ready', options: [{ label: 'Board Survey', value: '1' }] });
     expect(component.form().get('surveyTemplate')?.enabled).toBe(true);
+  });
+
+  it('locks a selected template and Next while a retry is loading, then unlocks them on success', async () => {
+    const pending = new Subject<SurveyTemplate[]>();
+    const templates = [{ id: '1', title: 'Board Survey' }];
+    getSurveyTemplates.mockReturnValueOnce(of(templates)).mockReturnValueOnce(pending.asObservable());
+    const fixture = await mount({});
+    const component = fixture.componentInstance;
+    component.form().patchValue({ committees: [{ uid: 'c-1', name: 'Board' }], surveyTemplate: '1' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.canGoNext()).toBe(true);
+
+    component.retryTemplates();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.surveyTemplates().status).toBe('loading');
+    expect(component.form().get('surveyTemplate')?.disabled).toBe(true);
+    expect(component.canGoNext()).toBe(false);
+
+    pending.next(templates);
+    pending.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.form().get('surveyTemplate')?.enabled).toBe(true);
+    expect(component.canGoNext()).toBe(true);
   });
 
   it('sorts options by title', async () => {

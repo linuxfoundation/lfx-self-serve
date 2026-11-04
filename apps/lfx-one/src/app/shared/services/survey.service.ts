@@ -162,7 +162,13 @@ export class SurveyService {
     if (committeeUid) {
       params = params.set('committee_uid', committeeUid);
     }
-    return this.http.get<SurveyTemplate[]>('/api/surveys/templates', { params }).pipe(take(1));
+    return this.http.get<SurveyTemplate[]>('/api/surveys/templates', { params }).pipe(
+      take(1),
+      catchError((error) => {
+        console.error('Failed to load survey templates:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   /** Sends the survey to committee members added since launch (#4340). */

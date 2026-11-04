@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -101,6 +101,7 @@ export class SurveyManageComponent {
   private readonly templateReload = signal<number>(0);
   // Reuse the granting candidate from the existing access probe for template authorization.
   private readonly templateCommitteeUid = signal<string | null>(null);
+  private readonly templateProjectWriter = signal<boolean>(false);
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
@@ -151,18 +152,7 @@ export class SurveyManageComponent {
     // Pass the guard-mirroring predicate — the default canWrite is project-writer-only and would
     // evict guard-admitted committee writers the moment the context syncs to the survey's project.
     evictOnWriteAccessLoss(this.writeAccess);
-    // Only a loaded list is selectable; a disabled control also fails isStepValid's `valid` check.
-    // Default emit so formValue (and with it canGoNext) recomputes when a held value is locked.
-    effect(() => {
-      const ready = this.surveyTemplates().status === 'ready';
-      const control = this.form().get('surveyTemplate');
-      if (!control || control.enabled === ready) return;
-      if (ready) {
-        control.enable();
-      } else {
-        control.disable();
-      }
-    });
+    this.initTemplateControlLock();
     this.initTemplateEmailDraft();
   }
 
@@ -390,6 +380,26 @@ export class SurveyManageComponent {
     });
   }
 
+  /** Keeps the picker and Next locked unless the template list has loaded. */
+  private initTemplateControlLock(): void {
+    toObservable(this.surveyTemplates)
+      .pipe(
+        map((state) => state.status === 'ready'),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((ready) => {
+        const control = this.form().get('surveyTemplate');
+        if (!control || control.enabled === ready) return;
+        // Emit so formValue and canGoNext also recompute when a held value is locked.
+        if (ready) {
+          control.enable();
+        } else {
+          control.disable();
+        }
+      });
+  }
+
   /**
    * Choosing a template swaps in its audience's email draft (maintainer or general, mirroring PCC),
    * but only into a subject or body that still holds a default draft, so edits are never overwritten.
@@ -440,14 +450,14 @@ export class SurveyManageComponent {
   /**
    * Create mode scopes to the active project context plus `?committee_uid=`, exactly as the
    * write-access project leg does; edit mode uses the survey's own project and the granting
-   * committee candidate, falling back to the first while access is pending. Null until a project UID exists.
+   * committee candidate. Edit mode waits for a granting access leg instead of guessing while the probe is pending.
    */
   private initTemplateAccessTarget(): Signal<SurveyTemplateAccessTarget | null> {
     const isEdit = this.route.snapshot.paramMap.has('id');
     return computed(() => {
       if (isEdit) {
         const survey = this.survey();
-        if (!survey?.project_uid) {
+        if (!survey?.project_uid || (!this.templateProjectWriter() && !this.templateCommitteeUid())) {
           return null;
         }
         return {
@@ -632,13 +642,15 @@ export class SurveyManageComponent {
         filter((key): key is string | null => key !== undefined),
         distinctUntilChanged(),
         switchMap((key) => {
+          this.templateProjectWriter.set(false);
           if (!key) {
             return of(false);
           }
           // writerGuard admits no coordinator-style role for surveys — project.writer only.
           return this.projectService.getProject(key, false).pipe(
             map((project) => project?.writer === true),
-            catchError(() => of(false))
+            catchError(() => of(false)),
+            tap((writer) => this.templateProjectWriter.set(writer))
           );
         })
       )

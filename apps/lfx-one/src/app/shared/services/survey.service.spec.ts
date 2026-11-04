@@ -6,7 +6,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { SURVEY_RESPONSES_MAX_PAGES, SURVEY_RESPONSES_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { SurveyResponseItem, SurveyTemplate } from '@lfx-one/shared/interfaces';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SurveyService } from './survey.service';
 
@@ -95,7 +95,10 @@ describe('SurveyService.getSurveyTemplates (#5124)', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    http.verify();
+    vi.restoreAllMocks();
+  });
 
   it('sends project_uid only when no committee is given', () => {
     let templates: SurveyTemplate[] | undefined;
@@ -117,5 +120,18 @@ describe('SurveyService.getSurveyTemplates (#5124)', () => {
     expect(req.request.params.get('project_uid')).toBe('p-1');
     expect(req.request.params.get('committee_uid')).toBe('c-1');
     req.flush([]);
+  });
+
+  it('logs and rethrows template failures rather than treating them as an empty list', () => {
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let templates: SurveyTemplate[] | undefined;
+    let error: unknown;
+    service.getSurveyTemplates('p-1').subscribe({ next: (value) => (templates = value), error: (value) => (error = value) });
+
+    http.expectOne((request) => request.url === '/api/surveys/templates').flush(null, { status: 503, statusText: 'Service Unavailable' });
+
+    expect(templates).toBeUndefined();
+    expect(error).toBeDefined();
+    expect(logError).toHaveBeenCalledExactlyOnceWith('Failed to load survey templates:', error);
   });
 });
