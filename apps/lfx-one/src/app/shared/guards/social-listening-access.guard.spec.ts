@@ -6,8 +6,9 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, convertToParamMap, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { PersonaService } from '@shared/services/persona.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
+import { ProjectRecoveryService } from '@shared/services/project-recovery.service';
 import { SocialListeningService } from '@shared/services/social-listening.service';
-import { firstValueFrom, Observable, of } from 'rxjs';
+import { firstValueFrom, Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { socialListeningAccessGuard } from './social-listening-access.guard';
@@ -17,9 +18,12 @@ describe('socialListeningAccessGuard', () => {
   let canViewExecutiveDashboards: ReturnType<typeof signal<boolean>>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let getAccess: ReturnType<typeof vi.fn>;
+  let setFoundation: ReturnType<typeof vi.fn>;
+  let setRouteLensKind: ReturnType<typeof vi.fn>;
+  let resolveProject: ReturnType<typeof vi.fn>;
 
   const route = (params: Record<string, string> = {}): ActivatedRouteSnapshot =>
-    ({ queryParamMap: convertToParamMap(params) }) as unknown as ActivatedRouteSnapshot;
+    ({ queryParamMap: convertToParamMap(params), data: { lens: 'foundation' } }) as unknown as ActivatedRouteSnapshot;
 
   const runGuard = async (r: ActivatedRouteSnapshot): Promise<boolean | UrlTree> => {
     const result = TestBed.runInInjectionContext(() => socialListeningAccessGuard(r, {} as RouterStateSnapshot));
@@ -31,25 +35,42 @@ describe('socialListeningAccessGuard', () => {
     canViewExecutiveDashboards = signal(false);
     selectedFoundation = signal<{ slug: string } | null>(null);
     getAccess = vi.fn().mockReturnValue(of({ canView: false, reason: 'none' }));
+    setFoundation = vi.fn();
+    setRouteLensKind = vi.fn();
+    resolveProject = vi.fn().mockReturnValue(of({ uid: 'tlf-uid', name: 'TLF', slug: 'tlf' }));
 
     TestBed.configureTestingModule({
       providers: [
         { provide: PersonaService, useValue: { currentPersona, canViewExecutiveDashboards, refreshEnrichedPersonas: vi.fn(() => of(null)) } },
-        { provide: ProjectContextService, useValue: { selectedFoundation } },
+        { provide: ProjectContextService, useValue: { selectedFoundation, setFoundation, setRouteLensKind } },
         { provide: SocialListeningService, useValue: { getAccess } },
+        { provide: ProjectRecoveryService, useValue: { resolve: resolveProject, unavailable: vi.fn() } },
         {
           provide: Router,
-          useValue: { createUrlTree: vi.fn((commands: string[], opts: unknown) => ({ denied: commands[0], opts }) as unknown as UrlTree) },
+          useValue: {
+            createUrlTree: vi.fn((commands: string[], opts: unknown) => ({ denied: commands[0], opts }) as unknown as UrlTree),
+            parseUrl: vi.fn((url: string) => ({ parsed: url }) as unknown as UrlTree),
+          },
         },
       ],
     });
   });
 
-  it('lets the ED persona straight through', async () => {
+  it('lets the ED persona straight through, seeding the foundation from ?project=', async () => {
     currentPersona.set('executive-director');
 
     await expect(runGuard(route({ project: 'tlf' }))).resolves.toBe(true);
     expect(getAccess).not.toHaveBeenCalled();
+    expect(resolveProject).toHaveBeenCalledWith('tlf');
+    expect(setFoundation).toHaveBeenCalledWith(expect.objectContaining({ uid: 'tlf-uid', slug: 'tlf' }));
+  });
+
+  it('shows not-found when ?project= does not resolve for the ED', async () => {
+    currentPersona.set('executive-director');
+    resolveProject.mockReturnValue(throwError(() => ({ status: 404 })));
+
+    const result = await runGuard(route({ project: 'nope' }));
+    expect((result as unknown as { redirectTo: unknown }).redirectTo).toEqual({ parsed: '/not-found' });
   });
 
   it('admits LF Staff without asking the access endpoint', async () => {
@@ -59,11 +80,15 @@ describe('socialListeningAccessGuard', () => {
     expect(getAccess).not.toHaveBeenCalled();
   });
 
-  it('admits a group member the access endpoint admits for the foundation in ?project=', async () => {
-    getAccess.mockReturnValue(of({ canView: true, reason: 'group-member' }));
+  it('admits a group member and seeds the foundation from the access response, without the viewer-gated lookup', async () => {
+    const foundation = { uid: 'tlf-uid', name: 'TLF', slug: 'tlf' };
+    getAccess.mockReturnValue(of({ canView: true, reason: 'group-member', foundation }));
 
     await expect(runGuard(route({ project: 'tlf' }))).resolves.toBe(true);
     expect(getAccess).toHaveBeenCalledWith('tlf');
+    expect(setRouteLensKind).toHaveBeenCalledWith('foundation');
+    expect(setFoundation).toHaveBeenCalledWith(foundation);
+    expect(resolveProject).not.toHaveBeenCalled();
   });
 
   it('falls back to the selected foundation when ?project= is absent', async () => {

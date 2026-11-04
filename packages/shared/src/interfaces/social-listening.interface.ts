@@ -5,6 +5,7 @@
 
 import type { SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES } from '../constants/social-listening.constants';
 import type { TagSeverity } from './components.interface';
+import type { ProjectContext } from './project.interface';
 import type { StatCardDelta } from './stat-card.interface';
 
 // ---------------------------------------------------------------------------
@@ -540,4 +541,9 @@ export type SocialListeningAccessReason = 'lf-staff' | 'executive-director' | 'g
 export interface SocialListeningAccessResponse {
   canView: boolean;
   reason: SocialListeningAccessReason;
+  /**
+   * The foundation's context, set only for a `group-member` grant: those members may lack project
+   * viewer access, so the page can't load the foundation through the viewer-gated project lookup.
+   */
+  foundation?: ProjectContext;
 }

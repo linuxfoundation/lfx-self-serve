@@ -8,12 +8,12 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getPersonas, checkProjectWriter, getProjectIdBySlug, getProjectById, canGroupMemberViewSocialListening, getUsernameFromAuth, computeIsFoundation } =
+const { getPersonas, checkProjectWriter, getProjectIdBySlug, getProjectWithM2M, canGroupMemberViewSocialListening, getUsernameFromAuth, computeIsFoundation } =
   vi.hoisted(() => ({
     getPersonas: vi.fn(),
     checkProjectWriter: vi.fn(),
     getProjectIdBySlug: vi.fn(),
-    getProjectById: vi.fn(),
+    getProjectWithM2M: vi.fn(),
     computeIsFoundation: vi.fn(),
     canGroupMemberViewSocialListening: vi.fn(),
     getUsernameFromAuth: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth: () => getUsernameF
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectIdBySlug = getProjectIdBySlug;
-    public getProjectById = getProjectById;
+    public getProjectWithM2M = getProjectWithM2M;
   },
 }));
 vi.mock('./committee.service', () => ({
@@ -41,6 +41,8 @@ const { SocialListeningAccessService } = await import('./social-listening-access
 const { SOCIAL_LISTENING_GROUP_ACCESS_CACHE_TTL_MS } = await import('../../../../../packages/shared/src/constants/social-listening.constants');
 
 const req = {} as Request;
+// Identity fields only: the M2M record's other fields never reach the caller.
+const GROUP_MEMBER = { canView: true, reason: 'group-member', foundation: { uid: 'tlf-uid', name: 'TLF', slug: 'tlf', parent_uid: undefined, logoUrl: 'https://logo' } };
 
 function personas(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return { personas: ['board-member'], personaProjects: {}, isRootWriter: false, isLFStaff: false, ...overrides };
@@ -53,7 +55,7 @@ describe('SocialListeningAccessService.getAccess', () => {
     getPersonas.mockReset().mockResolvedValue(personas());
     checkProjectWriter.mockReset().mockResolvedValue(false);
     getProjectIdBySlug.mockReset().mockResolvedValue({ uid: 'tlf-uid', slug: 'tlf', exists: true });
-    getProjectById.mockReset().mockResolvedValue({ uid: 'tlf-uid', slug: 'tlf' });
+    getProjectWithM2M.mockReset().mockResolvedValue({ uid: 'tlf-uid', name: 'TLF', slug: 'tlf', logo_url: 'https://logo', description: 'not returned' });
     computeIsFoundation.mockReset().mockReturnValue(true);
     canGroupMemberViewSocialListening.mockReset().mockResolvedValue(true);
     getUsernameFromAuth.mockReset().mockResolvedValue('board-user');
@@ -81,12 +83,12 @@ describe('SocialListeningAccessService.getAccess', () => {
       personas({ personas: ['executive-director'], personaProjects: { 'executive-director': [{ projectUid: 'u', projectSlug: 'cncf', projectName: 'CNCF' }] } })
     );
 
-    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual(GROUP_MEMBER);
     expect(canGroupMemberViewSocialListening).toHaveBeenCalledWith(req, 'tlf-uid');
   });
 
   it("admits a group member when the foundation's group opted in, looking the slug up as given", async () => {
-    await expect(service.getAccess(req, 'TLF')).resolves.toEqual({ canView: true, reason: 'group-member' });
+    await expect(service.getAccess(req, 'TLF')).resolves.toEqual(GROUP_MEMBER);
     expect(getProjectIdBySlug).toHaveBeenCalledWith(req, 'TLF');
   });
 
@@ -108,11 +110,11 @@ describe('SocialListeningAccessService.getAccess', () => {
 
   it("denies a child project's slug even when its group opted in — only a foundation's own groups grant access", async () => {
     getProjectIdBySlug.mockResolvedValue({ uid: 'child-uid', slug: 'child', exists: true });
-    getProjectById.mockResolvedValue({ uid: 'child-uid', slug: 'child', parent_uid: 'tlf-uid' });
+    getProjectWithM2M.mockResolvedValue({ uid: 'child-uid', slug: 'child', parent_uid: 'tlf-uid' });
     computeIsFoundation.mockReturnValue(false);
 
     await expect(service.getAccess(req, 'child')).resolves.toEqual({ canView: false, reason: 'none' });
-    expect(getProjectById).toHaveBeenCalledWith(req, 'child-uid', false);
+    expect(getProjectWithM2M).toHaveBeenCalledWith(req, 'child-uid');
     expect(canGroupMemberViewSocialListening).not.toHaveBeenCalled();
   });
 
@@ -138,7 +140,7 @@ describe('SocialListeningAccessService.getAccess', () => {
     getProjectIdBySlug.mockResolvedValueOnce({ uid: '', slug: 'tlf', exists: false });
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
-    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual(GROUP_MEMBER);
   });
 
   describe('cache expiry', () => {
@@ -148,11 +150,11 @@ describe('SocialListeningAccessService.getAccess', () => {
 
     it('asks again once the cached group answer is older than the TTL, so a removed member loses access', async () => {
       vi.useFakeTimers();
-      await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
+      await expect(service.getAccess(req, 'tlf')).resolves.toEqual(GROUP_MEMBER);
 
       canGroupMemberViewSocialListening.mockResolvedValue(false);
       vi.advanceTimersByTime(SOCIAL_LISTENING_GROUP_ACCESS_CACHE_TTL_MS - 1);
-      await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
+      await expect(service.getAccess(req, 'tlf')).resolves.toEqual(GROUP_MEMBER);
       expect(canGroupMemberViewSocialListening).toHaveBeenCalledTimes(1);
 
       vi.advanceTimersByTime(1);
@@ -162,7 +164,7 @@ describe('SocialListeningAccessService.getAccess', () => {
   });
 
   it('keys the remembered answer by foundation as well as user', async () => {
-    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual(GROUP_MEMBER);
 
     getProjectIdBySlug.mockResolvedValue({ uid: 'cncf-uid', slug: 'cncf', exists: true });
     canGroupMemberViewSocialListening.mockResolvedValue(false);
@@ -176,6 +178,6 @@ describe('SocialListeningAccessService.getAccess', () => {
     canGroupMemberViewSocialListening.mockRejectedValueOnce(new Error('query service down'));
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
-    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual(GROUP_MEMBER);
   });
 });

@@ -371,7 +371,7 @@ export const routes: Routes = [
         path: 'foundation/social-listening',
         title: 'Social Listening',
         data: { lens: 'foundation' },
-        canActivate: [socialListeningAccessGuard, projectQueryParamGuard],
+        canActivate: [socialListeningAccessGuard], // also seeds the foundation from ?project=
         loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
       },
       // Foundation Lens — Projects page
