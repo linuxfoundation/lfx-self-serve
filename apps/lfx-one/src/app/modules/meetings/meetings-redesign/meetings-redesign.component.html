@@ -208,15 +208,30 @@
 <ng-template #listTemplate>
   @if (store.loading()) {
     <div class="flex flex-col" role="status" aria-live="polite" aria-label="Loading meetings" data-testid="meetings-home-list-loading">
+      <!-- Mirrors a list row: date tile, eyebrow, title, two meta lines and the top-right buttons. -->
       @for (row of skeletonRows; track row) {
-        <div class="flex items-center gap-[16px] py-[16px]">
-          <div class="flex min-w-0 flex-auto flex-col gap-[8px]">
-            <lfx-ui-skeleton width="24%" height="10px" />
+        <div class="flex items-start gap-[14px] border-b border-gray-200 px-[4px] py-[20px]" data-testid="meetings-home-list-loading-row">
+          <lfx-ui-skeleton class="flex-none !rounded-[9px]" width="46px" height="48px" />
+          <div class="flex min-w-0 flex-auto flex-col gap-[7px]">
+            <span class="flex items-center gap-[6px]">
+              <lfx-ui-skeleton class="flex-none !rounded-[5px]" width="16px" height="16px" />
+              <lfx-ui-skeleton class="max-w-[160px]" width="24%" height="10px" />
+            </span>
             <lfx-ui-skeleton width="56%" height="14px" />
             <lfx-ui-skeleton width="40%" height="10px" />
+            <span class="mt-[3px] flex flex-wrap items-center gap-[8px]">
+              <lfx-ui-skeleton class="flex-none" shape="pill" width="76px" height="20px" />
+              <lfx-ui-skeleton class="flex-none" shape="pill" width="96px" height="20px" />
+              <lfx-ui-skeleton class="flex-none" width="72px" height="10px" />
+              <lfx-ui-skeleton class="flex-none" shape="circle" width="18px" height="18px" />
+            </span>
           </div>
-          <lfx-ui-skeleton shape="circle" width="44px" height="44px" />
-          <lfx-ui-skeleton shape="circle" width="32px" height="32px" />
+          <!-- 50px clears the row menu; hidden at 480px or less so the placeholder lines keep their width. -->
+          <span class="hidden flex-none gap-[6px] pr-[50px] @[481px]:flex">
+            @for (width of skeletonButtons[store.tab()]; track $index) {
+              <lfx-ui-skeleton class="!rounded-[11px]" [width]="width" height="28px" />
+            }
+          </span>
         </div>
       }
     </div>
