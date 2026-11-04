@@ -28,13 +28,14 @@ describe('UiAvatarComponent', () => {
 
   const initials = () => host.querySelector('[data-testid="ui-avatar-initials"]')?.textContent?.trim();
 
-  it('is a 32px neutral circle with a hairline ring by default', () => {
+  it('is a 32px accent-200 circle with accent-800 initials and no ring by default', () => {
     expect(host.style.width).toBe('32px');
     expect(host.style.height).toBe('32px');
     expect(host.className).toContain('rounded-ui-full');
-    expect(host.className).toContain('bg-ui-neutral-50');
-    expect(host.className).toContain('text-ui-neutral-600');
-    expect(host.className).toContain('edge');
+    expect(host.className).toContain('bg-ui-accent-200');
+    expect(host.className).toContain('text-ui-accent-800');
+    expect(host.className).not.toContain('edge');
+    expect(host.className).not.toContain('ring-');
   });
 
   it('is an image named by the literal name', () => {
@@ -93,13 +94,13 @@ describe('UiAvatarComponent', () => {
     ['success', 'bg-ui-success-600'],
     ['warning', 'bg-ui-warning-600'],
     ['danger', 'bg-ui-danger-600'],
-  ] as const)('tints the %s tone with %s, white text and no hairline', async (tone, fill) => {
+  ] as const)('tints the %s tone with %s, white text and no ring', async (tone, fill) => {
     fixture.componentRef.setInput('tone', tone);
     await fixture.whenStable();
 
     expect(host.className).toContain(fill);
     expect(host.className).toContain('text-ui-white');
-    expect(host.className).not.toContain('edge');
+    expect(host.className).not.toContain('ring-');
   });
 
   it('has 8px corners in the rounded shape', async () => {
@@ -118,6 +119,8 @@ describe('UiAvatarComponent', () => {
     expect(img?.getAttribute('src')).toBe('https://example.com/maria.png');
     expect(img?.getAttribute('alt')).toBe('');
     expect(initials()).toBeUndefined();
+    expect(host.className).toContain('bg-ui-neutral-100');
+    expect(host.className).not.toContain('bg-ui-accent-200');
   });
 
   it('falls back to the initials when the photo fails to load', async () => {
@@ -129,6 +132,7 @@ describe('UiAvatarComponent', () => {
 
     expect(host.querySelector('img')).toBeNull();
     expect(initials()).toBe('MS');
+    expect(host.className).toContain('bg-ui-accent-200');
   });
 
   it('tries a new photo after the old one failed', async () => {
@@ -237,12 +241,11 @@ describe('UiAvatarComponent', () => {
     expect(host.getAttribute('aria-label')).toBeNull();
   });
 
-  it('swaps the hairline for a background ring when stacked', async () => {
+  it('adds a background ring when stacked', async () => {
     fixture.componentRef.setInput('stacked', true);
     await fixture.whenStable();
 
     expect(host.className).toContain('ring-ui-background-100');
-    expect(host.className).not.toContain('edge');
   });
 
   describe('after hydration', () => {
