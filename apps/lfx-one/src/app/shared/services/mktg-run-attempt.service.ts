@@ -380,20 +380,30 @@ export class MktgRunAttemptService {
   }
 
   /**
-   * Whether this profile answered the block in ANOTHER window: its save reaches shared storage, never this window's
-   * memory copy, so storage is read past the cache. Nothing is restored or cached by the look.
+   * The answered round this profile's STORED attempt carries, read past this window's memory copy: another window's
+   * accepted send reaches shared storage, never this cache. Nothing is restored or cached by the look. A save that
+   * retires a held block spreads it back in, so the sibling's marker (its resume's ignore-id) survives the rewrite.
    */
-  public answeredInAnotherWindow(project: string, agentId: string, questionsId: string, documentId?: string): boolean {
+  public storedAnswered(project: string, agentId: string): Pick<MktgPendingGeneration, 'answered' | 'answeredQuestionsId'> {
     if (!this.subject() || !isPlatformBrowser(this.platformId)) {
-      return false;
+      return {};
     }
     try {
-      const raw = window.localStorage.getItem(this.key(project, agentId, this.subject(), documentId));
+      const raw = window.localStorage.getItem(this.key(project, agentId, this.subject()));
       const parsed = raw ? (JSON.parse(raw) as MktgStoredPendingGeneration) : null;
-      return !!parsed && (parsed.answered?.questionsId === questionsId || parsed.answeredQuestionsId === questionsId);
+      return {
+        ...(parsed?.answered && { answered: parsed.answered }),
+        ...(parsed?.answeredQuestionsId && { answeredQuestionsId: parsed.answeredQuestionsId }),
+      };
     } catch {
-      return false;
+      return {};
     }
+  }
+
+  /** Whether this profile answered the block in ANOTHER window (its stored attempt says so; this window's copy cannot). */
+  public answeredInAnotherWindow(project: string, agentId: string, questionsId: string): boolean {
+    const stored = this.storedAnswered(project, agentId);
+    return stored.answered?.questionsId === questionsId || stored.answeredQuestionsId === questionsId;
   }
 
   public clear(project: string, agentId: string, subject = this.subject(), documentId?: string): void {

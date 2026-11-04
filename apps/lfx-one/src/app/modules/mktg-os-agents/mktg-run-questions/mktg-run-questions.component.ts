@@ -3,7 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, effect, input, output, Signal, signal, untracked } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
@@ -121,10 +121,9 @@ export class MktgRunQuestionsComponent {
       if (this.questions().length && !untracked(() => this.locked())) this.draftChanged.emit(draft);
     });
     // The form API, not a bound attribute: a kept draft disables every box at once and re-enables them the same way.
-    effect(() => {
-      const locked = this.locked();
-      untracked(() => (locked ? this.answersForm.disable() : this.answersForm.enable()));
-    });
+    toObservable(this.locked)
+      .pipe(takeUntilDestroyed())
+      .subscribe((locked) => (locked ? this.answersForm.disable() : this.answersForm.enable()));
   }
 
   // === Protected methods ===

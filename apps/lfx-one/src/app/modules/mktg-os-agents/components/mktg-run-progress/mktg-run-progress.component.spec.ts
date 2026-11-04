@@ -584,6 +584,62 @@ describe('MktgRunProgressComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"] textarea').value).toBe('Synthetic edited audience');
     });
 
+    it('says nothing while this browser’s own send is open, even if a poll already shows the block written', async () => {
+      // The server claims the block before it replies: a poll landing during the POST shows writing for OUR answer.
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      const announced = vi.fn();
+      fixture.componentInstance.alreadyAnswered.subscribe(announced);
+      await fixture.whenStable();
+      await type('Synthetic edited audience');
+      const response = new Subject<{ runId: string; state: 'writing' }>();
+      answer.mockReturnValue(response);
+      fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+      await fixture.whenStable();
+      expect(answer).toHaveBeenCalledOnce();
+      await poll([run]);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).toBeNull();
+      expect(announced).not.toHaveBeenCalled();
+      response.next({ runId, state: 'writing' });
+      response.complete();
+      await fixture.whenStable();
+      await poll([run]);
+      expect(fixture.componentInstance.runState()).toBe('writing');
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).toBeNull();
+      expect(announced).not.toHaveBeenCalled();
+    });
+
+    it('keeps the typed draft when the open send loses to a 409 that a poll had already shown', async () => {
+      await setup();
+      read.mockReturnValue(of(detail([waiting])));
+      const announced = vi.fn();
+      fixture.componentInstance.alreadyAnswered.subscribe(announced);
+      await fixture.whenStable();
+      await type('Synthetic edited audience');
+      const response = new Subject<{ runId: string; state: 'writing' }>();
+      answer.mockReturnValue(response);
+      fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+      await fixture.whenStable();
+      await poll([run]);
+      expect(announced).not.toHaveBeenCalled();
+      response.error(
+        new HttpErrorResponse({
+          status: 409,
+          error: { code: MKTG_RUN_ANSWERED, details: { answeredBy: 'Synthetic writer', answeredAt: '2026-10-28T10:01:00Z' } },
+        })
+      );
+      await fixture.whenStable();
+      // One notice, the named one, with the draft kept below it.
+      expect(fixture.nativeElement.querySelectorAll('[data-testid="mktg-run-progress-answered-note"]')).toHaveLength(1);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')?.textContent?.trim()).toBe(
+        'Synthetic writer already answered these — the agent is writing. Your draft is kept below.'
+      );
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"] textarea').value).toBe('Synthetic edited audience');
+      expect(announced).toHaveBeenCalledOnce();
+    });
+
     it('moves an untouched form to writing quietly, even one whose text was retyped unchanged', async () => {
       await setup();
       read.mockReturnValue(of(detail([waiting])));

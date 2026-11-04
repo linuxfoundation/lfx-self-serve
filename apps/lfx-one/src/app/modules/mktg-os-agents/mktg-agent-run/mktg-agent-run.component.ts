@@ -61,6 +61,7 @@ import {
   MktgRunAnswer,
   MktgRunAnsweredNotice,
   MktgRunActivity,
+  MktgRunKeptDraft,
   MktgRunPhase,
   MktgRunQuestionDraft,
   MktgRunQuestionsPending,
@@ -365,7 +366,7 @@ export class MktgAgentRunComponent {
   /** True while the answers are on their way to the agent. */
   protected readonly answersSending = signal(false);
   /** The private form's live draft, keyed by its block: only a typed one hears that someone else answered. */
-  private readonly privateDraft = signal<{ questionsId: string; draft: MktgRunQuestionDraft } | null>(null);
+  private readonly privateDraft = signal<Omit<MktgRunKeptDraft, 'questions'> | null>(null);
   /** True once someone else answered the held block: it stays on screen read-only under the notice. */
   private readonly questionsLocked = signal(false);
   /** The block kept read-only under the answered notice, with the draft typed into it. */
@@ -869,13 +870,20 @@ export class MktgAgentRunComponent {
       if (owned) this.runAttempts.save({ ...owned, state: 'failed', pendingQuestions: undefined });
       return;
     }
+    // Read before any save below: `owned` is this window's memory copy, and a save rewrites the shared record, so the
+    // sibling window's answered marker is looked up in storage first and carried into the retiring save.
+    const heldId = owned?.pendingQuestions?.questionsId ?? this.questionsPending()?.questionsId;
+    const projectUid = cycle.detail.project;
+    const agentId = this.agent?.id ?? '';
+    const answeredInAnotherWindow = !!heldId && this.runAttempts.answeredInAnotherWindow(projectUid, agentId, heldId);
     if (owned?.pendingQuestions && !this.answersSending()) {
+      const retired = { ...owned, ...this.runAttempts.storedAnswered(projectUid, agentId), pendingQuestions: undefined, state: 'writing' as const };
       if (!run) {
         // Completion retires the question block, not the creator capability needed for its exact receipt.
-        this.runAttempts.save({ ...owned, state: 'writing', pendingQuestions: undefined });
+        this.runAttempts.save(retired);
       } else if (!mktgRunHoldsQuestions(run, owned.pendingQuestions.questionsId)) {
         // Only a visible newer round or another state retires the held block; a poll that omits it does not.
-        this.runAttempts.save({ ...owned, pendingQuestions: undefined, state: 'writing' });
+        this.runAttempts.save(retired);
       }
     }
     if (this.answersSending() && run?.state === 'questions') return;
@@ -897,14 +905,7 @@ export class MktgAgentRunComponent {
     // window's answer. A typed draft hears it as the send-time 409 does; an untouched form moves on quietly below.
     const held = this.questionsPending();
     if (held && !this.questionsLocked() && !this.answersSending() && this.privateDraftTyped(held.questionsId) && (run ? mktgRunMovedPast(run) : true)) {
-      const sameProfile = this.runAttempts.answeredInAnotherWindow(cycle.detail.project, this.agent?.id ?? '', held.questionsId);
-      this.hearAnswered(
-        held,
-        held.attempt.runId || this.publicRunId(),
-        cycle.detail.project,
-        this.agent?.id ?? '',
-        mktgRunAnsweredElsewhereNotice(null, sameProfile)
-      );
+      this.hearAnswered(held, held.attempt.runId || this.publicRunId(), projectUid, agentId, mktgRunAnsweredElsewhereNotice(null, answeredInAnotherWindow));
       return;
     }
     // A kept block stays until a newer round or another run; the run's later states change nothing below it.
@@ -2540,7 +2541,13 @@ export class MktgAgentRunComponent {
     this.errorText.set('');
     const saved = this.runAttempts.load(projectUid, agentId);
     if (saved?.attempt?.runId === runId)
-      this.runAttempts.save({ ...saved, state: 'writing', pendingQuestions: undefined, answeredQuestionsId: pending.questionsId });
+      this.runAttempts.save({
+        ...saved,
+        ...this.runAttempts.storedAnswered(projectUid, agentId),
+        state: 'writing',
+        pendingQuestions: undefined,
+        answeredQuestionsId: pending.questionsId,
+      });
     const scopedNotice = { runId, questionsId: pending.questionsId, message: notice };
     this.answeredNotice.set(scopedNotice);
     this.concurrentAnswers.remember(projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scopedNotice);

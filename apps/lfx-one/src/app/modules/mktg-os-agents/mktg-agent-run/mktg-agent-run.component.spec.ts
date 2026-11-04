@@ -2419,7 +2419,19 @@ describe('MktgAgentRunComponent', () => {
           await open();
           await typeAnswer('Synthetic typed goal');
           const attempts = TestBed.inject(MktgRunAttemptService);
-          vi.spyOn(attempts, 'answeredInAnotherWindow').mockReturnValue(otherWindow);
+          if (otherWindow) {
+            // The sibling window's accepted send: its own service writes the answered round to shared storage; this
+            // window's memory copy still holds the block.
+            const sibling = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+            sibling.save({
+              request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+              attempt,
+              answered: { questions: [question], answers: [{ key: 'goal', text: 'Synthetic sibling goal', origin: 'edited' }], questionsId },
+              state: 'writing',
+              updatedAt: new Date().toISOString(),
+            });
+            expect(attempts.load(PROJECT_1.uid, intake.agentId)?.pendingQuestions?.questionsId).toBe(questionsId);
+          }
           await pollWriting();
           expect(component['phase']()).toBe('running');
           expect(query('mktg-run-progress-answered-note')?.textContent?.trim()).toBe(
@@ -2427,7 +2439,6 @@ describe('MktgAgentRunComponent', () => {
               ? 'These were answered in another window — the agent is writing. Your draft is kept below.'
               : 'Someone on your team already answered these — the agent is writing. Your draft is kept below.'
           );
-          expect(attempts.answeredInAnotherWindow).toHaveBeenCalledWith(PROJECT_1.uid, intake.agentId, questionsId);
           expect(query('mktg-agent-run-questions')).toBeNull();
           const kept = query('mktg-run-questions-locked');
           const box = kept?.querySelector('textarea') as HTMLTextAreaElement;
@@ -2436,6 +2447,8 @@ describe('MktgAgentRunComponent', () => {
           expect(kept?.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
           expect(attempts.load(PROJECT_1.uid, intake.agentId)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
           expect(attempts.load(PROJECT_1.uid, intake.agentId)?.pendingQuestions).toBeUndefined();
+          // The retiring saves carried the sibling's stored round forward: its later resume still has its ignore-id.
+          if (otherWindow) expect(attempts.storedAnswered(PROJECT_1.uid, intake.agentId).answered?.questionsId).toBe(questionsId);
           expect(answerQuestions).not.toHaveBeenCalled();
           // The next poll of the same writing run keeps the block and says nothing new.
           await pollWriting();

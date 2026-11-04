@@ -25,7 +25,7 @@ import {
   MktgRunActivity,
   MktgRunAnswer,
   MktgRunAnsweredNotice,
-  MktgRunQuestion,
+  MktgRunKeptDraft,
   MktgRunQuestionDraft,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -50,13 +50,6 @@ import { catchError, defer, distinctUntilChanged, EMPTY, exhaustMap, expand, fin
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
 import { MktgClosedRunMessageComponent } from '../mktg-closed-run-message/mktg-closed-run-message.component';
-
-/** A block and the draft typed into it, kept read-only once someone else answered. */
-interface MktgRunKeptDraft {
-  questionsId: string;
-  questions: MktgRunQuestion[];
-  draft: MktgRunQuestionDraft;
-}
 
 /**
  * One public progress reader/presentation for the run and document pages.
@@ -479,8 +472,17 @@ export class MktgRunProgressComponent {
                       return { ...row, pendingQuestions: prior.pendingQuestions };
                     // The read-time half of the answers conflict: the shown block moved past its questions without this
                     // browser's answer. A typed draft hears it as the send-time 409 does; an untouched form moves on quietly.
+                    // Not while this browser's own send is open: the server claims the block before it replies, so a poll
+                    // landing then shows writing for an answer that is ours (the reply, or its 409, settles it).
                     const held = prior?.pendingQuestions?.questionsId;
-                    if (held && held === shown?.questionsId && this.answeredQuestionsId() !== held && this.publicDraftTyped(held) && mktgRunMovedPast(row))
+                    if (
+                      held &&
+                      held === shown?.questionsId &&
+                      !this.answersSending() &&
+                      this.answeredQuestionsId() !== held &&
+                      this.publicDraftTyped(held) &&
+                      mktgRunMovedPast(row)
+                    )
                       answeredElsewhere.push({ runId: row.runId, questionsId: held });
                     return row;
                   }),
@@ -610,8 +612,10 @@ export class MktgRunProgressComponent {
 
   /**
    * The read-time half of the answers conflict, learnt from a poll: the shown block moved past its questions without this
-   * browser's answer. The same words and channel as a send that lost, but no state is rewritten and nothing is re-read —
-   * the row already says writing. The name comes from this profile's attempt (another window) or the conflict fallback.
+   * browser's answer. The same words and channel as a send that lost: the notice, the answered ids and the kept draft are
+   * set and `alreadyAnswered` is emitted; the run row is not rewritten to writing (it already says so) and nothing is
+   * re-read. The name is "another window" when this profile's stored attempt shows the block answered there, else the
+   * conflict fallback.
    */
   private noticeAnsweredElsewhere(runId: string, questionsId: string): void {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === this.agentKey());

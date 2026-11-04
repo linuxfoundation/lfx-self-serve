@@ -44,7 +44,8 @@
         (readError)="onPublicReadError($event)"
         (landed)="onPublicLanding()"
         (failed)="onPublicLanding(true)" />
-      @if (!publicIdentityPending() && keptQuestions(); as kept) {
+      <!-- The kept draft shows only with its notice: the same visibility as the progress line above it. -->
+      @if (!publicIdentityPending() && !checkingRun() && !(errorText() && !navigation()) && keptQuestions(); as kept) {
         <lfx-mktg-run-questions
           [questions]="kept.questions"
           [projectName]="projectName()"

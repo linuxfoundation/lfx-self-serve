@@ -72,6 +72,17 @@ describe('MktgRunAttemptService', () => {
     expect(service.load(request.projectUid, request.agentId)?.pendingQuestions?.questionsId).toBe(questionsId);
     expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(true);
     expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, 'e'.repeat(64))).toBe(false);
+    // A save that retires this window's block spreads the stored round back in, so the sibling's marker survives.
+    service.save({
+      request,
+      attempt,
+      ...service.storedAnswered(request.projectUid, request.agentId),
+      pendingQuestions: undefined,
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+    });
+    expect(service.storedAnswered(request.projectUid, request.agentId).answered?.questionsId).toBe(questionsId);
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(true);
     user.set({ sub: 'other-subject' } as User);
     expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(false);
   });

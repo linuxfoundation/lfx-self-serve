@@ -612,6 +612,13 @@ export interface MktgRunQuestionDraft {
   dirty?: boolean;
 }
 
+/** A questions block with the draft typed into it, kept read-only once someone else answered the block. */
+export interface MktgRunKeptDraft {
+  questionsId: string;
+  questions: MktgRunQuestion[];
+  draft: MktgRunQuestionDraft;
+}
+
 /** Browser-local capability for resuming a pending one-off document; never placed in a URL. */
 export interface MktgPendingDocumentRun {
   /** Browser-local, in-progress questions; never part of an agent request. */
