@@ -88,16 +88,6 @@
           (filterChange)="onStatusFilterChange($event)"
           data-testid="vote-voters-status-pills" />
       }
-      @if (isActive() && !loading() && notVotedTotal() > 0) {
-        <lfx-button
-          label="Send reminder"
-          icon="fa-light fa-paper-plane"
-          size="small"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="openReminder()"
-          data-testid="vote-voters-send-reminder" />
-      }
     </div>
 
     @if (loading()) {
