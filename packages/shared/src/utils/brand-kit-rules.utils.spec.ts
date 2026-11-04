@@ -34,7 +34,7 @@ describe('brandKitChapterRuleBases', () => {
     expect(brandKitChapterRuleBases(brandKitReportV2RulesFixture().rules)).toEqual([
       { id: 'logo', title: 'Logo', total: 21, project: 1, lfReference: 20 },
       { id: 'color', title: 'Color', total: 5, project: 1, lfReference: 4 },
-      { id: 'type', title: 'Type', total: 9, project: 3, lfReference: 6 },
+      { id: 'type', title: 'Type', total: 9, project: 4, lfReference: 5 },
       { id: 'visual', title: 'Visual', total: 9, project: 0, lfReference: 9 },
       { id: 'usage', title: 'Usage', total: 2, project: 0, lfReference: 2 },
       { id: 'voice', title: 'Voice', total: 1, project: 1, lfReference: 0 },
@@ -68,7 +68,7 @@ describe('brandKitLfReferenceRuleLines', () => {
     expect(lines).toEqual([
       { id: 'logo', text: 'Logo: 20 of 21 rules' },
       { id: 'color', text: 'Color: 4 of 5 rules' },
-      { id: 'type', text: 'Type: 6 of 9 rules' },
+      { id: 'type', text: 'Type: 5 of 9 rules' },
       { id: 'visual', text: 'Visual: 9 of 9 rules' },
       { id: 'usage', text: 'Usage: 2 of 2 rules' },
     ]);

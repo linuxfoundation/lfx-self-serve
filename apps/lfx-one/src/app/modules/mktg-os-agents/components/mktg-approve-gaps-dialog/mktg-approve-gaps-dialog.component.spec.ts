@@ -92,7 +92,7 @@ describe('Approval with open gaps dialog', () => {
     expect(queryAll(root, 'mktg-document-view-approve-rule').map((line) => line.textContent)).toEqual([
       'Logo: 20 of 21 rules',
       'Color: 4 of 5 rules',
-      'Type: 6 of 9 rules',
+      'Type: 5 of 9 rules',
       'Visual: 9 of 9 rules',
       'Usage: 2 of 2 rules',
     ]);

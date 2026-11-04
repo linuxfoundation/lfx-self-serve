@@ -353,7 +353,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(pills).toEqual({
         logo: 'LF reference default for 20 of 21 rules',
         color: 'LF reference default for 4 of 5 rules',
-        type: 'LF reference default for 6 of 9 rules',
+        type: 'LF reference default for 5 of 9 rules',
         visual: 'LF reference default',
         usage: 'LF reference default',
         voice: 'From the project',

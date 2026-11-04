@@ -52,7 +52,7 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     await expect(dialog.getByTestId('mktg-document-view-approve-rule')).toHaveText([
       'Logo: 20 of 21 rules',
       'Color: 4 of 5 rules',
-      'Type: 6 of 9 rules',
+      'Type: 5 of 9 rules',
       'Visual: 9 of 9 rules',
       'Usage: 2 of 2 rules',
     ]);
@@ -123,7 +123,7 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     await expect(chapters).toBeVisible();
     await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-logo')).toHaveText('LF reference default for 20 of 21 rules');
     await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-color')).toHaveText('LF reference default for 4 of 5 rules');
-    await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-type')).toHaveText('LF reference default for 6 of 9 rules');
+    await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-type')).toHaveText('LF reference default for 5 of 9 rules');
     await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-visual')).toHaveText('LF reference default');
     await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-usage')).toHaveText('LF reference default');
     await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-voice')).toHaveText('From the project');

@@ -3,7 +3,7 @@
 
 import type { BrandKitReport, BrandKitReportRule } from '../../interfaces/brand-kit.interface';
 
-/** The report's rule paths, bases and uses exactly as the agent lane's report-v2 QA fixture (6f5ee832) lists them: 47 rules over the six chapters. */
+/** The report's rule paths, bases and uses exactly as the agent lane's report-v2 QA fixture (4dc32fdd) lists them: 47 rules over the six chapters. */
 const RULES: [string, BrandKitReportRule['basis'], string[]?][] = [
   ['chapters.logo.files', 'project'],
   ['chapters.logo.placeholder', 'lf-reference', ['chapters.logo.files']],
@@ -34,7 +34,7 @@ const RULES: [string, BrandKitReportRule['basis'], string[]?][] = [
   ['chapters.type.family', 'project'],
   ['chapters.type.weights', 'project'],
   ['chapters.type.source', 'project'],
-  ['chapters.type.fallback', 'lf-reference', ['chapters.type.family']],
+  ['chapters.type.fallback', 'project'],
   ['chapters.type.summary', 'lf-reference', ['chapters.type.family']],
   ['chapters.type.scale', 'lf-reference', ['chapters.type.family']],
   ['chapters.type.rules[0]', 'lf-reference', ['chapters.type.family']],
@@ -58,7 +58,7 @@ const RULES: [string, BrandKitReportRule['basis'], string[]?][] = [
  * A v2 Brand Kit report in the shape of the agent lane's report-v2 QA fixture
  * (brand-kit 2.2.0's computed envelope on a real site), with synthetic
  * sources: one colour conflict (Coral #FF702D on the brand page against
- * #FF7D2D in the site's CSS, the brand page's kept) and 47 rules — logo 1 project + 20 LF reference, color 1 + 4, type 3 + 6,
+ * #FF7D2D in the site's CSS, the brand page's kept) and 47 rules — logo 1 project + 20 LF reference, color 1 + 4, type 4 + 5,
  * visual 0 + 9, usage 0 + 2, voice 1 + 0. What the approve dialog and the
  * Kit page's basis pills are tested against. Fresh on every call.
  */
