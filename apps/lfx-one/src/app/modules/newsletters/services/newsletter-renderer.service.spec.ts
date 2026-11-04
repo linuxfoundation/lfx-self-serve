@@ -98,16 +98,17 @@ describe('NewsletterRendererService (browser)', () => {
     expect(html).not.toContain('PARENT');
   });
 
-  it('renders all each= items when the element also carries an if= guard', () => {
-    // if + each on the same element: the if guards the whole loop against the
-    // parent context, then is dropped for the per-item render so it is not
-    // re-checked against each item (which has no parent-scope field). Without
-    // that, `if="jobs" each="jobs"` would drop every item.
-    const html = service.renderBlock('<section if="jobs" each="jobs"><text>{{title}}</text></section>', {
-      jobs: [{ title: 'Alpha' }, { title: 'Beta' }],
+  it('checks an if= on an each= element against each item, as the server does', () => {
+    // bind.go clears each= on the clone but keeps if=/unless=, so the guard is
+    // evaluated per item against the item's own fields.
+    const html = service.renderBlock('<section if="enabled" each="items"><text>{{title}}</text></section>', {
+      items: [
+        { enabled: true, title: 'Alpha' },
+        { enabled: false, title: 'Beta' },
+      ],
     });
     expect(html).toContain('Alpha');
-    expect(html).toContain('Beta');
+    expect(html).not.toContain('Beta');
   });
 
   it('drops an if=-guarded element when its field is empty (non-edit mode)', () => {
@@ -125,6 +126,15 @@ describe('NewsletterRendererService (browser)', () => {
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
     expect(html).not.toContain('<img');
     expect(html).toContain('Ada');
+  });
+
+  it('drops a wrapper <style> block and its CSS instead of rendering it as text', () => {
+    const wrapper =
+      '<section><style>@media (prefers-color-scheme: dark) { .dm-card { color:#f0f0f0 !important; } }</style><text>Header</text><slot name="body"></slot></section>';
+    const { header } = service.renderWrapperChrome(wrapper);
+    expect(header).toContain('Header');
+    expect(header).not.toContain('prefers-color-scheme');
+    expect(header).not.toContain('<style');
   });
 
   it('honours unless= and field == literal guards the same way as the server', () => {

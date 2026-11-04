@@ -77,6 +77,9 @@ export class NewsletterContentStepComponent implements OnInit {
   // Which body editor is showing. Defaults to the basic (simple) editor for a
   // new draft; ngOnInit reseeds it to blocks when a loaded draft carries a layout.
   protected readonly editorMode = signal<NewsletterEditorMode>('simple');
+  // True when a new draft opened straight into blocks, so the composer starts
+  // from the template set's starter blocks.
+  protected readonly seedStarterBlocks = signal<boolean>(false);
 
   // True on small viewports (below Tailwind's `md`, 768px). The block composer is
   // a desktop drag-and-drop surface that does not work on a phone, so on mobile
@@ -131,19 +134,23 @@ export class NewsletterContentStepComponent implements OnInit {
       this.editorMode.set('simple');
       return;
     }
-    // Infer the editor from the draft: a saved layout means the composer,
-    // otherwise the basic editor (the signal default) — so a new draft opens in
-    // the basic editor and the author opts in to blocks.
+    // Infer the editor from the draft. A PRESENT layout means the composer, even
+    // after its last block is removed (an empty-but-present layout is still
+    // authoritative upstream). A draft with an authored html body stays on the
+    // basic editor. A draft with neither is new, so it opens in blocks with the
+    // template set's starter blocks (desktop only).
     const layout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
-    // A PRESENT layout means the composer, even after its last block is removed
-    // (an empty-but-present layout is still authoritative upstream). A null
-    // layout (new draft or an authored html body) stays on the basic editor.
     if (layout !== null) {
+      this.editorMode.set('blocks');
+    } else if (!this.isMobile() && stripHtml(this.form().get('bodyHtml')?.value ?? '').length === 0) {
+      this.seedStarterBlocks.set(true);
       this.editorMode.set('blocks');
     }
   }
 
   protected onLayoutChange(layout: NewsletterLayout): void {
+    // The draft now has a layout, so a remounted composer must not seed again.
+    this.seedStarterBlocks.set(false);
     this.form().get('bodyLayout')?.setValue(layout);
   }
 

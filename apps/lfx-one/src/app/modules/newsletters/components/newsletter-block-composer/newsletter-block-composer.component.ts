@@ -119,6 +119,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // authoritative size/source preview silently falls back to the client estimate.
   // Falls back to the active context when not supplied (create flow).
   public readonly projectUid = input<string | null>(null);
+  // Fill an empty canvas with the manifest's starter blocks once it loads. The
+  // content step sets it for a new draft only.
+  public readonly seedStarterBlocks = input<boolean>(false);
 
   // === Outputs ===
   // Emits the current layout whenever the canvas changes.
@@ -378,7 +381,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
         .ensureLoaded(activeKey, this.projectUid())
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe((manifest) => {
-          if (manifest) this.reconcileContainers(manifest);
+          if (!manifest) return;
+          this.reconcileContainers(manifest);
+          if (this.seedStarterBlocks() && this.blocks().length === 0) this.addStarterBlocks(manifest);
         });
     }
   }
@@ -854,14 +859,15 @@ export class NewsletterBlockComposerComponent implements OnInit {
   private initInlineEditingEffect(): void {
     afterRenderEffect(() => {
       if (!isPlatformBrowser(this.platformId)) return;
-      // Tracked deps: re-run on canvas re-render and on selection change. The
+      // Tracked deps: re-run on canvas re-render, on selection change, and when
+      // the canvas element is recreated (toggling the HTML source view). The
       // toolbar / editing-block reads + writes below are `untracked` so writing
       // the toolbar signal here can't feed back into this effect.
       this.renderedBlocks();
       const selectedId = this.selectedBlockId();
+      const canvas = this.canvasRef()?.nativeElement;
 
       untracked(() => {
-        const canvas = this.canvasRef()?.nativeElement;
         if (!canvas) return;
 
         // Only the selected block's rendered region is made editable (inline
@@ -1431,6 +1437,17 @@ export class NewsletterBlockComposerComponent implements OnInit {
   }
 
   /** Project the canvas into a NewsletterLayout and emit it. */
+  /** Add the manifest's starter blocks in order, skipping any type the palette lacks. */
+  private addStarterBlocks(manifest: NewsletterTemplateManifest): void {
+    const starters = (manifest.starter_blocks ?? [])
+      .map((starter) => manifest.blocks.find((entry) => entry.block_type === starter.block_type))
+      .filter((entry): entry is NewsletterBlockManifestEntry => !!entry)
+      .map((entry) => this.create(entry));
+    if (starters.length === 0) return;
+    this.blocks.set(starters);
+    this.emit();
+  }
+
   private emit(): void {
     this.layoutChange.emit(this.toLayout());
   }

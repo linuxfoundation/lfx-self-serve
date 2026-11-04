@@ -1059,6 +1059,13 @@ export interface NewsletterTemplateManifest {
    * was found at generation time.
    */
   wrapper?: string;
+  /** The ordered blocks a new edition starts with, from the template set's edition.json. */
+  starter_blocks?: NewsletterStarterBlock[];
+}
+
+/** One block of a template set's starting edition. */
+export interface NewsletterStarterBlock {
+  block_type: string;
 }
 
 /**

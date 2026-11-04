@@ -212,6 +212,12 @@ export class NewsletterRendererService {
 
     const { tag, attrs, children } = node;
 
+    // Email-only elements such as the wrapper's dark-mode <style> are dropped
+    // with their contents. Kept, the CSS would show as text on the canvas.
+    if (DROPPED_TAGS.has(tag)) {
+      return '';
+    }
+
     // The single inline-editable field this element owns (text or richtext), or
     // undefined for structural / link / multi-binding elements. Drives both the
     // edit-mode "keep empty" decision below and the placeholder marker.
@@ -221,29 +227,27 @@ export class NewsletterRendererService {
     // with the same rules as the server (see evalCondition) — EXCEPT in edit
     // mode when the if= guard is this element's OWN inline-editable field. There
     // we keep the (empty) element so the author can click into its placeholder,
-    // rather than have a freshly-dragged block render nothing.
-    if (attrs['if'] !== undefined && !evalCondition(ctx.content, attrs['if'])) {
-      if (!(ctx.editMode && selfEdit?.field === attrs['if'])) {
+    // rather than have a freshly-dragged block render nothing. An each= element
+    // is checked per item instead, below.
+    if (attrs['each'] === undefined) {
+      if (attrs['if'] !== undefined && !evalCondition(ctx.content, attrs['if'])) {
+        if (!(ctx.editMode && selfEdit?.field === attrs['if'])) {
+          return '';
+        }
+      }
+      if (attrs['unless'] !== undefined && evalCondition(ctx.content, attrs['unless'])) {
         return '';
       }
     }
-    if (attrs['unless'] !== undefined && evalCondition(ctx.content, attrs['unless'])) {
-      return '';
-    }
 
-    // Loop: repeat this element (minus `each` and `if`) once per array item,
-    // binding the item's fields inside. `if` was already evaluated above against
-    // the parent context (guarding the whole loop); dropping it here stops the
-    // per-item render from re-checking it against the item context — where a
-    // guard like `if="jobs" each="jobs"` would find no `jobs` field and drop
-    // every item.
+    // Loop: repeat this element (minus `each`) once per array item, binding the
+    // item's fields inside. if= and unless= stay on each clone, so they are
+    // checked against the item, as the server's binder does (bind.go).
     if (attrs['each'] !== undefined) {
       const arr = getPath(ctx.content, attrs['each']);
       if (!Array.isArray(arr)) return '';
       const rest = { ...attrs };
       delete rest['each'];
-      delete rest['if'];
-      delete rest['unless'];
       return arr
         .map((item, i) => {
           // Track the indexed path to this item (e.g. `jobs.0`) so inline-edit
@@ -462,6 +466,9 @@ const TAG_MAP: Record<string, TagMapping> = {
 
 /** Inert HTML tags the renderer may emit verbatim (layout / inline formatting). */
 const INTRINSIC_TAGS = new Set(['div', 'span', 'p', 'strong', 'em', 'b', 'i', 'u', 'br', 'ul', 'ol', 'li', 'small']);
+
+/** Elements the canvas never renders, children included. The server still sends them in the email. */
+const DROPPED_TAGS = new Set(['style', 'script', 'head', 'title', 'meta', 'link']);
 
 /** Self-closing HTML elements (no children, no close tag). */
 const VOID_TAGS = new Set(['img', 'hr', 'br']);

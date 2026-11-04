@@ -9,7 +9,7 @@
           <p class="text-sm text-gray-500" data-testid="newsletter-composer-fields-none">This block has no editable fields.</p>
         }
 
-        @for (entry of fieldEntries(); track trackByKey($index, entry)) {
+        @for (entry of fieldEntries(); track trackByFormKey($index, entry)) {
           <div
             role="group"
             [attr.aria-labelledby]="'nlfld-' + entry.key"
@@ -81,6 +81,13 @@
                             nested.displayLabel
                           }}</label>
                           @switch (nested.type) {
+                            @case ('boolean') {
+                              <lfx-toggle
+                                [form]="item"
+                                [control]="nested.key"
+                                [ariaLabel]="nested.displayLabel"
+                                [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + itemIdx + '-' + nested.key"></lfx-toggle>
+                            }
                             @case ('richtext') {
                               <lfx-rich-editor
                                 [form]="item"

@@ -36,6 +36,7 @@ describe('NewsletterBlockFieldsComponent', () => {
       paddingKey: string;
       addItem(e: NewsletterFieldEntry): void;
       removeItem(k: string, i: number): void;
+      trackByFormKey(i: number, e: NewsletterFieldEntry): string;
     };
   const setInputs = (schema: NewsletterFieldSchema | null, b: NewsletterComposerBlock | null): void => {
     fixture.componentRef.setInput('schema', schema);
@@ -93,6 +94,19 @@ describe('NewsletterBlockFieldsComponent', () => {
     setInputs({ heading: { type: 'text' } }, block('b2', { heading: 'Two' }));
     expect(priv().form()?.get('title')).toBeNull();
     expect(priv().form()?.get('heading')?.value).toBe('Two');
+  });
+
+  it('changes the row track key when another block with the same richtext field is selected', () => {
+    // lfx-rich-editor binds to its first control only, so the row must remount
+    // when the form is rebuilt, or block B would show and then save block A's text.
+    const schema: NewsletterFieldSchema = { body: { type: 'richtext' } };
+    setInputs(schema, block('b1', { body: '<p>First</p>' }));
+    const entry = priv().fieldEntries()[0];
+    const firstKey = priv().trackByFormKey(0, entry);
+
+    setInputs(schema, block('b2', { body: '<p>Second</p>' }));
+    expect(priv().form()?.get('body')?.value).toBe('<p>Second</p>');
+    expect(priv().trackByFormKey(0, priv().fieldEntries()[0])).not.toBe(firstKey);
   });
 
   it('persists a spacing override only when it is non-default', () => {

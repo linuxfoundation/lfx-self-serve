@@ -69,6 +69,8 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
   // === Writable Signals ===
   // The reactive form backing the rendered controls. Rebuilt per selected block.
   protected readonly form = signal<FormGroup | null>(null);
+  /** Bumped on every form rebuild so the field rows remount. lfx-rich-editor binds to its first control only. */
+  protected readonly formVersion = signal(0);
 
   // === Computed Signals ===
   // The non-slot fields to render, flattened with their key (ordered by schema).
@@ -177,6 +179,10 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     return entry.key;
   }
 
+  protected trackByFormKey(_index: number, entry: NewsletterFieldEntry): string {
+    return `${entry.key}:${this.formVersion()}`;
+  }
+
   // === Private Initializers ===
   private initFieldEntries(): Signal<NewsletterFieldEntry[]> {
     return computed(() => {
@@ -257,6 +263,7 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     group.addControl(this.paddingKey, new FormControl(this.seedSpacing(block.content[this.paddingKey])));
     group.addControl(this.marginKey, new FormControl(this.seedSpacing(block.content[this.marginKey])));
 
+    this.formVersion.update((v) => v + 1);
     this.builtForBlockId = block.id;
     this.builtForFieldsKey = this.fieldsKey(entries);
     this.syncedContent = block.content;

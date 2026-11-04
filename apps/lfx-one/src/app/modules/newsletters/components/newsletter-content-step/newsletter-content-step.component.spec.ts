@@ -19,10 +19,13 @@ import { NewsletterContentStepComponent } from './newsletter-content-step.compon
 @Component({ selector: 'lfx-newsletter-block-composer', template: '' })
 class StubBlockComposerComponent implements OnInit {
   public static seededWith: NewsletterLayout | null = null;
+  public static seedStarters = false;
   public readonly initialLayout = input<NewsletterLayout | null>(null);
+  public readonly seedStarterBlocks = input<boolean>(false);
   public readonly layoutChange = output<NewsletterLayout>();
   public ngOnInit(): void {
     StubBlockComposerComponent.seededWith = this.initialLayout();
+    StubBlockComposerComponent.seedStarters = this.seedStarterBlocks();
   }
 }
 
@@ -134,6 +137,25 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
     expect(blocksBtn.disabled).toBe(false);
     expect(blocksBtn.getAttribute('aria-describedby')).toBeNull();
     expect(q('newsletter-content-editor-desktop-hint')!.classList.contains('hidden')).toBe(true);
+  });
+
+  it('opens a new draft in blocks with the starter blocks on desktop', async () => {
+    stubMatchMedia(false);
+    StubBlockComposerComponent.seedStarters = false;
+    await createWith(makeForm(null));
+
+    expect(q('newsletter-content-composer')).not.toBeNull();
+    expect(StubBlockComposerComponent.seedStarters).toBe(true);
+  });
+
+  it('keeps a draft with an authored body on the basic editor', async () => {
+    stubMatchMedia(false);
+    const form = makeForm(null);
+    form.get('bodyHtml')!.setValue('<p>Written in the basic editor</p>');
+    await createWith(form);
+
+    expect(fixture.nativeElement.querySelector('lfx-rich-editor')).not.toBeNull();
+    expect(q('newsletter-content-composer')).toBeNull();
   });
 
   it('shows the desktop-only notice instead of the composer for a blocks draft on mobile', async () => {
