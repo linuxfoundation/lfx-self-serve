@@ -1113,8 +1113,9 @@ describe('MktgDocumentViewComponent', () => {
       expect(store.getRevision).not.toHaveBeenCalled();
       if (resumable) {
         expect(pending.waitForStorage).toHaveBeenCalled();
-        expect(query('mktg-document-view-run-loading')?.getAttribute('aria-label')).toBe('Checking the run…');
-        expect(query('mktg-document-view-loading')).toBeNull();
+        // A generating one-off says so (Law 1), never the run skeleton.
+        expect(query('mktg-document-view-generating')?.textContent).toContain('Generating your report');
+        expect(query('mktg-document-view-run-loading')).toBeNull();
       } else {
         expect(pending.waitForStorage).not.toHaveBeenCalled();
         expect(query('mktg-document-view-error')).not.toBeNull();
@@ -1126,14 +1127,17 @@ describe('MktgDocumentViewComponent', () => {
       pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
       pending.waitForStorage.mockReturnValue(completed);
       await render('/documents/aeo-geo/run-012345678901234567890123');
-      expect(query('mktg-document-view-run-loading')?.getAttribute('aria-label')).toBe('Checking the run…');
-      expect(query('mktg-document-view-loading')).toBeNull();
+      // The generating block, with its copy, and not the ACK's run skeleton (pre-existing since #4594).
+      expect(query('mktg-document-view-generating')?.textContent).toContain('Generating your report');
+      expect(query('mktg-document-view-loading')?.getAttribute('role')).toBe('status');
+      expect(query('mktg-document-view-run-loading')).toBeNull();
       expect(query('mktg-document-view-document')).toBeNull();
       expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'aeo-geo', 'run-012345678901234567890123', false, undefined, true);
       completed.next();
       completed.complete();
       await settle();
-      expect(query('mktg-document-view-run-loading')).toBeNull();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-loading')).toBeNull();
       expect(query('mktg-document-view-document')).not.toBeNull();
       expect(pending.clear).toHaveBeenCalledWith('proj-1', 'run-012345678901234567890123');
     });
