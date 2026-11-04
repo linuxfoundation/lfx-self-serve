@@ -391,3 +391,28 @@ export function getSurveyResyncScope(survey: Survey, projectUid: string | null |
   const committeeUids = (survey.committees ?? []).filter((c) => c.project_uid === projectUid && !!c.committee_uid).map((c) => c.committee_uid);
   return committeeUids.length > 0 ? { committeeUids } : null;
 }
+
+/**
+ * Converts the user-facing `{{Variable}}` placeholders in a survey email subject
+ * into the Go template form (`{{.Variable}}`) required by the survey service.
+ * Placeholders that already use the dot form are left unchanged.
+ */
+export function toSurveyTemplateVariables(text: string): string {
+  return text.replace(/\{\{\s*\.?\s*(\w+)\s*\}\}/g, '{{.$1}}');
+}
+
+/**
+ * Builds the survey email bodies sent to the survey service.
+ * Expands `{{SurveyButton}}` (a link in the HTML body, the bare survey link in the text body)
+ * and converts every placeholder to the Go template form (`{{.Variable}}`).
+ */
+export function buildSurveyEmailBodies(body: string): { html: string; text: string } {
+  const buttonHtml =
+    '<a href="{{SurveyLink}}" class="cta-button">Take Survey</a><br><div><p>Button not visible? Copy and paste the following link into your browser instead:</p></div>\n<div>{{SurveyLink}}</div>';
+  const withButton = (replacement: string): string => body.replace(/\{\{\s*\.?\s*SurveyButton\s*\}\}/g, () => replacement);
+
+  return {
+    html: toSurveyTemplateVariables(`<!DOCTYPE html><html><body>${withButton(buttonHtml)}</body></html>`),
+    text: toSurveyTemplateVariables(withButton('{{SurveyLink}}')),
+  };
+}

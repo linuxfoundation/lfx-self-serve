@@ -32,7 +32,7 @@ import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@sha
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 import { probeCommitteeWriters, resolveEntityWriteSlug, resolveSurveyCommitteeCandidates } from '@shared/utils/write-access.util';
 import { MessageComponent } from '@components/message/message.component';
-import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { buildSurveyEmailBodies, markFormControlsAsTouched, toSurveyTemplateVariables } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -296,6 +296,9 @@ export class SurveyManageComponent {
     const isImmediate = distributionMethod === 'immediate';
     const immediateSendAtMs = Date.now() + SURVEY_IMMEDIATE_SEND_OFFSET_MS;
 
+    // The survey service renders subject/body as Go templates: `{{Var}}` must be `{{.Var}}`
+    const emailBodies = buildSurveyEmailBodies(formData.emailBody);
+
     const surveyData: CreateSurveyRequest = {
       survey_monkey_id: formData.surveyTemplate,
       survey_title: committees[0]?.name ? `${committees[0].name} Survey` : 'New Survey',
@@ -303,9 +306,9 @@ export class SurveyManageComponent {
       survey_send_date: isImmediate ? new Date(immediateSendAtMs).toISOString() : new Date(formData.scheduledDate).toISOString(),
       survey_cutoff_date: new Date(formData.cutoffDate).toISOString(),
       survey_reminder_rate_days: parseInt(formData.reminderFrequency, 10) || 7,
-      email_subject: formData.emailSubject,
-      email_body: `<!DOCTYPE html><html><body>${formData.emailBody}</body></html>`,
-      email_body_text: formData.emailBody,
+      email_subject: toSurveyTemplateVariables(formData.emailSubject),
+      email_body: emailBodies.html,
+      email_body_text: emailBodies.text,
       committee_uid: committees[0]?.uid || '',
       committee_voting_enabled: this.committeeContext()?.enable_voting ?? false,
       is_project_survey: false,
