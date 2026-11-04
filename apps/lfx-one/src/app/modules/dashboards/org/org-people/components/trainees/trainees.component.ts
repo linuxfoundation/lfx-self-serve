@@ -8,12 +8,11 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, startWith, switchMap, tap } from 'rxjs';
 
-import { ButtonComponent } from '@components/button/button.component';
-import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrgTrainingFilterBarComponent } from '@components/org-training-filter-bar/org-training-filter-bar.component';
 import { OrgTrainingStatsComponent } from '@components/org-training-stats/org-training-stats.component';
+import { OrgTrainingStatsErrorComponent } from '@components/org-training-stats-error/org-training-stats-error.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensTrainingService } from '@services/org-lens-training.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
@@ -64,12 +63,11 @@ import { TraineesService } from '../../services/trainees.service';
   imports: [
     DecimalPipe,
     ReactiveFormsModule,
-    ButtonComponent,
-    CardComponent,
     EmptyStateComponent,
     InputTextComponent,
     OrgTrainingFilterBarComponent,
     OrgTrainingStatsComponent,
+    OrgTrainingStatsErrorComponent,
     SkeletonModule,
   ],
   templateUrl: './trainees.component.html',
@@ -129,6 +127,9 @@ export class TraineesComponent {
 
   /** The shared strip's numbers for the URL's range and filters; null while loading or when the read fails. */
   protected readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
+
+  /** Note under the strip when former employees on the people list count in the cards but are not table rows; null when there are none. */
+  protected readonly formerNote: Signal<string | null> = computed(() => this.initFormerNote());
 
   // Learners not on the people list carry no course data, so no foundation, project, course, level or format can match them.
   protected readonly courseFilterPicked: Signal<boolean> = computed(() => hasOrgTrainingFilter(this.viewState()));
@@ -413,6 +414,14 @@ export class TraineesComponent {
       out[personKey] = collapseExpandedRows(rows);
     }
     return out;
+  }
+
+  private initFormerNote(): string | null {
+    const people = this.response().formerOnPeopleList.people;
+    if (people <= 0) return null;
+    const subject =
+      people === 1 ? '1 former employee on the people list also counts' : `${people.toLocaleString('en-US')} former employees on the people list also count`;
+    return `${subject} in these numbers; the table lists current employees only.`;
   }
 
   private initOutsideLearners(): OrgTraineeOutsideLearner[] {

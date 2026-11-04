@@ -138,7 +138,7 @@
         </tr>
       </ng-template>
 
-      <!-- Totals over the whole tab: equal to the stat tiles of the same range and filters. Hidden while a request is pending: the retained response is the previous view's. -->
+      <!-- Totals over the whole tab: only Certified / Completed equals its stat tile for the same range and filters; In progress and People per tab can differ (ORG_TRAINING_GROUPS_SCOPE_NOTES). Hidden while a request is pending: the retained response is the previous view's. -->
       <ng-template #footer>
         @if (!loading() && groups().totals.coursesTaken > 0) {
           <tr data-testid="org-training-groups-totals" [attr.title]="totalsNote()">

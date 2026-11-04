@@ -37,7 +37,7 @@ import { OrgTrainingGroupEmployeesDrawerComponent } from '../org-training-group-
 /**
  * The Training page's one group-by table: person-course pairs of the selected range and filters, grouped by `groupBy`,
  * split by product type into the Certifications and Trainings tabs. Sort and paging are table-local and the name search comes from the page; the
- * footer totals come from the response and equal the stat tiles of the same filters.
+ * footer totals come from the response; only the Certified / Completed total equals its stat tile, while In progress and People per tab can differ (see `ORG_TRAINING_GROUPS_SCOPE_NOTES`).
  */
 @Component({
   selector: 'lfx-org-training-groups-table',

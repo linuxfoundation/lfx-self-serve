@@ -26,10 +26,6 @@ Training enrollment is handled on the Linux Foundation training platform. LFX Se
 
 All authenticated users can view their training enrollments.
 
-### Overview Education tiles
-
-On the Org Overview, the **Certified people** and **Courses taken** tiles show the same numbers as the Training & Certification page when it opens with its defaults (Past 2 years, no filters), with their unit, window and as-of date. The tiles show only that headline and its sub-line; they have no chart. Select a tile to open that page.
-
 ### Navigation
 
 Go to **app.lfx.dev** and select **Training & Certifications** from the left navigation sidebar (route: `/me/training`). The page shows tabs for Certifications, Enrolled Trainings, and Rewards, plus a **Useful links** section in the right sidebar.
@@ -48,9 +44,13 @@ The **Training & Certification** page in Org Lens (route: `/org/training`) gives
 - Certification achievements earned by people affiliated with your company
 - An overview of your organization's investment in Linux Foundation learning programs
 
+### Overview Education tiles
+
+On the Org Overview, the **Certified people** and **Courses taken** tiles show the same numbers as the Training & Certification page when it opens with its defaults (Past 2 years, no filters), with their unit, window and as-of date. The tiles show only that headline and its sub-line; they have no chart. Select a tile to open that page.
+
 ### Time range, filters and group by
 
-The Training & Certification page and People › Trainees share one filter bar and read the same numbers, so for the same selections they show the same figures. Both start on **Past 2 years**. On Training & Certification the bar sits in the card above the table, on one row with the name search; on People › Trainees it sits in its own card above the numbers.
+The Training & Certification page and People › Trainees share one filter bar and one set of definitions, so for the same selections the cards at the top show the same figures. The Trainees cards also count former employees who are still on the people list, which the table does not list (see People › Trainees). Both start on **Past 2 years**. On Training & Certification the bar sits in the card above the table, on one row with the name search; on People › Trainees it sits in its own card above the numbers.
 
 Search, **Time range** and (on Training & Certification) **Group by** are always visible. Foundation, Project, Course, Level and Format are behind **More filters**; the link reads **More filters (2)** when two of them are set, so a filter from a shared link is never hidden. **Fewer filters** collapses them again. Whether the row is open applies to the visit only, while the filter values stay in the page address.
 
@@ -76,7 +76,7 @@ Every number states what it counts (people or person-course pairs), its window a
 
 The two tabs split the same table by product type. **Certifications** lists certification products; **Trainings** lists everything else. Each row shows the group, **People**, **Courses taken**, **Certified** (Certifications tab) or **Completed** (Trainings tab), and **In progress**.
 
-- The **Total** row at the bottom covers every row of the tab, not only the page or the search, and matches the tiles: on the Certifications tab Certified equals the **Certifications** tile, on the Trainings tab Completed equals the **Trainings completed** tile. People in the total is distinct people, not the sum of the rows.
+- The **Total** row at the bottom covers every row of the tab, not only the page or the search, and matches its tile only for the headline count: on the Certifications tab Certified equals the **Certifications** tile, on the Trainings tab Completed equals the **Trainings completed** tile. **In progress** and **People** can differ from the tiles (see the line under the totals). People in the total is distinct people, not the sum of the rows.
 - The search box in the filter row narrows the rows only. It never changes the numbers at the top.
 - A note under the card states what Certified, Completed and In progress count in the selected range.
 - Under the totals row, a line states which products the tab counts: the Certifications tab counts Certification products only and the Trainings tab counts all the others, so each tab's **In progress** total can differ from the **Courses in progress** tile, and the two tabs add up to the tile.
@@ -86,7 +86,9 @@ The two tabs split the same table by product type. **Certifications** lists cert
 
 ### People › Trainees
 
-People › Trainees lists the people on your organization's people list with training activity in the selected time range, using the same filter bar (without Group by) and the same numbers as above. Search by name or title (it narrows the table only). The cards at the top follow the time range and the filters, and state the date of the data.
+People › Trainees lists the people on your organization's people list with training activity in the selected time range, using the same filter bar (without Group by) and the same numbers as above. Search by name or title. It narrows the table (by name or title) and the list of learners not on the people list (by name), never the cards. The cards at the top follow the time range and the filters, and state the date of the data.
+
+Former employees who are still on the people list count in the cards but are not rows of the table, which lists current employees only. When there are any, a note under the cards gives their number, for example "2 former employees on the people list also count in these numbers; the table lists current employees only."
 
 Learners linked to your organization who are not on its people list appear in a separate list below the table, **Learners not on the people list**, with their name and one overall status for the time range: **Certified** if they earned a certificate in the range, **Enrolled** otherwise. No course, project or date is shown for them. The list follows the time range and the name search only, so it is hidden while a foundation, project, course, level or format is selected.
 

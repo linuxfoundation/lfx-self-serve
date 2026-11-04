@@ -258,6 +258,33 @@ describe('TraineesComponent', () => {
       error.mockRestore();
     });
 
+    describe('former employees on the people list', () => {
+      const note = (): string | null => el().querySelector('[data-testid="org-people-trainees-former-note"]')?.textContent?.trim() ?? null;
+      const withFormer = (people: number, pairs: number): void => {
+        getTrainees.mockImplementation((_orgUid: string, range: OrgLensTimeRange) => of({ ...responseFor(range), formerOnPeopleList: { people, pairs } }));
+      };
+
+      it('states how many former employees count in the cards when there are some', async () => {
+        withFormer(2, 5);
+        await mount('/?tab=training');
+
+        expect(note()).toBe('2 former employees on the people list also count in these numbers; the table lists current employees only.');
+      });
+
+      it('uses the singular for one former employee', async () => {
+        withFormer(1, 3);
+        await mount('/?tab=training');
+
+        expect(note()).toBe('1 former employee on the people list also counts in these numbers; the table lists current employees only.');
+      });
+
+      it('shows no note when there are none', async () => {
+        await mount('/?tab=training');
+
+        expect(note()).toBeNull();
+      });
+    });
+
     it('keeps a URL filter with no rows in the range applied and shows the zeros the stats call returns, not an error', async () => {
       getTrainingStats.mockImplementation((_orgUid: string, query: OrgTrainingStatsQuery) =>
         of({

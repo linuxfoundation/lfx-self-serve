@@ -195,13 +195,19 @@ async function renderTrainingPage(
   return fixture.nativeElement;
 }
 
-async function renderTraineesPage(details: OrgTraineeDetailRow[] = DETAILS, query: string = QUERY, stats: OrgTrainingStats = STATS): Promise<HTMLElement> {
+async function renderTraineesPage(
+  details: OrgTraineeDetailRow[] = DETAILS,
+  query: string = QUERY,
+  stats: OrgTrainingStats = STATS,
+  formerOnPeopleList: OrgTraineesResponse['formerOnPeopleList'] = { people: 0, pairs: 0 }
+): Promise<HTMLElement> {
   const response: OrgTraineesResponse = {
     ...EMPTY_ORG_TRAINEES_RESPONSE,
     accountId: ACME.accountId,
     timeRange: 'all',
     trainees: PEOPLE,
     details,
+    formerOnPeopleList,
     asOf: STATS.asOf,
   };
   await TestBed.configureTestingModule({
@@ -349,6 +355,50 @@ describe('Mixed-attribute pair: Training strip, Trainees cards and Trainees tabl
     );
     expect(sums).toEqual([coursesTaken, certifications, trainingsCompleted, inProgress]);
     TestBed.resetTestingModule();
+  });
+});
+
+// A former employee still on the people list: their rows count in the stats call (cards) but the table lists current
+// employees only, so the response carries no detail rows for them, only the counts of `formerOnPeopleList`.
+const FORMER_DETAILS: OrgTraineeDetailRow[] = [row('p-gone', 'cka', 'Certified', 'Certification'), row('p-gone', 'lfs-ci', 'Enrolled', 'Training')];
+
+describe('Former employee on the people list: cards = table-derived sums + former counts', () => {
+  const formerPairs = resolveOrgTraineePairs(FORMER_DETAILS);
+  const former = countOrgTraineePairs(formerPairs);
+  const formerOnPeopleList = { people: new Set(formerPairs.map((pair) => pair.personKey)).size, pairs: formerPairs.length };
+  const allPairs = resolveOrgTraineePairs([...DETAILS, ...FORMER_DETAILS]);
+  const all = countOrgTraineePairs(allPairs);
+  const withFormerStats: OrgTrainingStats = {
+    ...STATS,
+    peopleWithTrainingActivity: new Set(allPairs.map((pair) => pair.personKey)).size,
+    coursesTaken: all.coursesTaken,
+    certifications: all.certifications,
+    trainingsCompleted: all.trainingsCompleted,
+    coursesInProgress: all.inProgress,
+  };
+
+  it('counts the former employee once as a person and per pair in formerOnPeopleList', () => {
+    expect(formerOnPeopleList).toEqual({ people: 1, pairs: 2 });
+  });
+
+  it('shows cards equal to the table sums plus the former pairs, and a note with the former people count', async () => {
+    const host = await renderTraineesPage(DETAILS, QUERY, withFormerStats, formerOnPeopleList);
+    const cards = Object.fromEntries(snapshotTiles(host).map((tile) => [tile.testId, Number(tile.value)]));
+    // columns: chevron, name, status, courses, certs, trainings, in progress, recent
+    const sums = [3, 4, 5, 6].map((index) =>
+      [...host.querySelectorAll('tbody tr[role="button"]')].reduce((sum, tr) => sum + (Number(tr.querySelectorAll('td')[index].textContent?.trim()) || 0), 0)
+    );
+
+    expect(host.querySelectorAll('tbody tr[role="button"]')).toHaveLength(PEOPLE.length);
+    expect([
+      cards['org-training-stat-courses-taken'],
+      cards['org-training-stat-certifications'],
+      cards['org-training-stat-trainings-completed'],
+      cards['org-training-stat-courses-in-progress'],
+    ]).toEqual([sums[0] + former.coursesTaken, sums[1] + former.certifications, sums[2] + former.trainingsCompleted, sums[3] + former.inProgress]);
+    expect(cards['org-training-stat-courses-taken']).toBe(sums[0] + formerOnPeopleList.pairs);
+    expect(cards['org-training-stat-people-with-training-activity']).toBe(PEOPLE.length + formerOnPeopleList.people);
+    expect(host.querySelector('[data-testid="org-people-trainees-former-note"]')?.textContent).toContain('1 former employee on the people list');
   });
 });
 

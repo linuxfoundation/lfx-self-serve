@@ -75,6 +75,26 @@ function statReading(key: OrgTrainingStatKey, stats: OrgTrainingStats): { value:
   }
 }
 
+/** A tile's tooltip: the no-roster note, the bare definition while `stats` is absent, or the definition with as-of date. */
+function tileTooltip(
+  definition: OrgTrainingStatDefinition,
+  range: OrgLensTimeRange,
+  stats: OrgTrainingStats | null,
+  asOf: string | null,
+  noRoster: boolean
+): string {
+  if (noRoster) return `${definition.definition} ${ORG_TRAINING_NO_ROSTER_NOTE}.`;
+  if (stats === null) return orgTrainingStatDefinitionText(definition, range);
+  return orgTrainingStatTooltip(definition, range, asOf);
+}
+
+/** A tile's shown value: an em dash for null, a percentage for the completion rate, a grouped number otherwise. */
+function tileDisplay(key: OrgTrainingStatKey, value: number | null): string {
+  if (value === null) return '—';
+  if (key === 'completionRate') return `${value}%`;
+  return value.toLocaleString('en-US');
+}
+
 /**
  * The shared stat tiles, in display order, for `range`. `stats` null (loading or failed) yields null values with the
  * definitions still stated and no as-of sentence. A roster of exactly null means the org has no training program.
@@ -84,17 +104,12 @@ export function buildOrgTrainingStatTiles(stats: OrgTrainingStats | null, range:
     const definition = ORG_TRAINING_STAT_DEFINITIONS[layout.key];
     const { value, asOf } = stats ? statReading(layout.key, stats) : { value: null, asOf: null };
     const noRoster = stats !== null && layout.key === 'rosterMembers' && value === null;
-    const shownValue = value ?? null;
-    const tooltip = noRoster
-      ? `${definition.definition} ${ORG_TRAINING_NO_ROSTER_NOTE}.`
-      : stats === null
-        ? orgTrainingStatDefinitionText(definition, range)
-        : orgTrainingStatTooltip(definition, range, asOf);
-    const display = shownValue === null ? '—' : layout.key === 'completionRate' ? `${shownValue}%` : shownValue.toLocaleString('en-US');
+    const tooltip = tileTooltip(definition, range, stats, asOf, noRoster);
+    const display = tileDisplay(layout.key, value);
     return {
       ...layout,
       label: definition.label,
-      value: shownValue,
+      value,
       display,
       caption: noRoster ? ORG_TRAINING_NO_ROSTER_NOTE : orgTrainingStatCaption(definition, range, stats ? asOf : undefined),
       tooltip,

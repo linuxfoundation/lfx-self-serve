@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MAX_ORG_CERT_EMPLOYEES } from '@lfx-one/shared/constants';
+import { MAX_ORG_TRAINING_GROUP_EMPLOYEES } from '@lfx-one/shared/constants';
 import type {
   OrgTrainingGroupBy,
   OrgTrainingGroupEmployeesResponse,
@@ -337,8 +337,8 @@ describe('OrgTrainingGroupsTableComponent', () => {
   describe('when the roster hits the server cap', () => {
     const capped = (): OrgTrainingGroupEmployeesResponse => ({
       ...EMPLOYEES,
-      total: MAX_ORG_CERT_EMPLOYEES + 40,
-      data: Array.from({ length: MAX_ORG_CERT_EMPLOYEES }, (_, index) => ({ contactId: `p-${index}`, name: `Person ${index}`, jobTitle: null })),
+      total: MAX_ORG_TRAINING_GROUP_EMPLOYEES + 40,
+      data: Array.from({ length: MAX_ORG_TRAINING_GROUP_EMPLOYEES }, (_, index) => ({ contactId: `p-${index}`, name: `Person ${index}`, jobTitle: null })),
     });
 
     async function openCapped() {
@@ -358,7 +358,7 @@ describe('OrgTrainingGroupsTableComponent', () => {
 
     it('states the cap above the list, and keeps it while a search narrows the rows', async () => {
       const { fixture } = await openCapped();
-      expect(text('org-training-group-employees-cap-note')).toContain(`first ${MAX_ORG_CERT_EMPLOYEES}`);
+      expect(text('org-training-group-employees-cap-note')).toContain(`first ${MAX_ORG_TRAINING_GROUP_EMPLOYEES}`);
 
       await search(fixture, 'Person 12');
 
@@ -374,7 +374,7 @@ describe('OrgTrainingGroupsTableComponent', () => {
       expect(byTestId('org-training-group-employees-list')).toBeNull();
       expect(byTestId('org-training-group-employees-cap-note')).not.toBeNull();
       expect(document.body.textContent).toContain('No loaded employees match your search');
-      expect(document.body.textContent).toContain(`first ${MAX_ORG_CERT_EMPLOYEES}`);
+      expect(document.body.textContent).toContain(`first ${MAX_ORG_TRAINING_GROUP_EMPLOYEES}`);
     });
 
     it('keeps the plain no-match message for a roster below the cap', async () => {

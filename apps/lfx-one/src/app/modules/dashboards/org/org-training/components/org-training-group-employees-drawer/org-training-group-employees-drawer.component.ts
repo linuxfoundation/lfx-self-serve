@@ -9,8 +9,8 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { MAX_ORG_CERT_EMPLOYEES } from '@lfx-one/shared/constants';
-import type { OrgCertEmployeeVm, OrgTrainingGroupEmployeesParams, OrgTrainingStatsQuery } from '@lfx-one/shared/interfaces';
+import { MAX_ORG_TRAINING_GROUP_EMPLOYEES } from '@lfx-one/shared/constants';
+import type { OrgTrainingGroupEmployeeVm, OrgTrainingGroupEmployeesParams, OrgTrainingStatsQuery } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
@@ -61,7 +61,7 @@ export class OrgTrainingGroupEmployeesDrawerComponent {
   // The clicked cell's pair count; the response's own total once it has loaded (the two are the same number).
   protected readonly pairCount = computed<number>(() => this.employeesData()?.total ?? this.count());
 
-  protected readonly filteredEmployees = computed<OrgCertEmployeeVm[]>(() => {
+  protected readonly filteredEmployees = computed<OrgTrainingGroupEmployeeVm[]>(() => {
     const term = this.searchTerm().toLowerCase().trim();
     const data = this.employeesData()?.data ?? [];
     const matched = !term ? data : data.filter((e) => e.name.toLowerCase().includes(term) || (e.jobTitle ?? '').toLowerCase().includes(term));
@@ -69,10 +69,10 @@ export class OrgTrainingGroupEmployeesDrawerComponent {
   });
 
   // The roster is capped server-side while the count is the number of person-course pairs — surface the gap so a truncated list isn't mistaken for the full set.
-  protected readonly rosterCap = MAX_ORG_CERT_EMPLOYEES;
-  protected readonly isRosterCapped = computed<boolean>(() => (this.employeesData()?.data.length ?? 0) >= MAX_ORG_CERT_EMPLOYEES);
+  protected readonly rosterCap = MAX_ORG_TRAINING_GROUP_EMPLOYEES;
+  protected readonly isRosterCapped = computed<boolean>(() => (this.employeesData()?.data.length ?? 0) >= MAX_ORG_TRAINING_GROUP_EMPLOYEES);
 
-  protected onPersonClick(employee: OrgCertEmployeeVm): void {
+  protected onPersonClick(employee: OrgTrainingGroupEmployeeVm): void {
     this.drawer.open({
       personKey: employee.contactId,
       name: employee.name,

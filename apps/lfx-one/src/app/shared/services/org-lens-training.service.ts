@@ -5,7 +5,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_TRAINING_VIEW_QUERY_PARAMS } from '@lfx-one/shared/constants';
+import { ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_TRAINING_FILTER_KEYS, ORG_TRAINING_VIEW_QUERY_PARAMS } from '@lfx-one/shared/constants';
 import type {
   OrgLensTimeRange,
   OrgTrainingFilterOptions,
@@ -68,7 +68,7 @@ export class OrgLensTrainingService {
   /** Range plus every filter that is set; an unset filter is left off the URL. */
   private queryParams(query: OrgTrainingStatsQuery): HttpParams {
     let httpParams = strictHttpParams().set(ORG_LENS_TIME_RANGE_QUERY_PARAM, query.range);
-    for (const key of ['foundation', 'project', 'course', 'level', 'format'] as const) {
+    for (const key of ORG_TRAINING_FILTER_KEYS) {
       const value = query[key];
       if (value !== null) httpParams = httpParams.set(ORG_TRAINING_VIEW_QUERY_PARAMS[key], value);
     }

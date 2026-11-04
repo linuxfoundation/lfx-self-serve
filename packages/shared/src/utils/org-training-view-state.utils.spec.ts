@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { OrgTrainingViewState } from '../interfaces/org-training-view.interface';
 import {
-  hasOrgTrainingCourseFilter,
+  hasOrgTrainingFilter,
   matchesOrgTrainingFilters,
   normalizeOrgTrainingFilterValue,
   orgTrainingCompletionRatePct,
@@ -97,8 +97,8 @@ describe('filter helpers', () => {
   const none = { foundation: null, project: null, course: null, level: null, format: null };
 
   it('detects a course-level filter', () => {
-    expect(hasOrgTrainingCourseFilter(none)).toBe(false);
-    expect(hasOrgTrainingCourseFilter({ ...none, format: 'E-Learning' })).toBe(true);
+    expect(hasOrgTrainingFilter(none)).toBe(false);
+    expect(hasOrgTrainingFilter({ ...none, format: 'E-Learning' })).toBe(true);
   });
 
   it('matches row attributes against every set filter', () => {

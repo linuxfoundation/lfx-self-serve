@@ -83,11 +83,6 @@ export function hasOrgTrainingFilter(filters: OrgTrainingFilters): boolean {
   return ORG_TRAINING_FILTER_KEYS.some((key) => filters[key] !== null);
 }
 
-/** Whether a course-level filter is set; learners outside the people list carry no course data and drop out then. */
-export function hasOrgTrainingCourseFilter(filters: OrgTrainingFilters): boolean {
-  return hasOrgTrainingFilter(filters);
-}
-
 /** Completion rate: (certifications + trainings completed) / courses taken, rounded; 0 with no courses. */
 export function orgTrainingCompletionRatePct(counts: { coursesTaken: number; certifications: number; trainingsCompleted: number }): number {
   return counts.coursesTaken > 0 ? Math.round(((counts.certifications + counts.trainingsCompleted) / counts.coursesTaken) * 100) : 0;
