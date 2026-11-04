@@ -191,6 +191,7 @@ describe('legacyDocsRedirectTarget', () => {
     ['/docs/organization/easycla', '/docs/company/easycla'],
     ['/docs/organization/manage-org-lens-access', '/docs/company/manage-company-lens-access'],
     ['/docs/organization/faq', '/docs/company/faq'],
+    ['/docs/organization/projects', '/docs/company/projects'],
     ['/docs/organization/easycla?x=1', '/docs/company/easycla?x=1'],
   ])('moves %s to %s', (from, to) => {
     expect(legacyDocsRedirectTarget(from)).toBe(to);

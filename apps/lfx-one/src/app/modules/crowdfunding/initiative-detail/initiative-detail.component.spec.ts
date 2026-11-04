@@ -1,13 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Signal, signal } from '@angular/core';
+import { Signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { FundType } from '@lfx-one/shared/enums';
 import { CrowdfundingInitiativeStatus, InitiativeDetail } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -43,7 +42,7 @@ describe('InitiativeDetailComponent Edit attribution visibility (lfx-crowdfundin
 
   const dialogClose = new Subject<InitiativeDetail | undefined>();
 
-  const setup = (opts: { lens?: string; flag?: boolean; initiative?: InitiativeDetail } = {}): Page => {
+  const setup = (opts: { lens?: string; initiative?: InitiativeDetail } = {}): Page => {
     TestBed.configureTestingModule({
       imports: [InitiativeDetailComponent],
       providers: [
@@ -55,7 +54,6 @@ describe('InitiativeDetailComponent Edit attribution visibility (lfx-crowdfundin
           },
         },
         { provide: CrowdfundingService, useValue: { getInitiativeBySlug: () => of(opts.initiative ?? detail()) } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(opts.flag ?? true) } },
         { provide: OrgLensNavigationService, useValue: { orgLensLink: () => ['/company', 'initiatives'] } },
         { provide: DialogService, useValue: { open: () => ({ onClose: dialogClose }) } },
         { provide: MessageService, useValue: { add: () => undefined } },
@@ -83,10 +81,6 @@ describe('InitiativeDetailComponent Edit attribution visibility (lfx-crowdfundin
 
   it.each(['pending', 'published', 'declined', 'hidden'] as const)('hides once the initiative is %s', (status) => {
     expect(canEdit({ initiative: detail({ status }) })).toBe(false);
-  });
-
-  it('hides while the attribution flag is off', () => {
-    expect(canEdit({ flag: false })).toBe(false);
   });
 
   it('stays visible after a settings save, whose response carries no is_owner', () => {

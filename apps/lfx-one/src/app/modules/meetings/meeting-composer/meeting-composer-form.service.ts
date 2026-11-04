@@ -65,6 +65,7 @@ import {
   generateTempId,
   getActiveOccurrences,
   getUserTimezone,
+  getMeetingCommitteeSelectionKey,
   isRecurrenceNeverEndSentinel,
   isSameOccurrenceId,
   mapRecurrenceToFormValue,
@@ -86,6 +87,7 @@ import { MessageService } from 'primeng/api';
 import {
   catchError,
   concat,
+  distinctUntilChanged,
   EMPTY,
   finalize,
   forkJoin,
@@ -95,6 +97,7 @@ import {
   mergeMap,
   Observable,
   of,
+  startWith,
   Subject,
   Subscription,
   switchMap,
@@ -217,7 +220,8 @@ export class MeetingComposerFormService {
    * contents would disable Save and claim a group was waiting when none was.
    */
   public readonly hasUnreconciledGroupSelection = computed<boolean>(() => {
-    if ((this.deferredCommitteeMembers()?.length ?? 0) > 0) {
+    this.revision();
+    if (this.committeeMembersPending() || (this.deferredCommitteeMembers()?.length ?? 0) > 0) {
       return true;
     }
 
@@ -234,7 +238,11 @@ export class MeetingComposerFormService {
     // has members still to fetch. A group the report names that the form no longer carries is the
     // mirror image: dropping a group refetches the remainder, and until that lands `registrantUpdates`
     // still holds the dropped group's people, so a save in the gap unlinks the group and keeps them.
-    return selected.some((uid) => !resolved.includes(uid)) || resolved.some((uid) => !selected.includes(uid));
+    return (
+      selected.some((uid) => !resolved.includes(uid)) ||
+      resolved.some((uid) => !selected.includes(uid)) ||
+      this.resolvedCommitteeSelectionKey() !== getMeetingCommitteeSelectionKey(this.form().getRawValue().committees)
+    );
   });
 
   /**
@@ -365,7 +373,8 @@ export class MeetingComposerFormService {
   /**
    * The group uids whose members have actually reached the form; `null` until anything has.
    * @description Reported by the picker, which writes the selection to the form synchronously and
-   * fetches its members afterwards, and never emits at all when that fetch fails. Both surfaces feed
+   * fetches its members afterwards. Pending reports invalidate coverage; failed fetches never report
+   * successful coverage. Both surfaces feed
    * it here rather than each gating on their own copy, so the rail, the section state and the save
    * button answer from one place.
    *
@@ -377,6 +386,8 @@ export class MeetingComposerFormService {
    * the form instead, so an unreported selection is unresolved by construction.
    */
   private readonly resolvedCommitteeUids = signal<string[] | null>(null);
+  private readonly resolvedCommitteeSelectionKey = signal<string | null>(null);
+  private readonly committeeMembersPending = signal(false);
 
   /** The group this open was scoped to, kept so a failed context lookup can be retried. */
   private readonly committeeContextUid = signal<string | null>(null);
@@ -417,6 +428,8 @@ export class MeetingComposerFormService {
     this.suppressedGuestEmails.set(new Set());
     this.deferredCommitteeMembers.set(null);
     this.resolvedCommitteeUids.set(null);
+    this.resolvedCommitteeSelectionKey.set(null);
+    this.committeeMembersPending.set(false);
     this.committeeContext.set(null);
     this.committeeContextLoading.set(false);
     this.committeeContextFailed.set(false);
@@ -725,9 +738,15 @@ export class MeetingComposerFormService {
     this.loadCommitteeContext(committeeUid);
   }
 
-  /** Records which groups the picker's latest member emission covered, opening the save gate for them. */
-  public setResolvedCommitteeUids(uids: string[]): void {
+  /** A null report invalidates in-flight coverage; a successful roster records its full group/filter selection. */
+  public setResolvedCommitteeUids(uids: string[] | null): void {
+    if (uids === null) {
+      this.committeeMembersPending.set(true);
+      return;
+    }
     this.resolvedCommitteeUids.set(uids);
+    this.resolvedCommitteeSelectionKey.set(getMeetingCommitteeSelectionKey(this.form().getRawValue().committees));
+    this.committeeMembersPending.set(false);
   }
 
   /** Marks the whole form touched so validation messages surface; returns whether submit may proceed. */
@@ -1257,6 +1276,18 @@ export class MeetingComposerFormService {
 
     this.formSubscriptions.add(form.valueChanges.subscribe(() => this.revision.update((value) => value + 1)));
     this.formSubscriptions.add(form.statusChanges.subscribe(() => this.revision.update((value) => value + 1)));
+    const committeesControl = form.get('committees');
+    if (committeesControl) {
+      this.formSubscriptions.add(
+        committeesControl.valueChanges
+          .pipe(
+            startWith(committeesControl.value),
+            map((committees) => getMeetingCommitteeSelectionKey(committees)),
+            distinctUntilChanged()
+          )
+          .subscribe(() => this.resolvedCommitteeSelectionKey.set(null))
+      );
+    }
 
     // Watch youtube_upload_enabled and enforce title length limit when enabled.
     // This fires correctly on patchValue during edit-mode hydration because the form initialises
@@ -2025,6 +2056,7 @@ export class MeetingComposerFormService {
     // without this an edit that never opens Guests, which "Save changes" does not require, would find
     // its own groups unaccounted for and refuse to save an unrelated change.
     this.resolvedCommitteeUids.set(sanitizeMeetingCommittees(meeting.committees).map((committee) => committee.uid));
+    this.resolvedCommitteeSelectionKey.set(getMeetingCommitteeSelectionKey(meeting.committees));
 
     // Duration is set through `setDuration()` rather than patched, because it lives in two controls.
     // Patching `duration` alone left an off-chip stored value (20 or 75 minutes) selecting no chip at

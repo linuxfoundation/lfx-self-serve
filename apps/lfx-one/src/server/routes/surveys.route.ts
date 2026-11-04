@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { SurveyController } from '../controllers/survey.controller';
+import { surveyWriteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
@@ -23,6 +24,15 @@ router.get('/:uid/my-response', (req, res, next) => surveyController.getMyRespon
 
 // GET /surveys/:uid/responses - paginated per-recipient responses (PMO results drawer)
 router.get('/:uid/responses', (req, res, next) => surveyController.getSurveyResponses(req, res, next));
+
+// POST /surveys/:uid/reminders - resend the survey email to selected non-respondents (#4340)
+router.post('/:uid/reminders', surveyWriteRateLimiter, (req, res, next) => surveyController.sendSurveyReminders(req, res, next));
+
+// GET /surveys/:uid/resync-preview - committee members a resync would add (#4340)
+router.get('/:uid/resync-preview', (req, res, next) => surveyController.getResyncPreview(req, res, next));
+
+// POST /surveys/:uid/resync - send the survey to committee members added since launch (#4340)
+router.post('/:uid/resync', surveyWriteRateLimiter, (req, res, next) => surveyController.resyncRecipients(req, res, next));
 
 // GET /surveys/:uid - get a single survey
 router.get('/:uid', (req, res, next) => surveyController.getSurveyById(req, res, next));

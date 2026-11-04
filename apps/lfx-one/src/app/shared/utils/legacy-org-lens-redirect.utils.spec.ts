@@ -66,6 +66,7 @@ describe('legacy docs redirects', () => {
     ['/docs/organization/manage-org-lens-access', '/docs/company/manage-company-lens-access'],
     ['/docs/organization/easycla#what-does-auto-acknowledge-do', '/docs/company/easycla#what-does-auto-acknowledge-do'],
     ['/docs/organization/faq', '/docs/company/faq'],
+    ['/docs/organization/projects', '/docs/company/projects'],
     ['/docs/organization/memberships', '/docs/company/memberships'],
   ])('%s lands on %s', async (from, to) => {
     await router.navigateByUrl(from);

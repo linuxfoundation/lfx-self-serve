@@ -196,5 +196,15 @@ describe('NextMeetingCardComponent', () => {
 
       expect(query(fixture, 'meetings-home-next-card-starts-in')?.textContent?.trim() ?? null).toBe(label);
     });
+
+    it('is a neutral 12px note with a clock icon', async () => {
+      const start = inMinutes(30);
+      const fixture = await render(buildRow(buildMeeting({ start_time: start.toISOString() }), start));
+      const note = query(fixture, 'meetings-home-next-card-starts-in');
+
+      expect(Array.from(note?.classList ?? [])).toEqual(expect.arrayContaining(['text-label-12', 'text-gray-500']));
+      expect(Array.from(note?.classList ?? []).some((name) => name.startsWith('bg-'))).toBe(false);
+      expect(Array.from(note?.querySelector('i')?.classList ?? [])).toEqual(expect.arrayContaining(['fa-clock', 'text-[12px]']));
+    });
   });
 });

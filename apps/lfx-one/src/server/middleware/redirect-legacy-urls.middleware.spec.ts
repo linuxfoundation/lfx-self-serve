@@ -21,6 +21,7 @@ describe('redirectLegacyUrls', () => {
     ['/org/0014100000MgaAAAAA/easycla/g1?org=0014100000MgaAAAAA&signed=1', '/company/0014100000MgaAAAAA/easycla/g1?company=0014100000MgaAAAAA&signed=1'],
     ['/org/overview', '/company/overview'],
     ['/docs/organization/choose-an-organization', '/docs/company/choose-a-company'],
+    ['/docs/organization/projects', '/docs/company/projects'],
   ])('answers %s with a 301 to %s', (from, to) => {
     const { redirect, next } = run(from);
     expect(redirect).toHaveBeenCalledWith(301, to);

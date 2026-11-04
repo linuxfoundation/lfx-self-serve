@@ -48,6 +48,7 @@ export const ORG_LENS_PAGE_SEGMENTS: Readonly<Record<string, true>> = {
   groups: true,
   profile: true,
   initiatives: true,
+  donations: true,
   'not-found': true,
 };
 

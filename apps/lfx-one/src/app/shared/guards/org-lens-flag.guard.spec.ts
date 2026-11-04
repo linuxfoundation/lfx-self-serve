@@ -9,7 +9,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 
-import { orgLensClaM3EnabledGuard } from './org-lens-cla-m3-enabled.guard';
+import { CF_ORG_DONATIONS_FLAG, ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants';
+
+import { cfOrgDonationsGuard, orgLensClaM3EnabledGuard } from './org-lens-flag.guard';
 
 describe('orgLensClaM3EnabledGuard', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;
@@ -154,5 +156,17 @@ describe('orgLensClaM3EnabledGuard', () => {
     expect(router.parseUrl).toHaveBeenCalledWith('/company/other-org/overview');
     expect(router.createUrlTree).not.toHaveBeenCalled();
     expect(result).toEqual({ redirected: '/company/other-org/overview' });
+  });
+
+  it.each([
+    [orgLensClaM3EnabledGuard, ORG_LENS_CLA_M3_ENABLED_FLAG],
+    [cfOrgDonationsGuard, CF_ORG_DONATIONS_FLAG],
+  ])('evaluates its own flag (%#)', async (guard, flag) => {
+    getBooleanFlag.mockReturnValue(signal(true));
+
+    const result = await TestBed.runInInjectionContext(() => guard(route, segments));
+
+    expect(result).toBe(true);
+    expect(getBooleanFlag).toHaveBeenCalledWith(flag, false);
   });
 });

@@ -3,13 +3,6 @@
 
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
-/**
- * Dark-launch gate for initiative attribution (lfx-crowdfunding #256). Crowdfunding uses the same
- * LaunchDarkly client id, so this one toggle also shows the project/org picker in its fundraise form. Here it hides the
- * Project/Foundation lens Initiatives route and sidebar entry (#347). Browser-only: the BFF stays open,
- * and CF's writer check on the project is the authorization boundary.
- */
-export const CROWDFUNDING_ATTRIBUTION_STEP_FLAG = 'crowdfunding-attribution-step';
 export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
 /**
  * Dark-launch gate for the M2 My CLAs overlay (#1738) — Sign CLA, Status column,
@@ -45,6 +38,12 @@ export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
  * write, rather than resting on the reads being harmless.
  */
 export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
+/**
+ * Dark-launch gate for the Org Lens Crowdfunding Donations page (lfx-crowdfunding#415): the route (`cfOrgDonationsGuard`,
+ * fail closed) and its sidebar entry. Default false. **UI-only**: the BFF stays open, and CF's auditor check on the
+ * b2b_org is the authorization boundary.
+ */
+export const CF_ORG_DONATIONS_FLAG = 'cf-org-donations';
 /**
  * Dark-launch gate for Slack-webhook sharing (LFXV2-3080) — the settings card
  * (committee-settings-tab) and the "Share to Slack" action (weekly-brief-card) both check this

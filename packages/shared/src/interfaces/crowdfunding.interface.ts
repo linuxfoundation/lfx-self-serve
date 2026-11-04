@@ -106,6 +106,22 @@ export interface MyDonation {
 
 export type MyDonationsResponse = OffsetPaginatedResponse<MyDonation>;
 
+/** A donation matched to an organization (#415) — returned by GET /api/crowdfunding/org-donations. */
+export interface OrgDonation {
+  id: string;
+  /** True for a recurring donation; it is one row with its per-charge amount. */
+  recurring: boolean;
+  initiativeId?: string;
+  initiativeName?: string;
+  donorName: string;
+  donorEmail: string;
+  amountCents: number;
+  /** Unix timestamp in milliseconds. */
+  date: number;
+}
+
+export type OrgDonationsResponse = OffsetPaginatedResponse<OrgDonation>;
+
 export interface FundingGoal {
   id: string;
   name: string;
