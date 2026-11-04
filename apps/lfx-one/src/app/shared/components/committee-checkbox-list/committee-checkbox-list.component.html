@@ -25,6 +25,8 @@
     optionLabel="name"
     optionValue="id"
     placeholder="Select groups"
+    display="chip"
+    [ariaLabel]="label() || 'Select groups'"
     [filter]="true"
     [filterPlaceHolder]="searchPlaceholder()"
     [showToggleAll]="true"

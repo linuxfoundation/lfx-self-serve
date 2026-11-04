@@ -63,7 +63,7 @@ export class CommitteeCheckboxListComponent {
       )
       .subscribe((ids) => {
         const control = this.selectionForm.controls.committeeIds;
-        if (!this.sameIds(control.value, ids)) {
+        if (!this.sameIds(control.value ?? [], ids)) {
           control.setValue(ids, { emitEvent: false });
         }
       });
@@ -139,9 +139,11 @@ export class CommitteeCheckboxListComponent {
     });
   }
 
-  private onSelectionChange(ids: string[]): void {
+  private onSelectionChange(value: string[] | null): void {
     const options = this.committeeOptions();
     const current = this.selectedItems();
+    // PrimeNG writes null when its clear action runs; treat that as an empty selection.
+    const ids = (value ?? []).filter((id): id is string => !!id);
 
     // A group already on the form but missing from the loaded options (e.g. edit mode) keeps its stored name.
     const updated: CommitteeSelectorOption[] = ids.map((id) => {
