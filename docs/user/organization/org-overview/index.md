@@ -79,7 +79,7 @@ The Org Overview links to the **Memberships** and **Projects** pages of the same
 
 1. **View all on Memberships page ›**, at the right of the Foundations and Projects heading, opens the **Memberships** page.
 2. Selecting a foundation's row opens the **Memberships** page. The **Outside LF** row does not open anything.
-3. Selecting a project inside an expanded foundation opens that project's page under **Projects**. Only LF projects open a page; other projects are listed for reference.
+3. Selecting a project inside an expanded foundation opens that project's page under **Projects**. Only LF projects open a page; other projects are listed for reference. See [What is a project detail page?](../projects/#what-is-a-project-detail-page).
 
 On a keyboard, move to a foundation or project row and press Enter or Space to open it.
 
@@ -107,6 +107,7 @@ If a link shows a message such as **You do not have access to this organization*
 ## Related sections
 
 - [Choose and switch an organization](../choose-an-organization/) — pick the organization the Org Overview shows
+- [Projects and project detail](../projects/) — the organization's projects, and each project's influence and leaderboards
 - [Manage Org Lens Access](../manage-org-lens-access/) — who can open the organization, and how an Admin adds or removes them
 - [Organization FAQ](../faq/) — short answers about the Organization lens
 - [ROI metrics](../../dashboards/roi/) — return on investment estimates, for Linux Foundation staff
