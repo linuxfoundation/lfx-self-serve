@@ -98,7 +98,7 @@ Your choice is kept when you open a project's detail page and when you return to
 
 ## What does Team members change?
 
-**Team members** chooses whether people marked as team members in LFX count toward the **Contributors** column. It does not change any other column.
+**Team members** chooses whether people marked as team members in LFX count toward the **Contributors** column. It does not change any other column. Hovering the menu shows **People marked as team members in the Community Data Platform. LFX Insights leaves them out of code contributions and maintainer roles; Org Lens does too by default. Seats, events and training are not affected. On this page it applies to the Contributors column only.**
 
 - **Exclude team members**, the default, leaves them out, as LFX Insights does.
 - **Include team members** counts them.
