@@ -110,8 +110,10 @@ describe('MeetingDeleteScopeModalComponent', () => {
 
   it('keeps the series from a click on the disabled occurrence description', async () => {
     await render(buildData({ ...MEETING, occurrences: [] }, null));
+    const description = query('meetings-home-delete-scope-occurrence-description') as HTMLElement;
+    expect(description).not.toBeNull();
 
-    query('meetings-home-delete-scope-occurrence-description')?.click();
+    description.click();
     await fixture.whenStable();
 
     expect(radio('series').checked).toBe(true);
