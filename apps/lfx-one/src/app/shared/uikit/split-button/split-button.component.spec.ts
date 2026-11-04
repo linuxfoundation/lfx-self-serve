@@ -141,7 +141,7 @@ describe('UiSplitButtonComponent', () => {
     expect(chevron().className).toContain('rounded-r-[10px]');
     expect(chevron().className).toContain('text-[12px]');
     expect(chevron().className).toContain('-ml-px');
-    expect(chevron().className).toContain('border-ui-neutral-alpha-200');
+    expect(chevron().className).toContain('border-ui-neutral-alpha-300');
   });
 
   it('draws the divider on the primary variant only', async () => {
