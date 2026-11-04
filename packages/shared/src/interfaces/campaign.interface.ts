@@ -1366,6 +1366,17 @@ export interface CampaignImplementationDraft {
    */
   googleLanguages?: string[];
   /**
+   * Google's ad-schedule windows, as the operator set them in the editor. Absent and empty agree:
+   * no windows means the campaign serves all day, every day. Held and restored on the same rule as
+   * {@link googleLanguages}, so a list saved under a channel that takes none is kept, not sent.
+   */
+  googleAdSchedules?: CampaignAdSchedule[];
+  /**
+   * Google's device bid adjustments and exclusions, one entry per device the operator changed from
+   * the default. Held and restored on the same rule as {@link googleAdSchedules}.
+   */
+  googleDeviceBidModifiers?: CampaignDeviceBidModifier[];
+  /**
    * Google's callout extensions, as the operator typed them — already trimmed, because a callout
    * only becomes a chip once it has passed the add guards.
    *
@@ -3135,6 +3146,121 @@ export interface CampaignDeviceBidModifier {
   bidModifier: number;
 }
 
+/**
+ * One ad schedule as normalized for judgement and dispatch.
+ *
+ * Widened from {@link CampaignAdSchedule} in three places: `dayOfWeek` is the caller's own string
+ * rather than one of the seven Google accepts, and the two minute fields are plain numbers rather
+ * than the four-value enum, because the BFF judges an unvalidated body and narrowing a type before
+ * the value has been judged would mean casting a lie. The BFF's `createCampaign` refuses each by
+ * name through `googleAdScheduleRefusal`, so what it dispatches always carries a real day and real
+ * quarter-hours.
+ *
+ * `bidModifier` stays OPTIONAL rather than being zero-filled like every other field: upstream reads
+ * an absent modifier as "listed but unadjusted" and `0` as the -100% opt-out, so the two must stay
+ * distinguishable all the way to the wire.
+ */
+export interface NormalizedGoogleAdSchedule extends Omit<CampaignAdSchedule, 'dayOfWeek' | 'startMinute' | 'endMinute'> {
+  dayOfWeek: string;
+  startMinute: number;
+  endMinute: number;
+}
+
+/**
+ * One device bid modifier as normalized for judgement and dispatch.
+ *
+ * `device` is widened from {@link CampaignDeviceBidModifier}'s enum to the caller's own string, for
+ * the same reason {@link NormalizedGoogleAdSchedule} widens its day of week: the body is unvalidated
+ * there and narrowing a type before the value has been judged would mean casting a lie.
+ *
+ * `bidModifier` is widened the other way — from REQUIRED to optional — and that is the one place
+ * this type must not be read as a copy of its ad-schedule sibling. There an absent modifier is the
+ * ordinary case and must survive all the way to the wire; here an absent modifier is a REFUSAL, and
+ * it is optional only so the BFF can see the absence and name it.
+ * Upstream's wire type carries a `*float64` for exactly this reason and `googleAdsDeviceBidModifiers`
+ * (`internal/dispatch/googleads.go`) refuses the nil, because the client type it maps onto holds a
+ * plain `float64` where `0` is the -100% opt-out — so an omitted modifier flattened to a zero would
+ * stop the campaign serving on that device while reporting a successful create.
+ */
+export interface NormalizedGoogleDeviceBidModifier extends Omit<CampaignDeviceBidModifier, 'device' | 'bidModifier'> {
+  device: string;
+  bidModifier?: number;
+}
+
+/**
+ * One ad-schedule window as the Implementation tab's editor renders it: the day, the start and end
+ * as minutes since midnight (24:00 is 1440), and the bid adjustment as a whole percentage, or `null`
+ * when the window carries no adjustment.
+ */
+export interface GoogleAdScheduleRowView {
+  dayOfWeek: GoogleAdsScheduleDay;
+  start: number;
+  end: number;
+  adjustment: number | null;
+}
+
+/**
+ * What the device control does with one device: leave Google's default bid, adjust it, or exclude
+ * the device (a `0` bid modifier, which stops the campaign serving there).
+ */
+export type GoogleDeviceBidMode = 'default' | 'adjust' | 'exclude';
+
+/**
+ * One choice in a device's mode picker. `disabled` is set only on an Adjust bid choice shown for a
+ * device that already holds an adjustment the bidding strategy refuses: it keeps the held value
+ * visible without offering it as something to pick.
+ */
+export interface GoogleDeviceBidModeOption {
+  value: GoogleDeviceBidMode;
+  label: string;
+  disabled: boolean;
+}
+
+/**
+ * One device as the Implementation tab's device control renders it; `adjustment` is a whole percentage.
+ *
+ * `held` is true for an adjustment the effective bidding strategy refuses (anything but Manual CPC):
+ * it stays in the list, and so blocks Create through the shared refusal, until the operator changes
+ * it or switches back. Its percentage box is read-only, not disabled, so keyboard and screen-reader
+ * users can still reach the value. `modeOptions` is what this device's picker offers.
+ */
+export interface GoogleDeviceBidRowView {
+  device: GoogleAdsDevice;
+  label: string;
+  mode: GoogleDeviceBidMode;
+  adjustment: number | null;
+  held: boolean;
+  modeOptions: GoogleDeviceBidModeOption[];
+}
+
+/** One option of an ad-schedule `lfx-ui-select`: a day, or a time as minutes since midnight written as a string. */
+export interface GoogleAdScheduleSelectOption {
+  value: string;
+  label: string;
+}
+
+/** Which end of an ad-schedule window a time picker sets. */
+export type GoogleAdScheduleEdge = 'start' | 'end';
+
+/** One window on one day as minutes since midnight, half-open: 24:00 is 1440. */
+export interface GoogleAdScheduleSpan {
+  start: number;
+  end: number;
+}
+
+/**
+ * Where the ad-schedule editor's "Add window" would put a new window, and, when it found nowhere,
+ * why. `slot` is `null` when no day has a gap a window can fill. `fullDays` are the days skipped
+ * because they already hold the per-day maximum; `earlyOnlyDays` are the days whose only free time
+ * ends before 01:00, which no window can fill because an end hour of 0 is refused. Every other day is
+ * covered from 00:00 to 24:00.
+ */
+export interface GoogleAdScheduleFreeSlot {
+  slot: CampaignAdSchedule | null;
+  fullDays: GoogleAdsScheduleDay[];
+  earlyOnlyDays: GoogleAdsScheduleDay[];
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -3253,6 +3379,10 @@ export interface CampaignCreateRequest {
    * than {@link adSchedules}: Demand Gen takes no campaign-level criteria at all, and Performance
    * Max's automated bidding owns the bid and sets no device adjustment. Upstream refuses both rather
    * than dropping the list, so the BFF refuses such a create by name.
+   *
+   * A NON-ZERO modifier also needs the effective bidding strategy to be `manual-cpc`: Google would
+   * ignore it under any other, so campaign-service refuses it (see `googleDeviceBidModifierRefusal`).
+   * `0`, the exclusion, is accepted under every strategy.
    *
    * Bounded by {@link GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS}, which is the size of the accepted device
    * vocabulary: a longer list necessarily REPEATS a device, and a repeat is refused rather than

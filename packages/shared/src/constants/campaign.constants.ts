@@ -46,6 +46,7 @@ import type {
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
   GoogleCreativeSharedCap,
+  GoogleDeviceBidMode,
   KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
@@ -1898,6 +1899,30 @@ export const GOOGLE_ADS_SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THUR
  */
 export const GOOGLE_ADS_SCHEDULE_MINUTES = [0, 15, 30, 45] as const;
 
+/** What the Implementation tab's ad-schedule editor calls each {@link GOOGLE_ADS_SCHEDULE_DAYS} value. */
+export const GOOGLE_ADS_SCHEDULE_DAY_LABELS = {
+  MONDAY: 'Monday',
+  TUESDAY: 'Tuesday',
+  WEDNESDAY: 'Wednesday',
+  THURSDAY: 'Thursday',
+  FRIDAY: 'Friday',
+  SATURDAY: 'Saturday',
+  SUNDAY: 'Sunday',
+} as const;
+
+/**
+ * Every quarter-hour of the day as minutes since midnight, 00:00 through 24:00, for the ad-schedule
+ * editor's time pickers. Every entry's minute is a {@link GOOGLE_ADS_SCHEDULE_MINUTES} value, so a
+ * pick never writes a minute Google refuses. Not every entry is a valid time at both ends, though:
+ * 24:00 is only an end (the only way to end a window at midnight), and 00:00 through 00:45 are only
+ * starts, since an end hour of 0 is refused. The editor offers starts up to 23:45 and ends from
+ * 01:00. A pick can still make an empty or inverted window, which `googleAdScheduleRefusal` reports.
+ */
+export const GOOGLE_ADS_SCHEDULE_TIME_OPTIONS = Array.from({ length: 24 * 4 + 1 }, (_, i) => ({
+  value: i * 15,
+  label: `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`,
+}));
+
 /**
  * Google's documented bid-adjustment range for an ad schedule or device criterion
  * (`campaign_criteria.go`'s `minBidModifier` / `maxBidModifier`): a multiplier of 0.1 through 10.0,
@@ -1925,10 +1950,12 @@ export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
  * refuses them with different messages for different reasons — a bid Performance Max does not set,
  * against demographics it takes as asset-group signals — and either could move without the other.
  *
- * NOT a rule about automated bidding, which is a different rule with a different shape: an automated
- * SEARCH campaign ignores a device adjustment too, and that belongs to the bidding plan, where the
- * strategy is known. Widening this fence to every automated channel would refuse the device
- * EXCLUSIONS (the 0 opt-out) that Google honours.
+ * NOT a rule about automated bidding, which is a different rule with a different shape:
+ * `validateBiddingPlan` refuses a NON-ZERO device modifier under every strategy but Manual CPC, on
+ * every channel, and `googleDeviceBidModifierRefusal` judges that with the effective strategy.
+ * Widening this fence to every automated channel would refuse the device EXCLUSIONS (the 0 opt-out)
+ * that Google honours. So on Display and Video, which offer no Manual CPC here, this list carries
+ * exclusions only.
  *
  * Video is listed because upstream accepts it there, not because this client can reach it — the
  * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
@@ -1969,6 +1996,24 @@ export const GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS = 3;
  * lands at the criteria mutate, AFTER the budget and campaign are committed.
  */
 export const GOOGLE_ADS_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET'] as const;
+
+/** What the Implementation tab's device control calls each {@link GOOGLE_ADS_DEVICES} value, in Google's own words. */
+export const GOOGLE_ADS_DEVICE_LABELS = {
+  MOBILE: 'Mobile phones',
+  DESKTOP: 'Computers',
+  TABLET: 'Tablets',
+} as const;
+
+/**
+ * What the Implementation tab's device mode picker calls each choice, in the order it offers them.
+ * Adjust bid is offered only while the effective bidding strategy is Manual CPC: campaign-service
+ * refuses a non-zero device bid modifier under any other (`validateBiddingPlan`).
+ */
+export const GOOGLE_DEVICE_BID_MODE_LABELS = {
+  default: 'Default bid',
+  adjust: 'Adjust bid',
+  exclude: 'Exclude',
+} as const satisfies Record<GoogleDeviceBidMode, string>;
 
 /**
  * Upstream's bound on EACH demographic exclusion list
