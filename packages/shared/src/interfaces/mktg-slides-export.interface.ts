@@ -265,6 +265,12 @@ export interface MktgSlidesExportStartInput {
  */
 export type MktgLogoPngFailure = 'external-reference' | 'live-text' | 'unreadable' | 'too-big';
 
+/** The one colour a logo variant is recoloured to: white for the reversed variants, black for the one-colour lockup. */
+export type MktgLogoRecolourInk = 'white' | 'black';
+
+/** The SVG source of each logo variant the server draws for a deck, by variant; a variant that cannot be derived is absent (server-side). */
+export type MktgLogoVariantSvgSources = Partial<Record<MktgSlidesExportLogoVariant, string>>;
+
 /**
  * The kit's SVG logo drawn as a PNG on the server (server-side). `png` is a
  * `Uint8Array` so the contract stays Node-free; the rasterizer returns a
