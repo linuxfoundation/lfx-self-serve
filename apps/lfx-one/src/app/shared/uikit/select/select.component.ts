@@ -95,7 +95,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   public readonly error = input<string>('');
   /** Text shown while nothing is picked. */
   public readonly placeholder = input<string>('');
-  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `small`, `default` or `large` button. */
+  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `tiny`, `default` or `large` button. */
   public readonly size = input<UiInputSize>('medium');
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });

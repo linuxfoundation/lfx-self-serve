@@ -192,7 +192,7 @@ describe('MeetingHomeRowComponent', () => {
         expect.arrayContaining(['grid', 'grid-cols-[auto_minmax(0,1fr)_auto_auto]', 'items-start', '@[861px]:flex', '@[861px]:flex-nowrap'])
       );
       expect(classes(fixture, 'meetings-home-row-actions')).toEqual(expect.arrayContaining(['contents', '@[861px]:flex']));
-      expect(classes(fixture, 'meetings-home-row-menu')).toEqual(expect.arrayContaining(['col-start-4', 'row-start-1', '-my-[4px]']));
+      expect(classes(fixture, 'meetings-home-row-menu')).toEqual(expect.arrayContaining(['col-start-4', 'row-start-1', '-my-[2px]']));
     });
 
     describe('organized by', () => {
@@ -362,7 +362,7 @@ describe('MeetingHomeRowComponent', () => {
       const join = query(fixture, 'meetings-home-row-join');
 
       expect(join?.querySelector('button')?.getAttribute('aria-label')).toBe('Join Series title');
-      expect(join?.querySelector('button')?.className).toContain('h-ui-tiny');
+      expect(join?.querySelector('button')?.className).toContain('h-ui-xsmall');
       expect(getPublicMeetingJoinUrl).toHaveBeenCalledWith('123', 'secret', { email: 'real@example.test' });
       join?.querySelector('button')?.click();
 

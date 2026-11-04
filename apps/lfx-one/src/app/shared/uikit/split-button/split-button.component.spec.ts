@@ -143,11 +143,18 @@ describe('UiSplitButtonComponent', () => {
     fixture.componentInstance.variant.set('secondary');
     await fixture.whenStable();
 
+    expect(chevron().className).toContain('h-ui-xsmall');
+    expect(chevron().className).toContain('rounded-r-[11px]');
+    expect(chevron().className).toContain('text-[13px]');
+    expect(chevron().className).toContain('-ml-px');
+    expect(chevron().className).toContain('border-ui-neutral-alpha-300');
+
+    fixture.componentInstance.size.set('tiny');
+    await fixture.whenStable();
+
     expect(chevron().className).toContain('h-ui-tiny');
     expect(chevron().className).toContain('rounded-r-[10px]');
     expect(chevron().className).toContain('text-[12px]');
-    expect(chevron().className).toContain('-ml-px');
-    expect(chevron().className).toContain('border-ui-neutral-alpha-300');
   });
 
   it('draws the divider on the primary variant only', async () => {
@@ -168,7 +175,10 @@ describe('UiSplitButtonComponent', () => {
 
     expect(main().disabled).toBe(true);
     expect(chevron().disabled).toBe(true);
-    expect(chevron().className).toContain('bg-ui-neutral-50');
+    expect(chevron().className).toContain('opacity-45');
+    expect(chevron().className).toContain('bg-ui-accent-500');
+    expect(chevron().className).not.toMatch(/(^|\s)(hover|active):bg-/);
+    expect(chevron().querySelector('[data-testid="ui-split-button-divider"]')).not.toBeNull();
     expect(chevron().className).toContain('cursor-not-allowed');
     expect(chevron().className).not.toContain('cursor-pointer');
 
@@ -281,7 +291,8 @@ describe('UiSplitButtonComponent', () => {
       await action.whenStable();
 
       expect(half().disabled).toBe(true);
-      expect(half().className).not.toContain('bg-ui-success-600');
+      expect(half().className).toContain('opacity-45');
+      expect(half().className).toContain('bg-ui-success-600');
       expect(action.componentInstance.events()).toEqual([]);
     });
 
