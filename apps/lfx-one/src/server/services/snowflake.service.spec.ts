@@ -90,6 +90,7 @@ describe('SnowflakeService read-only validation', () => {
     ['a line comment', '-- why this is trimmed\nSELECT 1'],
     ['stacked line comments before a CTE', '-- a\n-- b\nWITH x AS (SELECT 1) SELECT * FROM x'],
     ['a block comment', '/* why */\nSELECT 1'],
+    ['a block comment before a line comment', '/* a */ -- b\nSELECT 1'],
   ])('runs a query documented by %s above its SELECT', async (_label, sql) => {
     const use = vi.fn(() => Promise.resolve({ rows: [], metadata: [] }));
 
@@ -102,11 +103,21 @@ describe('SnowflakeService read-only validation', () => {
     ['only a comment', '-- just a comment', 'Only SELECT queries are allowed'],
     ['a SELECT that exists only inside a comment', '-- SELECT 1\nSHOW TABLES', 'Only SELECT queries are allowed'],
     ['a write behind a comment', '-- c\nDROP TABLE x', 'Write operations detected'],
+    ['a write keyword inside a leading block comment', '/* DROP TABLE x */ SELECT 1', 'Write operations detected'],
+    ['an unterminated block comment', '/* unterminated\nSELECT 1', 'Only SELECT queries are allowed'],
   ])('still rejects %s', async (_label, sql, message) => {
     const use = vi.fn(() => Promise.resolve({ rows: [], metadata: [] }));
 
     await expect(serviceWithPool(use).execute(sql)).rejects.toThrow(message);
     expect(use).not.toHaveBeenCalled();
+  });
+
+  it('names the span after the statement, not its leading comment', async () => {
+    const use = vi.fn(() => Promise.resolve({ rows: [], metadata: [] }));
+
+    await serviceWithPool(use).execute('-- why this is trimmed\nSELECT 1');
+
+    expect(tracer.startActiveSpan).toHaveBeenCalledWith('Snowflake SELECT', expect.anything(), expect.any(Function));
   });
 });
 
