@@ -314,5 +314,9 @@ describe('AEO/GEO envelope gates', () => {
     expect(isAeoGeoEnvelope({ ...envelope(), quality })).toBe(true);
     expect(isAeoGeoEnvelope({ ...envelope(), quality: null })).toBe(true);
     expect(isAeoGeoEnvelope({ ...envelope(), quality, extra: true })).toBe(false);
+    // The ledger changes nothing the report view reads: the named fields are the same with and without it.
+    const { quality: ignored, ...named } = { ...envelope(), quality };
+    expect(ignored).toBe(quality);
+    expect(named).toEqual(envelope());
   });
 });
