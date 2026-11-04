@@ -999,8 +999,9 @@ export class MktgDocumentViewComponent {
       this.loading.set(false);
       return;
     }
-    // A good public cycle clears the line a partial one put up.
-    if (this.publicProgressPolling()) this.refreshWarning.set('');
+    // A good public cycle clears the line a partial one put up; a partial revision read (the detail complete, the view's
+    // progress not) keeps it, since the reader reports transitions only and repeats of a partial view would show no line.
+    if (this.publicProgressPolling()) this.refreshWarning.set(cycle.view?.progressUnavailable ? MKTG_POLL_RETRYING_TEXT : '');
     if (
       !this.publicProgressPolling() ||
       cycle.detail.progressUnavailable ||
