@@ -50,12 +50,24 @@ describe('MentorshipController program review', () => {
   });
 
   it('returns the review for a program UUID', async () => {
-    const getProgramReview = vi.spyOn(MentorshipService.prototype, 'getProgramReview').mockResolvedValue({ ...review, status: 'pending' });
+    const details = {
+      ...review,
+      status: 'pending' as const,
+      projectName: null,
+      description: null,
+      logoUrl: null,
+      repoUrl: null,
+      codeOfConductUrl: null,
+      ciiProjectId: null,
+      skills: [],
+      hasDetails: true,
+    };
+    const getProgramReview = vi.spyOn(MentorshipService.prototype, 'getProgramReview').mockResolvedValue(details);
 
     await controller.getProgramReview(buildReq({ programId }), res, next);
 
     expect(getProgramReview).toHaveBeenCalledWith(expect.anything(), programId);
-    expect(res.json).toHaveBeenCalledWith({ ...review, status: 'pending' });
+    expect(res.json).toHaveBeenCalledWith(details);
     expect(next).not.toHaveBeenCalled();
   });
 

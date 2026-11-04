@@ -48,7 +48,7 @@ export type UiBadgeSize = 'sm' | 'md';
 /** Look of a uikit chip: the badge's `subtle` role fill, or the neutral `outline` ring. */
 export type UiChipVariant = 'subtle' | 'outline';
 
-/** Colour role that tints a uikit avatar. `neutral` is the quiet default. */
+/** Colour role that tints a uikit avatar. `neutral` is the default: an accent-200 fill with accent-800 text. */
 export type UiAvatarTone = UiTone;
 
 /** A person, organization or bot shown in a uikit avatar group. */
@@ -305,8 +305,8 @@ export interface UiSelectValueContext {
   $implicit: UiOption;
 }
 
-/** Visual style of a uikit split button. Only the accent `primary` and the neutral `secondary` exist: a split button is never destructive. */
-export type UiSplitButtonVariant = 'primary' | 'secondary';
+/** Visual style of a uikit split button: the accent `primary`, the neutral `secondary` or the green `recording`. A split button is never destructive. */
+export type UiSplitButtonVariant = 'primary' | 'secondary' | 'recording';
 
 /** One command in a uikit command menu: a place to go or an action to run. */
 export interface UiCommandItem {

@@ -113,7 +113,7 @@ describe('UiButtonComponent', () => {
 
   it.each([
     ['primary', 'border-transparent'],
-    ['secondary', 'border-ui-neutral-alpha-200'],
+    ['secondary', 'border-ui-neutral-alpha-300'],
     ['secondary-accent', 'border-ui-accent-300'],
     ['tertiary', 'border-transparent'],
     ['tertiary-accent', 'border-transparent'],

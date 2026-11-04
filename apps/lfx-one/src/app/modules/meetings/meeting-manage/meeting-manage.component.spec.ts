@@ -17,6 +17,7 @@ import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MeetingManageComponent } from './meeting-manage.component';
+import { MeetingCommitteeManagerComponent } from '../components/meeting-committee-manager/meeting-committee-manager.component';
 
 // Regression coverage for the relation-gated-null → uncached-detail context fallback (GH-1579):
 // when the by-uid project lookup is relation-gated into null for an organizer without a viewer
@@ -132,6 +133,117 @@ describe('MeetingManageComponent', () => {
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: messageAdd } },
       ],
+    });
+  });
+
+  describe('committee roster readiness', () => {
+    const mountReadyForm = async () => {
+      getMeetingDetail.mockReturnValue(of(unenrichedMeeting()));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+      const component = fixture.componentInstance;
+      const form = component.form();
+      Object.values(form.controls).forEach((control) => {
+        control.clearValidators();
+        control.updateValueAndValidity({ emitEvent: false });
+      });
+      form.clearValidators();
+      form.updateValueAndValidity({ emitEvent: false });
+      const updateMeeting = vi.fn().mockReturnValue(NEVER);
+      Object.assign(TestBed.inject(MeetingService), { updateMeeting });
+      vi.spyOn(component as any, 'prepareMeetingData').mockReturnValue({});
+      vi.spyOn(component as any, 'buildRegistrantOperations').mockReturnValue([]);
+      vi.spyOn(component as any, 'processAttachmentOperations').mockReturnValue(of(null));
+      return { component, form, updateMeeting };
+    };
+
+    it('blocks a pending or failed selected roster and permits saving after successful retry coverage', async () => {
+      const { component, form, updateMeeting } = await mountReadyForm();
+      form.get('committees')!.setValue([{ uid: 'group-a' }]);
+      component.onSubmitAll();
+      expect(updateMeeting).not.toHaveBeenCalled();
+      expect(component.submitting()).toBe(false);
+
+      // A failed strict fetch emits no coverage; even unrelated coverage must not unlock Save.
+      component.onCommitteeMembersResolved([]);
+      component.onSubmitAll();
+      expect(updateMeeting).not.toHaveBeenCalled();
+
+      component.onCommitteeMembersResolved(['group-a']);
+      expect(component.committeeMembersReady()).toBe(true);
+      component.onSubmitAll();
+      expect(updateMeeting).toHaveBeenCalledTimes(1);
+    });
+
+    it('invalidates previous coverage on selection changes, including returning to an earlier selection', async () => {
+      const { component, form, updateMeeting } = await mountReadyForm();
+      form.get('committees')!.setValue([{ uid: 'group-a' }]);
+      component.onCommitteeMembersResolved(['group-a']);
+      form.get('committees')!.setValue([{ uid: 'group-b' }]);
+      expect(component.committeeMembersReady()).toBe(false);
+      form.get('committees')!.setValue([{ uid: 'group-a' }]);
+      component.onSubmitAll();
+      expect(updateMeeting).not.toHaveBeenCalled();
+      component.onCommitteeMembersResolved(['group-b']);
+      expect(component.committeeMembersReady()).toBe(false);
+    });
+
+    it('preserves readiness when options retry rewrites the same selected roster', async () => {
+      const { component, form } = await mountReadyForm();
+      const group = { uid: 'group-a', name: 'Example Group', enable_voting: false };
+      const committeeService = TestBed.inject(CommitteeService);
+      Object.assign(committeeService, {
+        getCommitteesByProjectOrThrow: vi
+          .fn()
+          .mockReturnValueOnce(throwError(() => new Error('options unavailable')))
+          .mockReturnValue(of([group])),
+        getCommitteeMembers: vi.fn().mockReturnValue(of([])),
+      });
+      Object.assign(TestBed.inject(ProjectContextService), { activeContextUid: () => PROJECT_UID });
+      form.get('committees')!.setValue([{ uid: group.uid }]);
+      const pickerFixture = TestBed.createComponent(MeetingCommitteeManagerComponent);
+      pickerFixture.componentRef.setInput('form', form);
+      pickerFixture.componentRef.setInput('selectedCommittees', [{ uid: group.uid }]);
+      pickerFixture.componentInstance.committeeMembersResolvedChange.subscribe((uids) => component.onCommitteeMembersResolved(uids));
+      await pickerFixture.whenStable();
+      expect(pickerFixture.componentInstance.committeeOptionsFailed()).toBe(true);
+      expect(component.committeeMembersReady()).toBe(true);
+      pickerFixture.componentInstance.retryCommitteeOptions();
+      await pickerFixture.whenStable();
+      expect(pickerFixture.componentInstance.committeeOptionsFailed()).toBe(false);
+      expect(component.committeeMembersReady()).toBe(true);
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores equivalent group/filter writes but invalidates real filter changes and pending reports', async () => {
+      const { component, form } = await mountReadyForm();
+      form.get('committees')!.setValue([{ uid: 'group-a', allowed_voting_statuses: ['voting_rep', 'observer'] }, { uid: 'group-b' }]);
+      component.onCommitteeMembersResolved(['group-a', 'group-b']);
+      form.get('committees')!.setValue([{ uid: 'group-b' }, { uid: 'group-a', name: 'New label', allowed_voting_statuses: ['Observer', 'Voting Rep'] }]);
+      expect(component.committeeMembersReady()).toBe(true);
+      form.get('committees')!.setValue([{ uid: 'group-b' }, { uid: 'group-a', allowed_voting_statuses: ['observer'] }]);
+      expect(component.committeeMembersReady()).toBe(false);
+      component.onCommitteeMembersResolved(['group-a', 'group-b']);
+      component.onCommitteeMembersResolved(null);
+      expect(component.committeeMembersReady()).toBe(false);
+    });
+
+    it('waits for empty-selection reconciliation and guards invitation-only submits too', async () => {
+      const { component, form, updateMeeting } = await mountReadyForm();
+      form.get('committees')!.setValue([{ uid: 'group-a' }]);
+      component.onCommitteeMembersResolved(['group-a']);
+      form.get('committees')!.setValue([]);
+      expect(component.committeeMembersReady()).toBe(false);
+      const operations = vi.mocked((component as any).buildRegistrantOperations);
+      component.onManageRegistrants();
+      expect(operations).not.toHaveBeenCalled();
+      component.onSubmitAll();
+      expect(updateMeeting).not.toHaveBeenCalled();
+
+      component.onCommitteeMembersResolved([]);
+      expect(component.committeeMembersReady()).toBe(true);
+      component.onManageRegistrants();
+      expect(operations).toHaveBeenCalledTimes(1);
     });
   });
 

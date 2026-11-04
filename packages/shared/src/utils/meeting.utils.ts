@@ -1497,7 +1497,7 @@ export function normalizeUsername(username: string | null | undefined): string {
 
 /**
  * Whether a resolved organizer IS the current viewer — the single comparison behind both the
- * chip's "you" variant and the "Organized by me" list filter, so the two can never disagree.
+ * chip's "you" variant and the My Meetings dashboard's "Organized by me" filter, so the two can never disagree.
  * An absent/empty viewer never matches (a logged-out or unresolved viewer must not match every
  * meeting).
  */
@@ -1700,6 +1700,15 @@ export function fromMeetingApiVotingStatuses(statuses: ReadonlyArray<string | nu
 /** Canonicalizes a stored status list to the deduped meeting-API vocabulary, mapping pre-migration display values. */
 export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): MeetingAllowedVotingStatus[] {
   return toMeetingApiVotingStatuses(fromMeetingApiVotingStatuses(statuses));
+}
+
+/** Stable roster-selection identity: group order, labels, and equivalent status spellings do not change coverage. */
+export function getMeetingCommitteeSelectionKey(committees: ReadonlyArray<MeetingCommittee | null | undefined> | null | undefined): string {
+  return JSON.stringify(
+    sanitizeMeetingCommittees(committees)
+      .map((committee) => JSON.stringify([committee.uid, normalizeMeetingApiVotingStatuses(committee.allowed_voting_statuses).sort()]))
+      .sort()
+  );
 }
 
 /**

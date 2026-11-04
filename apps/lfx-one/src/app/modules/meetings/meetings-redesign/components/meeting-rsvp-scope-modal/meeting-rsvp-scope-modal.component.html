@@ -6,7 +6,7 @@
   <div class="flex flex-col gap-[4px] rounded-[12px] border border-gray-200 bg-gray-50 px-[14px] py-[12px]" data-testid="meetings-home-rsvp-scope-info">
     @if (project) {
       <span class="flex min-w-0 items-start gap-[6px] text-[12px] text-gray-600">
-        <lfx-ui-avatar class="mt-px flex-none" shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+        <lfx-meeting-project-logo class="mt-px" [src]="project.logo" />
         <span class="min-w-0 break-words">{{ project.name }}</span>
       </span>
     }
@@ -39,7 +39,13 @@
           [value]="option.value"
           [label]="option.label"
           [attr.data-testid]="'meetings-home-rsvp-scope-' + option.value" />
-        <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600">{{ option.description }}</span>
+        <!-- The uikit radio has no description slot, so a click on the description picks the option too. -->
+        <span
+          class="cursor-pointer pl-[24px] text-[13px] leading-[18px] text-gray-600"
+          (click)="scope.set(option.value)"
+          [attr.data-testid]="'meetings-home-rsvp-scope-' + option.value + '-description'"
+          >{{ option.description }}</span
+        >
       </span>
     }
   </lfx-ui-radio-group>

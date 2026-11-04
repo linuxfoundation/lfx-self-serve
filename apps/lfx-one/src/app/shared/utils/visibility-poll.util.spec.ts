@@ -5,6 +5,7 @@ import { Subject, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { VisibilityPollEvent } from '@lfx-one/shared/interfaces';
+import { VISIBILITY_POLL_WAKE_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 
 import { createVisibilityPoll, pollBackoffDelayMs } from './visibility-poll.util';
 
@@ -56,6 +57,27 @@ describe('createVisibilityPoll', () => {
     expect(fetch).toHaveBeenLastCalledWith(false);
     vi.advanceTimersByTime(5000);
     expect(fetch).toHaveBeenLastCalledWith(true);
+    sub.unsubscribe();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('coalesces visible and focus into one return read while hiding cancels immediately', () => {
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+    const fetch = vi.fn(() => of(1));
+    const sub = createVisibilityPoll(doc, fetch, { ...options, wakeDebounceMs: VISIBILITY_POLL_WAKE_DEBOUNCE_MS, shouldContinue: () => false }).subscribe();
+    expect(fetch).toHaveBeenCalledTimes(1); // Initial read is never debounced.
+    setVisibility('hidden');
+    setVisibility('visible');
+    window.dispatchEvent(new Event('focus'));
+    vi.advanceTimersByTime(VISIBILITY_POLL_WAKE_DEBOUNCE_MS - 1);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenLastCalledWith(false);
+    window.dispatchEvent(new Event('focus'));
+    setVisibility('hidden');
+    vi.advanceTimersByTime(VISIBILITY_POLL_WAKE_DEBOUNCE_MS);
+    expect(fetch).toHaveBeenCalledTimes(2);
     sub.unsubscribe();
     expect(vi.getTimerCount()).toBe(0);
   });

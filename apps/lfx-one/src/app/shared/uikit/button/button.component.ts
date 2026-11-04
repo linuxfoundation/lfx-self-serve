@@ -172,7 +172,7 @@ export class UiButtonComponent {
       const variants = {
         primary:
           'border-transparent bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
-        secondary: 'border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
+        secondary: 'border-ui-neutral-alpha-300 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
         'secondary-accent':
           'border-ui-accent-300 bg-ui-background-100 text-ui-accent-500 hover:border-ui-accent-500 hover:bg-ui-accent-100 active:border-ui-accent-500 active:bg-ui-accent-200',
         tertiary: 'border-transparent bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',

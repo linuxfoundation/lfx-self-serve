@@ -43,7 +43,10 @@ import {
   VoteSummary,
   VoteParticipationVoter,
   VoteSummaryEmailContext,
+  VoteSummaryPreviewResponse,
   VoteSummaryRecipient,
+  VoteSummaryRecipientOutcome,
+  VoteSummaryRecipientResult,
   VoteResultsResponse,
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
@@ -54,6 +57,7 @@ import {
   countVotesByStatus,
   isVoteClosingSoon,
   normalizePollStatus,
+  partitionVoteSummaryRecipients,
   sortCommentResponsesByRecency,
   sortCommentResponsesByText,
 } from '@lfx-one/shared/utils';
@@ -909,7 +913,7 @@ export class VoteService {
         seen.add(row.uid);
         return true;
       })
-      .map((row) => ({ uid: row.uid, user_name: row.user_name, user_email: row.user_email }))
+      .map((row) => ({ uid: row.uid, user_name: row.user_name, username: row.username, user_email: row.user_email }))
       .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? ''));
 
     logger.debug(req, 'get_vote_summary_recipients', 'Mapped vote summary recipients', {
@@ -919,6 +923,41 @@ export class VoteService {
     });
 
     return recipients;
+  }
+
+  /**
+   * Previews who the on-demand close summary would reach (#4830): voters ready to receive it, voters
+   * with no email address, and the unique-address counts. Uses the same partition as
+   * `sendVoteSummary`, so the preview and the send agree. Identity fields only — never ballots.
+   * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
+   */
+  public async getVoteSummaryPreview(req: Request, voteUid: string): Promise<VoteSummaryPreviewResponse> {
+    const vote = await this.getVoteById(req, voteUid);
+    if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+      throw new ConflictError('This vote has not closed yet.', VOTE_SUMMARY_NOT_ENDED, {
+        operation: 'get_vote_summary_preview',
+        service: 'vote_service',
+      });
+    }
+
+    const { ready, missingEmail, uniqueEmailRecipients, sharedEmailVoterCount } = partitionVoteSummaryRecipients(
+      await this.getVoteSummaryRecipients(req, voteUid)
+    );
+
+    logger.debug(req, 'get_vote_summary_preview', 'Partitioned vote summary recipients', {
+      vote_uid: voteUid,
+      ready_count: ready.length,
+      missing_email_count: missingEmail.length,
+      unique_email_count: uniqueEmailRecipients.length,
+      shared_email_voter_count: sharedEmailVoterCount,
+    });
+
+    return {
+      ready,
+      missing_email: missingEmail,
+      unique_email_count: uniqueEmailRecipients.length,
+      shared_email_voter_count: sharedEmailVoterCount,
+    };
   }
 
   /**
@@ -935,7 +974,8 @@ export class VoteService {
    * an email address are counted separately as skipped; shared email addresses are attempted once.
    * One recipient's failure never blocks the rest, so a partial send reports the counts instead of
    * throwing. Only when every attempt was confirmed failed (nothing sent, nothing uncertain) does
-   * it throw with the known counts. Permission, validation, rate-limit and not-ended errors keep
+   * it throw with the known counts. Both the reply and that error's `details` carry a per-voter
+   * `recipients` outcome (#4830); voters sharing an address share its outcome. Permission, validation, rate-limit and not-ended errors keep
    * their original responses; other failures before any email attempt become
    * `VOTE_SUMMARY_PRECHECK_FAILED`, so retrying cannot duplicate this attempt.
    */
@@ -976,30 +1016,26 @@ export class VoteService {
       );
     }
 
-    const emailRecipients = recipients.filter((recipient): recipient is VoteSummaryRecipient & { user_email: string } => !!recipient.user_email);
-    // Recipients are already deduped by response uid, so the difference is exactly the voters with no address.
-    // Voters collapsed by a shared email below are not skipped: they got the same email via the sibling row.
-    const skippedCount = recipients.length - emailRecipients.length;
-    const seenEmails = new Set<string>();
-    const uniqueRecipients = emailRecipients.filter((recipient) => {
-      const email = recipient.user_email.toLowerCase();
-      if (seenEmails.has(email)) return false;
-      seenEmails.add(email);
-      return true;
-    });
+    // Recipients are already deduped by response uid, so `missingEmail` is exactly the voters with no address.
+    // Voters collapsed by a shared email are not skipped: they got the same email via the sibling row.
+    const { ready, missingEmail, uniqueEmailRecipients: uniqueRecipients } = partitionVoteSummaryRecipients(recipients);
+    const skippedCount = missingEmail.length;
 
     let sentCount = 0;
     let failedCount = 0;
     let uncertainCount = 0;
+    const outcomeByEmail = new Map<string, VoteSummaryRecipientOutcome>();
     const outcomes = await settleInBatches(uniqueRecipients, VOTE_SUMMARY_EMAIL_CONCURRENCY, (recipient) =>
-      this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered })
+      this.emailService.sendEmail(req, { to: recipient.user_email as string, ...rendered })
     );
     outcomes.forEach((outcome, index) => {
+      const emailKey = (uniqueRecipients[index].user_email as string).toLowerCase();
       // `email_id` absent on a fulfilled reply means the email service accepted but did not actually
       // send (disabled, or the recipient was filtered) — that voter got nothing, so it counts as a
       // failure, not a send.
       if (outcome.status === 'fulfilled' && outcome.value.email_id) {
         sentCount += 1;
+        outcomeByEmail.set(emailKey, 'sent');
         return;
       }
 
@@ -1013,6 +1049,7 @@ export class VoteService {
       } else {
         failedCount += 1;
       }
+      outcomeByEmail.set(emailKey, uncertain ? 'uncertain' : 'failed');
       logger.warning(req, 'send_vote_summary', 'Summary email was not confirmed sent to one recipient', {
         vote_uid: voteUid,
         recipient_uid: uniqueRecipients[index].uid,
@@ -1021,24 +1058,35 @@ export class VoteService {
       });
     });
 
+    // Every ready voter's address was attempted exactly once above, so its outcome is always recorded.
+    const recipientResults: VoteSummaryRecipientResult[] = [
+      ...ready.map((recipient) => ({ ...recipient, outcome: outcomeByEmail.get((recipient.user_email as string).toLowerCase()) ?? 'uncertain' })),
+      ...missingEmail.map((recipient) => ({ ...recipient, outcome: 'skipped' as const })),
+    ];
+
     const result: SendVoteSummaryResponse = {
       recipient_count: sentCount,
       failed_count: failedCount,
       skipped_count: skippedCount,
       uncertain_count: uncertainCount,
+      recipients: recipientResults,
     };
 
     if (sentCount === 0 && uncertainCount === 0 && failedCount > 0) {
       throw new MicroserviceError('No summaries were sent. Please try again.', 502, VOTE_SUMMARY_SEND_FAILED, {
         operation: 'send_vote_summary',
         service: 'vote_service',
-        errorBody: { details: result },
+        details: { details: result },
       });
     }
 
+    // Counts only — `recipients` carries names and email addresses and is never logged.
     logger.info(req, 'send_vote_summary', 'Sent vote close summary', {
       vote_uid: voteUid,
-      ...result,
+      recipient_count: result.recipient_count,
+      failed_count: result.failed_count,
+      skipped_count: result.skipped_count,
+      uncertain_count: result.uncertain_count,
     });
 
     return result;

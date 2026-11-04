@@ -60,7 +60,7 @@
             [attr.aria-label]="project.label"
             (click)="onLinkClick($event, url, false)"
             data-testid="meetings-home-next-card-project">
-            <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+            <lfx-meeting-project-logo [src]="project.logo" />
             <span
               class="min-w-0 underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
               >{{ project.name }}</span
@@ -73,7 +73,7 @@
           <span
             class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start text-label-12 text-gray-500"
             data-testid="meetings-home-next-card-project">
-            <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+            <lfx-meeting-project-logo [src]="project.logo" />
             <span class="min-w-0">{{ project.name }}</span>
           </span>
         }
@@ -126,8 +126,8 @@
         Join Meeting
       </lfx-ui-button>
       @if (startsIn(); as startsIn) {
-        <span class="mt-[4px] flex items-center justify-center gap-[6px] text-label-12 text-blue-600" data-testid="meetings-home-next-card-starts-in">
-          <i class="fa-light fa-clock text-[11px]" aria-hidden="true"></i>{{ startsIn }}
+        <span class="mt-[4px] flex items-center justify-center gap-[6px] text-label-12 text-gray-500" data-testid="meetings-home-next-card-starts-in">
+          <i class="fa-light fa-clock text-[12px]" aria-hidden="true"></i>{{ startsIn }}
         </span>
       }
     </div>

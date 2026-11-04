@@ -95,7 +95,7 @@ export class UiTabsComponent {
       }
       // Exact px padding and gap, not rem; the selected bar is a 2px ::after on the tab's bottom edge.
       const size = this.size() === 'small' ? 'pb-[11px] text-[13px]' : 'pb-[14px]';
-      return `${base} gap-[7px] pt-[8px] ${size} text-ui-neutral-500 hover:text-ui-neutral-900 aria-selected:cursor-default aria-selected:font-medium aria-selected:text-ui-neutral-900 aria-selected:after:absolute aria-selected:after:inset-x-0 aria-selected:after:bottom-0 aria-selected:after:h-[2px] aria-selected:after:bg-ui-accent-500 aria-selected:after:content-['']`;
+      return `${base} gap-[7px] pt-[8px] ${size} text-ui-neutral-700 hover:text-ui-neutral-900 aria-selected:cursor-default aria-selected:font-medium aria-selected:text-ui-neutral-900 aria-selected:after:absolute aria-selected:after:inset-x-0 aria-selected:after:bottom-0 aria-selected:after:h-[2px] aria-selected:after:bg-ui-accent-500 aria-selected:after:content-['']`;
     });
   }
 }

@@ -1,0 +1,217 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { signal } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { Survey, SurveyResponseItem } from '@lfx-one/shared/interfaces';
+import { ProjectContextService } from '@services/project-context.service';
+import { DialogService } from 'primeng/dynamicdialog';
+import { SurveyService } from '@services/survey.service';
+import { of, Subject, throwError } from 'rxjs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { SurveyResultsDrawerComponent } from './survey-results-drawer.component';
+
+const SURVEY = { uid: 's-1', survey_title: 'Board NPS', committees: [], total_recipients: 3, total_responses: 2 } as unknown as Survey;
+const answer = (text: string) => ({ survey_monkey_question_answers: [{ answers: [{ text }] }] }) as Partial<SurveyResponseItem>;
+const ROWS = [
+  { id: 'r-1', response_status: 'Responded', response_datetime: '2026-11-03T10:00:00Z', ...answer('Older') },
+  { id: 'r-2', response_status: 'Responded', response_datetime: '2026-11-05T10:00:00Z', ...answer('Newer') },
+  { id: 'r-3', response_status: 'Opened' },
+] as SurveyResponseItem[];
+
+async function mount(hasPMOAccess: boolean, responses$ = of(ROWS), survey: Survey = SURVEY, canWrite = true) {
+  const activeContext = signal<{ uid: string } | null>({ uid: 'p-1' });
+  TestBed.resetTestingModule();
+  const getAllSurveyResponses = vi.fn().mockReturnValue(responses$);
+  const getSurvey = vi.fn().mockReturnValue(of(survey));
+  const openDialog = vi.fn().mockReturnValue({ onClose: of(undefined) });
+  TestBed.configureTestingModule({
+    imports: [SurveyResultsDrawerComponent],
+    providers: [
+      { provide: SurveyService, useValue: { getSurvey, getAllSurveyResponses } },
+      provideNoopAnimations(),
+      { provide: ProjectContextService, useValue: { activeContext, canWrite: signal(canWrite) } },
+    ],
+  });
+  TestBed.overrideComponent(SurveyResultsDrawerComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } });
+  const fixture = TestBed.createComponent(SurveyResultsDrawerComponent);
+  fixture.componentRef.setInput('surveyId', 's-1');
+  fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
+  fixture.componentRef.setInput('visible', true);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  return { fixture, component: fixture.componentInstance, getAllSurveyResponses, getSurvey, activeContext, openDialog };
+}
+
+describe('SurveyResultsDrawerComponent', () => {
+  let current: ComponentFixture<SurveyResultsDrawerComponent> | undefined;
+  afterEach(() => current?.destroy());
+
+  it('never loads per-recipient rows for users without Manage access', async () => {
+    const { fixture, component, getAllSurveyResponses } = await mount(false);
+    current = fixture;
+
+    expect(getAllSurveyResponses).not.toHaveBeenCalled();
+    expect(component['comments']()).toEqual([]);
+    expect(component['engagementRates']()).toBeNull();
+  });
+
+  it('builds comments (newest first) and engagement rates from every response row for Manage users', async () => {
+    const { fixture, component, getAllSurveyResponses } = await mount(true);
+    current = fixture;
+
+    expect(getAllSurveyResponses).toHaveBeenCalledWith('s-1', 'p-1');
+    expect(component['comments']().map((c) => c.comment)).toEqual(['Newer', 'Older']);
+    expect(component['engagementRates']()).toMatchObject({ recipients: 3, delivered: 1, opened: 1, responded: 2, commentRate: 100 });
+  });
+
+  it('retries a failed load when the drawer is closed and reopened', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { fixture, component, getAllSurveyResponses } = await mount(
+      true,
+      throwError(() => new Error('boom'))
+    );
+    current = fixture;
+    expect(component['responsesLoadError']()).toBe(true);
+
+    getAllSurveyResponses.mockReturnValue(of(ROWS));
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getAllSurveyResponses).toHaveBeenCalledTimes(2);
+    expect(component['responsesLoadError']()).toBe(false);
+    expect(component['responses']()).toEqual(ROWS);
+  });
+
+  it("clears the previous survey's rows while the next survey loads", async () => {
+    const { fixture, component, getAllSurveyResponses } = await mount(true);
+    current = fixture;
+    expect(component['responses']()).toEqual(ROWS);
+
+    getAllSurveyResponses.mockReturnValue(new Subject<SurveyResponseItem[]>());
+    fixture.componentRef.setInput('surveyId', 's-2');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component['responses']()).toEqual([]);
+    expect(component['engagementRates']()).toBeNull();
+  });
+
+  it('flags an incomplete list when the rows fail to load', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { fixture, component } = await mount(
+      true,
+      throwError(() => new Error('boom'))
+    );
+    current = fixture;
+
+    expect(component['responsesLoadError']()).toBe(true);
+    expect(component['responses']()).toEqual([]);
+  });
+
+  it('refetches the survey detail with the new project scope when the project changes', async () => {
+    const { fixture, getSurvey, getAllSurveyResponses, activeContext } = await mount(true);
+    current = fixture;
+    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-1', { skipCache: true });
+
+    activeContext.set({ uid: 'p-2' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-2', { skipCache: true });
+    expect(getAllSurveyResponses).toHaveBeenLastCalledWith('s-1', 'p-2');
+  });
+
+  it('refetches the survey detail, skipping the cache, each time the drawer is reopened', async () => {
+    const { fixture, getSurvey } = await mount(true);
+    current = fixture;
+    expect(getSurvey).toHaveBeenCalledTimes(1);
+
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getSurvey).toHaveBeenCalledTimes(2);
+    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-1', { skipCache: true });
+  });
+
+  it("offers resync only to managers of an open survey, scoped to the project's committee", async () => {
+    const open = {
+      ...SURVEY,
+      survey_status: 'sent',
+      survey_cutoff_date: '2099-01-01T00:00:00Z',
+      committees: [
+        { committee_uid: 'c-1', project_uid: 'p-1' },
+        { committee_uid: 'c-2', project_uid: 'p-2' },
+      ],
+    } as unknown as Survey;
+
+    const manager = await mount(true, of(ROWS), open);
+    current = manager.fixture;
+    expect(manager.component['resyncScope']()).toEqual({ committeeUids: ['c-1'] });
+
+    const viewer = await mount(false, of(ROWS), open);
+    current = viewer.fixture;
+    expect(viewer.component['resyncScope']()).toBeNull();
+
+    const closed = await mount(true, of(ROWS), { ...open, response_status: 'closed' });
+    current = closed.fixture;
+    expect(closed.component['resyncScope']()).toBeNull();
+  });
+
+  const OPEN_SURVEY = {
+    ...SURVEY,
+    survey_status: 'sent',
+    survey_cutoff_date: '2099-01-01T00:00:00Z',
+    committees: [{ committee_uid: 'c-1', project_uid: 'p-1' }],
+  } as unknown as Survey;
+
+  it('hides reminders and resync from a group writer who is not a project writer', async () => {
+    const { fixture, component } = await mount(true, of(ROWS), OPEN_SURVEY, false);
+    current = fixture;
+
+    expect(component['canSendFollowUp']()).toBe(false);
+    expect(component['resyncScope']()).toBeNull();
+  });
+
+  it('reloads the survey and rows however the resync dialog is closed', async () => {
+    const { fixture, component, getAllSurveyResponses, openDialog } = await mount(true, of(ROWS), OPEN_SURVEY);
+    current = fixture;
+    const loads = getAllSurveyResponses.mock.calls.length;
+
+    component['openResyncDialog']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(openDialog).toHaveBeenCalledOnce();
+    expect(getAllSurveyResponses.mock.calls.length).toBe(loads + 1);
+  });
+
+  it('keeps the current survey and rows on screen while a follow-up reload runs, and if it fails', async () => {
+    const { fixture, component, getAllSurveyResponses, getSurvey } = await mount(true, of(ROWS), OPEN_SURVEY);
+    current = fixture;
+
+    const pending = new Subject<SurveyResponseItem[]>();
+    getAllSurveyResponses.mockReturnValue(pending);
+    getSurvey.mockReturnValue(new Subject<Survey>());
+    component['refresh']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component['responses']()).toEqual(ROWS);
+    expect(component['responsesLoading']()).toBe(false);
+    expect(component['loading']()).toBe(false);
+    expect(component['survey']()).toEqual(OPEN_SURVEY);
+
+    pending.error(new Error('boom'));
+    expect(component['responses']()).toEqual(ROWS);
+    expect(component['responsesLoadError']()).toBe(true);
+  });
+});

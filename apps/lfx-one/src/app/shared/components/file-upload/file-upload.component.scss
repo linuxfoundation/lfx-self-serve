@@ -11,6 +11,15 @@
       @apply rounded-none border-0 bg-transparent;
     }
 
+    /* Match the small-button sizing in button.component.scss for PrimeNG's internal chooser. */
+    .p-fileupload-choose-button:not([class*='text-sm']).p-button-sm {
+      @apply text-xs tracking-wide px-2.5 py-1.5 gap-2;
+
+      .p-button-icon {
+        @apply w-3.5 h-3.5;
+      }
+    }
+
     .p-fileupload-header {
       @apply hidden;
     }

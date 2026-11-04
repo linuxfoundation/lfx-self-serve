@@ -75,7 +75,7 @@ describe('UiShowMoreComponent', () => {
     expect(rules().length).toBe(2);
     expect(rules()[0].className).toContain('bg-ui-neutral-alpha-200');
     expect(button().classList).toContain('bg-ui-background-100');
-    expect(button().classList).toContain('border-ui-neutral-alpha-200');
+    expect(button().classList).toContain('border-ui-neutral-alpha-300');
 
     const show = TestBed.createComponent(UiShowMoreComponent);
     show.componentRef.setInput('controls', 'x');

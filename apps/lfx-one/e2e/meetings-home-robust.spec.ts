@@ -61,7 +61,7 @@ test.describe('Meetings home page - Robust Tests', () => {
       await gotoMeetingsHome(page);
 
       const groups = page.getByTestId('meetings-home-list').getByTestId('meetings-home-day-group');
-      await expect(groups).toHaveCount(4);
+      await expect(groups).toHaveCount(5);
       for (const group of await groups.all()) {
         await expect(group.getByTestId('meetings-home-day-group-separator').getByRole('heading', { level: 2 })).toBeVisible();
         await expect(group.getByTestId('meetings-home-day-group-count')).toHaveText(/^1\b/);
@@ -78,7 +78,7 @@ test.describe('Meetings home page - Robust Tests', () => {
     test('rows expose date, title and actions, with RSVP controls only where the viewer can answer', async ({ page }) => {
       await gotoMeetingsHome(page);
 
-      await expect(homeRows(page)).toHaveCount(4);
+      await expect(homeRows(page)).toHaveCount(5);
       for (const row of await homeRows(page).all()) {
         for (const id of ['meetings-home-row-date-month', 'meetings-home-row-date-day', 'meetings-home-row-title', 'meetings-home-row-actions-trigger']) {
           await expect(row.getByTestId(id)).toBeVisible();
@@ -166,6 +166,46 @@ test.describe('Meetings home page - Robust Tests', () => {
     });
   });
 
+  // The narrowest centres beside the right column: 1025-1059px on the navbar rail, 1200px docked open.
+  for (const width of [1025, 1059, 1200, 1280]) {
+    test.describe(`Tabs bar at ${width}px`, () => {
+      test.use({ viewport: { width, height: 900 } });
+
+      test('the tabs, search and Filters share one line without overflowing', async ({ page, isMobile }) => {
+        test.skip(isMobile, 'A touch device docks the navbar open; covered by the touch tablet case');
+        await gotoMeetingsHome(page);
+
+        const bar = page.getByTestId('meetings-redesign-tabs-bar');
+        const tabs = await box(page.getByTestId('meetings-redesign-tabs'));
+        const search = await box(page.getByTestId('meetings-redesign-search'));
+        const filters = await box(page.getByTestId('meetings-home-filters-button'));
+        expect(search.y).toBeLessThan(tabs.y + tabs.height);
+        expect(filters.y).toBeLessThan(tabs.y + tabs.height);
+        expect(search.x).toBeGreaterThanOrEqual(tabs.x + tabs.width);
+        expect(filters.x).toBeGreaterThanOrEqual(search.x + search.width);
+        expect(await bar.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      });
+    });
+  }
+
+  test.describe('Tabs bar on a 1025px touch tablet', () => {
+    test.use({ viewport: { width: 1025, height: 900 }, isMobile: true, hasTouch: true });
+    test.skip(({ browserName }) => browserName === 'firefox', 'Firefox has no mobile emulation');
+
+    test('the navbar stays docked, so search and Filters wrap under the tabs inside the bar', async ({ page }) => {
+      await gotoMeetingsHome(page);
+
+      const bar = await box(page.getByTestId('meetings-redesign-tabs-bar'));
+      const tabs = await box(page.getByTestId('meetings-redesign-tabs'));
+      const search = await box(page.getByTestId('meetings-redesign-search'));
+      const filters = await box(page.getByTestId('meetings-home-filters-button'));
+      expect(search.y).toBeGreaterThanOrEqual(tabs.y + tabs.height);
+      expect(filters.y).toBeLessThan(search.y + search.height);
+      expect(search.x).toBeGreaterThanOrEqual(bar.x);
+      expect(filters.x + filters.width).toBeLessThanOrEqual(bar.x + bar.width + 1);
+    });
+  });
+
   test.describe('Folded layout at 1024px', () => {
     test.use({ viewport: { width: 1024, height: 900 } });
 
@@ -177,7 +217,7 @@ test.describe('Meetings home page - Robust Tests', () => {
       await expect(folded.getByTestId('meetings-redesign-folded-next-meeting').getByTestId('meetings-home-next-card')).toBeVisible();
       await expect(folded.getByTestId('meetings-redesign-folded-last-meeting').getByTestId('meetings-home-last-card')).toBeVisible();
       await expect(page.getByTestId('meetings-redesign-description')).toBeHidden();
-      await expect(homeRows(page)).toHaveCount(4);
+      await expect(homeRows(page)).toHaveCount(5);
     });
 
     test('a centre wider than 860px keeps the folded cards side by side and each row on one flex line', async ({ page, isMobile }) => {
