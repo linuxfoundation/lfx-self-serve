@@ -9,6 +9,7 @@ import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -94,6 +95,9 @@ describe('MeetingsHomeStore', () => {
   let confirmed: ReturnType<typeof signal<MeetingRsvp[]>>;
   let removed: ReturnType<typeof signal<ReadonlySet<string>>>;
   let userService: Record<string, unknown>;
+  let meetingsRefresh$: Subject<void>;
+  let pastMeetingsRefresh$: Subject<void>;
+  let toast: { show: ReturnType<typeof vi.fn>; toasts: ReturnType<typeof signal<{ id: string }[]>> };
 
   const create = (platform = 'browser'): MeetingsHomeStore => {
     TestBed.configureTestingModule({
@@ -102,6 +106,7 @@ describe('MeetingsHomeStore', () => {
         { provide: PLATFORM_ID, useValue: platform },
         { provide: UserService, useValue: userService },
         { provide: MeetingService, useValue: meetingService },
+        { provide: UiToastService, useValue: toast },
       ],
     });
     const store = TestBed.inject(MeetingsHomeStore);
@@ -117,6 +122,16 @@ describe('MeetingsHomeStore', () => {
     identity = signal('viewer-a');
     confirmed = signal<MeetingRsvp[]>([]);
     removed = signal<ReadonlySet<string>>(new Set());
+    meetingsRefresh$ = new Subject();
+    pastMeetingsRefresh$ = new Subject();
+    const toasts = signal<{ id: string }[]>([]);
+    toast = {
+      toasts,
+      show: vi.fn(() => {
+        toasts.update((items) => [...items, { id: `toast-${items.length}` }]);
+        return { id: `toast-${toasts().length - 1}`, dismiss: vi.fn() };
+      }),
+    };
     meetingService = {
       removedRegistrationMeetingIds: removed,
       getPublicMeetingJoinUrl: vi.fn(() => of({ link: 'https://zoom.example.test/j/1' })),
@@ -136,6 +151,8 @@ describe('MeetingsHomeStore', () => {
       getUserMeetings: vi.fn(() => upcoming$),
       getUserPastMeetings: vi.fn(() => past$),
       getUserLatestPastMeetings: vi.fn(() => latestPast$),
+      meetingsRefresh$,
+      pastMeetingsRefresh$,
       confirmedMeetingRsvps: vi.fn(() => confirmed()),
       isMeetingRsvpCurrent: vi.fn(() => true),
       authenticated: signal(true),
@@ -181,6 +198,49 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.failed()).toBe(false);
       expect(store.upcomingRows()).toHaveLength(1);
+    });
+
+    it('keeps the loaded rows on a failed refresh, shows one toast and takes the next refresh', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'kept' })]);
+      past$.next([buildPastMeeting('a', inDays(-1))]);
+
+      upcoming$.error(new Error('down'));
+      past$.error(new Error('down'));
+
+      expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['kept']);
+      expect(store.pastRows()).toHaveLength(1);
+      expect(store.nextRow()?.meeting.id).toBe('kept');
+      expect(store.upcomingFailed()).toBe(false);
+      expect(store.pastFailed()).toBe(false);
+      expect(console.error).toHaveBeenCalledWith('Failed to load meetings for the meetings home page:', expect.any(Error));
+      expect(toast.show).toHaveBeenCalledTimes(1);
+      expect(toast.show).toHaveBeenCalledWith(expect.objectContaining({ variant: 'dark' }));
+
+      const refreshed$ = new Subject<Meeting[]>();
+      (userService['getUserMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(refreshed$);
+      meetingsRefresh$.next();
+      refreshed$.next([buildMeeting({ id: 'fresh' })]);
+
+      expect(userService['getUserMeetings']).toHaveBeenCalledTimes(2);
+      expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['fresh']);
+    });
+
+    it('takes the next refresh after a failed first load and clears the error', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = create();
+      upcoming$.error(new Error('down'));
+      expect(store.upcomingFailed()).toBe(true);
+
+      const refreshed$ = new Subject<Meeting[]>();
+      (userService['getUserMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(refreshed$);
+      meetingsRefresh$.next();
+      refreshed$.next([buildMeeting()]);
+
+      expect(store.upcomingFailed()).toBe(false);
+      expect(store.upcomingRows()).toHaveLength(1);
+      expect(toast.show).not.toHaveBeenCalled();
     });
 
     it('does not request anything during server rendering', () => {
@@ -359,6 +419,21 @@ describe('MeetingsHomeStore', () => {
       next$.next([buildMeeting({ id: 'mine' })]);
       expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['mine']);
     });
+
+    it('resets the search, filters and page on a viewer change', () => {
+      const store = create();
+      upcoming$.next(Array.from({ length: MEETINGS_HOME_PAGE_SIZE * 2 }, (_, index) => buildMeeting({ id: `m-${index}` })));
+      store.loadMore();
+      store.setSearch('sync');
+      store.setFilters({ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-1' });
+
+      identity.set('viewer-b');
+      TestBed.tick();
+
+      expect(store.search()).toBe('');
+      expect(store.filters()).toEqual(MEETINGS_HOME_DEFAULT_FILTERS);
+      expect(store.visibleCount()).toBe(MEETINGS_HOME_PAGE_SIZE);
+    });
   });
 
   describe('grouping and paging', () => {
@@ -518,6 +593,21 @@ describe('MeetingsHomeStore', () => {
       expect(store.filterChips().map((chip) => chip.key)).toEqual(['organizedByMe']);
     });
 
+    it('names the foundation chip and keeps the project when the foundation chip is removed', () => {
+      const store = create();
+      upcoming$.next([
+        buildMeeting({ id: 'f', project_uid: 'f-1', project_name: 'Foundation One', is_foundation: true }),
+        buildMeeting({ parent_project_uid: 'f-1' }),
+      ]);
+      store.setFilters({ ...store.filters(), foundation: 'f-1', project: 'p-1' });
+
+      expect(store.filterChips().map((chip) => chip.label)).toEqual(['Foundation: Foundation One', 'Project: Project One']);
+
+      store.clearFilter('foundation');
+
+      expect(store.filters()).toEqual({ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-1' });
+    });
+
     it('clears both filters and search on reset', () => {
       const store = create();
       store.setSearch('sync');
@@ -527,6 +617,39 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.search()).toBe('');
       expect(store.hasActiveQuery()).toBe(false);
+    });
+  });
+
+  describe('deleted and cancelled', () => {
+    it('drops every row of a deleted meeting, keeping upcoming ones out after a refetch and past ones until their feed answers', () => {
+      const store = create();
+      const pastOfIt = { ...buildPastMeeting('a', inDays(-1)), meeting_id: 'm-1' };
+      const emit = (): void => {
+        upcoming$.next([weeklyMeeting([inDays(1)]), buildMeeting({ id: 'm-2' })]);
+        past$.next([pastOfIt]);
+        latestPast$.next([pastOfIt]);
+      };
+      emit();
+      store.removeMeeting('m-1');
+
+      expect(store.pastRows()).toEqual([]);
+      expect(store.lastMeeting()).toBeNull();
+      emit();
+
+      expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['m-2']);
+      expect(store.pastRows().map((row) => row.key)).toEqual(['m-past-a']);
+      expect(store.lastMeeting()?.key).toBe('m-past-a');
+    });
+
+    it('drops only the cancelled date of a series and marks it cancelled for the pickers', () => {
+      const store = create();
+      const [first, second] = [inDays(1), inDays(8)];
+      upcoming$.next([weeklyMeeting([first, second])]);
+
+      store.removeOccurrence('m-1', seconds(first));
+
+      expect(store.upcomingRows().map((row) => row.occurrenceId)).toEqual([seconds(second)]);
+      expect(store.upcomingRows()[0].meeting.cancelled_occurrences).toEqual([seconds(first)]);
     });
   });
 

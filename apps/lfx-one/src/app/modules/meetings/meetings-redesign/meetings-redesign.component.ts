@@ -4,6 +4,7 @@
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
+  afterRenderEffect,
   ChangeDetectionStrategy,
   Component,
   computed,
@@ -13,6 +14,7 @@ import {
   PLATFORM_ID,
   Signal,
   signal,
+  untracked,
   viewChild,
   WritableSignal,
 } from '@angular/core';
@@ -40,6 +42,7 @@ import { MeetingsDayGroupComponent } from './components/meetings-day-group/meeti
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { NextMeetingCardComponent } from './components/next-meeting-card/next-meeting-card.component';
 import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
+import { MeetingsHomeDeleteService } from './services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from './services/meetings-home-edit.service';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
@@ -74,7 +77,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     PendingRsvpsComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
-  providers: [MeetingsHomeStore, MeetingsHomeEditService],
+  providers: [MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'block -mx-5 -mt-6 md:-mx-8',
@@ -98,7 +101,9 @@ export class MeetingsRedesignComponent {
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
   private readonly tabsBar = viewChild<ElementRef<HTMLElement>>('tabsBar');
+  private readonly list = viewChild<ElementRef<HTMLElement>>('list');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
+  private readonly chips = viewChild(UiChipGroupComponent, { read: ElementRef });
   /** Takes focus when the last pending RSVP is answered. */
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
   /** Takes focus when the last pending RSVP is answered and there is no Create Meeting button. */
@@ -113,6 +118,8 @@ export class MeetingsRedesignComponent {
   protected readonly canWriteMeetings: Signal<boolean> = this.projectContext.canWriteMeetings;
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
+  /** Measured tabs bar height; the day headings stick right below it. */
+  protected readonly tabsBarHeight: WritableSignal<number> = signal(0);
   /** Page height on desktop, where the columns scroll on their own; `null` when the window scrolls (1024px and below). */
   protected readonly columnHeight: WritableSignal<number | null> = signal(null);
   /** Where the sticky header stops: 0 inside the centre column, below the mobile menu bar and impersonation banner otherwise. */
@@ -121,6 +128,10 @@ export class MeetingsRedesignComponent {
   protected readonly scrolled: WritableSignal<boolean> = signal(false);
   /** True once the tabs bar has reached its sticky position; the fade then sits under it instead of the header. */
   protected readonly tabsStuck: WritableSignal<boolean> = signal(false);
+  /** True while the list runs under the tabs bar, so a day heading is stuck there; the fade then sits under the heading. */
+  protected readonly dayHeadingStuck: WritableSignal<boolean> = signal(false);
+  /** Where the day headings stick: below the sticky header and tabs bar. */
+  protected readonly dayHeadingTop: Signal<number> = computed(() => this.stickyTop() + this.headerHeight() + this.tabsBarHeight());
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
   /** The Next meeting as a one-item list, so its menu is keyed by row. */
   protected readonly nextRows: Signal<MeetingHomeRow[]> = computed(() => {
@@ -134,6 +145,10 @@ export class MeetingsRedesignComponent {
   });
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
+  /** Header Create Meeting; the empty Upcoming tab offers its own in the empty state instead, per the design. */
+  protected readonly showCreate: Signal<boolean> = computed(
+    () => this.canWriteMeetings() && !(this.store.tab() === 'upcoming' && this.tabEmpty() && !this.store.failed())
+  );
   /** The active tab has meetings, but none match the search and filters. */
   protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.matchingRows().length === 0);
   /** "All N meetings loaded" once every row of a list longer than one page is shown. */
@@ -144,6 +159,18 @@ export class MeetingsRedesignComponent {
   public constructor() {
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.store.setTab(params.get('time') === 'past' ? 'past' : 'upcoming'));
     this.initLoadMore();
+    // The list comes and goes with the tab's state without a scroll, so re-check the stuck day heading then.
+    afterRenderEffect(() => {
+      this.list();
+      untracked(() => this.updateScroll());
+    });
+    // A new tab, search or filters starts at the list's first row, so a trigger left in view does not load a page.
+    afterRenderEffect(() => {
+      this.store.tab();
+      this.store.search();
+      this.store.filters();
+      untracked(() => this.scrollToListStart());
+    });
     // The composer saves in place, so refetch to show the new or edited meeting; skip(1) drops the replayed count.
     toObservable(this.composer.saveCount)
       .pipe(skip(1), takeUntilDestroyed())
@@ -155,8 +182,10 @@ export class MeetingsRedesignComponent {
     afterNextRender(() => {
       const observer = new ResizeObserver(() => this.measure());
       const header = this.header()?.nativeElement;
+      const tabsBar = this.tabsBar()?.nativeElement;
       const footer = this.footer();
       if (header) observer.observe(header);
+      if (tabsBar) observer.observe(tabsBar);
       if (footer) observer.observe(footer);
       this.destroyRef.onDestroy(() => observer.disconnect());
       this.measure();
@@ -181,7 +210,9 @@ export class MeetingsRedesignComponent {
 
   protected measure(): void {
     const header = this.header()?.nativeElement;
+    const tabsBar = this.tabsBar()?.nativeElement;
     if (header) this.headerHeight.set(header.offsetHeight);
+    if (tabsBar) this.tabsBarHeight.set(tabsBar.offsetHeight);
 
     if (window.matchMedia('(min-width: 1025px)').matches) {
       const host = this.host.nativeElement;
@@ -208,6 +239,9 @@ export class MeetingsRedesignComponent {
     const stickyEdge = desktop ? centre.getBoundingClientRect().top : this.stickyTop();
     this.scrolled.set(scrolled);
     this.tabsStuck.set(scrolled && tabsBar.getBoundingClientRect().top - stickyEdge <= this.headerHeight() + 1);
+    const list = this.list()?.nativeElement.getBoundingClientRect();
+    const headingTop = stickyEdge + this.headerHeight() + this.tabsBarHeight();
+    this.dayHeadingStuck.set(!!list && list.top <= headingTop && list.bottom > headingTop);
   }
 
   private initTabs(): Signal<UiTabItem[]> {
@@ -240,6 +274,20 @@ export class MeetingsRedesignComponent {
 
   private tabItem(value: MeetingDashboardView, label: string, unknown: boolean, count: number): UiTabItem {
     return unknown ? { value, label } : { value, label, count, countLabel: `${count} ${count === 1 ? 'meeting' : 'meetings'}` };
+  }
+
+  /** Scrolls the chips or list back up to just below the sticky tabs bar when they have scrolled under it. */
+  private scrollToListStart(): void {
+    const centre = this.centre()?.nativeElement;
+    const start: HTMLElement | undefined = this.chips()?.nativeElement ?? this.list()?.nativeElement;
+    if (!centre || !start) return;
+
+    const desktop = this.columnHeight() !== null;
+    const stickyEdge = desktop ? centre.getBoundingClientRect().top : this.stickyTop();
+    const offset = start.getBoundingClientRect().top - (stickyEdge + this.headerHeight() + this.tabsBarHeight());
+    if (offset >= 0) return;
+    if (desktop) centre.scrollBy({ top: offset });
+    else window.scrollBy({ top: offset });
   }
 
   /** Bottom padding of every ancestor up to `main` — the layout's content wrapper sits above the route-entry host, not directly over this one. */

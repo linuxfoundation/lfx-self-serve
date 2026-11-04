@@ -450,13 +450,13 @@ describe('NavMenuBase — carried organization scope', () => {
   const items: SidebarMenuItem[] = [
     { label: 'Dashboard', routerLink: '/org/acme-inc/overview' },
     { label: 'Memberships', routerLink: '/org/acme-inc/memberships' },
-    { label: 'Projects', routerLink: '/org/acme-inc/projects', carryQueryParams: ['orgScope'] },
+    { label: 'Projects', routerLink: '/org/acme-inc/projects', carryQueryParams: ['orgScope', 'teamMembers'] },
     {
       label: 'Organization Engagement',
       isSection: true,
       items: [
-        { label: 'People', routerLink: '/org/acme-inc/people', carryQueryParams: ['range', 'orgScope'] },
-        { label: 'Code Contributions', routerLink: '/org/acme-inc/contributions', carryQueryParams: ['range', 'orgScope'] },
+        { label: 'People', routerLink: '/org/acme-inc/people', carryQueryParams: ['range', 'orgScope', 'teamMembers'] },
+        { label: 'Code Contributions', routerLink: '/org/acme-inc/contributions', carryQueryParams: ['range', 'orgScope', 'teamMembers'] },
       ],
     },
   ];
@@ -516,6 +516,25 @@ describe('NavMenuBase — carried organization scope', () => {
 
   it('carries nothing from a page that carries no organization scope', async () => {
     await router.navigateByUrl('/org/acme-inc/memberships?orgScope=all');
+
+    expect(linkParams()).toEqual({ Dashboard: undefined, Memberships: undefined, Projects: undefined, People: undefined, 'Code Contributions': undefined });
+  });
+
+  // lfx-self-serve-ops#1246 — Projects, People and Code Contributions share the team members pick.
+  it('carries ?teamMembers=include from Projects to People and Code Contributions, not the Dashboard', async () => {
+    await router.navigateByUrl('/org/acme-inc/projects?teamMembers=include&orgScope=all');
+
+    expect(linkParams()).toEqual({
+      Dashboard: undefined,
+      Memberships: undefined,
+      Projects: { orgScope: 'all', teamMembers: 'include' },
+      People: { orgScope: 'all', teamMembers: 'include' },
+      'Code Contributions': { orgScope: 'all', teamMembers: 'include' },
+    });
+  });
+
+  it.each(['exclude', 'bogus'])('carries no ?teamMembers=%s, which is the default or unknown', async (teamMembers) => {
+    await router.navigateByUrl(`/org/acme-inc/people?teamMembers=${teamMembers}`);
 
     expect(linkParams()).toEqual({ Dashboard: undefined, Memberships: undefined, Projects: undefined, People: undefined, 'Code Contributions': undefined });
   });

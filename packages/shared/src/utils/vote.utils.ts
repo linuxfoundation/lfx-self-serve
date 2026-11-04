@@ -237,7 +237,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
  * @param fallbackTimezone - Zone to reset an elapsed deadline into; defaults to `getUserTimezone()` for
  * non-Angular callers (e.g. tests), but an Angular caller that may run this during SSR must pass an
  * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`), matching
- * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-detail-header,
+ * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-detail-facts,
  * newsletter-list): the reset falls back to UTC on the server and is replaced by the real zone on client
  * hydration — this does not prevent a server/client difference, it just makes the server side
  * deterministic instead of resolving a second, possibly different, non-UTC zone there (GH-3781)
@@ -694,10 +694,10 @@ export function canVoterFetchVoteResults(
 }
 
 /**
- * Copy for the vote detail page's "Visibility at a glance" card — describes who sees what today (managers see live
- * totals and comments on a named vote, and participation only on a pseudo-anonymous one until close; voters see their
- * own response, and totals and comments only after close), never a new rule. Ballot privacy itself is shown by the page header's
- * privacy tag, so it is not repeated here.
+ * Visibility explanation for the vote detail header's ballot privacy badge tooltip — describes who sees what today
+ * (managers see live totals and comments on a named vote, and participation only on a pseudo-anonymous one until close;
+ * voters see their own response, and totals and comments only after close), never a new rule. The badge itself labels
+ * ballot privacy, so the tooltip does not repeat that label.
  * @param audience - `creator` for a project or committee writer, `voter` for everyone else
  * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting; missing metadata never promises access to individual ballots
  * @param isClosed - Whether the vote has ended. A draft is not closed.

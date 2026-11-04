@@ -6,15 +6,23 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import type { IsActiveMatchOptions, Params } from '@angular/router';
 import { environment } from '@environments/environment';
-import { FORMATION_CHECKLIST_PATH, LENS_DEFAULT_ROUTES, ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM } from '@lfx-one/shared/constants';
+import {
+  FORMATION_CHECKLIST_PATH,
+  LENS_DEFAULT_ROUTES,
+  ORG_LENS_TIME_RANGE_QUERY_PARAM,
+  ORG_SCOPE_QUERY_PARAM,
+  ORG_TEAM_MEMBERS_QUERY_PARAM,
+} from '@lfx-one/shared/constants';
 import { LensItem, NavLens, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import {
   lensItemToProjectContext,
   orgLensDestinationKey,
   orgLensTimeRangeUrlParam,
   orgScopeUrlParam,
+  orgTeamMembersUrlParam,
   parseOrgLensTimeRange,
   parseOrgScopeFilter,
+  parseOrgTeamMembersFilter,
 } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { GwEmbedWarmupService } from '@services/gw-embed-warmup.service';
@@ -339,6 +347,10 @@ export abstract class NavMenuBase {
     if (name === ORG_SCOPE_QUERY_PARAM) {
       const scope = parseOrgScopeFilter(raw);
       return scope === null ? null : orgScopeUrlParam(scope);
+    }
+    if (name === ORG_TEAM_MEMBERS_QUERY_PARAM) {
+      const teamMembers = parseOrgTeamMembersFilter(raw);
+      return teamMembers === null ? null : orgTeamMembersUrlParam(teamMembers);
     }
     return raw;
   }

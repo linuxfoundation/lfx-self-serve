@@ -26,7 +26,9 @@ export interface MeetingHomeRow {
 
 /** Applied filters on the meetings home list (search is kept separately). */
 export interface MeetingsHomeFilters {
-  /** Project UID; null means all projects. */
+  /** Foundation UID: the foundation's own meetings and its non-foundation child projects'; null means all foundations. */
+  foundation: string | null;
+  /** Project UID; null means all projects. Takes precedence over `foundation`. */
   project: string | null;
   /** Exact `meeting_type`; null means all types. */
   meetingType: string | null;
@@ -95,6 +97,18 @@ export interface MeetingHomeRowType {
   icon: string;
 }
 
+/** One avatar in the "Organized by" stack of a meetings home row. */
+export interface MeetingHomeRowOrganizer {
+  /** Normalized username or email, unique within the row. */
+  key: string;
+  /** Accessible name and tooltip: "You" for the viewer, else the name. */
+  label: string;
+  /** Display name or username; the source of the initials. */
+  name: string;
+  /** Photo URL; empty when the feed has none. */
+  photo: string;
+}
+
 /** One date in the Pending RSVPs popover of the meetings home page, with what its row shows. */
 export interface MeetingPendingRsvpItem {
   row: MeetingHomeRow;
@@ -153,4 +167,19 @@ export interface MeetingEditScopeDialogData {
   meeting: Meeting;
   /** The date the dialog opens on. */
   occurrence: MeetingOccurrence;
+}
+
+/** What the meetings home delete dialogs open with: the recurring scope picker, and the delete or cancel confirmation. */
+export interface MeetingDeleteDialogData {
+  row: MeetingHomeRow;
+  /** Picker: the date it opens on. Confirmation: the date to cancel; null deletes the whole meeting. */
+  occurrence: MeetingOccurrence | null;
+}
+
+/** A past meeting artifact a meetings home row loads on click, named for its error copy. */
+export interface MeetingHomeArtifact {
+  /** Lower-case name in messages, e.g. "recording". */
+  noun: string;
+  /** Name in a toast title, e.g. "AI Summary". */
+  title: string;
 }

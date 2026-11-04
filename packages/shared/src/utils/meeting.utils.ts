@@ -1702,6 +1702,15 @@ export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string
   return toMeetingApiVotingStatuses(fromMeetingApiVotingStatuses(statuses));
 }
 
+/** Stable roster-selection identity: group order, labels, and equivalent status spellings do not change coverage. */
+export function getMeetingCommitteeSelectionKey(committees: ReadonlyArray<MeetingCommittee | null | undefined> | null | undefined): string {
+  return JSON.stringify(
+    sanitizeMeetingCommittees(committees)
+      .map((committee) => JSON.stringify([committee.uid, normalizeMeetingApiVotingStatuses(committee.allowed_voting_statuses).sort()]))
+      .sort()
+  );
+}
+
 /**
  * Whether the voting-status filter applies to the current group selection.
  * @description Uses option metadata when every selected group is present in `options`. An empty

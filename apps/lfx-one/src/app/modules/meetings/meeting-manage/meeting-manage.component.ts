@@ -50,6 +50,7 @@ import {
   generateRecurrenceObject,
   getDefaultStartDateTime,
   getEntityCommands,
+  getMeetingCommitteeSelectionKey,
   getSavedAttendeeVisibility,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
@@ -185,6 +186,8 @@ export class MeetingManageComponent {
   // Form state
   public form = signal<FormGroup>(this.createMeetingFormGroup());
   public submitting = signal<boolean>(false);
+  // The Guests picker must report complete coverage before any invitation changes can be saved.
+  public readonly committeeMembersReady = signal(false);
   public deletingAttachmentId = signal<string | null>(null);
   public pendingAttachmentDeletions = signal<string[]>([]);
   // Registrant updates refresh
@@ -248,6 +251,16 @@ export class MeetingManageComponent {
       ),
       { initialValue: 1 }
     );
+
+    this.form()
+      .get('committees')
+      ?.valueChanges.pipe(
+        startWith(this.form().get('committees')?.value),
+        map((committees) => getMeetingCommitteeSelectionKey(committees)),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.committeeMembersReady.set(false));
 
     // Subscribe to form value changes and update validation signals
     this.form()
@@ -431,9 +444,18 @@ export class MeetingManageComponent {
     this.pendingAttachmentDeletions.update((current) => [...current, attachmentId]);
   }
 
+  public onCommitteeMembersResolved(committeeUids: string[] | null): void {
+    if (committeeUids === null) {
+      this.committeeMembersReady.set(false);
+      return;
+    }
+    const selected = sanitizeMeetingCommittees(this.form().get('committees')?.value).map((committee) => committee.uid);
+    this.committeeMembersReady.set(selected.every((uid) => committeeUids.includes(uid)) && committeeUids.every((uid) => selected.includes(uid)));
+  }
+
   public onSubmitAll(): void {
     // Edit mode only - save meeting, attachments, and registrants together using forkJoin
-    if (!this.isEditMode()) {
+    if (!this.isEditMode() || !this.committeeMembersReady()) {
       return;
     }
 
@@ -526,6 +548,10 @@ export class MeetingManageComponent {
   }
 
   public onManageRegistrants(): void {
+    if (!this.committeeMembersReady()) {
+      return;
+    }
+
     this.submitting.set(true);
 
     // Build an array of operations with result tracking
