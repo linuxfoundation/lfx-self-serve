@@ -27,9 +27,6 @@
         {{ warning() }}
       } @else if (runState() === 'questions') {
         Waiting for your answers.
-        @if (!publicQuestions() && !answersError()) {
-          <span data-testid="mktg-run-progress-owner-note">Answering needs project write access or the browser that started this run.</span>
-        }
       } @else if (runState() === 'completed') {
         Written — confirming the produced revision…
       } @else {

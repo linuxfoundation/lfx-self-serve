@@ -514,7 +514,8 @@ describe('MktgRunProgressComponent', () => {
     read.mockReturnValue(of(detail([{ ...run, state: 'questions' }])));
     await fixture.whenStable();
     if (runPage) {
-      expect(text()).toContain('Answering needs project write access or the browser that started this run.');
+      expect(text()).toContain('Waiting for your answers.');
+      expect(text()).not.toContain('Answering needs project write access');
       expect(text()).not.toContain('This page keeps checking on its own.');
       expect(text()).not.toContain('Open the intake form');
     } else {
@@ -764,7 +765,8 @@ describe('MktgRunProgressComponent', () => {
     fixture.componentRef.setInput('runPage', true);
     await fixture.whenStable();
     expect(questions).toHaveBeenCalledOnce();
-    expect(text()).toContain('Answering needs project write access or the browser that started this run.');
+    expect(text()).toContain('Waiting for your answers.');
+    expect(text()).not.toContain('Answering needs project write access');
     expect(text()).not.toContain('This page keeps checking on its own.');
   });
 
