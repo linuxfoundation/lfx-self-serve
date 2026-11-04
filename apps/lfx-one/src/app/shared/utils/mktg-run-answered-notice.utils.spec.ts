@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { mktgRunAnsweredElsewhereNotice, mktgRunAnsweredNoticeAsLanded } from './mktg-run-answered-notice.utils';
+import { MKTG_RUN_ANSWERED_WRITING_CLAUSE, mktgRunAnsweredElsewhereNotice, mktgRunAnsweredNoticeAsLanded } from './mktg-run-answered-notice.utils';
 
 describe('mktgRunAnsweredElsewhereNotice', () => {
   it('names the answerer a lost send reported, else the shared fallback', () => {
@@ -17,7 +17,10 @@ describe('mktgRunAnsweredElsewhereNotice', () => {
     expect(mktgRunAnsweredElsewhereNotice(null, true)).toBe('These were answered in another window — the agent is writing. Your draft is kept below.');
   });
 
-  it('rewrites a line heard while writing to say the asset is ready, whoever it names', () => {
+  it('rewrites a line heard while writing to say the asset is ready, whoever it names, anchored on the whole clause', () => {
+    expect(mktgRunAnsweredNoticeAsLanded(`the agent is writing already answered these${MKTG_RUN_ANSWERED_WRITING_CLAUSE}`)).toBe(
+      'the agent is writing already answered these — the asset is ready.'
+    );
     expect(mktgRunAnsweredNoticeAsLanded(mktgRunAnsweredElsewhereNotice('Synthetic writer'))).toBe(
       mktgRunAnsweredElsewhereNotice('Synthetic writer', false, true)
     );

@@ -282,13 +282,23 @@ export class MktgDocumentViewComponent {
   private progressReadUnavailable = false;
   private readonly concurrentAnswers = inject(MktgRunAnswersService);
   protected readonly answeredNotice = computed(() => this.concurrentAnswers.notice(this.projectUid(), this.params().agentKey, this.params().documentId));
-  /** The notice's line as true when read: once its run has landed (completed, or gone from the active runs), the asset is ready. */
-  protected readonly answeredNoticeText = computed(() => {
+  /**
+   * The remembered notice as this page should show it, scoped like the reader's own: hidden once its run failed, once the
+   * run asks a newer round, or while the page follows another run; and its line true when read — once the run has landed
+   * (completed, or absent from a complete read), the asset is ready. An unavailable read changes nothing.
+   */
+  protected readonly answeredNoticeView = computed(() => {
     const notice = this.answeredNotice();
-    if (!notice) return '';
-    const runs = this.runDetail()?.runs;
-    const run = runs?.find((row) => row.runId === notice.runId);
-    return runs && (!run || run.state === 'completed') ? mktgRunAnsweredNoticeAsLanded(notice.message) : notice.message;
+    if (!notice) return null;
+    const detail = this.runDetail();
+    if (!detail || detail.progressUnavailable) return { text: notice.message, kept: notice.kept ?? null };
+    const run = detail.runs?.find((row) => row.runId === notice.runId);
+    if (run?.state === 'failed') return null;
+    if (run?.pendingQuestions && run.pendingQuestions.questionsId !== notice.questionsId) return null;
+    const selected = this.selectedRun();
+    if (selected && selected.runId !== notice.runId) return null;
+    const landed = !run || run.state === 'completed';
+    return { text: landed ? mktgRunAnsweredNoticeAsLanded(notice.message) : notice.message, kept: notice.kept ?? null };
   });
 
   protected readonly params = toSignal(
@@ -993,6 +1003,11 @@ export class MktgDocumentViewComponent {
     // A verified ACK may arrive before its run= URL replacement. The hint selects a row; only that server row authorizes the redirect.
     const selectedRunId = this.runParam() || this.handoffRunId();
     const run = cycle.detail.runs?.find((entry) => entry.runId === selectedRunId);
+    // A newer run observed here retires the notice remembered for an older one, as the run page does when it starts one.
+    const observedRunId = (run ?? (cycle.detail.progressUnavailable ? undefined : cycle.detail.runs?.[0]))?.runId;
+    const remembered = this.answeredNotice();
+    if (observedRunId && remembered && remembered.runId !== observedRunId)
+      this.concurrentAnswers.observeRun(cycle.detail.project, cycle.detail.type.agentKey, cycle.detail.documentId, observedRunId);
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
     if (this.publicProgressPolling() && cycle.detail.progressUnavailable) {
       this.runDetail.set(cycle.detail);

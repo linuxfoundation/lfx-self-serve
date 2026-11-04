@@ -207,8 +207,8 @@
       </div>
     }
 
-    @if (answeredNotice(); as concurrent) {
-      <lfx-message severity="info" [text]="answeredNoticeText()" data-testid="mktg-document-view-answered-note" />
+    @if (answeredNoticeView(); as concurrent) {
+      <lfx-message severity="info" [text]="concurrent.text" data-testid="mktg-document-view-answered-note" />
       <!-- The draft this browser typed stays readable beside the revision the run produced; nothing typed disappears. -->
       @if (concurrent.kept; as kept) {
         <lfx-mktg-run-questions
