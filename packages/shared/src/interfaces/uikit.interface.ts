@@ -137,7 +137,7 @@ export type UiToggleTone = 'accent' | 'warning' | 'danger';
 /** Size of the uikit loading dots: 4, 5 or 7px dots. */
 export type UiLoadingDotsSize = 'sm' | 'md' | 'lg';
 
-/** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `small`, `default` or `large` button. */
+/** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `tiny`, `default` or `large` button. */
 export type UiInputSize = UiControlSize;
 
 /** Native `type` of a uikit text input. There is no `number`: it would hand forms a string. Use `text` with the input's `inputmode` instead. */
@@ -212,8 +212,8 @@ export type UiCollapseSize = UiDensitySize;
 /** Visual style of a uikit button. `primary` is the accent fill; `secondary` and `tertiary` are neutral; `danger` is for destructive actions; `recording` is the green recording action. */
 export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'tertiary' | 'tertiary-accent' | 'danger' | 'danger-tertiary' | 'recording';
 
-/** Size of a uikit button: `small` 24px, `default` 32px or `large` 40px tall. */
-export type UiButtonSize = 'small' | 'default' | 'large';
+/** Size of a uikit button: `tiny` 24px, `small` 28px, `default` 32px or `large` 40px tall. */
+export type UiButtonSize = 'tiny' | 'small' | 'default' | 'large';
 
 /** Size of a uikit switch (segmented control): `tiny` 24px, `small` 32px or `medium` 40px tall. */
 export type UiSwitchSize = UiControlSize;

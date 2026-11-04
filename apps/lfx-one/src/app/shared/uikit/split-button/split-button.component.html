@@ -22,7 +22,7 @@
     [cdkMenuTriggerFor]="menuTemplate"
     [cdkMenuPosition]="menuPositions()"
     data-testid="ui-split-button-chevron">
-    @if (variant() === 'primary' && !disabled()) {
+    @if (variant() === 'primary') {
       <!-- 1px divider: the page background at 30% (no alpha utility for it). -->
       <span class="absolute inset-y-0 left-0 w-px bg-ui-background-100 opacity-30" aria-hidden="true" data-testid="ui-split-button-divider"></span>
     }
@@ -39,7 +39,7 @@
     [lfxUiTooltipDisabled]="disabled()"
     (click)="secondaryTriggered.emit()"
     data-testid="ui-split-button-secondary">
-    @if (variant() === 'primary' && !disabled()) {
+    @if (variant() === 'primary') {
       <span class="absolute inset-y-0 left-0 w-px bg-ui-background-100 opacity-30" aria-hidden="true" data-testid="ui-split-button-divider"></span>
     }
     <i [class]="'ui-icon ' + secondaryIcon()" aria-hidden="true"></i>

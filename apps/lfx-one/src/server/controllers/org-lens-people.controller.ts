@@ -22,6 +22,7 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { parseOptionalOrgCommitFilters, parseOrgCommitFilters, parseOrgScope, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
@@ -505,28 +506,29 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/trainees[?range=30d|90d|365d|730d|all] — the range's trainees, details and filter options for the Trainees tab (LFXV2-1876, default: the Org Lens default range). */
+  /** GET /api/orgs/:orgUid/lens/people/trainees[?range=30d|90d|365d|730d|all] — the range's trainees, current employees' course rows and outside learners for the Trainees tab (LFXV2-1876, default: the Org Lens default range); the cards come from /training/stats and the dropdowns from /training/filter-options. */
   public async getTrainees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_trainees';
 
     try {
       assertOrgUid(orgUid, operation);
+      // Memoized per request: the route gate already ran it. The qualification decides whether the shared Valkey entry may serve this caller.
+      const qualification = await assertOrgLensRead(req, orgUid, operation);
       const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_LENS_DEFAULT_TIME_RANGE;
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         time_range: range,
       });
 
-      const response = await this.traineesService.getTrainees(orgUid, range);
+      const response = await this.traineesService.getTrainees(orgUid, range, qualification);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
         time_range: range,
         trainee_count: response.trainees.length,
+        outside_learner_count: response.outsideLearners.length,
         detail_count: response.details.length,
-        foundation_count: response.foundationOptions.length,
-        course_count: response.courseOptions.length,
       });
 
       res.setHeader('Cache-Control', 'no-store');

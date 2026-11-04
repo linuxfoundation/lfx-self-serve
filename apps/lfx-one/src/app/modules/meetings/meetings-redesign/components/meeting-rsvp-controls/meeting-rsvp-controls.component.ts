@@ -66,7 +66,7 @@ export class MeetingRsvpControlsComponent {
   private readonly statusTrigger = viewChild<ElementRef<HTMLButtonElement>>('statusTrigger');
 
   public readonly row = input.required<MeetingHomeRow>();
-  /** Size of the Yes / No / Maybe buttons: 24px in the list and the Pending RSVPs popover. */
+  /** Size of the Yes / No / Maybe buttons: 28px in the list and the Pending RSVPs popover. */
   public readonly size = input<UiButtonSize>('small');
 
   /** The answer being saved; the BFF holds the request until the new answer is indexed (up to 5s). */
