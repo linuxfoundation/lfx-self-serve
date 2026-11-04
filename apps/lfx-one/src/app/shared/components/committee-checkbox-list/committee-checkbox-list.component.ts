@@ -1,19 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
-import { InputTextComponent } from '@components/input-text/input-text.component';
+import { Component, computed, effect, inject, input, output, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { Committee, CommitteeReference, CommitteeSelectorOption, VOTING_STATUSES } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { CheckboxModule } from 'primeng/checkbox';
 import { catchError, combineLatest, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-checkbox-list',
-  imports: [ReactiveFormsModule, FormsModule, InputTextComponent, CheckboxModule],
+  imports: [ReactiveFormsModule, MultiSelectComponent],
   templateUrl: './committee-checkbox-list.component.html',
 })
 export class CommitteeCheckboxListComponent {
@@ -35,22 +34,16 @@ export class CommitteeCheckboxListComponent {
   // Events
   public readonly selectionChange = output<CommitteeSelectorOption[]>();
 
-  // Internal search form
-  public readonly searchForm = new FormGroup({
-    search: new FormControl(''),
+  // The dropdown works on group UIDs; the parent control holds CommitteeReference[]. This form bridges the two.
+  public readonly selectionForm = new FormGroup({
+    committeeIds: new FormControl<string[]>([], { nonNullable: true }),
   });
-
-  // Search query signal
-  public readonly searchQuery: Signal<string> = this.initSearchQuery();
 
   // Loading state
   public readonly committeesLoading = signal<boolean>(true);
 
   // Committee options loaded from API
   public readonly committeeOptions: Signal<CommitteeSelectorOption[]> = this.initCommitteeOptions();
-
-  // Filtered options based on search
-  public readonly filteredOptions: Signal<CommitteeSelectorOption[]> = this.initFilteredOptions();
 
   // Selected items derived from form control
   public readonly selectedItems: Signal<CommitteeSelectorOption[]> = this.initSelectedItems();
@@ -61,42 +54,21 @@ export class CommitteeCheckboxListComponent {
   // Selected group names for summary
   public readonly selectedGroupNames: Signal<string> = this.initSelectedGroupNames();
 
-  /**
-   * Check if a committee is selected
-   */
-  public isSelected(option: CommitteeSelectorOption): boolean {
-    return this.selectedItems().some((item) => item.id === option.id);
-  }
+  public constructor() {
+    // Parent control -> dropdown (initial value, edit mode, programmatic changes)
+    effect(() => {
+      const ids = this.selectedItems().map((item) => item.id);
+      const control = this.selectionForm.controls.committeeIds;
+      if (!this.sameIds(control.value, ids)) {
+        control.setValue(ids, { emitEvent: false });
+      }
+    });
 
-  /**
-   * Toggle selection of a committee
-   */
-  public toggleSelection(option: CommitteeSelectorOption): void {
-    const current = this.selectedItems();
-    const isCurrentlySelected = current.some((item) => item.id === option.id);
-
-    let updated: CommitteeSelectorOption[];
-    if (isCurrentlySelected) {
-      updated = current.filter((item) => item.id !== option.id);
-    } else {
-      updated = [...current, option];
-    }
-
-    this.updateFormControl(updated);
-    this.selectionChange.emit(updated);
+    // Dropdown -> parent control
+    this.selectionForm.controls.committeeIds.valueChanges.pipe(takeUntilDestroyed()).subscribe((ids) => this.onSelectionChange(ids));
   }
 
   // Private initializer functions
-  private initSearchQuery(): Signal<string> {
-    return toSignal(
-      this.searchForm.get('search')!.valueChanges.pipe(
-        startWith(this.searchForm.get('search')!.value),
-        map((value) => value || '')
-      ),
-      { initialValue: '' }
-    );
-  }
-
   private initCommitteeOptions(): Signal<CommitteeSelectorOption[]> {
     const projectUid = computed(() => this.projectContextService.activeContextUid());
 
@@ -118,19 +90,6 @@ export class CommitteeCheckboxListComponent {
       ),
       { initialValue: [] }
     );
-  }
-
-  private initFilteredOptions(): Signal<CommitteeSelectorOption[]> {
-    return computed(() => {
-      const query = (this.searchQuery() || '').toLowerCase().trim();
-      const options = this.committeeOptions();
-
-      if (!query) {
-        return options;
-      }
-
-      return options.filter((option) => option.name.toLowerCase().includes(query));
-    });
   }
 
   private initSelectedItems(): Signal<CommitteeSelectorOption[]> {
@@ -176,6 +135,24 @@ export class CommitteeCheckboxListComponent {
     });
   }
 
+  private onSelectionChange(ids: string[]): void {
+    const options = this.committeeOptions();
+    const current = this.selectedItems();
+
+    // A group already on the form but missing from the loaded options (e.g. edit mode) keeps its stored name.
+    const updated: CommitteeSelectorOption[] = ids.map((id) => {
+      const option = options.find((o) => o.id === id) ?? current.find((o) => o.id === id);
+      return { id, name: option?.name ?? '', memberCount: option?.memberCount };
+    });
+
+    this.updateFormControl(updated);
+    this.selectionChange.emit(updated);
+  }
+
+  private sameIds(a: string[], b: string[]): boolean {
+    return a.length === b.length && a.every((id, index) => id === b[index]);
+  }
+
   private mapFormValueToSelectedItems(value: CommitteeReference[] | null, options: CommitteeSelectorOption[]): CommitteeSelectorOption[] {
     if (!value || !Array.isArray(value)) {
       return [];
@@ -213,5 +190,6 @@ export class CommitteeCheckboxListComponent {
 
     formControl.setValue(formValue);
     formControl.markAsDirty();
+    formControl.markAsTouched();
   }
 }
