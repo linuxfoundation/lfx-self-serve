@@ -106,8 +106,6 @@ export class MeetingsRedesignComponent {
   private readonly chips = viewChild(UiChipGroupComponent, { read: ElementRef });
   /** Takes focus when the last pending RSVP is answered. */
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
-  /** Takes focus when the last pending RSVP is answered and there is no Create Meeting button. */
-  protected readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
   /** Takes focus when the last filter chip is removed. */
   protected readonly filtersControl = viewChild(MeetingsFiltersComponent);
 

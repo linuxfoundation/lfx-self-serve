@@ -24,33 +24,28 @@
           [class.opacity-0]="!scrolled() || tabsStuck()"
           aria-hidden="true"
           data-testid="meetings-redesign-header-fade"></span>
-        @if (personaLoaded()) {
-          <div class="flex min-w-0 flex-col gap-[4px]">
-            <!-- Focusable so focus has somewhere to go when the Pending RSVPs button hides. -->
-            <h1
-              #heading
-              tabindex="-1"
-              class="font-display text-[24px] font-light leading-[1.2] text-gray-900 outline-none"
-              data-testid="meetings-redesign-title">
-              Meetings
-            </h1>
-            <!-- Hidden at 1024px and below, per the design. -->
+        <div class="flex min-w-0 flex-col gap-[4px]">
+          <!-- Focusable and always rendered so focus has somewhere to go when the Pending RSVPs button hides. -->
+          <h1 #heading tabindex="-1" class="font-display text-[24px] font-light leading-[1.2] text-gray-900 outline-none" data-testid="meetings-redesign-title">
+            Meetings
+          </h1>
+          <!-- Hidden at 1024px and below, per the design. -->
+          @if (personaLoaded()) {
             <p class="hidden text-[13px] text-gray-500 min-[1025px]:block" data-testid="meetings-redesign-description">
               Meetings you're invited to or organizing, across all your projects.
             </p>
-          </div>
-        } @else {
-          <div class="flex min-w-0 flex-col gap-[8px]" data-testid="meetings-home-persona-loading">
-            <lfx-ui-skeleton width="12rem" height="28px" />
-            <lfx-ui-skeleton width="min(28rem, 100%)" height="14px" />
-          </div>
-        }
+          } @else {
+            <div class="hidden min-[1025px]:block" data-testid="meetings-home-persona-loading">
+              <lfx-ui-skeleton width="min(28rem, 100%)" height="14px" />
+            </div>
+          }
+        </div>
         <!-- Hidden, not removed, while empty: no wrapped row on narrow screens, and Pending RSVPs still moves focus once emptied. -->
         <div
           class="flex max-w-full flex-none flex-wrap items-center gap-[12px]"
           [class.hidden]="!store.pendingRsvpRows().length && !showCreate()"
           data-testid="meetings-redesign-header-actions">
-          <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="createButton() ?? heading()?.nativeElement ?? null" />
+          <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="createButton() ?? heading" />
           @if (showCreate()) {
             <lfx-ui-button #createButton variant="tertiary-accent" icon="fa-light fa-plus" (click)="createMeeting()" data-testid="meetings-home-create">
               Create Meeting
