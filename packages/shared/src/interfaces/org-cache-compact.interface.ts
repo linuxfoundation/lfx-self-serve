@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { ColumnarTable } from './compact-cache.interface';
+import type { OrgTraineeFormerOnPeopleListCounts } from './org-people-trainees.interface';
 import type { HealthScore, InfluenceBand, InfluenceTrendDirection, OrgLensProjectMetricsState } from './org-lens-projects.interface';
 
 // Stored (Valkey) shapes for the per-org, 1-hour Org Lens caches (GH-1906). None of these is a wire
@@ -136,6 +137,8 @@ export interface CompactOrgTraineesRawCache {
   details: ColumnarTable;
   /** Aligned to `details.r`: which entry of `courses.r` each detail row belongs to. */
   detailCourses: number[];
+  /** Counts only (`OrgTraineesResponse.formerOnPeopleList`): no key of an unlisted former employee is stored. */
+  formerOnPeopleList: OrgTraineeFormerOnPeopleListCounts;
   /** ISO build time of the training table, or null (`OrgTraineesResponse.asOf`). */
   asOf: string | null;
 }

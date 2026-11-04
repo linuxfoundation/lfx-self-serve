@@ -9,14 +9,14 @@ export type OrgTrainingTabId = 'certifications' | 'trainings';
 // ─── Org Training & Certification page ───────────────────────────────────────
 
 /** One current employee listed in the Training page's group drawer. */
-export interface OrgCertEmployee {
+export interface OrgTrainingGroupEmployee {
   readonly contactId: string;
   readonly name: string;
   readonly jobTitle: string | null;
 }
 
 /** Employee row with presentation fields pre-baked for template rendering (avoids method calls in template). */
-export interface OrgCertEmployeeVm extends OrgCertEmployee {
+export interface OrgTrainingGroupEmployeeVm extends OrgTrainingGroupEmployee {
   readonly initials: string;
   readonly avatarColorClass: string;
 }

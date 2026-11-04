@@ -8,13 +8,13 @@ import {
   DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD,
   DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER,
   EMPTY_ORG_TRAINING_GROUPS_RESPONSE,
-  MAX_ORG_CERT_EMPLOYEES,
+  MAX_ORG_TRAINING_GROUP_EMPLOYEES,
   ORG_TRAINING_FILTER_KEYS,
   ORG_TRAINING_GROUP_NONE_LABELS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
-  OrgCertEmployee,
+  OrgTrainingGroupEmployee,
   OrgDropdownOption,
   OrgLensTimeRange,
   OrgTrainingFilterOptions,
@@ -28,7 +28,7 @@ import type {
   OrgTrainingStatsQuery,
 } from '@lfx-one/shared/interfaces';
 import {
-  hasOrgTrainingCourseFilter,
+  hasOrgTrainingFilter,
   isOrgLensTimeRange,
   normalizeOrgTrainingFilterValue,
   orgTrainingCompletionRatePct,
@@ -104,7 +104,7 @@ interface OrgTrainingGroupsRaw {
 interface OrgTrainingGroupEmployeesRaw {
   label: string;
   total: number;
-  data: OrgCertEmployee[];
+  data: OrgTrainingGroupEmployee[];
 }
 
 interface OrgRosterEmployeeRow {
@@ -385,7 +385,8 @@ export class OrgLensTrainingService {
       WHERE ACCOUNT_ID = ?
     `;
 
-    const includeOutside = !hasOrgTrainingCourseFilter(query);
+    // Learners outside the people list carry no course data to filter on, so any filter drops them from the people count.
+    const includeOutside = !hasOrgTrainingFilter(query);
     const [pairsResult, outsideResult, asOfResult, rosterResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingPairStatsRow>(pairsSql, binds),
       includeOutside
@@ -528,7 +529,7 @@ export class OrgLensTrainingService {
       WHERE ${where}
       GROUP BY p.PERSON_KEY, p.NAME, p.TITLE
       ORDER BY p.NAME ASC NULLS LAST
-      LIMIT ${MAX_ORG_CERT_EMPLOYEES}
+      LIMIT ${MAX_ORG_TRAINING_GROUP_EMPLOYEES}
     `;
 
     const [countResult, namesResult] = await Promise.all([

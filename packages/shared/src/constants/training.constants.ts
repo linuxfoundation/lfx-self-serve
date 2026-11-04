@@ -33,7 +33,7 @@ export const DEFAULT_ORG_TRAINING_GROUPS_PAGE_SIZE = 10;
 export const MAX_ORG_TRAINING_GROUPS_PAGE_SIZE = 100;
 
 /** Hard cap on names listed by the group drawer — bounds response size for large orgs while the drawer keeps its single-fetch, client-side-search UX. */
-export const MAX_ORG_CERT_EMPLOYEES = 500;
+export const MAX_ORG_TRAINING_GROUP_EMPLOYEES = 500;
 
 export const DEFAULT_ORG_TRAINING_GROUPS_SORT_FIELD: OrgTrainingGroupSortField = 'completed';
 export const DEFAULT_ORG_TRAINING_GROUPS_SORT_ORDER: 'ASC' | 'DESC' = 'DESC';
@@ -67,8 +67,8 @@ export const ENROLL_AGAIN_URL_PREFIX = 'https://trainingportal.linuxfoundation.o
 // ─── Enrollment window (lfx-self-serve#4288) ───────────────────────────────
 
 /**
- * Length of the enrollment window the person detail and the All Employees expanded row apply to training
- * enrollments. Training & Certification and People › Trainees use the range selector instead. Certificates are never
+ * Length of the enrollment window the person detail and the All Employees expanded row apply to in-progress
+ * training enrollments. Training & Certification and People › Trainees use the range selector instead. Certificates are never
  * windowed. The SQL predicate and the copy below both derive from this value so a label cannot drift from the query.
  */
 export const ORG_TRAINING_ENROLLMENT_WINDOW_MONTHS = 12;

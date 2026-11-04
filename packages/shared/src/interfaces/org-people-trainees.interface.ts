@@ -67,6 +67,12 @@ export interface OrgTraineeOutsideLearner {
   status: OrgTraineeStatus;
 }
 
+/** Counts of the unlisted former employees whose training the stat cards include but the Trainees table does not list. */
+export interface OrgTraineeFormerOnPeopleListCounts {
+  people: number;
+  pairs: number;
+}
+
 /** GET response for `/api/orgs/:orgUid/lens/people/trainees?range=…` — only enrollments and certificates dated in the range. */
 export interface OrgTraineesResponse {
   accountId: string;
@@ -85,6 +91,12 @@ export interface OrgTraineesResponse {
    * learner whose warehouse key also has people-list rows in `details` is left out, so the people card counts them once.
    */
   outsideLearners: OrgTraineeOutsideLearner[];
+  /**
+   * Counts only, no keys: the people-list members with NO current-employee row (unlisted former employees) that have
+   * in-range training, which the stat cards count but `trainees` / `details` never list. `people` = distinct persons,
+   * `pairs` = distinct (person, course) pairs, under the same pair rule as the stats.
+   */
+  formerOnPeopleList: OrgTraineeFormerOnPeopleListCounts;
   /** ISO build time of `ORG_PEOPLE_TRAINING` (`MAX(DBT_RUN_AT)` over the account's rows, every range): the date the training data reflects. Null when the account has no rows. */
   asOf: string | null;
 }

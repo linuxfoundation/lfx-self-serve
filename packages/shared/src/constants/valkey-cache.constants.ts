@@ -284,10 +284,10 @@ export const VALKEY_CACHE = {
     // dictionary, and drops the foundation and course option rows, which are now built from the details. Learners
     // outside the people list add one (name, certified flag) row each and no detail rows, so the per-course grain
     // stays the people list's, as measured for `v4`; `v9` adds one product-type cell per course dictionary entry
-    // and is carried over unmeasured like v6-v8 (v8 only drops outside learners
-    // already counted through people-list rows). Re-measure it on the
+    // and `v10` two integer counts (`formerOnPeopleList`, no keys: a few bytes), both carried over unmeasured like v6-v8 (v8 only
+    // drops outside learners already counted through people-list rows). Re-measure it on the
     // largest organization after lf-dbt enables outside learners (rollout step 3).
-    'org-lens-sf:v1:people-trainees:v9': 9 * 1_048_576,
+    'org-lens-sf:v1:people-trainees:v10': 9 * 1_048_576,
     // Training / Trainees shared-view caches (lfx-self-serve#4285), each far under 1 MiB: measured maximum × 1.25 rounds up to
     // 1 MiB (the default's size), and each is an explicit entry so its measurement lives here. Measured 2026-11-03 on
     // the dev build (ANALYTICS_DEV ORG_PEOPLE_TRAINING, All time, no filters, the five largest organizations; the largest has
@@ -307,7 +307,7 @@ export const VALKEY_CACHE = {
     // value 68.7 KB (course grouping, Training tab, 272 groups, All time; 12.1 KB for 47 groups on the Certification tab);
     // foundation 3.8 KB (22 groups), project 10.4 KB (55), level 0.7 KB, format 0.6 KB.
     'org-lens-sf:v1:training-groups:v1': 1_048_576,
-    // `training-group-employees:v1`: one drawer cell, capped at MAX_ORG_CERT_EMPLOYEES (500) {contactId, name, jobTitle}
+    // `training-group-employees:v1`: one drawer cell, capped at MAX_ORG_TRAINING_GROUP_EMPLOYEES (500) {contactId, name, jobTitle}
     // rows. Largest value 43.1 KB (about 500 rows at ~85 bytes; the widest group averaged 141 bytes per row, 70.5 KB for 500).
     'org-lens-sf:v1:training-group-employees:v1': 1_048_576,
   } as Readonly<Record<string, number>>,

@@ -320,7 +320,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: reading `k`/`r` off plain row
     // arrays would serve an empty tab for the whole TTL.
     const legacy = { traineeRows: [], detailRows: [{ PERSON_KEY: 'stale' }], foundationRows: [], courseRows: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v9:365d')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v10:365d')!, JSON.stringify(legacy));
 
     const response = await service.getTrainees(ACCOUNT, '365d', 'org-grant');
 
@@ -420,8 +420,8 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     await service.getTrainees(ACCOUNT, '30d', 'org-grant');
 
     expect(execute).toHaveBeenCalledTimes(8);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v9:30d')!)).toBe(true);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v9:365d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v10:30d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v10:365d')!)).toBe(true);
   });
 });
 
@@ -671,6 +671,93 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
     expect(stored).not.toMatch(/person-former|enrolled:former/);
     const entry = JSON.parse([...cacheValues.values()][0]) as CompactOrgTraineesRawCache;
     expect(entry.details.r).toHaveLength(1);
+  });
+
+  it('counts the unlisted former employee as one person and one pair, and ships and stores only the counts', async () => {
+    const response = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
+
+    expect(response.formerOnPeopleList).toEqual({ people: 1, pairs: 1 });
+    const entry = JSON.parse([...cacheValues.values()][0]) as CompactOrgTraineesRawCache;
+    expect(entry.formerOnPeopleList).toEqual({ people: 1, pairs: 1 });
+    expect(JSON.stringify(response)).not.toMatch(/person-former/);
+  });
+
+  it('counts a former employee by distinct (person, course) pair: re-enrollments and a certificate collapse, a second course adds one, uncounted rows add none', async () => {
+    const honest = execute.getMockImplementation()!;
+    const former = (courseOrCertId: string, courseId: string | null, status: string, activityTs: string | null, personKey = 'person-former') => ({
+      ...training[1],
+      PERSON_KEY: personKey,
+      COURSE_OR_CERT_ID: courseOrCertId,
+      COURSE_ID: courseId,
+      STATUS: status,
+      ACTIVITY_TS: activityTs,
+    });
+    execute.mockImplementation(async (query: string, binds: unknown[]) => {
+      const result = (await honest(query, binds)) as { rows: Record<string, unknown>[] };
+      if (!query.includes('COURSE_OR_CERT_ID') || query.includes('ORG_PEOPLE_ALL_RANGES') || query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')) return result;
+      return {
+        rows: [
+          ...result.rows,
+          // Same pair as the fixture's former row: a re-enrollment and the certificate.
+          former('enrolled:former-again', 'course-one', 'Enrolled', recent),
+          former('certified:former', 'course-one', 'Certified', recent),
+          // A second course, found through the cert id when COURSE_ID is null.
+          former('enrolled:former-two', null, 'Enrolled', recent),
+          // Not counted by the cards: an unknown status and an undated row.
+          former('other:former', 'course-three', 'Dropped', recent),
+          former('undated:former', 'course-four', 'Enrolled', null),
+          // A second unlisted person, and a person with only uncounted rows.
+          former('enrolled:other', 'course-one', 'Enrolled', recent, 'person-former-two'),
+          former('undated:third', 'course-one', 'Enrolled', null, 'person-former-three'),
+        ],
+      };
+    });
+
+    const response = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
+
+    expect(response.formerOnPeopleList).toEqual({ people: 2, pairs: 3 });
+    expect(JSON.stringify([response, ...cacheValues.values()])).not.toMatch(/person-former/);
+  });
+
+  it('reports no former employees when every people-list learner has a current-employee row', async () => {
+    const honest = execute.getMockImplementation()!;
+    execute.mockImplementation(async (query: string, binds: unknown[]) => {
+      const result = (await honest(query, binds)) as { rows: Record<string, unknown>[] };
+      return query.includes('COURSE_OR_CERT_ID') && !query.includes('ORG_PEOPLE_ALL_RANGES') && !query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')
+        ? { rows: result.rows.filter((row) => row['PERSON_KEY'] !== 'person-former') }
+        : result;
+    });
+
+    const response = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
+
+    expect(response.formerOnPeopleList).toEqual({ people: 0, pairs: 0 });
+  });
+
+  it('counts the former employee the same on the direct auditor-entitlement path, and reads the same count back from the cache', async () => {
+    const direct = await service.getTrainees(ACCOUNT, 'all', 'auditor-entitlement');
+    expect(direct.formerOnPeopleList).toEqual({ people: 1, pairs: 1 });
+    expect(cacheValues.size).toBe(0);
+
+    await service.getTrainees(ACCOUNT, 'all', 'org-grant');
+    const warehouseReads = execute.mock.calls.length;
+    const cached = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
+
+    expect(execute).toHaveBeenCalledTimes(warehouseReads);
+    expect(cached.formerOnPeopleList).toEqual({ people: 1, pairs: 1 });
+  });
+
+  it('treats a v9-shaped entry without the counts as a miss', async () => {
+    await service.getTrainees(ACCOUNT, 'all', 'org-grant');
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as Partial<CompactOrgTraineesRawCache>;
+    delete stored.formerOnPeopleList;
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    const response = await service.getTrainees(ACCOUNT, 'all', 'org-grant');
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+    expect(response.formerOnPeopleList).toEqual({ people: 1, pairs: 1 });
   });
 
   it('still counts the former employee rows for the outside-learner dedupe before dropping them from the cache', async () => {

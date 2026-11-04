@@ -209,6 +209,7 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   trainees: [],
   details: [],
   outsideLearners: [],
+  formerOnPeopleList: { people: 0, pairs: 0 },
   asOf: null,
 };
 

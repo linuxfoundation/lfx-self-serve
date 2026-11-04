@@ -3,7 +3,7 @@
 
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 import type { OrgDropdownOption } from './org-memberships.interface';
-import type { OrgCertEmployee, OrgTrainingTabId } from './training.interface';
+import type { OrgTrainingGroupEmployee, OrgTrainingTabId } from './training.interface';
 
 /** What the Training page's table groups the filtered person-course pairs by. */
 export type OrgTrainingGroupBy = 'course' | 'foundation' | 'project' | 'level' | 'format';
@@ -129,7 +129,7 @@ export interface OrgTrainingGroupEmployeesResponse {
   tab: OrgTrainingTabId;
   status: OrgTrainingGroupStatus;
   total: number;
-  data: OrgCertEmployee[];
+  data: OrgTrainingGroupEmployee[];
 }
 
 /** Stats shown on the shared strip, in order. */

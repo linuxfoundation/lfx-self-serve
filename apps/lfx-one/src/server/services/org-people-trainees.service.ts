@@ -16,6 +16,7 @@ import type {
   OrgPeopleAllTraineeRow,
   OrgPeopleTrainingRow,
   OrgTraineeDetailRow,
+  OrgTraineeFormerOnPeopleListCounts,
   OrgTraineeOutsideLearner,
   OrgTraineeRow,
   OrgTraineesResponse,
@@ -51,18 +52,19 @@ export class OrgPeopleTraineesService {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange: range };
     }
 
-    // `people-trainees:v9:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
+    // `people-trainees:v10:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
     // so the read is windowed per range here instead of shipping every row for the client to filter. `v6` added the
     // table's build time, the project, level and format columns and the learners outside the people list (name and
     // certified flag, no detail rows), and dropped the two option reads; `v7` stops caching those learners' warehouse
     // key, so a `v6` entry, which still holds it, must miss, and reads the renamed `IS_ON_PEOPLE_LIST` column; `v8`
     // drops a learner whose warehouse key also has people-list rows in the range, so a `v7` entry may count them twice; `v9` adds the row's product type
-    // (Certification | Training), so a `v8` entry without it must miss, and the dropdowns moved to /filter-options.
-    const { traineeRows, outsideLearnerRows, detailRows, asOf } =
+    // (Certification | Training), so a `v8` entry without it must miss, and the dropdowns moved to /filter-options; `v10` adds
+    // the counts of unlisted former employees' pairs (`formerOnPeopleList`, no keys), so a `v9` entry without them must miss.
+    const { traineeRows, outsideLearnerRows, detailRows, formerOnPeopleList, asOf } =
       qualification === 'org-grant'
         ? await withOrgCompactCache(
             accountId,
-            `people-trainees:v9:${range}`,
+            `people-trainees:v10:${range}`,
             VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
             () => this.fetchTraineesRaw(accountId, range),
             {
@@ -134,6 +136,7 @@ export class OrgPeopleTraineesService {
       trainees,
       details,
       outsideLearners,
+      formerOnPeopleList,
       asOf,
     };
   }
@@ -145,6 +148,7 @@ export class OrgPeopleTraineesService {
     traineeRows: OrgPeopleAllTraineeRow[];
     outsideLearnerRows: OrgTrainingOutsideLearnerRow[];
     detailRows: OrgPeopleTrainingRow[];
+    formerOnPeopleList: OrgTraineeFormerOnPeopleListCounts;
     asOf: string | null;
   }> {
     const inRange = orgTrainingRangePredicate(range);
@@ -166,7 +170,10 @@ export class OrgPeopleTraineesService {
     // key) and before the cache: a former employee's warehouse key and enrollment or certificate ids have no reader and are never stored.
     const listedKeys = new Set(traineeRows.map((row) => row.PERSON_KEY));
     const detailRows = allDetailRows.filter((row) => listedKeys.has(row.PERSON_KEY));
-    return { traineeRows, outsideLearnerRows, detailRows, asOf };
+    // The cards count these people's pairs but the table lists none of them: counted here, from the same rows and the same
+    // (person, course) pair rule as the stats, and only the two counts leave this method; an unlisted key never does.
+    const formerOnPeopleList = countFormerOnPeopleList(allDetailRows.filter((row) => !listedKeys.has(row.PERSON_KEY)));
+    return { traineeRows, outsideLearnerRows, detailRows, formerOnPeopleList, asOf };
   }
 
   /**
@@ -286,6 +293,25 @@ function countedActivityTs(row: OrgPeopleTrainingRow): string | null {
 }
 
 /**
+ * Distinct people and distinct (person, course) pairs among the rows the cards count (a known status and a parseable date).
+ * The pair is keyed as the stats' pairs CTE keys it, on `COALESCE(COURSE_ID, COURSE_OR_CERT_ID)`; each pair counts once however many
+ * enrollment and certificate rows it has. Counts only: the keys stay in this function.
+ */
+function countFormerOnPeopleList(rows: readonly OrgPeopleTrainingRow[]): OrgTraineeFormerOnPeopleListCounts {
+  const coursesByPerson = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (countedActivityTs(row) === null) continue;
+    const courseKey = row.COURSE_ID ?? row.COURSE_OR_CERT_ID;
+    const courses = coursesByPerson.get(row.PERSON_KEY);
+    if (courses) courses.add(courseKey);
+    else coursesByPerson.set(row.PERSON_KEY, new Set([courseKey]));
+  }
+  let pairs = 0;
+  for (const courses of coursesByPerson.values()) pairs += courses.size;
+  return { people: coursesByPerson.size, pairs };
+}
+
+/**
  * Compacts the raw reads for Valkey storage (GH-1906).
  *
  * Same shape of waste as the event-attendees payload: `detailRows` is grained per (person,
@@ -298,6 +324,7 @@ function encodeTraineesRaw(raw: {
   traineeRows: OrgPeopleAllTraineeRow[];
   outsideLearnerRows: OrgTrainingOutsideLearnerRow[];
   detailRows: OrgPeopleTrainingRow[];
+  formerOnPeopleList: OrgTraineeFormerOnPeopleListCounts;
   asOf: string | null;
 }): CompactOrgTraineesRawCache {
   // Keyed on the whole tuple, not on COURSE_ID: two rows sharing a course id but disagreeing on a
@@ -317,6 +344,7 @@ function encodeTraineesRaw(raw: {
     details: toColumnar(raw.detailRows, ORG_TRAINEE_DETAIL_COLUMNS),
     // Every detail row was part of the set `courses` was built from, so the lookup always resolves.
     detailCourses: raw.detailRows.map((row) => courses.indexOf.get(keys.get(row)!)!),
+    formerOnPeopleList: raw.formerOnPeopleList,
     asOf: raw.asOf,
   };
 }
@@ -326,6 +354,7 @@ function decodeTraineesRaw(value: CompactOrgTraineesRawCache): {
   traineeRows: OrgPeopleAllTraineeRow[];
   outsideLearnerRows: OrgTrainingOutsideLearnerRow[];
   detailRows: OrgPeopleTrainingRow[];
+  formerOnPeopleList: OrgTraineeFormerOnPeopleListCounts;
   asOf: string | null;
 } {
   const courses = fromColumnar<OrgPeopleTrainingRow>(value.courses);
@@ -335,6 +364,7 @@ function decodeTraineesRaw(value: CompactOrgTraineesRawCache): {
     traineeRows: fromColumnar<OrgPeopleAllTraineeRow>(value.traineeRows),
     outsideLearnerRows: fromColumnar<OrgTrainingOutsideLearnerRow>(value.outsideLearnerRows),
     detailRows,
+    formerOnPeopleList: value.formerOnPeopleList,
     asOf: value.asOf,
   };
 }
@@ -346,6 +376,8 @@ function isCompactTraineesRaw(value: unknown): boolean {
     typeof cache !== 'object' ||
     // Required, not optional: a `v4`-shaped entry under this key would otherwise serve no as-of date for the whole TTL.
     !(cache.asOf === null || typeof cache.asOf === 'string') ||
+    !isStoredCount(cache.formerOnPeopleList?.people) ||
+    !isStoredCount(cache.formerOnPeopleList?.pairs) ||
     !isColumnarTable(cache.traineeRows) ||
     !isColumnarTable(cache.outsideLearnerRows) ||
     !isColumnarTable(cache.courses) ||
@@ -393,4 +425,9 @@ function isStoredString(cell: unknown): boolean {
 /** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
 function isStoredNullableString(cell: unknown): boolean {
   return cell === null || isStoredString(cell);
+}
+
+/** A stored count: a non-negative integer, so a `v9`-shaped entry (no counts) or a corrupt one is a miss. */
+function isStoredCount(value: unknown): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }

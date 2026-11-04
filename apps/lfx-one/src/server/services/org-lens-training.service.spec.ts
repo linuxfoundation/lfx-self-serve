@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MAX_ORG_CERT_EMPLOYEES, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH } from '@lfx-one/shared/constants';
+import { MAX_ORG_TRAINING_GROUP_EMPLOYEES, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH } from '@lfx-one/shared/constants';
 import type { OrgTrainingStatsQuery } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -264,7 +264,7 @@ describe('OrgLensTrainingService — group drawer', () => {
     expect(countSql).toContain("COALESCE(COURSE_NAME, '') = ?");
     expect(countSql).toContain('IS_CERTIFIED');
     expect(countBinds).toEqual([ACCOUNT, 'Course A']);
-    expect(namesSql).toContain(`LIMIT ${MAX_ORG_CERT_EMPLOYEES}`);
+    expect(namesSql).toContain(`LIMIT ${MAX_ORG_TRAINING_GROUP_EMPLOYEES}`);
     expect(namesBinds).toEqual([ACCOUNT, ACCOUNT, 'Course A']);
   });
 
