@@ -115,6 +115,46 @@ describe('NewsletterManifestService', () => {
     expect(service.templates()).toEqual([{ key: 'b', label: 'B' }]);
   });
 
+  it('clears loading when a remounted composer replays a manifest whose first subscriber left early', () => {
+    const response = new Subject<unknown>();
+    httpGet.mockReturnValue(response.asObservable());
+    const service = configure('browser', httpGet);
+
+    // The first composer unsubscribes before the response lands.
+    service.load('default').subscribe().unsubscribe();
+    response.next({ wrapper_key: 'default', blocks: [] });
+    response.complete();
+
+    // A remount loads the same key from the cache.
+    service.load('default').subscribe();
+    expect(service.loading()).toBe(false);
+    expect(service.manifest()).not.toBeNull();
+  });
+
+  it('loadTemplates clears the previous project list on a switch, and an old failure does not drop the new request', () => {
+    const failing = new Subject<{ templates: { key: string; label: string }[] }>();
+    const fresh = new Subject<{ templates: { key: string; label: string }[] }>();
+    httpGet
+      .mockReturnValueOnce(of({ templates: [{ key: 'a', label: 'A' }] }))
+      .mockReturnValueOnce(failing.asObservable())
+      .mockReturnValueOnce(fresh.asObservable());
+    const service = configure('browser', httpGet, 'ambient-proj');
+
+    service.loadTemplates('proj-a').subscribe();
+    expect(service.templates()).toEqual([{ key: 'a', label: 'A' }]);
+
+    service.loadTemplates('proj-b').subscribe();
+    expect(service.templates()).toEqual([]);
+
+    service.loadTemplates('proj-c').subscribe();
+    failing.error(new Error('boom'));
+    // proj-c's request is still the cached one, so no new fetch is made.
+    service.loadTemplates('proj-c').subscribe();
+    expect(httpGet).toHaveBeenCalledTimes(3);
+    fresh.next({ templates: [{ key: 'c', label: 'C' }] });
+    expect(service.templates()).toEqual([{ key: 'c', label: 'C' }]);
+  });
+
   it('load scopes the manifest to the owning project UID when one is passed, over the ambient lens', () => {
     const service = configure('browser', httpGet, 'ambient-proj');
     service.load('default', 'owning-proj').subscribe();

@@ -226,7 +226,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
     const html = this.sourceHtml();
     return html ? new TextEncoder().encode(html).length : 0;
   });
-  protected readonly emailSizeLabel: Signal<string> = computed(() => `${(this.emailBytes() / 1024).toFixed(1)} KB`);
+  // Decimal KB, the same unit as the 100 KB (100,000-byte) limit in the message.
+  protected readonly emailSizeLabel: Signal<string> = computed(() => `${(this.emailBytes() / 1000).toFixed(1)} KB`);
   // 'limit' comes first: the service rejects a render over the limit, so the
   // author should see the size, not the generic error. Otherwise 'error' takes
   // precedence over the warning: on a rejected render the byte count reflects the
@@ -392,7 +393,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
         .ensureLoaded(activeKey, this.projectUid())
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe((manifest) => {
-          if (!manifest) return;
+          // The author may have picked another template before this load landed.
+          if (!manifest || this.selectedTemplateKey() !== activeKey) return;
           this.reconcileContainers(manifest);
           if (this.seedStarterBlocks() && this.blocks().length === 0) this.addStarterBlocks(manifest);
         });

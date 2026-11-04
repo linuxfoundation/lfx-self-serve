@@ -93,6 +93,9 @@ export class NewsletterManifestService {
       return this.templatesStream;
     }
 
+    // A different project: drop the previous project's list so the picker never
+    // shows another project's template sets while this one loads.
+    if (this.templatesUid !== uid) this.templatesSignal.set([]);
     this.templatesUid = uid;
     this.templatesStream = this.http.get<NewsletterTemplatesResponse>(`/api/projects/${encodeURIComponent(uid)}/newsletters/templates`).pipe(
       map((response) => response.templates ?? []),
@@ -102,8 +105,9 @@ export class NewsletterManifestService {
       }),
       catchError((err: unknown) => {
         console.warn('NewsletterManifestService: template catalog load failed; picker will show the active library only', { err });
-        // Reset so a later call can retry once the endpoint is available.
-        this.templatesStream = null;
+        // Reset so a later call can retry, unless a newer project's request has
+        // already replaced this one.
+        if (this.templatesUid === uid) this.templatesStream = null;
         return of([]);
       }),
       shareReplay({ bufferSize: 1, refCount: false })
@@ -198,7 +202,12 @@ export class NewsletterManifestService {
           // once it lands, even if a newer switch is now active; a later switch
           // back to it can then clear loading synchronously (see the cached branch).
           this.resolvedKeys.add(templateKey);
-          if (isLatest()) this.manifestSignal.set(manifest);
+          if (isLatest()) {
+            this.manifestSignal.set(manifest);
+            // A replay to a remounted composer doesn't re-run finalize, so clear
+            // loading here too, or the palette stays on "Loading blocks…".
+            this.loadingSignal.set(false);
+          }
         })
       );
 
