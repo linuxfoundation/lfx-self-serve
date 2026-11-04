@@ -950,4 +950,35 @@ describe('EnrollProgramComponent — from a lens (lfx-mentorship#398)', () => {
     expect(component['form'].controls.projectId.value).toBe('');
     expect(component['selectedProject']()).toBeNull();
   });
+
+  /** The program was created but its logo upload failed: the answers are locked and Retry uploads the logo only. */
+  const partialSave = (): void => {
+    component['createdProgram'].set(PROGRAM);
+    component['logoUploadFailed'].set(true);
+    component['submitPhase'].set('failed');
+    component['form'].disable({ emitEvent: false });
+  };
+
+  it('keeps the Foundation lens enrollment’s project after a partial save, so Retry still has it', async () => {
+    await create('foundation');
+    const subProject = { id: 'sub-project-uid', name: 'Sub', slug: 'sub' };
+    component['form'].controls.projectId.setValue(subProject.id);
+    component['selectedProject'].set(subProject);
+    partialSave();
+
+    await switchLensTo('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other-foundation');
+
+    expect(component['form'].controls.projectId.value).toBe(subProject.id);
+    expect(component['selectedProject']()).toEqual(subProject);
+  });
+
+  it('keeps the Projects lens enrollment’s project after a partial save, not the project switched to', async () => {
+    await create('project');
+    partialSave();
+
+    await switchLensTo('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other');
+
+    expect(component['form'].controls.projectId.value).toBe(PROJECT_UID);
+    expect(component['selectedProject']()).toEqual(LENS_PROJECT);
+  });
 });

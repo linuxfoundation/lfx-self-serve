@@ -696,10 +696,13 @@ export class EnrollProgramComponent {
   }
 
   /**
-   * A new program follows the lens for as long as the wizard is open. A project switch made here navigates away, but it sets
-   * the lens context first, so an admin who stays at the discard prompt keeps the wizard under the new context. In the
-   * Projects lens the program is for the lens's project: picked as soon as the lens resolves it, and again on each switch.
-   * In the Foundation lens a switch clears the pick, which may be a sub-project of the previous foundation.
+   * A new program follows the lens until it is sent. A project switch made here navigates away, but it sets the lens context
+   * first, so an admin who stays at the discard prompt keeps the wizard under the new context. In the Projects lens the
+   * program is for the lens's project: picked as soon as the lens resolves it, and again on each switch. In the Foundation
+   * lens a switch clears the pick, which may be a sub-project of the previous foundation.
+   *
+   * Once a create is in flight or the program exists, its project is fixed and the answers are locked, so a switch no
+   * longer moves it: a logo retry after a partial save still needs the project the program was created under.
    */
   private followLensProject(): void {
     toObservable(this.lensProject)
@@ -710,6 +713,7 @@ export class EnrollProgramComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(({ project, index }) => {
+        if (this.submitting() || this.programSaved()) return;
         if (this.lens === 'project') this.pickProject(project);
         else if (this.lens === 'foundation' && index > 0) this.pickProject(null);
       });
