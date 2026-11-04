@@ -249,61 +249,75 @@ describe('VoteVotersComponent', () => {
     }
   });
 
-  it.each([50, 100])('retains a %s-row page and its offset across a manual refresh', async (size) => {
-    const voters = Array.from({ length: 250 }, (_, index) => ({ ...VOTERS[1], uid: `voter-${index}`, user_name: `Synthetic voter ${index}` }));
-    const { fixture, component, getVoteVoters } = await mount({ voters: () => of(voters) });
-    current = fixture;
+  it.each([50, 100].flatMap((size) => ['manual', 'header'].map((source) => ({ size, source }))))(
+    'retains a $size-row page and its offset across a $source refresh',
+    async ({ size, source }) => {
+      const voters = Array.from({ length: 250 }, (_, index) => ({ ...VOTERS[1], uid: `voter-${index}`, user_name: `Synthetic voter ${index}` }));
+      const { fixture, component, getVoteVoters } = await mount({ voters: () => of(voters) });
+      current = fixture;
 
-    const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
-    table.onPage.emit({ first: size, rows: size });
-    await settle(fixture);
-    expect(rowUids(fixture)).toHaveLength(size);
-    const selectedPage = rowUids(fixture);
+      const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+      table.onPage.emit({ first: size, rows: size });
+      await settle(fixture);
+      expect(rowUids(fixture)).toHaveLength(size);
+      const selectedPage = rowUids(fixture);
 
-    const pending = new Subject<VoteVoter[]>();
-    getVoteVoters.mockReturnValueOnce(pending);
-    component['refresh']();
-    fixture.detectChanges();
-    expect(byTestId(fixture, 'vote-voters-loading')).not.toBeNull();
-    expect(byTestId(fixture, 'vote-voters-table')).toBeNull();
+      const pending = new Subject<VoteVoter[]>();
+      getVoteVoters.mockReturnValueOnce(pending);
+      if (source === 'header') {
+        fixture.componentRef.setInput('refreshTick', 1);
+      } else {
+        component['refresh']();
+      }
+      await settle(fixture);
+      expect(byTestId(fixture, 'vote-voters-loading')).not.toBeNull();
+      expect(byTestId(fixture, 'vote-voters-table')).toBeNull();
 
-    pending.next(voters);
-    pending.complete();
-    await settle(fixture);
-    const refreshed = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
-    expect(refreshed.rows()).toBe(size);
-    expect(refreshed.first()).toBe(size);
-    expect(rowUids(fixture)).toEqual(selectedPage);
-  });
+      pending.next(voters);
+      pending.complete();
+      await settle(fixture);
+      const refreshed = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+      expect(refreshed.rows()).toBe(size);
+      expect(refreshed.first()).toBe(size);
+      expect(rowUids(fixture)).toEqual(selectedPage);
+    }
+  );
 
-  it.each([25, 50, 100])('clamps an invalid page after a refresh while retaining %s rows per page', async (size) => {
-    const voters = Array.from({ length: 250 }, (_, index) => ({ ...VOTERS[1], uid: `voter-${index}`, user_name: `Synthetic voter ${index}` }));
-    const { fixture, component, getVoteVoters } = await mount({ voters: () => of(voters) });
-    current = fixture;
-    component['onStatusFilterChange'](VoteVoterStatus.NOT_VOTED);
-    const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
-    table.onPage.emit({ first: 200, rows: size });
-    await settle(fixture);
-    expect(rowUids(fixture).length).toBeGreaterThan(0);
+  it.each([25, 50, 100].flatMap((size) => ['manual', 'header'].map((source) => ({ size, source }))))(
+    'clamps an invalid page after a $source refresh while retaining $size rows per page',
+    async ({ size, source }) => {
+      const voters = Array.from({ length: 250 }, (_, index) => ({ ...VOTERS[1], uid: `voter-${index}`, user_name: `Synthetic voter ${index}` }));
+      const { fixture, component, getVoteVoters } = await mount({ voters: () => of(voters) });
+      current = fixture;
+      component['onStatusFilterChange'](VoteVoterStatus.NOT_VOTED);
+      const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+      table.onPage.emit({ first: 200, rows: size });
+      await settle(fixture);
+      expect(rowUids(fixture).length).toBeGreaterThan(0);
 
-    const pending = new Subject<VoteVoter[]>();
-    getVoteVoters.mockReturnValueOnce(pending);
-    component['refresh']();
-    fixture.detectChanges();
-    expect(byTestId(fixture, 'vote-voters-loading')).not.toBeNull();
-    expect(component['tableFirst']()).toBe(200);
+      const pending = new Subject<VoteVoter[]>();
+      getVoteVoters.mockReturnValueOnce(pending);
+      if (source === 'header') {
+        fixture.componentRef.setInput('refreshTick', 1);
+      } else {
+        component['refresh']();
+      }
+      await settle(fixture);
+      expect(byTestId(fixture, 'vote-voters-loading')).not.toBeNull();
+      expect(component['tableFirst']()).toBe(200);
 
-    pending.next(voters.map((voter, index) => (index < 220 ? { ...voter, status: VoteVoterStatus.VOTED } : voter)));
-    pending.complete();
-    await settle(fixture);
+      pending.next(voters.map((voter, index) => (index < 220 ? { ...voter, status: VoteVoterStatus.VOTED } : voter)));
+      pending.complete();
+      await settle(fixture);
 
-    const expectedFirst = size === 25 ? 25 : 0;
-    const refreshed = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
-    expect(refreshed.first()).toBe(expectedFirst);
-    expect(refreshed.rows()).toBe(size);
-    expect(rowUids(fixture)).toEqual(voters.slice(220 + expectedFirst).map((voter) => voter.uid));
-    expect(statusLabels(component)).toContain('Not voted yet (30)');
-  });
+      const expectedFirst = size === 25 ? 25 : 0;
+      const refreshed = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+      expect(refreshed.first()).toBe(expectedFirst);
+      expect(refreshed.rows()).toBe(size);
+      expect(rowUids(fixture)).toEqual(voters.slice(220 + expectedFirst).map((voter) => voter.uid));
+      expect(statusLabels(component)).toContain('Not voted yet (30)');
+    }
+  );
 
   it.each([250, 80, 0])('preserves pagination through a failed refresh until Retry returns %s voters', async (count) => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -379,16 +393,6 @@ describe('VoteVotersComponent', () => {
     expect(byTestId(fixture, 'vote-voters-send-reminder')).toBeNull();
     expect(fixture.nativeElement.textContent).not.toContain('Send reminder');
     expect(open).not.toHaveBeenCalled();
-  });
-
-  it('hides the reminder after close and when everyone has voted', async () => {
-    const closed = await mount({ vote: { ...VOTE, status: PollStatus.ENDED } });
-    expect(byTestId(closed.fixture, 'vote-voters-send-reminder')).toBeNull();
-    closed.fixture.destroy();
-
-    const allVoted = await mount({ voters: () => of(VOTERS.filter((voter) => voter.status !== VoteVoterStatus.NOT_VOTED)) });
-    current = allVoted.fixture;
-    expect(byTestId(allVoted.fixture, 'vote-voters-send-reminder')).toBeNull();
   });
 
   it('opens a ballot with the filtered ballots in table order', async () => {

@@ -3,7 +3,7 @@
 
 import { DOCUMENT, isPlatformBrowser, isPlatformServer, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, ElementRef, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal, viewChild } from '@angular/core';
 import { VoteDescriptionPipe } from '../pipes/vote-description.pipe';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -92,6 +92,7 @@ import {
   startWith,
   Subject,
   switchMap,
+  take,
   tap,
   takeUntil,
   takeWhile,
@@ -174,6 +175,7 @@ export class VoteDetailComponent {
   private readonly projectService = inject(ProjectService);
   private readonly committeeService = inject(CommitteeService);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly messageService = inject(MessageService);
   private readonly document = inject(DOCUMENT);
   private readonly platformId = inject(PLATFORM_ID);
@@ -186,6 +188,7 @@ export class VoteDetailComponent {
 
   // === Writable Signals ===
   protected readonly castDrawerVisible = signal<boolean>(false);
+  protected readonly votersRefreshTick = signal<number>(0);
   protected readonly slideBusy = signal<boolean>(false);
   protected readonly impersonating = this.userService.impersonating;
   protected readonly impersonationReadOnlyNotice = VOTE_IMPERSONATION_READ_ONLY_NOTICE;
@@ -392,14 +395,21 @@ export class VoteDetailComponent {
   protected onSendReminder(): void {
     const vote = this.vote();
     if (!vote) return;
-    this.dialogService.open(VoteReminderDialogComponent, {
-      header: 'Send vote reminder',
-      width: 'min(960px, 96vw)',
-      modal: true,
-      closable: true,
-      draggable: false,
-      data: { vote },
-    });
+    this.dialogService
+      .open(VoteReminderDialogComponent, {
+        header: 'Send vote reminder',
+        width: 'min(960px, 96vw)',
+        modal: true,
+        closable: true,
+        draggable: false,
+        data: { vote },
+      })
+      ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((sent) => {
+        // A reminder completed for another vote must not refresh the current vote's list.
+        if (sent !== true || vote.uid !== this.voteId() || vote.uid !== this.vote()?.uid) return;
+        this.votersRefreshTick.update((tick) => tick + 1);
+      });
   }
 
   /** Opens the chrome-less presenter in a new tab; votePresenterGuard (vote#writer) is the real gate. */

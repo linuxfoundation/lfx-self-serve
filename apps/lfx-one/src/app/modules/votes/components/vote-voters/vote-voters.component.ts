@@ -91,6 +91,8 @@ export class VoteVotersComponent {
 
   // === Inputs ===
   public readonly vote = input.required<Vote>();
+  /** Bumped by the page after a reminder is sent so the current voter statuses reload. */
+  public readonly refreshTick = input<number>(0);
   /** Resolved prompts from results, used when the vote detail omits its prompt metadata. */
   public readonly commentPrompts = input<PollCommentPrompt[]>([]);
   /** `voters_choice` from the URL — a `<question_id>:<choice_id>` key, or the abstain row's status key. */
@@ -245,12 +247,13 @@ export class VoteVotersComponent {
     );
   }
 
-  /** Reloads on a new vote and on every refresh; `switchMap` drops a load a newer one replaced. */
+  /** Reloads on a new vote and on manual or page-triggered refreshes; `switchMap` drops a load a newer one replaced. */
   private initVoters(): Signal<VoteVoter[] | VoteParticipationVoter[]> {
     const voteUid = computed(() => this.vote().uid);
+    const key = computed(() => ({ uid: voteUid(), tick: this.refreshTick() }));
     return toSignal(
-      combineLatest([toObservable(voteUid), this.refresh$.pipe(startWith(undefined))]).pipe(
-        switchMap(([uid]) => {
+      combineLatest([toObservable(key), this.refresh$.pipe(startWith(undefined))]).pipe(
+        switchMap(([{ uid }]) => {
           this.loading.set(true);
           this.loadError.set(false);
           return this.voteService.getVoteVoters(uid).pipe(
