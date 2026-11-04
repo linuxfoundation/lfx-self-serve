@@ -13,7 +13,7 @@ import { getMockFormation } from './fixtures/mock-data/formation.mock';
 import {
   buildBaseProject,
   FORMATION_PROJECT_SLUG,
-  gotoProjectOverview,
+  gotoProjectFormation,
   mockFormationChecklistApis,
   setPersonaCookie,
   stubFormationFlag,
@@ -47,7 +47,7 @@ async function openDrawer(page: Page, putStatus = 200): Promise<Request[]> {
     return route.fulfill({ status: putStatus, contentType: 'application/json', body: JSON.stringify(body) });
   });
 
-  await gotoProjectOverview(page, FORMATION_PROJECT_SLUG);
+  await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
   await page.getByTestId('formation-card-edit-button').click({ timeout: DRAWER_TIMEOUT });
   await expect(page.getByTestId('formation-record-edit-drawer')).toBeVisible({ timeout: DRAWER_TIMEOUT });
   return puts;
@@ -68,6 +68,17 @@ test.describe('Formation record edit drawer (#5134)', () => {
 
     await expect.poll(() => puts.length, { timeout: DRAWER_TIMEOUT }).toBe(1);
     expect(puts[0].postDataJSON()).toEqual({ legal_entity_name: 'Cascade Data Inc.' });
+  });
+
+  test('clears the legal entity type with the Not set option', async ({ page }) => {
+    const puts = await openDrawer(page);
+
+    await page.getByTestId('formation-record-legal-entity-type').click();
+    await page.getByRole('option', { name: 'Not set' }).click();
+    await page.getByTestId('formation-record-save').click();
+
+    await expect.poll(() => puts.length, { timeout: DRAWER_TIMEOUT }).toBe(1);
+    expect(puts[0].postDataJSON()).toEqual({ legal_entity_type: '' });
   });
 
   test('asks for a dissolution date before archiving', async ({ page }) => {
