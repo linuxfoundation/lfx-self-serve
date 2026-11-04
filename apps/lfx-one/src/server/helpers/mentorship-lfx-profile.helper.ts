@@ -72,7 +72,7 @@ export const resolveMentorshipGithubProfileLink = async (req: Request, emailServ
   const userSub = getEffectiveSub(req);
   if (!userSub) return undefined;
 
-  const identities = await emailService.listIdentitiesSafe(req, userSub);
+  const identities = await emailService.listIdentitiesSafe(req);
   const login = identities.find((identity) => identity.provider === 'github')?.profileData?.nickname;
   return typeof login === 'string' && MENTORSHIP_GITHUB_LOGIN_PATTERN.test(login)
     ? `${MENTORSHIP_GITHUB_PROFILE_URL_BASE}${encodeURIComponent(login)}`
