@@ -1062,10 +1062,12 @@ function reportV2Errors(report: UnknownRecord): string[] {
     entry['values'].length >= BRAND_KIT_REPORT_CONFLICT_VALUES.min &&
     entry['values'].length <= BRAND_KIT_REPORT_CONFLICT_VALUES.max &&
     entry['values'].every(valueOk) &&
-    isHex(entry['chosen']);
+    isHex(entry['chosen']) &&
+    // The kept value is one of the values seen: the agent's schema holds the same rule.
+    entry['values'].some((value) => (value as Record<string, unknown>)['hex'] === entry['chosen']);
   if (report['color_conflicts'] !== undefined && !isListOf(report['color_conflicts'], conflictOk)) {
     errors.push(
-      `report.color_conflicts must be a list of { name, values: [{ hex, source }] (${BRAND_KIT_REPORT_CONFLICT_VALUES.min}–${BRAND_KIT_REPORT_CONFLICT_VALUES.max}), chosen }`
+      `report.color_conflicts must be a list of { name, values: [{ hex, source }] (${BRAND_KIT_REPORT_CONFLICT_VALUES.min}–${BRAND_KIT_REPORT_CONFLICT_VALUES.max}), chosen: one of the values' hex }`
     );
   }
   const ruleOk = (entry: unknown): boolean =>

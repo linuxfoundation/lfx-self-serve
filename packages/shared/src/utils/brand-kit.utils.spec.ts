@@ -910,6 +910,8 @@ describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
       { name: good.name, values: good.values },
       { ...good, values: [value('#FF702D'), value('coral')] },
       { ...good, name: '' },
+      // The kept value must be one of the values seen.
+      { ...good, chosen: '#FF7D2E' },
     ]) {
       expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [bad] }).join(' ')).toContain('report.color_conflicts');
     }
@@ -920,10 +922,13 @@ describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
     if (!good) throw new Error('fixture');
     const values = (count: number) =>
       Array.from({ length: count }, (_, index) => ({ hex: `#FF70${(20 + index).toString(16).toUpperCase().padStart(2, '0')}`, source: `synthetic ${index}` }));
-    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(1) }] }).join(' ')).toContain('report.color_conflicts');
-    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(5) }] }).join(' ')).toContain('report.color_conflicts');
-    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(2) }] })).toEqual([]);
-    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(4) }] })).toEqual([]);
+    const seen = (count: number) => ({ ...good, values: values(count), chosen: values(count)[0].hex });
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(1)] }).join(' ')).toContain('report.color_conflicts');
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(5)] }).join(' ')).toContain('report.color_conflicts');
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(2)] })).toEqual([]);
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(4)] })).toEqual([]);
+    // The kept value is one of the values seen, whichever of them it is.
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...seen(3), chosen: values(3)[2].hex }] })).toEqual([]);
     // A conflict's name is text with no cap, unlike the sentences.
     expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, name: 'x'.repeat(400) }] })).toEqual([]);
   });
