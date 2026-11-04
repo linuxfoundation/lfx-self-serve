@@ -46,7 +46,7 @@ The **Repositories** tab has these columns:
 | ---------------------- | -------------------------------------------------------------------------------------------------------- |
 | **Project**            | The project the repository belongs to                                                                    |
 | **Repository**         | The repository's path. When it is a link, it opens the repository on its source site                     |
-| **Source**             | Where the repository is hosted: **GitHub**, **GitLab** or **Gerrit**                                     |
+| **Source**             | Where the repository is hosted: **GitHub**, **GitLab**, **Gerrit** or **Git**                            |
 | **Code contributions** | The organization's code count in that repository. It says **Commits** when you count commits             |
 | **First contribution** | The date of the organization's first contribution there. It says **First Commit** when you count commits |
 | **Last contribution**  | The date of the most recent one. It says **Last Commit** when you count commits                          |

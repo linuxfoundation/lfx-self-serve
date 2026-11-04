@@ -67,7 +67,7 @@ The tab shows 30 people at first. Select **Show All** at the bottom to see the r
 
 The **Contributors** tab shows the employees who made at least one code contribution in the time range, with their role, their code count, when they were last active, and the project they were most active in.
 
-Four cards at the top count **Maintainer roles**, **Contributors**, **Projects** and **Foundations**. Hover the info icon next to **Maintainer roles** or **Contributors** for how each is counted. The cards follow the time range, project type, code count, **Employment**, **Team members** and **Organization scope**. They do not change with the search box, foundation or project. **Maintainer roles** does not follow **Employment**.
+Four cards at the top count **Maintainer roles**, **Contributors**, **Projects** and **Foundations**. Hover the info icon next to **Maintainer roles** or **Contributors** for how each is counted. All four cards follow the time range, project type and **Team members**. **Contributors**, **Projects** and **Foundations** also follow **Employment** and **Organization scope**; **Maintainer roles** does not. The cards do not change with the code count, the search box, the foundation or the project.
 
 | Column                  | What it shows                                                                                               |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------- |
