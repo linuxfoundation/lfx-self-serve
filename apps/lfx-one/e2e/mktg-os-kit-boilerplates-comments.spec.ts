@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 import { ASSET_PROJECT, ASSET_REVISION } from './helpers/mktg-os-assets.helper';
 import { setupStructuredComments } from './helpers/mktg-os-kit-comments.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+
+/** Long enough for the shared poller's first retry (the 5 s healthy interval, jittered up to twice that) plus the read itself. */
+const POLL_RECOVERY_TIMEOUT = 20_000;
 
 test.beforeEach(async ({ page }) => {
   await suppressCookieBanner(page);
@@ -58,7 +62,7 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
     await expect(panel.getByTestId('mktg-comment-resolution')).toHaveText('Shortened the selected passage.');
     await page.screenshot({ path: test.info().outputPath(`${agentKey}-redraft.png`), fullPage: true });
   });
-  test(`${agentKey}: loading is not empty and failed reads recover only on explicit Retry`, async ({ page }) => {
+  test(`${agentKey}: loading is not empty and a failed read recovers on its own behind one quiet line, with no Retry button`, async ({ page }) => {
     const fixture = await setupStructuredComments(page, agentKey);
     fixture.state.hold = true;
     try {
@@ -75,13 +79,15 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
       fixture.release();
     }
     const panel = page.getByTestId('mktg-comments-panel');
-    await expect(panel.getByRole('alert')).toBeVisible();
+    await expect(panel.getByTestId('mktg-comments-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT);
+    await expect(panel.getByRole('alert')).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Retry comments' })).toHaveCount(0);
     await expect(panel.getByTestId('mktg-comments-empty')).toHaveCount(0);
     await expect(panel.getByTestId('mktg-comments-send')).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath(`${agentKey}-comments-error.png`), fullPage: true });
     fixture.state.fail = false;
-    await panel.getByRole('button', { name: 'Retry comments' }).click();
-    await expect(panel.getByTestId('mktg-comments-empty')).toBeVisible();
+    // The shared poller's next check (capped backoff with jitter, never below the 5 s interval) reads the list again by itself.
+    await expect(panel.getByTestId('mktg-comments-empty')).toBeVisible({ timeout: POLL_RECOVERY_TIMEOUT });
     await page.screenshot({ path: test.info().outputPath(`${agentKey}-comments-empty.png`), fullPage: true });
   });
   test(`${agentKey}: no writer access exposes neither comments nor redraft actions`, async ({ page }) => {

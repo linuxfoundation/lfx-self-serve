@@ -19,12 +19,16 @@ export type VisibilityPollEvent<T> = { kind: 'ok'; value: T } | { kind: 'error';
 export interface VisibilityPollOptions<T> {
   /** Delay between a successful poll and the next. */
   intervalMs: number;
-  /** First retry delay after a failure; doubles per consecutive failure. */
+  /** Floor of the retry delay, and the base the retry ceiling doubles from per consecutive failure. */
   backoffBaseMs: number;
-  /** Ceiling for the retry delay. */
+  /** Ceiling for the retry delay; equal to `backoffBaseMs` for a constant retry interval (no spread). */
   backoffMaxMs: number;
-  /** Returning false after a successful poll stops the loop until the tab next becomes visible. */
+  /** Returning false after a successful poll stops the loop until the next wake while visible (tab return, window focus or reconnect). */
   shouldContinue?: (value: T) => boolean;
+  /** Source of the retry delay's jitter, in [0, 1); tests pin it, production leaves `Math.random`. */
+  random?: () => number;
+  /** `false` keeps the un-randomised doubling (base, 2·base, 4·base … capped): the Votes presenter's fixed cadence. */
+  jitter?: boolean;
 }
 
 /** Result of exporting the vote slide PNG. */

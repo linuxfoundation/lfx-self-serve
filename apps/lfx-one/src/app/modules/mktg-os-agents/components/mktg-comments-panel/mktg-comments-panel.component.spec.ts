@@ -6,7 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Subject, EMPTY, of, throwError, Observable } from 'rxjs';
 import type { MktgRedraftProgress } from '@lfx-one/shared/interfaces';
 import { MktgDocumentRedraftClientService } from '@services/mktg-document-redraft-client.service';
-import { MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES, MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 import { TestBed } from '@angular/core/testing';
 import { mktgCommentFixture, mktgCommentScopeFixture, provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { describe, expect, it, vi } from 'vitest';
@@ -99,9 +99,10 @@ describe('MktgCommentsPanelComponent', () => {
     await fixture.whenStable();
     loadError.set('Synthetic refresh failure');
     await fixture.whenStable();
-    el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-retry"] button')?.click();
-    await fixture.whenStable();
-    expect(refresh).toHaveBeenCalledTimes(1);
+    // A failed read shows its line only: the service re-reads on its own, so the panel offers no Retry button.
+    expect(el.querySelector('[data-testid="mktg-comments-retry"]')).toBeNull();
+    expect(el.textContent).toContain('Synthetic refresh failure');
+    expect(refresh).not.toHaveBeenCalled();
     expect(el.querySelector('[data-testid="mktg-comments-loading"]')).toBeNull();
     expect(button?.getAttribute('aria-expanded')).toBe('true');
     threads.set([mktgCommentFixture({ text: 'Preview\nUpdated details', status: 'resolved', resolution: 'Agent explanation' })]);
@@ -407,8 +408,9 @@ describe('MktgCommentsPanelComponent', () => {
     loadError.set('Writer access required.');
     fixture.detectChanges();
     expect(element.querySelector('[role="alert"]')?.textContent).toContain('Writer access required.');
-    element.querySelector('button')?.click();
-    expect(refresh).toHaveBeenCalledTimes(1);
+    // The failed read is a plain line: no Retry button, and the service re-reads on its own.
+    expect(element.querySelector('[data-testid="mktg-comments-retry"]')).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
     loadError.set('');
     loaded.set(true);
     threads.set([]);
@@ -430,7 +432,35 @@ describe('MktgCommentsPanelComponent', () => {
     loadError.set(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
     fixture.detectChanges();
     expect(element.querySelector('[role="alert"]')?.textContent).toContain('write access');
-    expect(element.querySelector('[data-testid="mktg-comments-retry"]')).not.toBeNull();
+    expect(element.querySelector('[data-testid="mktg-comments-retry"]')).toBeNull();
     expect(element.querySelector('textarea')).toBeNull();
+  });
+
+  it('shows the retrying line once, as a quiet status, and keeps Send steady while a loaded list is re-read', async () => {
+    const retrying = signal(false);
+    const loading = signal(false);
+    const threads = signal([mktgCommentFixture()]);
+    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded: signal(true), loading, retrying, loadError: signal(''), threads })] });
+    const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
+    fixture.componentRef.setInput('scope', mktgCommentScopeFixture());
+    fixture.componentRef.setInput('priorVersion', 1);
+    await fixture.whenStable();
+    const element = fixture.nativeElement as HTMLElement;
+    const send = () => element.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button');
+    expect(send()?.disabled).toBe(false);
+    const label = send()?.textContent;
+    retrying.set(true);
+    fixture.detectChanges();
+    const line = element.querySelector('[data-testid="mktg-comments-retrying"]');
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(element.querySelectorAll('[role="alert"]')).toHaveLength(0);
+    // Once: the disabled reason does not repeat it, and Send stays enabled with its label (law 5).
+    expect((element.textContent?.split(MKTG_POLL_RETRYING_TEXT).length ?? 1) - 1).toBe(1);
+    expect(send()?.disabled).toBe(false);
+    expect(send()?.textContent).toBe(label);
+    retrying.set(false);
+    fixture.detectChanges();
+    expect(element.querySelector('[data-testid="mktg-comments-retrying"]')).toBeNull();
   });
 });

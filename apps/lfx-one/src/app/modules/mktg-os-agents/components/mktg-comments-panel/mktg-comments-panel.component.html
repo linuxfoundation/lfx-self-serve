@@ -9,9 +9,11 @@
   @if (comments.loading() && !comments.loaded()) {
     <p role="status" class="sr-only">Loading comments…</p>
   }
-  @if (comments.loadError()) {
-    <p role="alert" class="text-sm text-red-700">{{ comments.loadError() }}</p>
-    <lfx-button label="Retry comments" size="small" [text]="true" (onClick)="refresh()" data-testid="mktg-comments-retry" />
+  @if (comments.retrying()) {
+    <!-- A check that keeps going is one quiet status line (polite), never an alert. -->
+    <p role="status" class="text-xs text-gray-500" data-testid="mktg-comments-retrying">{{ retryingText }}</p>
+  } @else if (comments.loadError()) {
+    <p role="alert" class="text-sm text-red-700" data-testid="mktg-comments-load-error">{{ comments.loadError() }}</p>
   }
   @if (comments.loaded()) {
     @for (thread of comments.threads(); track thread.id) {

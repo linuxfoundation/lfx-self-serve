@@ -22,6 +22,10 @@
         <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-public-identity-loading" />
       } @else if (checkingRun()) {
         <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-progress-loading" />
+        @if (publicRetrying()) {
+          <!-- The reader is headless while the run is checked: its one quiet connection-state line is shown here. -->
+          <p role="status" class="text-xs text-gray-500" data-testid="mktg-run-public-retrying">{{ retryingText }}</p>
+        }
       } @else {
         <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
         <h1 class="mb-4 text-base font-semibold text-gray-900">{{ assetName }}</h1>
@@ -35,15 +39,24 @@
         [runId]="publicRunId()"
         [refreshKey]="publicRefreshKey()"
         [runPage]="true"
-        [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || (!!errorText() && !navigation())"
+        [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || !!publicWaitingText() || (!!errorText() && !navigation())"
         [watchQuestions]="phase() === 'questions'"
         [errorText]="errorText()"
         [retainedAnswersNotice]="answeredNotice()"
         (alreadyAnswered)="onAlreadyAnswered($event)"
         (observed)="onPublicObserved($event)"
         (readError)="onPublicReadError($event)"
+        (readRetrying)="publicRetrying.set($event)"
         (landed)="onPublicLanding()"
         (failed)="onPublicLanding(true)" />
+      @if (!publicIdentityPending() && publicWaitingText()) {
+        <p role="status" class="text-xs text-gray-500" data-testid="mktg-run-public-waiting">{{ publicWaitingText() }}</p>
+        <lfx-button
+          label="Open the document"
+          [routerLink]="publicDocumentLink()"
+          [queryParams]="{ project: projectSlug() ?? '' }"
+          data-testid="mktg-run-public-document-link" />
+      }
       @if (!publicIdentityPending() && errorText()) {
         <lfx-message severity="error" [text]="errorText()" data-testid="mktg-run-public-error" />
         @if (navigation()) {

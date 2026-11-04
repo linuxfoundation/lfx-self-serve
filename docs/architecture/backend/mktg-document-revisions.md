@@ -453,8 +453,8 @@ rows leave the BFF, never coverage IDs/counts or private sessions. A real lookup
 failure adds `progressUnavailable` so clients can warn/retry even with no row;
 intentional window coverage alone never manufactures active work or endless retries.
 Window-skipped unfinished writing/storing snapshots are last-known, not fresh
-liveness: poll reads mark them unavailable, so the client's existing bounded
-availability budget stops automatic checks. Closed-history coverage is not flagged.
+liveness: poll reads mark them unavailable, so the client keeps checking on its
+capped jittered backoff (floored at its base interval) behind one connection-state line. Closed-history coverage is not flagged.
 Explicit detail navigation may pass `refreshRun` to refresh ONE scoped failed run;
 timer reads reject that selector. A stale/foreign selector or transient tracking
 error retains the stored document/known rows with an availability warning, never

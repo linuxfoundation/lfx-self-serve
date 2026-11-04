@@ -621,6 +621,11 @@ export interface MktgPendingDocumentRun {
   sessionId: string;
   ownerToken: string;
   savedAt: string;
+  /**
+   * When a view first began waiting for this run's storage (ISO). The storage wait's completion budget is absolute from
+   * here, so research and answering time are not spent from it and a tab return or focus never moves it.
+   */
+  waitStartedAt?: string;
 }
 
 /** Response of an agent's `generate` endpoint — the session to poll. */

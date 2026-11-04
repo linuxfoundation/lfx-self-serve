@@ -18,6 +18,7 @@ import {
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_LINK_ADVICE,
   MKTG_DRIVE_SHARING_HINT,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_ACTIVE,
   MKTG_RUN_ANSWERED,
@@ -1821,6 +1822,71 @@ describe('MktgAgentRunComponent', () => {
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
     });
 
+    it('shows the unconfirmed produced revision as a quiet status line, never as an error box', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['privateReceiptRunId'] = runId;
+      component['activeRequest'] = { projectUid: PROJECT_1.uid, agentId: type.catalogAgentId } as MktgGenerateRequest;
+      component['onPublicLanding']();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')?.textContent).toContain('The produced revision is not confirmed yet.');
+      expect(query('mktg-run-public-waiting')?.getAttribute('role')).toBe('status');
+      expect(query('mktg-run-public-error')).toBeNull();
+      // As on main: the card goes headless and the document link (a navigation, not a re-read) stays the way on.
+      expect(query('mktg-run-public-document-link')).not.toBeNull();
+      expect(component['publicProgressView']()?.headless()).toBe(true);
+      // The reader keeps its state-driven cadence: the shared poller's wakes re-read; a continuous read here is follow-up work.
+      expect(component['publicProgressView']()?.continuous()).toBe(false);
+    });
+
+    it('sends exactly one GET for a refusal while waiting, and none after the state clears (the latch holds)', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const read = vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['privateReceiptRunId'] = runId;
+      component['activeRequest'] = { projectUid: PROJECT_1.uid, agentId: type.catalogAgentId } as MktgGenerateRequest;
+      component['onPublicLanding']();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).not.toBeNull();
+      expect(read).toHaveBeenCalledTimes(1);
+      read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      // RFC 9110 §15.5.4: the refusal is final; clearing the waiting state must not restart the reader or re-send the GET.
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(query('mktg-run-public-waiting')).toBeNull();
+      expect(query('mktg-run-public-error')?.textContent).toContain('write access');
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(read).toHaveBeenCalledTimes(2);
+    });
+
+    it('clears the unconfirmed-revision line when the context resets and when a read recovers', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['privateReceiptRunId'] = runId;
+      component['activeRequest'] = { projectUid: PROJECT_1.uid, agentId: type.catalogAgentId } as MktgGenerateRequest;
+      component['onPublicLanding']();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).not.toBeNull();
+      component['resetForContext'](PROJECT_1, false);
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).toBeNull();
+      // The reset dropped the private receipt; a fresh landing with it set shows the line again, and a recovered read clears it.
+      component['privateReceiptRunId'] = runId;
+      component['activeRequest'] = { projectUid: PROJECT_1.uid, agentId: type.catalogAgentId } as MktgGenerateRequest;
+      component['onPublicLanding']();
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).not.toBeNull();
+      component['publicReadFailed'] = true;
+      component['onPublicObserved']({ detail: record('writing'), view: null });
+      fixture.detectChanges();
+      expect(query('mktg-run-public-waiting')).toBeNull();
+    });
+
     it('settles a malformed run selector to an error and document recovery instead of a skeleton', async () => {
       await configure('browser', type.catalogAgentId, { run: 'invalid-run' });
       activeContext.set(PROJECT_1);
@@ -1831,6 +1897,51 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-run-progress-loading')).toBeNull();
       expect(generate).not.toHaveBeenCalled();
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    });
+
+    it('shows the one quiet line, not the error box, while a transiently failed first check of the run is retried', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const read = vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument);
+      read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      // The reader is headless behind the checking skeleton: it reports its retrying state and the page shows the line.
+      expect(component['checkingRun']()).toBe(true);
+      expect(query('mktg-run-progress-loading')).not.toBeNull();
+      expect(query('mktg-run-public-retrying')?.getAttribute('role')).toBe('status');
+      expect(query('mktg-run-public-retrying')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-run-public-error')).toBeNull();
+      expect(query('mktg-run-progress-refresh')).toBeNull();
+      // A focus wake re-reads at once; the good read lands the run and clears the line.
+      read.mockReturnValue(of(record('writing')));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(component['checkingRun']()).toBe(false);
+      expect(query('mktg-run-public-retrying')).toBeNull();
+      expect(query('mktg-run-progress-loading')).toBeNull();
+      expect(query('mktg-run-public-error')).toBeNull();
+      expect(query('mktg-run-public-progress')?.querySelector('h1')).not.toBeNull();
+    });
+
+    it('keeps checking behind the one quiet line when the first read of the run is partial, instead of an error box', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const read = vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument);
+      read.mockReturnValue(of({ ...record('writing'), progressUnavailable: true }));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      // The writer lookup failed server-side: the run is still being checked, so no error-severity box for a retrying state.
+      expect(component['checkingRun']()).toBe(true);
+      expect(query('mktg-run-progress-loading')).not.toBeNull();
+      expect(query('mktg-run-public-retrying')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-run-public-error')).toBeNull();
+      expect(query('mktg-run-public-document-link')).toBeNull();
+      read.mockReturnValue(of(record('writing')));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(component['checkingRun']()).toBe(false);
+      expect(query('mktg-run-public-retrying')).toBeNull();
+      expect(query('mktg-run-public-error')).toBeNull();
+      expect(query('mktg-run-public-progress')?.querySelector('h1')).not.toBeNull();
     });
 
     it.each(['writing', 'questions'] as const)('opens public %s progress without starting or resuming a private run', async (state) => {

@@ -6,7 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_POLL_MAX_BACKOFF_MS, MKTG_POLL_RETRYING_TEXT, MKTG_RUN_POLL, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentRunProgress, MktgRevisionSummary, MktgRevisionResponse, User } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -51,8 +51,11 @@ describe('MktgRunProgressComponent', () => {
       questions: [{ key: 'audience', label: 'Audience', question: 'Who is this for?', why: '', suggestedAnswer: 'Synthetic maintainers', basis: [] }],
     },
   };
-  const setup = async (platform = 'browser') => {
+  const setup = async (platform = 'browser', jitter = 0) => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    // The retry backoff carries jitter at or above the healthy interval; pinned at 0 every retry waits exactly that interval,
+    // pinned at 1 the ceilings double from twice the interval (10 s, 20 s, 30 s cap).
+    vi.spyOn(Math, 'random').mockReturnValue(jitter);
     read.mockReset().mockReturnValue(of(detail()));
     revisionRead.mockReset();
     answer.mockReset().mockReturnValue(of({ runId, state: 'writing' }));
@@ -78,6 +81,7 @@ describe('MktgRunProgressComponent', () => {
   afterEach(() => {
     fixture?.destroy();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it.each(['writing', 'storing', 'questions', 'failed'] as const)('renders %s with the original document card wording', async (state) => {
@@ -482,11 +486,11 @@ describe('MktgRunProgressComponent', () => {
     expect(fixture.nativeElement.querySelector('textarea')).toBe(textarea);
     expect(fixture.componentInstance.selectedRun()?.pendingQuestions?.questionsId).toBe(waiting.pendingQuestions.questionsId);
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-owner-note"]')).toBeNull();
-    // A partial read that still omits the block keeps it too, under the shared retry warning.
+    // A partial read that still omits the block keeps it too, under the one connection-state line.
     read.mockReturnValue(of({ ...detail([{ ...waiting, pendingQuestions: undefined }]), progressUnavailable: true }));
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
     await fixture.whenStable();
-    expect(text()).toContain('Could not fully refresh');
+    expect(text()).toContain(MKTG_POLL_RETRYING_TEXT);
     expect(fixture.nativeElement.querySelector('textarea')).toBe(textarea);
     // A visible newer round replaces the held block.
     const newer = {
@@ -731,7 +735,7 @@ describe('MktgRunProgressComponent', () => {
     fixture.componentInstance.landed.subscribe(landed);
     await fixture.whenStable();
     expect(landed).not.toHaveBeenCalled();
-    expect(text()).toContain('Could not fully refresh');
+    expect(text()).toContain(MKTG_POLL_RETRYING_TEXT);
   });
 
   it.each([true, false])('emits terminal questions/failure once and refreshes a failed record only once (selected: %s)', async (selected) => {
@@ -796,22 +800,100 @@ describe('MktgRunProgressComponent', () => {
     expect(fixture.componentInstance.selectedRun()).toBeNull();
   });
 
-  it('bounds unavailable reads and lets manual Refresh reset that budget', async () => {
-    await setup();
+  it('never stops checking unavailable reads: capped backoff, no deadline, no Refresh button, and the line clears on a good read', async () => {
+    await setup('browser', 1);
     await fixture.whenStable();
     read.mockReturnValue(of({ ...detail(), progressUnavailable: true }));
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
-    expect(text()).toContain('Automatic checks are paused');
+    expect(text()).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(text()).not.toContain('paused');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"]')).toBeNull();
+    // Past the run deadline the checks go on at the capped backoff.
     const count = read.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
-    expect(read).toHaveBeenCalledTimes(count);
-    read.mockReturnValue(of(detail()));
-    fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"] button').click();
-    await fixture.whenStable();
-    expect(text()).not.toContain('Automatic checks are paused');
+    await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
     expect(read).toHaveBeenCalledTimes(count + 1);
+    read.mockReturnValue(of(detail()));
+    await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
+    await fixture.whenStable();
+    expect(text()).not.toContain(MKTG_POLL_RETRYING_TEXT);
   });
+
+  it('retries a failed first read on the capped backoff behind the one plain line, and lands the content when it succeeds', async () => {
+    await setup('browser', 1);
+    read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const failed = vi.fn();
+    fixture.componentInstance.readError.subscribe(failed);
+    await fixture.whenStable();
+    expect(failed).not.toHaveBeenCalled();
+    expect(text()).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-refresh"]')).toBeNull();
+    expect(read).toHaveBeenCalledTimes(1);
+    // Jitter pinned at the ceiling: the first retry waits twice the interval, the second four times.
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(3 * MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(3);
+    read.mockReturnValue(of(detail()));
+    await vi.advanceTimersByTimeAsync(6 * MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(text()).not.toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(text()).toContain('Writing…');
+  });
+
+  it('reports its retrying state to the host on transitions only: on through failed and partial reads, off on a good or a final one', async () => {
+    await setup('browser', 1);
+    read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const retrying = vi.fn();
+    fixture.componentInstance.readRetrying.subscribe(retrying);
+    await fixture.whenStable();
+    // A transient first read, with nothing known yet: the host rendering this reader headless shows the one line from this.
+    expect(retrying.mock.calls).toEqual([[true]]);
+    // Jitter pinned at the ceiling: the first retry waits twice the interval; a second failure emits nothing new.
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(retrying.mock.calls).toEqual([[true]]);
+    // A partial read keeps it on; a good read turns it off.
+    read.mockReturnValue(of({ ...detail(), progressUnavailable: true }));
+    await vi.advanceTimersByTimeAsync(4 * MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(retrying.mock.calls).toEqual([[true]]);
+    read.mockReturnValue(of(detail()));
+    await vi.advanceTimersByTimeAsync(8 * MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(retrying.mock.calls).toEqual([[true], [false]]);
+    // A refused re-read is final: off, once, and the line is the plain denied copy.
+    read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(retrying.mock.calls).toEqual([[true], [false], [true]]);
+    read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(retrying.mock.calls).toEqual([[true], [false], [true], [false]]);
+    expect(fixture.componentInstance['readFailure']()).toContain('write access');
+  });
+
+  it.each([401, 403])(
+    'keeps a denied read (%s) terminal and latched: a plain line, no retry, no button, and no wake re-sends the same credentials',
+    async (status) => {
+      await setup();
+      read.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+      await fixture.whenStable();
+      expect(text()).toContain('write access');
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-refresh"]')).toBeNull();
+      await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS * 2);
+      // RFC 9110 §15.5.4: the refused scope is latched by this reader; tab return, focus and reconnect wakes send nothing.
+      window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('online'));
+      await fixture.whenStable();
+      expect(read).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it('rejects invalid public selectors rather than inferring a completed revision', async () => {
     await setup();
@@ -874,28 +956,47 @@ describe('MktgRunProgressComponent', () => {
     expect(read).toHaveBeenCalledTimes(3);
   });
 
-  it('offers Refresh in the waiting state only once automatic checks are paused', async () => {
-    await setup();
+  it('keeps the waiting state checking through unavailable reads with no Refresh button, before and after the run deadline', async () => {
+    await setup('browser', 1);
     read.mockReturnValue(of(detail([waiting])));
     await fixture.whenStable();
     read.mockReturnValue(of({ ...detail([waiting]), progressUnavailable: true }));
-    // While the poll is still retrying, the warning shows but the waiting state offers no Refresh.
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
     await fixture.whenStable();
-    expect(text()).toContain('retrying');
+    expect(text()).toContain(MKTG_POLL_RETRYING_TEXT);
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('textarea')).not.toBeNull();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
     await fixture.whenStable();
-    expect(text()).toContain('Automatic checks are paused');
-    expect(fixture.nativeElement.querySelector('textarea')).not.toBeNull();
-    const count = read.mock.calls.length;
-    read.mockReturnValue(of(detail([waiting])));
-    fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"] button').click();
-    await fixture.whenStable();
-    expect(read).toHaveBeenCalledTimes(count + 1);
-    expect(text()).not.toContain('Automatic checks are paused');
+    expect(text()).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(text()).not.toContain('paused');
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('textarea')).not.toBeNull();
+    // Past the run deadline the checks go on, one per capped wait.
+    const count = read.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
+    expect(read).toHaveBeenCalledTimes(count + 1);
+    read.mockReturnValue(of(detail([waiting])));
+    await vi.advanceTimersByTimeAsync(MKTG_POLL_MAX_BACKOFF_MS);
+    await fixture.whenStable();
+    expect(text()).not.toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(fixture.nativeElement.querySelector('textarea')).not.toBeNull();
+  });
+
+  it('polls the waiting state on the document card too, so a second browser sees the run move on without a click', async () => {
+    await setup();
+    fixture.componentRef.setInput('runPage', false);
+    read.mockReturnValue(of(detail([{ ...run, state: 'questions' }])));
+    await fixture.whenStable();
+    expect(text()).toContain('The agent is waiting for answers.');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-questions-refresh"]')).toBeNull();
+    expect(read).toHaveBeenCalledOnce();
+    read.mockReturnValue(of(detail()));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance.runState()).toBe('writing');
+    expect(text()).not.toContain('waiting for answers');
   });
 
   it('cancels a previous reader on subject change and hides its creator feed immediately', async () => {

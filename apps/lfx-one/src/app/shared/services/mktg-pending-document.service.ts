@@ -99,6 +99,7 @@ export class MktgPendingDocumentService {
         typeof run.ownerToken !== 'string' ||
         !run.ownerToken ||
         (run.phase !== undefined && run.phase !== 'research' && run.phase !== 'writing') ||
+        (run.waitStartedAt !== undefined && !Number.isFinite(Date.parse(run.waitStartedAt))) ||
         (run.questionDraft !== undefined &&
           (!Number.isInteger(run.questionDraft.index) ||
             !run.questionDraft.answers ||
@@ -147,6 +148,25 @@ export class MktgPendingDocumentService {
     return runs.sort((a, b) => Date.parse(b.savedAt) - Date.parse(a.savedAt))[0] ?? null;
   }
 
+  /**
+   * Anchors the storage wait of this run: the first call records now as `waitStartedAt` (persisted with the record, so a
+   * reload, a tab return or a focus finds the same anchor); later calls return the stored one. The returned run carries it.
+   */
+  public markWaitStarted(run: MktgPendingDocumentRun): MktgPendingDocumentRun {
+    const current = this.load(run.projectUid, run.documentId);
+    const key = this.key(run.projectUid, run.documentId);
+    if (!key || !current || current.sessionId !== run.sessionId || current.ownerToken !== run.ownerToken) return run;
+    if (current.waitStartedAt) return current;
+    const next = { ...current, waitStartedAt: new Date().toISOString() };
+    this.memory.set(key, next);
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      /* In-memory recovery remains available. */
+    }
+    return next;
+  }
+
   public saveQuestionDraft(run: MktgPendingDocumentRun, questionDraft: MktgRunQuestionDraft | null): void {
     const current = this.load(run.projectUid, run.documentId);
     const key = this.key(run.projectUid, run.documentId);
@@ -189,12 +209,15 @@ export class MktgPendingDocumentService {
       );
   }
 
-  /** Shared polling for the research/questions page and the storage-gated Document handoff. */
-  public poll(run: MktgPendingDocumentRun, intake: MktgAgentIntake): Observable<MktgRunResultResponse> {
-    const started = Date.now();
+  /**
+   * Shared polling for the research/questions page and the storage-gated Document handoff.
+   * `deadlineAt` (epoch ms) makes the run's completion deadline absolute, so a caller that resubscribes (a tab that returns,
+   * a window that focuses) never restarts the 600 s budget; without it the budget starts at subscription.
+   */
+  public poll(run: MktgPendingDocumentRun, intake: MktgAgentIntake, deadlineAt = Date.now() + MKTG_RUN_POLL.timeoutMs): Observable<MktgRunResultResponse> {
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
       tap(() => {
-        if (Date.now() - started > MKTG_RUN_POLL.timeoutMs) {
+        if (Date.now() > deadlineAt) {
           throw new TimeoutError();
         }
       }),
@@ -220,9 +243,17 @@ export class MktgPendingDocumentService {
     );
   }
 
-  /** A ready report without a persistence receipt is NOT a stored Document. */
-  public waitForStorage(run: MktgPendingDocumentRun, intake: MktgAgentIntake, onActivity?: (activity: MktgRunActivity[]) => void): Observable<void> {
-    return this.poll(run, intake).pipe(
+  /**
+   * A ready report without a persistence receipt is NOT a stored Document.
+   * `deadlineAt` is the run's absolute completion deadline (see `poll`): one per pending run, never reset by a resubscription.
+   */
+  public waitForStorage(
+    run: MktgPendingDocumentRun,
+    intake: MktgAgentIntake,
+    onActivity?: (activity: MktgRunActivity[]) => void,
+    deadlineAt = Date.now() + MKTG_RUN_POLL.timeoutMs
+  ): Observable<void> {
+    return this.poll(run, intake, deadlineAt).pipe(
       // Activity is optional on old runs and the first poll; storage remains the completion gate.
       tap((result) => {
         if (result.status === 'refused' || result.status === 'failed') {
@@ -239,7 +270,7 @@ export class MktgPendingDocumentService {
       }),
       filter((result) => result.status === 'ready' && !!result.persistence),
       take(1),
-      timeout(MKTG_RUN_POLL.timeoutMs),
+      timeout({ first: new Date(deadlineAt) }),
       map(() => undefined),
       catchError((error: unknown) => {
         if (!(error instanceof TimeoutError)) this.clear(run.projectUid, run.documentId);
