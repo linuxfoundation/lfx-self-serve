@@ -3,12 +3,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { Survey, SurveyResponseItem } from '../interfaces/survey.interface';
+import type { Survey, SurveyCommittee, SurveyResponseItem } from '../interfaces/survey.interface';
 import {
   buildSurveyFollowUpMailto,
   buildSurveyResponsesCsvRows,
   getSurveyEmailStages,
   getSurveyEngagementRates,
+  getSurveyResyncScope,
   renderSurveyEmailForRecipient,
 } from './survey.utils';
 
@@ -156,5 +157,33 @@ describe('renderSurveyEmailForRecipient — send quarter', () => {
   it('blanks wizard variables the survey service has no data for, instead of leaking the token', () => {
     const email = renderSurveyEmailForRecipient({ ...survey, email_subject: 'From {{SenderTitle}} <{{SenderEmail}}> re {{SurveyTemplate}}' }, row({}));
     expect(email.subject).toBe('From  <> re ');
+  });
+});
+
+describe('getSurveyResyncScope', () => {
+  const committee = (uid: string, projectUid: string): SurveyCommittee => ({
+    committee_id: uid,
+    committee_uid: uid,
+    committee_name: 'Board',
+    project_id: projectUid,
+    project_uid: projectUid,
+    project_name: 'Project',
+    total_recipients: 0,
+    total_responses: 0,
+    nps_value: 0,
+    num_detractors: 0,
+    num_passives: 0,
+    num_promoters: 0,
+  });
+  const withCommittees = (...projects: string[]): Survey => ({ ...survey, committees: projects.map((p, i) => committee(`c-${i}`, p)) });
+
+  it("names the project's committees explicitly, never the whole survey", () => {
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-1'), 'p-1')).toEqual({ committeeUids: ['c-0', 'c-1'] });
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-2', 'p-1'), 'p-1')).toEqual({ committeeUids: ['c-0', 'c-2'] });
+  });
+
+  it('offers no resync when the project has no committee on the survey or no project is active', () => {
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-2'), 'p-9')).toBeNull();
+    expect(getSurveyResyncScope(withCommittees('p-1'), null)).toBeNull();
   });
 });

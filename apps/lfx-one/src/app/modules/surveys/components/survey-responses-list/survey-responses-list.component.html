@@ -10,6 +10,17 @@
         class="fa-light fa-circle-info text-slate-400 text-sm"
         pTooltip="Recipients who submitted a response out of everyone the survey was sent to."
         tooltipPosition="top"></i>
+      @if (canRemind() && nonRespondents().length > 0) {
+        <lfx-button
+          [label]="'Send reminders (' + nonRespondents().length + ')'"
+          icon="fa-light fa-paper-plane"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="loading()"
+          (onClick)="openReminderDialog()"
+          data-testid="survey-responses-send-reminders" />
+      }
       <lfx-button
         label="Download CSV"
         icon="fa-light fa-download"
