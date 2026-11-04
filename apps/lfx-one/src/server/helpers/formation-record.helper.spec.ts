@@ -53,9 +53,13 @@ describe('validateFormationRecordBody', () => {
     expect(() => validateFormationRecordBody({ formation_date: '2026-02-31' })).toThrowError(/formation_date/);
   });
 
-  it('uses the archive copy when Archived has no dissolution date', () => {
+  it('defers the Archived requirement to the merged record when the body omits the date', () => {
+    expect(validateFormationRecordBody({ stage: 'Archived' })).toEqual({ stage: 'Archived' });
+  });
+
+  it('uses the archive copy when Archived explicitly clears the dissolution date', () => {
     try {
-      validateFormationRecordBody({ stage: 'Archived' });
+      validateFormationRecordBody({ stage: 'Archived', entity_dissolution_date: null });
       expect.unreachable();
     } catch (error) {
       expect((error as { validationErrors: { message: string }[] }).validationErrors[0].message).toBe('Archiving needs a dissolution date.');

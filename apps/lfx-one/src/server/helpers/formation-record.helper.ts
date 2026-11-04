@@ -64,8 +64,10 @@ export function validateFormationRecordBody(body: unknown): UpdateFormationRecor
     throw ServiceValidationError.forField('stage', INVALID);
   }
 
-  // Archived requires a dissolution date (upstream rule, F3) — checked here so a bad request never costs an upstream read.
-  if (result['stage'] === ProjectStage.Archived && !result['entity_dissolution_date']) {
+  // Archived requires a dissolution date (upstream rule). An explicitly cleared date is rejected here without an
+  // upstream read; an absent one may already be stored, so that case is checked on the merged record by
+  // `assertMergedRecordValid`, after the read and before the PUT.
+  if (result['stage'] === ProjectStage.Archived && 'entity_dissolution_date' in result && !result['entity_dissolution_date']) {
     throw ServiceValidationError.forField('entity_dissolution_date', FORMATION_RECORD_ERROR_MESSAGES.archivedNeedsDissolutionDate);
   }
 

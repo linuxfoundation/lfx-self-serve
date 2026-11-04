@@ -3110,7 +3110,7 @@ describe('ProjectService.updateFormationRecord', () => {
     ['Prospect stage', { stage: 'Prospect' }],
     ['Confidential stage', { stage: 'Formation - Confidential' }],
     ['unknown key', { slug: 'renamed' }],
-    ['Archived without a dissolution date', { stage: 'Archived' }],
+    ['Archived with an explicitly cleared dissolution date', { stage: 'Archived', entity_dissolution_date: '' }],
     ['bad legal entity type', { legal_entity_type: 'Cooperative' }],
     ['bad date', { formation_date: '04/11/2026' }],
     ['non-http URL', { entity_formation_document_url: 'javascript:alert(1)' }],
@@ -3127,6 +3127,21 @@ describe('ProjectService.updateFormationRecord', () => {
 
     await expect(service.updateFormationRecord(req, 'project-1', { entity_dissolution_date: '' })).rejects.toMatchObject({ statusCode: 400 });
     expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects Archived on the merged record when no dissolution date is stored, after the read and before the PUT', async () => {
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Archived' })).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(fetchWithETag).toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('archives without resending a dissolution date that is already stored', async () => {
+    fetchWithETag.mockResolvedValue({ data: { ...stored, entity_dissolution_date: '2026-09-30' }, etag: '5' });
+
+    await service.updateFormationRecord(req, 'project-1', { stage: 'Archived' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ stage: 'Archived', entity_dissolution_date: '2026-09-30' });
   });
 
   it('accepts Archived with a dissolution date', async () => {
