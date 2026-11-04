@@ -111,7 +111,10 @@ const GOVERNANCE_USERNAME = agreedUsername([' MixedUser ', 'mixeduser'])!;
 const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
 const FAILED: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 /** SQLite reading of the Snowflake enrollment window, so the detail read's real SQL runs here too. */
-const SQLITE_ENROLLED_WINDOW = `date(ACTIVITY_TS) >= date('now', '-12 months') AND date(ACTIVITY_TS) < date('now')`;
+const SQLITE_ENROLLED_WINDOW = `date(LAST_ENROLLED_TS) >= date('now', '-12 months') AND date(LAST_ENROLLED_TS) < date('now')`;
+/** Rows on the people list (IS_ON_PEOPLE_LIST keeps its default, 1). */
+const STATUS_INSERT =
+  'INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS (ACCOUNT_ID, PERSON_KEY, COURSE_ID, STATUS, COURSE_NAME, LAST_ENROLLED_TS, LAST_CERTIFIED_TS) VALUES (?, ?, ?, ?, ?, ?, ?)';
 // SQLite form of the bound range start in the maintainer roles overlap predicate.
 const SQLITE_DAYS_BEFORE_TODAY = "date('now', '-' || ? || ' days')";
 let database: SqlDatabase;
@@ -291,7 +294,7 @@ beforeEach(() => {
       .prepare(
         query
           .replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')
-          .replaceAll(orgTrainingEnrolledWindowPredicate(), SQLITE_ENROLLED_WINDOW)
+          .replaceAll(orgTrainingEnrolledWindowPredicate('LAST_ENROLLED_TS'), SQLITE_ENROLLED_WINDOW)
           .replaceAll('DATEADD(day, 0 - ?, CURRENT_DATE())', SQLITE_DAYS_BEFORE_TODAY)
           .replace(/DATEADD\(day, -(\d+), CURRENT_DATE\(\)\)/g, "date('now', '-$1 days')")
           .replaceAll('CURRENT_DATE()', "date('now')")
@@ -544,10 +547,11 @@ describe('OrgLensPeopleService username company emails', () => {
 
 describe('OrgLensPeopleService person-key company emails', () => {
   const personKey = 'person-one';
-  // The roster's foundation dropdown also reads the training foundations, which the detail fixture below omits; the
-  // off-roster read classifies against that roster read (lfx-self-serve#4735).
+  // The roster's foundation dropdown also reads the training foundations of people-list rows, which the detail fixture
+  // below omits; the off-roster read classifies against that roster read (lfx-self-serve#4735, lfx-self-serve#4287).
   const TRAINING_FOUNDATION_COLUMNS =
-    'ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_ID TEXT; ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_NAME TEXT;';
+    'ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_ID TEXT; ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_NAME TEXT; ' +
+    'ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN IS_ON_PEOPLE_LIST INTEGER NOT NULL DEFAULT 1;';
   const activity = {
     boardSeats: [
       {
@@ -625,6 +629,10 @@ describe('OrgLensPeopleService person-key company emails', () => {
       CREATE TABLE ORG_PEOPLE_TRAINING (
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, COURSE_ID TEXT, COURSE_NAME TEXT, ACTIVITY_TS TEXT
       );
+      CREATE TABLE ORG_PEOPLE_TRAINING_COURSE_STATUS (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_ID TEXT, STATUS TEXT, COURSE_NAME TEXT, LAST_ENROLLED_TS TEXT, LAST_CERTIFIED_TS TEXT,
+        IS_ON_PEOPLE_LIST INTEGER NOT NULL DEFAULT 1
+      );
     `);
     database
       .prepare('INSERT INTO ORG_PEOPLE_COMMITTEE_MEMBERSHIP VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -642,9 +650,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     database
       .prepare('INSERT INTO ORG_PEOPLE_EVENTS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'event-one', 'Community Summit', '2026-04-10', 1, 'foundation-one', 'Foundation One');
-    database
-      .prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(ACCOUNT, personKey, 'cert-one', 'Certified', 'course-one', 'Project Fundamentals', '2026-04-01');
+    database.prepare(STATUS_INSERT).run(ACCOUNT, personKey, 'course-one', 'Certified', 'Project Fundamentals', null, '2026-04-01');
   });
 
   it('answers unavailable for cdp: person keys without resolving addresses', async () => {
@@ -662,11 +668,18 @@ describe('OrgLensPeopleService person-key company emails', () => {
   });
 
   it('lists certificates of any age but enrollments from the last 12 months only, today excluded', async () => {
-    const insert = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?, ?)');
-    insert.run(ACCOUNT, personKey, 'cert-old', 'Certified', 'course-old-cert', 'Old Certificate', daysAgo(1500));
-    insert.run(ACCOUNT, personKey, 'enroll-recent', 'Enrolled', 'course-recent', 'Recent Enrollment', daysAgo(30));
-    insert.run(ACCOUNT, personKey, 'enroll-old', 'Enrolled', 'course-old', 'Old Enrollment', daysAgo(500));
-    insert.run(ACCOUNT, personKey, 'enroll-today', 'Enrolled', 'course-today', 'Today Enrollment', daysAgo(0));
+    const insert = database.prepare(STATUS_INSERT);
+    insert.run(ACCOUNT, personKey, 'course-old-cert', 'Certified', 'Old Certificate', null, daysAgo(1500));
+    insert.run(ACCOUNT, personKey, 'course-recent', 'Enrolled', 'Recent Enrollment', daysAgo(30), null);
+    insert.run(ACCOUNT, personKey, 'course-old', 'Enrolled', 'Old Enrollment', daysAgo(500), null);
+    insert.run(ACCOUNT, personKey, 'course-today', 'Enrolled', 'Today Enrollment', daysAgo(0), null);
+    // Another person's and another account's courses never reach this drawer.
+    insert.run(ACCOUNT, 'person-two', 'course-other-person', 'Enrolled', 'Other Person', daysAgo(30), null);
+    insert.run('other-account', personKey, 'course-other-account', 'Certified', 'Other Account', null, daysAgo(30));
+    // A row linked only by the learner's own enrollment (lfx-self-serve#4287) can share this key; it is not this employee's.
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'course-outside-link', 'Certified', 'Outside Link', null, daysAgo(30), 0);
 
     const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
 
@@ -676,26 +689,28 @@ describe('OrgLensPeopleService person-key company emails', () => {
       ['course-recent', 'Enrolled'],
     ]);
     expect(detail.training[0]?.coursesCount).toBe(3);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v5:${personKey}`)!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v7:${personKey}`)!)).toBe(true);
   });
 
-  it('shows one row per course, a certificate superseding a later re-enrollment, and counts the rows shown', async () => {
-    const insert = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?, ?)');
-    insert.run(ACCOUNT, personKey, 'cert-two', 'Certified', 'course-two', 'Course Two', daysAgo(400));
-    insert.run(ACCOUNT, personKey, 'enroll-two', 'Enrolled', 'course-two', 'Course Two', daysAgo(30));
-    insert.run(ACCOUNT, personKey, 'enroll-three', 'Enrolled', null, 'Course Three', daysAgo(20));
-    insert.run(ACCOUNT, personKey, 'enroll-three', 'Enrolled', null, 'Course Three', daysAgo(10));
+  // lf-dbt resolves one status per course, Certified winning over a re-enrollment; the drawer shows it as is, so a
+  // certified course keeps its certificate whatever the age of the re-enrollment beside it.
+  it('shows the resolved status per course, Certified with an enrollment beside it, and counts the rows shown', async () => {
+    const insert = database.prepare(STATUS_INSERT);
+    insert.run(ACCOUNT, personKey, 'course-two', 'Certified', 'Course Two', daysAgo(30), daysAgo(400));
+    insert.run(ACCOUNT, personKey, 'course-three', 'Certified', 'Course Three', daysAgo(900), daysAgo(800));
+    insert.run(ACCOUNT, personKey, 'course-four', 'Enrolled', 'Course Four', daysAgo(10), null);
 
     const { training } = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
 
     expect(training.map((row) => [row.courseId, row.status]).sort()).toEqual([
+      ['course-four', 'Enrolled'],
       ['course-one', 'Certified'],
+      ['course-three', 'Certified'],
       ['course-two', 'Certified'],
-      ['enroll-three', 'Enrolled'],
     ]);
     for (const row of training) {
-      expect(row.coursesCount).toBe(3);
-      expect(row.certificationsCount).toBe(2);
+      expect(row.coursesCount).toBe(4);
+      expect(row.certificationsCount).toBe(3);
     }
   });
 
@@ -1167,7 +1182,22 @@ describe('OrgLensPeopleService person-key company emails', () => {
       ]);
       const rosterRead = (execute.mock.calls as [string, string[]][]).find(([query]) => /ORG_PEOPLE_ALL_RANGES/.test(query));
       expect(rosterRead?.[1]).toEqual([ACCOUNT, '730d', 'all']);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v6:730d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:730d:all')!)).toBe(true);
+    });
+
+    it('offers the training foundations of people-list rows only, not those of learners outside the list', async () => {
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+      const insert = database.prepare(
+        'INSERT INTO ORG_PEOPLE_TRAINING (ACCOUNT_ID, PERSON_KEY, COURSE_OR_CERT_ID, STATUS, ACTIVITY_TS, FOUNDATION_ID, FOUNDATION_NAME, IS_ON_PEOPLE_LIST) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      );
+      insert.run(ACCOUNT, personKey, 'enrolled:listed', 'Enrolled', daysAgo(30), 'foundation-listed', 'Foundation Listed', 1);
+      insert.run(ACCOUNT, 'ti:outside-learner', 'enrolled:outside', 'Enrolled', daysAgo(30), 'foundation-outside', 'Foundation Outside', 0);
+
+      const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS);
+
+      const foundationIds = response.foundations.map((foundation) => foundation.foundationId);
+      expect(foundationIds).toContain('foundation-listed');
+      expect(foundationIds).not.toContain('foundation-outside');
     });
 
     it('lists the rows of the requested project scope only, counting the code in it', async () => {
@@ -1226,9 +1256,9 @@ describe('OrgLensPeopleService person-key company emails', () => {
       // The live code read is People → Contributors' own entry, shared by the current and the off-roster reads.
       expect([...cacheValues.keys()].filter((key) => !key.includes('people-team-members')).sort()).toEqual(
         [
-          'people-all:v6:30d:all',
-          'people-all:v6:all:all',
-          'people-all:v6:all:lf',
+          'people-all:v8:30d:all',
+          'people-all:v8:all:all',
+          'people-all:v8:all:lf',
           'people-contributors:v5:30d:all:all',
           'people-contributors:v5:all:all:all',
           'people-contributors:v5:all:lf:all',
@@ -1269,8 +1299,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(rosterRead?.[0]).toMatch(/ORG_PEOPLE_ALL\s/);
       expect(rosterRead?.[0]).not.toContain('ORG_PEOPLE_ALL_RANGES');
       expect(rosterRead?.[1]).toEqual([ACCOUNT]);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:roster')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v6:365d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:roster')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
     });
 
     // lfx-self-serve#4685
@@ -1293,7 +1323,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(formerExcluded.rows).toEqual([]);
       // One roster entry per range and scope serves both picks; the team members are cached once per account.
       expect([...cacheValues.keys()].filter((key) => key.includes('people-team-members') || key.includes('people-all:'))).toEqual(
-        expect.arrayContaining([buildOrgCacheKey(ACCOUNT, 'people-all:v6:365d:all')!, buildOrgCacheKey(ACCOUNT, 'people-team-members:v1')!])
+        expect.arrayContaining([buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!, buildOrgCacheKey(ACCOUNT, 'people-team-members:v1')!])
       );
       expect((execute.mock.calls as [string][]).filter(([query]) => query.includes('IS_CDP_TEAM_MEMBER'))).toHaveLength(1);
     });
@@ -1589,7 +1619,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
         expect(rosterRead).not.toMatch(/COMMITS_COUNT|CODE_ACTIVITIES_COUNT|INSIGHTS/);
         expect(rosterRead).toContain('NON_CODE_ENGAGED_FOUNDATION_IDS AS ENGAGED_FOUNDATION_IDS');
         expect(queries().filter((query) => query.includes('AND insights_daily_code_activities > 0'))).toHaveLength(orgScope === 'insights' ? 1 : 0);
-        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v6:365d:all')!)).toBe(true);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
       }
     );
 
@@ -1600,7 +1630,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
 
       expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-other-org', 8]]);
       expect(queries().some((query) => /INSIGHTS|insights_daily/.test(query))).toBe(false);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v6:365d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:all')!)).toBe(true);
     });
 
@@ -1611,7 +1641,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
 
       expect(resolveOrgScope).not.toHaveBeenCalled();
       expect(queries().some((query) => query.includes('INSIGHTS'))).toBe(false);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:roster')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:roster')!)).toBe(true);
     });
 
     it('lists former and unclassified people only for Insights-scoped code under insights, with its foundation labels, still naming every unclassified person', async () => {
@@ -2095,7 +2125,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: decoding an array as a
     // `ColumnarTable` would read `k`/`r` off it and serve an empty roster for the whole TTL.
     const legacy = { rowsRaw: [{ PERSON_KEY: 'stale-person', LF_USERNAME: 'stale' }], foundationRaw: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v6:365d:all')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!, JSON.stringify(legacy));
     mockRoster();
 
     const response = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');

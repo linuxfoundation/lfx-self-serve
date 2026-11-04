@@ -13,8 +13,7 @@ import type {
   OrgPeopleEventRow,
   OrgPeopleFoundationOptionRow,
   OrgPeopleTrainingRow,
-  TraineeCourseOptionRow,
-  TraineeFoundationOptionRow,
+  OrgTrainingOutsideLearnerRow,
 } from '../interfaces';
 
 /**
@@ -141,6 +140,11 @@ export const ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS = [
   'COURSE_NAME',
   'FOUNDATION_ID',
   'FOUNDATION_NAME',
+  'PROJECT_ID',
+  'PROJECT_NAME',
+  'COURSE_LEVEL',
+  'COURSE_FORMAT',
+  'PRODUCT_TYPE',
 ] as const satisfies readonly (keyof OrgPeopleTrainingRow)[];
 
 /** `CompactOrgTraineesRawCache.details` — what genuinely varies per (person, course-or-cert) row. */
@@ -151,11 +155,8 @@ export const ORG_TRAINEE_DETAIL_COLUMNS = [
   'ACTIVITY_TS',
 ] as const satisfies readonly (keyof OrgPeopleTrainingRow)[];
 
-/** `CompactOrgTraineesRawCache.foundationRows`. */
-export const ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS = ['FOUNDATION_ID', 'FOUNDATION_NAME'] as const satisfies readonly (keyof TraineeFoundationOptionRow)[];
-
-/** `CompactOrgTraineesRawCache.courseRows`. */
-export const ORG_TRAINEE_COURSE_OPTION_COLUMNS = ['COURSE_ID', 'COURSE_NAME'] as const satisfies readonly (keyof TraineeCourseOptionRow)[];
+/** `CompactOrgTraineesRawCache.outsideLearnerRows` — learners outside the people list, name and overall status only (lfx-self-serve#4287); no warehouse key. */
+export const ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS = ['LEARNER_NAME', 'IS_CERTIFIED'] as const satisfies readonly (keyof OrgTrainingOutsideLearnerRow)[];
 
 /** `CompactOrgContributorRowsCache.projects` — the project-level columns lifted out of every aggregate row. */
 export const ORG_CONTRIBUTOR_PROJECT_COLUMNS = [

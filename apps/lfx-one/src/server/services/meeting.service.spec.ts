@@ -2683,3 +2683,30 @@ describe('MeetingService.createMeetingRsvp — acknowledged response', () => {
     expect(saved.response_type).toBe('declined');
   });
 });
+
+describe('MeetingService.dedupePastMeetingParticipants', () => {
+  const service = new MeetingService();
+  const record = (extra: Partial<PastMeetingParticipant>): PastMeetingParticipant =>
+    ({ is_invited: false, is_attended: false, ...extra }) as PastMeetingParticipant;
+
+  it('merges an invitee and an attendee record of the same person into one invited, attended row', () => {
+    const result = service.dedupePastMeetingParticipants([
+      record({ email: 'ada@acme-motors.example', is_invited: true }),
+      record({ email: 'ADA@acme-motors.example', is_attended: true }),
+      record({ email: 'grace@acme-motors.example', is_invited: true }),
+    ]);
+
+    expect(result).toHaveLength(2);
+    expect(result.filter((person) => person.is_attended)).toHaveLength(1);
+    expect(result.every((person) => person.is_invited)).toBe(true);
+  });
+
+  it('keeps people with different usernames apart even when they share an email', () => {
+    const result = service.dedupePastMeetingParticipants([
+      record({ username: 'ada', email: 'team@acme-motors.example' }),
+      record({ username: 'grace', email: 'team@acme-motors.example' }),
+    ]);
+
+    expect(result).toHaveLength(2);
+  });
+});

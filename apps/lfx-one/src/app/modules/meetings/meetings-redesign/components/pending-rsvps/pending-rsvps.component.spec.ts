@@ -116,7 +116,7 @@ describe('PendingRsvpsComponent', () => {
     expect(trigger()?.getAttribute('aria-label')).toBe('1 Pending RSVP');
   });
 
-  it('lists each pending date with its project, title, time and 24px RSVP buttons', async () => {
+  it('lists each pending date with its project, title, time and 28px RSVP buttons', async () => {
     await render([buildRow('a'), buildRow('b', { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 } })]);
     await open();
 
@@ -127,7 +127,7 @@ describe('PendingRsvpsComponent', () => {
     expect(rows[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-when"]')?.textContent).toContain('Thu, Oct 1 · 9:00 AM');
     expect(rows[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-recurring"]')).toBeNull();
     expect(rows[1].querySelector('[data-testid="meetings-home-pending-rsvps-row-recurring"]')).not.toBeNull();
-    expect(rows[0].querySelector('[data-testid="meetings-home-rsvp-accepted"] button')?.className).toContain('h-ui-tiny');
+    expect(rows[0].querySelector('[data-testid="meetings-home-rsvp-accepted"] button')?.className).toContain('h-ui-xsmall');
   });
 
   it('puts the RSVP buttons in the top-right corner of each row, wrapping right-aligned on phones', async () => {

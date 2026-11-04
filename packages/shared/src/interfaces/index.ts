@@ -457,3 +457,4 @@ export * from './mktg-last-intake.interface';
 export * from './mktg-project-roles.interface';
 export * from './uikit.interface';
 export * from './social-share.interface';
+export * from './org-training-view.interface';

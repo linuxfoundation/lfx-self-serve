@@ -15,6 +15,8 @@ const {
   getEmployeeDetailByUsername,
   getKeyContactsForPerson,
   resolveUsernameByPersonKey,
+  getTrainees,
+  assertOrgLensRead,
   logger,
 } = vi.hoisted(() => ({
   getAllEmployees: vi.fn(),
@@ -27,6 +29,8 @@ const {
   getEmployeeDetailByUsername: vi.fn(),
   getKeyContactsForPerson: vi.fn(),
   resolveUsernameByPersonKey: vi.fn(),
+  getTrainees: vi.fn(),
+  assertOrgLensRead: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
@@ -70,7 +74,14 @@ vi.mock('../services/org-people-key-contacts.service', () => ({
     public getKeyContactsForPerson = getKeyContactsForPerson;
   },
 }));
-vi.mock('../services/org-people-trainees.service', () => ({ OrgPeopleTraineesService: class {} }));
+vi.mock('../services/org-people-trainees.service', () => ({
+  OrgPeopleTraineesService: class {
+    public getTrainees = getTrainees;
+  },
+}));
+vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead }));
+
+import { ORG_TRAINEE_OUTSIDE_KEY_PREFIX } from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
 import { OrgLensPeopleController } from './org-lens-people.controller';
@@ -627,5 +638,65 @@ describe('OrgLensPeopleController organization scope (lfx-self-serve-ops#1219)',
     expect(getContributors).not.toHaveBeenCalled();
     expect(getEmployeeDetail).not.toHaveBeenCalled();
     expect(getEmployeeDetailByUsername).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgLensPeopleController Trainees outside-learner keys (lfx-self-serve#4287)', () => {
+  const controller = new OrgLensPeopleController();
+  // The opaque per-response key the Trainees response gives a learner outside the people list.
+  const outsideReq = (): Request =>
+    ({ params: { orgUid: ORG_UID, personKey: `${ORG_TRAINEE_OUTSIDE_KEY_PREFIX}1` }, query: {}, path: '/test' }) as unknown as Request;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects the opaque key with a 400 on the detail, company-email and key-contact endpoints before any read', async () => {
+    const next = vi.fn();
+    await controller.getEmployeeDetail(outsideReq(), buildRes(), next);
+    await controller.getCompanyEmails(outsideReq(), buildRes(), next);
+    await controller.getPersonKeyContacts(outsideReq(), buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(3);
+    for (const [error] of next.mock.calls) {
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error).toMatchObject({ statusCode: 400 });
+    }
+    expect(getEmployeeDetail).not.toHaveBeenCalled();
+    expect(getCompanyEmails).not.toHaveBeenCalled();
+    expect(resolveUsernameByPersonKey).not.toHaveBeenCalled();
+    expect(getKeyContactsForPerson).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgLensPeopleController trainees access qualification', () => {
+  const controller = new OrgLensPeopleController();
+  const EMPTY_TRAINEES = { accountId: ORG_UID, timeRange: '730d', trainees: [], details: [], outsideLearners: [], asOf: null };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getTrainees.mockResolvedValue(EMPTY_TRAINEES);
+  });
+
+  it.each(['org-grant', 'auditor-entitlement'])('passes the %s read qualification to the service with the range', async (qualification) => {
+    assertOrgLensRead.mockResolvedValue(qualification);
+    const next = vi.fn();
+
+    await controller.getTrainees(buildRosterReq({ range: '90d' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(assertOrgLensRead).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'get_org_lens_people_trainees');
+    expect(getTrainees).toHaveBeenCalledWith(ORG_UID, '90d', qualification);
+  });
+
+  it('reads nothing for a caller whose read access is denied', async () => {
+    const denied = new Error('forbidden');
+    assertOrgLensRead.mockRejectedValue(denied);
+    const next = vi.fn();
+
+    await controller.getTrainees(buildRosterReq({}), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(denied);
+    expect(getTrainees).not.toHaveBeenCalled();
   });
 });

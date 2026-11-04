@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  OrgInvolvementCertifiedEmployeesMonthlyResponse,
   OrgInvolvementContributorsMonthlyResponse,
   OrgInvolvementEventAttendanceMonthlyResponse,
   OrgFoundationCoverageResponse,
   OrgInvolvementMaintainersMonthlyResponse,
   OrgMaintainerRolesCountRow,
   OrgMaintainerRolesMonthlyRow,
-  OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
@@ -58,23 +56,6 @@ interface EventAttendanceMonthlyRow {
   TOTAL_REGISTRATIONS: number;
   TOTAL_ATTENDED: number;
   TOTAL_SPEAKERS: number;
-}
-
-interface CertifiedEmployeesMonthlyRow {
-  ACCOUNT_ID: string;
-  MONTH_START_DATE: Date;
-  MONTHLY_CERTIFICATIONS: number;
-  MONTHLY_CERTIFIED_EMPLOYEES: number;
-  TOTAL_CERTIFICATIONS: number;
-  TOTAL_CERTIFIED_EMPLOYEES: number;
-}
-
-interface TrainingEnrollmentRow {
-  ACCOUNT_ID: string;
-  ENROLLMENT_DATE: string;
-  DAILY_COUNT: number;
-  CUMULATIVE_COUNT: number;
-  TOTAL_ENROLLMENTS: number;
 }
 
 /** Cross-foundation organization involvement analytics against the org_* platinum tables (account-level). */
@@ -157,26 +138,6 @@ export class OrgInvolvementService {
       'events',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchEventAttendanceMonthly(accountId),
-      OrgInvolvementService.hasAccountId
-    );
-  }
-
-  public async getCertifiedEmployeesMonthly(accountId: string): Promise<OrgInvolvementCertifiedEmployeesMonthlyResponse> {
-    return withOrgCache(
-      accountId,
-      'certs',
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchCertifiedEmployeesMonthly(accountId),
-      OrgInvolvementService.hasAccountId
-    );
-  }
-
-  public async getTrainingEnrollments(accountId: string): Promise<OrgTrainingEnrollmentsResponse> {
-    return withOrgCache(
-      accountId,
-      'training',
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchTrainingEnrollments(accountId),
       OrgInvolvementService.hasAccountId
     );
   }
@@ -387,65 +348,6 @@ export class OrgInvolvementService {
       attendeesMonthlyData: result.rows.map((row) => row.ATTENDED_COUNT || 0),
       speakersMonthlyData: result.rows.map((row) => row.SPEAKER_COUNT || 0),
       monthlyLabels: result.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
-    };
-  }
-
-  private async fetchCertifiedEmployeesMonthly(accountId: string): Promise<OrgInvolvementCertifiedEmployeesMonthlyResponse> {
-    const query = `
-      SELECT
-        ACCOUNT_ID,
-        MONTH_START_DATE,
-        MONTHLY_CERTIFICATIONS,
-        MONTHLY_CERTIFIED_EMPLOYEES,
-        TOTAL_CERTIFICATIONS,
-        TOTAL_CERTIFIED_EMPLOYEES
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CERTIFIED_EMPLOYEES_MONTHLY
-      WHERE ACCOUNT_ID = ?
-      ORDER BY MONTH_START_DATE ASC
-    `;
-
-    const result = await this.snowflakeService.execute<CertifiedEmployeesMonthlyRow>(query, [accountId]);
-
-    if (result.rows.length === 0) {
-      return { accountId, totalCertifications: 0, totalCertifiedEmployees: 0, monthlyData: [], monthlyLabels: [] };
-    }
-
-    const firstRow = result.rows[0];
-
-    return {
-      accountId: firstRow.ACCOUNT_ID,
-      totalCertifications: firstRow.TOTAL_CERTIFICATIONS || 0,
-      totalCertifiedEmployees: firstRow.TOTAL_CERTIFIED_EMPLOYEES || 0,
-      monthlyData: result.rows.map((row) => row.MONTHLY_CERTIFICATIONS || 0),
-      monthlyLabels: result.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
-    };
-  }
-
-  private async fetchTrainingEnrollments(accountId: string): Promise<OrgTrainingEnrollmentsResponse> {
-    const query = `
-      SELECT
-        ACCOUNT_ID,
-        ENROLLMENT_DATE,
-        DAILY_COUNT,
-        CUMULATIVE_COUNT,
-        TOTAL_ENROLLMENTS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_TRAINING_ENROLLMENTS
-      WHERE ACCOUNT_ID = ?
-      ORDER BY ENROLLMENT_DATE ASC
-    `;
-
-    const result = await this.snowflakeService.execute<TrainingEnrollmentRow>(query, [accountId]);
-
-    const totalEnrollments = result.rows.length > 0 ? result.rows[result.rows.length - 1].TOTAL_ENROLLMENTS || 0 : 0;
-
-    return {
-      accountId,
-      totalEnrollments,
-      dailyData: result.rows.map((row) => ({
-        date: row.ENROLLMENT_DATE,
-        count: row.DAILY_COUNT,
-        cumulativeCount: row.CUMULATIVE_COUNT,
-      })),
     };
   }
 }
