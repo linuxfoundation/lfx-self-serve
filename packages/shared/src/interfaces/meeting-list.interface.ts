@@ -24,6 +24,9 @@ export interface MeetingHomeRow {
   myRsvp?: MeetingRsvp | null;
 }
 
+/** Next meeting card's join state: before the join window, inside it before the start, or under way. */
+export type MeetingHomeJoinState = 'early' | 'soon' | 'live';
+
 /** Applied filters on the meetings home list (search is kept separately). */
 export interface MeetingsHomeFilters {
   /** Foundation UID: the foundation's own meetings and its non-foundation child projects'; null means all foundations. */

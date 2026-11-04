@@ -138,7 +138,24 @@ describe('LastMeetingCardComponent', () => {
     expect(text(fixture, 'meetings-home-last-card-when')).toBe(`${day}, ${time} · 60m`);
     expect(text(fixture, 'meetings-home-last-card-type')).toBe('Technical');
     expect(text(fixture, 'meetings-home-last-card-recurring')).toBe('Recurring');
-    expect(fixture.nativeElement.textContent).not.toContain('Steering Committee');
+    expect(query(fixture, 'meetings-home-last-card-recurring')?.querySelector('i')?.classList).toContain('fa-arrows-repeat');
+  });
+
+  it('badges each of the meeting groups between the type and recurring tags', async () => {
+    const meeting = buildMeeting({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } });
+    const fixture = await render({ row: rowOf(meeting), summary: null });
+    const tags = Array.from(fixture.nativeElement.querySelectorAll('lfx-ui-badge')).map((badge) => (badge as HTMLElement).dataset['testid']);
+
+    expect(text(fixture, 'meetings-home-last-card-group')).toBe('Steering Committee');
+    expect(query(fixture, 'meetings-home-last-card-group')?.querySelector('i')?.classList).toContain('fa-users');
+    expect(query(fixture, 'meetings-home-last-card-group')?.getAttribute('title')).toBe('Steering Committee');
+    expect(tags).toEqual(['meetings-home-last-card-type', 'meetings-home-last-card-group', 'meetings-home-last-card-recurring']);
+  });
+
+  it('shows no group tag for a meeting without groups', async () => {
+    const fixture = await render({ row: rowOf(buildMeeting({ committees: [] })), summary: null });
+
+    expect(query(fixture, 'meetings-home-last-card-group')).toBeNull();
   });
 
   it('shows no recurring tag for a one-off meeting', async () => {

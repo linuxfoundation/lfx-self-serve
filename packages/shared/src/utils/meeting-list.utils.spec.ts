@@ -17,6 +17,7 @@ import {
   formatMeetingDateTime,
   formatMeetingTimeRange,
   getMeetingDayBucket,
+  getMeetingGroupNames,
   getMeetingHomeRowLink,
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
@@ -486,6 +487,21 @@ describe('buildMeetingFilterChips', () => {
     expect(buildMeetingFilterChips(filters({ project: 'p-9' }), rows)).toEqual([{ key: 'project', label: 'Project: p-9' }]);
     expect(buildMeetingFilterChips(filters({ rsvp: 'pending' }), rows)[0].label).toBe('RSVP: Needs response');
     expect(buildMeetingFilterChips(filters({ rsvp: 'accepted' }), rows)[0].label).toBe('RSVP: Going');
+  });
+});
+
+describe('getMeetingGroupNames', () => {
+  it('lists the group names in order, without blanks or repeats', () => {
+    const committees = [
+      { uid: 'c-1', name: 'TOC' },
+      { uid: 'c-2' },
+      { uid: 'c-3', name: '  ' },
+      { uid: 'c-4', name: 'Security WG' },
+      { uid: 'c-5', name: 'TOC' },
+    ];
+
+    expect(getMeetingGroupNames({ committees })).toEqual(['TOC', 'Security WG']);
+    expect(getMeetingGroupNames({ committees: [] })).toEqual([]);
   });
 });
 
