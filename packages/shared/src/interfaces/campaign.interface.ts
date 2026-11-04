@@ -611,8 +611,8 @@ export interface CampaignBriefOutput {
    * Implement tab's create-time negatives on a Search campaign (#4991), and the Optimize tab's
    * negative-keyword editor once the campaign is live.
    *
-   * A SUGGESTION, never sent as it stands: each editor opens with this text, the operator edits it
-   * there, and nothing leaves until they create the campaign or press the Optimize button.
+   * A SUGGESTION: each editor opens with this text. On a Search create it is sent as shown unless the
+   * operator edits or clears it; on Optimize nothing leaves until they press the button.
    *
    * Text only, no match type. The match type is one choice for the whole request and belongs to the
    * platform the operator is sending to — Google offers three, Microsoft two, Reddit none — so the
@@ -627,8 +627,9 @@ export interface CampaignBriefOutput {
    * Already bounded by the generator to {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries of at
    * most {@link MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters — Google's cap, the narrowest
    * of the four platforms that take negatives, since the brief cannot know which campaign these
-   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`, so the editor
-   * never opens holding a line it would refuse the operator for typing.
+   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`. A stored brief
+   * is still runtime-arbitrary, so the Implement tab filters its seed through the same rules again
+   * (`googleSuggestedNegativeKeywordsText`) and never opens holding a line it would refuse.
    */
   negativeKeywords?: string[];
   hsUtm: string | null;

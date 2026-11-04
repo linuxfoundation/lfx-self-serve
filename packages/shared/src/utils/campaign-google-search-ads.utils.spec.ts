@@ -8,7 +8,9 @@ import {
   googleAdsTextWeight,
   googleCreateNegativeKeywords,
   googleCreateNegativeKeywordsRefusal,
+  googleSearchAdCopyWidthRefusal,
   googleSearchAdPathsRefusal,
+  googleSuggestedNegativeKeywordsText,
 } from './campaign-google-search-ads.utils';
 
 /**
@@ -128,5 +130,43 @@ describe('googleCreateNegativeKeywords', () => {
       { text: 'free tickets', matchType: 'Phrase' },
       { text: 'jobs', matchType: 'Phrase' },
     ]);
+  });
+});
+
+describe('googleSearchAdCopyWidthRefusal', () => {
+  it('accepts copy at the widths, blanks and non-strings', () => {
+    expect(googleSearchAdCopyWidthRefusal(['h'.repeat(30), '日'.repeat(15), '  '], ['d'.repeat(90), 5], 'ad 1')).toBeNull();
+    expect(googleSearchAdCopyWidthRefusal(undefined, 'not a list', 'ad 1')).toBeNull();
+  });
+
+  it('refuses an over-wide headline, then description, naming the ad', () => {
+    expect(googleSearchAdCopyWidthRefusal(['日'.repeat(16)], [], 'ad 1')).toContain('A headline on ad 1');
+    expect(googleSearchAdCopyWidthRefusal(['ok'], ['ｄ'.repeat(46)], 'ad 1')).toContain('A description on ad 1');
+    expect(googleSearchAdCopyWidthRefusal(['h'.repeat(31)], ['d'.repeat(91)], 'ad 1')).toContain('headline');
+  });
+
+  it('judges each line trimmed, as Go trims it', () => {
+    expect(googleSearchAdCopyWidthRefusal([` ${'h'.repeat(30)} `], [], 'ad 1')).toBeNull();
+  });
+});
+
+describe('googleSuggestedNegativeKeywordsText', () => {
+  it('keeps only the suggestions the judge accepts, the first of a repeat, and the first 60', () => {
+    const many = Array.from({ length: 61 }, (_, i) => `term ${i}`);
+    const text = googleSuggestedNegativeKeywordsText(['free!', 'x'.repeat(81), 'Jobs', 'jobs', 5, ...many]);
+    const lines = text.split('\n');
+
+    expect(lines).toHaveLength(60);
+    expect(lines[0]).toBe('Jobs');
+    expect(lines).not.toContain('free!');
+    expect(lines).not.toContain('jobs');
+    expect(lines.at(-1)).toBe('term 58');
+    expect(googleCreateNegativeKeywordsRefusal(lines.map((t) => ({ text: t, matchType: 'Exact' })))).toBeNull();
+  });
+
+  it('keeps an 80-character suggestion and seeds nothing from a non-list', () => {
+    expect(googleSuggestedNegativeKeywordsText(['x'.repeat(80)])).toBe('x'.repeat(80));
+    expect(googleSuggestedNegativeKeywordsText(undefined)).toBe('');
+    expect(googleSuggestedNegativeKeywordsText('jobs')).toBe('');
   });
 });

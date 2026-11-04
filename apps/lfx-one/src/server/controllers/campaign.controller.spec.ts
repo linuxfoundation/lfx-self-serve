@@ -5039,6 +5039,32 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(error.message).toContain('2048');
     });
 
+    it.each([
+      ['headlines', { headlines: ['日'.repeat(16)] }, 'A headline on ad 1'],
+      ['descriptions', { descriptions: ['ｄ'.repeat(46)] }, 'A description on ad 1'],
+      ['headlines', { headlines: ['日'.repeat(16)], additionalSearchAds: [{ headlines: ['A'], descriptions: ['B'] }] }, 'A headline on ad 1'],
+    ])('refuses an over-wide first-ad %s by name, as campaign-service refuses it on every Search ad', async (field, overrides, fragment) => {
+      await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.field).toBe(field);
+      expect(error.message).toContain(fragment);
+    });
+
+    it('still dispatches first-ad copy at the widths Google allows', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004994', error: null });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ headlines: ['h'.repeat(30), '日'.repeat(15)], descriptions: ['d'.repeat(90)] }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(createCampaigns).toHaveBeenCalled();
+    });
+
     it('bounds the strings nested in the further ads before normalising them', async () => {
       await controller.createCampaign(
         buildReq(googleBody({ additionalSearchAds: [{ headlines: ['x'.repeat(5000)], descriptions: ['B'] }] }), { project: 'tlf', brief_id: 'b-1' }),

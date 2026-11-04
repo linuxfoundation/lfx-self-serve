@@ -21,6 +21,7 @@ import {
 import {
   googleAdditionalSearchAdsRefusal,
   googleCreateNegativeKeywordsRefusal,
+  googleSearchAdCopyWidthRefusal,
   googleSearchAdPathsRefusal,
 } from '@lfx-one/shared/utils/campaign-google-search-ads.utils';
 import {
@@ -5774,8 +5775,8 @@ export class CampaignController {
   }
 
   /**
-   * The Search ad group's further ads, every ad's display paths and the create-time negatives,
-   * judged in that order, or `null`. Off Search a non-empty one is refused by name; on Search each
+   * The Search ad group's display paths, the first ad's copy width, the further ads and the
+   * create-time negatives, judged in that order, or `null`. Off Search a non-empty one is refused by name; on Search each
    * goes through its shared judge. An empty path, list or absent key asks for nothing on any channel.
    */
   private googleSearchAdsRefusal(body: CampaignCreateRequest, googleChannel: unknown): { field: string; message: string } | null {
@@ -5803,6 +5804,13 @@ export class CampaignController {
     if (path1Refusal) return { field: 'path1', message: path1Refusal };
     const path2Refusal = googleSearchAdPathsRefusal(raw['path1'], raw['path2']);
     if (path2Refusal) return { field: 'path2', message: path2Refusal };
+    // The first ad's campaign-level copy, for display width: campaign-service's `callerCopy` refuses
+    // an over-wide line on every Search ad, with one ad or three, and the form's maxlength counts
+    // characters rather than Google's width. Filed under the field the line is in.
+    const headlineRefusal = googleSearchAdCopyWidthRefusal(raw['headlines'], [], 'ad 1');
+    if (headlineRefusal) return { field: 'headlines', message: headlineRefusal };
+    const descriptionRefusal = googleSearchAdCopyWidthRefusal([], raw['descriptions'], 'ad 1');
+    if (descriptionRefusal) return { field: 'descriptions', message: descriptionRefusal };
     const adsRefusal = googleAdditionalSearchAdsRefusal(raw['additionalSearchAds']);
     if (adsRefusal) return { field: 'additionalSearchAds', message: adsRefusal };
     const negativesRefusal = googleCreateNegativeKeywordsRefusal(raw['negativeKeywords']);

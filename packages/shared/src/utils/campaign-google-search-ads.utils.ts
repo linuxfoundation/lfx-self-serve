@@ -80,6 +80,33 @@ export function googleSearchAdPathsRefusal(path1: unknown, path2: unknown, adLab
 }
 
 /**
+ * Why upstream would refuse one responsive search ad's copy for its display width, or `null`
+ * (`callerCopy`, which campaign-service runs on EVERY Search ad before the budget mutate — the first
+ * ad's campaign-level copy included, with one ad or three). Each line is trimmed as Go trims it; a
+ * blank line or a non-string is skipped, as upstream skips a blank one. Headlines first, then
+ * descriptions, the first over-wide line named. Counts are not judged here: upstream drops a line
+ * past the cap on the first ad, whose Add buttons have never been capped.
+ */
+export function googleSearchAdCopyWidthRefusal(headlines: unknown, descriptions: unknown, adLabel: string): string | null {
+  const lines = (list: unknown): string[] =>
+    Array.isArray(list)
+      ? list
+          .filter((line): line is string => typeof line === 'string')
+          .map((line) => googleAdsTrimSpace(line))
+          .filter((line) => line !== '')
+      : [];
+  const wideHeadline = lines(headlines).find((h) => googleAdsTextWeight(h) > CAMPAIGN_CHAR_LIMITS.searchHeadline);
+  if (wideHeadline !== undefined) {
+    return `A headline on ${adLabel} (${googleAdsEchoed(wideHeadline)}) is longer than the ${CAMPAIGN_CHAR_LIMITS.searchHeadline} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
+  }
+  const wideDescription = lines(descriptions).find((d) => googleAdsTextWeight(d) > CAMPAIGN_CHAR_LIMITS.searchDescription);
+  if (wideDescription !== undefined) {
+    return `A description on ${adLabel} (${googleAdsEchoed(wideDescription)}) is longer than the ${CAMPAIGN_CHAR_LIMITS.searchDescription} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
+  }
+  return null;
+}
+
+/**
  * Why upstream would refuse the second and third responsive search ads, or `null`. The list may hold
  * at most {@link GOOGLE_ADS_MAX_SEARCH_ADS_PER_AD_GROUP} minus the first ad. Each ad, in order, needs
  * at least one headline and one description — upstream would otherwise pad it with the same generated
@@ -107,14 +134,8 @@ export function googleAdditionalSearchAdsRefusal(ads: unknown): string | null {
     if (descriptions.length > GOOGLE_ADS_MAX_SEARCH_DESCRIPTIONS) {
       return `Google Ads takes at most ${GOOGLE_ADS_MAX_SEARCH_DESCRIPTIONS} descriptions on one ad, and ${label} has ${descriptions.length}. Remove some and create again.`;
     }
-    const wideHeadline = headlines.find((h) => googleAdsTextWeight(h) > CAMPAIGN_CHAR_LIMITS.searchHeadline);
-    if (wideHeadline !== undefined) {
-      return `A headline on ${label} (${googleAdsEchoed(wideHeadline)}) is longer than the ${CAMPAIGN_CHAR_LIMITS.searchHeadline} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
-    }
-    const wideDescription = descriptions.find((d) => googleAdsTextWeight(d) > CAMPAIGN_CHAR_LIMITS.searchDescription);
-    if (wideDescription !== undefined) {
-      return `A description on ${label} (${googleAdsEchoed(wideDescription)}) is longer than the ${CAMPAIGN_CHAR_LIMITS.searchDescription} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
-    }
+    const widthRefusal = googleSearchAdCopyWidthRefusal(headlines, descriptions, label);
+    if (widthRefusal) return widthRefusal;
     const pathRefusal = googleSearchAdPathsRefusal(ad.path1, ad.path2, label);
     if (pathRefusal) return pathRefusal;
   }
@@ -163,6 +184,21 @@ export function googleCreateNegativeKeywordsRefusal(keywords: unknown): string |
 export function googleCreateNegativeKeywords(text: string, matchType: CampaignNegativeKeywordMatchType): CampaignNegativeKeywordInput[] {
   const { keywords } = parseNegativeKeywordInput(text, CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'].maxTextLength);
   return keywords.map((keyword) => ({ text: keyword, matchType }));
+}
+
+/**
+ * The brief's suggested negatives as the create-time editor's text: one per line, keeping only the
+ * lines `parseNegativeKeywordInput` accepts under Google's 80-character cap — which also drops a
+ * case-insensitive repeat, the key `googleCreateNegativeKeywordsRefusal` uses for one match type —
+ * and only the first `maxKeywords` of those. A stored brief is runtime-arbitrary, so a suggestion
+ * the judge would refuse is dropped here rather than holding Create on a create the operator never
+ * touched; what the operator types is still judged in full.
+ */
+export function googleSuggestedNegativeKeywordsText(suggestions: unknown): string {
+  if (!Array.isArray(suggestions)) return '';
+  const rules = CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'];
+  const text = suggestions.filter((entry): entry is string => typeof entry === 'string').join('\n');
+  return parseNegativeKeywordInput(text, rules.maxTextLength).keywords.slice(0, rules.maxKeywords).join('\n');
 }
 
 function isSearchAdShape(ad: unknown): boolean {

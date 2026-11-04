@@ -8625,6 +8625,36 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
     ]);
   });
 
+  it('seeds only the suggestions the shared judge accepts, so an untouched create is not held', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
+      negativeKeywords: ['free!', 'x'.repeat(81), 'Jobs', 'jobs', ...Array.from({ length: 61 }, (_, i) => `term ${i}`)],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+    c['campaignForm'].patchValue({ includeSearch: true });
+    fixture.detectChanges();
+
+    const lines = (c['googleNegativeKeywordsText']() as string).split('\n');
+    expect(lines).toHaveLength(60);
+    expect(lines).not.toContain('free!');
+    expect(lines).not.toContain('jobs');
+    expect(c['googleNegativeKeywordsError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it("holds Create on a first-ad headline wider than Google's 30, counting CJK double", () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].patchValue({ headlines: ['日'.repeat(16)] });
+    fixture.detectChanges();
+
+    expect(c['googleAdditionalSearchAdsError']()).toContain('A headline on ad 1');
+    expect(c['canSubmit']()).toBe(false);
+    expect(query('implementation-google-search-ads-error')?.textContent).toContain('A headline on ad 1');
+  });
+
   it('round-trips everything through a draft and empties it for a new brief', () => {
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));

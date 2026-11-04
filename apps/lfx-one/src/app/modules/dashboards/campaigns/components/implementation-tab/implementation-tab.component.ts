@@ -303,8 +303,10 @@ import {
   googlePromotionRefusal,
   googleScheduleAdjustmentIgnoredSentence,
   googleScheduleAdjustmentStrategiesOn,
+  googleSearchAdCopyWidthRefusal,
   googleSearchAdPathsRefusal,
   googleStrategyTakesScheduleAdjustments,
+  googleSuggestedNegativeKeywordsText,
   googleUpperCodeList,
   isHttpUrl,
   isReversedCampaignFlight,
@@ -7562,9 +7564,10 @@ export class ImplementationTabComponent implements OnInit {
 
     // A stored brief can lack the list; every reader maps or filters it (#4848).
     this.briefKeywords.set(Array.isArray(brief.keywords) ? brief.keywords : []);
-    // The brief's suggested negatives seed the create-time editor (#4991), one per line, as the
-    // Optimize editor opens with them. A draft's own text restores over this in `applyDraft`.
-    this.googleNegativeKeywordsText.set(Array.isArray(brief.negativeKeywords) ? brief.negativeKeywords.filter((kw) => typeof kw === 'string').join('\n') : '');
+    // The brief's suggested negatives seed the create-time editor (#4991), one per line, filtered to
+    // what the shared judge accepts and capped at its count, as the Microsoft seed below is filtered:
+    // an untouched create must not open held on a suggestion. A draft's own text restores over this.
+    this.googleNegativeKeywordsText.set(googleSuggestedNegativeKeywordsText(brief.negativeKeywords));
 
     // Microsoft's seed (LFXV2-3312). The brief's own keywords feed it DIRECTLY, with no
     // translation: `CampaignKeyword.matchType` is already the PascalCase vocabulary
@@ -8679,8 +8682,18 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => (this.googleSearchAdsAvailable() ? googleSearchAdPathsRefusal(this.googleSearchPath1(), this.googleSearchPath2()) : null));
   }
 
+  /**
+   * The first ad's copy judged for display width first — campaign-service refuses an over-wide line
+   * on every Search ad, the campaign-level copy included, with one ad or three — then the further ads.
+   * Read through `campaignFormRevision` because the copy controls are not signals.
+   */
   private initGoogleAdditionalSearchAdsError(): Signal<string | null> {
-    return computed(() => (this.googleSearchAdsAvailable() ? googleAdditionalSearchAdsRefusal(this.googleAdditionalSearchAds()) : null));
+    return computed(() => {
+      if (!this.googleSearchAdsAvailable()) return null;
+      void this.campaignFormRevision();
+      const { headlines, descriptions } = this.campaignForm.getRawValue();
+      return googleSearchAdCopyWidthRefusal(headlines, descriptions, 'ad 1') ?? googleAdditionalSearchAdsRefusal(this.googleAdditionalSearchAds());
+    });
   }
 
   /**
