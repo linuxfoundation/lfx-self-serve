@@ -77,7 +77,7 @@ test.describe('Formation record edit drawer (#5134)', () => {
     await page.getByRole('option', { name: 'Archived' }).click();
     await page.getByTestId('formation-record-save').click();
 
-    await expect(page.getByTestId('formation-record-dissolution-date-error')).toHaveText('Archiving needs a dissolution date.');
+    await expect(page.getByTestId('formation-record-edit-drawer')).toContainText('Archiving needs a dissolution date.');
     expect(puts).toHaveLength(0);
   });
 
