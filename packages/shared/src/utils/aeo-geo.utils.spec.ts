@@ -307,4 +307,12 @@ describe('AEO/GEO envelope gates', () => {
     expect(isAeoGeoEnvelope({ ...envelope(), extra: true })).toBe(false);
     expect(isAeoGeoEnvelope({ ...envelope(), inputs: { ...envelope().inputs, extra: true } })).toBe(false);
   });
+
+  it('accepts the Plan-2 quality ledger as an opaque top-level field while still rejecting other unknown keys', () => {
+    // aeo-geo ≥ 2.1.0 writes `quality` (its shape is the agent's; LFX One stores it and never reads it).
+    const quality = { reads: [{ key: 'home', kind: 'page', required: true, outcome: 'complete', pages_read: 1, bytes: 51234, truncated: false }] };
+    expect(isAeoGeoEnvelope({ ...envelope(), quality })).toBe(true);
+    expect(isAeoGeoEnvelope({ ...envelope(), quality: null })).toBe(true);
+    expect(isAeoGeoEnvelope({ ...envelope(), quality, extra: true })).toBe(false);
+  });
 });
