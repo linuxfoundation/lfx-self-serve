@@ -1,10 +1,10 @@
 ---
 title: Organization
-description: Guides for the Organization lens in LFX Self Serve, including the Org Overview dashboard, Projects and project detail, managing Org Lens access and EasyCLA for corporate CLAs.
+description: Guides for the Organization lens in LFX Self Serve, including the Org Overview dashboard, Memberships, Projects and project detail, People, Code Contributions, managing Org Lens access and EasyCLA for corporate CLAs.
 audience: [all]
 product_area: Organization
-tags: [organization, org, switch-organization, easycla, cla, access]
-last_updated: 2026-11-03
+tags: [organization, org, switch-organization, memberships, people, code-contributions, easycla, cla, access]
+last_updated: 2026-11-04
 intercom_collection: Organization
 ---
 
@@ -13,7 +13,10 @@ The Organization section covers pages in the Organization lens. These steps appl
 ## What you can do
 
 - Open **Dashboard**, the Org Overview, to see the organization's involvement and its foundations and projects
+- Open **Memberships** to see the organization's foundation memberships and, for each one, its key contacts, board and committee seats, and agreements
 - Open **Projects** to see the projects in the organization's shared workspaces, its influence on each one, and how it ranks against other organizations
+- Open **People** to see the organization's employees and their board and committee seats, key contact roles, code contributions, events and training
+- Open **Code Contributions** to see the repositories the organization's contributors worked in and each of their commits
 - Open **People** → **Org Lens Access** to see who can open the organization and, as an Admin, add, change or remove their access
 - Open **EasyCLA** to view and manage the corporate CLAs (Contributor License Agreements) that organization holds
 
@@ -32,7 +35,10 @@ Go to **app.lfx.dev**, switch to the **Organization** lens, and select the organ
 - [Choose and switch an organization](./choose-an-organization/) — pick the organization you are viewing, switch to another, and read the organization in a page address
 - [Manage Org Lens Access](./manage-org-lens-access/) — add, change or remove who can open the organization
 - [Org Overview dashboard](./org-overview/) — what each card on the Organization lens Dashboard shows and where its links go
+- [Memberships](./memberships/) — the organization's foundation memberships, their key contacts, board and committee seats, and agreements
 - [Projects and project detail](./projects/) — the organization's projects, workspaces, and each project's influence and leaderboards
+- [People](./people/) — the organization's employees, contributors, board and committee members, key contacts, event attendees and trainees
+- [Code Contributions](./code-contributions/) — the organization's repositories and commits, and how the time range carries to People
 - [EasyCLA](./easycla/) — corporate CLAs for the selected organization
-- [Organization FAQ](./faq/) — short answers about switching organizations, Org Lens access, the Org Overview dashboard, the Projects page, who can edit a corporate CLA, who can see a company, and CLA Manager changes
+- [Organization FAQ](./faq/) — short answers about switching organizations, Org Lens access, the Org Overview dashboard, the Memberships, Projects, People and Code Contributions pages, who can edit a corporate CLA, who can see a company, and CLA Manager changes
 - [CLAs](../account/my-clas/) — your own Individual CLAs and your coverage under an employer's corporate CLA
