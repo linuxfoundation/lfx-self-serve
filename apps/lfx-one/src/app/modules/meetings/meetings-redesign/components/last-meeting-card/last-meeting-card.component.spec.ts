@@ -73,7 +73,7 @@ const rowOf = (meeting: PastMeeting): MeetingHomeRow => toPastMeetingHomeRow(mee
 
 describe('LastMeetingCardComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
-  let dialogs: { openSummary: ReturnType<typeof vi.fn>; openRecording: ReturnType<typeof vi.fn> };
+  let dialogs: { openSummary: ReturnType<typeof vi.fn>; openRecording: ReturnType<typeof vi.fn>; copyRecordingLink: ReturnType<typeof vi.fn> };
 
   const render = async (inputs: Record<string, unknown>): Promise<ComponentFixture<LastMeetingCardComponent>> => {
     const fixture = TestBed.createComponent(LastMeetingCardComponent);
@@ -89,7 +89,7 @@ describe('LastMeetingCardComponent', () => {
 
   beforeEach(() => {
     navigateByUrl = vi.fn().mockResolvedValue(true);
-    dialogs = { openSummary: vi.fn(), openRecording: vi.fn() };
+    dialogs = { openSummary: vi.fn(), openRecording: vi.fn(), copyRecordingLink: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
@@ -209,19 +209,24 @@ describe('LastMeetingCardComponent', () => {
     it('puts Recording before AI Summary', async () => {
       const fixture = await render({ row: rowOf(buildMeeting()), summary: buildSummary(), recordingUrl: 'https://zoom.example/rec' });
 
-      const buttons = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('lfx-ui-button'));
+      const buttons = Array.from<HTMLElement>(
+        fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-last-card-recording"], [data-testid="meetings-home-last-card-summary"]')
+      );
       expect(buttons.map((button) => button.dataset['testid'])).toEqual(['meetings-home-last-card-recording', 'meetings-home-last-card-summary']);
     });
 
-    it('opens the recording and summary dialogs without opening the meeting', async () => {
+    it('opens the recording, copies its link and opens the summary without opening the meeting', async () => {
       const summary = buildSummary();
       const fixture = await render({ row: rowOf(buildMeeting()), summary, recordingUrl: 'https://zoom.example/rec' });
 
-      clickButton(fixture, 'meetings-home-last-card-recording');
+      clickButton(fixture, 'ui-split-button-main');
+      clickButton(fixture, 'ui-split-button-secondary');
       clickButton(fixture, 'meetings-home-last-card-summary');
 
       expect(navigateByUrl).not.toHaveBeenCalled();
-      expect(dialogs.openRecording).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ' }), 'https://zoom.example/rec');
+      expect(query(fixture, 'ui-split-button-secondary')?.getAttribute('aria-label')).toBe('Copy recording link');
+      expect(dialogs.openRecording).toHaveBeenCalledWith('https://zoom.example/rec');
+      expect(dialogs.copyRecordingLink).toHaveBeenCalledWith('https://zoom.example/rec');
       expect(dialogs.openSummary).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ', title: 'Steering sync' }), summary, expect.any(Function));
     });
 

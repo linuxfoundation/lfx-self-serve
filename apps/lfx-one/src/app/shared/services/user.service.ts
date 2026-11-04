@@ -505,7 +505,7 @@ export class UserService {
   /**
    * Gets past meetings for the current authenticated user.
    * Call refreshUserPastMeetings() to re-fetch.
-   * @param options - `includeArtifacts` adds `has_recording` / `has_ai_summary`, cached apart from the plain feed
+   * @param options - `includeArtifacts` adds `has_recording` / `recording_share_url` / `has_ai_summary`, cached apart from the plain feed
    */
   public getUserPastMeetings(options?: { includeArtifacts?: boolean }): Observable<PastMeeting[]> {
     const includeArtifacts = options?.includeArtifacts === true;

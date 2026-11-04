@@ -137,10 +137,19 @@
 
     @if (recordingUrl() || summaryContent()) {
       <div class="flex flex-col gap-[8px]">
-        @if (recordingUrl()) {
-          <lfx-ui-button variant="recording" icon="fa-light fa-play" fullWidth (click)="openRecording($event)" data-testid="meetings-home-last-card-recording">
-            Recording
-          </lfx-ui-button>
+        @if (recordingUrl(); as recordingUrl) {
+          <!-- Full width: the main half grows and the copy half stays square. -->
+          <lfx-ui-split-button
+            class="w-full [&>lfx-ui-button>button]:w-full [&>lfx-ui-button]:flex-auto"
+            label="Recording"
+            variant="recording"
+            icon="fa-light fa-play"
+            secondaryIcon="fa-light fa-link"
+            secondaryTooltip="Copy recording link"
+            (click)="$event.stopPropagation()"
+            (triggered)="openRecording(recordingUrl)"
+            (secondaryTriggered)="copyRecordingLink(recordingUrl)"
+            data-testid="meetings-home-last-card-recording" />
         }
         @if (summaryContent()) {
           <lfx-ui-button variant="secondary" icon="fa-light fa-sparkles" fullWidth (click)="openSummary($event)" data-testid="meetings-home-last-card-summary">

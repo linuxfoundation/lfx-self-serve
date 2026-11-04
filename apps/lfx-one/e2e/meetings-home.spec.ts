@@ -312,15 +312,17 @@ test.describe('Meetings home page', () => {
   });
 
   test.describe('Recording and AI Summary', () => {
-    test('the Last meeting card opens the recording and summary dialogs', async ({ page }) => {
+    test('the Last meeting card opens the recording in a new tab, copies its link and opens the summary dialog', async ({ page }) => {
+      await page.context().route('https://zoom.example.test/**', (route) => route.fulfill({ body: '' }));
       await gotoMeetingsHome(page);
       const rail = rightColumn(page);
+      const recording = rail.getByTestId('meetings-home-last-card-recording');
 
-      await rail.getByTestId('meetings-home-last-card-recording').click();
-      const recording = page.getByRole('dialog', { name: 'Meeting Recording' });
-      await expect(recording).toContainText(MEETINGS_HOME_RECORDING_URL);
-      await recording.getByRole('button', { name: 'Close' }).click();
-      await expect(recording).toBeHidden();
+      const popup = page.waitForEvent('popup');
+      await recording.getByRole('button', { name: 'Recording', exact: true }).click();
+      expect((await popup).url()).toContain(MEETINGS_HOME_RECORDING_URL);
+      await recording.getByRole('button', { name: 'Copy recording link' }).click();
+      await expect(homeToast(page, 'Recording link copied to clipboard')).toBeVisible();
 
       await rail.getByTestId('meetings-home-last-card-summary').click();
       const summary = page.getByRole('dialog', { name: 'Meeting Summary' });
@@ -328,16 +330,20 @@ test.describe('Meetings home page', () => {
     });
 
     test('a past row offers Recording and AI Summary only when it has them', async ({ page }) => {
+      // The split button needs a centre column wider than 900px.
+      await page.setViewportSize({ width: 1920, height: 900 });
       await gotoMeetingsHome(page, { query: '?time=past' });
 
       await expect(homeRow(page, TITLES.pastOlder)).toBeVisible();
       await expect(homeRow(page, TITLES.pastOlder).getByTestId('meetings-home-row-artifacts')).toHaveCount(0);
       const row = homeRow(page, TITLES.pastRecent);
 
+      await page.context().route('https://zoom.example.test/**', (route) => route.fulfill({ body: '' }));
+      const popup = page.waitForEvent('popup');
       await row.getByRole('button', { name: 'Recording', exact: true }).click();
-      const recording = page.getByRole('dialog', { name: 'Meeting Recording' });
-      await expect(recording).toContainText(MEETINGS_HOME_RECORDING_URL);
-      await recording.getByRole('button', { name: 'Close' }).click();
+      expect((await popup).url()).toContain(MEETINGS_HOME_RECORDING_URL);
+      await row.getByRole('button', { name: 'Copy recording link' }).click();
+      await expect(homeToast(page, 'Recording link copied to clipboard')).toBeVisible();
 
       await row.getByRole('button', { name: 'AI Summary', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Meeting Summary' })).toContainText(MEETINGS_HOME_SUMMARY_TEXT);

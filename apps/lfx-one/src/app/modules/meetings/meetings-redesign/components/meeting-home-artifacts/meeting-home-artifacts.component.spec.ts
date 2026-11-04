@@ -4,10 +4,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MeetingHomeRow, PastMeeting, PastMeetingRecording, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import { MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of, Subject, throwError } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
@@ -26,14 +26,15 @@ const row = (overrides: Partial<PastMeeting> = {}): MeetingHomeRow => {
     durationMinutes: 60,
   };
 };
+const SHARE_URL = 'https://zoom.example/rec';
 const summary = (overrides: Partial<PastMeetingSummary> = {}): PastMeetingSummary =>
   ({ uid: 'synthetic-summary', approved: true, requires_approval: true, summary_data: { content: 'Notes' }, ...overrides }) as PastMeetingSummary;
 
 describe('MeetingHomeArtifactsComponent', () => {
   let fixture: ComponentFixture<MeetingHomeArtifactsComponent>;
-  let getPastMeetingRecording: ReturnType<typeof vi.fn>;
   let getPastMeetingSummary: ReturnType<typeof vi.fn>;
   let openRecording: ReturnType<typeof vi.fn>;
+  let copyRecordingLink: ReturnType<typeof vi.fn>;
   let openSummary: ReturnType<typeof vi.fn>;
   let toastShow: ReturnType<typeof vi.fn>;
   let lastMeeting: WritableSignal<MeetingHomeRow | null>;
@@ -51,16 +52,9 @@ describe('MeetingHomeArtifactsComponent', () => {
   };
 
   beforeEach(() => {
-    getPastMeetingRecording = vi.fn(() =>
-      of({
-        sessions: [
-          { share_url: 'https://zoom.example/small', total_size: 1 },
-          { share_url: 'https://zoom.example/large', total_size: 9 },
-        ],
-      } as PastMeetingRecording)
-    );
     getPastMeetingSummary = vi.fn(() => of(summary()));
     openRecording = vi.fn();
+    copyRecordingLink = vi.fn();
     openSummary = vi.fn();
     toastShow = vi.fn();
     lastMeeting = signal(null);
@@ -68,8 +62,8 @@ describe('MeetingHomeArtifactsComponent', () => {
 
     TestBed.configureTestingModule({
       providers: [
-        { provide: MeetingService, useValue: { getPastMeetingRecording, getPastMeetingSummary } },
-        { provide: MeetingsHomeDialogsService, useValue: { openRecording, openSummary } },
+        { provide: MeetingService, useValue: { getPastMeetingSummary } },
+        { provide: MeetingsHomeDialogsService, useValue: { openRecording, copyRecordingLink, openSummary } },
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: MeetingsHomeStore, useValue: { lastMeeting, setLastMeetingSummary } },
       ],
@@ -81,30 +75,31 @@ describe('MeetingHomeArtifactsComponent', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders nothing when the feed flags no artifact, or the lookup failed', async () => {
+  it('renders nothing when the feed has no recording link or summary, or the lookup failed', async () => {
     await render(row({ has_recording: false, has_ai_summary: undefined }));
 
     expect(query('meetings-home-row-artifacts')).toBeNull();
   });
 
-  it('shows only the flagged artifact', async () => {
-    await render(row({ has_recording: true, has_ai_summary: false }));
+  it('shows only the available artifact', async () => {
+    await render(row({ has_recording: true, recording_share_url: SHARE_URL, has_ai_summary: false }));
 
-    expect(query('meetings-home-row-recording')?.textContent?.trim()).toBe('Recording');
+    expect(query('ui-split-button-main')?.textContent?.trim()).toBe('Recording');
     expect(query('meetings-home-row-summary')).toBeNull();
     expect(query('meetings-home-row-summary-icon')).toBeNull();
   });
 
   it('swaps the labelled buttons for icon-only ones with tooltips at a 900px container', async () => {
-    await render(row({ has_recording: true, has_ai_summary: true }));
+    await render(row({ has_recording: true, recording_share_url: SHARE_URL, has_ai_summary: true }));
 
     expect(query('meetings-home-row-artifacts')?.className).toContain('w-[74px]');
     expect(query('meetings-home-row-artifacts')?.className).toContain('@[901px]:w-[256px]');
+    expect(query('meetings-home-row-recording')?.className).toContain('hidden @[901px]:inline-flex');
+    expect(query('meetings-home-row-summary')?.className).toContain('hidden @[901px]:inline-block');
     for (const [testId, label] of [
       ['meetings-home-row-recording', 'Recording'],
       ['meetings-home-row-summary', 'AI Summary'],
     ]) {
-      expect(query(testId)?.className).toContain('hidden @[901px]:inline-block');
       expect(query(testId)?.textContent?.trim()).toBe(label);
       const icon = query(`${testId}-icon`);
       expect(icon?.className).toContain('@[901px]:hidden');
@@ -113,25 +108,25 @@ describe('MeetingHomeArtifactsComponent', () => {
     }
   });
 
-  it('fetches the recording on click and opens its dialog with the largest session', async () => {
-    const value = row({ has_recording: true });
-    await render(value);
+  it('opens the recording link from either Recording button without fetching it', async () => {
+    await render(row({ has_recording: true, recording_share_url: SHARE_URL }));
 
+    await click('ui-split-button-main');
     await click('meetings-home-row-recording-icon');
 
-    expect(getPastMeetingRecording).toHaveBeenCalledWith('synthetic-past-key');
-    expect(openRecording).toHaveBeenCalledWith(value, 'https://zoom.example/large');
+    expect(openRecording.mock.calls).toEqual([[SHARE_URL], [SHARE_URL]]);
   });
 
-  it('ignores clicks while the recording loads', async () => {
-    const pending$ = new Subject<PastMeetingRecording>();
-    getPastMeetingRecording.mockReturnValue(pending$);
-    await render(row({ has_recording: true }));
+  it('copies the recording link from the split half', async () => {
+    await render(row({ has_recording: true, recording_share_url: SHARE_URL }));
 
-    await click('meetings-home-row-recording');
-    await click('meetings-home-row-recording');
+    const copy = query('ui-split-button-secondary') as HTMLButtonElement;
+    copy.click();
+    await fixture.whenStable();
 
-    expect(getPastMeetingRecording).toHaveBeenCalledOnce();
+    expect(copy.getAttribute('aria-label')).toBe('Copy recording link');
+    expect(copyRecordingLink).toHaveBeenCalledWith(SHARE_URL);
+    expect(openRecording).not.toHaveBeenCalled();
   });
 
   it('fetches the summary on click and opens its dialog', async () => {
@@ -168,23 +163,21 @@ describe('MeetingHomeArtifactsComponent', () => {
     );
   });
 
-  it('shows an error toast when the recording is missing or fails to load', async () => {
+  it('shows an error toast when the summary is missing or fails to load', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    getPastMeetingRecording
+    getPastMeetingSummary
       .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })))
       .mockReturnValueOnce(throwError(() => new Error('boom')));
-    await render(row({ has_recording: true }));
+    await render(row({ has_ai_summary: true }));
 
-    await click('meetings-home-row-recording');
-    await click('meetings-home-row-recording');
+    await click('meetings-home-row-summary');
+    await click('meetings-home-row-summary');
 
-    expect(openRecording).not.toHaveBeenCalled();
-    expect(toastShow).toHaveBeenCalledTimes(2);
+    expect(openSummary).not.toHaveBeenCalled();
     expect(toastShow.mock.calls.map(([config]) => config.description)).toEqual([
-      "This recording isn't available yet.",
-      "We couldn't load this recording. Please try again.",
+      "This summary isn't available yet.",
+      "We couldn't load this summary. Please try again.",
     ]);
-    expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ message: 'Recording unavailable', position: 'bottom-center' }));
     expect(console.error).toHaveBeenCalledOnce();
   });
 });

@@ -155,12 +155,6 @@ export interface MeetingSummaryDialogData {
   onChange?: (summary: PastMeetingSummary) => void;
 }
 
-/** What the meetings home recording dialog opens with. */
-export interface MeetingRecordingDialogData {
-  row: MeetingHomeRow;
-  shareUrl: string;
-}
-
 /** What the meetings home edit scope dialog opens with. */
 export interface MeetingEditScopeDialogData {
   row: MeetingHomeRow;
@@ -179,7 +173,7 @@ export interface MeetingDeleteDialogData {
 
 /** A past meeting artifact a meetings home row loads on click, named for its error copy. */
 export interface MeetingHomeArtifact {
-  /** Lower-case name in messages, e.g. "recording". */
+  /** Lower-case name in messages, e.g. "summary". */
   noun: string;
   /** Name in a toast title, e.g. "AI Summary". */
   title: string;
