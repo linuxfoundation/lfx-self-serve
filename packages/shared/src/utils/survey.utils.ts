@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { COMBINED_SURVEY_STATUS, SURVEY_RESPONSE_FUNNEL_RANK } from '../constants/survey.constants';
+import { COMBINED_SURVEY_STATUS, SURVEY_EMAIL_BUTTON_HTML, SURVEY_RESPONSE_FUNNEL_RANK } from '../constants/survey.constants';
 import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
 import type {
   CombinedSurveyStatus,
@@ -9,6 +9,7 @@ import type {
   RenderedSurveyEmail,
   Survey,
   SurveyDisplayStatusInput,
+  SurveyEmailBodies,
   SurveyEmailRenderContext,
   SurveyEmailStages,
   SurveyEngagementRates,
@@ -390,4 +391,27 @@ export function getSurveyResyncScope(survey: Survey, projectUid: string | null |
   if (!projectUid) return null;
   const committeeUids = (survey.committees ?? []).filter((c) => c.project_uid === projectUid && !!c.committee_uid).map((c) => c.committee_uid);
   return committeeUids.length > 0 ? { committeeUids } : null;
+}
+
+/**
+ * Converts the user-facing `{{Variable}}` placeholders in survey email text
+ * into the Go template form (`{{.Variable}}`) required by the survey service.
+ * Placeholders that already use the dot form are left unchanged.
+ */
+export function toSurveyTemplateVariables(text: string): string {
+  return text.replace(/\{\{\s*(?:\.\s*)?(\w+)\s*\}\}/g, '{{.$1}}');
+}
+
+/**
+ * Builds the survey email bodies sent to the survey service.
+ * Expands `{{SurveyButton}}` (a link in the HTML body, the bare survey link in the text body)
+ * and converts every placeholder to the Go template form (`{{.Variable}}`).
+ */
+export function buildSurveyEmailBodies(body: string): SurveyEmailBodies {
+  const withButton = (replacement: string): string => body.replace(/\{\{\s*(?:\.\s*)?SurveyButton\s*\}\}/g, () => replacement);
+
+  return {
+    html: toSurveyTemplateVariables(`<!DOCTYPE html><html><body>${withButton(SURVEY_EMAIL_BUTTON_HTML)}</body></html>`),
+    text: toSurveyTemplateVariables(withButton('{{SurveyLink}}')),
+  };
 }

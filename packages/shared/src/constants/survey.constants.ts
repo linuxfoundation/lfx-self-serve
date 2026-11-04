@@ -245,6 +245,13 @@ export const SCHEDULE_SURVEY_CONFIRMATION = {
 } as const;
 
 /**
+ * HTML that replaces the `{{SurveyButton}}` placeholder in the survey email body
+ * @description Link button plus a copy-paste fallback; uses the user-facing `{{SurveyLink}}` form
+ */
+export const SURVEY_EMAIL_BUTTON_HTML =
+  '<a href="{{SurveyLink}}" class="cta-button">Take Survey</a><br><div><p>Button not visible? Copy and paste the following link into your browser instead:</p></div>\n<div>{{SurveyLink}}</div>';
+
+/**
  * Sample data for email preview
  * @description Sample values used to preview email templates
  */

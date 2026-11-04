@@ -452,6 +452,16 @@ export interface RenderedSurveyEmail {
 }
 
 /**
+ * Email bodies sent to the survey service when creating a survey
+ */
+export interface SurveyEmailBodies {
+  /** HTML body with Go template placeholders */
+  html: string;
+  /** Plain-text body with Go template placeholders */
+  text: string;
+}
+
+/**
  * Data handed to the sent-email dialog
  */
 export interface SurveySentEmailDialogData {
