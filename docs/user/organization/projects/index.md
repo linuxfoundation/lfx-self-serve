@@ -119,7 +119,7 @@ A workspace is a named list of projects that the Projects table shows. Workspace
 
 **All Projects with Activities** is the workspace every organization starts with. It is filled with up to 50 of the organization's projects, those with the most participating employees first. It cannot be deleted.
 
-If you can only view the organization and no one who can edit it has opened Projects for it yet, the table can say **No projects with activity yet** and **Projects will appear here once this organization has activity in the catalog.**
+When the organization has no recorded activity, the table says **No projects with activity yet** and **Projects will appear here once this organization has activity in the catalog.** Someone who is not one of the organization's Admins can also see this before any Admin has opened Projects, because an Admin's first visit is what fills **All Projects with Activities**.
 
 ## Who can manage workspaces and add projects?
 
