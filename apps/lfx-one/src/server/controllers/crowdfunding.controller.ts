@@ -238,7 +238,7 @@ export class CrowdfundingController {
       const { orgUid, pageSize, offset } = req.query;
       // Interpolated into the CF path, so it must be an 18-char b2b_org SFID.
       if (typeof orgUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
-        throw ServiceValidationError.forField('orgUid', 'orgUid must be an organization account id', { operation: 'get_org_donations' });
+        throw ServiceValidationError.forField('orgUid', 'orgUid must be a company account id', { operation: 'get_org_donations' });
       }
 
       const donations = await this.crowdfundingService.getOrgDonations(req, orgUid, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
