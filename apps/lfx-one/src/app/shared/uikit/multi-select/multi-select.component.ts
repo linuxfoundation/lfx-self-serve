@@ -279,9 +279,9 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
     return computed(() => {
       // Library recipe (same as Input): 1px ring at rest, stronger ring plus a 4px halo when focused or open (accent).
       const interactive =
-        'cursor-pointer hover:edge-hover focus-visible:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)] aria-expanded:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
+        'cursor-pointer hover:edge-control-hover focus-visible:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)] aria-expanded:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
       // A disabled field keeps the resting ring only, so it does not look interactive on hover.
-      const ring = this.isDisabled() ? 'edge cursor-not-allowed' : `edge ${interactive}`;
+      const ring = this.isDisabled() ? 'edge-control cursor-not-allowed' : `edge-control ${interactive}`;
       const fill = this.isDisabled() ? 'bg-ui-neutral-50 text-ui-neutral-500' : 'bg-ui-background-100 text-ui-neutral-900';
       // forced-colors: shadows vanish, so a real border keeps the field visible and an outline marks focus.
       const border = this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:CanvasText]';

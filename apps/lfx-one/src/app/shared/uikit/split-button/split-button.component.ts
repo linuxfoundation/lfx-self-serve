@@ -118,7 +118,7 @@ export class UiSplitButtonComponent {
       const variants = {
         primary:
           'border-transparent bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
-        secondary: '-ml-px border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
+        secondary: '-ml-px border-ui-neutral-alpha-300 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
       };
       // The glyph takes no pointer, so a click lands on the native disabled button, which never dispatches it.
       const disabled = '-ml-px cursor-not-allowed [&_*]:pointer-events-none border-ui-neutral-alpha-200 bg-ui-neutral-50 text-ui-neutral-500';

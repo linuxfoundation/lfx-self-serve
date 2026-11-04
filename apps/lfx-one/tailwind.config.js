@@ -80,7 +80,7 @@ import uiTokens from './scripts/ui-tokens/tokens.json' with { type: 'json' };
 // with Tailwind's palettes); `shadow-{border|small|medium|large|tooltip|menu|modal|fullscreen|focus}`;
 // `rounded-ui-{xs|sm|md|lg|full}`; `h-ui-{tiny|small|medium|large|menu-item|row}`; `duration-ui-{fast|base|slow}`;
 // `ease-ui` (spring), `ease-ui-standard`; `text-<role>` and `<role>` type
-// classes; `edge`, `edge-hover`. The 14px root font makes rem scale, so every size is a literal px value.
+// classes; `edge`, `edge-hover`, `edge-control`, `edge-control-hover`. The 14px root font makes rem scale, so every size is a literal px value.
 // Any `ui-<family>-<step>` colour token is picked up, so a new role family needs no change here.
 const uiVar = (name) => `var(${uiVarName(name)})`;
 const uiColors = {};
@@ -458,6 +458,9 @@ export default {
       addUtilities({
         '.edge': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-200')}` },
         '.edge-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
+        // Form fields (input, textarea, select, multi-select, combobox) use a stronger ring than cards.
+        '.edge-control': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
+        '.edge-control-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-400')}` },
         // cv11/ss01 for uikit text that sets a size without a type role.
         '.font-features-ui': { fontFeatureSettings: FONT_FEATURES_UI },
         // Library icon box (bundle.css `i[class*="fa-"]`): Font Awesome 7 sizes a glyph with --fa-width (1.25em); the library keeps 1em.
