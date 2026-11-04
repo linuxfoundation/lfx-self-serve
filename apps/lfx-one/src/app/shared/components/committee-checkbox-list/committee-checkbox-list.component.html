@@ -35,6 +35,14 @@
     appendTo="body"
     class="w-full"
     [attr.data-testid]="testIdPrefix() + '-select'">
+    <ng-template #item let-option>
+      <div class="flex w-full min-w-0 items-center justify-between gap-2">
+        <span class="truncate text-sm text-gray-900">{{ option.name }}</span>
+        @if (option.memberCount !== undefined) {
+          <span class="flex-shrink-0 text-xs text-gray-500">{{ option.memberCount }} participants</span>
+        }
+      </div>
+    </ng-template>
   </lfx-multi-select>
 
   <!-- Selection Summary -->

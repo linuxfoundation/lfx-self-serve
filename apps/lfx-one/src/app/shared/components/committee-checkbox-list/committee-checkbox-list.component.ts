@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, effect, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
@@ -56,13 +56,17 @@ export class CommitteeCheckboxListComponent {
 
   public constructor() {
     // Parent control -> dropdown (initial value, edit mode, programmatic changes)
-    effect(() => {
-      const ids = this.selectedItems().map((item) => item.id);
-      const control = this.selectionForm.controls.committeeIds;
-      if (!this.sameIds(control.value, ids)) {
-        control.setValue(ids, { emitEvent: false });
-      }
-    });
+    toObservable(this.selectedItems)
+      .pipe(
+        map((items) => items.map((item) => item.id)),
+        takeUntilDestroyed()
+      )
+      .subscribe((ids) => {
+        const control = this.selectionForm.controls.committeeIds;
+        if (!this.sameIds(control.value, ids)) {
+          control.setValue(ids, { emitEvent: false });
+        }
+      });
 
     // Dropdown -> parent control
     this.selectionForm.controls.committeeIds.valueChanges.pipe(takeUntilDestroyed()).subscribe((ids) => this.onSelectionChange(ids));
