@@ -441,7 +441,7 @@ export const MEETING_COMPOSER_PREVIEW_FEATURES: MeetingComposerPreviewFeature[] 
  * Where the composer's post-create uikit toast renders.
  * @description Not the app-wide top-right `p-toast` slot, where the composer's own partial-save warning
  * is emitted immediately before this success message, so the success toast could cover the warning that
- * matters more. Bottom-right also suits a sticky, action-bearing toast, which is conventionally a snackbar slot.
+ * matters more. Bottom-right also suits an action-bearing toast, which is conventionally a snackbar slot.
  */
 export const MEETING_COMPOSER_TOAST_POSITION = 'bottom-right';
 
