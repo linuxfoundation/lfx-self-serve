@@ -523,6 +523,9 @@ export const routes: Routes = [
         path: 'foundation/mentorship',
         title: 'Mentorship Programs',
         data: { lens: 'foundation' },
+        // The list, program and wizard share this parent, so a `?project=` change between them (Back/Forward to an older
+        // selection) must re-run projectQueryParamGuard, as on project/participating-orgs.
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_LENS_ROUTES),
       },
@@ -663,6 +666,8 @@ export const routes: Routes = [
         path: 'project/mentorship',
         title: 'Mentorship Programs',
         data: { lens: 'project' },
+        // As on foundation/mentorship: a `?project=` change between the list, program and wizard re-runs the guard.
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_LENS_ROUTES),
       },

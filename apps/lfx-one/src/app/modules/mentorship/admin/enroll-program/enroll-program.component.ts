@@ -701,11 +701,13 @@ export class EnrollProgramComponent {
    * program is for the lens's project: picked as soon as the lens resolves it, and again on each switch. In the Foundation
    * lens a switch clears the pick, which may be a sub-project of the previous foundation.
    *
-   * Once a create is in flight or the program exists, its project is fixed and the answers are locked, so a switch no
-   * longer moves it: a logo retry after a partial save still needs the project the program was created under.
+   * While a create is in flight or once the program exists, its project is fixed and the answers are locked, so a switch
+   * doesn't move it: a logo retry after a partial save still needs the project the program was created under. The stream
+   * pauses while pinned rather than skipping, so a create that fails unpins it and the latest lens project applies.
    */
   private followLensProject(): void {
-    toObservable(this.lensProject)
+    const pinned = computed(() => this.submitting() || this.programSaved());
+    toObservable(computed(() => (pinned() ? null : this.lensProject())))
       .pipe(
         filter((project): project is MentorshipLfProject => project !== null),
         distinctUntilChanged((previous, next) => previous.id === next.id),
@@ -713,7 +715,6 @@ export class EnrollProgramComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(({ project, index }) => {
-        if (this.submitting() || this.programSaved()) return;
         if (this.lens === 'project') this.pickProject(project);
         else if (this.lens === 'foundation' && index > 0) this.pickProject(null);
       });

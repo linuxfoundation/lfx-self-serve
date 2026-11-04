@@ -981,4 +981,33 @@ describe('EnrollProgramComponent — from a lens (lfx-mentorship#398)', () => {
     expect(component['form'].controls.projectId.value).toBe(PROJECT_UID);
     expect(component['selectedProject']()).toEqual(LENS_PROJECT);
   });
+
+  /** A lens switch while the create request is out, then that create fails: the answers unlock with no program saved. */
+  const switchDuringFailedCreate = async (uid: string, slug: string): Promise<void> => {
+    component['submitPhase'].set('creating');
+    await switchLensTo(uid, slug);
+    component['submitPhase'].set('failed');
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it('applies a Projects lens switch made during a create once that create fails', async () => {
+    await create('project');
+
+    await switchDuringFailedCreate('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other');
+
+    expect(component['form'].controls.projectId.value).toBe('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47');
+    expect(component['selectedProject']()?.id).toBe('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47');
+  });
+
+  it('clears a Foundation lens pick after a switch made during a create that fails', async () => {
+    await create('foundation');
+    component['form'].controls.projectId.setValue('sub-project-uid');
+    component['selectedProject'].set({ id: 'sub-project-uid', name: 'Sub', slug: 'sub' });
+
+    await switchDuringFailedCreate('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other-foundation');
+
+    expect(component['form'].controls.projectId.value).toBe('');
+    expect(component['selectedProject']()).toBeNull();
+  });
 });
