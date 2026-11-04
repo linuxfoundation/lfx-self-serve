@@ -202,6 +202,11 @@ describe('SurveyResyncDialogComponent', () => {
     expect(close).toHaveBeenCalledWith(true);
   });
 
+  it('says the survey is no longer available on a 404, not that the send is unconfirmed', async () => {
+    const { fixture } = await mount(throwError(() => new HttpErrorResponse({ status: 404 })));
+    expect(fixture.nativeElement.textContent).toContain('no longer available');
+  });
+
   it('says nothing was sent when the access check could not run', async () => {
     const { fixture } = await mount(throwError(() => new HttpErrorResponse({ status: 503, error: { code: SURVEY_FOLLOW_UP_PRECHECK_FAILED } })));
     fixture.detectChanges();

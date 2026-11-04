@@ -212,5 +212,6 @@ describe('SurveyResultsDrawerComponent', () => {
 
     pending.error(new Error('boom'));
     expect(component['responses']()).toEqual(ROWS);
+    expect(component['responsesLoadError']()).toBe(true);
   });
 });

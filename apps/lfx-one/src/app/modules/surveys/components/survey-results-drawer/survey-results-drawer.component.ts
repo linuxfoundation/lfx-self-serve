@@ -228,13 +228,15 @@ export class SurveyResultsDrawerComponent {
             this.responsesLoading.set(false);
             return of([] as SurveyResponseItem[]);
           }
-          // A reload after a follow-up keeps the current rows on screen (and on failure) until the new ones arrive.
+          // A reload after a follow-up keeps the current rows on screen until the new ones arrive. If it
+          // fails, the rows stay but are flagged as possibly incomplete (e.g. missing resynced recipients).
           if (isRefresh) {
             const current = this.responses();
             return this.surveyService.getAllSurveyResponses(id, projectUid ?? undefined).pipe(
               tap(() => this.responsesLoadError.set(false)),
               catchError((error) => {
                 console.error(`Failed to reload responses for survey ${id}:`, error);
+                this.responsesLoadError.set(true);
                 return of(current);
               })
             );
