@@ -626,7 +626,7 @@ describe('MentorshipService LFX profile sync', () => {
         profile_links: { githubProfileLink: 'https://github.com/test-user' },
       }
     );
-    expect(listIdentitiesSafe).toHaveBeenCalledWith(expect.anything(), 'auth0|test-user-1');
+    expect(listIdentitiesSafe).toHaveBeenCalledWith(expect.anything());
   });
 
   it('copies the GitHub link alone when nothing else resolves', async () => {
