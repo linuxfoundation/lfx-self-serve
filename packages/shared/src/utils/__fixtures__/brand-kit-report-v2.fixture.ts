@@ -7,8 +7,8 @@ import envelope from './brand-kit-report-v2.envelope.json';
 
 /**
  * The brand-kit agent's own v2 envelope, the computed 2.2.0 output its QA fixture holds: marketing-os-agents
- * `agents/brand-kit/qa/fixtures/report-v2/aaif-envelope.json` at 6f5ee8321d84d3d6ed67f3e3e4f462670e73bc7b,
- * sha256 ad704e0f52c71b8a6277459bde6f54c96cc575a96c601bbe042653d8f10662cd. The JSON beside this file is that blob
+ * `agents/brand-kit/qa/fixtures/report-v2/aaif-envelope.json` at 4dc32fddfed1296d8972e695ede1d45dac501133,
+ * sha256 4ee047d471c77e51f8332f530ff2990c44a9dfdb648d639766c2cee3d340beee. The JSON beside this file is that blob
  * byte for byte except `inputs.lfx_records[].uid`, replaced by a synthetic identifier of the same shape (the
  * source repository is private, this one is public). Its report carries the three findings groups (two failed
  * sources, four missing assets each with a fix, four warnings), one colour conflict and 47 rules over the v1 fields.

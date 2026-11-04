@@ -803,12 +803,7 @@ describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
     expect(report.findings?.sources_failed[0]).toMatchObject({ detail: 'HTTP 404' });
     expect(report.findings?.missing_assets.map((entry) => entry.asset)).toEqual(['logo_primary', 'logo_stacked', 'logo_symbol', 'logo_reversed']);
     expect(report.findings?.missing_assets.every((entry) => !!entry.fix)).toBe(true);
-    expect(report.findings?.warnings.map((entry) => entry.code)).toEqual([
-      'color_conflict',
-      'live_type_wordmark',
-      'palette_from_page_text',
-      'brand_page_guessed',
-    ]);
+    expect(report.findings?.warnings.map((entry) => entry.code)).toEqual(['color_conflict', 'palette_from_page_text', 'brand_page_guessed']);
     expect(report.color_conflicts?.map((entry) => [entry.name, entry.chosen])).toEqual([['Coral', '#FF702D']]);
     expect(report.color_conflicts?.flatMap((entry) => entry.values.map((value) => value.hex))).toEqual(['#FF702D', '#FF7D2D']);
     expect(report.rules).toHaveLength(47);

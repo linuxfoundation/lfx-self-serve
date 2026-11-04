@@ -410,7 +410,7 @@
       "missing_assets": [
         {
           "asset": "logo_primary",
-          "reason": "No logo file was uploaded and none could be read from the site, so the kit shows placeholder marks.",
+          "reason": "The site's header links a logo image (16dd7d8270b673d376cadca831ab3d5ea003bb89-838x203.svg) that was not read in this run, so the kit shows placeholder marks.",
           "fix": "Upload the logo package (the ZIP linked on aaif.io/brand) or the primary file in the form."
         },
         {
@@ -436,13 +436,8 @@
           "source": "https://aaif.io/_next/static/chunks/3tg274q-9atqx.css"
         },
         {
-          "code": "live_type_wordmark",
-          "text": "The site's pages were read but no logo artwork was found on them: the wordmark is probably set in live type, so a logo file must be uploaded.",
-          "source": "https://aaif.io/"
-        },
-        {
           "code": "palette_from_page_text",
-          "text": "Black, Coral and Lilac were read from the brand page's printed values, not from a stylesheet token or a logo file.",
+          "text": "Coral and Lilac were read from the brand page's printed values, not from a stylesheet token or a logo file.",
           "source": "https://aaif.io/brand"
         },
         {
@@ -629,10 +624,7 @@
       },
       {
         "path": "chapters.type.fallback",
-        "basis": "lf-reference",
-        "uses": [
-          "chapters.type.family"
-        ]
+        "basis": "project"
       },
       {
         "path": "chapters.type.summary",
