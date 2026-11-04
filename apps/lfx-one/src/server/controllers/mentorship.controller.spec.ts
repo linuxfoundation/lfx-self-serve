@@ -129,7 +129,8 @@ describe('MentorshipController enroll lookups', () => {
   let res: Response;
   let next: NextFunction;
 
-  const buildReq = (query: Record<string, string>): Request => ({ query }) as unknown as Request;
+  // Express parses a repeated query param into an array.
+  const buildReq = (query: Record<string, string | string[]>): Request => ({ query }) as unknown as Request;
 
   beforeEach(() => {
     controller = new MentorshipController();
