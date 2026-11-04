@@ -20,15 +20,18 @@ import {
 import {
   formatDuration,
   formatMeetingDateTime,
+  getMeetingGroupNames,
   getMeetingHomeRowLink,
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
+  getMeetingRecurrenceLabel,
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
 } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
@@ -41,7 +44,7 @@ import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-pro
 import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
 
 /**
- * One row of the meetings home list: date tile with visibility badges, project eyebrow, title and meta line.
+ * One row of the meetings home list: date tile with visibility badges, project eyebrow, title and two meta lines.
  * @description Clicking the row opens the meeting; the project eyebrow opens the project instead.
  */
 @Component({
@@ -53,6 +56,7 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
     MeetingProjectLogoComponent,
     MeetingRsvpControlsComponent,
     UiAvatarComponent,
+    UiBadgeComponent,
     UiButtonComponent,
     UiTooltipDirective,
   ],
@@ -84,6 +88,8 @@ export class MeetingHomeRowComponent {
   protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => getMeetingHomeRowProject(this.row().meeting));
   protected readonly when: Signal<string[]> = this.initWhen();
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
+  protected readonly groups: Signal<string[]> = computed(() => getMeetingGroupNames(this.row().meeting));
+  protected readonly recurrenceLabel: Signal<string | null> = computed(() => getMeetingRecurrenceLabel(this.row().meeting, this.row().occurrence));
   protected readonly recurrenceTooltip: Signal<string | null> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence));
   protected readonly attended: Signal<boolean> = this.initAttended();
   protected readonly organizers: Signal<MeetingHomeRowOrganizer[]> = computed(() =>

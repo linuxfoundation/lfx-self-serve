@@ -86,35 +86,24 @@ describe('MeetingHomeArtifactsComponent', () => {
 
     expect(query('ui-split-button-main')?.textContent?.trim()).toBe('Recording');
     expect(query('meetings-home-row-summary')).toBeNull();
-    expect(query('meetings-home-row-summary-icon')).toBeNull();
   });
 
-  it('swaps the labelled buttons for icon-only ones with tooltips at a 900px container', async () => {
+  it('keeps Recording and AI Summary labelled and 28px at every width', async () => {
     await render(row({ has_recording: true, recording_share_url: SHARE_URL, has_ai_summary: true }));
 
-    expect(query('meetings-home-row-artifacts')?.className).toContain('w-[74px]');
-    expect(query('meetings-home-row-artifacts')?.className).toContain('@[901px]:w-[256px]');
-    expect(query('meetings-home-row-recording')?.className).toContain('hidden @[901px]:inline-flex');
-    expect(query('meetings-home-row-summary')?.className).toContain('hidden @[901px]:inline-block');
-    for (const [testId, label] of [
-      ['meetings-home-row-recording', 'Recording'],
-      ['meetings-home-row-summary', 'AI Summary'],
-    ]) {
-      expect(query(testId)?.textContent?.trim()).toBe(label);
-      const icon = query(`${testId}-icon`);
-      expect(icon?.className).toContain('@[901px]:hidden');
-      expect(icon?.textContent?.trim()).toBe('');
-      expect(icon?.querySelector('button')?.getAttribute('aria-label')).toBe(label);
-    }
+    expect(query('meetings-home-row-recording')?.textContent?.trim()).toBe('Recording');
+    expect(query('meetings-home-row-summary')?.textContent?.trim()).toBe('AI Summary');
+    expect(query('ui-split-button-main')?.querySelector('button')?.className).toContain('h-ui-xsmall');
+    expect(query('meetings-home-row-summary')?.querySelector('button')?.className).toContain('h-ui-xsmall');
+    expect(fixture.nativeElement.querySelector('[data-testid$="-icon"]')).toBeNull();
   });
 
-  it('opens the recording link from either Recording button without fetching it', async () => {
+  it('opens the recording link from the Recording button without fetching it', async () => {
     await render(row({ has_recording: true, recording_share_url: SHARE_URL }));
 
     await click('ui-split-button-main');
-    await click('meetings-home-row-recording-icon');
 
-    expect(openRecording.mock.calls).toEqual([[SHARE_URL], [SHARE_URL]]);
+    expect(openRecording.mock.calls).toEqual([[SHARE_URL]]);
   });
 
   it('copies the recording link from the split half', async () => {

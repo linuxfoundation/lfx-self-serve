@@ -229,11 +229,11 @@ export function buildMeetingFilterChips(filters: MeetingsHomeFilters, rows: read
 }
 
 /**
- * Recurring tooltip copy, e.g. "Repeats weekly on Thursday" or "Repeats every 2 weeks on Wednesday".
+ * Recurrence label, e.g. "Weekly on Thursday" or "Every 2 weeks on Wednesday".
  * @description A weekly rule without days falls back to the start's weekday in the meeting's time zone.
  * Returns null for one-time meetings and rules with no describable cadence.
  */
-export function getMeetingRecurrenceTooltip(
+export function getMeetingRecurrenceLabel(
   meeting: Pick<Meeting, 'recurrence' | 'start_time' | 'timezone'>,
   occurrence?: MeetingOccurrence | null
 ): string | null {
@@ -245,9 +245,16 @@ export function getMeetingRecurrenceTooltip(
     pattern.weeklyDaysArray = [getWeekdayIndex(occurrence?.start_time ?? meeting.start_time, meeting.timezone)];
   }
 
-  const { description } = buildRecurrenceSummary(pattern);
-  if (!description) return null;
-  return `Repeats ${description.charAt(0).toLowerCase()}${description.slice(1)}`;
+  return buildRecurrenceSummary(pattern).description || null;
+}
+
+/** Recurring tooltip copy, e.g. "Repeats weekly on Thursday" or "Repeats every 2 weeks on Wednesday"; null like the label. */
+export function getMeetingRecurrenceTooltip(
+  meeting: Pick<Meeting, 'recurrence' | 'start_time' | 'timezone'>,
+  occurrence?: MeetingOccurrence | null
+): string | null {
+  const label = getMeetingRecurrenceLabel(meeting, occurrence);
+  return label ? `Repeats ${label.charAt(0).toLowerCase()}${label.slice(1)}` : null;
 }
 
 /**

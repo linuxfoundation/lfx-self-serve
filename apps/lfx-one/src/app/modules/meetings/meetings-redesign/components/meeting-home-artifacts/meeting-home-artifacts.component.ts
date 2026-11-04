@@ -19,7 +19,7 @@ import { MeetingsHomeStore } from '../../services/meetings-home.store';
 /**
  * Recording and AI Summary buttons of a past meetings home row, each shown only when the past feed has it.
  * @description Recording opens the feed's share link in a new tab, and its split half copies it. AI Summary fetches the
- * summary on click and opens its dialog. In a centre column of 900px or less they collapse to icon-only buttons with tooltips.
+ * summary on click and opens its dialog. Both stay labelled at every width.
  */
 @Component({
   selector: 'lfx-meeting-home-artifacts',

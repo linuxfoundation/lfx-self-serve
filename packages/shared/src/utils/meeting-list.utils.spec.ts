@@ -23,6 +23,7 @@ import {
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingProjectUrl,
+  getMeetingRecurrenceLabel,
   getMeetingRecurrenceTooltip,
   getMeetingRsvpScopeLabel,
   getMeetingStartsInLabel,
@@ -502,6 +503,22 @@ describe('getMeetingGroupNames', () => {
 
     expect(getMeetingGroupNames({ committees })).toEqual(['TOC', 'Security WG']);
     expect(getMeetingGroupNames({ committees: [] })).toEqual([]);
+  });
+});
+
+describe('getMeetingRecurrenceLabel', () => {
+  const base = { start_time: '2026-10-01T13:30:00Z', timezone: 'America/Los_Angeles' };
+
+  it('names the cadence without the "Repeats" prefix', () => {
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: WEEKLY })).toBe('Weekly on Thursday');
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 2, weekly_days: '2' } })).toBe(
+      'Every 2 weeks on Monday'
+    );
+  });
+
+  it('returns null for one-time meetings', () => {
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: null })).toBeNull();
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: { ...WEEKLY, end_times: 1 } })).toBeNull();
   });
 });
 

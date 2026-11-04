@@ -1,50 +1,31 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Exact [Npx] design values: a 256px block, 74px in a centre column of 900px or less; the page's centre is the @container. -->
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 @if (recordingUrl() || hasSummary()) {
-  <div class="-mr-[4px] flex w-[74px] flex-none items-center justify-end gap-[10px] @[901px]:w-[256px]" data-testid="meetings-home-row-artifacts">
+  <div class="flex flex-none items-center gap-[6px]" data-testid="meetings-home-row-artifacts">
     @if (recordingUrl(); as recordingUrl) {
       <lfx-ui-split-button
-        class="hidden @[901px]:inline-flex"
         label="Recording"
         variant="secondary"
+        size="small"
         icon="fa-light fa-circle-play"
         secondaryIcon="fa-light fa-link"
         secondaryTooltip="Copy recording link"
         (triggered)="openRecording(recordingUrl)"
         (secondaryTriggered)="copyRecordingLink(recordingUrl)"
         data-testid="meetings-home-row-recording" />
-      <lfx-ui-button
-        class="@[901px]:hidden"
-        variant="secondary"
-        icon="fa-light fa-circle-play"
-        ariaLabel="Recording"
-        lfxUiTooltip="Recording"
-        iconOnly
-        (click)="openRecording(recordingUrl)"
-        data-testid="meetings-home-row-recording-icon" />
     }
     @if (hasSummary()) {
       <lfx-ui-button
-        class="hidden @[901px]:inline-block"
         variant="secondary"
+        size="small"
         icon="fa-light fa-sparkles"
         [loading]="loadingSummary()"
         (click)="openSummary()"
         data-testid="meetings-home-row-summary">
         AI Summary
       </lfx-ui-button>
-      <lfx-ui-button
-        class="@[901px]:hidden"
-        variant="secondary"
-        icon="fa-light fa-sparkles"
-        ariaLabel="AI Summary"
-        lfxUiTooltip="AI Summary"
-        iconOnly
-        [loading]="loadingSummary()"
-        (click)="openSummary()"
-        data-testid="meetings-home-row-summary-icon" />
     }
   </div>
 }
