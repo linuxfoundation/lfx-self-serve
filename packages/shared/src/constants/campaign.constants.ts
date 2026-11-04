@@ -1926,12 +1926,16 @@ export const GOOGLE_ADS_SCHEDULE_TIME_OPTIONS = Array.from({ length: 24 * 4 + 1 
 /**
  * Google's documented bid-adjustment range for an ad schedule or device criterion
  * (`campaign_criteria.go`'s `minBidModifier` / `maxBidModifier`): a multiplier of 0.1 through 10.0,
- * which is -90%..+900%.
+ * which is -90%..+900% (Google's "About bid adjustments",
+ * https://support.google.com/google-ads/answer/2732132).
  *
- * 0 is NOT below the minimum — it is the -100% "do not serve here at all" opt-out, and it sits
- * outside the range above rather than at its bottom end: upstream accepts it on its own, before the
- * range is ever tested. What upstream refuses is a value strictly between 0 and the minimum, so a
- * guard that simply tested `value < 0.1` would refuse the opt-out every day-parted campaign uses.
+ * On a DEVICE, 0 is NOT below the minimum — it is the -100% "do not serve on this device" exclusion,
+ * and it sits outside the range above rather than at its bottom end: upstream accepts it on its own,
+ * before the range is ever tested, and a device guard that simply tested `value < 0.1` would refuse
+ * the exclusion. On an AD SCHEDULE it is below the minimum: Google's `CampaignCriterion` contract
+ * reserves 0 for device exclusions and takes only 0.1 through 10.0 on a schedule, so
+ * `googleAdScheduleRefusal` refuses it even though campaign-service's shared `validateBidModifier`
+ * would forward it (#5088 review). A window is switched off by leaving it out of the schedule.
  */
 export const GOOGLE_ADS_MIN_BID_MODIFIER = 0.1;
 export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
@@ -2075,6 +2079,27 @@ export const GOOGLE_ADS_AGE_RANGES = Object.keys(GOOGLE_ADS_AGE_RANGE_MAP).filte
  * `UNDETERMINED` is a member for the same reason it is one in {@link GOOGLE_ADS_AGE_RANGE_MAP}.
  */
 export const GOOGLE_ADS_GENDERS = ['MALE', 'FEMALE', 'UNDETERMINED'] as const;
+
+/**
+ * What the Implementation tab's demographic exclusion checkboxes call each friendly
+ * {@link GOOGLE_ADS_AGE_RANGES} spelling, in Google's own words. `UNDETERMINED` is Google's "Unknown".
+ */
+export const GOOGLE_ADS_AGE_RANGE_LABELS: Readonly<Record<string, string>> = {
+  '18-24': '18 to 24',
+  '25-34': '25 to 34',
+  '35-44': '35 to 44',
+  '45-54': '45 to 54',
+  '55-64': '55 to 64',
+  '65+': '65 or more',
+  UNDETERMINED: 'Unknown',
+};
+
+/** What the Implementation tab's demographic exclusion checkboxes call each {@link GOOGLE_ADS_GENDERS} value. */
+export const GOOGLE_ADS_GENDER_LABELS = {
+  MALE: 'Male',
+  FEMALE: 'Female',
+  UNDETERMINED: 'Unknown',
+} as const;
 
 /**
  * Upstream's own bound on a Google Ads callout list (`assets.go`'s `maxCallouts`).
@@ -4958,6 +4983,41 @@ export const GOOGLE_BIDDING_ROAS_STRATEGIES = ['maximize-conversion-value', 'tar
  * the label whose whole content is the number — and upstream refuses it by name.
  */
 export const GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES = ['target-cpa', 'target-roas'] as const;
+
+/**
+ * The strategies under which Google Ads does not apply a device bid adjustment, apart from a -100%
+ * device exclusion: Maximize Conversions, Maximize Conversion Value and Target ROAS (Google's "About
+ * bid adjustments", https://support.google.com/google-ads/answer/2732132). Target CPA is NOT here:
+ * Google applies a device adjustment there as an adjustment of the device's CPA target
+ * (https://support.google.com/google-ads/answer/6268632), so a device adjustment is withheld under it
+ * only by campaign-service's Manual-CPC-only rule (`validateBiddingPlan`), as under Maximize Clicks.
+ * Names which of the two reasons `googleDeviceAdjustmentNotSentSentence` gives. Not the ad-schedule
+ * rule, which is {@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES} and refuses Target CPA as well.
+ */
+export const GOOGLE_DEVICE_ADJUSTMENT_IGNORED_STRATEGIES = [
+  'maximize-conversions',
+  'maximize-conversion-value',
+  'target-roas',
+] as const satisfies readonly (typeof GOOGLE_BIDDING_STRATEGIES)[number][];
+
+/**
+ * The strategies under which Google Ads applies an ad-schedule bid adjustment: Manual CPC and
+ * Maximize Clicks. Google's "About bid adjustments"
+ * (https://support.google.com/google-ads/answer/2732132) lists Maximize Clicks as honouring ad
+ * schedule adjustments, and Smart Bidding (Maximize Conversions, Target CPA, Maximize Conversion
+ * Value, Target ROAS) as not supporting them.
+ *
+ * Under Smart Bidding Google stores a schedule's bid modifier and does not bid it, so a window
+ * adjusted under one of them would report a successful create and never bid differently.
+ * campaign-service accepts such a modifier (its `validateBiddingPlan` refuses only device
+ * adjustments), so LFX One refuses it in `googleAdScheduleRefusal`, which the Implementation tab and
+ * the BFF both judge by. The windows themselves are honoured under every strategy; only the
+ * percentage is held.
+ */
+export const GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES = [
+  'manual-cpc',
+  'maximize-clicks',
+] as const satisfies readonly (typeof GOOGLE_BIDDING_STRATEGIES)[number][];
 
 /**
  * The channels that accept a conversion-action list at create time.

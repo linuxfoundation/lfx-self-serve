@@ -11,19 +11,28 @@ import {
   GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY,
   GOOGLE_ADS_MAX_BID_MODIFIER,
   GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
   GOOGLE_ADS_MIN_BID_MODIFIER,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
+  GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
+  GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_DEVICE_ADJUSTMENT_IGNORED_STRATEGIES,
   googleAdsEchoed,
   googleAdsTrimSpace,
   isCanonicalGoogleAdsResourceId,
 } from '../constants/campaign.constants';
-import type { GoogleCampaignChannel, NormalizedGoogleAdSchedule, NormalizedGoogleDeviceBidModifier } from '../interfaces/campaign.interface';
+import type {
+  GoogleBiddingStrategy,
+  GoogleCampaignChannel,
+  NormalizedGoogleAdSchedule,
+  NormalizedGoogleDeviceBidModifier,
+} from '../interfaces/campaign.interface';
 
 /**
  * Google campaign-level criteria — ad schedules, device bid modifiers, demographic exclusions and
@@ -80,18 +89,19 @@ export function googleUpperCodeList(raw: unknown): string[] {
 }
 
 /**
- * Why upstream would refuse one bid modifier, or `null` when it would not. Mirrors
- * `validateBidModifier`'s branches in order: finite, then the 0 opt-out, then the range. One
- * helper for both callers because upstream calls the one `validateBidModifier` from both
- * `validateAdSchedules` and `validateDeviceBidModifiers`.
+ * Why upstream would refuse one DEVICE bid modifier, or `null` when it would not. Mirrors
+ * `validateBidModifier`'s branches in order: finite, then the 0 exclusion, then the range.
  *
- * 0 RETURNS EARLY and is accepted. It is not a value below the minimum but the -100% opt-out —
- * "do not serve here at all" — which is how a day-parted campaign switches off the hours it does
- * not want, and how a campaign stops serving on tablets. A guard that tested the range first would
- * refuse the one modifier such a campaign is certain to carry.
+ * 0 RETURNS EARLY and is accepted. On a device it is not a value below the minimum but the -100%
+ * exclusion — "do not serve on this device at all" — which is how a campaign stops serving on
+ * tablets. A guard that tested the range first would refuse the one modifier such a campaign is
+ * certain to carry.
  *
- * `noun` names the entry the caller wrote — an ad schedule or a device bid modifier — so the
- * message points at it rather than at the number.
+ * Not used for ad schedules, although upstream's `validateAdSchedules` calls the same
+ * `validateBidModifier`: Google reserves 0 for device exclusions and refuses it on a schedule, so
+ * {@link googleAdScheduleBidModifierRefusal} judges a schedule's modifier with the range alone.
+ *
+ * `noun` names the entry the caller wrote, so the message points at it rather than at the number.
  */
 export function googleBidModifierRefusal(noun: string, modifier: number): string | null {
   if (!Number.isFinite(modifier)) {
@@ -105,7 +115,71 @@ export function googleBidModifierRefusal(noun: string, modifier: number): string
 }
 
 /**
- * Why upstream would refuse a normalized ad-schedule LIST, or `null` when it would not.
+ * Why Google would refuse one AD SCHEDULE bid modifier, or `null` when it would not: a finite number
+ * from {@link GOOGLE_ADS_MIN_BID_MODIFIER} to {@link GOOGLE_ADS_MAX_BID_MODIFIER} (-90% to +900%).
+ *
+ * Narrower than {@link googleBidModifierRefusal} by exactly one value, 0. campaign-service's
+ * `validateBidModifier` accepts 0 for a schedule as it does for a device and forwards it, but
+ * Google's `CampaignCriterion` contract takes 0.1 to 10.0 on an ad schedule and reserves 0 for a
+ * device exclusion, so a -100% window would fail the criteria mutate after the budget exists (#5088
+ * review). The way to stop serving at a time is to remove that window while keeping another — with
+ * windows the campaign serves only in them, with none it serves around the clock — and the refusal
+ * says so.
+ */
+export function googleAdScheduleBidModifierRefusal(noun: string, modifier: number): string | null {
+  if (!Number.isFinite(modifier)) return googleBidModifierRefusal(noun, modifier);
+  if (modifier >= GOOGLE_ADS_MIN_BID_MODIFIER && modifier <= GOOGLE_ADS_MAX_BID_MODIFIER) return null;
+  const zero =
+    modifier === 0
+      ? ' A bid modifier of 0 excludes a device, not an ad schedule. To stop serving at that time, remove this window and keep at least one other: with windows, the campaign serves only in them; with none, it serves around the clock.'
+      : '';
+  return `The Google Ads ${noun} has a bid modifier of ${modifier}. Google accepts ${GOOGLE_ADS_MIN_BID_MODIFIER} to ${GOOGLE_ADS_MAX_BID_MODIFIER} on an ad schedule (${googleBidAdjustmentRangeText()}).${zero} Fix it and create again.`;
+}
+
+/**
+ * Google's bid-adjustment range as an operator reads it, "-90% to +900%", derived from
+ * {@link GOOGLE_ADS_MIN_BID_MODIFIER} and {@link GOOGLE_ADS_MAX_BID_MODIFIER} through
+ * {@link googleBidAdjustmentPercent}, so the refusals and the Implementation tab's hints cannot drift
+ * from the bounds they describe.
+ */
+export function googleBidAdjustmentRangeText(): string {
+  return `${googleBidAdjustmentPercent(GOOGLE_ADS_MIN_BID_MODIFIER)}% to +${googleBidAdjustmentPercent(GOOGLE_ADS_MAX_BID_MODIFIER)}%`;
+}
+
+/**
+ * The strategies this client offers on `channel` under which Google applies an ad-schedule bid
+ * adjustment ({@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES} that
+ * {@link GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL} lists there), so a refusal or hint only suggests a
+ * strategy the operator can pick: both on Search, Maximize Clicks on Display, none on Performance
+ * Max or Video. None on Demand Gen either, although it offers Maximize Clicks: it takes no ad
+ * schedules at all ({@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}), and upstream refuses a Demand Gen
+ * schedule modifier whatever the strategy.
+ */
+export function googleScheduleAdjustmentStrategiesOn(channel: GoogleCampaignChannel): GoogleBiddingStrategy[] {
+  if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(channel)) return [];
+  const offered = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel] as readonly GoogleBiddingStrategy[];
+  return GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES.filter((strategy) => offered.includes(strategy));
+}
+
+/** Whether Google applies an ad-schedule bid adjustment under the effective `strategy`. */
+export function googleStrategyTakesScheduleAdjustments(strategy: string): boolean {
+  return (GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES as readonly string[]).includes(strategy);
+}
+
+/**
+ * The one sentence that says why an ad-schedule bid adjustment is not sent under `strategyLabel`:
+ * Google Ads would store it and ignore it, so LFX One refuses it rather than lose it silently. Shared
+ * by the refusal below and the Implementation tab's hint and held notice, so the three say the same,
+ * as {@link googleDeviceAdjustmentNotSentSentence} is for devices.
+ */
+export function googleScheduleAdjustmentIgnoredSentence(strategyLabel: string): string {
+  const takes = GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES.map((strategy) => GOOGLE_BIDDING_STRATEGY_LABELS[strategy]).join(' or ');
+  return `Google Ads applies an ad schedule bid adjustment only under ${takes}. Under ${strategyLabel} it would ignore it, so LFX One doesn't send one.`;
+}
+
+/**
+ * Why upstream would refuse a normalized ad-schedule LIST under the effective bidding `strategy`,
+ * or `null` when it would not.
  *
  * A list-level guard rather than a per-entry one like the BFF's radius-target refusal, because
  * three of `validateAdSchedules`' branches are about an entry's relationship to the ones before
@@ -124,10 +198,20 @@ export function googleBidModifierRefusal(noun: string, modifier: number): string
  * test would refuse the ordinary split-day schedule, which is the over-refusal these mirrors exist
  * to avoid.
  *
+ * THEN the strategy, in a second pass over the whole list, so every entry's own refusal wins first,
+ * as {@link googleDeviceBidModifierRefusal} orders its strategy pass. Any PRESENT modifier is refused
+ * unless {@link googleStrategyTakesScheduleAdjustments} — 1, the 0% adjustment, included, since
+ * Google would store it and ignore it all the same. Upstream makes no such refusal: campaign-service
+ * forwards a schedule modifier under every strategy and Google silently ignores it under Smart
+ * Bidding. LFX One refuses it in this one judge, so the tab and the BFF agree, rather than let a
+ * create report an adjustment that is never bid (#5088 review). A window with NO modifier is accepted
+ * under every strategy. `strategy` is the EFFECTIVE one ({@link googleEffectiveBiddingStrategy});
+ * `channel` decides only the wording, through {@link googleScheduleAdjustmentStrategiesOn}.
+ *
  * `index` is reported from 1 so it matches what an operator counts; upstream's own message numbers
  * from 0.
  */
-export function googleAdScheduleRefusal(schedules: NormalizedGoogleAdSchedule[]): string | null {
+export function googleAdScheduleRefusal(schedules: NormalizedGoogleAdSchedule[], strategy: string, channel: GoogleCampaignChannel): string | null {
   // Accepted intervals per normalized day, as minutes of the day — the form both the overlap test
   // and the empty-window check compare in, so 24:00 is 1440 and sorts after every real end.
   const perDay = new Map<string, { start: number; end: number }[]>();
@@ -168,7 +252,7 @@ export function googleAdScheduleRefusal(schedules: NormalizedGoogleAdSchedule[])
       return `The Google Ads ${shown} ends at ${googleAdsClockTime(24, schedule.endMinute)}, past the end of the day. End hour 24 takes only minute 0, so fix it and create again.`;
     }
     if (schedule.bidModifier !== undefined) {
-      const refusal = googleBidModifierRefusal(shown, schedule.bidModifier);
+      const refusal = googleAdScheduleBidModifierRefusal(shown, schedule.bidModifier);
       if (refusal) return refusal;
     }
 
@@ -196,6 +280,18 @@ export function googleAdScheduleRefusal(schedules: NormalizedGoogleAdSchedule[])
     accepted.push({ start, end });
     perDay.set(day, accepted);
     seen.set(key, schedule.bidModifier);
+  }
+  if (googleStrategyTakesScheduleAdjustments(strategy)) return null;
+  for (const [index, schedule] of schedules.entries()) {
+    if (schedule.bidModifier !== undefined) {
+      const named = GOOGLE_BIDDING_STRATEGY_LABELS[strategy as keyof typeof GOOGLE_BIDDING_STRATEGY_LABELS] ?? googleAdsEchoed(strategy);
+      const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
+      const fix =
+        offered.length > 0
+          ? `Clear its bid adjustment, or bid with ${offered.join(' or ')}, then create again.`
+          : 'Clear its bid adjustment, then create again.';
+      return `The Google Ads ad schedule ${index + 1} has a bid modifier of ${schedule.bidModifier}. ${googleScheduleAdjustmentIgnoredSentence(named)} ${fix}`;
+    }
   }
   return null;
 }
@@ -226,12 +322,25 @@ export function googleChannelOffersManualCpc(channel: GoogleCampaignChannel): bo
 }
 
 /**
- * The one sentence that says why a device bid adjustment is not sent under `strategyLabel`: Google
- * Ads would accept it and ignore it, so LFX One refuses it rather than lose it silently. Shared by
- * the refusal below and the Implementation tab's hint and held notice, so the three say the same.
+ * The one sentence that says why a device bid adjustment is not sent under the effective `strategy`.
+ * Shared by the refusal below and the Implementation tab's hint and held notice, so the three say the
+ * same.
+ *
+ * Two different reasons, and the sentence must not merge them. Under Maximize Conversions, Maximize
+ * Conversion Value and Target ROAS ({@link GOOGLE_DEVICE_ADJUSTMENT_IGNORED_STRATEGIES}) Google Ads
+ * itself does not apply a device bid adjustment, except a -100% exclusion. Under Maximize Clicks Google
+ * DOES apply it (Google's "About bid adjustments", https://support.google.com/google-ads/answer/2732132),
+ * and under Target CPA it applies it to the device's CPA target
+ * (https://support.google.com/google-ads/answer/6268632); it is campaign-service's `validateBiddingPlan`,
+ * which takes a device adjustment only under Manual CPC, that refuses it there, so saying Google would
+ * ignore it would be false. An unknown name gets the second, policy wording.
  */
-export function googleDeviceAdjustmentIgnoredSentence(strategyLabel: string): string {
-  return `Google Ads applies a device bid adjustment only under ${GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc']}. Under ${strategyLabel} it would ignore it, so LFX One doesn't send one.`;
+export function googleDeviceAdjustmentNotSentSentence(strategy: string): string {
+  const named = GOOGLE_BIDDING_STRATEGY_LABELS[strategy as keyof typeof GOOGLE_BIDDING_STRATEGY_LABELS] ?? googleAdsEchoed(strategy);
+  if ((GOOGLE_DEVICE_ADJUSTMENT_IGNORED_STRATEGIES as readonly string[]).includes(strategy)) {
+    return `Google Ads doesn't apply a device bid adjustment under ${named}, except a -100% exclusion, so LFX One doesn't send one.`;
+  }
+  return `LFX One sends a device bid adjustment only under ${GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc']}, so it doesn't send one under ${named}.`;
 }
 
 /**
@@ -249,9 +358,11 @@ export function googleDeviceAdjustmentIgnoredSentence(strategyLabel: string): st
  *
  * THEN the strategy, in a second pass over the whole list, because upstream runs it later and
  * separately: `validateCriteriaPlan` judges every entry before `validateBiddingPlan` refuses any
- * NON-ZERO modifier while the strategy is anything but `manual-cpc`. Google itself would accept such
- * an adjustment and silently ignore it under automated bidding; campaign-service refuses it so it is
- * not lost without a word, and so does this. Non-zero includes `1`, the 0% adjustment the device
+ * NON-ZERO modifier while the strategy is anything but `manual-cpc`. Under Maximize Conversions,
+ * Maximize Conversion Value and Target ROAS Google itself would accept such an adjustment and not
+ * apply it; under Maximize Clicks Google applies it, and under Target CPA it applies it to the CPA
+ * target, so there the refusal is campaign-service's Manual-CPC-only policy. This mirrors that policy, and
+ * {@link googleDeviceAdjustmentNotSentSentence} says which of the two reasons applies. Non-zero includes `1`, the 0% adjustment the device
  * control starts at, so "Adjust bid" left at 0% is refused too. `0` is not: it is the device
  * exclusion, which Google honours under automated bidding, so refusing it would stop a create
  * upstream accepts. `strategy` is the EFFECTIVE one — the caller resolves an omitted strategy to the
@@ -285,12 +396,11 @@ export function googleDeviceBidModifierRefusal(devices: NormalizedGoogleDeviceBi
   if (strategy === 'manual-cpc') return null;
   for (const [index, entry] of devices.entries()) {
     if (entry.bidModifier !== undefined && entry.bidModifier !== 0) {
-      const named = GOOGLE_BIDDING_STRATEGY_LABELS[strategy as keyof typeof GOOGLE_BIDDING_STRATEGY_LABELS] ?? googleAdsEchoed(strategy);
       const manual = GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc'];
       const fix = googleChannelOffersManualCpc(channel)
         ? `Set it to 0 to exclude the device, remove it, or bid with ${manual}, then create again.`
         : 'Set it to 0 to exclude the device or remove it, then create again.';
-      return `The Google Ads device bid modifier ${index + 1} gives ${googleAdsTrimSpace(entry.device).toUpperCase()} a bid modifier of ${entry.bidModifier}. ${googleDeviceAdjustmentIgnoredSentence(named)} ${fix}`;
+      return `The Google Ads device bid modifier ${index + 1} gives ${googleAdsTrimSpace(entry.device).toUpperCase()} a bid modifier of ${entry.bidModifier}. ${googleDeviceAdjustmentNotSentSentence(strategy)} ${fix}`;
     }
   }
   return null;
@@ -342,6 +452,20 @@ export function googleDemographicExclusionRefusal(
     if (refusal) return refusal;
   }
   return null;
+}
+
+/**
+ * Why upstream would refuse the excluded age range list, or `null`: {@link googleDemographicExclusionRefusal}
+ * with the age-range nouns and vocabulary. One call for the BFF and the Implementation tab, so the
+ * message text is written once.
+ */
+export function googleExcludedAgeRangesRefusal(raw: unknown, channel: unknown): string | null {
+  return googleDemographicExclusionRefusal(raw, 'excluded age ranges', 'age range names', channel, googleExcludedAgeRangeRefusal);
+}
+
+/** Why upstream would refuse the excluded gender list, or `null`: the gender half of {@link googleExcludedAgeRangesRefusal}. */
+export function googleExcludedGendersRefusal(raw: unknown, channel: unknown): string | null {
+  return googleDemographicExclusionRefusal(raw, 'excluded genders', 'gender names', channel, googleExcludedGenderRefusal);
 }
 
 /**
@@ -434,8 +558,27 @@ export function googleExcludedGeoClashRefusal(targeted: readonly string[], exclu
 }
 
 /**
+ * Why upstream would refuse a normalized EXCLUDED geo list sent beside a normalized TARGETED one, or
+ * `null`. `validateGeoPlan`'s exclusion steps in its order: the cap on the submitted length (per list,
+ * and before any repeat is collapsed — see {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}), then each
+ * entry with the first bad one winning ({@link googleExcludedGeoRefusal}), then the clash
+ * ({@link googleExcludedGeoClashRefusal}). No channel fence: upstream applies none to exclusions.
+ */
+export function googleExcludedGeoListRefusal(excluded: readonly string[], targeted: readonly string[]): string | null {
+  if (excluded.length > GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS) {
+    return `Google Ads accepts at most ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} excluded locations on one campaign, and this one has ${excluded.length}. Remove some and create again.`;
+  }
+  for (const entry of excluded) {
+    const refusal = googleExcludedGeoRefusal(entry);
+    if (refusal) return refusal;
+  }
+  return googleExcludedGeoClashRefusal(targeted, excluded);
+}
+
+/**
  * A bid adjustment written as a percentage, as Google's own UI shows it, turned into the bid
- * modifier the request carries: -20% is 0.8, +50% is 1.5 and -100% is 0, the do-not-serve opt-out.
+ * modifier the request carries: -20% is 0.8, +50% is 1.5 and -100% is 0 — a device exclusion, and a
+ * value `googleAdScheduleRefusal` refuses on an ad schedule, whose lowest adjustment is -90% (0.1).
  * Rounded to a whole percentage, so the modifier never carries float noise such as 0.7999999.
  */
 export function googleBidModifierFromPercent(percent: number): number {

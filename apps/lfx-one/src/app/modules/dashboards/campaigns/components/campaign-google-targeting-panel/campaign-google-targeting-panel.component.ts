@@ -1,13 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model, Signal } from '@angular/core';
+import { afterNextRender, Component, computed, ElementRef, inject, Injector, input, model, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   GOOGLE_ADS_DEVICE_LABELS,
+  GOOGLE_ADS_MAX_BID_MODIFIER,
   GOOGLE_ADS_DEVICES,
   GOOGLE_ADS_MAX_AD_SCHEDULES,
   GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY,
+  GOOGLE_ADS_MIN_BID_MODIFIER,
   GOOGLE_ADS_SCHEDULE_DAY_LABELS,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_TIME_OPTIONS,
@@ -27,7 +29,7 @@ import type {
   GoogleDeviceBidMode,
   GoogleDeviceBidRowView,
 } from '@lfx-one/shared/interfaces';
-import { googleBidAdjustmentPercent, googleBidModifierFromPercent, joinAsSentenceList } from '@lfx-one/shared/utils';
+import { googleBidAdjustmentPercent, googleBidAdjustmentRangeText, googleBidModifierFromPercent, joinAsSentenceList } from '@lfx-one/shared/utils';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 
@@ -50,10 +52,20 @@ import { UiSelectComponent } from '@shared/uikit/select/select.component';
   templateUrl: './campaign-google-targeting-panel.component.html',
 })
 export class CampaignGoogleTargetingPanelComponent {
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+
   public readonly showAdSchedules = input.required<boolean>();
   public readonly showDevices = input.required<boolean>();
   public readonly adSchedulesError = input<string | null>(null);
   public readonly devicesError = input<string | null>(null);
+  /**
+   * Why a window offers no Bid adjustment box, or `null` while it does: the tab's sentence for an
+   * effective bidding strategy Google ignores schedule adjustments under (anything but Manual CPC and
+   * Maximize Clicks). The windows stay editable. A window already adjusted keeps its value read-only,
+   * held, with a Clear button.
+   */
+  public readonly scheduleAdjustBlockedReason = input<string | null>(null);
   /**
    * Why Adjust bid is not offered, or `null` while it is: the tab's sentence for an effective bidding
    * strategy other than Manual CPC, under which campaign-service refuses a non-zero device modifier.
@@ -65,6 +77,10 @@ export class CampaignGoogleTargetingPanelComponent {
   public readonly deviceBidModifiers = model.required<CampaignDeviceBidModifier[]>();
 
   protected readonly maxAdSchedules = GOOGLE_ADS_MAX_AD_SCHEDULES;
+  /** Google's adjustment range as whole percentages and as text, from the shared modifier bounds, for both boxes and hints. */
+  protected readonly minAdjustment = googleBidAdjustmentPercent(GOOGLE_ADS_MIN_BID_MODIFIER);
+  protected readonly maxAdjustment = googleBidAdjustmentPercent(GOOGLE_ADS_MAX_BID_MODIFIER);
+  protected readonly adjustmentRange = googleBidAdjustmentRangeText();
   protected readonly dayOptions: GoogleAdScheduleSelectOption[] = GOOGLE_ADS_SCHEDULE_DAYS.map((day) => ({
     value: day,
     label: GOOGLE_ADS_SCHEDULE_DAY_LABELS[day],
@@ -127,14 +143,38 @@ export class CampaignGoogleTargetingPanelComponent {
     this.updateSchedule(index, (s) => (edge === 'start' ? { ...s, startHour: hour, startMinute: minute } : { ...s, endHour: hour, endMinute: minute }));
   }
 
-  /** A blank box removes the adjustment, which is not the same as 0%: see `CampaignAdSchedule.bidModifier`. */
+  /**
+   * A blank box removes the adjustment, which is not the same as 0%: see `CampaignAdSchedule.bidModifier`.
+   * Ignored while {@link scheduleAdjustBlockedReason} is set, as a stale Adjust bid is for devices: a held
+   * box is read-only, and the only edit left is {@link clearScheduleAdjustment}.
+   */
   protected onScheduleAdjustment(index: number, change: Event): void {
+    if (this.scheduleAdjustBlockedReason() !== null) return;
     const percent = this.percentFrom(change);
     this.updateSchedule(index, (s) => {
       const unadjusted: CampaignAdSchedule = { ...s };
       delete unadjusted.bidModifier;
       return percent === null ? unadjusted : { ...unadjusted, bidModifier: googleBidModifierFromPercent(percent) };
     });
+  }
+
+  /**
+   * Drops a window's bid adjustment, leaving the window: how a held adjustment is let go. The Clear
+   * button and the read-only box leave the row once the list comes back without the adjustment, so
+   * focus moves to that row's remove button after the next render rather than falling to the page.
+   */
+  protected clearScheduleAdjustment(index: number): void {
+    this.updateSchedule(index, (s) => {
+      const unadjusted: CampaignAdSchedule = { ...s };
+      delete unadjusted.bidModifier;
+      return unadjusted;
+    });
+    afterNextRender(
+      () => {
+        this.host.nativeElement.querySelector<HTMLButtonElement>(`[data-testid="implementation-google-ad-schedule-remove-${index}"] button`)?.focus();
+      },
+      { injector: this.injector }
+    );
   }
 
   /**
@@ -159,15 +199,18 @@ export class CampaignGoogleTargetingPanelComponent {
     this.setDevice(device, googleBidModifierFromPercent(percent));
   }
 
+  /** One row per window; an adjustment is `held` while {@link scheduleAdjustBlockedReason} is set. */
   private initScheduleRows(): Signal<GoogleAdScheduleRowView[]> {
-    return computed(() =>
-      this.adSchedules().map((s) => ({
+    return computed(() => {
+      const blocked = this.scheduleAdjustBlockedReason() !== null;
+      return this.adSchedules().map((s) => ({
         dayOfWeek: s.dayOfWeek,
         start: s.startHour * 60 + s.startMinute,
         end: s.endHour * 60 + s.endMinute,
         adjustment: s.bidModifier === undefined ? null : googleBidAdjustmentPercent(s.bidModifier),
-      }))
-    );
+        held: blocked && s.bidModifier !== undefined,
+      }));
+    });
   }
 
   /**

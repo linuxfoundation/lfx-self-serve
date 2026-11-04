@@ -121,6 +121,7 @@ import {
   GOOGLE_BIDDING_ROAS_STRATEGIES,
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
+  GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES,
   GOOGLE_BIDDING_STRATEGY_LABELS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
@@ -131,6 +132,7 @@ import {
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
@@ -232,6 +234,8 @@ import type {
   CreativeAssetUploadResult,
   CreativeAssetUploadStatus,
   CreativeSlotAssignment,
+  GoogleAdsAgeRange,
+  GoogleAdsGender,
   GoogleAdsGeoTargetOption,
   GoogleAdsGeoTargetSearchState,
   GoogleAdsGeoTargetSuggestion,
@@ -282,10 +286,17 @@ import {
   googleCreativeImageDrift,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
-  googleDeviceAdjustmentIgnoredSentence,
+  googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
+  googleExcludedAgeRangesRefusal,
+  googleExcludedGendersRefusal,
+  googleExcludedGeoListRefusal,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
+  googleScheduleAdjustmentIgnoredSentence,
+  googleScheduleAdjustmentStrategiesOn,
+  googleStrategyTakesScheduleAdjustments,
+  googleUpperCodeList,
   isHttpUrl,
   isReversedCampaignFlight,
   joinAsSentenceList,
@@ -297,6 +308,7 @@ import {
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
+import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
 import { CampaignGoogleTargetingPanelComponent } from '../campaign-google-targeting-panel/campaign-google-targeting-panel.component';
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
@@ -350,6 +362,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     LowerCasePipe,
     SlicePipe,
     CampaignBiddingControlComponent,
+    CampaignGoogleExclusionsPanelComponent,
     CampaignGoogleTargetingPanelComponent,
     CreativeLibraryUploadComponent,
     CreativeSlotGridComponent,
@@ -1654,6 +1667,14 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleAdSchedules = signal<CampaignAdSchedule[]>([]);
   protected readonly googleDeviceBidModifiers = signal<CampaignDeviceBidModifier[]>([]);
+  /**
+   * The Google campaign's demographic exclusions and excluded locations, edited in
+   * `lfx-campaign-google-exclusions-panel`. Empty is Google's own default — serve to every age and
+   * gender, and exclude nowhere — so leaving them alone changes nothing about the campaign.
+   */
+  protected readonly googleExcludedAgeRanges = signal<GoogleAdsAgeRange[]>([]);
+  protected readonly googleExcludedGenders = signal<GoogleAdsGender[]>([]);
+  protected readonly googleExcludedGeoTargets = signal<string[]>([]);
   /**
    * The languages Google Ads can target on this path, offered as a closed list.
    *
@@ -3273,6 +3294,8 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.googleSearchKeywordsError() !== null) return false;
     // An ad schedule or device adjustment the BFF would refuse; the message is under the panel.
     if (googleSelected && (this.googleAdSchedulesError() !== null || this.googleDeviceBidModifiersError() !== null)) return false;
+    // A demographic exclusion or excluded location the BFF would refuse; the message is under the exclusions panel.
+    if (googleSelected && (this.googleDemographicExclusionsError() !== null || this.googleExcludedGeoTargetsError() !== null)) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -3549,8 +3572,20 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleAdSchedulesAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_AD_SCHEDULES));
   protected readonly googleDeviceBidModifiersAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS));
-  /** The shared refusal the BFF would answer the create with, or `null`; `canSubmit` blocks on it. */
-  protected readonly googleAdSchedulesError = computed(() => (this.googleAdSchedulesAvailable() ? googleAdScheduleRefusal(this.googleAdSchedules()) : null));
+  /**
+   * The shared refusal the BFF would answer the create with, or `null`; `canSubmit` blocks on it.
+   * Judged under the EFFECTIVE strategy, as for devices, so a window adjusted under a strategy Google
+   * ignores schedule adjustments under blocks Create here rather than failing the create.
+   */
+  protected readonly googleAdSchedulesError: Signal<string | null> = this.initGoogleAdSchedulesError();
+  /** Why the schedule windows offer no bid adjustment, or `null` while the effective strategy takes one. */
+  protected readonly googleScheduleAdjustBlockedReason: Signal<string | null> = this.initGoogleScheduleAdjustBlockedReason();
+  /**
+   * The held-adjustment sentence for ad schedules, or `''`: window adjustments that a strategy switch
+   * now refuses. Kept for a switch back, Create waits on the shared refusal, and one string feeds the
+   * visible notice and the always-mounted live region, as for devices.
+   */
+  protected readonly googleScheduleAdjustmentsHeldMessage: Signal<string> = this.initGoogleScheduleAdjustmentsHeldMessage();
   protected readonly googleDeviceBidModifiersError: Signal<string | null> = this.initGoogleDeviceBidModifiersError();
   /** Why the device control offers no Adjust bid, or `null` while the effective strategy is Manual CPC. */
   protected readonly googleDeviceAdjustBlockedReason: Signal<string | null> = this.initGoogleDeviceAdjustBlockedReason();
@@ -3560,6 +3595,23 @@ export class ImplementationTabComponent implements OnInit {
    * string feeds the visible notice and the always-mounted live region, as for languages.
    */
   protected readonly googleDeviceAdjustmentsHeldMessage: Signal<string> = this.initGoogleDeviceAdjustmentsHeldMessage();
+  /**
+   * Whether the exclusions panel offers demographic exclusions / excluded locations, and so whether the
+   * request carries them. Demographics are fenced by the shared channel list the BFF refuses on.
+   * Excluded locations have NO channel fence — `validateGeoPlan` applies none, so they reach Demand
+   * Gen too — and are gated only on the campaign-service road (`googleBiddingChannel`), the road the
+   * BFF judges them on.
+   */
+  protected readonly googleDemographicExclusionsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS));
+  protected readonly googleExcludedGeoTargetsAvailable = computed(() => this.googleBiddingChannel() !== null);
+  /** The shared age-range refusal, else the gender one — the BFF's order — or `null`; `canSubmit` blocks on it. */
+  protected readonly googleDemographicExclusionsError: Signal<string | null> = this.initGoogleDemographicExclusionsError();
+  /**
+   * The shared excluded-location refusal, judged against the targeted list the request will ACTUALLY
+   * send (`googleEffectiveGeoTargets`, event-country fallback included), which is the list the BFF
+   * compares for the clash. `canSubmit` blocks on it.
+   */
+  protected readonly googleExcludedGeoTargetsError: Signal<string | null> = this.initGoogleExcludedGeoTargetsError();
   /** The held-targeting sentence, or `''`; one string feeds the visible notice and the live region, as for languages. */
   protected readonly googleTargetingWithheldMessage: Signal<string> = this.initGoogleTargetingWithheldMessage();
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
@@ -4764,6 +4816,21 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onGoogleDeviceBidModifiersChange(devices: CampaignDeviceBidModifier[]): void {
     this.googleDeviceBidModifiers.set(devices);
+    this.emitDraft();
+  }
+
+  protected onGoogleExcludedAgeRangesChange(ageRanges: GoogleAdsAgeRange[]): void {
+    this.googleExcludedAgeRanges.set(ageRanges);
+    this.emitDraft();
+  }
+
+  protected onGoogleExcludedGendersChange(genders: GoogleAdsGender[]): void {
+    this.googleExcludedGenders.set(genders);
+    this.emitDraft();
+  }
+
+  protected onGoogleExcludedGeoTargetsChange(excluded: string[]): void {
+    this.googleExcludedGeoTargets.set(excluded);
     this.emitDraft();
   }
 
@@ -6725,6 +6792,16 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleDeviceBidModifiers !== undefined) {
       this.googleDeviceBidModifiers.set(draft.googleDeviceBidModifiers.map((d) => ({ ...d })));
     }
+    // Copied, and held rather than sent on a channel that takes none, on the same rule.
+    if (draft.googleExcludedAgeRanges !== undefined) {
+      this.googleExcludedAgeRanges.set([...draft.googleExcludedAgeRanges]);
+    }
+    if (draft.googleExcludedGenders !== undefined) {
+      this.googleExcludedGenders.set([...draft.googleExcludedGenders]);
+    }
+    if (draft.googleExcludedGeoTargets !== undefined) {
+      this.googleExcludedGeoTargets.set([...draft.googleExcludedGeoTargets]);
+    }
     // Copied on the same rule, and restored whatever the channel selection is: the section and
     // `googleAudienceSegmentsPayload` both gate on `googleAudienceSegmentsAvailable`, so a list
     // restored under a non-Search channel is held, not sent.
@@ -7075,6 +7152,9 @@ export class ImplementationTabComponent implements OnInit {
       googleLanguages: [...this.googleLanguages()],
       googleAdSchedules: this.googleAdSchedules().map((s) => ({ ...s })),
       googleDeviceBidModifiers: this.googleDeviceBidModifiers().map((d) => ({ ...d })),
+      googleExcludedAgeRanges: [...this.googleExcludedAgeRanges()],
+      googleExcludedGenders: [...this.googleExcludedGenders()],
+      googleExcludedGeoTargets: [...this.googleExcludedGeoTargets()],
       googleAudienceSegments: [...this.googleAudienceSegments()],
       googleCallouts: [...this.googleCallouts()],
       // Entries copied too, for the reason the restore above gives in the other direction.
@@ -7523,6 +7603,9 @@ export class ImplementationTabComponent implements OnInit {
     this.googleLanguages.set([]);
     this.googleAdSchedules.set([]);
     this.googleDeviceBidModifiers.set([]);
+    this.googleExcludedAgeRanges.set([]);
+    this.googleExcludedGenders.set([]);
+    this.googleExcludedGeoTargets.set([]);
     this.googleAudienceSegments.set([]);
     this.googleCallouts.set([]);
     this.googleSitelinks.set([]);
@@ -8479,9 +8562,78 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Why the device control offers only Default bid and Exclude: Google Ads would ignore a device
-   * adjustment under any strategy but Manual CPC, so campaign-service refuses a non-zero modifier
-   * there (`validateBiddingPlan`). The way back differs by channel — Search can switch to Manual CPC,
+   * The per-entry checks (range, repeat, overlap, per-day cap) run whenever the section is shown;
+   * only the strategy pass needs a resolved channel and strategy. With either unresolved the judge
+   * runs under Manual CPC, a strategy that takes schedule adjustments and so skips that pass, and
+   * Search, which decides only the strategy pass's wording.
+   */
+  private initGoogleAdSchedulesError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleAdSchedulesAvailable()) return null;
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!channel || strategy === null) return googleAdScheduleRefusal(this.googleAdSchedules(), 'manual-cpc', 'search');
+      return googleAdScheduleRefusal(this.googleAdSchedules(), strategy, channel);
+    });
+  }
+
+  private initGoogleDemographicExclusionsError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleDemographicExclusionsAvailable()) return null;
+      const channel = this.googleBiddingChannel();
+      return googleExcludedAgeRangesRefusal(this.googleExcludedAgeRanges(), channel) ?? googleExcludedGendersRefusal(this.googleExcludedGenders(), channel);
+    });
+  }
+
+  private initGoogleExcludedGeoTargetsError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleExcludedGeoTargetsAvailable()) return null;
+      return googleExcludedGeoListRefusal(googleUpperCodeList(this.googleExcludedGeoTargets()), googleUpperCodeList(this.googleEffectiveGeoTargets()));
+    });
+  }
+
+  /**
+   * Why the schedule windows offer no Bid adjustment box: Google Ads applies an ad-schedule bid
+   * adjustment only under Manual CPC and Maximize Clicks and ignores it under Smart Bidding, so the
+   * shared judge refuses one there. The windows themselves still apply. The way back names only the
+   * strategies the channel offers (`googleScheduleAdjustmentStrategiesOn`) — Search both, Display
+   * Maximize Clicks, Performance Max and Video neither. `null` while the schedule section is not shown.
+   */
+  private initGoogleScheduleAdjustBlockedReason(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null || googleStrategyTakesScheduleAdjustments(strategy)) return null;
+      const lead = `${googleScheduleAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The windows still decide when the campaign serves.`;
+      const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
+      const takes = GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES.map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]).join(' or ');
+      return offered.length > 0
+        ? `${lead} Choose ${offered.join(' or ')} as the bidding strategy to adjust bids by time.`
+        : `${lead} ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns cannot bid ${takes} here.`;
+    });
+  }
+
+  private initGoogleScheduleAdjustmentsHeldMessage(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null || googleStrategyTakesScheduleAdjustments(strategy)) return '';
+      const adjusted = this.googleAdSchedules().filter((s) => s.bidModifier !== undefined).length;
+      if (adjusted === 0) return '';
+      const one = adjusted === 1;
+      const pronoun = one ? 'it' : 'them';
+      const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
+      const way = offered.length > 0 ? `clear ${pronoun}, or choose ${offered.join(' or ')}` : `clear ${pronoun}`;
+      return `${googleScheduleAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The bid ${one ? 'adjustment' : 'adjustments'} on ${adjusted} ad schedule ${one ? 'window is' : 'windows are'} kept for a switch back, and Create Campaign waits until you ${way}.`;
+    });
+  }
+
+  /**
+   * Why the device control offers only Default bid and Exclude: campaign-service refuses a non-zero
+   * device modifier under any strategy but Manual CPC (`validateBiddingPlan`). Under Maximize
+   * Conversions, Maximize Conversion Value and Target ROAS Google would not apply one anyway; under
+   * Maximize Clicks and Target CPA it would, so the shared
+   * `googleDeviceAdjustmentNotSentSentence` gives whichever reason is true. The way back differs by channel — Search can switch to Manual CPC,
    * Display and Video offer no Manual CPC here — so the sentence says which. `null` while the device
    * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}.
    */
@@ -8491,7 +8643,7 @@ export class ImplementationTabComponent implements OnInit {
       const strategy = this.googleBiddingStrategy();
       if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null || strategy === 'manual-cpc') return null;
       const manual = GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc'];
-      const lead = `${googleDeviceAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} You can keep the default bid or exclude a device.`;
+      const lead = `${googleDeviceAdjustmentNotSentSentence(strategy)} You can keep the default bid or exclude a device.`;
       return googleChannelOffersManualCpc(channel)
         ? `${lead} Choose ${manual} as the bidding strategy to adjust bids by device.`
         : `${lead} ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns cannot bid ${manual} here.`;
@@ -8510,15 +8662,16 @@ export class ImplementationTabComponent implements OnInit {
       const way = googleChannelOffersManualCpc(channel)
         ? `Default bid or Exclude, or choose ${GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc']} again`
         : 'Default bid or Exclude';
-      return `${googleDeviceAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The ${one ? 'adjustment' : 'adjustments'} on ${names} ${one ? 'is' : 'are'} kept for a switch back, and Create Campaign waits until you set ${one ? 'it' : 'them'} to ${way}.`;
+      return `${googleDeviceAdjustmentNotSentSentence(strategy)} The ${one ? 'adjustment' : 'adjustments'} on ${names} ${one ? 'is' : 'are'} kept for a switch back, and Create Campaign waits until you set ${one ? 'it' : 'them'} to ${way}.`;
     });
   }
 
   /**
-   * What the dispatched channel holds back from the targeting panel, said out loud — whichever list
-   * its shared channel fence leaves out. The lists are kept for a switch back, not sent, so the
-   * campaign serves all day or at one bid; the notice says so rather than letting the section simply
-   * vanish. `''` off the campaign-service road and when nothing is held.
+   * What the dispatched channel holds back from the targeting and exclusions panels, said out loud —
+   * whichever list its shared channel fence leaves out. The lists are kept for a switch back, not
+   * sent, so the campaign serves all day, at one bid or to every age and gender; the notice says so
+   * rather than letting the section simply vanish. Excluded locations are never held this way: no
+   * channel fences them. `''` off the campaign-service road and when nothing is held.
    */
   private initGoogleTargetingWithheldMessage(): Signal<string> {
     return computed(() => {
@@ -8528,6 +8681,7 @@ export class ImplementationTabComponent implements OnInit {
       const held: string[] = [];
       const schedules = this.googleAdSchedulesAvailable() ? 0 : this.googleAdSchedules().length;
       const devices = this.googleDeviceBidModifiersAvailable() ? 0 : this.googleDeviceBidModifiers().length;
+      const demographics = this.googleDemographicExclusionsAvailable() ? 0 : this.googleExcludedAgeRanges().length + this.googleExcludedGenders().length;
       if (schedules > 0) {
         kinds.push('ad schedules');
         held.push(`${schedules} ad schedule ${schedules === 1 ? 'window' : 'windows'}`);
@@ -8535,6 +8689,10 @@ export class ImplementationTabComponent implements OnInit {
       if (devices > 0) {
         kinds.push('device bid adjustments');
         held.push(`${devices} device ${devices === 1 ? 'setting' : 'settings'}`);
+      }
+      if (demographics > 0) {
+        kinds.push('demographic exclusions');
+        held.push(`${demographics} demographic ${demographics === 1 ? 'exclusion' : 'exclusions'}`);
       }
       if (held.length === 0) return '';
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take ${kinds.join(' or ')}, so the ${held.join(' and ')} you set will not be sent. Switch the channel back to keep them.`;
@@ -9406,8 +9564,9 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Ad schedules and device adjustments as the request carries them: each gated by the SAME computed
-   * the panel renders on, omitted when empty (Google's default), entries copied.
+   * Ad schedules, device adjustments, demographic exclusions and excluded locations as the request
+   * carries them: each gated by the SAME computed its panel section renders on, omitted when empty
+   * (Google's default), entries copied.
    */
   private googleTargetingPayload(): Partial<CampaignCreateRequest> {
     const payload: Partial<CampaignCreateRequest> = {};
@@ -9415,6 +9574,14 @@ export class ImplementationTabComponent implements OnInit {
     if (this.googleAdSchedulesAvailable() && schedules.length > 0) payload.adSchedules = schedules.map((s) => ({ ...s }));
     const devices = this.googleDeviceBidModifiers();
     if (this.googleDeviceBidModifiersAvailable() && devices.length > 0) payload.deviceBidModifiers = devices.map((d) => ({ ...d }));
+    if (this.googleDemographicExclusionsAvailable()) {
+      const ageRanges = this.googleExcludedAgeRanges();
+      const genders = this.googleExcludedGenders();
+      if (ageRanges.length > 0) payload.excludedAgeRanges = [...ageRanges];
+      if (genders.length > 0) payload.excludedGenders = [...genders];
+    }
+    const excluded = this.googleExcludedGeoTargets();
+    if (this.googleExcludedGeoTargetsAvailable() && excluded.length > 0) payload.excludedGeoTargets = [...excluded];
     return payload;
   }
 
