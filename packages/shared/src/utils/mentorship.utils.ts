@@ -65,11 +65,14 @@ import {
 import {
   MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE,
   MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE,
+  MENTORSHIP_ADMIN_PATH,
   MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL,
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
+  MENTORSHIP_FOUNDATION_PROGRAMS_PATH,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
   MENTORSHIP_PROGRAM_DETAIL_TABS,
+  MENTORSHIP_PROJECT_PROGRAMS_PATH,
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
@@ -129,6 +132,7 @@ import type {
   MentorshipMentorRegisterForm,
   MentorshipMentorRegisterRequest,
 } from '../interfaces/mentorship-mentor.interface';
+import type { Lens } from '../interfaces/lens.interface';
 import type { MentorshipLfxProfileFields } from '../interfaces/mentorship-lfx-profile-card.interface';
 import type {
   MentorshipMenteeApplication,
@@ -238,6 +242,16 @@ export function buildMentorshipPublicUrl(base: string, page: MentorshipPublicPag
 /** The mentorship site's program listing at `base`, or one program's page when `programId` is given. */
 export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
   return buildMentorshipPublicUrl(base, 'programs', programId);
+}
+
+/**
+ * Where a lens keeps its admin program list, program pages and wizard: the Project or Foundation lens's Mentorship Programs
+ * (lfx-mentorship#398), or the Me lens's Admin for every other lens.
+ */
+export function getMentorshipAdminBasePath(lens: Lens | undefined): string {
+  if (lens === 'project') return MENTORSHIP_PROJECT_PROGRAMS_PATH;
+  if (lens === 'foundation') return MENTORSHIP_FOUNDATION_PROGRAMS_PATH;
+  return MENTORSHIP_ADMIN_PATH;
 }
 
 /** The admin program-detail tabs a program shows: a pending program has no mentees or mentors yet, so only Terms. */

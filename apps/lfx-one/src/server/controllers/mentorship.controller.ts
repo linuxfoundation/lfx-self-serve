@@ -56,13 +56,20 @@ export class MentorshipController {
         throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_lf_projects' });
       }
 
+      // The Foundation lens wizard lists the foundation's direct sub-projects here (lfx-mentorship#398).
+      const parentUid = parseTrimmedString(req.query['parentUid']);
+      if (parentUid !== undefined && !isUuid(parentUid)) {
+        throw ServiceValidationError.forField('parentUid', 'parentUid must be a UUID.', { operation: 'get_mentorship_lf_projects' });
+      }
+
       const projects = await this.mentorshipService.getLfProjects(req, {
         search: parseTrimmedString(req.query['search']),
         pageToken: parseTrimmedString(req.query['page_token']),
         limit: parseIntQuery(req.query['page_size']),
+        ...(parentUid && { parentUid }),
       });
 
-      logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length });
+      logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length, parentUid });
       res.json(projects);
     } catch (error) {
       next(error);

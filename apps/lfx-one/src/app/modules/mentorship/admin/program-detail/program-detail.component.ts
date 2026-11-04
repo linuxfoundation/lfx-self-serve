@@ -22,12 +22,13 @@ import {
   MENTORSHIP_PROGRAM_VISIBILITY_FAILED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
+  Lens,
   MentorshipAdminProgramPage,
   MentorshipProgramDetailTab,
   MentorshipProgramDetailTabSource,
   MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
-import { getMentorshipProgramDetailTabs } from '@lfx-one/shared/utils';
+import { getMentorshipAdminBasePath, getMentorshipProgramDetailTabs } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MessageService } from 'primeng/api';
 import { catchError, map, of, switchMap, take, tap } from 'rxjs';
@@ -77,6 +78,8 @@ export class ProgramDetailComponent {
   protected readonly noAccessTitle = MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE;
   protected readonly noAccessMessage = MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_MESSAGE;
   protected readonly loadErrorMessage = MENTORSHIP_ADMIN_PROGRAM_LOAD_ERROR_MESSAGE;
+  /** The lens's program list and edit wizard: the Me lens's Admin, or the Project lens's Mentorship Programs (lfx-mentorship#398). */
+  protected readonly basePath = getMentorshipAdminBasePath(this.route.snapshot.data['lens'] as Lens | undefined);
 
   private readonly reloadCount = signal(0);
   /** Bumped by every page read and silent refresh; only the latest one may write the page. */
@@ -118,7 +121,7 @@ export class ProgramDetailComponent {
 
   /** Opens the enroll wizard in edit mode for this program. */
   protected onEditProgram(): void {
-    void this.router.navigate(['/mentorship/admin/enroll'], { queryParams: { programId: this.programId() } });
+    void this.router.navigate([this.basePath, 'enroll'], { queryParams: { programId: this.programId() } });
   }
 
   /**

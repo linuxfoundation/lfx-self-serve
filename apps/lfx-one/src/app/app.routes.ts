@@ -518,6 +518,14 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
       },
+      // Every mentorship program of the lens foundation and its sub-projects (lfx-mentorship#398), scoped by `data.lens`.
+      {
+        path: 'foundation/mentorship',
+        title: 'Mentorship Programs',
+        data: { lens: 'foundation' },
+        canActivate: [projectQueryParamGuard],
+        loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_LENS_ROUTES),
+      },
       // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
       // (CanActivate). As of GH-2367 the queue scopes to the selected foundation's formations via
       // ProjectContextService.selectedFoundation (the whole subtree since GH-2368's upstream
@@ -649,6 +657,14 @@ export const routes: Routes = [
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
+      },
+      // Every mentorship program of the lens project (lfx-mentorship#398) — the Mentorship Admin pages, scoped by `data.lens`.
+      {
+        path: 'project/mentorship',
+        title: 'Mentorship Programs',
+        data: { lens: 'project' },
+        canActivate: [projectQueryParamGuard],
+        loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_LENS_ROUTES),
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {

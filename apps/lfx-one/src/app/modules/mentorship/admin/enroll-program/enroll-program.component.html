@@ -42,6 +42,8 @@
             [(logoFile)]="logoFile"
             [programId]="editProgramId"
             [currentLogoUrl]="currentLogoUrl()"
+            [lockedProject]="lockedProject()"
+            [parentProject]="parentProject()"
             (ciiLookupStatusChange)="onCiiLookupStatusChange($event)"
             (nameLookupStatusChange)="onNameLookupStatusChange($event)" />
         }

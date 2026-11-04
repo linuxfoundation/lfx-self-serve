@@ -43,11 +43,13 @@ export class MentorshipService {
   }
 
   /** One lazy-load page of LF projects; pass the previous page's `page_token` as `pageToken` for the next one. Errors propagate. */
-  public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number }): Observable<MentorshipLfProjectsResponse> {
+  /** One page of LF projects; with `parentUid`, only that project's direct sub-projects (the Foundation lens wizard). */
+  public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number; parentUid?: string }): Observable<MentorshipLfProjectsResponse> {
     // Strict codec: a `+` in a typed search (`C++`) or in the opaque cursor would otherwise reach Express as a space.
     let httpParams = strictHttpParams();
     if (params?.search) httpParams = httpParams.set('search', params.search);
     if (params?.pageToken) httpParams = httpParams.set('page_token', params.pageToken);
+    if (params?.parentUid) httpParams = httpParams.set('parentUid', params.parentUid);
     httpParams = httpParams.set('page_size', String(params?.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
 
     return this.http

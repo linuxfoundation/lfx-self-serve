@@ -87,6 +87,7 @@ import {
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramsUrl,
   buildMentorshipPublicUrl,
+  getMentorshipAdminBasePath,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
@@ -908,6 +909,16 @@ describe('buildMentorshipProgramsUrl', () => {
   it("links one program's page, URL-encoding its id", () => {
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org/', 'prog_gridflow')).toBe('https://mentorship.example.org/programs/prog_gridflow');
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org', 'prog/with space')).toBe('https://mentorship.example.org/programs/prog%2Fwith%20space');
+  });
+});
+
+describe('getMentorshipAdminBasePath', () => {
+  it('keeps the Project and Foundation lenses on their Mentorship Programs and every other lens on the Me lens Admin', () => {
+    expect(getMentorshipAdminBasePath('project')).toBe('/project/mentorship');
+    expect(getMentorshipAdminBasePath('foundation')).toBe('/foundation/mentorship');
+    expect(getMentorshipAdminBasePath('me')).toBe('/mentorship/admin');
+    expect(getMentorshipAdminBasePath('org')).toBe('/mentorship/admin');
+    expect(getMentorshipAdminBasePath(undefined)).toBe('/mentorship/admin');
   });
 });
 

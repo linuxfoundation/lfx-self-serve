@@ -71,6 +71,22 @@ export const MENTORSHIP_PROGRAM_PAGE_SIZE = 12;
 /** Most programs one `GET /api/mentorship/admin/programs` page may return; the BFF rejects a larger `limit`. */
 export const MENTORSHIP_PROGRAMS_MAX_LIMIT = 50;
 
+/** The Me lens Admin program list; a program's page is `/{programId}` under it and the enroll wizard is `/enroll`. */
+export const MENTORSHIP_ADMIN_PATH = '/mentorship/admin';
+
+/** The Project lens Mentorship Programs list (lfx-mentorship#398), laid out like {@link MENTORSHIP_ADMIN_PATH}. */
+export const MENTORSHIP_PROJECT_PROGRAMS_PATH = '/project/mentorship';
+
+/** The Foundation lens Mentorship Programs list: the foundation's programs and its sub-projects', laid out like the Project lens's. */
+export const MENTORSHIP_FOUNDATION_PROGRAMS_PATH = '/foundation/mentorship';
+
+export const MENTORSHIP_ADMIN_PROGRAMS_EMPTY_MESSAGE = 'Enroll a program to get started.';
+export const MENTORSHIP_PROJECT_PROGRAMS_TITLE = 'Mentorship Programs';
+export const MENTORSHIP_PROJECT_PROGRAMS_EMPTY_MESSAGE = 'This project has no mentorship programs yet.';
+export const MENTORSHIP_FOUNDATION_PROGRAMS_EMPTY_MESSAGE = 'This foundation and its projects have no mentorship programs yet.';
+export const MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_TITLE = 'No access to this project’s programs';
+export const MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_MESSAGE = 'You need Manage access on this project to see its mentorship programs.';
+
 /** The two mentee tabs of an admin program page; `type` on `GET /api/mentorship/admin/programs/:programId/mentees`. */
 export const MENTORSHIP_ADMIN_MENTEE_TABS = ['current', 'past'] as const;
 

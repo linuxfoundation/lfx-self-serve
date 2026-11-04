@@ -10,6 +10,7 @@ import {
 import {
   MentorshipCiiBadge,
   MentorshipLfProject,
+  MentorshipLfProjectsQuery,
   MentorshipLfProjectsResponse,
   MentorshipNameAvailability,
   MentorshipProgramDecisionResult,
@@ -90,11 +91,21 @@ export class MentorshipService {
    * than `limit` (the cursor carries the sort position, not the page size). `limit` is held to 1–`MENTORSHIP_LF_PROJECT_MAX_LIMIT` and `search` is cut to
    * `MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH`.
    */
-  public async getLfProjects(req: Request, options: { search?: string; pageToken?: string; limit?: number } = {}): Promise<MentorshipLfProjectsResponse> {
+  /**
+   * One page of LF projects for the enroll wizard's picker. With `parentUid`, only that project's direct sub-projects: the
+   * Foundation lens wizard (lfx-mentorship#398) offers its foundation, which it already has, and these sub-projects.
+   */
+  public async getLfProjects(req: Request, options: MentorshipLfProjectsQuery = {}): Promise<MentorshipLfProjectsResponse> {
     const search = truncateToUtf16Units(options.search?.trim() ?? '', MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH);
     const limit = Math.min(MENTORSHIP_LF_PROJECT_MAX_LIMIT, Math.max(1, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
     let pageToken = options.pageToken || undefined;
-    logger.debug(req, 'mentorship_get_lf_projects', 'Listing LF projects', { has_search: search.length > 0, has_page_token: !!pageToken, limit });
+    const parentUid = options.parentUid;
+    logger.debug(req, 'mentorship_get_lf_projects', 'Listing LF projects', {
+      has_search: search.length > 0,
+      has_page_token: !!pageToken,
+      limit,
+      parentUid,
+    });
 
     const projects: Project[] = [];
     let reads = 0;
@@ -102,6 +113,7 @@ export class MentorshipService {
       const requestedToken = pageToken;
       const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'project',
+        ...(parentUid && { parent: `project:${parentUid}` }),
         ...(search ? { name: search, sort: 'best_match' } : { sort: 'name_asc' }),
         page_size: limit - projects.length,
         ...(pageToken && { page_token: pageToken }),

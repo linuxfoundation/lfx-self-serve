@@ -76,6 +76,29 @@ export type MentorshipProgramsResponse = {
   total: number;
 };
 
+/**
+ * One page of an admin program list, as the BFF sends it upstream: the caller's programs (Me lens Admin) or a project's
+ * programs (Project lens Mentorship Programs). The two lists share these filters.
+ */
+export interface MentorshipAdminProgramListOptions {
+  search?: string;
+  status?: MentorshipProgramStatus;
+  /** From 0. */
+  offset: number;
+  /** From 1 to `MENTORSHIP_PROGRAMS_MAX_LIMIT`. */
+  limit: number;
+  /** A project's list only: also the programs of its sub-projects, at any depth (the Foundation lens). */
+  includeSubprojects?: boolean;
+}
+
+/** The filters an admin program list page has applied: the search text, the status and, in the Project lens, the project. */
+export interface MentorshipAdminProgramListFilters {
+  search: string;
+  status: MentorshipProgramStatus | null;
+  /** The Project lens's project; `''` on the Me lens Admin. */
+  projectUid: string;
+}
+
 /** Admin program-detail underline tabs. */
 export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number]['value'];
 

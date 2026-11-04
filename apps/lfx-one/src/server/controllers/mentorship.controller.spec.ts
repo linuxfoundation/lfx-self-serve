@@ -212,6 +212,24 @@ describe('MentorshipController enroll lookups', () => {
     expect(getLfProjects).toHaveBeenCalledWith(expect.anything(), { search: 'alp', pageToken: 'cursor-2', limit: 5 });
     expect(res.json).toHaveBeenCalledWith(page);
   });
+
+  it('passes a parent project through, so the Foundation lens picker lists its sub-projects only', async () => {
+    const parentUid = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+    const getLfProjects = vi.spyOn(MentorshipService.prototype, 'getLfProjects').mockResolvedValue({ data: [] });
+
+    await controller.getLfProjects(buildReq({ parentUid: ` ${parentUid} ` }), res, next);
+
+    expect(getLfProjects).toHaveBeenCalledWith(expect.anything(), { search: undefined, pageToken: undefined, limit: undefined, parentUid });
+  });
+
+  it('rejects a parent project that is not a UUID with a 400', async () => {
+    const getLfProjects = vi.spyOn(MentorshipService.prototype, 'getLfProjects');
+
+    await controller.getLfProjects(buildReq({ parentUid: 'cncf' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(getLfProjects).not.toHaveBeenCalled();
+  });
 });
 
 describe('MentorshipController LFX profile sync', () => {

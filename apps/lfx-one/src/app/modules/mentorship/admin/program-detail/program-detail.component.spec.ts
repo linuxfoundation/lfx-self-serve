@@ -61,7 +61,7 @@ describe('ProgramDetailComponent', () => {
   let setProgramVisibility: ReturnType<typeof vi.fn>;
   let routeParams: BehaviorSubject<Map<string, string>>;
 
-  const buildWith = (options: { page?: Observable<MentorshipAdminProgramPage>; visibility?: Observable<void> } = {}): void => {
+  const buildWith = (options: { page?: Observable<MentorshipAdminProgramPage>; visibility?: Observable<void>; lens?: 'me' | 'project' } = {}): void => {
     getProgram = vi.fn().mockReturnValue(options.page ?? of(programPage()));
     setProgramVisibility = vi.fn().mockReturnValue(options.visibility ?? of(undefined));
     getProgramMentees = vi.fn().mockReturnValue(of(menteesPage()));
@@ -88,7 +88,7 @@ describe('ProgramDetailComponent', () => {
         },
         // The tab's task writes go through the shared mentorship service; no test here sends one.
         { provide: MentorshipService, useValue: { createTasks: vi.fn(), updateTask: vi.fn() } },
-        { provide: ActivatedRoute, useValue: { paramMap: routeParams as never } },
+        { provide: ActivatedRoute, useValue: { paramMap: routeParams as never, snapshot: { data: { lens: options.lens ?? 'me' } } } },
       ],
     });
 
@@ -112,6 +112,22 @@ describe('ProgramDetailComponent', () => {
   const tabText = (value: string): string =>
     (element().querySelector(`[data-testid="mentorship-program-detail-tab-${value}"]`)?.textContent ?? '').replace(/\s+/g, ' ').trim();
 
+  describe('on the Project lens', () => {
+    beforeEach(() => buildWith({ lens: 'project' }));
+
+    it('links back to the Project lens’s Mentorship Programs', () => {
+      expect(element().querySelector('[data-testid="mentorship-program-detail-back"] a')?.getAttribute('href')).toBe('/project/mentorship');
+    });
+
+    it('opens the Project lens’s edit wizard from Edit Program', () => {
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      element().querySelector<HTMLButtonElement>('[data-testid="mentorship-program-detail-edit"] button')!.click();
+
+      expect(navigate).toHaveBeenCalledWith(['/project/mentorship', 'enroll'], { queryParams: { programId: 'mp_example_fall26' } });
+    });
+  });
+
   describe('with a program page', () => {
     beforeEach(() => build());
 
@@ -119,12 +135,16 @@ describe('ProgramDetailComponent', () => {
       expect(getProgram).toHaveBeenCalledWith('mp_example_fall26');
     });
 
+    it('links back to the Me lens Admin', () => {
+      expect(element().querySelector('[data-testid="mentorship-program-detail-back"] a')?.getAttribute('href')).toBe('/mentorship/admin');
+    });
+
     it('opens the enroll wizard in edit mode for this program from Edit Program', () => {
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
       element().querySelector<HTMLButtonElement>('[data-testid="mentorship-program-detail-edit"] button')!.click();
 
-      expect(navigate).toHaveBeenCalledWith(['/mentorship/admin/enroll'], { queryParams: { programId: 'mp_example_fall26' } });
+      expect(navigate).toHaveBeenCalledWith(['/mentorship/admin', 'enroll'], { queryParams: { programId: 'mp_example_fall26' } });
     });
 
     it('opens on the Current Mentees tab, handing it the program id and the terms', () => {

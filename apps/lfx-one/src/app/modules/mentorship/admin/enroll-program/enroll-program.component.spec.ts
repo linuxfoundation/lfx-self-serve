@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, model, output } from '@angular/core';
+import { Component, input, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -38,6 +38,7 @@ import {
   MentorshipProgramTermRow,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
@@ -66,6 +67,8 @@ class StubDetailsStepComponent {
   public readonly logoFile = model<File | null>(null);
   public readonly programId = input('');
   public readonly currentLogoUrl = input('');
+  public readonly lockedProject = input<MentorshipLfProject | null>(null);
+  public readonly parentProject = input<MentorshipLfProject | null>(null);
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 }
@@ -164,6 +167,7 @@ describe('EnrollProgramComponent', () => {
         provideHttpClientTesting(),
         { provide: MessageService, useValue: { add: toast } },
         { provide: MentorshipAdminService, useValue: { createProgram, uploadProgramLogo } },
+        { provide: ProjectContextService, useValue: { activeContext: signal(null), activeContextUid: signal('') } },
       ],
     });
 
@@ -595,7 +599,17 @@ describe('EnrollProgramComponent — edit mode', () => {
       return of(value);
     });
 
+  /** The route's lens, read when the wizard is created: unset is the Me lens. */
+  let routeLens: string | undefined;
+  /** Creates the wizard again, e.g. after changing `routeLens`. */
+  const createWizard = (): void => {
+    fixture = TestBed.createComponent(EnrollProgramComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  };
+
   beforeEach(async () => {
+    routeLens = undefined;
     toast = vi.fn();
     calls = [];
     service = {
@@ -613,9 +627,20 @@ describe('EnrollProgramComponent — edit mode', () => {
         provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ programId: PROGRAM_ID }) } } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap({ programId: PROGRAM_ID }),
+              get data() {
+                return { lens: routeLens };
+              },
+            },
+          },
+        },
         { provide: MessageService, useValue: { add: toast } },
         { provide: MentorshipAdminService, useValue: service },
+        { provide: ProjectContextService, useValue: { activeContext: signal(null), activeContextUid: signal('') } },
       ],
     });
 
@@ -628,11 +653,18 @@ describe('EnrollProgramComponent — edit mode', () => {
       },
     }).compileComponents();
 
-    fixture = TestBed.createComponent(EnrollProgramComponent);
-    component = fixture.componentInstance;
     router = TestBed.inject(Router);
     vi.spyOn(router, 'navigate').mockResolvedValue(true);
-    fixture.detectChanges();
+    createWizard();
+  });
+
+  it('goes back to the Project lens’s program page after an update opened from the Project lens', () => {
+    routeLens = 'project';
+    createWizard();
+
+    clickUpdate();
+
+    expect(router.navigate).toHaveBeenCalledWith(['/project/mentorship', PROGRAM_ID]);
   });
 
   it('fills the form from the program and shows the edit title, the Update button and the closed terms', () => {
@@ -791,5 +823,79 @@ describe('EnrollProgramComponent — edit mode', () => {
 
     expect(await component.canLeave()).toBe(true);
     expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Discard changes' }));
+  });
+});
+
+describe('EnrollProgramComponent — from a lens (lfx-mentorship#398)', () => {
+  const PROJECT_UID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+  const LENS_PROJECT: MentorshipLfProject = { id: PROJECT_UID, name: 'GridFlow', slug: 'gridflow', logoUrl: 'https://cdn.example/gridflow.png' };
+
+  let fixture: ComponentFixture<EnrollProgramComponent>;
+  let component: EnrollProgramComponent;
+  let router: Router;
+
+  const detailsStep = (): StubDetailsStepComponent => fixture.debugElement.query(By.directive(StubDetailsStepComponent)).componentInstance;
+
+  const create = async (lens: 'project' | 'foundation'): Promise<void> => {
+    TestBed.configureTestingModule({
+      imports: [EnrollProgramComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}), data: { lens } } } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MentorshipAdminService, useValue: { createProgram: vi.fn(), uploadProgramLogo: vi.fn() } },
+        {
+          provide: ProjectContextService,
+          useValue: {
+            activeContext: signal({ uid: PROJECT_UID, name: 'GridFlow', slug: 'gridflow', logoUrl: 'https://cdn.example/gridflow.png' }),
+            activeContextUid: signal(PROJECT_UID),
+          },
+        },
+      ],
+    });
+
+    await TestBed.overrideComponent(EnrollProgramComponent, {
+      remove: {
+        imports: [EnrollStepperComponent, EnrollDetailsStepComponent, EnrollSetupStepComponent, EnrollPrerequisitesStepComponent],
+      },
+      add: {
+        imports: [StubStepperComponent, StubDetailsStepComponent, StubSetupStepComponent, StubPrerequisitesStepComponent],
+      },
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(EnrollProgramComponent);
+    component = fixture.componentInstance;
+    router = TestBed.inject(Router);
+    vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    fixture.detectChanges();
+  };
+
+  it('enrolls for the Projects lens’s project only, picked up front, and goes back to its Mentorship Programs', async () => {
+    await create('project');
+
+    expect(component['form'].controls.projectId.value).toBe(PROJECT_UID);
+    expect(component['selectedProject']()).toEqual(LENS_PROJECT);
+    expect(detailsStep().lockedProject()).toEqual(LENS_PROJECT);
+    expect(detailsStep().parentProject()).toBeNull();
+    expect(component['backToLabel']).toBe('Mentorship Programs');
+
+    // The preset project is not an unsaved answer, so leaving the untouched form does not ask.
+    expect(await component.canLeave()).toBe(true);
+    component['onCancel']();
+    expect(router.navigate).toHaveBeenCalledWith(['/project/mentorship']);
+  });
+
+  it('offers the Foundation lens’s foundation and its sub-projects, with nothing picked up front', async () => {
+    await create('foundation');
+
+    expect(component['form'].controls.projectId.value).toBe('');
+    expect(detailsStep().lockedProject()).toBeNull();
+    expect(detailsStep().parentProject()).toEqual(LENS_PROJECT);
+
+    component['onCancel']();
+    expect(router.navigate).toHaveBeenCalledWith(['/foundation/mentorship']);
   });
 });
