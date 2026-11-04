@@ -83,6 +83,7 @@ describe('MentorshipService program review', () => {
       codeOfConductUrl: 'https://test-org.example/coc',
       ciiProjectId: '1234',
       skills: ['go', 'kubernetes'],
+      hasDetails: true,
     });
   });
 
@@ -109,7 +110,48 @@ describe('MentorshipService program review', () => {
       codeOfConductUrl: null,
       ciiProjectId: null,
       skills: [],
+      hasDetails: true,
     });
+  });
+
+  it('reads the status of a program the catalog does not serve, without its details', async () => {
+    proxyRequest
+      .mockRejectedValueOnce(new MicroserviceError('Program not found', 404, 'NOT_FOUND'))
+      .mockResolvedValueOnce({ ...upstreamProgram, status: 'rejected', project_name: 'Test Foundation', description: 'not forwarded' });
+
+    const review = await service.getProgramReview(buildReq(), programId);
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}/catalog`, 'GET');
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}`, 'GET');
+    expect(review).toEqual({
+      id: programId,
+      name: 'Test Program',
+      status: 'rejected',
+      projectName: 'Test Foundation',
+      description: null,
+      logoUrl: null,
+      repoUrl: null,
+      codeOfConductUrl: null,
+      ciiProjectId: null,
+      skills: [],
+      hasDetails: false,
+    });
+  });
+
+  it('lets a 404 through when the program does not exist at all', async () => {
+    const missing = new MicroserviceError('Program not found', 404, 'NOT_FOUND');
+    proxyRequest.mockRejectedValueOnce(new MicroserviceError('Program not found', 404, 'NOT_FOUND')).mockRejectedValueOnce(missing);
+
+    await expect(service.getProgramReview(buildReq(), programId)).rejects.toBe(missing);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fall back on a catalog error other than 404', async () => {
+    const forbidden = new MicroserviceError('Forbidden', 403, 'FORBIDDEN');
+    proxyRequest.mockRejectedValueOnce(forbidden);
+
+    await expect(service.getProgramReview(buildReq(), programId)).rejects.toBe(forbidden);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
   it.each([

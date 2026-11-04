@@ -187,19 +187,26 @@ export class MentorshipService {
   }
 
   /**
-   * The program a review email link points at, as its public page shows it. Read from the catalog
-   * with the caller's own token: the catalog read is `viewer`-guarded, and approvers pass it through
-   * `auditor`, so a pending program reaches approvers and nobody else.
+   * The program a review email link points at, as its public page shows it. Read with the caller's
+   * own token, so upstream's `viewer` check decides who sees it: approvers pass it through `auditor`.
+   *
+   * The catalog serves only pending and published programs and answers 404 for the rest, so on a 404
+   * the plain program read (same `viewer` guard) tells a decided program from a missing one. A
+   * rejected or hidden program comes back with its status and no details, which is all the page
+   * shows once a program is no longer pending; a missing one still ends in 404.
    */
   public async getProgramReview(req: Request, programId: string): Promise<MentorshipProgramReview> {
+    const path = `/mentorship/v1/programs/${encodeURIComponent(programId)}`;
     logger.debug(req, 'mentorship_get_program_review', 'Fetching program for review', { programId });
-    const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgramCatalog>(
-      req,
-      'LFX_V2_SERVICE',
-      `/mentorship/v1/programs/${encodeURIComponent(programId)}/catalog`,
-      'GET'
-    );
-    return toProgramReview(program);
+    try {
+      const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgramCatalog>(req, 'LFX_V2_SERVICE', `${path}/catalog`, 'GET');
+      return toProgramReview(program);
+    } catch (error) {
+      if (!(error instanceof MicroserviceError && error.statusCode === 404)) throw error;
+      logger.debug(req, 'mentorship_get_program_review', 'Program not in the catalog, reading its status', { programId });
+      const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(req, 'LFX_V2_SERVICE', path, 'GET');
+      return toDecidedProgramReview(program);
+    }
   }
 
   /**
@@ -287,6 +294,24 @@ function toProgramReview(program: MentorshipUpstreamProgramCatalog): MentorshipP
     codeOfConductUrl: toHttpUrl(program.code_of_conduct),
     ciiProjectId: isMentorshipCiiProjectId(ciiProjectId) ? ciiProjectId : null,
     skills: (program.skills ?? []).map((skill) => skill.trim()).filter((skill) => skill.length > 0),
+    hasDetails: true,
+  };
+}
+
+/** A program the catalog does not serve (rejected or hidden): its status, without details. */
+function toDecidedProgramReview(program: MentorshipUpstreamProgram): MentorshipProgramReview {
+  return {
+    id: program.id,
+    name: program.name,
+    status: program.status,
+    projectName: program.project_name?.trim() || null,
+    description: null,
+    logoUrl: null,
+    repoUrl: null,
+    codeOfConductUrl: null,
+    ciiProjectId: null,
+    skills: [],
+    hasDetails: false,
   };
 }
 

@@ -13,14 +13,14 @@ When a program is enrolled, reviewers receive an email about it. Its links open 
 
 ## Before you begin
 
-Only members of the mentorship approver team can see a program awaiting review and decide on it. Anyone else who opens the link sees a message that they don't have permission.
+Only members of the mentorship approver team can approve or reject a program. Anyone without access to the program who opens the link sees a message that they don't have permission.
 
 ## Steps
 
 1. Open a link in the review email.
 2. Sign in at [app.lfx.dev](https://app.lfx.dev) if prompted.
 3. Review the program on the page:
-   - **Header** — the program logo, name, status and foundation.
+   - **Header** — the program logo, name, status and the project it belongs to.
    - **Program description** and **Program skills**.
    - **Links and compliance** — the GitHub repository, the Code of Conduct and the OpenSSF Best Practices (CII) badge. Each shows **Not provided** when the program has none.
 4. Decide in the **Review request** card:

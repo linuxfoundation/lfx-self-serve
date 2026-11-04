@@ -417,6 +417,11 @@ export interface MentorshipProgramReview {
   codeOfConductUrl: string | null;
   ciiProjectId: string | null;
   skills: string[];
+  /**
+   * `false` when upstream's catalog does not serve the program (it serves only pending and published
+   * ones), so only its status, name and project are known; the page then leaves out the details.
+   */
+  hasDetails: boolean;
 }
 
 /** Response body from `POST /api/mentorship/program-review/:programId/decision`: the status the decision recorded. */

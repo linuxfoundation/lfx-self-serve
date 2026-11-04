@@ -25,6 +25,7 @@ describe('ProgramReviewComponent', () => {
     codeOfConductUrl: 'https://test-org.example/coc',
     ciiProjectId: '1234',
     skills: ['go', 'kubernetes'],
+    hasDetails: true,
     ...overrides,
   });
   const result = (status: MentorshipUpstreamProgramStatus): MentorshipProgramDecisionResult => ({ id: programId, name: 'Test Program', status });
@@ -126,6 +127,14 @@ describe('ProgramReviewComponent', () => {
     for (const id of ['repo', 'coc', 'cii']) {
       expect(byTestId(`mentorship-program-review-${id}`)?.textContent).toContain('Not provided');
     }
+  });
+
+  it('leaves out the details of a program the catalog does not serve', () => {
+    build({ load: of(review('rejected', { hasDetails: false, description: null, skills: [] })) });
+
+    expect(byTestId('mentorship-program-review-details')).toBeNull();
+    expect(byTestId('mentorship-program-review-title')?.textContent).toContain('Test Program');
+    expect(byTestId('mentorship-program-review-rejected')).not.toBeNull();
   });
 
   it('records an approval on Approve and shows the outcome', () => {

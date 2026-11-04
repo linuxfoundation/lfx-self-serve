@@ -60,6 +60,7 @@ describe('MentorshipController program review', () => {
       codeOfConductUrl: null,
       ciiProjectId: null,
       skills: [],
+      hasDetails: true,
     };
     const getProgramReview = vi.spyOn(MentorshipService.prototype, 'getProgramReview').mockResolvedValue(details);
 

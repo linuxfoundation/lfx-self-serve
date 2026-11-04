@@ -53,8 +53,9 @@ import {
  * approve and reject buttons (`?decision=approve|reject`). The page shows the program as its public
  * page would, and records a decision only when the reviewer clicks Approve or confirms Reject, so a
  * mail scanner prefetching the link changes nothing. `?decision=reject` opens the page on the reject
- * step. Who may see and decide is enforced upstream (approvers hold `auditor` on every program), so a
- * signed-in user who is not an approver sees the 403 state rather than the program.
+ * step. Who may see the program and decide is enforced upstream: approvers hold `auditor` on every
+ * program, a signed-in user without `viewer` on it sees the 403 state, and a decision from anyone
+ * outside the approver team is refused with a 403.
  */
 @Component({
   selector: 'lfx-mentorship-program-review',
