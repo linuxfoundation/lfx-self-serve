@@ -447,7 +447,14 @@ without any session capability. An accepted answer resumes public progress;
 403 retains a reason-bearing waiting notice without retries. A scoped 409
 `MKTG_RUN_ANSWERED` retires the submitted questions block, shows the server's
 safe display name (or Another writer), and resumes writing progress without
-resending. Identifier-like names are not echoed. A genuinely new server questions
+resending, and keeps the sent draft read-only under the notice (`locked` questions block: every
+box disabled, no Send, the stepper still browsable) until a newer block, another run or leaving.
+The same conflict learnt at read time, from a poll that shows the held block moved to writing,
+storing or completed, is heard the same way when the form was typed (an answer differs, trimmed,
+from what it opened with): the notice names nobody ("Someone on your team"), or "another window"
+when this profile's stored attempt shows the block answered elsewhere, and the typed draft stays
+below; an untouched form moves on to Writing quietly. Both forms, public and private, share the
+notice text builder. Identifier-like names are not echoed. A genuinely new server questions
 block remains answerable; other 409/412 responses refresh the current row. The waiting state
 checks on its own (`MKTG_RUN_POLL.questionsIntervalMs`) and keeps a held block through polls that
 omit it; it offers no Refresh button, and Refresh appears only once automatic checks pause after

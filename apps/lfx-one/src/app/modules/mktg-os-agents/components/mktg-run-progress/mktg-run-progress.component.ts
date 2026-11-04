@@ -25,6 +25,8 @@ import {
   MktgRunActivity,
   MktgRunAnswer,
   MktgRunAnsweredNotice,
+  MktgRunQuestion,
+  MktgRunQuestionDraft,
 } from '@lfx-one/shared/interfaces';
 import {
   findMktgRunIntake,
@@ -33,6 +35,7 @@ import {
   mktgRunRouteFor,
   mktgRunAnsweredBy,
   mktgRunHoldsQuestions,
+  mktgRunMovedPast,
   mktgSentenceCaseLabel,
   readMktgRetiredRunHint,
 } from '@lfx-one/shared/utils';
@@ -41,11 +44,19 @@ import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
+import { mktgRunAnsweredElsewhereNotice } from '@shared/utils/mktg-run-answered-notice.utils';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { catchError, defer, distinctUntilChanged, EMPTY, exhaustMap, expand, finalize, map, of, Subject, switchMap, tap, throwError, timer } from 'rxjs';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
 import { MktgClosedRunMessageComponent } from '../mktg-closed-run-message/mktg-closed-run-message.component';
+
+/** A block and the draft typed into it, kept read-only once someone else answered. */
+interface MktgRunKeptDraft {
+  questionsId: string;
+  questions: MktgRunQuestion[];
+  draft: MktgRunQuestionDraft;
+}
 
 /**
  * One public progress reader/presentation for the run and document pages.
@@ -148,6 +159,14 @@ export class MktgRunProgressComponent {
   private readonly answeredRunId = signal('');
   private readonly answeredQuestionsId = signal('');
   private readonly answersDenied = signal(false);
+  /** The public form's live draft with its block: only a typed one hears that someone else answered, and the kept copy is read-only. */
+  private readonly publicDraft = signal<MktgRunKeptDraft | null>(null);
+  /** The draft kept read-only under the answered notice, until a newer block, another run or leaving. */
+  private readonly keptDraft = signal<MktgRunKeptDraft | null>(null);
+  protected readonly keptBlock = computed(() => {
+    const kept = this.keptDraft();
+    return kept && this.visibleAnswersNotice() && kept.questionsId === this.answeredQuestionsId() ? kept : null;
+  });
   protected readonly publicQuestions = this.initPublicQuestions();
 
   protected readonly detail = computed(() => {
@@ -259,6 +278,8 @@ export class MktgRunProgressComponent {
           this.answersNotice.set('');
           this.answeredRunId.set('');
           this.answeredQuestionsId.set('');
+          this.keptDraft.set(null);
+          this.publicDraft.set(null);
           return this.answerRequests.pipe(
             exhaustMap((answers) => {
               const run = this.selectedRun();
@@ -285,7 +306,7 @@ export class MktgRunProgressComponent {
                       );
                     } else if (error.status === 409 || error.status === 412) {
                       const answered = this.answeredConflict(error, run.runId, pending.questionsId);
-                      if (answered) this.acknowledgeAnswers(pending.questionsId, `${answered} already answered these — the agent is writing.`, run.runId);
+                      if (answered) this.acknowledgeAnswers(pending.questionsId, mktgRunAnsweredElsewhereNotice(answered), run.runId);
                       else this.onRefreshProgress();
                     } else {
                       this.answersError.set('Your answers could not be sent. Check the current run before trying again.');
@@ -437,6 +458,8 @@ export class MktgRunProgressComponent {
                 if (request.subject && request.subject !== this.user.user()?.sub) return;
                 if (readerSubject && readerSubject !== this.user.user()?.sub) return;
                 const previous = this.loaded();
+                const shown = this.publicQuestions();
+                const answeredElsewhere: { runId: string; questionsId: string }[] = [];
                 this.loadedSelector.set(request.runId);
                 // A poll of the same block must not reset the stepper or overwrite unsent edits.
                 this.loaded.set({
@@ -448,14 +471,22 @@ export class MktgRunProgressComponent {
                       this.answersNotice.set('');
                       this.answeredRunId.set('');
                       this.answeredQuestionsId.set('');
+                      this.keptDraft.set(null);
                     }
                     const prior = previous?.runs?.find((entry) => entry.runId === row.runId);
                     // The same block keeps its object (no stepper reset); a questions row without its block keeps the held one.
                     if (prior?.pendingQuestions && mktgRunHoldsQuestions(row, prior.pendingQuestions.questionsId))
                       return { ...row, pendingQuestions: prior.pendingQuestions };
+                    // The read-time half of the answers conflict: the shown block moved past its questions without this
+                    // browser's answer. A typed draft hears it as the send-time 409 does; an untouched form moves on quietly.
+                    const held = prior?.pendingQuestions?.questionsId;
+                    if (held && held === shown?.questionsId && this.answeredQuestionsId() !== held && this.publicDraftTyped(held) && mktgRunMovedPast(row))
+                      answeredElsewhere.push({ runId: row.runId, questionsId: held });
                     return row;
                   }),
                 });
+                // Collected inside the map, acted on after it: the notice must not re-enter the state being set.
+                for (const { runId, questionsId } of answeredElsewhere) this.noticeAnsweredElsewhere(runId, questionsId);
                 this.loadedSubject.set(readerSubject);
                 this.observed.emit({ ...cycle, detail: this.loaded() ?? cycle.detail });
                 if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) return;
@@ -531,6 +562,8 @@ export class MktgRunProgressComponent {
     if (notice) this.alreadyAnswered.emit({ runId, questionsId, message: notice });
     this.answeredRunId.set(runId);
     this.answeredQuestionsId.set(questionsId);
+    // A send that lost keeps what was typed, read-only, under the notice; an accepted send keeps nothing.
+    this.keptDraft.set(notice ? this.publicDraft() : null);
     this.loaded.update(
       (detail) =>
         detail && { ...detail, runs: detail.runs?.map((row) => (row.runId === runId ? { ...row, state: 'writing', pendingQuestions: undefined } : row)) }
@@ -558,10 +591,38 @@ export class MktgRunProgressComponent {
     this.answerRequests.next(answers);
   }
 
+  protected onPublicDraft(draft: MktgRunQuestionDraft): void {
+    const shown = this.publicQuestions();
+    this.publicDraft.set(shown ? { questionsId: shown.questionsId, questions: shown.questions, draft } : null);
+  }
+
   protected onRefreshProgress(): void {
     if (this.submittingGeneration()) return;
     if (this.polling()) this.reload.update((count) => count + 1);
     else this.refresh.emit();
+  }
+
+  /** Whether the live public draft for this block differs from what its form opened with. */
+  private publicDraftTyped(questionsId: string): boolean {
+    const kept = this.publicDraft();
+    return kept?.questionsId === questionsId && kept.draft.dirty === true;
+  }
+
+  /**
+   * The read-time half of the answers conflict, learnt from a poll: the shown block moved past its questions without this
+   * browser's answer. The same words and channel as a send that lost, but no state is rewritten and nothing is re-read —
+   * the row already says writing. The name comes from this profile's attempt (another window) or the conflict fallback.
+   */
+  private noticeAnsweredElsewhere(runId: string, questionsId: string): void {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === this.agentKey());
+    const sameProfile = !!type?.catalogAgentId && this.attempts.answeredInAnotherWindow(this.project(), type.catalogAgentId, questionsId);
+    const notice = mktgRunAnsweredElsewhereNotice(null, sameProfile);
+    this.answersError.set('');
+    this.answersNotice.set(notice);
+    this.alreadyAnswered.emit({ runId, questionsId, message: notice });
+    this.answeredRunId.set(runId);
+    this.answeredQuestionsId.set(questionsId);
+    this.keptDraft.set(this.publicDraft());
   }
 
   /** Only the exact scoped server conflict can retire this browser's answer form. */

@@ -53,6 +53,8 @@ export class MktgRunQuestionsComponent {
   public readonly allowNonAnswers = input(false);
   /** Only these stable question ids may use literal none on otherwise substantive-only surfaces. */
   public readonly allowNoneFor = input<readonly string[]>([]);
+  /** A kept draft, read-only: every box disabled, nothing to send, the questions still browsable. */
+  public readonly locked = input(false);
 
   // === Outputs ===
   /** Every question's answer, sent together from the last question. */
@@ -71,6 +73,8 @@ export class MktgRunQuestionsComponent {
   private readonly visited = signal<Record<string, boolean>>({});
   /** True once Continue was pressed on an answer that says nothing — the message then shows. */
   protected readonly showError = signal(false);
+  /** The values the boxes opened with, so a draft can say whether the requester typed. */
+  private readonly opening = signal<Record<string, string>>({});
 
   // === Computed ===
   private readonly values = toSignal(this.answersForm.valueChanges.pipe(map(() => this.answersForm.getRawValue())), {
@@ -110,8 +114,16 @@ export class MktgRunQuestionsComponent {
       });
     });
     effect(() => {
-      const draft = { index: this.index(), answers: this.values() };
-      if (this.questions().length) this.draftChanged.emit(draft);
+      const answers = this.values();
+      const opening = this.opening();
+      const dirty = Object.keys(answers).some((key) => (answers[key] ?? '').trim() !== (opening[key] ?? '').trim());
+      const draft: MktgRunQuestionDraft = { index: this.index(), answers, dirty };
+      if (this.questions().length && !untracked(() => this.locked())) this.draftChanged.emit(draft);
+    });
+    // The form API, not a bound attribute: a kept draft disables every box at once and re-enables them the same way.
+    effect(() => {
+      const locked = this.locked();
+      untracked(() => (locked ? this.answersForm.disable() : this.answersForm.enable()));
     });
   }
 
@@ -120,6 +132,10 @@ export class MktgRunQuestionsComponent {
   protected onNext(): void {
     const current = this.current();
     if (!current || this.busy()) {
+      return;
+    }
+    if (this.locked()) {
+      if (!this.isLast()) this.goTo(this.index() + 1);
       return;
     }
     if (!this.currentValid()) {
@@ -206,9 +222,13 @@ export class MktgRunQuestionsComponent {
     for (const key of Object.keys(this.answersForm.controls)) {
       this.answersForm.removeControl(key);
     }
+    const opening: Record<string, string> = {};
     for (const question of questions) {
-      this.answersForm.addControl(question.key, new FormControl(previous[question.key] ?? question.suggestedAnswer, { nonNullable: true }));
+      opening[question.key] = previous[question.key] ?? question.suggestedAnswer;
+      this.answersForm.addControl(question.key, new FormControl(opening[question.key], { nonNullable: true }));
     }
+    if (untracked(() => this.locked())) this.answersForm.disable();
+    this.opening.set(opening);
     this.visited.set({});
     this.index.set(0);
     this.showError.set(false);

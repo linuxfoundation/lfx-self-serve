@@ -62,6 +62,7 @@ import {
   MktgRunAnsweredNotice,
   MktgRunActivity,
   MktgRunPhase,
+  MktgRunQuestionDraft,
   MktgRunQuestionsPending,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
@@ -73,6 +74,7 @@ import {
   mktgKitAssetLabel,
   mktgRunAnsweredBy,
   mktgRunHoldsQuestions,
+  mktgRunMovedPast,
   mktgRunRouteFor,
   readMktgRetiredRunHint,
   mktgLinkWarnings,
@@ -92,6 +94,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { mktgRunAnsweredElsewhereNotice } from '@shared/utils/mktg-run-answered-notice.utils';
 
 import { AeoGeoRunComponent } from '../components/aeo-geo-run/aeo-geo-run.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
@@ -361,6 +364,20 @@ export class MktgAgentRunComponent {
   protected readonly lastAnswers = signal<Record<string, string>>({});
   /** True while the answers are on their way to the agent. */
   protected readonly answersSending = signal(false);
+  /** The private form's live draft, keyed by its block: only a typed one hears that someone else answered. */
+  private readonly privateDraft = signal<{ questionsId: string; draft: MktgRunQuestionDraft } | null>(null);
+  /** True once someone else answered the held block: it stays on screen read-only under the notice. */
+  private readonly questionsLocked = signal(false);
+  /** The block kept read-only under the answered notice, with the draft typed into it. */
+  protected readonly keptQuestions = computed(() => {
+    const kept = this.questionsPending();
+    return this.questionsLocked() && kept && this.answeredNotice()?.questionsId === kept.questionsId ? kept : null;
+  });
+  protected readonly keptDraft = computed(() => {
+    const kept = this.keptQuestions();
+    const draft = this.privateDraft();
+    return kept && draft?.questionsId === kept.questionsId ? draft.draft : null;
+  });
   /** The row ids of every `url-list` field, in display order, keyed by field key. */
   protected readonly linkRows = signal<Record<string, string[]>>({});
   /** Ever-increasing counter behind the row ids, so a removed row's id is never reused. */
@@ -876,6 +893,22 @@ export class MktgAgentRunComponent {
         return;
       }
     }
+    // The read-time half of the answers conflict: the held block moved past its questions (or its run landed) without this
+    // window's answer. A typed draft hears it as the send-time 409 does; an untouched form moves on quietly below.
+    const held = this.questionsPending();
+    if (held && !this.questionsLocked() && !this.answersSending() && this.privateDraftTyped(held.questionsId) && (run ? mktgRunMovedPast(run) : true)) {
+      const sameProfile = this.runAttempts.answeredInAnotherWindow(cycle.detail.project, this.agent?.id ?? '', held.questionsId);
+      this.hearAnswered(
+        held,
+        held.attempt.runId || this.publicRunId(),
+        cycle.detail.project,
+        this.agent?.id ?? '',
+        mktgRunAnsweredElsewhereNotice(null, sameProfile)
+      );
+      return;
+    }
+    // A kept block stays until a newer round or another run; the run's later states change nothing below it.
+    if (this.keptQuestions()) return;
     // Server writing/storing/landed (or a new questions block) beats a stale local questions draft.
     if (this.phase() === 'questions' || this.questionsPending()) {
       if (!this.answersSending()) {
@@ -1080,6 +1113,12 @@ export class MktgAgentRunComponent {
     this.documentsSection()?.addFiles(Array.from(event.files), field.uploadTag);
   }
 
+  /** The private form's live draft: whether it was typed decides if a poll past the questions is heard. */
+  protected onQuestionDraft(draft: MktgRunQuestionDraft): void {
+    const questionsId = this.questionsPending()?.questionsId;
+    this.privateDraft.set(questionsId ? { questionsId, draft } : null);
+  }
+
   /** Sends answers once, keeps the run-page feed, and lands only after the exact revision is stored. */
   protected onAnswerQuestions(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending();
@@ -1115,25 +1154,7 @@ export class MktgAgentRunComponent {
           const runId = pending.attempt.runId || this.publicRunId();
           const answeredBy = error instanceof HttpErrorResponse && error.status === 409 ? mktgRunAnsweredBy(error.error, runId, pending.questionsId) : null;
           if (answeredBy) {
-            this.answersSending.set(false);
-            this.hasAcknowledgement.set(true);
-            this.clearQuestions();
-            this.phase.set('running');
-            this.checkingRun.set(false);
-            this.writingStretch.set(true);
-            this.errorText.set('');
-            const saved = this.runAttempts.load(request.projectUid, request.agentId);
-            if (saved?.attempt?.runId === runId)
-              this.runAttempts.save({ ...saved, state: 'writing', pendingQuestions: undefined, answeredQuestionsId: pending.questionsId });
-            const notice = `${answeredBy} already answered these — the agent is writing.`;
-            const scopedNotice = { runId, questionsId: pending.questionsId, message: notice };
-            this.answeredNotice.set(scopedNotice);
-            this.concurrentAnswers.remember(request.projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scopedNotice);
-            this.discoveredRunId.set(runId);
-            this.publicReceiver.set(true);
-            const observer = this.publicProgressView();
-            if (observer && observer.runId() === runId) observer.acknowledgeAnswers(pending.questionsId, notice, runId);
-            else this.publicRefreshKey.update((value) => value + '1');
+            this.hearAnswered(pending, runId, request.projectUid, request.agentId, mktgRunAnsweredElsewhereNotice(answeredBy));
             return;
           }
           if (error instanceof HttpErrorResponse && (error.status === 409 || error.status === 412) && this.publicProgressView()) {
@@ -2490,10 +2511,43 @@ export class MktgAgentRunComponent {
     this.recheckingAttempt.set(false);
     if (this.questionsPending()?.questionsId !== pending.questionsId) this.lastAnswers.set({});
     this.questionsPending.set(pending);
+    this.questionsLocked.set(false);
     this.phase.set('questions');
   }
 
   private clearQuestions(): void {
     this.questionsPending.set(null);
+    this.questionsLocked.set(false);
+  }
+
+  /** Whether the live private draft for this block differs from what its form opened with. */
+  private privateDraftTyped(questionsId: string): boolean {
+    const kept = this.privateDraft();
+    return kept?.questionsId === questionsId && kept.draft.dirty === true;
+  }
+
+  /**
+   * Someone else answered the held block — learnt from a send's 409 or from a poll past the questions. The block stays
+   * read-only under the notice, the attempt follows the run as writing, and the public observer of that run says it too.
+   */
+  private hearAnswered(pending: MktgRunQuestionsPending, runId: string, projectUid: string, agentId: string, notice: string): void {
+    this.answersSending.set(false);
+    this.hasAcknowledgement.set(true);
+    this.questionsLocked.set(true);
+    this.phase.set('running');
+    this.checkingRun.set(false);
+    this.writingStretch.set(true);
+    this.errorText.set('');
+    const saved = this.runAttempts.load(projectUid, agentId);
+    if (saved?.attempt?.runId === runId)
+      this.runAttempts.save({ ...saved, state: 'writing', pendingQuestions: undefined, answeredQuestionsId: pending.questionsId });
+    const scopedNotice = { runId, questionsId: pending.questionsId, message: notice };
+    this.answeredNotice.set(scopedNotice);
+    this.concurrentAnswers.remember(projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scopedNotice);
+    this.discoveredRunId.set(runId);
+    this.publicReceiver.set(true);
+    const observer = this.publicProgressView();
+    if (observer && observer.runId() === runId) observer.acknowledgeAnswers(pending.questionsId, notice, runId);
+    else this.publicRefreshKey.update((value) => value + '1');
   }
 }

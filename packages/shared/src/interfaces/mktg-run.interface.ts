@@ -605,6 +605,11 @@ export interface MktgRunResultBody {
 export interface MktgRunQuestionDraft {
   index: number;
   answers: Record<string, string>;
+  /**
+   * True once at least one answer differs, trimmed, from what the form opened with (the
+   * question's suggestion or the earlier try's answer): the requester has typed.
+   */
+  dirty?: boolean;
 }
 
 /** Browser-local capability for resuming a pending one-off document; never placed in a URL. */

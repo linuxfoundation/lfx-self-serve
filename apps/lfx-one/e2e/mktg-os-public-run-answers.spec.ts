@@ -136,9 +136,17 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   }
   await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Writing');
   if (alreadyAnswered) {
-    await expect(page.getByTestId('mktg-run-progress-answered-note')).toHaveText('Another Writer already answered these — the agent is writing.');
+    await expect(page.getByTestId('mktg-run-progress-answered-note')).toHaveText(
+      'Another Writer already answered these — the agent is writing. Your draft is kept below.'
+    );
     // 144-E: the conflict lives above THIS run's writing progress, never a toast followed by a redirect.
     await expect(page).toHaveURL(waitingUrl);
+    // The lost send keeps what was typed under the notice, read-only: the box disabled with its text, Send gone.
+    const kept = page.getByTestId('mktg-run-questions-locked');
+    await expect(kept.locator('textarea[data-test="mktg-run-questions-answer-audience"]')).toBeDisabled();
+    await expect(kept.locator('textarea[data-test="mktg-run-questions-answer-audience"]')).toHaveValue('Synthetic project maintainers and contributors');
+    await expect(kept.getByTestId('mktg-run-questions-send')).toHaveCount(0);
+  } else {
     await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
   }
   await page.getByTestId('mktg-run-public-progress').screenshot({ path: info.outputPath('03-settled-writing.png') });

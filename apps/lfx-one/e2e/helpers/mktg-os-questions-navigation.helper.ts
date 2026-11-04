@@ -107,6 +107,7 @@ export async function setupQuestionsNavigation(page: Page) {
     intake,
     runId,
     revision,
+    pendingQuestions,
     posts,
     historyTrace,
     finish: () => {

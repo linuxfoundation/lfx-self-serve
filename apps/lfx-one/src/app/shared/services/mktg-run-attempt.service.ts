@@ -379,6 +379,23 @@ export class MktgRunAttemptService {
     }
   }
 
+  /**
+   * Whether this profile answered the block in ANOTHER window: its save reaches shared storage, never this window's
+   * memory copy, so storage is read past the cache. Nothing is restored or cached by the look.
+   */
+  public answeredInAnotherWindow(project: string, agentId: string, questionsId: string, documentId?: string): boolean {
+    if (!this.subject() || !isPlatformBrowser(this.platformId)) {
+      return false;
+    }
+    try {
+      const raw = window.localStorage.getItem(this.key(project, agentId, this.subject(), documentId));
+      const parsed = raw ? (JSON.parse(raw) as MktgStoredPendingGeneration) : null;
+      return !!parsed && (parsed.answered?.questionsId === questionsId || parsed.answeredQuestionsId === questionsId);
+    } catch {
+      return false;
+    }
+  }
+
   public clear(project: string, agentId: string, subject = this.subject(), documentId?: string): void {
     if (!subject || subject !== this.subject() || !isPlatformBrowser(this.platformId)) {
       return;

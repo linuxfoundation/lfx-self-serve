@@ -56,6 +56,26 @@ describe('MktgRunAttemptService', () => {
     }
   });
 
+  it('sees another window of the same profile answer the block through storage, past this window held copy', () => {
+    const questionsId = 'd'.repeat(64);
+    const attempt = {
+      runId: 'b'.repeat(64),
+      priorVersion: 0,
+      session: { agentId: request.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+    };
+    const pending = { attempt, questionsId, questions: [] };
+    service.save({ request, attempt, pendingQuestions: pending, state: 'questions', updatedAt: new Date().toISOString() });
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(false);
+    // The sibling window's accepted send: its own service writes storage; this window's memory still holds the block.
+    const sibling = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    sibling.save({ request, attempt, answered: { questions: [], answers: [], questionsId }, state: 'writing', updatedAt: new Date().toISOString() });
+    expect(service.load(request.projectUid, request.agentId)?.pendingQuestions?.questionsId).toBe(questionsId);
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(true);
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, 'e'.repeat(64))).toBe(false);
+    user.set({ sub: 'other-subject' } as User);
+    expect(service.answeredInAnotherWindow(request.projectUid, request.agentId, questionsId)).toBe(false);
+  });
+
   it('restores only the exact subject/revision redraft nonce, with no source text or serialized endpoint', () => {
     const scope = { projectUid: request.projectUid, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
     const intent = { scope, clientRequestId: 'send-one', commentIds: ['comment-one'], priorVersion: 1, updatedAt: new Date().toISOString() };

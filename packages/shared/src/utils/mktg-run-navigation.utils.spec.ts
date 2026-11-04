@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { mktgDiscardedRunMessage, mktgRunAnsweredBy, mktgRunHoldsQuestions, readMktgRetiredRunHint } from './mktg-run-navigation.utils';
+import { mktgDiscardedRunMessage, mktgRunAnsweredBy, mktgRunHoldsQuestions, mktgRunMovedPast, readMktgRetiredRunHint } from './mktg-run-navigation.utils';
 
 describe('retired run navigation', () => {
   const row = { runId: 'b'.repeat(64), state: 'discarded', replacedBy: 'c'.repeat(64), closedBy: 'Synthetic writer', closedAt: '2026-10-28T10:00:00Z' };
@@ -57,5 +57,11 @@ describe('held questions against a polled row', () => {
     }
     expect(mktgRunHoldsQuestions(null, held)).toBe(false);
     expect(mktgRunHoldsQuestions(undefined, held)).toBe(false);
+  });
+  it('has moved past its questions only while writing, storing or completed', () => {
+    for (const state of ['writing', 'storing', 'completed'] as const) expect(mktgRunMovedPast({ state })).toBe(true);
+    for (const state of ['questions', 'failed', 'superseded', 'discarded'] as const) expect(mktgRunMovedPast({ state })).toBe(false);
+    expect(mktgRunMovedPast(null)).toBe(false);
+    expect(mktgRunMovedPast(undefined)).toBe(false);
   });
 });

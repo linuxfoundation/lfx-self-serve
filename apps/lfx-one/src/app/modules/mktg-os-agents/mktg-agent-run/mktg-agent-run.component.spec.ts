@@ -2200,16 +2200,21 @@ describe('MktgAgentRunComponent', () => {
       navigate.mockClear();
       component['onAnswerQuestions']([{ key: 'goal', text: 'Synthetic adoption', origin: 'accepted' }]);
       await fixture.whenStable();
-      expect(query('mktg-run-progress-answered-note')?.textContent).toContain('Synthetic writer already answered these — the agent is writing.');
+      const notice = 'Synthetic writer already answered these — the agent is writing. Your draft is kept below.';
+      expect(query('mktg-run-progress-answered-note')?.textContent).toContain(notice);
       expect(navigate).not.toHaveBeenCalled();
       // A child observer can remount while writing; its initial reset must not erase the host's scoped notice.
       component['publicReceiver'].set(false);
       await fixture.whenStable();
       component['publicReceiver'].set(true);
       await fixture.whenStable();
-      expect(query('mktg-run-progress-answered-note')?.textContent).toContain('Synthetic writer already answered these — the agent is writing.');
+      expect(query('mktg-run-progress-answered-note')?.textContent).toContain(notice);
       expect(navigate).not.toHaveBeenCalled();
-      expect(query('mktg-run-questions')).toBeNull();
+      // The lost send keeps its block read-only under the notice: the private form itself is gone.
+      expect(query('mktg-agent-run-questions')).toBeNull();
+      const kept = query('mktg-run-questions-locked');
+      expect(kept?.querySelector('textarea')?.disabled).toBe(true);
+      expect(kept?.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
       expect(component['phase']()).toBe('running');
       expect(answerQuestions).toHaveBeenCalledOnce();
       expect(generate).not.toHaveBeenCalled();
@@ -2376,6 +2381,80 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-run-questions')).toBeNull();
       expect(generate).not.toHaveBeenCalled();
       expect(answerQuestions).not.toHaveBeenCalled();
+    });
+
+    describe('a typed private draft hears that someone else answered', () => {
+      const questionsId = 'd'.repeat(64);
+      const attempt = { runId, priorVersion: 0, session: { agentId: intake.agentId, sessionId: 'synthetic-owned', ownerToken: 'synthetic-proof' } };
+      const question = { key: 'goal', label: 'Goal', question: 'Which goal?', why: '', suggestedAnswer: 'Synthetic adoption', basis: [] };
+      const open = async () => {
+        await configure('browser', type.catalogAgentId, { run: runId });
+        TestBed.inject(MktgRunAttemptService).save({
+          request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+          state: 'questions',
+          updatedAt: new Date().toISOString(),
+          attempt,
+          pendingQuestions: { attempt, questionsId, questions: [question] },
+        });
+        vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('questions')));
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        expect(component['phase']()).toBe('questions');
+      };
+      const typeAnswer = async (value: string) => {
+        const textarea = host().querySelector('textarea[data-test="mktg-run-questions-answer-goal"]') as HTMLTextAreaElement;
+        textarea.value = value;
+        textarea.dispatchEvent(new Event('input'));
+        await fixture.whenStable();
+      };
+      const pollWriting = async () => {
+        vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('writing')));
+        window.dispatchEvent(new Event('focus'));
+        await fixture.whenStable();
+      };
+
+      it.each([false, true])(
+        'keeps a typed draft read-only under the notice when a poll shows the block answered (another window: %s)',
+        async (otherWindow) => {
+          await open();
+          await typeAnswer('Synthetic typed goal');
+          const attempts = TestBed.inject(MktgRunAttemptService);
+          vi.spyOn(attempts, 'answeredInAnotherWindow').mockReturnValue(otherWindow);
+          await pollWriting();
+          expect(component['phase']()).toBe('running');
+          expect(query('mktg-run-progress-answered-note')?.textContent?.trim()).toBe(
+            otherWindow
+              ? 'These were answered in another window — the agent is writing. Your draft is kept below.'
+              : 'Someone on your team already answered these — the agent is writing. Your draft is kept below.'
+          );
+          expect(attempts.answeredInAnotherWindow).toHaveBeenCalledWith(PROJECT_1.uid, intake.agentId, questionsId);
+          expect(query('mktg-agent-run-questions')).toBeNull();
+          const kept = query('mktg-run-questions-locked');
+          const box = kept?.querySelector('textarea') as HTMLTextAreaElement;
+          expect(box.disabled).toBe(true);
+          expect(box.value).toBe('Synthetic typed goal');
+          expect(kept?.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
+          expect(attempts.load(PROJECT_1.uid, intake.agentId)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
+          expect(attempts.load(PROJECT_1.uid, intake.agentId)?.pendingQuestions).toBeUndefined();
+          expect(answerQuestions).not.toHaveBeenCalled();
+          // The next poll of the same writing run keeps the block and says nothing new.
+          await pollWriting();
+          expect(query('mktg-run-questions-locked')).not.toBeNull();
+          expect(host().querySelectorAll('[data-testid="mktg-run-progress-answered-note"]')).toHaveLength(1);
+        }
+      );
+
+      it('moves an untouched form on quietly when a poll shows the block answered', async () => {
+        await open();
+        await typeAnswer('  Synthetic adoption ');
+        await pollWriting();
+        expect(component['phase']()).toBe('running');
+        expect(query('mktg-run-progress-answered-note')).toBeNull();
+        expect(query('mktg-run-questions-locked')).toBeNull();
+        expect(query('mktg-run-questions')).toBeNull();
+        expect(TestBed.inject(MktgRunAttemptService).load(PROJECT_1.uid, intake.agentId)?.pendingQuestions).toBeUndefined();
+        expect(answerQuestions).not.toHaveBeenCalled();
+      });
     });
   });
 
