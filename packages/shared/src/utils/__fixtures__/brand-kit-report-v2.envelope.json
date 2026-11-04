@@ -399,28 +399,34 @@
           "kind": "brand_page",
           "reason": "This page does not exist on the site (the server answered 404).",
           "detail": "HTTP 404"
+        },
+        {
+          "source": "https://cdn.sanity.io/files/4o10fa7h/production/648471a723a16523e4a2bb9269e093a1ecd3d8e2.zip?dl=",
+          "kind": "logo_package",
+          "reason": "The logo package on aaif.io/brand is a ZIP file, which the agent can't download from a link. Upload it in the form to add the stacked, reversed, symbol and primary files.",
+          "detail": "linked ZIP, not readable from a link"
         }
       ],
       "missing_assets": [
         {
           "asset": "logo_primary",
-          "reason": "No logo file was uploaded and the site sets its wordmark in live type, so the kit shows placeholder marks.",
-          "fix": "Upload the horizontal lockup as SVG, or share the logo package the brand page links."
+          "reason": "No logo file was uploaded and none could be read from the site, so the kit shows placeholder marks.",
+          "fix": "Upload the logo package (the ZIP linked on aaif.io/brand) or the primary file in the form."
         },
         {
           "asset": "logo_stacked",
           "reason": "No stacked logo was uploaded and the site shows none.",
-          "fix": "Upload the stacked logo as SVG, or point to the brand page that has it."
+          "fix": "Upload the logo package (the ZIP linked on aaif.io/brand) or the stacked file in the form."
         },
         {
           "asset": "logo_symbol",
           "reason": "No symbol was uploaded and none could be cropped out of a lockup.",
-          "fix": "Upload the symbol alone as SVG."
+          "fix": "Upload the logo package (the ZIP linked on aaif.io/brand) or the symbol file in the form."
         },
         {
           "asset": "logo_reversed",
           "reason": "No white (reversed) logo was uploaded; dark grounds reuse the full-colour lockup until one is.",
-          "fix": "Upload the white version of the lockup as SVG."
+          "fix": "Upload the logo package (the ZIP linked on aaif.io/brand) or the reversed file in the form."
         }
       ],
       "warnings": [
@@ -431,12 +437,17 @@
         },
         {
           "code": "live_type_wordmark",
-          "text": "The site sets its wordmark in live type rather than an image, so no logo artwork could be read from the pages.",
+          "text": "The site's pages were read but no logo artwork was found on them: the wordmark is probably set in live type, so a logo file must be uploaded.",
           "source": "https://aaif.io/"
         },
         {
           "code": "palette_from_page_text",
-          "text": "Black, Coral and Lilac were read from the brand page's printed HEX values, not from a stylesheet token or a logo file.",
+          "text": "Black, Coral and Lilac were read from the brand page's printed values, not from a stylesheet token or a logo file.",
+          "source": "https://aaif.io/brand"
+        },
+        {
+          "code": "brand_page_guessed",
+          "text": "The brand page was found by its path on the site, not named on the form: check it is the project's own brand page.",
           "source": "https://aaif.io/brand"
         }
       ]
@@ -455,20 +466,6 @@
           }
         ],
         "chosen": "#FF702D"
-      },
-      {
-        "name": "Black",
-        "values": [
-          {
-            "hex": "#000000",
-            "source": "brand_page: https://aaif.io/brand"
-          },
-          {
-            "hex": "#171717",
-            "source": "site_css: https://aaif.io/_next/static/chunks/3tg274q-9atqx.css"
-          }
-        ],
-        "chosen": "#000000"
       }
     ],
     "rules": [
@@ -529,23 +526,38 @@
       },
       {
         "path": "chapters.logo.partnership[0]",
-        "basis": "lf-reference"
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
       },
       {
         "path": "chapters.logo.partnership[1]",
-        "basis": "lf-reference"
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
       },
       {
         "path": "chapters.logo.partnership[2]",
-        "basis": "lf-reference"
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
       },
       {
         "path": "chapters.logo.partnership[3]",
-        "basis": "lf-reference"
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
       },
       {
         "path": "chapters.logo.partnership[4]",
-        "basis": "lf-reference"
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
       },
       {
         "path": "chapters.logo.watchouts[0]",
@@ -659,19 +671,31 @@
       },
       {
         "path": "chapters.visual.icons.rules[0]",
-        "basis": "lf-reference"
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
       },
       {
         "path": "chapters.visual.icons.rules[1]",
-        "basis": "lf-reference"
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
       },
       {
         "path": "chapters.visual.icons.rules[2]",
-        "basis": "lf-reference"
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
       },
       {
         "path": "chapters.visual.icons.rules[3]",
-        "basis": "lf-reference"
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
       },
       {
         "path": "chapters.visual.icons.recommended",
@@ -679,7 +703,10 @@
       },
       {
         "path": "chapters.visual.imagery.rule",
-        "basis": "lf-reference"
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
       },
       {
         "path": "chapters.visual.imagery.avoid[0]",
@@ -697,7 +724,7 @@
         "path": "chapters.usage.summary",
         "basis": "lf-reference",
         "uses": [
-          "chapters.color.palette"
+          "chapters.type.family"
         ]
       },
       {
@@ -756,7 +783,7 @@
     "lfx_records": [
       {
         "slug": "agentic-ai-foundation",
-        "uid": "a0941000002wBz5AAE",
+        "uid": "a0900000000SYNTHAAA",
         "name": "Agentic AI Foundation"
       }
     ]
@@ -774,7 +801,7 @@
   "generated_at": "2026-11-04T22:30:00Z",
   "agent": {
     "identifier": "linux-foundation~brand-kit",
-    "agent_version": "2.1.12",
+    "agent_version": "2.2.0",
     "prompt_manifest_sha256": "18c8c7443e660648865ea7601e473b5b4374e38ef4188ef7adfd6111462b6a77"
   }
 }
