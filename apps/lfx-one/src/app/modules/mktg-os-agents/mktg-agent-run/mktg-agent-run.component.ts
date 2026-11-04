@@ -369,6 +369,10 @@ export class MktgAgentRunComponent {
   private readonly privateDraft = signal<Omit<MktgRunKeptDraft, 'questions'> | null>(null);
   /** True once someone else answered the held block: it stays on screen read-only under the notice. */
   private readonly questionsLocked = signal(false);
+  /** When the public progress reader renders nothing of its own; the kept block below it follows the same rule. */
+  protected readonly progressHeadless = computed(
+    () => this.publicIdentityPending() || this.checkingRun() || this.phase() === 'questions' || (!!this.errorText() && !this.navigation())
+  );
   /** The block kept read-only under the answered notice, with the draft typed into it. */
   protected readonly keptQuestions = computed(() => {
     const kept = this.questionsPending();
@@ -871,13 +875,19 @@ export class MktgAgentRunComponent {
       return;
     }
     // Read before any save below: `owned` is this window's memory copy, and a save rewrites the shared record, so the
-    // sibling window's answered marker is looked up in storage first and carried into the retiring save.
-    const heldId = owned?.pendingQuestions?.questionsId ?? this.questionsPending()?.questionsId;
+    // sibling window's answered marker is looked up in storage first and carried into the retiring save. The block heard
+    // below is the one this page shows (questionsPending), so its id decides the notice string.
+    const heldId = this.questionsPending()?.questionsId ?? owned?.pendingQuestions?.questionsId;
     const projectUid = cycle.detail.project;
     const agentId = this.agent?.id ?? '';
     const answeredInAnotherWindow = !!heldId && this.runAttempts.answeredInAnotherWindow(projectUid, agentId, heldId);
     if (owned?.pendingQuestions && !this.answersSending()) {
-      const retired = { ...owned, ...this.runAttempts.storedAnswered(projectUid, agentId), pendingQuestions: undefined, state: 'writing' as const };
+      const retired = {
+        ...owned,
+        ...this.runAttempts.storedAnswered(projectUid, agentId, owned.pendingQuestions.questionsId),
+        pendingQuestions: undefined,
+        state: 'writing' as const,
+      };
       if (!run) {
         // Completion retires the question block, not the creator capability needed for its exact receipt.
         this.runAttempts.save(retired);
@@ -1493,7 +1503,13 @@ export class MktgAgentRunComponent {
           this.clearQuestions();
           if (this.phase() === 'questions') this.phase.set(run ? 'running' : 'form');
           if (!run) this.runAttempts.clear(project, this.agent?.id ?? '');
-          else this.runAttempts.save({ ...saved, pendingQuestions: undefined, state: run.state === 'questions' ? 'questions' : 'writing' });
+          else
+            this.runAttempts.save({
+              ...saved,
+              ...this.runAttempts.storedAnswered(project, this.agent?.id ?? '', saved.pendingQuestions.questionsId),
+              pendingQuestions: undefined,
+              state: run.state === 'questions' ? 'questions' : 'writing',
+            });
         }
         if (fresh && !this.startedOverWaiting()) {
           this.waitingRun.set(run ?? null);
@@ -2543,7 +2559,7 @@ export class MktgAgentRunComponent {
     if (saved?.attempt?.runId === runId)
       this.runAttempts.save({
         ...saved,
-        ...this.runAttempts.storedAnswered(projectUid, agentId),
+        ...this.runAttempts.storedAnswered(projectUid, agentId, pending.questionsId),
         state: 'writing',
         pendingQuestions: undefined,
         answeredQuestionsId: pending.questionsId,

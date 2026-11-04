@@ -2448,7 +2448,7 @@ describe('MktgAgentRunComponent', () => {
           expect(attempts.load(PROJECT_1.uid, intake.agentId)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
           expect(attempts.load(PROJECT_1.uid, intake.agentId)?.pendingQuestions).toBeUndefined();
           // The retiring saves carried the sibling's stored round forward: its later resume still has its ignore-id.
-          if (otherWindow) expect(attempts.storedAnswered(PROJECT_1.uid, intake.agentId).answered?.questionsId).toBe(questionsId);
+          if (otherWindow) expect(attempts.storedAnswered(PROJECT_1.uid, intake.agentId, questionsId).answered?.questionsId).toBe(questionsId);
           expect(answerQuestions).not.toHaveBeenCalled();
           // The next poll of the same writing run keeps the block and says nothing new.
           await pollWriting();
@@ -2456,6 +2456,26 @@ describe('MktgAgentRunComponent', () => {
           expect(host().querySelectorAll('[data-testid="mktg-run-progress-answered-note"]')).toHaveLength(1);
         }
       );
+
+      it('does not carry an older round’s marker into the retiring save of a newer block', async () => {
+        await open();
+        await typeAnswer('Synthetic typed goal');
+        const attempts = TestBed.inject(MktgRunAttemptService);
+        // The sibling answered an EARLIER round of this run; the block this window holds is a later one.
+        const sibling = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+        sibling.save({
+          request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+          attempt,
+          answered: { questions: [question], answers: [], questionsId: 'a'.repeat(64) },
+          state: 'writing',
+          updatedAt: new Date().toISOString(),
+        });
+        await pollWriting();
+        expect(query('mktg-run-progress-answered-note')?.textContent).toContain('Someone on your team already answered these');
+        expect(attempts.load(PROJECT_1.uid, intake.agentId)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
+        expect(attempts.storedAnswered(PROJECT_1.uid, intake.agentId, 'a'.repeat(64))).toEqual({ answered: undefined });
+        expect(window.localStorage.getItem(Object.keys(window.localStorage).find((key) => key.includes(intake.agentId)) ?? '')).not.toContain('a'.repeat(64));
+      });
 
       it('moves an untouched form on quietly when a poll shows the block answered', async () => {
         await open();

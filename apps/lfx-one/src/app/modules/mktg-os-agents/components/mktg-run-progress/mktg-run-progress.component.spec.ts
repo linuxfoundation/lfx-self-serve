@@ -597,7 +597,11 @@ describe('MktgRunProgressComponent', () => {
       fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
       await fixture.whenStable();
       expect(answer).toHaveBeenCalledOnce();
+      const readsBefore = read.mock.calls.length;
       await poll([run]);
+      // The mid-send poll did land and did show the row written: the silence below is the guard's, not a missed poll's.
+      expect(read.mock.calls.length).toBeGreaterThan(readsBefore);
+      expect(fixture.componentInstance.runState()).toBe('writing');
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')).toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).toBeNull();
       expect(announced).not.toHaveBeenCalled();
@@ -622,7 +626,10 @@ describe('MktgRunProgressComponent', () => {
       answer.mockReturnValue(response);
       fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
       await fixture.whenStable();
+      const readsBefore = read.mock.calls.length;
       await poll([run]);
+      expect(read.mock.calls.length).toBeGreaterThan(readsBefore);
+      expect(fixture.componentInstance.runState()).toBe('writing');
       expect(announced).not.toHaveBeenCalled();
       response.error(
         new HttpErrorResponse({
