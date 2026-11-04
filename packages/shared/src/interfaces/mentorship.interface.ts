@@ -400,10 +400,11 @@ export interface MentorshipUpstreamProgramCatalog extends MentorshipUpstreamProg
 }
 
 /**
- * Response body from `GET /api/mentorship/program-review/:programId`: the pending program as the
- * reviewer sees it. Status values and their lifecycle are documented on
- * `MENTORSHIP_UPSTREAM_PROGRAM_STATUSES`. Links are `null` unless they are http(s) URLs, and the CII
- * id is `null` unless it is numeric, so the page can bind them as they are.
+ * Response body from `GET /api/mentorship/program-review/:programId`: the program as the reviewer
+ * sees it, whatever its status. `hasDetails` is `false` when only its status, name and project are
+ * known. Status values and their lifecycle are documented on `MENTORSHIP_UPSTREAM_PROGRAM_STATUSES`.
+ * Links are `null` unless they are http(s) URLs, and the CII id is `null` unless it is numeric, so
+ * the page can bind them as they are.
  */
 export interface MentorshipProgramReview {
   id: string;
@@ -446,9 +447,11 @@ export type MentorshipProgramReviewStep = 'choosing' | 'rejecting';
 
 /**
  * A note the review card shows after a decision did not go through: `conflict` when another
- * reviewer decided first (409), `failed` when the decision was not recorded and can be retried.
+ * reviewer decided first (409) and the page read the status they recorded, `stale` when another
+ * reviewer decided first but that status could not be read yet, and `failed` when the decision was
+ * not recorded and can be retried.
  */
-export type MentorshipProgramReviewNotice = 'conflict' | 'failed';
+export type MentorshipProgramReviewNotice = 'conflict' | 'failed' | 'stale';
 
 /** How a submitted decision settled: the view to show and the note to show with it. */
 export interface MentorshipProgramReviewOutcome {

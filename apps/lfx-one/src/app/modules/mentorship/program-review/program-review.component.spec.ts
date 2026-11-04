@@ -159,6 +159,18 @@ describe('ProgramReviewComponent', () => {
     expect(byTestId('mentorship-program-review-choice')).not.toBeNull();
   });
 
+  it('moves focus to the reject step when it opens, and back to Reject on Cancel', () => {
+    build();
+
+    click('mentorship-program-review-reject');
+    TestBed.tick();
+    expect(document.activeElement).toBe(byTestId('mentorship-program-review-reject-heading'));
+
+    click('mentorship-program-review-reject-cancel');
+    TestBed.tick();
+    expect(document.activeElement).toBe(byTestId('mentorship-program-review-reject')?.querySelector('button'));
+  });
+
   it('records a rejection on Reject program and shows the outcome', () => {
     build({ submit: of(result('rejected')) });
 
@@ -250,6 +262,35 @@ describe('ProgramReviewComponent', () => {
     expect(getProgramReview).toHaveBeenCalledTimes(2);
     expect(byTestId('mentorship-program-review-conflict')?.textContent).toContain('Another reviewer decided this program before you.');
     expect(byTestId('mentorship-program-review-rejected')).not.toBeNull();
+  });
+
+  it('keeps the program after a 409 whose status read fails, and Refresh status reads it again', () => {
+    build({ submit: httpError(409) });
+    getProgramReview.mockReturnValue(httpError(503));
+
+    click('mentorship-program-review-approve');
+
+    expect(byTestId('mentorship-program-review-stale')?.textContent).toContain("its latest status couldn't be loaded");
+    expect(byTestId('mentorship-program-review-title')?.textContent).toContain('Test Program');
+    expect(byTestId('mentorship-program-review-choice')).toBeNull();
+    expect(byTestId('mentorship-program-review-reject-step')).toBeNull();
+
+    getProgramReview.mockReturnValue(of(review('rejected', { hasDetails: false })));
+    click('mentorship-program-review-refresh');
+
+    expect(getProgramReview).toHaveBeenCalledTimes(3);
+    expect(byTestId('mentorship-program-review-stale')).toBeNull();
+    expect(byTestId('mentorship-program-review-conflict')).not.toBeNull();
+    expect(byTestId('mentorship-program-review-rejected')).not.toBeNull();
+  });
+
+  it('lets an access error on the status read after a 409 take over the page', () => {
+    build({ submit: httpError(409) });
+    getProgramReview.mockReturnValue(httpError(403));
+
+    click('mentorship-program-review-approve');
+
+    expect(byTestId('mentorship-program-review-forbidden')).not.toBeNull();
   });
 
   it('keeps the program on screen after a failed decision, and trying again submits again', () => {

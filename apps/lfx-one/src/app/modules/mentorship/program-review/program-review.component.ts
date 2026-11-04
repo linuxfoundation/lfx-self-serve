@@ -2,7 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, linkedSignal, SecurityContext, Signal, signal } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  linkedSignal,
+  SecurityContext,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DomSanitizer } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
@@ -65,16 +78,22 @@ import {
 export class ProgramReviewComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly mentorshipService = inject(MentorshipService);
 
   protected readonly backRoute = ['/mentorship/admin'];
 
+  /** Focus targets when the reject step opens and closes, so keyboard and screen-reader users keep their place. */
+  private readonly rejectHeading = viewChild<ElementRef<HTMLElement>>('rejectHeading');
+  private readonly rejectButton = viewChild<string, ElementRef<HTMLElement>>('rejectButton', { read: ElementRef });
+
   /** The view a submitted decision settled on. Cleared when the link changes, so the loaded view shows again. */
   private readonly submission = signal<MentorshipProgramReviewView | null>(null);
   /**
-   * The in-flight decision POST. A link change does not cancel it, because the write may already have
-   * reached upstream: the new link loads once it settles, so that view shows the program's real status.
+   * The in-flight decision POST, or the status refresh after a conflict. A link change does not cancel
+   * it, because a decision may already have reached upstream: the new link loads once it settles, so
+   * that view shows the program's real status.
    */
   private submitRequest: Observable<MentorshipProgramReviewOutcome> | null = null;
 
@@ -87,6 +106,8 @@ export class ProgramReviewComponent {
   protected readonly step = linkedSignal<MentorshipProgramReviewStep>(() => (this.link().decision === 'reject' ? 'rejecting' : 'choosing'));
   /** The decision being submitted, so only its button shows the spinner. */
   protected readonly submitting = signal<MentorshipProgramReviewDecision | null>(null);
+  /** A status refresh after a conflict whose first reload failed is in flight. */
+  protected readonly refreshing = signal(false);
   protected readonly notice = signal<MentorshipProgramReviewNotice | null>(null);
   // Upstream owns the status set, so a status added there before these maps shows its raw value with neutral styling.
   protected readonly statusLabel = computed(() => {
@@ -116,28 +137,36 @@ export class ProgramReviewComponent {
   protected onStartReject(): void {
     this.notice.set(null);
     this.step.set('rejecting');
+    this.focusAfterRender(() => this.rejectHeading()?.nativeElement);
   }
 
   protected onCancelReject(): void {
     this.notice.set(null);
     this.step.set('choosing');
+    this.focusAfterRender(() => this.rejectButton()?.nativeElement.querySelector<HTMLElement>('button'));
   }
 
   protected onDecide(decision: MentorshipProgramReviewDecision): void {
     const program = this.program();
-    if (!program || program.status !== 'pending' || this.submitting()) return;
+    if (!program || program.status !== 'pending' || this.submitting() || this.notice() === 'stale') return;
 
-    const link = this.link();
-    const request = this.mentorshipService.submitProgramDecision(program.id, decision).pipe(
-      map((result): MentorshipProgramReviewOutcome => ({ view: { state: 'ready', program: { ...program, status: result.status } }, notice: null })),
-      catchError((error: unknown) => this.outcomeForFailedDecision(error, program)),
-      takeUntilDestroyed(this.destroyRef),
-      shareReplay({ bufferSize: 1, refCount: false })
-    );
-    this.submitRequest = request;
     this.notice.set(null);
     this.submitting.set(decision);
-    request.subscribe((outcome) => this.settleSubmit(request, link, outcome));
+    this.track(
+      this.mentorshipService.submitProgramDecision(program.id, decision).pipe(
+        map((result): MentorshipProgramReviewOutcome => ({ view: { state: 'ready', program: { ...program, status: result.status } }, notice: null })),
+        catchError((error: unknown) => this.outcomeForFailedDecision(error, program))
+      )
+    );
+  }
+
+  /** Retries reading the status another reviewer recorded, after the first read following a 409 failed. */
+  protected onRefreshStatus(): void {
+    const program = this.program();
+    if (!program || this.refreshing()) return;
+
+    this.refreshing.set(true);
+    this.track(this.reloadAfterConflict(program));
   }
 
   private initLink(): Signal<MentorshipProgramReviewLink> {
@@ -189,6 +218,19 @@ export class ProgramReviewComponent {
     );
   }
 
+  /** Moves focus once the next render has put the target in the DOM; `afterNextRender` runs only in the browser. */
+  private focusAfterRender(target: () => HTMLElement | null | undefined): void {
+    afterNextRender(() => target()?.focus(), { injector: this.injector });
+  }
+
+  /** Runs a decision or a status refresh, so a link change waits for it and its outcome lands only on its own link. */
+  private track(outcome$: Observable<MentorshipProgramReviewOutcome>): void {
+    const link = this.link();
+    const request = outcome$.pipe(takeUntilDestroyed(this.destroyRef), shareReplay({ bufferSize: 1, refCount: false }));
+    this.submitRequest = request;
+    request.subscribe((outcome) => this.settleSubmit(request, link, outcome));
+  }
+
   /**
    * A 409 means another reviewer decided first, so the program is read again to show the status
    * they recorded. Access and link errors take over the page; anything else keeps the program on
@@ -197,17 +239,29 @@ export class ProgramReviewComponent {
   private outcomeForFailedDecision(error: unknown, program: MentorshipProgramReview): Observable<MentorshipProgramReviewOutcome> {
     const state = this.stateForError(error);
     if (this.httpStatus(error) === 409) {
-      return this.mentorshipService.getProgramReview(program.id).pipe(
-        map((reloaded): MentorshipProgramReviewOutcome => ({ view: { state: 'ready', program: reloaded }, notice: 'conflict' })),
-        catchError((reloadError: unknown) =>
-          of<MentorshipProgramReviewOutcome>({ view: { state: this.stateForError(reloadError), program: null }, notice: null })
-        )
-      );
+      return this.reloadAfterConflict(program);
     }
     if (state === 'error') {
       return of<MentorshipProgramReviewOutcome>({ view: { state: 'ready', program }, notice: 'failed' });
     }
     return of<MentorshipProgramReviewOutcome>({ view: { state, program: null }, notice: null });
+  }
+
+  /**
+   * Reads the status another reviewer recorded. Access and link errors still take over the page; any
+   * other failure keeps the program on screen with the `stale` note, which hides the decision buttons
+   * (the program is no longer pending upstream) and offers a refresh.
+   */
+  private reloadAfterConflict(program: MentorshipProgramReview): Observable<MentorshipProgramReviewOutcome> {
+    return this.mentorshipService.getProgramReview(program.id).pipe(
+      map((reloaded): MentorshipProgramReviewOutcome => ({ view: { state: 'ready', program: reloaded }, notice: 'conflict' })),
+      catchError((error: unknown) => {
+        const state = this.stateForError(error);
+        return of<MentorshipProgramReviewOutcome>(
+          state === 'error' ? { view: { state: 'ready', program }, notice: 'stale' } : { view: { state, program: null }, notice: null }
+        );
+      })
+    );
   }
 
   /** Completes once an in-flight decision settles, whatever its outcome, or at once when there is none. */
@@ -226,6 +280,7 @@ export class ProgramReviewComponent {
       this.submitRequest = null;
     }
     this.submitting.set(null);
+    this.refreshing.set(false);
     if (this.link() === link) {
       this.submission.set(outcome.view);
       this.notice.set(outcome.notice);

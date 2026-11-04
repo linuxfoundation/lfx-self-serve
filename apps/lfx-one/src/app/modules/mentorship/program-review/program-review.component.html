@@ -165,10 +165,31 @@
             </p>
           }
 
-          @if (program.status === 'pending') {
+          @if (notice() === 'stale') {
+            <div class="flex flex-col gap-3" data-testid="mentorship-program-review-stale">
+              <p class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+                Another reviewer decided this program, but its latest status couldn't be loaded.
+              </p>
+              <lfx-button
+                label="Refresh status"
+                icon="fa-light fa-arrows-rotate"
+                severity="secondary"
+                [outlined]="true"
+                [fluid]="true"
+                [loading]="refreshing()"
+                (onClick)="onRefreshStatus()"
+                data-testid="mentorship-program-review-refresh" />
+            </div>
+          } @else if (program.status === 'pending') {
             @if (step() === 'rejecting') {
               <div class="flex flex-col gap-3" data-testid="mentorship-program-review-reject-step">
-                <p class="text-sm font-semibold text-gray-900">Reject this program?</p>
+                <h3
+                  #rejectHeading
+                  tabindex="-1"
+                  class="text-sm font-semibold text-gray-900 focus:outline-none"
+                  data-testid="mentorship-program-review-reject-heading">
+                  Reject this program?
+                </h3>
                 <p class="text-sm leading-relaxed text-gray-600">Rejected programs are not listed and cannot open terms or accept mentee applications.</p>
                 <div class="flex flex-col gap-2.5">
                   <lfx-button
@@ -205,6 +226,7 @@
                     (onClick)="onDecide('approve')"
                     data-testid="mentorship-program-review-approve" />
                   <lfx-button
+                    #rejectButton
                     label="Reject"
                     icon="fa-light fa-xmark"
                     severity="danger"
