@@ -212,6 +212,7 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/roi/investment-breakdown', requireOrgLensRoiAudience, (req, res, next) =>
     orgLensRoiController.getInvestmentBreakdown(req, res, next)
   );
+  router.get('/:orgUid/lens/roi/value-drivers', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getValueDrivers(req, res, next));
   router.get('/:orgUid/lens/roi/projects', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getProjects(req, res, next));
   // Parameterized, so it stays below every literal above — `investment-breakdown` would otherwise
   // be captured as a project slug.

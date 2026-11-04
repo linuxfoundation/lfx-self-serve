@@ -255,3 +255,35 @@ export interface OrgLensRoiProjectTableRow {
   roiLabel: string;
   bcrLabel: string;
 }
+
+/** One value driver category's signed deviation from the typical organization-project pair, in percent. */
+export interface OrgLensRoiValueDriverRow {
+  category: string;
+  /** Positive: the portfolio earns more return than the typical pair from this category. Negative: less. */
+  pctDeviation: number;
+}
+
+export interface OrgLensRoiValueDrivers {
+  method: OrgLensRoiMethod;
+  /** Projects the decomposition covers. 0 when there are no rows. */
+  nProjects: number;
+  /** Empty when the organization has no decomposition (too few projects or not estimated). */
+  rows: OrgLensRoiValueDriverRow[];
+}
+
+/** The chart's view of a row: ordered and annotated, never serialized. */
+export interface OrgLensRoiValueDriverBar extends OrgLensRoiValueDriverRow {
+  subtitle: string;
+  color: string;
+  label: string;
+}
+
+/** A bar placed on the chart: its length as a percentage of the whole plot width, zero line at the centre. */
+export interface OrgLensRoiValueDriverPositionedBar extends OrgLensRoiValueDriverBar {
+  widthPct: number;
+  /** True when the bar is too long to leave room for its label beyond the end. */
+  labelInside: boolean;
+  /** Which edge of the plot row the label is anchored to, and its CSS offset from that edge. */
+  labelSide: 'left' | 'right';
+  labelOffset: string;
+}
