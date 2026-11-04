@@ -95,7 +95,6 @@ function orgLensPageRoutes(): Routes {
       // Initiatives attributed to the organization (#348): the My Initiatives page and detail scoped by `data.lens`.
       // Componentless parent so both children share its data.
       path: 'initiatives',
-      canMatch: [crowdfundingAttributionEnabledGuard],
       data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your company.', icon: 'fa-light fa-box-dollar' },
       children: [
         {
