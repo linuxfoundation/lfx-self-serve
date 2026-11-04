@@ -9,6 +9,7 @@
 
 import { expect, Page, Request, test } from '@playwright/test';
 
+import { getMockFormation } from './fixtures/mock-data/formation.mock';
 import {
   buildBaseProject,
   FORMATION_PROJECT_SLUG,
@@ -25,7 +26,12 @@ test.setTimeout(60_000);
 const DRAWER_TIMEOUT = 20_000;
 
 async function openDrawer(page: Page, putStatus = 200): Promise<Request[]> {
+  // The card opens the drawer for the checklist's `parent_project_uid`, so the project, checklist and the
+  // GET/PUT interceptors must all agree on that UID rather than buildBaseProject's generated one.
+  const projectUid = getMockFormation(FORMATION_PROJECT_SLUG)?.parent_project_uid;
+  if (!projectUid) throw new Error(`No mock formation for ${FORMATION_PROJECT_SLUG}`);
   const project = buildBaseProject(FORMATION_PROJECT_SLUG, {
+    uid: projectUid,
     stage: 'Formation - Engaged',
     category: 'project',
     legal_entity_name: 'Cascade Data LLC',
