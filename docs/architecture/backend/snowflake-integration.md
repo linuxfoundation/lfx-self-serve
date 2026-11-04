@@ -417,8 +417,10 @@ private validateReadOnlyQuery(sqlText: string): void {
     }
   }
 
-  // Ensure query starts with SELECT or WITH (for CTEs)
-  if (!/^\s*SELECT\b/i.test(normalizedSql) && !/^\s*WITH\b/i.test(normalizedSql)) {
+  // Ensure query starts with SELECT or WITH (for CTEs). Leading comments are skipped so a query can be documented
+  // above its SELECT; the write-operation scan above already covers the whole text, comments included.
+  const statementStart = normalizedSql.replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, '');
+  if (!/^SELECT\b/i.test(statementStart) && !/^WITH\b/i.test(statementStart)) {
     throw new Error('Only SELECT queries are allowed');
   }
 }
