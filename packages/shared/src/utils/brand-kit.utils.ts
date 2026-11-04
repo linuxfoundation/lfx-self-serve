@@ -52,6 +52,13 @@ import {
   BRAND_KIT_MODES,
   BRAND_KIT_OPAQUE_FILE_STEM_REGEX,
   BRAND_KIT_PALETTE_MAX,
+  BRAND_KIT_REPORT_ASSETS,
+  BRAND_KIT_REPORT_LIST_MAX,
+  BRAND_KIT_REPORT_RULE_BASES,
+  BRAND_KIT_REPORT_SOURCE_KINDS,
+  BRAND_KIT_REPORT_TEXT_MAX_CHARS,
+  BRAND_KIT_REPORT_V2,
+  BRAND_KIT_REPORT_WARNING_CODES,
   BRAND_KIT_PALETTE_MIN,
   BRAND_KIT_PROJECT_SLUG_REGEX,
   BRAND_KIT_QUESTIONS_CONTRACT_ID,
@@ -992,7 +999,93 @@ export function findBrandKitReportErrors(report: unknown): string[] {
   if (typeof report['notes'] !== 'string') {
     errors.push('report.notes must be a string');
   }
+  errors.push(...reportV2Errors(report));
   return errors;
+}
+
+/**
+ * The v2 fields (brand-kit ≥ 2.2.0), each checked only when present: absent means the v1 report. A present field with
+ * a bad shape is an error, so our agent's malformed output surfaces instead of vanishing from the Sources tab.
+ */
+function reportV2Errors(report: UnknownRecord): string[] {
+  const errors: string[] = [];
+  if (report['version'] !== undefined && report['version'] !== BRAND_KIT_REPORT_V2) {
+    errors.push(`report.version must be ${BRAND_KIT_REPORT_V2} when present`);
+  }
+  const findings = report['findings'];
+  if (findings !== undefined) {
+    if (!isRecord(findings) || !onlyKeys(findings, ['sources_failed', 'missing_assets', 'warnings'])) {
+      errors.push('report.findings must be an object of { sources_failed, missing_assets, warnings }');
+    } else {
+      const failedOk = (entry: unknown): boolean =>
+        isRecord(entry) &&
+        onlyKeys(entry, ['source', 'kind', 'reason', 'detail']) &&
+        isText(entry['source']) &&
+        isOneOf(entry['kind'], BRAND_KIT_REPORT_SOURCE_KINDS) &&
+        isSentence(entry['reason']) &&
+        (entry['detail'] === undefined || isSentence(entry['detail']));
+      const missingOk = (entry: unknown): boolean =>
+        isRecord(entry) &&
+        onlyKeys(entry, ['asset', 'reason', 'fix']) &&
+        isOneOf(entry['asset'], BRAND_KIT_REPORT_ASSETS) &&
+        isSentence(entry['reason']) &&
+        (entry['fix'] === undefined || isSentence(entry['fix']));
+      const warningOk = (entry: unknown): boolean =>
+        isRecord(entry) &&
+        onlyKeys(entry, ['code', 'text', 'source']) &&
+        isOneOf(entry['code'], BRAND_KIT_REPORT_WARNING_CODES) &&
+        isSentence(entry['text']) &&
+        (entry['source'] === undefined || isText(entry['source']));
+      if (!isListOf(findings['sources_failed'], failedOk)) {
+        errors.push('report.findings.sources_failed must be a list of { source, kind, reason, detail? }');
+      }
+      if (!isListOf(findings['missing_assets'], missingOk)) {
+        errors.push('report.findings.missing_assets must be a list of { asset, reason, fix? }');
+      }
+      if (!isListOf(findings['warnings'], warningOk)) {
+        errors.push('report.findings.warnings must be a list of { code, text, source? }');
+      }
+    }
+  }
+  const valueOk = (entry: unknown): boolean => isRecord(entry) && onlyKeys(entry, ['hex', 'source']) && isHex(entry['hex']) && isText(entry['source']);
+  const conflictOk = (entry: unknown): boolean =>
+    isRecord(entry) &&
+    onlyKeys(entry, ['name', 'values', 'chosen']) &&
+    isSentence(entry['name']) &&
+    isListOf(entry['values'], valueOk) &&
+    isHex(entry['chosen']);
+  if (report['color_conflicts'] !== undefined && !isListOf(report['color_conflicts'], conflictOk)) {
+    errors.push('report.color_conflicts must be a list of { name, values: [{ hex, source }], chosen }');
+  }
+  const ruleOk = (entry: unknown): boolean =>
+    isRecord(entry) &&
+    onlyKeys(entry, ['path', 'basis', 'uses']) &&
+    isText(entry['path']) &&
+    isOneOf(entry['basis'], BRAND_KIT_REPORT_RULE_BASES) &&
+    (entry['uses'] === undefined || (isTextList(entry['uses']) && entry['uses'].length <= BRAND_KIT_REPORT_LIST_MAX));
+  if (report['rules'] !== undefined && !isListOf(report['rules'], ruleOk)) {
+    errors.push('report.rules must be a list of { path, basis, uses? }');
+  }
+  return errors;
+}
+
+/** A report sentence: text of 1–300 characters. */
+function isSentence(value: unknown): value is string {
+  return isText(value) && value.length <= BRAND_KIT_REPORT_TEXT_MAX_CHARS;
+}
+
+/** A report list: at most 50 entries, each of the given shape. */
+function isListOf(value: unknown, ok: (entry: unknown) => boolean): boolean {
+  return Array.isArray(value) && value.length <= BRAND_KIT_REPORT_LIST_MAX && value.every(ok);
+}
+
+function isOneOf(value: unknown, allowed: readonly string[]): value is string {
+  return typeof value === 'string' && allowed.includes(value);
+}
+
+/** Strict to its keys: no key outside the contract's. */
+function onlyKeys(value: UnknownRecord, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
 }
 
 /** The inputs record's required fields (the record is open for additive growth, so only these are gated). */

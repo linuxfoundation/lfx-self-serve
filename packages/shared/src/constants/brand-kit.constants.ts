@@ -266,6 +266,41 @@ export const BRAND_KIT_FOUND_IN_LABELS: Record<(typeof BRAND_KIT_FOUND_IN_KINDS)
 /** The four logo slots the kit assigns the real files to. */
 export const BRAND_KIT_LOGO_SLOTS = ['primary', 'stacked', 'symbol', 'reversed'] as const;
 
+// ---------------------------------------------------------------------------
+// Report v2 (brand-kit ≥ 2.2.0): the findings groups, the colour conflicts and the rules' basis, all optional in the envelope
+// ---------------------------------------------------------------------------
+
+/** The report version that carries the findings; absent means the v1 report. */
+export const BRAND_KIT_REPORT_V2 = 2;
+/** What a failed source was: a provenance kind, or one of the other inputs the agent reads. */
+export const BRAND_KIT_REPORT_SOURCE_KINDS = [...BRAND_KIT_FOUND_IN_KINDS, 'logo_file', 'logo_package', 'lfx_record', 'framework'] as const;
+/** The assets the agent looks for and may report missing. */
+export const BRAND_KIT_REPORT_ASSETS = [
+  'logo_primary',
+  'logo_stacked',
+  'logo_symbol',
+  'logo_reversed',
+  'brand_page',
+  'font_weights',
+  'palette_accent',
+  'framework',
+] as const;
+/** The warnings the agent can raise about what it read. */
+export const BRAND_KIT_REPORT_WARNING_CODES = [
+  'color_conflict',
+  'font_unverified',
+  'live_type_wordmark',
+  'palette_from_page_text',
+  'site_colour_not_in_logo',
+  'brand_page_guessed',
+] as const;
+/** Where a rule the chapters render comes from: the project's own sources, or the LF reference kit. */
+export const BRAND_KIT_REPORT_RULE_BASES = ['project', 'lf-reference'] as const;
+/** Every reason, text and fix the report writes is a sentence of this length; URLs travel in `source`. */
+export const BRAND_KIT_REPORT_TEXT_MAX_CHARS = 300;
+/** No report list grows past this. */
+export const BRAND_KIT_REPORT_LIST_MAX = 50;
+
 /** The exact lengths the chapters' fixed lists have (the agent's envelope schema). */
 export const BRAND_KIT_CHAPTER_COUNTS = {
   colorways: 4,

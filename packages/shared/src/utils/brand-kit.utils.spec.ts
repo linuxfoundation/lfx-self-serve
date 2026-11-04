@@ -25,6 +25,7 @@ import {
 } from '../constants/brand-kit.constants';
 import { BrandKitChapters, BrandKitEnvelope, BrandKitRedraftFormPayload, BrandKitTokens } from '../interfaces/brand-kit.interface';
 import { brandKitBuiltFrom } from './brand-kit-book.utils';
+import { brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
 import {
   brandKitBookPages,
   brandKitFontStack,
@@ -40,6 +41,7 @@ import {
   buildBrandKitFormPayload,
   extractBrandKitQuestions,
   extractBrandKitRefusal,
+  findBrandKitReportErrors,
   findMissingBrandKitHeadings,
   parseBrandKitFramework,
   readBrandKitQuestions,
@@ -773,6 +775,105 @@ describe('validateBrandKitEnvelope', () => {
   it('rejects a non-object payload', () => {
     expect(validateBrandKitEnvelope('not an envelope').valid).toBe(false);
     expect(validateBrandKitEnvelope(null).valid).toBe(false);
+  });
+});
+
+describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
+  const v2 = () => brandKitReportV2Fixture();
+
+  it('accepts a v1 report as it always did, and a full v2 report', () => {
+    expect(findBrandKitReportErrors(buildEnvelope().report)).toEqual([]);
+    expect(findBrandKitReportErrors(v2())).toEqual([]);
+    expect(validateBrandKitEnvelope(buildEnvelope({ report: v2() })).valid).toBe(true);
+  });
+
+  it('accepts any one v2 field on its own, since every one is optional', () => {
+    const full = v2();
+    for (const key of ['version', 'findings', 'color_conflicts', 'rules'] as const) {
+      expect(findBrandKitReportErrors({ ...buildEnvelope().report, [key]: full[key] })).toEqual([]);
+    }
+  });
+
+  it('rejects a version other than 2', () => {
+    expect(findBrandKitReportErrors({ ...v2(), version: 3 }).join(' ')).toContain('report.version');
+    expect(findBrandKitReportErrors({ ...v2(), version: '2' }).join(' ')).toContain('report.version');
+  });
+
+  it.each([
+    ['not an object', 'not findings'],
+    ['an extra key', { ...v2().findings, extra: [] }],
+    ['a group missing', { sources_failed: [], missing_assets: [] }],
+  ])('rejects findings that is %s', (_case, findings) => {
+    expect(findBrandKitReportErrors({ ...v2(), findings }).join(' ')).toContain('report.findings');
+  });
+
+  it('rejects a failed source with an unknown kind, an empty reason, an extra key, or a reason past 300 characters', () => {
+    const good = v2().findings?.sources_failed[0];
+    if (!good) throw new Error('fixture');
+    for (const bad of [
+      { ...good, kind: 'guess' },
+      { ...good, reason: '' },
+      { ...good, extra: true },
+      { ...good, reason: 'x'.repeat(301) },
+      { ...good, detail: '' },
+    ]) {
+      const report = v2();
+      expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, sources_failed: [bad] } }).join(' ')).toContain(
+        'report.findings.sources_failed'
+      );
+    }
+  });
+
+  it('rejects a missing asset outside the closed list, or one without a reason', () => {
+    const good = v2().findings?.missing_assets[0];
+    if (!good) throw new Error('fixture');
+    for (const bad of [{ ...good, asset: 'favicon' }, { asset: 'logo_stacked' }, { ...good, fix: 42 }]) {
+      const report = v2();
+      expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, missing_assets: [bad] } }).join(' ')).toContain(
+        'report.findings.missing_assets'
+      );
+    }
+  });
+
+  it('rejects a warning with an unknown code, no text, or a non-string source', () => {
+    const good = v2().findings?.warnings[0];
+    if (!good) throw new Error('fixture');
+    for (const bad of [{ ...good, code: 'hunch' }, { code: 'font_unverified' }, { ...good, source: ['x'] }]) {
+      const report = v2();
+      expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, warnings: [bad] } }).join(' ')).toContain('report.findings.warnings');
+    }
+  });
+
+  it('rejects a colour conflict with a lowercase hex, a value without its source, or a missing chosen', () => {
+    const good = v2().color_conflicts?.[0];
+    if (!good) throw new Error('fixture');
+    for (const bad of [
+      { ...good, chosen: '#ff702d' },
+      { ...good, values: [{ hex: '#FF702D' }] },
+      { name: good.name, values: good.values },
+      { ...good, values: [{ hex: 'coral', source: 'x' }] },
+    ]) {
+      expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [bad] }).join(' ')).toContain('report.color_conflicts');
+    }
+  });
+
+  it('rejects a rule with a basis outside project | lf-reference, no path, or uses that is not a list of strings', () => {
+    for (const bad of [{ path: 'chapters.voice', basis: 'guess' }, { basis: 'project' }, { path: 'chapters.voice', basis: 'project', uses: 'found_in' }]) {
+      expect(findBrandKitReportErrors({ ...v2(), rules: [bad] }).join(' ')).toContain('report.rules');
+    }
+  });
+
+  it('rejects any report list past 50 entries', () => {
+    const rules = Array.from({ length: 51 }, (_, index) => ({ path: `chapters.rule[${index}]`, basis: 'project' as const }));
+    expect(findBrandKitReportErrors({ ...v2(), rules }).join(' ')).toContain('report.rules');
+    const report = v2();
+    const warnings = Array.from({ length: 51 }, () => ({ code: 'font_unverified' as const, text: 'The font could not be verified.' }));
+    expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, warnings } }).join(' ')).toContain('report.findings.warnings');
+  });
+
+  it('names every bad field at once, so one malformed report explains itself', () => {
+    const errors = findBrandKitReportErrors({ ...v2(), version: 1, rules: 'none', color_conflicts: {} });
+    expect(errors).toHaveLength(3);
   });
 });
 
