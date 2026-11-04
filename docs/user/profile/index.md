@@ -4,7 +4,7 @@ description: Manage your personal identity in LFX Self Serve — name, photo, Ab
 audience: [all]
 product_area: Profile
 tags: [profile, edit, about-me, photo, public-profile, visibility]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Profile
 ---
 

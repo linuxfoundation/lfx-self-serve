@@ -4,7 +4,7 @@ description: How the ROI model counts direct spending — memberships, event att
 audience: [all]
 product_area: Dashboards
 tags: [roi, expenditures, memberships, events, sponsorships, training, fixed unit]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 

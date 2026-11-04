@@ -4,7 +4,7 @@ description: What Total Investment, Total Return, Net Return, ROI, and BCR mean 
 audience: [all]
 product_area: Dashboards
 tags: [roi, bcr, markup, break-even, interpretation, investment]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 

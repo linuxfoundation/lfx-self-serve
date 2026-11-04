@@ -4,7 +4,7 @@ description: How to read the Memberships list for the selected company, open a f
 audience: [all]
 product_area: Company
 tags: [company, company-lens, memberships, membership, key-contacts, board, committee, agreements]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Company
 ---
 
@@ -75,7 +75,7 @@ The panel title is **Company Projects**. Under it is the foundation name, a midd
 
 1. Select the number in **Company Projects**.
 2. To narrow the list, use **Search projects...**.
-3. Select a Linux Foundation (LF) project name to open that project. The panel closes. A project that is not an LF project is shown as text and is not a link.
+3. Select a Linux Foundation (LF) project name to open that project's detail page. The panel closes. See [What is a project detail page?](../projects/#what-is-a-project-detail-page). A project that is not an LF project is shown as text and is not a link.
 
 Each project shows an influence word under its name. The words **Leading**, **Contributing**, and **Participating** are the named levels. To the right, each project shows **LF maintainer roles**, **Contributors**, and **Commits**.
 
@@ -239,6 +239,7 @@ A dash (**—**) on the three **Active** cards, while the table says **Failed to
 
 - [Choose and switch a company](../choose-a-company/) — pick the company these memberships belong to
 - [Company Overview dashboard](../company-overview/) — the **Dashboard**, including **View all on Memberships page ›**
+- [Projects and project detail](../projects/) — the company's projects, and each project's influence and leaderboards
 - [Manage Company Lens Access](../manage-company-lens-access/) — who is an Admin, and who can edit the company
 - [EasyCLA](../easycla/) — corporate CLAs (Contributor License Agreements) for the selected company
 - [Company FAQ](../faq/) — short answers about the Company Lens

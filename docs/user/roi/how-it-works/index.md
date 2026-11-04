@@ -4,7 +4,7 @@ description: A plain-language explanation of the LFX contribution ROI model, wit
 audience: [all]
 product_area: Dashboards
 tags: [roi, intuition, revealed preference, markup, how it works]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 

@@ -130,6 +130,7 @@ describe('EmailService.sendEmail', () => {
         failed_count: 0,
         skipped_count: 0,
         uncertain_count: 1,
+        recipients: [{ uid: 'r-1', user_email: 'voter@example.test', outcome: 'uncertain' }],
       });
     }
   );
@@ -146,6 +147,10 @@ describe('EmailService.sendEmail', () => {
       failed_count: 0,
       skipped_count: 0,
       uncertain_count: 1,
+      recipients: [
+        { uid: 'r-1', user_email: 'one@example.test', outcome: 'sent' },
+        { uid: 'r-2', user_email: 'two@example.test', outcome: 'uncertain' },
+      ],
     });
   });
 
@@ -157,7 +162,16 @@ describe('EmailService.sendEmail', () => {
     expect(error).toBeInstanceOf(MicroserviceError);
     expect((error as MicroserviceError).toResponse()).toMatchObject({
       code: 'VOTE_SUMMARY_SEND_FAILED',
-      details: { recipient_count: 0, failed_count: 1, skipped_count: 1, uncertain_count: 0 },
+      details: {
+        recipient_count: 0,
+        failed_count: 1,
+        skipped_count: 1,
+        uncertain_count: 0,
+        recipients: [
+          { uid: 'r-1', user_email: 'voter@example.test', outcome: 'failed' },
+          { uid: 'r-2', outcome: 'skipped' },
+        ],
+      },
     });
     expect(request).toHaveBeenCalledTimes(1);
   });

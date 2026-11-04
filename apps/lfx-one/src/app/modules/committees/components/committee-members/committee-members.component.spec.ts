@@ -48,6 +48,7 @@ describe('CommitteeMembersComponent add-people actions', () => {
     fixture.componentRef.setInput('committee', committee);
     fixture.componentRef.setInput('members', MEMBERS);
     fixture.componentRef.setInput('membersLoading', false);
+    fixture.componentRef.setInput('membersReady', true);
     fixture.componentRef.setInput('invites', INVITES);
     for (const [name, value] of Object.entries(inputs)) {
       fixture.componentRef.setInput(name, value);
@@ -173,6 +174,49 @@ describe('CommitteeMembersComponent add-people actions', () => {
 
       expect(refreshes).toBe(0);
       expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([{ membersReady: false }, { membersError: true }, { membersLoading: true }])(
+      'blocks direct Add and Import calls while roster is unavailable: %j',
+      async (inputs) => {
+        for (const [name, value] of Object.entries(inputs)) fixture.componentRef.setInput(name, value);
+        await fixture.whenStable();
+        expect((query('add-member-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+        expect((query('import-members-csv-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+        component.openAddMemberDialog();
+        component.openImportMembersDialog();
+        expect(dialogService.open).not.toHaveBeenCalled();
+        expect(committeeService.getCommitteeMembers).not.toHaveBeenCalled();
+      }
+    );
+
+    it('keeps a persistent roster alert with pending invitations and emits Retry', async () => {
+      fixture.componentRef.setInput('membersError', true);
+      fixture.componentRef.setInput('membersReady', false);
+      const retry = vi.fn();
+      component.retryMembers.subscribe(retry);
+      await fixture.whenStable();
+      expect(query('committee-members-load-error')?.getAttribute('role')).toBe('alert');
+      expect(query('committee-members-load-error')?.textContent).toContain('complete member list');
+      query('committee-members-load-retry')?.querySelector('button')?.click();
+      expect(retry).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not present failure as an empty roster, and restores empty-success actions', async () => {
+      fixture.componentRef.setInput('members', []);
+      fixture.componentRef.setInput('invites', []);
+      fixture.componentRef.setInput('membersError', true);
+      fixture.componentRef.setInput('membersReady', false);
+      await fixture.whenStable();
+      expect(fixture.nativeElement.textContent).not.toContain('No members found');
+      expect(fixture.nativeElement.textContent).not.toContain('Add the first member');
+      fixture.componentRef.setInput('membersError', false);
+      fixture.componentRef.setInput('membersReady', true);
+      await fixture.whenStable();
+      expect(query('committee-members-load-error')).toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('No members found');
+      expect(fixture.nativeElement.textContent).toContain('Add the first member');
+      expect((query('add-member-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
     });
 
     it('keeps Add Member opening the existing direct-add dialog', () => {

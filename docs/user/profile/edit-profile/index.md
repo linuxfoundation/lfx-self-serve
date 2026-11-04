@@ -4,7 +4,7 @@ description: How to update your personal information, photo, location, and conta
 audience: [all]
 product_area: Profile
 tags: [profile, edit, about-me, bio, photo, location]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Profile
 ---
 

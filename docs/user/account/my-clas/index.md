@@ -4,7 +4,7 @@ description: View your signed Individual CLAs and your Corporate CLA coverage in
 audience: [all]
 product_area: Account
 tags: [account, cla, easycla, icla, ccla, identities, signing]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Account
 ---
 

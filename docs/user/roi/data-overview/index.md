@@ -4,7 +4,7 @@ description: The data behind the ROI model — contribution types, sources, how 
 audience: [all]
 product_area: Dashboards
 tags: [roi, data, contribution types, sources, observation window, limitations]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 

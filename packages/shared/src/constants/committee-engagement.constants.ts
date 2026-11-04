@@ -19,10 +19,11 @@ export const COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW = '30d';
 /**
  * Attendance-rate thresholds (attended / invited) for engagement classification, computed in the
  * BFF so they can be tuned without a dbt deploy once real distributions are observed. Applies once
- * a member has at least one real invite (`invited > 0`) — see
- * `committee-engagement-classifier.utils.ts`'s `classifyCommitteeEngagement` for the `Emeritus`,
- * `LF Staff` (LFXV2-3101), and tenure-clipping (`member_joined_at`) cases these thresholds don't
- * cover.
+ * a member has at least one real invite (`invited > 0`), or at least
+ * `COMMITTEE_ENGAGEMENT_MIN_INVITES` invites for a member who joined within the window (below that
+ * they classify `New`) — see `committee-engagement-classifier.utils.ts`'s
+ * `classifyCommitteeEngagement` for the `Emeritus`, `LF Staff` (LFXV2-3101), `New`, and
+ * tenure-clipping (`member_joined_at`) cases these thresholds don't cover.
  *   rate <= 0            → Inactive (invited, but attended nothing)
  *   0 < rate < medium     → Low
  *   medium <= rate < high → Medium
@@ -32,6 +33,13 @@ export const COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS = {
   high: 0.75,
   medium: 0.4,
 } as const;
+
+/**
+ * Minimum invites within the window before a member who joined inside that window gets a rate
+ * tier. Below it they classify `New` — a single meeting (1/1 or 0/1) is not enough history to call
+ * someone highly engaged or inactive.
+ */
+export const COMMITTEE_ENGAGEMENT_MIN_INVITES = 2;
 
 /**
  * Display labels per supported window. `Record<CommitteeEngagementWindow, ...>` is
@@ -66,6 +74,7 @@ export const COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY: Record<CommitteeE
   Medium: 'info',
   Low: 'warn',
   Inactive: 'danger',
+  New: 'secondary',
   Emeritus: 'secondary',
   'LF Staff': 'secondary',
 };

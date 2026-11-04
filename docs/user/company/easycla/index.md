@@ -4,7 +4,7 @@ description: View and manage a company's corporate CLAs in the Company Lens — 
 audience: [all]
 product_area: Company
 tags: [company, easycla, cla, ccla, cla-manager, approval-list, signing]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Company
 ---
 

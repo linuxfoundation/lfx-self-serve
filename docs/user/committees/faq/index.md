@@ -4,7 +4,7 @@ description: Frequently asked questions about groups (committees) in LFX Self Se
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, faq, governance, join, leave]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Committees
 ---
 

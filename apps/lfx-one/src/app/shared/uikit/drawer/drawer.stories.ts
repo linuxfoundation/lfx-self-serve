@@ -144,7 +144,7 @@ export const CanCloseGuard: Story = {
               <lfx-ui-note variant="warning" label="You have unsaved changes">Save or discard them to close.</lfx-ui-note>
             }
             <textarea
-              class="edge min-h-[160px] w-full rounded-ui-sm bg-ui-background-100 p-[12px] copy-14 focus-visible:shadow-focus focus-visible:outline-none"
+              class="edge-control min-h-[160px] w-full rounded-ui-sm bg-ui-background-100 p-[12px] copy-14 focus-visible:shadow-focus focus-visible:outline-none"
               aria-label="Agenda"
               (input)="state.dirty.set(true)"></textarea>
             <ng-container drawerFooter>

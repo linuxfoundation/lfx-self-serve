@@ -4,7 +4,7 @@ description: How to find a past meeting, read its attendance, and watch its reco
 audience: [all]
 product_area: Meetings
 tags: [meetings, past meetings, attendance, participants, recording, transcript, ai summary]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Meetings
 ---
 

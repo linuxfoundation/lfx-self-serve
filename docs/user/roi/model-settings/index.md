@@ -4,7 +4,7 @@ description: The default settings of the ROI model — observation window, cost 
 audience: [all]
 product_area: Dashboards
 tags: [roi, parameters, defaults, settings, assumptions]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 

@@ -4,7 +4,7 @@ description: See who can open your company in the Company Lens, and add people, 
 audience: [all]
 product_area: Company
 tags: [company, company-lens, access, admin, viewer, invite, remove, people]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Company
 ---
 

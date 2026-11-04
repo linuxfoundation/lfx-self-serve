@@ -16,7 +16,6 @@ import {
   getMeetingStartsInLabel,
   getMeetingVisibilityBadges,
 } from '@lfx-one/shared/utils';
-import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
@@ -24,6 +23,7 @@ import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
+import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
 /**
  * Next meeting card of the meetings home page: the soonest upcoming date with Join and a countdown.
@@ -33,7 +33,7 @@ import { MeetingsHomeJoinService } from '../../services/meetings-home-join.servi
  */
 @Component({
   selector: 'lfx-next-meeting-card',
-  imports: [DatePipe, UiAvatarComponent, UiBadgeComponent, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent, UiTooltipDirective],
+  imports: [DatePipe, MeetingProjectLogoComponent, UiBadgeComponent, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent, UiTooltipDirective],
   templateUrl: './next-meeting-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },

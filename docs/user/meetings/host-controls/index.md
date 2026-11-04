@@ -4,7 +4,7 @@ description: What the Zoom host key is, who can see it, when it is available, an
 audience: [all]
 product_area: Meetings
 tags: [meetings, host, host key, zoom, recording, host controls]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Meetings
 ---
 

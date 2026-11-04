@@ -4,7 +4,7 @@ description: How the ROI model estimates, for each company-project pair, how con
 audience: [all]
 product_area: Dashboards
 tags: [roi, ces, elasticity of substitution, gmm, moment conditions, technical]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 

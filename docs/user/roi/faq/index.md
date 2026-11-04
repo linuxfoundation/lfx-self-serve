@@ -4,7 +4,7 @@ description: Frequently asked questions about the LFX contribution ROI model —
 audience: [all]
 product_area: Dashboards
 tags: [roi, faq, revealed preference, cocomo, markup]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 

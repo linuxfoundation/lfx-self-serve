@@ -4,7 +4,7 @@ description: Manage your crowdfunding initiatives and track your donations in LF
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, donations, funding, sponsors]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Crowdfunding
 ---
 
@@ -48,6 +48,7 @@ Under the **Project**, **Foundation**, and **Company** lenses, select **Crowdfun
 ## Related sections
 
 - [Lens-scoped Initiatives](./lens-initiatives/) — initiatives run on behalf of a project, foundation, or company
+- [Company Donations](./lens-donations/) — donations made on behalf of a company
 - [Crowdfunding FAQ](./faq/) — answers to common questions about initiatives and donations
 - [Transactions](../account/transactions/) — view purchase and billing history across all LFX products
 - [Profile](../profile/) — manage your account details associated with your donations

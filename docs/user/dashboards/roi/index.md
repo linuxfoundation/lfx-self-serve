@@ -4,7 +4,7 @@ description: What the Company Lens ROI Metrics page shows, and where to find the
 audience: [all]
 product_area: Dashboards
 tags: [company lens, roi, return on investment, investment, return, estimation method, markup]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 

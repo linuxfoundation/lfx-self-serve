@@ -4,7 +4,7 @@ description: How the ROI model turns activity counts and meeting attendance into
 audience: [all]
 product_area: Dashboards
 tags: [roi, labor, fte, salary, overhead, opportunity cost, activity]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 

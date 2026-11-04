@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Component, DestroyRef, EnvironmentProviders, input, output, PLATFORM_ID, Provider, type WritableSignal } from '@angular/core';
+import { Component, DestroyRef, EnvironmentProviders, input, output, PLATFORM_ID, Provider, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -21,6 +21,7 @@ import {
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS,
   GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
   GOOGLE_ADS_MAX_PRICE_OFFERINGS,
@@ -47,11 +48,13 @@ import {
   REDDIT_CALL_TO_ACTIONS,
 } from '@lfx-one/shared/constants';
 import type {
+  CampaignAdSchedule,
   CampaignBriefOutput,
   CampaignIndexDoc,
   CampaignJobOutcome,
   CampaignBriefPersistenceState,
   CampaignCreateResult,
+  CampaignDeviceBidModifier,
   CampaignImplementationDraft,
   CampaignPlatformResult,
   CampaignSitelink,
@@ -7918,6 +7921,561 @@ describe('ImplementationTabComponent google languages', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleLanguages']()).toEqual([code]);
+  });
+});
+
+/**
+ * Ad schedules and device bid adjustments (#4991). The panel's edits land in two tab signals; these
+ * pin what the create request carries for each channel, that Create waits on the shared refusals the
+ * BFF answers with, and that a list hidden by a channel switch is held and said to be held.
+ */
+describe('ImplementationTabComponent google ad schedules and devices', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const MONDAY_EVENINGS: CampaignAdSchedule = { dayOfWeek: 'MONDAY', startHour: 18, startMinute: 0, endHour: 24, endMinute: 0, bidModifier: 0.8 };
+  const NO_TABLETS: CampaignDeviceBidModifier = { device: 'TABLET', bidModifier: 0 };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  function seedTargeting(patch: Record<string, unknown>): Record<string, any> {
+    const c = seedChannel(fixture, patch);
+    c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS]);
+    c['onGoogleDeviceBidModifiersChange']([NO_TABLETS]);
+    fixture.detectChanges();
+    return c;
+  }
+
+  // Display and Performance Max default to Maximize Conversions, under which the window's -20% is
+  // refused (Google would not bid it), so their payload is built but Create waits on it.
+  it.each([
+    ['search', { includeSearch: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, false],
+    ['display', { includeDisplay: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
+    ['performance-max', { includePerformanceMax: true }, { adSchedules: [MONDAY_EVENINGS] }, true],
+    ['demand-gen', { includeDemandGen: true }, {}, false],
+  ])(
+    'builds the payload %s accepts, holds the rest, and holds Create on an adjustment its default strategy ignores',
+    (_channel, patch, expected, heldByStrategy) => {
+      const c = seedTargeting(patch);
+
+      expect(c['googleTargetingPayload']()).toEqual(expected);
+      expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
+      expect(c['googleDeviceBidModifiers']()).toEqual([NO_TABLETS]);
+      if (heldByStrategy) {
+        expect(c['googleAdSchedulesError']()).toContain('ad schedule 1 has a bid modifier of 0.8');
+        expect(c['canSubmit']()).toBe(false);
+      } else {
+        expect(c['googleAdSchedulesError']()).toBeNull();
+      }
+    }
+  );
+
+  it('submits both lists on Search, copied rather than shared', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedTargeting({ includeSearch: true });
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['adSchedules']).toEqual([MONDAY_EVENINGS]);
+    expect(request['deviceBidModifiers']).toEqual([NO_TABLETS]);
+    expect((request['adSchedules'] as CampaignAdSchedule[])[0]).not.toBe(c['googleAdSchedules']()[0]);
+  });
+
+  it('sends neither key when nothing was set', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleTargetingPayload']()).toEqual({});
+  });
+
+  it('renders the panel on Search and not on Demand Gen, where it says what is held', () => {
+    seedTargeting({ includeSearch: true });
+    const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+    expect(query('implementation-google-ad-schedule')).not.toBeNull();
+    expect(query('implementation-google-devices')).not.toBeNull();
+    expect(query('implementation-google-targeting-withheld')).toBeNull();
+
+    (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(query('implementation-google-targeting-panel')).toBeNull();
+    expect(query('implementation-google-targeting-withheld')?.textContent).toContain(
+      'Demand Gen campaigns do not take ad schedules or device bid adjustments, so the 1 ad schedule window and 1 device setting you set will not be sent.'
+    );
+    expect(query('implementation-google-targeting-withheld-live')?.textContent).toContain('Demand Gen campaigns do not take ad schedules');
+  });
+
+  it('holds Create on the shared refusal and shows it under the panel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS, { ...MONDAY_EVENINGS, startHour: 20, bidModifier: undefined }]);
+    fixture.detectChanges();
+
+    expect(c['googleAdSchedulesError']()).toContain('overlaps MONDAY 18:00-24:00');
+    expect(c['canSubmit']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-ad-schedule-error"]')?.textContent).toContain('overlaps');
+
+    c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS]);
+    c['onGoogleDeviceBidModifiersChange']([{ device: 'MOBILE', bidModifier: 0.05 }]);
+    expect(c['googleDeviceBidModifiersError']()).toContain('bid modifier of 0.05');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  // #5094 review: an unresolved strategy skips only the strategy pass. The per-entry checks still run,
+  // so an overlapping window holds Create rather than reaching the BFF's 400.
+  describe('with no resolved strategy', () => {
+    it('still refuses an overlapping window', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      Object.defineProperty(c, 'googleBiddingStrategy', { value: signal(null) });
+      c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS, { ...MONDAY_EVENINGS, startHour: 20, bidModifier: undefined }]);
+
+      expect(c['googleAdSchedulesError']()).toContain('overlaps MONDAY 18:00-24:00');
+      expect(c['canSubmit']()).toBe(false);
+    });
+  });
+
+  /**
+   * campaign-service refuses any non-zero device modifier unless the EFFECTIVE strategy is manual-cpc
+   * (`validateBiddingPlan`). The tab judges with the same shared refusal, under the strategy it sends.
+   */
+  describe('device adjustments and the bidding strategy', () => {
+    const MOBILE_UP: CampaignDeviceBidModifier = { device: 'MOBILE', bidModifier: 1.25 };
+    const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+    it.each([
+      ['search', { includeSearch: true }, 'manual-cpc', true],
+      ['search', { includeSearch: true }, 'maximize-clicks', false],
+      ['search', { includeSearch: true }, 'maximize-conversions', false],
+      ['search', { includeSearch: true }, 'target-cpa', false],
+      ['search', { includeSearch: true }, 'maximize-conversion-value', false],
+      ['search', { includeSearch: true }, 'target-roas', false],
+      ['display', { includeDisplay: true }, '', false],
+      ['display', { includeDisplay: true }, 'maximize-clicks', false],
+    ])('on %s (%o) under strategy "%s", offers Adjust bid only for Manual CPC', (_channel, patch, strategy, adjustable) => {
+      const c = seedChannel(fixture, patch);
+      c['campaignForm'].controls.googleBiddingStrategy.setValue(strategy);
+      c['onGoogleDeviceBidModifiersChange']([MOBILE_UP]);
+      fixture.detectChanges();
+
+      if (adjustable) {
+        expect(c['googleDeviceAdjustBlockedReason']()).toBeNull();
+        expect(c['googleDeviceBidModifiersError']()).toBeNull();
+        expect(c['googleDeviceAdjustmentsHeldMessage']()).toBe('');
+        expect(c['canSubmit']()).toBe(true);
+      } else {
+        expect(c['googleDeviceAdjustBlockedReason']()).toMatch(
+          /LFX One sends a device bid adjustment only under Manual CPC|Google Ads doesn't apply a device bid adjustment under/
+        );
+        expect(c['googleDeviceBidModifiersError']()).toContain('gives MOBILE a bid modifier of 1.25');
+        expect(c['googleDeviceAdjustmentsHeldMessage']()).toContain('The adjustment on Mobile phones is kept for a switch back');
+        expect(c['canSubmit']()).toBe(false);
+        // Held, not dropped: the list still carries it for a switch back.
+        expect(c['googleDeviceBidModifiers']()).toEqual([MOBILE_UP]);
+      }
+    });
+
+    it('says how to get Manual CPC back on Search, and that Display has none', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
+      fixture.detectChanges();
+      expect(c['googleDeviceAdjustBlockedReason']()).toBe(
+        "LFX One sends a device bid adjustment only under Manual CPC, so it doesn't send one under Maximize Clicks. You can keep the default bid or exclude a device. Choose Manual CPC as the bidding strategy to adjust bids by device."
+      );
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true, googleBiddingStrategy: '' });
+      fixture.detectChanges();
+      expect(c['googleDeviceAdjustBlockedReason']()).toBe(
+        "Google Ads doesn't apply a device bid adjustment under Maximize Conversions, except a -100% exclusion, so LFX One doesn't send one. You can keep the default bid or exclude a device. Display campaigns cannot bid Manual CPC here."
+      );
+      expect(query('implementation-google-devices-hint')?.textContent).toContain('Display campaigns cannot bid Manual CPC here.');
+    });
+
+    it('holds an adjustment across a switch from Manual CPC to automated and back, blocking Create only while automated', () => {
+      const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleDeviceBidModifiersChange']([MOBILE_UP, NO_TABLETS]);
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(true);
+      expect(query('implementation-google-device-adjustments-held')).toBeNull();
+
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversions');
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(false);
+      expect(c['googleDeviceBidModifiers']()).toEqual([MOBILE_UP, NO_TABLETS]);
+      const held =
+        "Google Ads doesn't apply a device bid adjustment under Maximize Conversions, except a -100% exclusion, so LFX One doesn't send one. The adjustment on Mobile phones is kept for a switch back, and Create Campaign waits until you set it to Default bid or Exclude, or choose Manual CPC again.";
+      expect(query('implementation-google-device-adjustments-held')?.textContent?.trim()).toBe(held);
+      expect(query('implementation-google-device-adjustments-held-live')?.textContent?.trim()).toBe(held);
+      expect(query('implementation-google-devices-error')?.textContent).toContain('gives MOBILE a bid modifier of 1.25');
+      c['submit']();
+      expect(createCampaign).not.toHaveBeenCalled();
+
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('manual-cpc');
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(true);
+      expect(query('implementation-google-device-adjustments-held')).toBeNull();
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [MOBILE_UP, NO_TABLETS] });
+    });
+
+    it('names every held device in one list, and on Display leaves Manual CPC out of the way back', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleDeviceBidModifiersChange']([MOBILE_UP, { device: 'DESKTOP', bidModifier: 0.8 }, { device: 'TABLET', bidModifier: 1 }]);
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
+      fixture.detectChanges();
+      expect(c['googleDeviceAdjustmentsHeldMessage']()).toContain(
+        'The adjustments on Mobile phones, Computers and Tablets are kept for a switch back, and Create Campaign waits until you set them to Default bid or Exclude, or choose Manual CPC again.'
+      );
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true, googleBiddingStrategy: '' });
+      fixture.detectChanges();
+      expect(c['googleDeviceAdjustmentsHeldMessage']()).toMatch(/until you set them to Default bid or Exclude\.$/);
+      expect(c['googleDeviceBidModifiersError']()).not.toContain('bid with Manual CPC');
+    });
+
+    it('gives no Adjust bid reason while the device section is not shown', () => {
+      const c = seedChannel(fixture, { includePerformanceMax: true });
+      fixture.detectChanges();
+      expect(c['googleBiddingStrategy']()).toBe('maximize-conversions');
+      expect(c['googleDeviceAdjustBlockedReason']()).toBeNull();
+    });
+
+    it('still sends an Exclude under an automated strategy, on Search and on Display', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('target-roas');
+      c['onGoogleDeviceBidModifiersChange']([NO_TABLETS]);
+      fixture.detectChanges();
+      expect(c['googleDeviceBidModifiersError']()).toBeNull();
+      expect(c['googleDeviceAdjustmentsHeldMessage']()).toBe('');
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS] });
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true, googleBiddingStrategy: '' });
+      fixture.detectChanges();
+      expect(c['googleDeviceBidModifiersError']()).toBeNull();
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS] });
+    });
+  });
+
+  it('withholds the panel and both keys off the campaign-service road', () => {
+    const c = seedTargeting({ includeSearch: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+
+    expect(c['googleTargetingPayload']()).toEqual({});
+    expect(c['googleTargetingWithheldMessage']()).toBe('');
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-targeting-panel"]')).toBeNull();
+  });
+
+  it('round-trips both lists through a draft and empties them for a new brief', () => {
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const c = seedTargeting({ includeSearch: true });
+
+    expect(emitted?.googleAdSchedules).toEqual([MONDAY_EVENINGS]);
+    expect(emitted?.googleDeviceBidModifiers).toEqual([NO_TABLETS]);
+
+    c['resetGoogleFields']();
+    expect(c['googleAdSchedules']()).toEqual([]);
+    restoreGoogleDraft(fixture, c, { googleAdSchedules: [MONDAY_EVENINGS], googleDeviceBidModifiers: [NO_TABLETS] });
+
+    expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
+    expect(c['googleDeviceBidModifiers']()).toEqual([NO_TABLETS]);
+  });
+
+  /**
+   * Google takes 0.1-10.0 on an ad schedule (0 is only a device exclusion) and applies a schedule
+   * adjustment only under Manual CPC and Maximize Clicks, ignoring it under Smart Bidding. Neither is
+   * refused upstream, so the shared judge refuses both, and the tab judges with it under the EFFECTIVE
+   * strategy (#5088 review). The windows themselves are sent under every strategy.
+   */
+  describe('ad schedule adjustments and the bidding strategy', () => {
+    const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+    const UNADJUSTED: CampaignAdSchedule = { dayOfWeek: 'MONDAY', startHour: 18, startMinute: 0, endHour: 24, endMinute: 0 };
+    const SENTENCE = 'Google Ads applies an ad schedule bid adjustment only under Manual CPC or Maximize Clicks.';
+
+    it.each([
+      ['search', { includeSearch: true }, 'manual-cpc', true],
+      ['search', { includeSearch: true }, 'maximize-clicks', true],
+      ['search', { includeSearch: true }, 'maximize-conversions', false],
+      ['search', { includeSearch: true }, 'target-cpa', false],
+      ['search', { includeSearch: true }, 'maximize-conversion-value', false],
+      ['search', { includeSearch: true }, 'target-roas', false],
+      ['display', { includeDisplay: true }, '', false],
+      ['display', { includeDisplay: true }, 'maximize-clicks', true],
+      ['performance-max', { includePerformanceMax: true }, '', false],
+    ])('on %s (%o) under strategy "%s", offers a schedule adjustment only where Google applies it', (_channel, patch, strategy, adjustable) => {
+      const c = seedChannel(fixture, patch);
+      c['campaignForm'].controls.googleBiddingStrategy.setValue(strategy);
+      c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS]);
+      fixture.detectChanges();
+
+      if (adjustable) {
+        expect(c['googleScheduleAdjustBlockedReason']()).toBeNull();
+        expect(c['googleAdSchedulesError']()).toBeNull();
+        expect(c['googleScheduleAdjustmentsHeldMessage']()).toBe('');
+        expect(query('implementation-google-ad-schedule-adjustment-0')?.readOnly).toBe(false);
+      } else {
+        expect(c['googleScheduleAdjustBlockedReason']()).toContain(SENTENCE);
+        expect(c['googleAdSchedulesError']()).toContain('The Google Ads ad schedule 1 has a bid modifier of 0.8.');
+        expect(c['googleScheduleAdjustmentsHeldMessage']()).toContain('The bid adjustment on 1 ad schedule window is kept for a switch back');
+        expect(c['canSubmit']()).toBe(false);
+        // Held, not dropped: the list still carries it for a switch back.
+        expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
+        expect(query('implementation-google-ad-schedule-adjustment-0')?.readOnly).toBe(true);
+      }
+    });
+
+    it('says which strategies give the adjustment back on each channel', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversions');
+      fixture.detectChanges();
+      expect(c['googleScheduleAdjustBlockedReason']()).toBe(
+        `${SENTENCE} Under Maximize Conversions it would ignore it, so LFX One doesn't send one. The windows still decide when the campaign serves. Choose Manual CPC or Maximize Clicks as the bidding strategy to adjust bids by time.`
+      );
+      expect(query('implementation-google-ad-schedule-hint')?.textContent).toContain('Choose Manual CPC or Maximize Clicks as the bidding strategy');
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true, googleBiddingStrategy: '' });
+      fixture.detectChanges();
+      expect(c['googleScheduleAdjustBlockedReason']()).toMatch(/Choose Maximize Clicks as the bidding strategy to adjust bids by time\.$/);
+
+      c['campaignForm'].patchValue({ includeDisplay: false, includePerformanceMax: true, googleBiddingStrategy: '' });
+      fixture.detectChanges();
+      expect(c['googleScheduleAdjustBlockedReason']()).toMatch(/Performance Max campaigns cannot bid Manual CPC or Maximize Clicks here\.$/);
+    });
+
+    it('holds an adjustment across a switch to Smart Bidding, blocking Create until it is cleared, and sends the window', async () => {
+      const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS, { ...UNADJUSTED, dayOfWeek: 'TUESDAY' }]);
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(true);
+      expect(query('implementation-google-schedule-adjustments-held')).toBeNull();
+
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversions');
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(false);
+      expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS, { ...UNADJUSTED, dayOfWeek: 'TUESDAY' }]);
+      const held = `${SENTENCE} Under Maximize Conversions it would ignore it, so LFX One doesn't send one. The bid adjustment on 1 ad schedule window is kept for a switch back, and Create Campaign waits until you clear it, or choose Manual CPC or Maximize Clicks.`;
+      expect(query('implementation-google-schedule-adjustments-held')?.textContent?.trim()).toBe(held);
+      expect(query('implementation-google-schedule-adjustments-held-live')?.textContent?.trim()).toBe(held);
+      expect(query('implementation-google-ad-schedule-error')?.textContent).toContain('ad schedule 1 has a bid modifier of 0.8');
+      c['submit']();
+      expect(createCampaign).not.toHaveBeenCalled();
+
+      // Clearing it in the panel lets Create through under the same strategy, window kept.
+      (query('implementation-google-ad-schedule-clear-0')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(c['googleAdSchedules']()).toEqual([UNADJUSTED, { ...UNADJUSTED, dayOfWeek: 'TUESDAY' }]);
+      expect(c['googleAdSchedulesError']()).toBeNull();
+      expect(query('implementation-google-schedule-adjustments-held')).toBeNull();
+      expect(c['googleTargetingPayload']()).toEqual({ adSchedules: [UNADJUSTED, { ...UNADJUSTED, dayOfWeek: 'TUESDAY' }] });
+    });
+
+    it('lets a held adjustment through again on a switch back to Manual CPC', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS, { ...MONDAY_EVENINGS, dayOfWeek: 'TUESDAY' }]);
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('target-roas');
+      fixture.detectChanges();
+      expect(c['googleScheduleAdjustmentsHeldMessage']()).toContain(
+        'The bid adjustments on 2 ad schedule windows are kept for a switch back, and Create Campaign waits until you clear them, or choose Manual CPC or Maximize Clicks.'
+      );
+
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('manual-cpc');
+      fixture.detectChanges();
+      expect(c['googleScheduleAdjustmentsHeldMessage']()).toBe('');
+      expect(c['googleAdSchedulesError']()).toBeNull();
+      expect(c['canSubmit']()).toBe(true);
+      expect(c['googleTargetingPayload']()).toEqual({ adSchedules: [MONDAY_EVENINGS, { ...MONDAY_EVENINGS, dayOfWeek: 'TUESDAY' }] });
+    });
+
+    it('restores a Display draft whose window is adjusted as held, since Display defaults to Maximize Conversions', () => {
+      const c = seedChannel(fixture, { includeDisplay: true });
+      restoreGoogleDraft(fixture, c, { includeDisplay: true, googleAdSchedules: [MONDAY_EVENINGS] });
+
+      expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
+      expect(c['googleScheduleAdjustmentsHeldMessage']()).toContain('The bid adjustment on 1 ad schedule window is kept for a switch back');
+      expect(c['googleScheduleAdjustmentsHeldMessage']()).toMatch(/clear it, or choose Maximize Clicks\.$/);
+      expect(query('implementation-google-ad-schedule-adjustment-0')?.readOnly).toBe(true);
+      expect(c['canSubmit']()).toBe(false);
+    });
+
+    it('sends unadjusted windows under Smart Bidding with no notice', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversions');
+      c['onGoogleAdSchedulesChange']([UNADJUSTED]);
+      fixture.detectChanges();
+      expect(c['googleAdSchedulesError']()).toBeNull();
+      expect(c['googleScheduleAdjustmentsHeldMessage']()).toBe('');
+      expect(c['googleTargetingPayload']()).toEqual({ adSchedules: [UNADJUSTED] });
+    });
+
+    it('refuses a typed -100% under Manual CPC, since 0 is only a device exclusion', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleAdSchedulesChange']([UNADJUSTED]);
+      fixture.detectChanges();
+      const box = query('implementation-google-ad-schedule-adjustment-0') as HTMLInputElement;
+      box.value = '-100';
+      box.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      expect(c['googleAdSchedules']()[0].bidModifier).toBe(0);
+      expect(c['googleAdSchedulesError']()).toContain('A bid modifier of 0 excludes a device, not an ad schedule');
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-google-ad-schedule-error')?.textContent).toContain('remove this window and keep at least one other');
+    });
+  });
+});
+
+/**
+ * Demographic exclusions and excluded locations (#4991). The exclusions panel's edits land in three
+ * tab signals; these pin what the create request carries for each channel, that Create waits on every
+ * shared refusal the BFF answers with (each entry branch, the cap and the targeted-and-excluded clash),
+ * and that demographics hidden by a channel switch are held and said to be held.
+ */
+describe('ImplementationTabComponent google exclusions', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  function seedExclusions(patch: Record<string, unknown>, geos: string[] = ['DE']): Record<string, any> {
+    const c = seedChannel(fixture, patch);
+    c['onGoogleExcludedAgeRangesChange'](['18-24']);
+    c['onGoogleExcludedGendersChange'](['UNDETERMINED']);
+    c['onGoogleExcludedGeoTargetsChange'](geos);
+    fixture.detectChanges();
+    return c;
+  }
+
+  it.each([
+    ['search', { includeSearch: true }, { excludedAgeRanges: ['18-24'], excludedGenders: ['UNDETERMINED'], excludedGeoTargets: ['DE'] }],
+    ['display', { includeDisplay: true }, { excludedAgeRanges: ['18-24'], excludedGenders: ['UNDETERMINED'], excludedGeoTargets: ['DE'] }],
+    ['performance-max', { includePerformanceMax: true }, { excludedGeoTargets: ['DE'] }],
+    ['demand-gen', { includeDemandGen: true }, { excludedGeoTargets: ['DE'] }],
+  ])('sends what %s accepts and holds the rest', (_channel, patch, expected) => {
+    const c = seedExclusions(patch);
+
+    expect(c['googleTargetingPayload']()).toEqual(expected);
+    expect(c['googleExcludedAgeRanges']()).toEqual(['18-24']);
+  });
+
+  it('submits all three lists on Search, copied rather than shared', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedExclusions({ includeSearch: true });
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['excludedAgeRanges']).toEqual(['18-24']);
+    expect(request['excludedGenders']).toEqual(['UNDETERMINED']);
+    expect(request['excludedGeoTargets']).toEqual(['DE']);
+    expect(request['excludedGeoTargets']).not.toBe(c['googleExcludedGeoTargets']());
+  });
+
+  it('shows both sections on Search, and on Performance Max only locations, saying the demographics are held', () => {
+    seedExclusions({ includeSearch: true });
+    expect(query('implementation-google-demographics')).not.toBeNull();
+    expect(query('implementation-google-excluded-geos')).not.toBeNull();
+    expect(query('implementation-google-targeting-withheld')).toBeNull();
+
+    (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
+    fixture.detectChanges();
+
+    expect(query('implementation-google-demographics')).toBeNull();
+    expect(query('implementation-google-excluded-geos')).not.toBeNull();
+    const held = 'Performance Max campaigns do not take demographic exclusions, so the 2 demographic exclusions you set will not be sent.';
+    expect(query('implementation-google-targeting-withheld')?.textContent).toContain(held);
+    expect(query('implementation-google-targeting-withheld-live')?.textContent).toContain(held);
+    // Held, not judged: the shared fence would refuse demographics on Performance Max, but none are sent.
+    expect((fixture.componentInstance as unknown as Record<string, any>)['googleDemographicExclusionsError']()).toBeNull();
+  });
+
+  it.each([
+    ['an unknown age range', { ageRanges: ['17-23'] }, 'googleDemographicExclusionsError', 'cannot exclude the age range 17-23'],
+    ['an unknown gender', { genders: ['OTHER'] }, 'googleDemographicExclusionsError', 'cannot exclude the gender OTHER'],
+    ['a blank location', { geos: [''] }, 'googleExcludedGeoTargetsError', 'cannot include a blank entry'],
+    ['a non-canonical geo id', { geos: ['01023191'] }, 'googleExcludedGeoTargetsError', 'is not the canonical spelling'],
+    ['an unsupported country', { geos: ['ZZ'] }, 'googleExcludedGeoTargetsError', 'cannot exclude ZZ on this path'],
+    [
+      'too many locations',
+      { geos: Array.from({ length: GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS + 1 }, (_, i) => String(1000 + i)) },
+      'googleExcludedGeoTargetsError',
+      `accepts at most ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} excluded locations`,
+    ],
+  ])('holds Create on %s and shows the shared refusal under its section', (_case, lists, signalName, message) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googleGeoTargets'].set(['GB']);
+    c['onGoogleExcludedAgeRangesChange']((lists as Record<string, string[]>)['ageRanges'] ?? []);
+    c['onGoogleExcludedGendersChange']((lists as Record<string, string[]>)['genders'] ?? []);
+    c['onGoogleExcludedGeoTargetsChange']((lists as Record<string, string[]>)['geos'] ?? []);
+    fixture.detectChanges();
+
+    expect(c[signalName]()).toContain(message);
+    expect(c['canSubmit']()).toBe(false);
+    const errorId =
+      signalName === 'googleDemographicExclusionsError' ? 'implementation-google-demographics-error' : 'implementation-google-excluded-geos-error';
+    expect(query(errorId)?.textContent).toContain(message);
+  });
+
+  it('refuses excluding a targeted place however it is spelled, and the event country the request falls back to', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googleGeoTargets'].set(['US']);
+    c['onGoogleExcludedGeoTargetsChange'](['2840']);
+    fixture.detectChanges();
+    expect(c['googleExcludedGeoTargetsError']()).toContain('cannot both target and exclude US');
+    expect(c['canSubmit']()).toBe(false);
+
+    // No country picked: the request targets the event country (US), so excluding it clashes too.
+    c['googleGeoTargets'].set([]);
+    c['onGoogleExcludedGeoTargetsChange'](['US']);
+    fixture.detectChanges();
+    expect(c['googleEffectiveGeoTargets']()).toEqual(['US']);
+    expect(c['googleExcludedGeoTargetsError']()).toContain('cannot both target and exclude US');
+
+    c['onGoogleExcludedGeoTargetsChange'](['CA']);
+    expect(c['googleExcludedGeoTargetsError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('withholds the panel and every key off the campaign-service road', () => {
+    const c = seedExclusions({ includeSearch: true }, ['ZZ']);
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+
+    expect(c['googleTargetingPayload']()).toEqual({});
+    expect(c['googleExcludedGeoTargetsError']()).toBeNull();
+    expect(query('implementation-google-exclusions-panel')).toBeNull();
+  });
+
+  it('round-trips the three lists through a draft and empties them for a new brief', () => {
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const c = seedExclusions({ includeSearch: true });
+
+    expect(emitted?.googleExcludedAgeRanges).toEqual(['18-24']);
+    expect(emitted?.googleExcludedGenders).toEqual(['UNDETERMINED']);
+    expect(emitted?.googleExcludedGeoTargets).toEqual(['DE']);
+
+    c['resetGoogleFields']();
+    expect(c['googleExcludedAgeRanges']()).toEqual([]);
+    expect(c['googleExcludedGenders']()).toEqual([]);
+    expect(c['googleExcludedGeoTargets']()).toEqual([]);
+    restoreGoogleDraft(fixture, c, { googleExcludedAgeRanges: ['65+'], googleExcludedGenders: ['MALE'], googleExcludedGeoTargets: ['DE', '1023191'] });
+
+    expect(c['googleExcludedAgeRanges']()).toEqual(['65+']);
+    expect(c['googleExcludedGenders']()).toEqual(['MALE']);
+    expect(c['googleExcludedGeoTargets']()).toEqual(['DE', '1023191']);
   });
 });
 

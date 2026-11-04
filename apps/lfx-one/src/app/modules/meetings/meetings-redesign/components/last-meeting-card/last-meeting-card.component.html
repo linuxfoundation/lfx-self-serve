@@ -63,7 +63,7 @@
             [lfxUiTooltipDisabled]="!projectTruncated()"
             (click)="onLinkClick($event, url)"
             data-testid="meetings-home-last-card-project">
-            <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+            <lfx-meeting-project-logo [src]="project.logo" />
             <span
               #projectName
               class="min-w-0 truncate underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
@@ -74,7 +74,7 @@
           <span
             class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-[12px] text-gray-500"
             data-testid="meetings-home-last-card-project">
-            <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+            <lfx-meeting-project-logo [src]="project.logo" />
             <span
               #projectName
               class="min-w-0 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"

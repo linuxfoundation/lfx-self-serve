@@ -4,7 +4,7 @@ description: Find your groups, join or leave them, and create and manage project
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, governance, membership, management]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Committees
 ---
 

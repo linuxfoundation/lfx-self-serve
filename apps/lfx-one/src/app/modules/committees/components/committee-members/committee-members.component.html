@@ -5,6 +5,25 @@
   <!-- Confirm dialog host for revoke-invite and remove-member actions -->
   <p-confirmDialog></p-confirmDialog>
 
+  @if (showMemberRoster() && membersError()) {
+    <div class="flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 p-3" role="alert" data-testid="committee-members-load-error">
+      <p class="text-sm text-red-700">
+        We couldn't load the complete member list. Add Member and Import Members are unavailable until loading succeeds. Retry the load; if the loading limit is
+        reached again, contact support.
+      </p>
+      <div class="flex">
+        <lfx-button
+          label="Retry"
+          severity="secondary"
+          size="small"
+          [outlined]="true"
+          [disabled]="membersLoading()"
+          data-testid="committee-members-load-retry"
+          (onClick)="retryMembers.emit()" />
+      </div>
+    </div>
+  }
+
   <!-- Committee Members Section -->
   <lfx-card [styleClass]="showPendingInvites() ? '[&_.p-card-body]:p-0 [&_.p-card-content]:p-0' : ''">
     @if (!showMembersSection()) {
@@ -114,7 +133,7 @@
               size="small"
               severity="secondary"
               [outlined]="true"
-              [disabled]="membersLoading() || invitesLoading() || importSnapshotsLoading()"
+              [disabled]="!membersReady() || membersError() || membersLoading() || invitesLoading() || importSnapshotsLoading()"
               (onClick)="openImportMembersDialog()"
               data-testid="import-members-csv-btn">
             </lfx-button>
@@ -123,6 +142,7 @@
               label="Add Member"
               size="small"
               severity="info"
+              [disabled]="!membersReady() || membersLoading() || membersError()"
               (onClick)="openAddMemberDialog()"
               data-testid="add-member-btn">
             </lfx-button>
@@ -355,13 +375,13 @@
                   </div>
                 </td>
               </tr>
-            } @else {
+            } @else if (!membersError() || activeTab() === 'pending') {
               <tr>
                 <td [attr.colspan]="emptyStateColspan()" class="text-center py-8">
                   <div class="text-center">
                     <i class="fa-light fa-users text-3xl text-gray-300 mb-2"></i>
                     <p class="text-sm font-medium text-gray-600">{{ activeTab() === 'pending' ? 'No pending invitations' : 'No members found' }}</p>
-                    @if (canManageMembers() && activeTab() !== 'pending') {
+                    @if (canManageMembers() && membersReady() && activeTab() !== 'pending') {
                       <div class="mt-3">
                         <button class="text-xs text-blue-600 hover:text-blue-700 font-medium" (click)="openAddMemberDialog()">
                           <i class="fa-light fa-user-plus mr-1"></i>Add the first member

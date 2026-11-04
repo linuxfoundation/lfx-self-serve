@@ -4,7 +4,7 @@ description: How organizers match the people in a meeting's Zoom attendance reco
 audience: [all]
 product_area: Meetings
 tags: [meetings, past meetings, attendance, reconcile, participants, organizer, zoom]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Meetings
 ---
 

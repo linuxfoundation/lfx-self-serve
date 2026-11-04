@@ -34,6 +34,8 @@ export class MeetingsHomeSummaryDialogComponent {
   protected readonly draft = signal('');
   protected readonly saving = signal(false);
   protected readonly approving = signal(false);
+  /** A blank summary is not saved. */
+  protected readonly canSave: Signal<boolean> = computed(() => this.draft().trim() !== '');
   protected readonly content: Signal<string> = computed(() => getPastMeetingSummaryContent(this.data.row.meeting, this.summary()) ?? '');
   protected readonly awaitingReview: Signal<boolean> = computed(() => !this.readOnly && isPastMeetingSummaryAwaitingApproval(this.summary()));
 
@@ -47,6 +49,7 @@ export class MeetingsHomeSummaryDialogComponent {
   }
 
   protected save(): void {
+    if (!this.canSave()) return;
     const summary = this.summary();
     const editedContent = this.draft();
     this.saving.set(true);
@@ -63,7 +66,7 @@ export class MeetingsHomeSummaryDialogComponent {
         error: (error: unknown) => {
           console.error('Failed to update summary:', error);
           this.saving.set(false);
-          this.toast.show({ variant: 'dark', message: 'Failed to update summary', duration: 5000 });
+          this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Failed to update summary' });
         },
       });
   }
@@ -83,7 +86,7 @@ export class MeetingsHomeSummaryDialogComponent {
         error: (error: unknown) => {
           console.error('Failed to approve summary:', error);
           this.approving.set(false);
-          this.toast.show({ variant: 'dark', message: 'Failed to approve summary', duration: 5000 });
+          this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Failed to approve summary' });
         },
       });
   }

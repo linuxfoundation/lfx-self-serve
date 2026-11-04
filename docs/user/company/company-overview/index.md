@@ -4,7 +4,7 @@ description: What each card on the Company Lens Dashboard (the Company Overview)
 audience: [all]
 product_area: Company
 tags: [company, company-lens, dashboard, overview, involvement, foundations, projects, governance, meetings]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Company
 ---
 
@@ -79,7 +79,7 @@ The Company Overview links to the **Memberships** and **Projects** pages of the 
 
 1. **View all on Memberships page ›**, at the right of the Foundations and Projects heading, opens the **Memberships** page.
 2. Selecting a foundation's row opens the **Memberships** page. The **Outside LF** row does not open anything.
-3. Selecting a project inside an expanded foundation opens that project's page under **Projects**. Only LF projects open a page; other projects are listed for reference.
+3. Selecting a project inside an expanded foundation opens that project's page under **Projects**. Only LF projects open a page; other projects are listed for reference. See [What is a project detail page?](../projects/#what-is-a-project-detail-page).
 
 On a keyboard, move to a foundation or project row and press Enter or Space to open it.
 
@@ -107,6 +107,7 @@ If a link shows a message such as **You do not have access to this company** or 
 ## Related sections
 
 - [Choose and switch a company](../choose-a-company/) — pick the company the Company Overview shows
+- [Projects and project detail](../projects/) — the company's projects, and each project's influence and leaderboards
 - [Manage Company Lens Access](../manage-company-lens-access/) — who can open the company, and how an Admin adds or removes them
 - [Company FAQ](../faq/) — short answers about the Company Lens
 - [ROI metrics](../../dashboards/roi/) — return on investment estimates, for Linux Foundation staff

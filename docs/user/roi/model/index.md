@@ -4,7 +4,7 @@ description: A self-contained description of the LFX contribution ROI model — 
 audience: [all]
 product_area: Dashboards
 tags: [roi, model, markup, ces, revealed preference, assumptions, technical]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 

@@ -4,7 +4,7 @@ description: How the ROI model turns monthly participation histories into a mark
 audience: [all]
 product_area: Dashboards
 tags: [roi, markup, logit, participation, calibration, gamma, technical]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 
