@@ -48,13 +48,13 @@ The hover text on both influence columns says **Technical influence examines cod
 
 Under the trend line, a change of more than 1% either way shows an up or down arrow. A smaller change is shown without an arrow. Hover the line to see **Combined influence**, **Technical influence**, and **Ecosystem influence** changes separately.
 
-The table starts sorted by **Contributors**, most first. Select a column heading to sort by it, and select it again to reverse the order. It shows 25 rows per page. You can change that to 10 or 50 at the bottom of the table.
+The table starts sorted by **Contributors**, most first. Select a column heading to sort by it, and select it again to reverse the order. It shows 25 rows per page. When there are more than 25 projects, you can change that to 10 or 50 at the bottom of the table.
 
 ## What does the Health label mean?
 
 The **Health** label is the project's health classification from LFX Insights. Hover or select the label to see the score and how it breaks down.
 
-The panel shows the label, the score out of 100, and three categories:
+The panel shows the label, the score out of the most it can reach (100, or less for a partial score), and three categories:
 
 | Category                    | Points |
 | --------------------------- | ------ |
