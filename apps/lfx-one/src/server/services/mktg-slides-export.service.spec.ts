@@ -559,12 +559,13 @@ describe('MktgSlidesExportService', () => {
       expect(lines[3]).toBe(`FOLDER ID: ${MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID}`);
       expect(lines[4]).toBe('DECK ID: none (create a new deck from the LF 2025 template)');
       expect(lines[5]).toMatch(/^DECK TITLE: Example Project · Messaging framework · \d{4}-\d{2}-\d{2}$/);
-      expect(lines[7]).toBe('ASSETS: framework, kit');
+      expect(lines[11]).toBe('ASSETS: framework, kit');
       const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
       expect(assets['framework']['mh']).toEqual({ umbrella: 'Open search.', pillars: [] });
       expect(assets['kit']).toMatchObject({ dark: '#4D4E4E', accent: '#F37625', font: 'Montserrat' });
       // No public image URL in this environment: the logo is not sent, and the start says why.
       expect(lines[6]).toBe('LOGO URL: none');
+      expect(lines.slice(7, 11)).toEqual(['LOGO SYMBOL URL: none', 'LOGO REVERSED URL: none', 'LOGO ONE-COLOR URL: none', 'LOGO SYMBOL REVERSED URL: none']);
       expect(started.logoNote).toBe('not-public');
       expect(store.publicImages.size).toBe(0);
     });

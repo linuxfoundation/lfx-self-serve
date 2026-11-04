@@ -103,6 +103,22 @@ export const MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES = 1_048_576;
 export const MKTG_SLIDES_EXPORT_LOGO_SIDE_PX = 1200;
 
 /**
+ * The logo variants sent beside the primary, in the order the intake's head
+ * lines carry them (slides-export 1.1.2 reads them; 1.1.1 ignores lines it
+ * does not read): the symbol, the reversed (white) lockup, the one-colour
+ * (black) lockup and the reversed symbol.
+ */
+export const MKTG_SLIDES_EXPORT_LOGO_VARIANTS = ['symbol', 'reversed', 'one_color', 'symbol_reversed'] as const;
+
+/** The form field each variant's URL travels in (`MktgSlidesExportForm`). */
+export const MKTG_SLIDES_EXPORT_LOGO_VARIANT_FIELDS = {
+  symbol: 'logo_symbol_url',
+  reversed: 'logo_reversed_url',
+  one_color: 'logo_one_color_url',
+  symbol_reversed: 'logo_symbol_reversed_url',
+} as const;
+
+/**
  * A runtime error is a failed export only once it has settled: a session can
  * recover from one (a dropped connection retried), so an error counts when
  * nothing came after it beyond the run's own teardown and it is this old.

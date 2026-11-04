@@ -3,15 +3,17 @@
 
 // Export to Google Slides: the exporter's form and result envelope
 // (slides-export-output/v1, mirroring marketing-os-agents
-// agents/slides-export 1.1.0, src/form.ts and src/envelope.ts; a Brand Kit
-// export's chapters need 1.1.0 or later), the BFF's routes and the export
-// record a deck is kept with, beside the document revision it was made from.
+// agents/slides-export 1.1.2, src/form.ts and src/envelope.ts; a Brand Kit
+// export's chapters need 1.1.0 or later, the logo variants 1.1.2 or later),
+// the BFF's routes and the export record a deck is kept with, beside the
+// document revision it was made from.
 
 import {
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
   MKTG_SLIDES_EXPORT_ASSET_KINDS,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_LOGO_NOTES,
+  MKTG_SLIDES_EXPORT_LOGO_VARIANTS,
   MKTG_SLIDES_EXPORT_MODES,
   MKTG_SLIDES_EXPORT_SLIDE_KINDS,
 } from '../constants/mktg-slides-export.constants';
@@ -32,6 +34,12 @@ export type MktgSlidesExportSlideKind = (typeof MKTG_SLIDES_EXPORT_SLIDE_KINDS)[
 /** Why a deck carries no project logo; null when it does. */
 export type MktgSlidesExportLogoNote = keyof typeof MKTG_SLIDES_EXPORT_LOGO_NOTES;
 
+/** A logo variant sent beside the primary: the symbol, the reversed lockup, the one-colour lockup, the reversed symbol. */
+export type MktgSlidesExportLogoVariant = (typeof MKTG_SLIDES_EXPORT_LOGO_VARIANTS)[number];
+
+/** The variant URLs that could be drawn and published, by variant; a variant that could not is absent. */
+export type MktgSlidesExportLogoVariantUrls = Partial<Record<MktgSlidesExportLogoVariant, string>>;
+
 /** What went wrong with an export, as the plain message names it. */
 export type MktgSlidesExportFailure = keyof typeof MKTG_SLIDES_EXPORT_FAILURE_MESSAGES;
 
@@ -48,6 +56,14 @@ export interface MktgSlidesExportForm {
   deck_title?: string;
   /** A publicly fetchable PNG, JPEG or GIF URL of the project logo. */
   logo_url?: string;
+  /** A publicly fetchable PNG, JPEG or GIF URL of the logo's symbol alone (slides-export 1.1.2 or later). */
+  logo_symbol_url?: string;
+  /** A publicly fetchable PNG, JPEG or GIF URL of the reversed (white) lockup, for dark grounds (slides-export 1.1.2 or later). */
+  logo_reversed_url?: string;
+  /** A publicly fetchable PNG, JPEG or GIF URL of the one-colour (black) lockup (slides-export 1.1.2 or later). */
+  logo_one_color_url?: string;
+  /** A publicly fetchable PNG, JPEG or GIF URL of the reversed (white) symbol alone (slides-export 1.1.2 or later). */
+  logo_symbol_reversed_url?: string;
   /** One member per asset, as LFX One stores it. */
   assets: Partial<Record<MktgSlidesExportAssetKind, unknown>>;
 }
