@@ -4,7 +4,24 @@ description: Short answers about the Organization lens — how to switch organiz
 audience: [all]
 product_area: Organization
 tags:
-  [organization, faq, switch-organization, all-organizations, org-overview, dashboard, memberships, projects, workspaces, easycla, cla, ccla, cla-manager, access, remove, invite]
+  [
+    organization,
+    faq,
+    switch-organization,
+    all-organizations,
+    org-overview,
+    dashboard,
+    memberships,
+    projects,
+    workspaces,
+    easycla,
+    cla,
+    ccla,
+    cla-manager,
+    access,
+    remove,
+    invite,
+  ]
 last_updated: 2026-11-04
 intercom_collection: Organization
 ---

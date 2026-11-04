@@ -240,6 +240,32 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.listIncomplete()).toBe(true);
   });
 
+  /**
+   * Copilot on PR #4415. Writing the failure check as one disjunct among others let optimism
+   * short-circuit it: two persona seeds keep `canSelectRollUp` true after the roster fails, so the
+   * page-level outage and its shared Retry disappeared behind a roll-up that could still be picked.
+   */
+  it('lets the outage win even when the seeds still make the roll-up selectable', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(true);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.selectedHeld()).toBe(false);
+    expect(h.service.pageState()).toBe('could-not-load');
+  });
+
+  // Rule 3 — a lower bound with nothing held at all is the same outage, not a window to ride out.
+  it('lets the outage win for a partial lookup that leaves the caller holding nothing', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(false);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('partial');
+
+    expect(h.service.selectedHeld()).toBe(false);
+    expect(h.service.pageState()).toBe('could-not-load');
+  });
+
   // A failed lookup is not a lower bound: rule 2 owns that render, rather than a page over an outage.
   it('lets the outage win over an admitted roll-up when the lookup failed outright', () => {
     h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));

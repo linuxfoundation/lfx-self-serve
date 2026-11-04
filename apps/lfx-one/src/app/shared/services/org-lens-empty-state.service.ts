@@ -127,11 +127,23 @@ export class OrgLensEmptyStateService {
     // inherited grants, so the count sits below two through the whole partial window while the
     // selection stands (#4415, Copilot then Cursor).
     //
-    // A failed lookup is excluded on purpose: nothing is a lower bound there, the selection is not
-    // evidence of anything, and rule 2 below owns that render — `could-not-load` with its Retry,
-    // not a page drawn over an outage.
+    // The outage rules come FIRST, because optimism must never paper one over. Writing the failure
+    // check as one disjunct among others did exactly that: two persona seeds keep `canSelectRollUp`
+    // true after the roster fails outright, and that short-circuited rules 2 and 3 away, taking the
+    // page-level state and its shared Retry with them (#4415, Copilot).
     if (isOrgRollUpSegment(uid)) {
-      return this.accountContext.canSelectRollUp() || !this.roleGrants.loaded() || this.roleGrants.lookupOutcome() === 'partial';
+      const outcome = this.roleGrants.lookupOutcome();
+      // Rule 2 — the roster never answered, so the selection is not evidence of anything.
+      if (outcome === 'failed') {
+        return false;
+      }
+      // Rule 3 — a lower bound with nothing held at all is the same outage. `holdsAnything` is the
+      // caller's own evidence of holding something, weighed exactly as `classifyLookup` weighs it.
+      const lowerBound = !this.roleGrants.loaded() || outcome === 'partial' || this.claOnlyAccess.lookupFailed();
+      if (lowerBound && !this.accountContext.hasOrgSelectorAccess()) {
+        return false;
+      }
+      return this.accountContext.canSelectRollUp() || lowerBound;
     }
     return (
       this.roleGrants.writerSet().has(uid) ||
