@@ -32,7 +32,7 @@ The Settings tab (`/profile/settings`) has three sections on one page — **Emai
 
 _Manage your email addresses. All email addresses are verified before they can be used._
 
-The **Email Addresses** card lists every address on your account. Badges mark the **Primary** address, the address that receives **Meeting Invites**, and each **Verified** address. Each address has a **⋮** actions menu that shows only the actions available for it:
+The **Email Addresses** card lists every address on your account. Badges mark the **Primary** address, the address that receives **Meeting Invites**, and each **Verified** address. Addresses with available actions have a **⋮** menu that shows only those actions. Your primary address has none unless meeting invitations go to a different address.
 
 | Action                          | When it appears                                                         |
 | ------------------------------- | ----------------------------------------------------------------------- |
@@ -57,11 +57,13 @@ Select **Use a different email** to return to an empty address form and start ag
 
 _Keep your account secure by using a strong password and enabling two-factor authentication._
 
-- **Change Password** — fill in **Current Password**, **New Password**, and **Confirm New Password**, then select **Change Password**. A strength meter under **New Password** lists the requirements under _Requirements (must meet at least 3 of 4 criteria):_ — **At least 8 characters**, **Lowercase letter (a-z)**, **Uppercase letter (A-Z)**, **Number (0-9)**, and **Special character**. **Reset** clears the form. If you don't know your current password, select **Forgot your password? Start the account recovery process.** under the **Current Password** field.
+- **Change Password** — fill in **Current Password**, **New Password**, and **Confirm New Password**, then select **Change Password**. A strength meter under **New Password** lists the requirements under _Requirements (must meet at least 3 of 4 criteria):_ — **At least 8 characters**, **Lowercase letter (a-z)**, **Uppercase letter (A-Z)**, **Number (0-9)**, and **Special character (!@#$%^&\*)**. The meter appears once you start typing a new password. **Reset** clears the form. If you don't know your current password, select **Forgot your password? Start the account recovery process.** under the **Current Password** field.
 - **Account Recovery** — select **Send Reset Link** to email yourself a password reset link.
 - **Two-Factor Authentication** — currently shows "Two-factor authentication settings are currently unavailable." The **Set up 2FA** button is disabled.
 
 ### Developer Settings
+
+_Your API token provides programmatic access to LFX services._
 
 The **API Token** card shows your **Personal Access Token**. Use **Show** to reveal it and **Copy** to copy it to your clipboard (the button briefly reads **Copied!**). If no token can be loaded, the card says "API token is currently unavailable."
 

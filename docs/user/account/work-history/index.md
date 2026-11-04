@@ -31,7 +31,7 @@ Your entries appear in a table with **Organization**, **Job Title**, and **Dates
 
 ### Add a work experience
 
-1. Select **Add work experience** (once you have entries, the button above the table reads **Add Work Experience**).
+1. Select **Add work experience**.
 2. In the **Add work experience** dialog, fill in the fields. **Organization**, **Role**, and **Start Date** are marked required (`*`):
    - **Organization** — search and pick your employer (for example, `Google`, `Red Hat`).
    - **Role** — your job title (for example, `Senior Software Engineer`).
