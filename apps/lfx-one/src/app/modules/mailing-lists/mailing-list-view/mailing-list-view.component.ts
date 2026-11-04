@@ -33,6 +33,7 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { restoreMeLensOnBrowserBack } from '@shared/utils/restore-me-lens.util';
 
 import { MailingListMembersComponent } from '../components/mailing-list-members/mailing-list-members.component';
+import { MailingListSyncSettingsComponent } from '../components/mailing-list-sync-settings/mailing-list-sync-settings.component';
 
 @Component({
   selector: 'lfx-mailing-list-view',
@@ -45,6 +46,7 @@ import { MailingListMembersComponent } from '../components/mailing-list-members/
     MailingListVisibilitySeverityPipe,
     StripHtmlPipe,
     MailingListMembersComponent,
+    MailingListSyncSettingsComponent,
     TooltipModule,
   ],
   templateUrl: './mailing-list-view.component.html',

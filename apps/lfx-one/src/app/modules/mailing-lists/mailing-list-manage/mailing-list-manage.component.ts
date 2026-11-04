@@ -9,7 +9,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonComponent } from '@components/button/button.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
 import { COMMITTEE_LABEL, MAILING_LIST_NAME_PATTERN, MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
-import { GroupsIOServiceType, MailingListAudienceAccess, MailingListType } from '@lfx-one/shared/enums';
+import { GroupsIOServiceType, MailingListAudienceAccess, MailingListSyncMode, MailingListType } from '@lfx-one/shared/enums';
 import {
   CommitteeReference,
   CreateGroupsIOServiceRequest,
@@ -551,6 +551,19 @@ export class MailingListManageComponent {
     const selected = Array.isArray(raw) ? raw[0] : raw;
     const committeeUid = selected?.uid ?? null;
 
+    // This form has no sync direction control (#4024) — preserve the existing value in edit mode
+    // only when the committee is unchanged, so saving unrelated fields here doesn't silently reset
+    // it to manual. Picking a DIFFERENT committee in step 3 must reset sync to manual instead, or
+    // auto-sync would silently start against a committee nobody configured it for (#4880 review).
+    const previousCommitteeUid = this.mailingList()?.committees?.[0]?.uid ?? null;
+    const sameCommittee = !!committeeUid && committeeUid === previousCommitteeUid;
+    let syncMode: MailingListSyncMode | undefined;
+    if (sameCommittee) {
+      syncMode = this.mailingList()?.sync_mode;
+    } else if (committeeUid) {
+      syncMode = MailingListSyncMode.MANUAL;
+    }
+
     return {
       name: groupName,
       public: formValue.public,
@@ -560,6 +573,7 @@ export class MailingListManageComponent {
       service_id: service.uid,
       committee_uid: committeeUid,
       title: formValue.group_name,
+      sync_mode: syncMode,
     };
   }
 

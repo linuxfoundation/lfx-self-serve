@@ -206,6 +206,12 @@
         </div>
       </div>
 
+      <!-- Sync Settings (dark-launched, #4024) -->
+      <lfx-mailing-list-sync-settings
+        [mailingList]="ml"
+        (updated)="refreshData()"
+        data-testid="mailing-list-view-sync-settings"></lfx-mailing-list-sync-settings>
+
       <!-- Members Section -->
       <lfx-mailing-list-members [mailingList]="mailingList()" data-testid="mailing-list-view-members"> </lfx-mailing-list-members>
     </div>

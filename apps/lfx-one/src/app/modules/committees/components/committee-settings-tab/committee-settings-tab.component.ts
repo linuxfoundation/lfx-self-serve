@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal, TemplateRef, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -16,8 +16,8 @@ import {
   MailingListPickerDialogResult,
   ValidationError,
 } from '@lfx-one/shared/interfaces';
-import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import { SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
+import { CommitteeMemberVisibility, MailingListSyncMode } from '@lfx-one/shared/enums';
+import { MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -26,8 +26,13 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take, tap } from 'rxjs';
 
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiDrawerComponent } from '@shared/uikit/drawer/drawer.component';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
+
+import { MailingListSyncSettingsComponent } from '../../../mailing-lists/components/mailing-list-sync-settings/mailing-list-sync-settings.component';
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
 import { CommitteeGeneralSettingsComponent } from '../committee-general-settings/committee-general-settings.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
@@ -44,6 +49,9 @@ import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
     ConfirmDialogModule,
     MailingListEmailPipe,
     MailingListTypePipe,
+    UiDrawerComponent,
+    UiButtonComponent,
+    MailingListSyncSettingsComponent,
   ],
   providers: [DialogService],
   templateUrl: './committee-settings-tab.component.html',
@@ -60,6 +68,7 @@ export class CommitteeSettingsTabComponent {
   private readonly router = inject(Router);
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
+  private readonly drawerService = inject(UiDrawerService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -91,6 +100,24 @@ export class CommitteeSettingsTabComponent {
 
   // Subject to trigger ML list refresh after association changes
   private refreshMl$ = new Subject<void>();
+
+  // Count of Auto Sync drawer instances currently mid-save — closing the drawer destroys every open
+  // lfx-mailing-list-sync-settings instance, tearing down its (updated) binding, so a save that's
+  // still in flight would otherwise never reach onSyncSettingsUpdated() (#4899 review). Gates both
+  // the drawer's canClose (Escape/backdrop/close button) and the Done button, since DialogRef.close()
+  // — what Done calls — does not consult canClose.
+  public drawerSavingCount = signal(0);
+  // Signal (not a plain Set) so the drawer template can reactively lock sibling cards' toggles while
+  // one card saves — two cards both reading a stale associatedMailingLists() snapshot could otherwise
+  // pass their own "no active sync elsewhere" check and fire conflicting PUTs before either save's
+  // round-trip lands (#4899 review).
+  public savingMlUids = signal<ReadonlySet<string>>(new Set());
+  // True from the moment a card's save succeeds (onSyncSettingsUpdated) until the resulting
+  // getMailingListsByCommittee refresh lands — savingMlUids alone unlocks sibling cards as soon as
+  // the saving card's own PUT completes, before associatedMailingLists() (and each sibling's
+  // activeSync()) reflects the new sync_mode, leaving a window where a second card can still submit
+  // an automatic mode against stale sibling data (#4899 review, prior item partially addressed).
+  public refreshingMl = signal(false);
 
   // Form
   public form = new FormGroup({
@@ -132,6 +159,17 @@ export class CommitteeSettingsTabComponent {
   // actually succeed; this flag alone controls whether the card renders at all, so it stays off
   // until the feature is ready to roll out to users, independent of when the server flag flips.
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
+
+  // Dark-launch gate for the "Auto Sync" entry point (#4025) — mirrors the same flag's use as the
+  // sync settings section's own gate (mailing-list-sync-settings.component.ts). UI-only; see that
+  // constant's doc comment for the real-time auto-sync execution kill switch tracked separately in #4878.
+  public autoSyncEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
+
+  // The "Auto Sync" button only makes sense once the committee has at least one linked mailing list to configure.
+  public showAutoSyncButton = computed(() => this.autoSyncEnabled() && this.canEdit() && this.associatedMailingLists().length > 0);
+
+  // Inline template passed to UiDrawerService.open() — see drawer.stories.ts for the pattern.
+  public readonly autoSyncDrawerTemplate = viewChild.required<TemplateRef<unknown>>('autoSyncDrawer');
 
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
   // control renders visible-but-disabled instead of accepting an edit that will 403, matching the
@@ -225,6 +263,39 @@ export class CommitteeSettingsTabComponent {
           this.form.disable();
         }
       });
+  }
+
+  public openAutoSyncDrawer(): void {
+    this.drawerService.open(this.autoSyncDrawerTemplate(), {
+      width: 600,
+      // Blocks Escape/backdrop/close-button dismissal while any card's save is in flight (#4899 review).
+      canClose: () => this.drawerSavingCount() === 0,
+    });
+  }
+
+  // Tracks how many open Auto Sync drawer cards are currently saving, keyed by whether this
+  // particular instance's own saving state just turned on or off (not a plain increment/decrement,
+  // since a misordered pair of emissions from the same instance must not leave the count permanently
+  // off by one).
+  public onSyncSettingsSavingChange(mlUid: string, saving: boolean): void {
+    const next = new Set(this.savingMlUids());
+    if (saving) {
+      next.add(mlUid);
+    } else {
+      next.delete(mlUid);
+    }
+    this.savingMlUids.set(next);
+    this.drawerSavingCount.set(next.size);
+  }
+
+  // Refreshes associatedMailingLists (shared by this card and the drawer). The @for loop rebinds
+  // every open lfx-mailing-list-sync-settings instance's `mailingList` input to a fresh object,
+  // which in turn makes each instance re-fetch its own siblingLists/activeSync lookup — so the
+  // "only one auto direction per committee" notice updates across all open instances, not just the
+  // one that was just saved (#4025).
+  public onSyncSettingsUpdated(): void {
+    this.refreshingMl.set(true);
+    this.refreshMl$.next();
   }
 
   public openMailingListPicker(): void {
@@ -528,6 +599,17 @@ export class CommitteeSettingsTabComponent {
   }
 
   private buildMlUpdatePayload(ml: GroupsIOMailingList, committeeUid: string | null): Partial<CreateMailingListRequest> {
+    // Preserve the existing sync direction (#4024) only when the committee is unchanged —
+    // detaching/reattaching the SAME committee is a full-resource PUT, so omitting sync_mode would
+    // silently reset it to manual. Re-linking to a DIFFERENT committee must reset to manual instead,
+    // or auto-sync would silently start against a committee nobody configured it for (#4880 review).
+    const sameCommittee = !!committeeUid && ml.committees?.[0]?.uid === committeeUid;
+    let syncMode: MailingListSyncMode | undefined;
+    if (sameCommittee) {
+      syncMode = ml.sync_mode;
+    } else if (committeeUid) {
+      syncMode = MailingListSyncMode.MANUAL;
+    }
     return {
       name: ml.group_name,
       public: ml.public,
@@ -540,12 +622,21 @@ export class CommitteeSettingsTabComponent {
       subject_tag: ml.subject_tag,
       writers: ml.writers,
       auditors: ml.auditors,
+      sync_mode: syncMode,
     };
   }
 
   private initAssociatedMailingLists(): Signal<GroupsIOMailingList[]> {
     const committee$ = toObservable(this.committee);
     const refresh$ = this.refreshMl$.pipe(map(() => this.committee()));
+    // Preserve the last successfully-loaded list on a failed refresh instead of wiping it to [] —
+    // a transient fetch error (e.g. a flaky refreshMl$ re-fetch) would otherwise make every open
+    // Auto Sync drawer card vanish rather than just leaving the data stale (#4899 review). Keyed by
+    // committee uid, not a bare array: this component instance is reused across /groups/:id ->
+    // /groups/:id2 navigation, so a failed fetch for committee B must not resurface committee A's
+    // lists — the fallback is only valid when it matches the committee currently being requested
+    // (#4899 review).
+    let lastGoodLists: { uid: string; lists: GroupsIOMailingList[] } | null = null;
 
     return toSignal(
       merge(committee$, refresh$).pipe(
@@ -554,7 +645,21 @@ export class CommitteeSettingsTabComponent {
           this.mlLoadingInternal.set(true);
           return this.mailingListService.getMailingListsByCommittee(c!.uid).pipe(
             finalize(() => this.mlLoadingInternal.set(false)),
-            catchError(() => of([] as GroupsIOMailingList[]))
+            // Clear refreshingMl only on an actual emission, not in finalize() — finalize() also
+            // fires on unsubscribe, so a switchMap cancelling this request in favor of a newer one
+            // (another refreshMl$/committee() emission) would otherwise unlock sibling cards while
+            // the replacement request is still in flight (#4899 review).
+            tap((lists) => {
+              lastGoodLists = { uid: c!.uid, lists };
+              this.refreshingMl.set(false);
+            }),
+            catchError((error) => {
+              console.error('Failed to refresh associated mailing lists', error);
+              // Leave refreshingMl locked rather than unlocking sibling cards against this stale
+              // fallback — it only clears again once a refresh actually succeeds (#4899 review).
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to refresh mailing lists' });
+              return of(lastGoodLists?.uid === c!.uid ? lastGoodLists.lists : []);
+            })
           );
         })
       ),
@@ -563,11 +668,26 @@ export class CommitteeSettingsTabComponent {
   }
 
   private initProjectMailingLists(): Signal<GroupsIOMailingList[]> {
+    // Also refreshes on refreshMl$, not just on committee() changing — buildMlUpdatePayload's
+    // "keep sync_mode from the same committee" branch reads this snapshot, so a stale pre-save copy
+    // (e.g. one still showing auto_c_to_ml after a drawer save turned it off) can resurrect an
+    // automatic sync mode the admin just disabled the next time the picker re-associates that list
+    // (#4899 review).
+    // Same keyed last-good-data fallback as initAssociatedMailingLists() above — a transient fetch
+    // error otherwise empties the Add List picker instead of just leaving it stale (#4899 review).
+    let lastGoodProjectLists: { uid: string; lists: GroupsIOMailingList[] } | null = null;
+
     return toSignal(
-      toObservable(this.committee).pipe(
+      merge(toObservable(this.committee), this.refreshMl$.pipe(map(() => this.committee()))).pipe(
         filter((c) => !!c?.project_uid),
         switchMap((c) => {
-          return this.mailingListService.getMailingListsByProject(c!.project_uid!).pipe(catchError(() => of([] as GroupsIOMailingList[])));
+          return this.mailingListService.getMailingListsByProject(c!.project_uid!).pipe(
+            tap((lists) => (lastGoodProjectLists = { uid: c!.project_uid!, lists })),
+            catchError((error) => {
+              console.error('Failed to refresh project mailing lists', error);
+              return of(lastGoodProjectLists?.uid === c!.project_uid ? lastGoodProjectLists.lists : []);
+            })
+          );
         })
       ),
       { initialValue: [] as GroupsIOMailingList[] }
