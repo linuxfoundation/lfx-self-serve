@@ -2,12 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
+import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS, MKTG_POLL_RETRYING_TEXT } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import { expectMktgPrintCover, expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
+/**
+ * A failed lookup recovers on the poller's retry: the first retry's backoff is ≤ 10 s (5 s floor plus full jitter to 2×)
+ * and the second's ≤ 20 s (to 4×). Sized at the second retry's ceiling plus a margin, so a retry that raced the route
+ * switch and failed too cannot flake the wait.
+ */
+const LOOKUP_RECOVERY_TIMEOUT = 25_000;
+
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
 test('export stays on the Family URL and Back returns to Kit, never to an export action', async ({ page }, info) => {
@@ -101,15 +108,18 @@ test('reader sees disabled actions even when the document-list API denies access
   await page.screenshot({ path: info.outputPath('reader-family-export.png'), fullPage: true });
 });
 
-test('failed last lookup blocks Create and exposes retry', async ({ page }, info) => {
+test('failed last lookup blocks Create behind the one plain line, with no Check again button, and recovers on its own', async ({ page }, info) => {
   await openFamilyExports(page, { lookupStatus: 500 });
-  await expect(page.getByTestId('family-export-lookup-error')).toContainText('no second deck');
+  await expect(page.getByTestId('family-export-lookup-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT);
+  await expect(page.getByTestId('family-export-lookup-retrying')).toHaveAttribute('role', 'status');
+  await expect(page.getByTestId('family-export-lookup-error')).toHaveCount(0);
+  await expect(page.getByTestId('family-export-check-again')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Check again' })).toHaveCount(0);
   await expect(page.getByTestId('family-export-slides').getByRole('button')).toBeDisabled();
   await page.route(`**${MKTG_FAMILY_EXPORT_API_PATH}/last?*`, (route) =>
     route.fulfill({ json: { last: null, currentMembers: [], skippedMembers: [], stale: false } })
   );
-  await page.getByTestId('family-export-check-again').getByRole('button').click();
-  await expect(page.getByTestId('family-export-empty')).toBeVisible();
+  await expect(page.getByTestId('family-export-empty')).toBeVisible({ timeout: LOOKUP_RECOVERY_TIMEOUT });
   await page.screenshot({ path: info.outputPath('lookup-recovered.png'), fullPage: true });
 });
 

@@ -26,6 +26,8 @@ import {
   MEMBER_360_TRACKER_EXTENSION_REGEX,
   MEMBER_360_RUN_CEILING_MS,
   MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
+  MEMBER_360_OWNED_RUN_UNCONFIRMED,
+  MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_ID_REGEX,
   MKTG_LIVING_DOCUMENT_ID,
@@ -58,7 +60,7 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { getHttpErrorDetail, isTransientHttpError } from '@shared/utils/http-error.utils';
 import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, tap, EMPTY, timer, finalize, take, Observable, startWith, filter } from 'rxjs';
 
 @Component({
@@ -110,8 +112,13 @@ export class Member360RunComponent {
   protected readonly latest = signal<Member360Envelope | null>(null);
   protected readonly history = signal<MktgDocumentListItem[]>([]);
   protected readonly historyLoading = signal(true);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly historyError = signal('');
+  /** The run-history read is failing transiently and the poller retries it: one quiet line, no alert. */
+  protected readonly historyRetrying = signal(false);
   protected readonly error = signal('');
+  /** The owned run's check is failing transiently and the poller retries it: one quiet line, no alert. */
+  protected readonly retrying = signal(false);
   protected readonly answersNotice = signal('');
   protected readonly uploading = signal(false);
   protected readonly submitting = signal(false);
@@ -119,7 +126,8 @@ export class Member360RunComponent {
   private readonly confirmedScope = signal('');
   private readonly checkedHistoryScope = signal('');
   private readonly deniedScope = signal('');
-  private readonly loadingIssue = signal<[string, string]>(['', '']);
+  /** [scope, message, kind]: the screen-state line; `retrying` is the poller's transient retry, `status` a self-updating wait, `error` a final failure. */
+  private readonly loadingIssue = signal<[string, string, 'error' | 'retrying' | 'status']>(['', '', 'error']);
   private readonly accepted = signal<[string, MktgPendingGeneration | null]>(['', null]);
   private readonly ownedContext = signal<[string, MktgDocumentRunProgress | null]>(['', null]);
   private readonly ownedRun = computed(() => (this.ownedContext()[0] === this.screenScope() ? this.ownedContext()[1] : null));
@@ -139,7 +147,10 @@ export class Member360RunComponent {
     if (this.serverDenied() || (this.context.activeContextUid() && this.context.activeProject() && !this.context.canWrite())) return false;
     return this.confirmedScope() !== this.screenScope();
   });
-  protected readonly loadingError = computed(() => (this.loadingIssue()[0] === this.screenScope() ? this.loadingIssue()[1] : ''));
+  private readonly loadingState = computed(() => (this.loadingIssue()[0] === this.screenScope() ? this.loadingIssue() : null));
+  protected readonly loadingError = computed(() => (this.loadingState()?.[2] === 'error' ? this.loadingState()?.[1] : '') ?? '');
+  protected readonly loadingNote = computed(() => (this.loadingState()?.[2] === 'status' ? this.loadingState()?.[1] : '') ?? '');
+  protected readonly loadingRetrying = computed(() => this.loadingState()?.[2] === 'retrying');
   protected readonly pending = computed(() => {
     const [subject, pending] = this.accepted();
     return this.context.canWrite() && subject === this.users.user()?.sub && pending?.request.projectUid === this.context.activeContextUid() ? pending : null;
@@ -188,10 +199,6 @@ export class Member360RunComponent {
     }
   }
 
-  protected retryHistory(): void {
-    this.historyRetry.update((value) => value + 1);
-  }
-
   protected run(): void {
     const project = this.context.activeContextUid();
     const user = this.users.user()?.sub;
@@ -204,10 +211,10 @@ export class Member360RunComponent {
       this.error.set('Wait for run history to finish loading, then create Member 360.');
       return;
     }
-    if (this.form.controls.compare.value && (this.historyError() || !this.latest())) {
+    if (this.form.controls.compare.value && (this.historyError() || this.historyRetrying() || !this.latest())) {
       this.error.set(
-        this.historyError()
-          ? 'The previous run could not be read. Choose No comparison or retry history.'
+        this.historyError() || this.historyRetrying()
+          ? 'The previous run could not be read yet. Choose No comparison, or wait for history to load.'
           : 'There is no previous run to compare with. Choose No comparison to create Member 360.'
       );
       return;
@@ -496,7 +503,9 @@ export class Member360RunComponent {
             this.confirmedScope.set('');
             this.checkedHistoryScope.set('');
             this.deniedScope.set('');
-            this.loadingIssue.set(['', '']);
+            this.loadingIssue.set(['', '', 'error']);
+            this.retrying.set(false);
+            this.historyRetrying.set(false);
             this.history.set([]);
             this.latest.set(null);
             this.lastHistoryRevision = '';
@@ -519,19 +528,32 @@ export class Member360RunComponent {
           this.lastScope = key;
           this.historyLoading.set(true);
           this.historyError.set('');
+          this.historyRetrying.set(false);
           this.form.controls.compare.disable({ emitEvent: false });
         }),
         switchMap(({ key, project, user, retry }) => {
           const current = () => key === this.screenScope() && retry === this.historyRetry();
           let background = false;
+          // State of the last read, decided where the read happens: a partial roster read is a transient condition.
+          let partialRead = false;
           const fetch = (): Observable<MktgDocumentListItem[]> => {
+            partialRead = false;
             if (!project || !user || !this.context.canWrite()) return of([]);
+            // A refused scope is latched (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's
+            // choice, since a session-expiry 401 needs a sign-in, not a poll): no scheduled poll or wake sends the same
+            // credentials again.
+            if (this.deniedScope() === key) return EMPTY;
             const poll = background;
             background = true;
             return this.documents.listDocuments(project, poll, true).pipe(
               tap((response) => {
                 if (current()) {
-                  if (response.project !== project || response.progressUnavailable) throw new Error('Owned run state is not confirmed.');
+                  if (response.project !== project) throw new Error('Owned run state belongs to another project.');
+                  // A partial read is a transient condition: the poller retries it behind the one connection line.
+                  if (response.progressUnavailable) {
+                    partialRead = true;
+                    throw new Error(MEMBER_360_OWNED_RUN_UNCONFIRMED);
+                  }
                   this.restoreServerRun(key, project, user, response);
                   this.checkedHistoryScope.set(key);
                   this.deniedScope.set('');
@@ -554,7 +576,7 @@ export class Member360RunComponent {
                     if (current()) {
                       this.latest.set(view.member360 ?? null);
                       this.lastHistoryRevision = view.member360 ? last.latestRevisionId : '';
-                      if (!view.member360) this.historyError.set('Previous run details could not be loaded. Retry before comparing.');
+                      if (!view.member360) this.historyError.set('Previous run details could not be loaded yet.');
                     }
                     return group.documents;
                   })
@@ -567,19 +589,26 @@ export class Member360RunComponent {
             backoffBaseMs: MKTG_RUN_POLL.intervalMs,
             backoffMaxMs: MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
             shouldContinue: () => !!project && !!user && this.context.canWrite(),
-          }).pipe(filter(current));
+          }).pipe(
+            filter(current),
+            map((event) => ({ event, partialRead }))
+          );
         }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((event) => {
+      .subscribe(({ event, partialRead }) => {
         const key = this.screenScope();
         this.historyLoading.set(false);
         this.form.controls.compare.enable({ emitEvent: false });
         if (event.kind === 'error') {
-          this.historyError.set('Run history could not be loaded. Retry before comparing with the previous run.');
-          this.loadingIssue.set([key, 'The run state could not be checked. Refresh to try again.']);
+          // A transient failure shows the one connection line while the poller retries; the rest is a plain failed line.
+          const transient = partialRead || isTransientHttpError(event.error);
+          this.historyRetrying.set(transient);
+          this.historyError.set(transient ? '' : 'Run history could not be loaded.');
+          this.loadingIssue.set([key, transient ? '' : 'The run state could not be checked.', transient ? 'retrying' : 'error']);
           if (event.error instanceof HttpErrorResponse && (event.error.status === 401 || event.error.status === 403)) this.deniedScope.set(key);
         } else {
+          this.historyRetrying.set(false);
           this.history.set(event.value);
           if (!this.latest() && !this.historyError()) this.form.controls.compare.setValue(false, { emitEvent: false });
         }
@@ -588,8 +617,8 @@ export class Member360RunComponent {
       });
   }
 
-  /** A creator result is displayed only after the recorded run confirms its phase. */
-  private readVerifiedRun(pending: MktgPendingGeneration, runId: string): Observable<Member360Result | null> {
+  /** A creator result is displayed only after the recorded run confirms its phase; `markPartial` flags a read the server could not complete. */
+  private readVerifiedRun(pending: MktgPendingGeneration, runId: string, markPartial: () => void): Observable<Member360Result | null> {
     const documentId = pending.request.documentId;
     if (!documentId) return of(null);
     const result = this.ownedRun()?.runId === runId ? this.api.questions(pending, runId) : this.api.questions(pending);
@@ -606,13 +635,12 @@ export class Member360RunComponent {
           return of({ ...result, documentId: canonical });
         return this.documents.getDocument(pending.request.projectUid, 'member-360', documentId, false, undefined, true, runId).pipe(
           map((detail): Member360Result | null => {
-            if (
-              detail.project !== pending.request.projectUid ||
-              detail.type.agentKey !== 'member-360' ||
-              detail.documentId !== documentId ||
-              detail.progressUnavailable
-            )
-              throw new Error('Run progress is not confirmed.');
+            if (detail.project !== pending.request.projectUid || detail.type.agentKey !== 'member-360' || detail.documentId !== documentId)
+              throw new Error('Run progress belongs to another document.');
+            if (detail.progressUnavailable) {
+              markPartial();
+              throw new Error(MEMBER_360_OWNED_RUN_UNCONFIRMED);
+            }
             if (pending === this.pending()) this.progressContext.set([pending, detail]);
             if (detail.revisions.length) return { ...result, status: 'ready', stored: true, documentId: detail.documentId };
             const run = detail.runs?.find((value) => value.runId === runId && value.agentKey === 'member-360' && value.documentId === documentId);
@@ -666,11 +694,19 @@ export class Member360RunComponent {
         switchMap(({ pending, runId, state: recordedState }) => {
           if (this.resultContext()[0] !== pending) this.resultContext.set([null, null]);
           this.stillRunning.set(false);
+          this.retrying.set(false);
           if (!pending || !runId) return EMPTY;
+          // A partial progress read (the server could not confirm the run's phase) is its own condition, set by the read
+          // and classified as transient below; a mismatched project or document stays a final failure.
+          let partialRead = false;
+          const read = () => {
+            partialRead = false;
+            return this.readVerifiedRun(pending, runId, () => (partialRead = true));
+          };
           return slow$.pipe(
             switchMap((slow) => {
               this.stillRunning.set(slow);
-              return createVisibilityPoll(this.doc, () => this.readVerifiedRun(pending, runId), {
+              return createVisibilityPoll(this.doc, read, {
                 intervalMs: slow ? MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS : MKTG_RUN_POLL.intervalMs,
                 backoffBaseMs: MKTG_RUN_POLL.intervalMs,
                 backoffMaxMs: MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
@@ -685,8 +721,12 @@ export class Member360RunComponent {
               if (pending !== this.pending() || (this.ownedRun() && (runId !== this.ownedRun()?.runId || recordedState !== this.ownedRun()?.state))) return;
               const key = this.screenScope();
               if (event.kind === 'error') {
-                this.loadingIssue.set([key, 'The run state could not be checked. Refresh to try again.']);
-                this.error.set('The run could not be checked. Try again; no new run is started.');
+                const transient = partialRead || isTransientHttpError(event.error);
+                this.retrying.set(transient);
+                this.loadingIssue.set([key, transient ? '' : 'The run state could not be checked.', transient ? 'retrying' : 'error']);
+                // A transient re-read leaves `error` alone: a failed submission's message is terminal and actionable and
+                // must not be cleared, or hidden, by the connection line.
+                if (!transient) this.error.set('The run could not be checked. No new run is started.');
                 if (event.error instanceof HttpErrorResponse && [400, 401, 403, 404].includes(event.error.status)) {
                   this.confirmedScope.set('');
                   this.checkedHistoryScope.set('');
@@ -695,7 +735,8 @@ export class Member360RunComponent {
                 }
                 return;
               }
-              this.loadingIssue.set(['', '']);
+              this.loadingIssue.set(['', '', 'error']);
+              this.retrying.set(false);
               this.error.set('');
               const result = event.value;
               if (!result) {
@@ -716,7 +757,8 @@ export class Member360RunComponent {
               this.resultContext.set([pending, value]);
               if (value.status === 'needs_input') this.answersNotice.set('');
               if (value.status === 'needs_input' && (!value.questionsId || !value.questions?.length) && this.confirmedScope() !== key) {
-                this.loadingIssue.set([key, 'The questions are not available yet. Checking the same run again.']);
+                // A self-updating wait is a plain status line, never an alert.
+                this.loadingIssue.set([key, 'The questions are not available yet. Checking the same run again.', 'status']);
                 return;
               }
               this.confirmedScope.set(key);
@@ -763,7 +805,8 @@ export class Member360RunComponent {
     return computed(() => {
       const latest = this.latest();
       let label = 'No previous run yet';
-      if (this.historyLoading()) label = 'Loading previous run…';
+      // A transient re-read in progress is still a load: the option never claims "no previous run" during an outage.
+      if (this.historyLoading() || this.historyRetrying()) label = 'Loading previous run…';
       if (this.historyError()) label = 'Previous run details unavailable';
       if (latest) label = `Previous run: ${this.latestPeriod()} (${formatDate(latest.generated_at, 'd MMM', 'en-US', 'UTC')}) — trend arrows`;
       return [

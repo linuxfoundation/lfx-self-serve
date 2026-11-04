@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -17,6 +17,9 @@ import {
   MKTG_FAMILY_PRINT_ONLY_CLASS,
   MKTG_FAMILY_SLIDES_NOTE,
   MKTG_KIT_FAMILIES,
+  MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
 } from '@lfx-one/shared/constants';
@@ -33,7 +36,24 @@ import { mktgFamilyExportAgentKeys } from '@lfx-one/shared/utils';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, distinctUntilChanged, from, map, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  from,
+  map,
+  of,
+  Subject,
+  Subscription,
+  startWith,
+  switchMap,
+  tap,
+  throwError,
+} from 'rxjs';
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { MktgBrandKitPrintComponent } from '../../mktg-brand-kit-print/mktg-brand-kit-print.component';
 import { MktgBoilerplatesPrintComponent } from '../../mktg-boilerplates-print/mktg-boilerplates-print.component';
 import { MktgFaqPrintComponent } from '../../mktg-faq-print/mktg-faq-print.component';
@@ -62,6 +82,7 @@ export class MktgFamilyExportActionsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
 
   public readonly familyId = input.required<string>();
   protected readonly slidesNote = MKTG_FAMILY_SLIDES_NOTE;
@@ -78,6 +99,9 @@ export class MktgFamilyExportActionsComponent {
   protected readonly lookup = signal<MktgFamilyExportLastResponse | null>(null);
   protected readonly checking = signal(true);
   protected readonly lookupError = signal('');
+  /** True while the last-export lookup is failing transiently and the shared poller retries it; one quiet line, no button. */
+  protected readonly lookupRetrying = signal(false);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly phase = signal<MktgSlidesExportPhase>('idle');
   protected readonly message = signal('');
   protected readonly partialLink = signal<string | null>(null);
@@ -166,10 +190,6 @@ export class MktgFamilyExportActionsComponent {
   protected cancel(): void {
     this.phase.set('idle');
   }
-  protected checkAgain(): void {
-    this.retry.next(true);
-  }
-
   protected downloadPdf(): void {
     const target = this.target();
     const members = this.lookup()?.currentMembers;
@@ -251,7 +271,15 @@ export class MktgFamilyExportActionsComponent {
 
   private initCanExport(): Signal<boolean> {
     return computed(
-      () => !!this.target() && this.writer() && !this.checking() && !this.lookupError() && !!this.lookup()?.currentMembers.length && !this.busy()
+      () =>
+        !!this.target() &&
+        this.writer() &&
+        !this.checking() &&
+        !this.lookupError() &&
+        // A failed first read leaves no lookup, so Export is held; a transient re-read of a loaded lookup keeps it (law 5:
+        // the last loaded content stays and stays usable), as the Slides panel does.
+        !!this.lookup()?.currentMembers.length &&
+        !this.busy()
     );
   }
 
@@ -295,6 +323,7 @@ export class MktgFamilyExportActionsComponent {
           this.partialLink.set(null);
           this.message.set('');
           this.lookupError.set('');
+          this.lookupRetrying.set(false);
           if (!target || !writer) {
             this.checking.set(false);
             return of(null);
@@ -304,13 +333,49 @@ export class MktgFamilyExportActionsComponent {
           return this.retry.pipe(
             startWith(true),
             switchMap((refresh) => {
-              this.checking.set(true);
-              this.lookupError.set('');
-              return this.api.last(target, refresh).pipe(
-                catchError(() => {
-                  this.lookupError.set('Could not check for an earlier deck. Export waits until this check succeeds, so no second deck is made by mistake.');
-                  return of(null);
-                })
+              // A transient failure is read again by the shared poller (capped backoff; at once on tab return, focus or
+              // reconnect) behind one plain line; a final failure keeps its message. No button re-reads.
+              let first = true;
+              let denied = false;
+              const read = () => {
+                // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401
+                // too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
+                if (denied) return EMPTY;
+                // Only a first read with nothing loaded shows the checking line: a retry keeps the plain line until it
+                // succeeds (no flicker), and a re-read after an export keeps the loaded lookup usable (law 5) instead of
+                // entering a checking state that a filtered transient failure could never leave.
+                if (first) {
+                  if (!this.lookup()) this.checking.set(true);
+                  this.lookupError.set('');
+                }
+                const fresh = refresh || !first;
+                first = false;
+                return this.api.last(target, fresh).pipe(
+                  tap(() => {
+                    this.lookupError.set('');
+                    this.lookupRetrying.set(false);
+                  }),
+                  catchError((error: unknown) => {
+                    if (isTransientHttpError(error)) return throwError(() => error);
+                    denied = error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403);
+                    this.lookupRetrying.set(false);
+                    this.lookupError.set('Could not check for an earlier deck. Export is unavailable here, so no second deck is made by mistake.');
+                    return of(null);
+                  })
+                );
+              };
+              return createVisibilityPoll(this.document, read, {
+                intervalMs: 0,
+                backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+                backoffMaxMs: MKTG_POLL_MAX_BACKOFF_MS,
+                shouldContinue: () => false,
+              }).pipe(
+                tap((event) => {
+                  if (event.kind === 'error') this.lookupRetrying.set(true);
+                }),
+                // A transient wake re-read never clears a loaded lookup (the last loaded content stays): only a result replaces it.
+                filter((event) => event.kind === 'ok' || !this.lookup()),
+                map((event) => (event.kind === 'ok' ? event.value : null))
               );
             })
           );

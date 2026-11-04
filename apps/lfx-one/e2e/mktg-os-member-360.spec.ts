@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper';
 import { createHash } from 'node:crypto';
 import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '../../../packages/shared/src/constants/member-360.constants';
+import { MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
 
 import {
   json,
@@ -19,6 +20,14 @@ import { member360Revision } from './fixtures/mock-data/member-360.mock';
 import { SYNTHETIC_ORG_NAME, SYNTHETIC_SECOND_ORG_LEGAL_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
 test.use({ storageState: { cookies: [], origins: [] } });
+
+/**
+ * A failed read recovers on the poller's retry: the first retry's backoff is ≤ 10 s (5 s floor plus full jitter to 2×)
+ * and the second's ≤ 20 s (to 4×). Sized at the second retry's ceiling plus a margin, so a retry that raced the route
+ * switch and failed too cannot flake the wait.
+ */
+const POLL_RECOVERY_TIMEOUT = 25_000;
+
 test.describe.configure({ timeout: 60000 });
 test.beforeEach(({ page, isMobile }) => {
   if (isMobile) expect(page.viewportSize()?.width).toBeLessThan(640);
@@ -53,7 +62,7 @@ for (const choice of ['Open it', 'Discard and start over'])
     await openMember360(page);
     await selectMember360Option(page, 'member-360-compare', 'No comparison');
     await page.getByTestId('member-360-run').getByRole('button').click();
-    const dialog = activeRunConfirmDialog(page, 'member-360-active-run-confirm');
+    const dialog = activeRunConfirmDialog(page);
     await expect(dialog).toContainText('Your Member 360 run is in progress');
     await dialog.getByRole('button', { name: choice, exact: true }).click();
     if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
@@ -136,7 +145,9 @@ for (const state of ['writing', 'questions', 'none'] as const)
     await page.screenshot({ path: info.outputPath(`member-owned-${state}-settled.png`), fullPage: true });
   });
 
-test('an unavailable initial roster stays neutral and Refresh loads the correct intake', async ({ page }, info) => {
+test('an unavailable initial roster stays neutral, shows the one plain line with no Refresh button, and loads the correct intake on its own', async ({
+  page,
+}, info) => {
   await setupMember360(page); // Includes suppressCookieBanner and synthetic writer/flag overrides.
   let available = false;
   await page.route('**/api/mktg-agents/documents?*', (route) =>
@@ -144,11 +155,16 @@ test('an unavailable initial roster stays neutral and Refresh loads the correct 
   );
   await openMember360(page);
   await expect(page.getByTestId('mktg-skeleton')).toBeVisible();
-  await expect(page.getByTestId('member-360-state-error')).toContainText('The run state could not be checked.');
+  await expect(page.getByTestId('member-360-state-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT);
+  await expect(page.getByTestId('member-360-state-retrying')).toHaveAttribute('role', 'status');
+  await expect(page.getByTestId('member-360-state-error')).toHaveCount(0);
+  await expect(page.getByTestId('member-360-state-refresh')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
+  await expect(page.getByTestId('member-360-retry-history')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Retry history' })).toHaveCount(0);
   await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
   available = true;
-  await page.getByTestId('member-360-state-refresh').getByRole('button').click();
-  await expect(page.getByTestId('member-360-intake')).toBeVisible();
+  await expect(page.getByTestId('member-360-intake')).toBeVisible({ timeout: POLL_RECOVERY_TIMEOUT });
   await expect(page.getByTestId('mktg-skeleton')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('member-roster-recovered.png'), fullPage: true });
 });
@@ -523,7 +539,14 @@ for (const state of ['resume', 'send-error', 'already-answered', 'load-error', '
     await selectMember360Option(page, 'member-360-compare', 'No comparison');
     await page.getByTestId('member-360-run').getByRole('button').click();
     if (state === 'load-error') {
-      await expect(page.getByTestId('member-360-error')).toContainText('could not be checked', { timeout: 15000 });
+      // A 503 on the run check is transient: one quiet status line while the poller retries, no error box and no button.
+      await expect(page.getByTestId('member-360-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: POLL_RECOVERY_TIMEOUT });
+      await expect(page.getByTestId('member-360-retrying')).toHaveAttribute('role', 'status');
+      await expect(page.getByTestId('member-360-error')).toHaveCount(0);
+      await expect(page.getByTestId('member-360-state-refresh')).toHaveCount(0);
+      await expect(page.getByTestId('member-360-check-again')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Check again' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
     } else if (state === 'empty') {
       await expect(page.getByTestId('member-360-generating')).toContainText('Member 360 is working on your report.', { timeout: 15000 });
       await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);

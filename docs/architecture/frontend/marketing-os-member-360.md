@@ -93,7 +93,7 @@ The `MktgRunFailureReason` union currently contains `Member360FailureReason`; th
 `isMktgRunFailureReason` guard accepts only the codes in the Member failure-message allow-list,
 not arbitrary metadata/attempt IDs. A new one-off's classified failures extend that union and
 its guard's explicit allow-list together, with their own safe message presentation; no prose matching.
-A Guild-ended Member session is a classified failure that offers Run again, not Retry or paused Refresh:
+A Guild-ended Member session is a classified failure that offers Run again, not Retry or a Refresh control:
 the Member failure view hides the shared retry card, so it cannot reopen a dead session. The BFF retry API is unchanged; this is a document-page action policy.
 Entity document-title binding remains limited to Member 360. Transient reads retain
 last-known content/progress within the shared bounded backoff policy; access errors

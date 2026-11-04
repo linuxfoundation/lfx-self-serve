@@ -6,9 +6,12 @@
 <div class="flex flex-col gap-[20px] bg-white px-4 pb-[32px] pt-[24px] text-gray-900 sm:px-[32px]" data-testid="member-360-run-page">
   @if (loading()) {
     <lfx-mktg-skeleton variant="run-page" />
-    @if (loadingError()) {
+    @if (loadingRetrying()) {
+      <p role="status" class="text-xs text-gray-500" data-testid="member-360-state-retrying">{{ retryingText }}</p>
+    } @else if (loadingNote()) {
+      <p role="status" class="text-xs text-gray-500" data-testid="member-360-state-note">{{ loadingNote() }}</p>
+    } @else if (loadingError()) {
       <lfx-message severity="error" [text]="loadingError()" data-testid="member-360-state-error" />
-      <lfx-button label="Refresh" [text]="true" (onClick)="retryHistory()" data-testid="member-360-state-refresh" />
     }
   } @else {
     <ng-container [ngTemplateOutlet]="settledContent" />
@@ -73,14 +76,11 @@
           }
         </section>
       }
+      <!-- A terminal, actionable error (a failed submission) outranks the transient connection line. -->
       @if (error()) {
         <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
-        <lfx-button
-          label="Check again"
-          [text]="true"
-          [disabled]="answering()"
-          (onClick)="pollRetry.set(pollRetry() + 1)"
-          data-testid="member-360-check-again" />
+      } @else if (retrying()) {
+        <p role="status" class="text-xs text-gray-500" data-testid="member-360-retrying">{{ retryingText }}</p>
       }
     } @else {
       <form [formGroup]="form" (ngSubmit)="run()" class="flex flex-col gap-5">
@@ -189,14 +189,17 @@
               </div>
             </div>
           </div>
-          @if (error()) {
+          @if (retrying()) {
+            <p role="status" class="text-xs text-gray-500" data-testid="member-360-retrying">{{ retryingText }}</p>
+          } @else if (error()) {
             <div aria-live="polite">
               <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
             </div>
           }
-          @if (historyError()) {
+          @if (historyRetrying()) {
+            <p role="status" class="text-xs text-gray-500" data-testid="member-360-history-retrying">{{ retryingText }}</p>
+          } @else if (historyError()) {
             <lfx-message severity="error" [text]="historyError()" data-testid="member-360-history-error" />
-            <lfx-button label="Retry history" [text]="true" (onClick)="retryHistory()" data-testid="member-360-retry-history" />
           }
           <div class="flex flex-wrap items-center justify-between gap-3">
             <span class="text-sm text-gray-500"
@@ -210,7 +213,7 @@
         <h2 class="font-semibold">Run history</h2>
         @if (historyLoading()) {
           <p role="status">Loading run history…</p>
-        } @else if (!historyError() && !history().length) {
+        } @else if (!historyError() && !historyRetrying() && !history().length) {
           <p class="text-sm text-gray-500">No Member 360 runs yet.</p>
         }
         @for (run of history(); track run.documentId) {

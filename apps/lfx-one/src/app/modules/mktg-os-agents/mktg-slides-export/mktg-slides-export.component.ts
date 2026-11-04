@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -11,6 +11,9 @@ import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.c
 import {
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
   MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS,
+  MKTG_POLL_MAX_BACKOFF_MS,
+  MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_POLL,
   MKTG_SLIDES_EXPORT_ASSET_LABELS,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
@@ -31,7 +34,9 @@ import {
 import { isMktgSlidesExportStale, mktgSlidesExportBrandSummary } from '@lfx-one/shared/utils';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
-import { catchError, distinctUntilChanged, filter, merge, Observable, of, startWith, Subject, Subscription, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, map, Observable, of, startWith, Subscription, switchMap, tap, throwError } from 'rxjs';
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 // Export to Google Slides on a Marketing OS asset page (the Messaging
 // Framework and the Brand Kit): the panel under the asset's header that the
@@ -40,8 +45,10 @@ import { catchError, distinctUntilChanged, filter, merge, Observable, of, startW
 // different approved-current content), asks Update or Create when a deck exists,
 // shows progress while the exporter works, then the deck (opens in a new
 // tab), its slide count and what was branded — or a plain message with a
-// retry. An unreadable history offers Check again in an existing deck's
-// panel (or a standalone exporter); a first document lookup offers it after the paint cap.
+// retry. An unreadable history is read again by the shared poller (capped
+// backoff; at once on tab return, focus or reconnect) behind a plain line in
+// an existing deck's panel (or a standalone exporter); a first document lookup
+// shows that line after the paint cap. No button re-reads.
 // A panel that comes back to a document whose
 // export is still under way in this tab shows that export instead of
 // offering a second deck. Slides are only an export: the asset itself stays
@@ -50,7 +57,8 @@ import { catchError, distinctUntilChanged, filter, merge, Observable, of, startW
   selector: 'lfx-mktg-slides-export',
   imports: [DatePipe, ButtonComponent, MessageComponent, MktgSkeletonComponent],
   templateUrl: './mktg-slides-export.component.html',
-  // Document history is secondary: unknown history hides after the paint cap; failures offer retry.
+  // Document history is secondary: unknown history hides after the paint cap; a failure shows the plain line, and a
+  // transient one is re-read by the poller.
   host: { '[class.hidden]': '!visible()' },
 })
 export class MktgSlidesExportComponent {
@@ -59,6 +67,7 @@ export class MktgSlidesExportComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly exportService = inject(MktgSlidesExportService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
 
   // === Inputs ===
   /** The stored revision to export; null when there is none (no project, or nothing stored yet). */
@@ -83,10 +92,13 @@ export class MktgSlidesExportComponent {
   /** True once the current target's last export has been read: until then Export cannot tell Update from Create. */
   private readonly lookupSettled = signal(false);
   private readonly historyWaitExpired = signal(false);
-  /** True when a lookup failed: offer Check again, retaining any previously successful lookup. */
+  /** True when a lookup failed: a plain line, retaining any previously successful lookup. */
   protected readonly lookupFailed = signal(false);
-  /** True while the last export is being read: after a failed read the line stays, its "Check again" shown as checking. */
+  /** True while the last export is being read: after a failed read the line stays until a read succeeds. */
   protected readonly lookupChecking = signal(false);
+  /** True while a failed lookup is being retried by the poller (a transient failure); false once it is terminal. */
+  protected readonly lookupRetrying = signal(false);
+  protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
 
   // === Computed ===
   /** True while an export runs: the header's button shows it and takes no second click. */
@@ -118,10 +130,8 @@ export class MktgSlidesExportComponent {
     if (this.canExport()) return '';
     if (!this.target()) return MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
     if (this.busy()) return 'An export is already running';
-    if (this.lookupFailed()) {
-      if (this.lookupTarget() && !this.last() && !this.historyWaitExpired()) return 'Could not check the last export.';
-      return 'Could not check the last export. Use Check again below.';
-    }
+    // The disabled tooltip names the failure only (its copy is another operator's area); the retrying state is the status line's.
+    if (this.lookupFailed()) return 'Could not check the last export.';
     return 'Checking the last export…';
   });
   protected readonly assetLabel = computed(() => {
@@ -143,7 +153,7 @@ export class MktgSlidesExportComponent {
   });
   /** The last export's line shows while nothing newer is on the panel. */
   protected readonly showLast = computed(() => this.last() !== null && this.phase() !== 'running' && this.phase() !== 'done');
-  /** A failed refresh retains an existing deck's retry; a first document failure offers retry after the paint cap. */
+  /** A failed lookup keeps an existing deck's plain status line; a first document failure shows it after the paint cap. */
   protected readonly showLookupFailed = computed(() => this.lookupFailed() && this.phase() === 'idle');
   protected readonly lookupPending = computed(() => Boolean(this.lastTarget()) && !this.lookupSettled() && !this.lookupFailed() && this.phase() === 'idle');
   public readonly visible = computed(
@@ -156,8 +166,6 @@ export class MktgSlidesExportComponent {
 
   private historyWaitTimer: ReturnType<typeof setTimeout> | null = null;
   private run: Subscription | null = null;
-  /** "Check again" after a failed read of the last export. */
-  private readonly lookupRetry = new Subject<void>();
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -185,8 +193,8 @@ export class MktgSlidesExportComponent {
         )
         .subscribe((response) => {
           if (!response) {
-            // Keep the cap timer running so a first failure gains a reachable retry
-            // without inserting an error bar before the document's initial paint.
+            // Keep the cap timer running so a first failure shows the plain line only after the cap (a transient one is
+            // re-read by the poller), without inserting a bar before the document's initial paint.
             this.lookupFailed.set(true);
             this.lookupAnswered.emit(JSON.stringify(this.lastTarget()));
             return;
@@ -239,13 +247,6 @@ export class MktgSlidesExportComponent {
     this.phase.set('idle');
   }
 
-  protected onCheckAgain(): void {
-    if (this.lookupChecking()) {
-      return;
-    }
-    this.lookupRetry.next();
-  }
-
   // === Private helpers ===
   private startExport(mode: MktgSlidesExportMode): void {
     const target = this.target();
@@ -289,18 +290,51 @@ export class MktgSlidesExportComponent {
   }
 
   /**
-   * The target's last export, read again on "Check again" or a project
-   * document change (approval / Make current); null while the
-   * read has failed. A failed read's line stays until a read succeeds, so a
-   * slow or unanswered check never takes away the way to check again.
+   * The target's last export, read again on a project document change
+   * (approval / Make current) and, after a transient failure, by the shared
+   * poller on its capped backoff and when the tab returns, the window focuses
+   * or the network is back; null while the read has failed. A failed read's
+   * line stays until a read succeeds. A refused read (401/403) is latched; any
+   * other final read is not retried on backoff, only on the next wake.
    */
   private readLast(target: MktgSlidesExportTarget): Observable<MktgSlidesExportLastResponse | null> {
-    return merge(this.lookupRetry, this.dependencyService.documentsChanged$.pipe(filter((project) => project === target.project))).pipe(
+    let denied = false;
+    let first = true;
+    const read = (): Observable<MktgSlidesExportLastResponse | null> => {
+      // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the
+      // operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
+      if (denied) return EMPTY;
+      // The first lookup of a target, a re-check after the documents changed and a retry after a failure hold Export;
+      // a wake re-read (tab return, focus, reconnect) of a settled lookup keeps it available.
+      if (first || !this.lookupSettled()) this.lookupChecking.set(true);
+      first = false;
+      // The service logs the failure; a transient one is the poller's to retry.
+      return this.exportService.last(target).pipe(
+        catchError((error: unknown) => {
+          if (isTransientHttpError(error)) return throwError(() => error);
+          denied = error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403);
+          return of(null);
+        })
+      );
+    };
+    return this.dependencyService.documentsChanged$.pipe(
+      filter((project) => project === target.project),
       startWith(undefined),
-      tap(() => this.lookupChecking.set(true)),
-      // The service logs the failure; the panel offers to check again.
-      switchMap(() => this.exportService.last(target).pipe(catchError(() => of(null)))),
-      tap(() => this.lookupChecking.set(false))
+      switchMap(() => {
+        first = true;
+        return createVisibilityPoll(this.document, read, {
+          intervalMs: 0,
+          backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+          backoffMaxMs: MKTG_POLL_MAX_BACKOFF_MS,
+          shouldContinue: () => false,
+        }).pipe(
+          tap((event) => {
+            this.lookupChecking.set(false);
+            this.lookupRetrying.set(event.kind === 'error');
+          }),
+          map((event) => (event.kind === 'ok' ? event.value : null))
+        );
+      })
     );
   }
 
@@ -313,6 +347,7 @@ export class MktgSlidesExportComponent {
     this.lookupSettled.set(false);
     this.lookupFailed.set(false);
     this.lookupChecking.set(false);
+    this.lookupRetrying.set(false);
     this.phase.set('idle');
     this.last.set(null);
     this.latest.set(null);

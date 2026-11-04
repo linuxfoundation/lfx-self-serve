@@ -1113,8 +1113,9 @@ describe('MktgDocumentViewComponent', () => {
       expect(store.getRevision).not.toHaveBeenCalled();
       if (resumable) {
         expect(pending.waitForStorage).toHaveBeenCalled();
-        expect(query('mktg-document-view-run-loading')?.getAttribute('aria-label')).toBe('Checking the run…');
-        expect(query('mktg-document-view-loading')).toBeNull();
+        // A generating one-off says so (Law 1), never the run skeleton.
+        expect(query('mktg-document-view-generating')?.textContent).toContain('Generating your report');
+        expect(query('mktg-document-view-run-loading')).toBeNull();
       } else {
         expect(pending.waitForStorage).not.toHaveBeenCalled();
         expect(query('mktg-document-view-error')).not.toBeNull();
@@ -1126,14 +1127,17 @@ describe('MktgDocumentViewComponent', () => {
       pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
       pending.waitForStorage.mockReturnValue(completed);
       await render('/documents/aeo-geo/run-012345678901234567890123');
-      expect(query('mktg-document-view-run-loading')?.getAttribute('aria-label')).toBe('Checking the run…');
-      expect(query('mktg-document-view-loading')).toBeNull();
+      // The generating block, with its copy, and not the ACK's run skeleton (pre-existing since #4594).
+      expect(query('mktg-document-view-generating')?.textContent).toContain('Generating your report');
+      expect(query('mktg-document-view-loading')?.getAttribute('role')).toBe('status');
+      expect(query('mktg-document-view-run-loading')).toBeNull();
       expect(query('mktg-document-view-document')).toBeNull();
       expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'aeo-geo', 'run-012345678901234567890123', false, undefined, true);
       completed.next();
       completed.complete();
       await settle();
-      expect(query('mktg-document-view-run-loading')).toBeNull();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-loading')).toBeNull();
       expect(query('mktg-document-view-document')).not.toBeNull();
       expect(pending.clear).toHaveBeenCalledWith('proj-1', 'run-012345678901234567890123');
     });
@@ -4442,7 +4446,8 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe('https://docs.google.com/presentation/d/SyntheticDeck/edit');
     } else if (answer === 'error' && afterCap) {
       expect(exporter?.classList.contains('hidden')).toBe(false);
-      expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+      expect(query('mktg-slides-export-check-again')).toBeNull();
+      expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
     } else {
       expect(exporter?.classList.contains('hidden')).toBe(true);
       expect(query('mktg-slides-export-panel')).toBeNull();
@@ -4453,7 +4458,8 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     if (answer === 'error') {
       expect(exporter?.classList.contains('hidden')).toBe(false);
-      expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+      expect(query('mktg-slides-export-check-again')).toBeNull();
+      expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
       expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
     } else {
       expect(query('mktg-slides-export-panel')).toBe(settledPanel);
