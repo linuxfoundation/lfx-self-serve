@@ -133,6 +133,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-project Project Lens → Participating Organizations cache (summary + list pages; shared across callers, since the rows carry no per-caller data — Org Lens links are resolved per caller, uncached). `v2`: a foundation's own project lists every current member, contributing or not, and the Members count is the full roster — no `v1` entry may be served under the new semantics. */
   PROJECT_PARTICIPATING_ORGS_NAMESPACE: 'project-participating-orgs-sf:v2',
 
+  /** Domain + schema-version segment for the per-viewer organizer attendance summaries on the meetings home feeds. */
+  MEETING_ATTENDANCE_NAMESPACE: 'meeting-attendance:v1',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
@@ -144,6 +147,9 @@ export const VALKEY_CACHE = {
 
   /** Short TTL for a genuinely empty (data_available: false) engagement-rows result — a committee the model doesn't cover yet. Much shorter than `COMMITTEE_ENGAGEMENT_TTL_SECONDS` so "no data yet" can't outlive the committee's dbt sync by up to an hour, while still absorbing repeated page loads in the interim. */
   COMMITTEE_ENGAGEMENT_DEGRADE_TTL_SECONDS: 120,
+
+  /** Freshness window for organizer attendance summaries; short so new answers show within a minute. */
+  MEETING_ATTENDANCE_TTL_SECONDS: 60,
 
   /** Freshness window for the per-user Org Lens caches (seats, key-contacts, access-list, people directory). */
   ORG_LENS_PERUSER_TTL_SECONDS: 30,
