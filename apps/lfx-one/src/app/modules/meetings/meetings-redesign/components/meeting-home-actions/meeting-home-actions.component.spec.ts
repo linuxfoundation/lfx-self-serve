@@ -351,12 +351,13 @@ describe('MeetingHomeActionsComponent', () => {
       expect(remove$).toHaveBeenCalledTimes(1);
     });
 
-    it('warns when some registrations could not be removed', async () => {
+    it('reports a sticky error when some registrations could not be removed', async () => {
       remove$.mockReturnValue(of({ removed_registrant_ids: ['synthetic-reg'], remaining_registrant_ids: ['synthetic-other-reg'] }));
       await render(row(INVITEE));
       await confirmRemoval();
 
-      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'warning', position: 'bottom-center', message: 'Removal incomplete' }));
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', position: 'bottom-center', message: 'Removal incomplete' }));
+      expect(toastShow.mock.lastCall?.[0]).not.toHaveProperty('duration');
       expect(refreshUserMeetings).toHaveBeenCalledWith();
     });
 
