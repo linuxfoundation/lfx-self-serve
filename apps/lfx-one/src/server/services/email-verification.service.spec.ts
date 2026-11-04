@@ -158,6 +158,7 @@ describe('EmailVerificationService.listIdentities', () => {
     await expect(service.listIdentities(reqWithoutToken)).rejects.toMatchObject({ statusCode: 401, code: 'AUTHENTICATION_REQUIRED' });
 
     expect(natsRequest).not.toHaveBeenCalled();
+    expect(loggerMock.warning).not.toHaveBeenCalled();
   });
 
   it('maps an unsuccessful auth-service reply to AUTH_SERVICE_UNAVAILABLE', async () => {
@@ -170,6 +171,15 @@ describe('EmailVerificationService.listIdentities', () => {
     natsRequest.mockRejectedValue(new Error('request timeout'));
 
     await expect(service.listIdentities(reqWithToken)).rejects.toMatchObject({ statusCode: 503, code: 'AUTH_SERVICE_UNAVAILABLE' });
+  });
+
+  it('logs a missing-token fallback only once in listIdentitiesSafe', async () => {
+    await expect(service.listIdentitiesSafe(reqWithoutToken)).resolves.toEqual([]);
+
+    expect(natsRequest).not.toHaveBeenCalled();
+    expect(loggerMock.warning).toHaveBeenCalledExactlyOnceWith(reqWithoutToken, 'list_identities_safe', 'Identity list unavailable — continuing without it', {
+      err: expect.objectContaining({ statusCode: 401, code: 'AUTHENTICATION_REQUIRED' }),
+    });
   });
 
   it.each([

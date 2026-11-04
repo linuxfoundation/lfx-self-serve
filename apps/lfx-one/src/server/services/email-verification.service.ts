@@ -594,7 +594,6 @@ export class EmailVerificationService {
   public async listIdentities(req: Request): Promise<Auth0Identity[]> {
     const authToken = req.bearerToken;
     if (!authToken) {
-      logger.warning(req, 'list_identities', 'No bearer token on the request — cannot list identities');
       throw new AuthenticationError('Authentication required to list identities', {
         operation: 'list_identities',
         service: 'email_verification_service',
