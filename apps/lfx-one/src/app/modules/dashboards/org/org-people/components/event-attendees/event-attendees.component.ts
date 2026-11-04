@@ -284,10 +284,9 @@ export class EventAttendeesComponent {
   }
 
   private initStats(): OrgEventAttendeeStatsBaseline {
-    // Events and Foundations always come from the listed rows (the Count and Counted by selection, listed people only), so they
-    // do not change with how many people the rows leave unnamed. Speakers and Attendees are the warehouse summary for the
-    // selection — the numbers the Overview shows, including people the rows never name — until search, foundation or event
-    // narrow the rows.
+    // All four tiles are the warehouse summary for the selection — the numbers the Overview shows, including people the rows
+    // never name — until search, foundation or event narrow the rows; then they are counted from the listed rows that remain,
+    // so the four tiles always agree with each other.
     const attendees = new Set<number>();
     const speakers = new Set<number>();
     const events = new Set<string>();
@@ -301,8 +300,8 @@ export class EventAttendeesComponent {
     return {
       speakers: this.isRowFiltering() ? speakers.size : this.response().summary.speakersCount,
       attendees: this.isRowFiltering() ? attendees.size : this.response().summary.attendeesCount,
-      events: events.size,
-      foundations: foundations.size,
+      events: this.isRowFiltering() ? events.size : this.response().summary.eventsCount,
+      foundations: this.isRowFiltering() ? foundations.size : this.response().summary.foundationsCount,
     };
   }
 

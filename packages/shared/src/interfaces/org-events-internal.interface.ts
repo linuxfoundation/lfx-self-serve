@@ -20,7 +20,7 @@ export interface OrgEventRow {
   EVENT_COUNTRY: string | null;
   EVENT_URL: string | null;
   EVENT_REGISTRATION_URL: string | null;
-  /** `REGISTERED_COUNT_<ATTRIBUTION>` / `ATTENDED_COUNT_<ATTRIBUTION>` of the served option, aliased. */
+  /** `ALL_COUNT_<ATTRIBUTION>` / `REGISTERED_COUNT_<ATTRIBUTION>` / `ATTENDED_COUNT_<ATTRIBUTION>` of the served option, aliased. */
   ORG_ATTENDEE_COUNT: number;
   EVENT_REGISTRATIONS_GOAL: number | null;
   ORG_SPEAKER_ACCEPTED_COUNT: number;
@@ -39,6 +39,7 @@ export interface OrgEventsSummaryRow {
 export interface OrgEventDrawerHeaderRow {
   EVENT_NAME: string | null;
   IS_PAST_EVENT: boolean | null;
+  ALL_COUNT: number | null;
   REGISTERED_COUNT: number | null;
   ATTENDED_COUNT: number | null;
 }
@@ -116,8 +117,10 @@ export interface EventAttendeesRaw {
 /** A per-attribution metric column of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview reads. */
 export type OrgEventAttendanceMetricColumn =
   | `ATTENDEES_REGISTERED_${OrgEventsAttributionColumnSuffix}`
+  | `ATTENDEES_ALL_${OrgEventsAttributionColumnSuffix}`
   | `SPEAKERS_${OrgEventsAttributionColumnSuffix}`
   | `TOTAL_ATTENDEES_REGISTERED_${OrgEventsAttributionColumnSuffix}`
+  | `TOTAL_ATTENDEES_ALL_${OrgEventsAttributionColumnSuffix}`
   | `TOTAL_SPEAKERS_${OrgEventsAttributionColumnSuffix}`;
 
 /** Row of `ORG_EVENT_PARTICIPATION_MONTHLY` (Overview Event Attendees / Event Speakers cards). */

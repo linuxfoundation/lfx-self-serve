@@ -10,13 +10,16 @@ import type { OrgLensTimeRange } from './org-lens-time-range.interface';
  */
 export type OrgEventsAttribution = 'company_email' | 'account' | 'all';
 
-/** What an Events attendee count counts ("Count"): everyone who registered, or only those who attended (ended events only). */
-export type OrgEventsParticipation = 'registered' | 'attended';
+/**
+ * What an Events attendee count counts ("Count"): `all` — everyone who registered or attended; `registered` — everyone who
+ * registered; `attended` — only those who attended (ended events only).
+ */
+export type OrgEventsParticipation = 'registered' | 'attended' | 'all';
 
 /** Which events the Events page lists ("Show"): events with this company's activity, or every event in its foundations. */
 export type OrgEventsScope = 'activity' | 'all';
 
-/** Column-name suffix of an attribution in the Events warehouse tables (`REGISTERED_COUNT_<SUFFIX>`, `HAS_FOOTPRINT_<SUFFIX>`, `IS_COUNTED_REGISTERED_<SUFFIX>`, ...). */
+/** Column-name suffix of an attribution in the Events warehouse tables (`REGISTERED_COUNT_<SUFFIX>`, `HAS_FOOTPRINT_<SUFFIX>`, `IS_COUNTED_REGISTERED_<SUFFIX>`, `ALL_COUNT_<SUFFIX>`, ...). */
 export type OrgEventsAttributionColumnSuffix = 'COMPANY_EMAIL' | 'ACCOUNT' | 'ALL';
 
 /** "Counted by" dropdown option — label rendered as-is. */

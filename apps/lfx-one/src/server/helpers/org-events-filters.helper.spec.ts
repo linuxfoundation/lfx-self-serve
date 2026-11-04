@@ -38,8 +38,8 @@ function buildReq(query: Record<string, unknown>): Request {
 describe('parseOrgEventsFilters', () => {
   it('defaults every missing param', () => {
     expect(parseOrgEventsFilters(buildReq({}), 'op')).toEqual({
-      attribution: 'company_email',
-      participation: 'registered',
+      attribution: 'all',
+      participation: 'all',
       scope: 'activity',
       foundation: '',
       range: '730d',
@@ -48,11 +48,16 @@ describe('parseOrgEventsFilters', () => {
 
   it('reads each param', () => {
     const filters = parseOrgEventsFilters(
-      buildReq({ attribution: 'all', participation: 'attended', eventScope: 'all', foundation: 'foundation-one', range: '90d' }),
+      buildReq({ attribution: 'company_email', participation: 'attended', eventScope: 'all', foundation: 'foundation-one', range: '90d' }),
       'op'
     );
 
-    expect(filters).toEqual({ attribution: 'all', participation: 'attended', scope: 'all', foundation: 'foundation-one', range: '90d' });
+    expect(filters).toEqual({ attribution: 'company_email', participation: 'attended', scope: 'all', foundation: 'foundation-one', range: '90d' });
+  });
+
+  it('reads the registered or attended participation', () => {
+    expect(parseOrgEventsFilters(buildReq({ participation: 'all' }), 'op').participation).toBe('all');
+    expect(parseOrgEventsFilters(buildReq({ participation: 'registered' }), 'op').participation).toBe('registered');
   });
 
   it.each([
@@ -71,6 +76,9 @@ describe('SQL fragments', () => {
     expect(orgEventsCountColumn('company_email', 'registered')).toBe('REGISTERED_COUNT_COMPANY_EMAIL');
     expect(orgEventsCountColumn('account', 'attended')).toBe('ATTENDED_COUNT_ACCOUNT');
     expect(orgEventsCountColumn('all', 'registered')).toBe('REGISTERED_COUNT_ALL');
+    expect(orgEventsCountColumn('company_email', 'all')).toBe('ALL_COUNT_COMPANY_EMAIL');
+    expect(orgEventsCountColumn('account', 'all')).toBe('ALL_COUNT_ACCOUNT');
+    expect(orgEventsCountColumn('all', 'all')).toBe('ALL_COUNT_ALL');
     expect(orgEventsFootprintColumn('all')).toBe('HAS_FOOTPRINT_ALL');
   });
 
@@ -78,6 +86,9 @@ describe('SQL fragments', () => {
     expect(orgEventsAttendeePredicate('company_email', 'registered')).toBe('IS_COUNTED_REGISTERED_COMPANY_EMAIL = TRUE');
     expect(orgEventsAttendeePredicate('account', 'attended')).toBe('IS_COUNTED_ATTENDED_ACCOUNT = TRUE');
     expect(orgEventsAttendeePredicate('all', 'registered')).toBe('IS_COUNTED_REGISTERED_ALL = TRUE');
+    expect(orgEventsAttendeePredicate('company_email', 'all')).toBe('IS_COUNTED_ALL_COMPANY_EMAIL = TRUE');
+    expect(orgEventsAttendeePredicate('account', 'all')).toBe('IS_COUNTED_ALL_ACCOUNT = TRUE');
+    expect(orgEventsAttendeePredicate('all', 'all')).toBe('IS_COUNTED_ALL_ALL = TRUE');
   });
 
   it('builds the speaker predicate as the one dbt conjunction flag of the attribution', () => {
