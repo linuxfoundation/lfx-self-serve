@@ -803,6 +803,24 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-loading')).toBeNull();
   });
 
+  it('keeps the one plain line while the revision part of the read is partial, with the detail complete', async () => {
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), progressUnavailable: true }));
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    expect(component?.['loading']()).toBe(false);
+    expect(component?.['view']()).not.toBeNull();
+    const line = query('mktg-document-view-refresh-warning');
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(line?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(query('mktg-document-view-error')).toBeNull();
+    // The next complete cycle clears it.
+    store.getRevision.mockReturnValue(of(revisionResponse(LATEST)));
+    window.dispatchEvent(new Event('focus'));
+    await settle();
+    expect(component?.['refreshWarning']()).toBe('');
+    expect(query('mktg-document-view-refresh-warning')).toBeNull();
+  });
+
   it('settles an unverified initial selected run to the one plain line with no Retry button, never an old document body', async () => {
     store.getDocument.mockReturnValue(of({ ...detail, progressUnavailable: true, runs: [] }));
     await render(`/documents/brand-kit/living?run=${started('writing').runId}`);

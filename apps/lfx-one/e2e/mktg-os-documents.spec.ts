@@ -20,6 +20,7 @@ import {
 } from './helpers/mktg-os-documents.helper';
 
 test.describe('Marketing OS current revisions', () => {
+  /** A failed read is retried by the poller: the first retry's backoff is ≤ 10 s (5 s floor plus full jitter to 2×), plus a margin. */
   const progressReadTimeout = 15_000;
   test.use({ viewport: { width: 1440, height: 1000 }, timezoneId: 'UTC' });
   test.beforeEach(async ({ page }) => {
@@ -442,17 +443,37 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page).not.toHaveURL(/\/documents\?/);
   });
 
-  for (const status of [403, 404, 500]) {
+  for (const status of [403, 404]) {
     test(`load failure ${status} is distinct from an empty document`, async ({ page }) => {
       await setupDocuments(page, { status, writer: status !== 403 });
       await openDocuments(page, DOCUMENT_VIEW_URL);
       const error = page.getByTestId('mktg-document-view-error');
       if (status === 403) await expect(error).toContainText('write access');
-      else if (status === 404) await expect(error).toContainText('This document could not be found');
-      else await expect(error).toContainText('could not be loaded');
+      else await expect(error).toContainText('This document could not be found');
       await expect(page.getByTestId('mktg-document-view-document')).toHaveCount(0);
     });
   }
+
+  test('a transient load failure shows the one status line, no error box, and the document arrives on its own', async ({ page }) => {
+    await setupDocuments(page);
+    let outage = true;
+    // Registered after the helper's route, so it answers first; the helper's document answers once the outage ends.
+    await page.route('**/api/mktg-agents/**', (route) => (outage ? route.fulfill({ status: 500, json: { error: 'Synthetic outage' } }) : route.fallback()));
+    await openDocuments(page, DOCUMENT_VIEW_URL);
+    const line = page.getByTestId('mktg-document-view-refresh-warning');
+    await expect(line).toHaveText(MKTG_POLL_RETRYING_TEXT);
+    await expect(line).toHaveAttribute('role', 'status');
+    await expect(page.getByTestId('mktg-document-view-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-document')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-loading')).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('transient-load-status-line.png'), fullPage: true });
+    outage = false;
+    // The poller's first retry lands within its backoff ceiling (progressReadTimeout: first retry's ceiling plus a margin).
+    await expect(page.getByTestId('mktg-document-view-document')).toBeVisible({ timeout: progressReadTimeout });
+    await expect(line).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-error')).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('transient-load-recovered.png'), fullPage: true });
+  });
 
   for (const writeStatus of [403, 404, 412]) {
     test(`Make current failure ${writeStatus} preserves the open body`, async ({ page }) => {
