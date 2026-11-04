@@ -55,13 +55,61 @@ describe('MentorshipService program review', () => {
     proxyRequest.mockRestore();
   });
 
-  it('reads the program from the mentorship service and returns only the review fields', async () => {
-    proxyRequest.mockResolvedValue(upstreamProgram);
+  it('reads the program from the catalog and returns only the review fields', async () => {
+    proxyRequest.mockResolvedValue({
+      ...upstreamProgram,
+      project_name: 'Test Foundation',
+      description: '<p>Learn the codebase.</p>',
+      logo_url: 'https://logo.example/test.png',
+      repo_link: 'github.com/test-org/test-repo',
+      code_of_conduct: 'https://test-org.example/coc',
+      cii_project_id: ' 1234 ',
+      skills: ['go', ' ', 'kubernetes '],
+      terms: [{ id: 'term-1' }],
+      mentors: [{ id: 'mentor-1' }],
+    });
 
     const review = await service.getProgramReview(buildReq(), programId);
 
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}`, 'GET');
-    expect(review).toEqual({ id: programId, name: 'Test Program', status: 'pending' });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}/catalog`, 'GET');
+    expect(review).toEqual({
+      id: programId,
+      name: 'Test Program',
+      status: 'pending',
+      projectName: 'Test Foundation',
+      description: '<p>Learn the codebase.</p>',
+      logoUrl: 'https://logo.example/test.png',
+      repoUrl: 'https://github.com/test-org/test-repo',
+      codeOfConductUrl: 'https://test-org.example/coc',
+      ciiProjectId: '1234',
+      skills: ['go', 'kubernetes'],
+    });
+  });
+
+  it('drops unsafe links, a non-numeric CII id and missing fields', async () => {
+    proxyRequest.mockResolvedValue({
+      ...upstreamProgram,
+      description: '  ',
+      repo_link: 'javascript:alert(1)',
+      code_of_conduct: '',
+      cii_project_id: 'abc',
+      skills: null,
+    });
+
+    const review = await service.getProgramReview(buildReq(), programId);
+
+    expect(review).toEqual({
+      id: programId,
+      name: 'Test Program',
+      status: 'pending',
+      projectName: null,
+      description: null,
+      logoUrl: null,
+      repoUrl: null,
+      codeOfConductUrl: null,
+      ciiProjectId: null,
+      skills: [],
+    });
   });
 
   it.each([
