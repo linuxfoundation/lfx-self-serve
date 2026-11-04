@@ -1457,6 +1457,11 @@ export class MeetingService {
       { failOnPartial }
     );
 
+    return this.dedupePastMeetingParticipants(raw);
+  }
+
+  /** Merges one past meeting's participant records into one row per person (see {@link getPastMeetingParticipants}). */
+  public dedupePastMeetingParticipants(raw: PastMeetingParticipant[]): PastMeetingParticipant[] {
     // Plain union-find over connected identity-match edges (pure transitive closure, no
     // conflict veto during union). isSamePerson is not transitive — a no-username row can
     // share an email with two records that carry different, conflicting usernames — so a
