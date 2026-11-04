@@ -15,6 +15,7 @@ import {
 import { MentorshipAdminMenteesResponse, MentorshipAdminProgramPage, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MessageService, ToastMessageOptions } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
@@ -89,6 +90,7 @@ describe('ProgramDetailComponent', () => {
         // The tab's task writes go through the shared mentorship service; no test here sends one.
         { provide: MentorshipService, useValue: { createTasks: vi.fn(), updateTask: vi.fn() } },
         { provide: ActivatedRoute, useValue: { paramMap: routeParams as never, snapshot: { data: { lens: options.lens ?? 'me' } } } },
+        { provide: ProjectContextService, useValue: { activeContext: () => ({ uid: 'project-uid', slug: 'gridflow' }) } },
       ],
     });
 
@@ -115,16 +117,16 @@ describe('ProgramDetailComponent', () => {
   describe('on the Project lens', () => {
     beforeEach(() => buildWith({ lens: 'project' }));
 
-    it('links back to the Project lens’s Mentorship Programs', () => {
-      expect(element().querySelector('[data-testid="mentorship-program-detail-back"] a')?.getAttribute('href')).toBe('/project/mentorship');
+    it('links back to the Project lens’s Mentorship Programs, naming its project', () => {
+      expect(element().querySelector('[data-testid="mentorship-program-detail-back"] a')?.getAttribute('href')).toBe('/project/mentorship?project=gridflow');
     });
 
-    it('opens the Project lens’s edit wizard from Edit Program', () => {
+    it('opens the Project lens’s edit wizard from Edit Program, keeping its project', () => {
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
       element().querySelector<HTMLButtonElement>('[data-testid="mentorship-program-detail-edit"] button')!.click();
 
-      expect(navigate).toHaveBeenCalledWith(['/project/mentorship', 'enroll'], { queryParams: { programId: 'mp_example_fall26' } });
+      expect(navigate).toHaveBeenCalledWith(['/project/mentorship', 'enroll'], { queryParams: { project: 'gridflow', programId: 'mp_example_fall26' } });
     });
   });
 

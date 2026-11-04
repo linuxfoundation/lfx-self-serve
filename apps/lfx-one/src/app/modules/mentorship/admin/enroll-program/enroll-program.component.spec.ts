@@ -671,7 +671,7 @@ describe('EnrollProgramComponent — edit mode', () => {
 
     clickUpdate();
 
-    expect(router.navigate).toHaveBeenCalledWith(['/project/mentorship', PROGRAM_ID]);
+    expect(router.navigate).toHaveBeenCalledWith(['/project/mentorship', PROGRAM_ID], { queryParams: { project: 'gridflow' } });
   });
 
   it('fills the form from the program and shows the edit title, the Update button and the closed terms', () => {
@@ -892,7 +892,7 @@ describe('EnrollProgramComponent — from a lens (lfx-mentorship#398)', () => {
     // The preset project is not an unsaved answer, so leaving the untouched form does not ask.
     expect(await component.canLeave()).toBe(true);
     component['onCancel']();
-    expect(router.navigate).toHaveBeenCalledWith(['/project/mentorship']);
+    expect(router.navigate).toHaveBeenCalledWith(['/project/mentorship'], { queryParams: { project: 'gridflow' } });
   });
 
   it('offers the Foundation lens’s foundation and its sub-projects, with nothing picked up front', async () => {
@@ -903,7 +903,7 @@ describe('EnrollProgramComponent — from a lens (lfx-mentorship#398)', () => {
     expect(detailsStep().parentProject()).toEqual(LENS_PROJECT);
 
     component['onCancel']();
-    expect(router.navigate).toHaveBeenCalledWith(['/foundation/mentorship']);
+    expect(router.navigate).toHaveBeenCalledWith(['/foundation/mentorship'], { queryParams: { project: 'gridflow' } });
   });
 
   it('waits for the lens’s project before it shows the form, so the picker never lists every project', async () => {
@@ -919,5 +919,35 @@ describe('EnrollProgramComponent — from a lens (lfx-mentorship#398)', () => {
 
     expect(detailsStep().lockedProject()).toEqual(LENS_PROJECT);
     expect(component['form'].controls.projectId.value).toBe(PROJECT_UID);
+  });
+
+  /** A lens switch kept in place: the admin stayed at the discard prompt, so the context changed under the open wizard. */
+  const switchLensTo = async (uid: string, slug: string): Promise<void> => {
+    activeContext.set({ uid, name: 'Other', slug, logoUrl: '' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it('follows a Projects lens switch, so the program is never enrolled under the previous project', async () => {
+    await create('project');
+
+    await switchLensTo('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other');
+
+    expect(component['form'].controls.projectId.value).toBe('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47');
+    expect(component['selectedProject']()?.id).toBe('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47');
+    expect(await component.canLeave()).toBe(true);
+    component['onCancel']();
+    expect(router.navigate).toHaveBeenCalledWith(['/project/mentorship'], { queryParams: { project: 'other' } });
+  });
+
+  it('clears a pick made under the previous foundation after a Foundation lens switch', async () => {
+    await create('foundation');
+    component['form'].controls.projectId.setValue('sub-project-uid');
+    component['selectedProject'].set({ id: 'sub-project-uid', name: 'Sub', slug: 'sub' });
+
+    await switchLensTo('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other-foundation');
+
+    expect(component['form'].controls.projectId.value).toBe('');
+    expect(component['selectedProject']()).toBeNull();
   });
 });

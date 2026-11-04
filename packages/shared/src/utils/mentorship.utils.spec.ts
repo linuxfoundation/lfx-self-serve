@@ -88,6 +88,7 @@ import {
   buildMentorshipProgramsUrl,
   buildMentorshipPublicUrl,
   getMentorshipAdminBasePath,
+  getMentorshipLensQueryParams,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
@@ -919,6 +920,17 @@ describe('getMentorshipAdminBasePath', () => {
     expect(getMentorshipAdminBasePath('me')).toBe('/mentorship/admin');
     expect(getMentorshipAdminBasePath('org')).toBe('/mentorship/admin');
     expect(getMentorshipAdminBasePath(undefined)).toBe('/mentorship/admin');
+  });
+});
+
+describe('getMentorshipLensQueryParams', () => {
+  it('names the lens project on the Project and Foundation lenses only, once it is known', () => {
+    expect(getMentorshipLensQueryParams('project', 'gridflow')).toEqual({ project: 'gridflow' });
+    expect(getMentorshipLensQueryParams('foundation', 'lf-energy')).toEqual({ project: 'lf-energy' });
+    expect(getMentorshipLensQueryParams('project', undefined)).toEqual({});
+    expect(getMentorshipLensQueryParams('project', '')).toEqual({});
+    expect(getMentorshipLensQueryParams('me', 'gridflow')).toEqual({});
+    expect(getMentorshipLensQueryParams(undefined, 'gridflow')).toEqual({});
   });
 });
 

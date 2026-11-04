@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { CUSTOM_ELEMENTS_SCHEMA, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
+import { MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_TITLE } from '@lfx-one/shared/constants';
 import { Lens, MentorshipProgramsResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -28,6 +29,8 @@ describe('AdminComponent', () => {
   let getProjectPrograms: ReturnType<typeof vi.fn<(projectUid: string) => Observable<MentorshipProgramsResponse>>>;
   let navigate: ReturnType<typeof vi.fn>;
   const activeContextUid = signal('');
+  /** The lens context's slug, which an in-place project switch changes without a router navigation. */
+  const activeSlug = signal('gridflow');
 
   const create = async (lens: Lens = 'me'): Promise<ComponentFixture<AdminComponent>> => {
     TestBed.overrideComponent(AdminComponent, { set: { imports: [], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
@@ -35,7 +38,10 @@ describe('AdminComponent', () => {
       imports: [AdminComponent],
       providers: [
         { provide: MentorshipAdminService, useValue: { getPrograms, getProjectPrograms } },
-        { provide: ProjectContextService, useValue: { activeContextUid } },
+        {
+          provide: ProjectContextService,
+          useValue: { activeContextUid, activeContext: () => (activeContextUid() ? { uid: activeContextUid(), slug: activeSlug() } : null) },
+        },
         { provide: ActivatedRoute, useValue: { snapshot: { data: { lens } } } },
         { provide: Router, useValue: { navigate } },
       ],
@@ -65,6 +71,7 @@ describe('AdminComponent', () => {
     getProjectPrograms = vi.fn(() => of(page));
     navigate = vi.fn();
     activeContextUid.set('');
+    activeSlug.set('gridflow');
   });
 
   describe('programs load', () => {
@@ -113,7 +120,7 @@ describe('AdminComponent', () => {
       expect(query(fixture, 'mentorship-admin-enroll-button')).not.toBeNull();
 
       view(fixture).onProgramClick('p-1');
-      expect(navigate).toHaveBeenCalledWith(['/mentorship/admin', 'p-1'], { queryParamsHandling: 'preserve' });
+      expect(navigate).toHaveBeenCalledWith(['/mentorship/admin', 'p-1'], { queryParams: {} });
     });
   });
 
@@ -140,7 +147,7 @@ describe('AdminComponent', () => {
       expect(query(fixture, 'mentorship-admin-loading')).toBeNull();
 
       view(fixture).onEnrollProgram();
-      expect(navigate).toHaveBeenCalledWith(['/project/mentorship', 'enroll']);
+      expect(navigate).toHaveBeenCalledWith(['/project/mentorship', 'enroll'], { queryParams: { project: 'gridflow' } });
     });
 
     it('reads the new project’s programs when the lens switches project', async () => {
@@ -172,13 +179,15 @@ describe('AdminComponent', () => {
       expect(view(fixture).programsLoadError()).toBe(true);
     });
 
-    it('opens a program on the Project lens, keeping ?project=', async () => {
+    it('opens a program on the Project lens with the lens context’s project, not a stale ?project= from before a switch', async () => {
       activeContextUid.set(PROJECT_UID);
       const fixture = await create('project');
 
+      // An in-place switch rewrites ?project= with Location.replaceState; the router keeps the old slug.
+      activeSlug.set('switched-project');
       view(fixture).onProgramClick('p-1');
 
-      expect(navigate).toHaveBeenCalledWith(['/project/mentorship', 'p-1'], { queryParamsHandling: 'preserve' });
+      expect(navigate).toHaveBeenCalledWith(['/project/mentorship', 'p-1'], { queryParams: { project: 'switched-project' } });
     });
   });
 
@@ -192,8 +201,17 @@ describe('AdminComponent', () => {
 
       view(fixture).onProgramClick('p-1');
       view(fixture).onEnrollProgram();
-      expect(navigate).toHaveBeenCalledWith(['/foundation/mentorship', 'p-1'], { queryParamsHandling: 'preserve' });
-      expect(navigate).toHaveBeenCalledWith(['/foundation/mentorship', 'enroll']);
+      expect(navigate).toHaveBeenCalledWith(['/foundation/mentorship', 'p-1'], { queryParams: { project: 'gridflow' } });
+      expect(navigate).toHaveBeenCalledWith(['/foundation/mentorship', 'enroll'], { queryParams: { project: 'gridflow' } });
+    });
+
+    it('names the foundation in its no-access state', async () => {
+      getProjectPrograms = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 403, statusText: 'Forbidden' })));
+      activeContextUid.set(PROJECT_UID);
+      const fixture = await create('foundation');
+
+      expect(view(fixture).programsForbidden()).toBe(true);
+      expect((fixture.componentInstance as unknown as { noAccessTitle: string }).noAccessTitle).toBe(MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_TITLE);
     });
   });
 });

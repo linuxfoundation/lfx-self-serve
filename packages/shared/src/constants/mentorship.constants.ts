@@ -86,6 +86,9 @@ export const MENTORSHIP_PROJECT_PROGRAMS_EMPTY_MESSAGE = 'This project has no me
 export const MENTORSHIP_FOUNDATION_PROGRAMS_EMPTY_MESSAGE = 'This foundation and its projects have no mentorship programs yet.';
 export const MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_TITLE = 'No access to this project’s programs';
 export const MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_MESSAGE = 'You need Manage access on this project to see its mentorship programs.';
+export const MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_TITLE = 'No access to this foundation’s programs';
+export const MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_MESSAGE =
+  'You need Manage access on this foundation to see the mentorship programs of it and its projects.';
 
 /** The two mentee tabs of an admin program page; `type` on `GET /api/mentorship/admin/programs/:programId/mentees`. */
 export const MENTORSHIP_ADMIN_MENTEE_TABS = ['current', 'past'] as const;

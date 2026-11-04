@@ -11,6 +11,7 @@
       size="small"
       styleClass="!text-blue-600 !px-0 self-start mt-3"
       [routerLink]="basePath"
+      [queryParams]="lensQueryParams()"
       data-testid="mentorship-program-detail-back" />
 
     @if (isLoading()) {

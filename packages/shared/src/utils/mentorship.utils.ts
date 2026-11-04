@@ -254,6 +254,16 @@ export function getMentorshipAdminBasePath(lens: Lens | undefined): string {
   return MENTORSHIP_ADMIN_PATH;
 }
 
+/**
+ * The `?project=` a lens's Mentorship Programs navigation carries, so every list, program and wizard URL names its project
+ * or foundation (lfx-mentorship#398). Set from the lens context rather than kept from the current URL: an in-place project
+ * switch rewrites `?project=` with `Location.replaceState`, so the router's copy is stale. `{}` on the Me lens, or before
+ * the lens resolves its project.
+ */
+export function getMentorshipLensQueryParams(lens: Lens | undefined, slug: string | undefined): Record<string, string> {
+  return (lens === 'project' || lens === 'foundation') && slug ? { project: slug } : {};
+}
+
 /** The admin program-detail tabs a program shows: a pending program has no mentees or mentors yet, so only Terms. */
 export function getMentorshipProgramDetailTabs(status: MentorshipProgramStatus): readonly MentorshipProgramDetailTabDefinition[] {
   return status === 'pending-review' ? MENTORSHIP_PROGRAM_DETAIL_TABS.filter((tab) => tab.value === 'terms') : MENTORSHIP_PROGRAM_DETAIL_TABS;

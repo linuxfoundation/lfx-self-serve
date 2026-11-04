@@ -13,6 +13,8 @@ import {
   EMPTY_MENTORSHIP_PROGRAMS_RESPONSE,
   MENTORSHIP_ADMIN_PROGRAMS_EMPTY_MESSAGE,
   MENTORSHIP_FOUNDATION_PROGRAMS_EMPTY_MESSAGE,
+  MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_MESSAGE,
+  MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_TITLE,
   MENTORSHIP_PROGRAM_PAGE_SIZE,
   MENTORSHIP_PROJECT_PROGRAMS_EMPTY_MESSAGE,
   MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_MESSAGE,
@@ -20,7 +22,7 @@ import {
   MENTORSHIP_PROJECT_PROGRAMS_TITLE,
 } from '@lfx-one/shared/constants';
 import { Lens, MentorshipAdminProgramListFilters, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
-import { getMentorshipAdminBasePath } from '@lfx-one/shared/utils';
+import { getMentorshipAdminBasePath, getMentorshipLensQueryParams } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { merge, Observable, of, share, Subject } from 'rxjs';
@@ -62,8 +64,9 @@ export class AdminComponent {
   private readonly basePath = getMentorshipAdminBasePath(this.lens);
   protected readonly pageTitle = this.isLensPage ? MENTORSHIP_PROJECT_PROGRAMS_TITLE : 'Admin';
   protected readonly emptyMessage = this.initEmptyMessage();
-  protected readonly noAccessTitle = MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_TITLE;
-  protected readonly noAccessMessage = MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_MESSAGE;
+  protected readonly noAccessTitle = this.lens === 'foundation' ? MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_TITLE : MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_TITLE;
+  protected readonly noAccessMessage =
+    this.lens === 'foundation' ? MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_MESSAGE : MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_MESSAGE;
 
   // ─── Simple WritableSignals ────────────────────────────────────────────────
   protected readonly hasLoaded = signal(false);
@@ -98,8 +101,7 @@ export class AdminComponent {
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onProgramClick(programId: string): void {
-    // Keeps ?project=, so a Project lens deep link opens the program in the same project.
-    void this.router.navigate([this.basePath, programId], { queryParamsHandling: 'preserve' });
+    this.navigateInLens([this.basePath, programId]);
   }
 
   protected onSearchChange(value: string): void {
@@ -112,7 +114,7 @@ export class AdminComponent {
 
   /** Opens the lens's own wizard, which offers the Project lens's project or the Foundation lens's sub-projects only. */
   protected onEnrollProgram(): void {
-    void this.router.navigate([this.basePath, 'enroll']);
+    this.navigateInLens([this.basePath, 'enroll']);
   }
 
   /** Reads the first page again with the filters last applied: a Retry after a failed load, or a card that added its logo. */
@@ -220,6 +222,15 @@ export class AdminComponent {
   }
 
   // ─── Private Helpers ───────────────────────────────────────────────────────
+  /**
+   * Navigates within the lens with its project in `?project=`, taken from the lens context: after an in-place project switch
+   * the router still holds the previous slug, which `projectQueryParamGuard` would switch back to. The Me lens has none.
+   */
+  private navigateInLens(commands: string[]): void {
+    const queryParams = getMentorshipLensQueryParams(this.lens, this.projectContextService.activeContext()?.slug);
+    void this.router.navigate(commands, { queryParams });
+  }
+
   private appliedFilters(): MentorshipAdminProgramListFilters {
     return { search: this.appliedSearch(), status: this.appliedStatus(), projectUid: this.appliedProjectUid() };
   }
