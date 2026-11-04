@@ -518,6 +518,47 @@ describe('MeetingsRedesignComponent', () => {
       expect(menu()).not.toBe(firstMenu);
     });
 
+    it('pages the Next meeting card through the meetings that overlap it, in both card copies', async () => {
+      const start = Date.now() + 2 * DAY_MS;
+      const at = (minutes: number): string => new Date(start + minutes * 60_000).toISOString();
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, [buildMeeting(1, { start_time: at(0) }), buildMeeting(2, { start_time: at(30) }), buildMeeting(3, { start_time: at(60) })]);
+      const pager = (scope: string): HTMLElement | null => query(fixture, `meetings-redesign-${scope}-next-pager`);
+      const title = (scope: string): string | null | undefined =>
+        query(fixture, `meetings-redesign-${scope}-next-meeting`)?.querySelector('[data-testid="meetings-home-next-card-title"]')?.textContent;
+      const pagerButton = (name: string): UiButtonComponent => button(fixture, `meetings-redesign-rail-next-pager-${name}`);
+      const click = async (name: string): Promise<void> => {
+        (query(fixture, `meetings-redesign-rail-next-pager-${name}`)?.querySelector('button') as HTMLButtonElement).click();
+        await fixture.whenStable();
+      };
+
+      expect(query(fixture, 'meetings-redesign-rail-next-pager-position')?.textContent?.trim()).toBe('1 of 2');
+      expect(pager('rail')?.querySelector('[aria-live="polite"]')).toBeTruthy();
+      expect(pagerButton('previous').disabled()).toBe(true);
+      expect(pagerButton('next').ariaLabel()).toBe('Next concurrent meeting');
+      expect(title('rail')).toBe('Meeting 1');
+
+      await click('next');
+
+      expect(query(fixture, 'meetings-redesign-folded-next-pager-position')?.textContent?.trim()).toBe('2 of 2');
+      expect(title('rail')).toBe('Meeting 2');
+      expect(title('folded')).toBe('Meeting 2');
+      expect(pagerButton('next').disabled()).toBe(true);
+
+      await click('previous');
+      expect(title('rail')).toBe('Meeting 1');
+    });
+
+    it('shows no pager when no other meeting overlaps the next one', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, [buildMeeting(1), buildMeeting(2)]);
+
+      expect(query(fixture, 'meetings-redesign-rail-next-pager')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-folded-next-pager')).toBeNull();
+    });
+
     it('shows the empty Next meeting card, then lists a lone meeting there and in the list', async () => {
       const fixture = render();
       await fixture.whenStable();

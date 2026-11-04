@@ -128,9 +128,9 @@ export class MeetingsRedesignComponent {
   /** Where the day headings stick: below the sticky header and tabs bar. */
   protected readonly dayHeadingTop: Signal<number> = computed(() => this.stickyTop() + this.headerHeight() + this.tabsBarHeight());
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
-  /** The Next meeting as a one-item list, so its menu is keyed by row. */
+  /** The Next meeting card's date as a one-item list, so its menu is keyed by row. */
   protected readonly nextRows: Signal<MeetingHomeRow[]> = computed(() => {
-    const row = this.store.nextRow();
+    const row = this.store.nextCardRow();
     return row ? [row] : [];
   });
   /** The Last meeting as a one-item list, so its menu is keyed by row. */

@@ -29,6 +29,7 @@ import {
   PastMeetingSummary,
 } from '@lfx-one/shared/interfaces';
 import {
+  getMeetingGroupNames,
   getMeetingHomeRowLink,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
@@ -93,6 +94,10 @@ export class LastMeetingCardComponent {
   protected readonly recurrenceTooltip: Signal<string | null> = computed(() => {
     const row = this.row();
     return row ? getMeetingRecurrenceTooltip(row.meeting, row.occurrence) : null;
+  });
+  protected readonly groups: Signal<string[]> = computed(() => {
+    const row = this.row();
+    return row ? getMeetingGroupNames(row.meeting) : [];
   });
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => {
     const row = this.row();

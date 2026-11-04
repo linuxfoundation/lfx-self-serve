@@ -359,6 +359,12 @@ export function getMeetingHomeRowType(meeting: Pick<Meeting, 'meeting_type'>): M
   return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
 }
 
+/** Names of the groups a meeting belongs to, in order, without blanks or repeats. */
+export function getMeetingGroupNames(meeting: Pick<Meeting, 'committees'>): string[] {
+  const names = (meeting.committees ?? []).map((committee) => committee.name?.trim() ?? '').filter(Boolean);
+  return [...new Set(names)];
+}
+
 /** "Organized by" avatars: owner or creator first ("You" for the viewer), then the other `organizers` by username. */
 export function getMeetingHomeRowOrganizers(
   meeting: Pick<Meeting, 'created_by' | 'owner' | 'organizers'>,

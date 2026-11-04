@@ -142,9 +142,39 @@
   <!-- A failed feed hides the card rather than claiming an empty calendar; the list shows that error with a retry. -->
   @if (!store.upcomingFailed()) {
     <section class="flex min-w-0 flex-col gap-[8px] @[621px]:only:col-span-2" [attr.data-testid]="'meetings-redesign-' + scope + '-next-meeting'">
-      <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-500">Next meeting</h2>
+      <div class="flex min-h-[22px] items-center justify-between gap-[12px]">
+        <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">Next meeting</h2>
+        @if (store.concurrentNextRows().length > 1) {
+          <span class="-my-[6px] -mr-[6px] inline-flex items-center gap-[2px]" [attr.data-testid]="'meetings-redesign-' + scope + '-next-pager'">
+            <lfx-ui-button
+              variant="tertiary"
+              size="small"
+              icon="fa-light fa-chevron-left"
+              iconOnly
+              ariaLabel="Previous concurrent meeting"
+              [disabled]="store.nextCardIndex() === 0"
+              (click)="store.stepNextCard(-1)"
+              [attr.data-testid]="'meetings-redesign-' + scope + '-next-pager-previous'" />
+            <span
+              class="min-w-[40px] whitespace-nowrap text-center text-label-12 tabular-nums text-gray-600"
+              aria-live="polite"
+              [attr.data-testid]="'meetings-redesign-' + scope + '-next-pager-position'"
+              >{{ store.nextCardIndex() + 1 }} of {{ store.concurrentNextRows().length }}</span
+            >
+            <lfx-ui-button
+              variant="tertiary"
+              size="small"
+              icon="fa-light fa-chevron-right"
+              iconOnly
+              ariaLabel="Next concurrent meeting"
+              [disabled]="store.nextCardIndex() === store.concurrentNextRows().length - 1"
+              (click)="store.stepNextCard(1)"
+              [attr.data-testid]="'meetings-redesign-' + scope + '-next-pager-next'" />
+          </span>
+        }
+      </div>
       <lfx-next-meeting-card
-        [row]="store.nextRow()"
+        [row]="store.nextCardRow()"
         [loading]="store.upcomingLoading()"
         [now]="store.now()"
         [joinable]="store.nextRowJoinable()"
@@ -159,7 +189,7 @@
   <!-- A failed feed hides the card rather than claiming the viewer has no past meetings. -->
   @if (!store.lastMeetingFailed()) {
     <section class="flex min-w-0 flex-col gap-[8px] @[621px]:only:col-span-2" [attr.data-testid]="'meetings-redesign-' + scope + '-last-meeting'">
-      <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-500">Last meeting</h2>
+      <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">Last meeting</h2>
       <lfx-last-meeting-card
         [row]="store.lastMeeting()"
         [loading]="store.lastMeetingLoading()"
