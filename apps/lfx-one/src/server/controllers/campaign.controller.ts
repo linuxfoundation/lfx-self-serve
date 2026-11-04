@@ -141,17 +141,17 @@ import {
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
-  GOOGLE_CHANNELS_WITH_SEARCH_ADS,
-  GOOGLE_SEARCH_AD_GROUP_NAME,
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
+  GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
+  GOOGLE_SEARCH_AD_GROUP_NAME,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
@@ -6278,7 +6278,7 @@ export class CampaignController {
    * before it is sent, and upstream trims again, so measuring the raw length would refuse a short
    * value padded with whitespace that upstream accepts. Shape-only, like everything else on this
    * road: a non-string entry is left for the normalisers to drop and is not counted — except for the
-   * four lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
+   * lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
    * objects, so the strings inside them are measured rather than skipped.
    *
    * Names the offending field in the refusal so an operator who somehow reaches it is told which one,
@@ -6338,7 +6338,7 @@ export class CampaignController {
       }
     }
 
-    // Seven request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
+    // Nine request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
     // of a list — an object entry is left for the normalisers, so the strings nested inside it are
     // never reached by `boundableEntries`. They are bounded here instead, each at the limit upstream
     // already refuses it past: the sitelink URL at its byte limit, which no longer trimmed string can
@@ -6346,8 +6346,9 @@ export class CampaignController {
     // because `deviceBidModifiers` is the second list-of-objects to need this and a third bespoke
     // copy is how the two drift apart.
     //
-    // `sitelinks`, `structuredSnippets` and the three asset lists are the ones that are not already
-    // `candidates` keys, so their list lengths are checked here. For the other two the check above has already refused an
+    // `sitelinks`, `structuredSnippets`, the three asset lists, `additionalSearchAds` and
+    // `negativeKeywords` are the ones that are not already `candidates` keys, so their list lengths
+    // are checked here. For the other two (`adSchedules`, `deviceBidModifiers`) the check above has already refused an
     // over-long list with the same field and message, which is why this one re-states rather than
     // contradicts.
     //
@@ -6401,13 +6402,15 @@ export class CampaignController {
           // its length first, then each string in it. Measured with the same `max` as a plain field,
           // so one named field cannot be bounded two different ways depending on how it is shaped.
           //
-          // Only `values` is bounded at the nested ceiling, because it is the only name here that
-          // upstream decodes as a LIST, and it has no raw-count cap upstream at all: blanks and
-          // case-folded repeats are collapsed before the 3..10 bound is counted, so a duplicate-heavy
-          // paste is a valid three-value snippet at any raw length, and the 100 above would refuse
-          // it. Every other name decodes as a plain `string`, so an array under one of them is a body
-          // upstream refuses outright — no over-refusal to relax, and raising its ceiling would only
-          // widen what this walk admits. See MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES.
+          // Only `values` is bounded at the nested ceiling, because it has no raw-count cap upstream
+          // at all: blanks and case-folded repeats are collapsed before the 3..10 bound is counted, so
+          // a duplicate-heavy paste is a valid three-value snippet at any raw length, and the 100
+          // above would refuse it. The only other names upstream decodes as a LIST are
+          // `additionalSearchAds`' `headlines` and `descriptions` (#4991), each a `[]string` that one
+          // ad caps at 15 and 4, so the 100 above refuses nothing upstream accepts. Every other name
+          // decodes as a plain `string`, so an array under one of them is a body upstream refuses
+          // outright — no over-refusal to relax, and raising its ceiling would only widen what this
+          // walk admits. See MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES.
           const listMax = name === 'values' ? MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES : MAX_GOOGLE_CREATIVE_LIST_ENTRIES;
           if (Array.isArray(value)) {
             if (value.length > listMax) {

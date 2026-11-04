@@ -3745,6 +3745,32 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(legacyCreate).toHaveBeenCalledTimes(2);
     });
 
+    it.each([
+      ['path1', { path1: 'kubecon' }],
+      ['path2', { path2: 'na' }],
+      ['additionalSearchAds', { additionalSearchAds: [{ headlines: ['Register today'], descriptions: ['Join us.'] }] }],
+      ['negativeKeywords', { negativeKeywords: [{ text: 'free tickets', matchType: 'Exact' }] }],
+    ])('refuses the Search-only %s by name while the cutover is dark (#4991)', async (field, overrides) => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe(field);
+    });
+
+    it('still serves an empty display path on the legacy road, which asks for nothing (#4991)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody({ path1: '', path2: '' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(legacyCreate).toHaveBeenCalledTimes(1);
+    });
+
     // The bidding plan and creative are judged by what the cutover's own normalizers would send
     // (#3568), so a value campaign-service would never receive still creates on the legacy road.
     it.each([
@@ -4989,6 +5015,28 @@ describe('CampaignController.createCampaign cutover', () => {
       const error = refusalFrom();
       expect(error.field).toBe(field);
       expect(error.message).toContain(fragment);
+    });
+
+    it.each([['path1'], ['path2']])('bounds a %s longer than the shared field limit before the envelope trims it', async (field) => {
+      await controller.createCampaign(buildReq(googleBody({ path1: 'kubecon', [field]: 'x'.repeat(2049) }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.field).toBe(field);
+      expect(error.message).toContain('2048');
+    });
+
+    it('bounds an over-long negative keyword before the shared judge reads it', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ negativeKeywords: [{ text: 'x'.repeat(5000), matchType: 'Exact' }] }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.field).toBe('negativeKeywords.text');
+      expect(error.message).toContain('2048');
     });
 
     it('bounds the strings nested in the further ads before normalising them', async () => {

@@ -2041,8 +2041,9 @@ export const GOOGLE_ADS_MAX_SEARCH_ADS_PER_AD_GROUP = 3;
 
 /**
  * Most headlines and descriptions one responsive search ad takes (`ad_copy.go`'s `maxHeadlines` and
- * `maxDescriptions`). Upstream drops the rows past these with a note rather than refusing them, so
- * the Implement tab stops offering Add at the cap instead.
+ * `maxDescriptions`). Upstream drops the rows past these with a note; the shared judge
+ * (`googleAdditionalSearchAdsRefusal`) deliberately refuses them instead, stricter than upstream, so
+ * no line the operator wrote is silently left out. The Implement tab stops offering Add at the cap.
  */
 export const GOOGLE_ADS_MAX_SEARCH_HEADLINES = 15;
 export const GOOGLE_ADS_MAX_SEARCH_DESCRIPTIONS = 4;
@@ -4285,8 +4286,11 @@ export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
  * Far above any paste an operator produces, so the invariant the bound above states — a resource
  * ceiling never refuses what upstream accepts — holds here too, while a pathological body is still
  * stopped before `createConfigEnvelope` walks it. Only the one field named above is measured against
- * it: every other nested name upstream decodes as a plain `string`, so an array under one of those
- * is a body upstream refuses outright and has no over-refusal to relax.
+ * it. The other nested LISTS are `additionalSearchAds[].headlines` and `.descriptions` (#4991), each a
+ * `[]string` upstream: they are bounded at {@link MAX_GOOGLE_CREATIVE_LIST_ENTRIES}, far above the
+ * 15 headlines and 4 descriptions one ad takes, so that bound refuses nothing upstream accepts. Every
+ * other nested name upstream decodes as a plain `string`, so an array under one of those is a body
+ * upstream refuses outright and has no over-refusal to relax.
  */
 export const MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES = 1000;
 

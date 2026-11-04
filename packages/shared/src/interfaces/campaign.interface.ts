@@ -3234,7 +3234,6 @@ export interface GoogleAdScheduleRowView {
  */
 export type GoogleDeviceBidMode = 'default' | 'adjust' | 'exclude';
 
-/** One demographic exclusion checkbox on the Implementation tab: the value it writes, its label and whether it is ticked. */
 /**
  * One responsive search ad on a Google Search campaign (#4991): its copy and its optional display
  * paths. Blank lines are dropped before sending; an ad that sets neither path inherits the
@@ -3247,6 +3246,7 @@ export interface CampaignSearchAd {
   path2?: string;
 }
 
+/** One demographic exclusion checkbox on the Implementation tab: the value it writes, its label and whether it is ticked. */
 export interface GoogleExclusionOptionView {
   value: string;
   label: string;
