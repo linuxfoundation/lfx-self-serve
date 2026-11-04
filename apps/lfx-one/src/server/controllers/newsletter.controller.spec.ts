@@ -471,8 +471,8 @@ describe('NewsletterController.renderPreview — validateRenderPreviewPayload', 
     ['an array', ['a']],
     ['null', null],
     ['an object over the (mocked) cap', { edition: { date: 'x'.repeat(500) } }],
-  ])('rejects wrapper_content that is %s', async (_label, wrapper_content) => {
-    const next = await run({ body_layout: { wrapper_key: 'default', blocks: [] }, wrapper_content });
+  ])('rejects wrapper_content that is %s', async (_label, wrapperContent) => {
+    const next = await run({ body_layout: { wrapper_key: 'default', blocks: [] }, wrapper_content: wrapperContent });
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(renderPreview).not.toHaveBeenCalled();
   });
