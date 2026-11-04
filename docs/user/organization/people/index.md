@@ -111,7 +111,16 @@ An Admin of the organization can change a seat from the pencil icon on its row. 
 
 Some seats are controlled by the foundation, so even an Admin cannot change them from the organization's view. On **Committee**, the pencil on such a seat is disabled and its hover text gives the reason, such as **This seat is foundation-controlled and not editable here.** On **Board**, such a seat shows **Why can't I edit?** in place of the pencil. Selecting it opens **Why can't I edit this member?** with the reason. Select **Got it** to close it. When none of a person's board or committee seats can be changed, the hover text on their row is **No org-reassignable seats for this person**.
 
-The same seats can be changed from a foundation's membership page. For each step in these dialogs, see [Memberships](../memberships/).
+### How do I reassign a person's board, committee or key contact roles?
+
+You reassign them from the pencil on the person's row, which opens **Reassign Board Roles**, **Reassign Committee Roles** or **Reassign Key Contact Roles**. All three work the same way.
+
+1. On the person's row, select the pencil.
+2. Under **Select roles to reassign**, leave checked the roles to hand over, or use **Select all**. The person who holds them now is marked as being removed from the selected roles.
+3. Under **Assign to**, enter the new person's **Email** (the box says **Enter the employee's email address...**), **First Name** and **Last Name**.
+4. Select **Save Changes** followed by the number of roles, such as **Save Changes (1 role)**. While it saves, the button says **Reassigning…**.
+
+A saved change shows **Board roles reassigned**, **Committee roles reassigned** or **Roles reassigned**. When only some roles were reassigned, it shows **Some reassignments did not succeed**. To change a single key contact, use the pencil on that role, which opens **Edit Key Contact**, the same dialog as on a membership page. Its steps are in [How do I change a key contact?](../memberships/#how-do-i-change-a-key-contact).
 
 ## What do the Event Attendees and Trainees tabs show?
 
@@ -183,6 +192,6 @@ A tab that finds nobody says so in its table, and a tab that fails to load names
 - [Code Contributions](../code-contributions/) — the organization's repositories and commits, with the same time range
 - [Choose and switch an organization](../choose-an-organization/) — pick the organization these people belong to
 - [Org Overview dashboard](../org-overview/) — the **Dashboard**, with the organization's involvement at a glance
-- [Memberships](../memberships/) — the foundation memberships behind the board, committee and key contact seats, and the steps for changing them
+- [Memberships](../memberships/) — the foundation memberships behind the board, committee and key contact seats, and the steps for editing a single key contact
 - [Manage Org Lens Access](../manage-org-lens-access/) — the **Org Lens Access** tab
 - [Organization FAQ](../faq/) — short answers about the Organization lens
