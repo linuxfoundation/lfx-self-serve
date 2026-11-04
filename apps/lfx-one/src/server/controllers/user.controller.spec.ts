@@ -262,3 +262,29 @@ describe('UserController.getUserPastMeetings include param', () => {
     });
   });
 });
+
+describe('UserController.getUserMeetings include param', () => {
+  let controller: UserController;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    controller = new UserController();
+    userSvc.getUserMeetings.mockResolvedValue([]);
+    const actual = await vi.importActual<typeof import('../helpers/validation.helper')>('../helpers/validation.helper');
+    getStringQueryParamMock.mockImplementation(actual.getStringQueryParam as never);
+  });
+
+  it.each([
+    [{ include: 'attendance' }, true],
+    [{ include: 'artifacts,attendance' }, true],
+    [{ include: 'everything' }, false],
+    [{}, false],
+  ])('passes includeAttendance for query %j as %s', async (query, includeAttendance) => {
+    const next = vi.fn();
+
+    await controller.getUserMeetings({ query, path: '/api/user/meetings', log: {} } as any, buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(userSvc.getUserMeetings).toHaveBeenCalledWith(expect.anything(), undefined, undefined, { includeAttendance });
+  });
+});

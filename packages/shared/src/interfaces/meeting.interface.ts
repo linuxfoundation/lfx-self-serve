@@ -1785,6 +1785,25 @@ export interface MeetingRsvpSummary {
   no_response: number;
 }
 
+/** A meeting's RSVP summaries keyed by the home row's occurrence id, `''` for a row without one */
+export type MeetingRsvpSummaries = Record<string, MeetingRsvpSummary>;
+
+/**
+ * One meetings-home row of a meeting the viewer organizes, as the BFF tallies it
+ */
+export interface MeetingRsvpSummaryRow {
+  /** The row's occurrence id, `''` for a row without one */
+  key: string;
+  /** Whether the row shows an entry of `occurrences` (else the summary goes on the meeting) */
+  onOccurrence: boolean;
+}
+
+/**
+ * Per-viewer cache of attendance summaries keyed by meeting id
+ * @description Each entry keeps its own write time so entries expire independently.
+ */
+export type CachedMeetingAttendance<T> = Record<string, { at: number; value: T }>;
+
 /**
  * Attendance of one past meeting, as the meeting page counts it
  */

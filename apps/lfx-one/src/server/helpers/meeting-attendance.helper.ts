@@ -3,10 +3,13 @@
 
 import { MEETING_ATTENDANCE_BATCH_SIZE, MEETING_ATTENDANCE_CONCURRENCY, QUERY_SERVICE_MAX_PAGE_SIZE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import {
+  CachedMeetingAttendance,
   Meeting,
   MeetingRegistrant,
   MeetingRsvp,
+  MeetingRsvpSummaries,
   MeetingRsvpSummary,
+  MeetingRsvpSummaryRow,
   PastMeeting,
   PastMeetingAttendanceSummary,
   PastMeetingParticipant,
@@ -27,17 +30,6 @@ import { settleInBatches } from './settle-in-batches.helper';
 const meetingService = new MeetingService();
 const microserviceProxy = new MicroserviceProxyService();
 
-/** A meeting's summaries keyed by the home row's occurrence id, `''` for a row without one. */
-type MeetingRsvpSummaries = Record<string, MeetingRsvpSummary>;
-
-/** One home row of an organizer's meeting: its occurrence id key, and whether it shows an occurrence object. */
-interface SummaryRow {
-  key: string;
-  onOccurrence: boolean;
-}
-
-type CachedSummaries<T> = Record<string, { at: number; value: T }>;
-
 /**
  * Adds `rsvp_summary` to every home row date of the upcoming meetings the viewer organizes.
  * @description Rows come from the same expansion the meetings home uses, and each date resolves RSVP
@@ -46,7 +38,7 @@ type CachedSummaries<T> = Record<string, { at: number; value: T }>;
 export async function attachMeetingRsvpSummaries(req: Request, meetings: Meeting[], now: Date = new Date()): Promise<Meeting[]> {
   const viewer = getEffectiveUsername(req);
   const organized = meetings.filter((meeting) => isMeetingInviteResponsesEnabled(meeting) && isMeetingHomeOrganizer(meeting, viewer));
-  const rowsByMeeting = new Map<string, SummaryRow[]>();
+  const rowsByMeeting = new Map<string, MeetingRsvpSummaryRow[]>();
   for (const row of expandMeetingOccurrences(organized, now)) {
     const rows = rowsByMeeting.get(row.meeting.id) ?? [];
     rows.push({ key: row.occurrenceId ?? '', onOccurrence: !!row.occurrence });
@@ -109,11 +101,11 @@ async function loadSummaries<T>(
   fetchBatch: (ids: string[]) => Promise<Map<string, T>>
 ): Promise<Map<string, T>> {
   const cacheKey = viewer ? buildUserCacheKey(`${VALKEY_CACHE.MEETING_ATTENDANCE_NAMESPACE}:${kind}`, viewer) : null;
-  const cached = cacheKey ? await valkeyService.getJson<CachedSummaries<T>>(cacheKey, isPlainObject) : null;
+  const cached = cacheKey ? await valkeyService.getJson<CachedMeetingAttendance<T>>(cacheKey, isPlainObject) : null;
   const nowMs = Date.now();
   const isFresh = (entry: { at: number } | undefined): boolean => !!entry && nowMs - entry.at < VALKEY_CACHE.MEETING_ATTENDANCE_TTL_SECONDS * 1000;
   // Keep other feeds' fresh entries (e.g. a project-scoped load) so one scope does not evict another.
-  const entries: CachedSummaries<T> = Object.fromEntries(Object.entries(cached ?? {}).filter(([, entry]) => isFresh(entry)));
+  const entries: CachedMeetingAttendance<T> = Object.fromEntries(Object.entries(cached ?? {}).filter(([, entry]) => isFresh(entry)));
   const summaries = new Map<string, T>();
   const missing: string[] = [];
 
@@ -161,7 +153,7 @@ async function fetchRsvpSummaries(
   req: Request,
   ids: string[],
   meetingsById: Map<string, Meeting>,
-  rowsByMeeting: Map<string, SummaryRow[]>
+  rowsByMeeting: Map<string, MeetingRsvpSummaryRow[]>
 ): Promise<Map<string, MeetingRsvpSummaries>> {
   // Registrants carry meeting_id as a data field, not a tag; RSVPs carry a meeting_id tag.
   const [registrants, rsvps] = await Promise.all([
@@ -232,7 +224,9 @@ function groupBy<T>(items: T[], keyOf: (item: T) => string | undefined): Map<str
   for (const item of items) {
     const key = keyOf(item);
     if (!key) continue;
-    groups.set(key, [...(groups.get(key) ?? []), item]);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
   }
   return groups;
 }
