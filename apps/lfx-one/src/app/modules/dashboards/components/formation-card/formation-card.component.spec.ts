@@ -3,13 +3,12 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MessageService } from 'primeng/api';
 import { Formation, Project, ProjectSettings } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { catchError, map, Observable, of, tap, throwError } from 'rxjs';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
+import { catchError, map, Observable, of, Subject, tap, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationCardComponent } from './formation-card.component';
@@ -218,7 +217,7 @@ describe('FormationCardComponent', () => {
         'activeProjectAnnouncementDateHasError',
         'activeProjectAnnouncementDateReadable',
       ];
-      const stub = {};
+      const stub: Record<string, unknown> = { refreshActiveProject };
       for (const member of members) {
         Object.defineProperty(stub, member, {
           get: () => {
@@ -252,8 +251,15 @@ describe('FormationCardComponent', () => {
       };
     }
 
+    let openDrawer: ReturnType<typeof vi.fn>;
+    let drawerClosed: Subject<boolean | undefined>;
+    let refreshActiveProject: ReturnType<typeof vi.fn>;
+
     async function renderWithInput(value: Formation, admin: { sfid?: string | null; auditor?: boolean } = {}): Promise<void> {
       TestBed.resetTestingModule();
+      drawerClosed = new Subject<boolean | undefined>();
+      openDrawer = vi.fn(() => ({ closed: drawerClosed }));
+      refreshActiveProject = vi.fn();
       getProjectSpy = vi.fn(() => of(project('Formation - Engaged', { auditor: admin.auditor ?? false })));
       getProjectSfidSpy = vi.fn(() => of(admin.sfid ?? null));
       await TestBed.configureTestingModule({
@@ -264,9 +270,7 @@ describe('FormationCardComponent', () => {
             useValue: { getProjectSfid: getProjectSfidSpy, getProject: getProjectSpy, getProjectRecord: () => of(project('Formation - Engaged')) },
           },
           { provide: ProjectContextService, useValue: throwingProjectContext() },
-          // The edit drawer the card hosts toasts through MessageService and animates via p-drawer.
-          { provide: MessageService, useValue: { add: vi.fn() } },
-          provideNoopAnimations(),
+          { provide: UiDrawerService, useValue: { open: openDrawer } },
         ],
       }).compileComponents();
 
@@ -302,6 +306,35 @@ describe('FormationCardComponent', () => {
 
         expect(fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"]')).toBeNull();
       });
+    });
+
+    it('opens the edit drawer through UiDrawerService with the project uid and open required count', async () => {
+      await renderWithInput(formation({ gating_items_open: 2 }));
+      fixture.componentRef.setInput('canEditRecord', true);
+      fixture.detectChanges();
+
+      (fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"] button') as HTMLButtonElement).click();
+
+      expect(openDrawer).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ data: { projectUid: 'child-uid', openRequiredCount: 2 } }));
+    });
+
+    it('refreshes the active project and tells the host after a save, and does neither when the drawer is dismissed', async () => {
+      await renderWithInput(formation());
+      fixture.componentRef.setInput('canEditRecord', true);
+      fixture.detectChanges();
+      const saved = vi.fn();
+      fixture.componentInstance.recordSaved.subscribe(saved);
+      const click = () => (fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"] button') as HTMLButtonElement).click();
+
+      click();
+      drawerClosed.next(false);
+      expect(refreshActiveProject).not.toHaveBeenCalled();
+      expect(saved).not.toHaveBeenCalled();
+
+      click();
+      drawerClosed.next(true);
+      expect(refreshActiveProject).toHaveBeenCalledWith('child-uid');
+      expect(saved).toHaveBeenCalledOnce();
     });
 
     it('renders the sub-stage, announcement date and slug from the response, never from the project context', async () => {

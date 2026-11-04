@@ -939,3 +939,11 @@ export interface DecoratedMyFormation extends MyFormationSummary {
   stageLabel: string;
   stageSeverity: TagSeverity;
 }
+
+/** Data handed to the formation record edit drawer through `UiDrawerService` (#5134). */
+export interface FormationRecordEditDrawerData {
+  /** The project whose stage and legal entity are edited. */
+  projectUid: string;
+  /** Gating ("required for Active") items still open on the checklist — named in the confirmation step. */
+  openRequiredCount: number;
+}

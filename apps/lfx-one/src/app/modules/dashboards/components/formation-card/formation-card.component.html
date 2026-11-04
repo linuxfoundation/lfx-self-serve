@@ -47,10 +47,9 @@
           severity="secondary"
           [outlined]="true"
           styleClass="w-full"
-          (onClick)="editVisible.set(true)"
+          (onClick)="onEdit()"
           data-testid="formation-card-edit-button" />
       </div>
-      <lfx-formation-record-edit-drawer [(visible)]="editVisible" [projectUid]="v.uid" [openRequiredCount]="openRequiredCount()" (saved)="recordSaved.emit()" />
     } @else {
       <p class="text-xs text-gray-500">Stage and legal entity are set by the formation team and appear here within minutes.</p>
     }

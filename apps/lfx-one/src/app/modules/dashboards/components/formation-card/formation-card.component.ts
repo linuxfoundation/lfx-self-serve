@@ -1,17 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
-import type { Formation, FormationCardView } from '@lfx-one/shared/interfaces';
+import type { Formation, FormationCardView, FormationRecordEditDrawerData } from '@lfx-one/shared/interfaces';
 import { formatAnnouncementDateLabel, getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { filter, map, switchMap } from 'rxjs';
+import { filter, map, switchMap, take } from 'rxjs';
 
 import { FormationRecordEditDrawerComponent } from '../formation-record-edit-drawer/formation-record-edit-drawer.component';
 
@@ -67,12 +68,13 @@ import { FormationRecordEditDrawerComponent } from '../formation-record-edit-dra
  */
 @Component({
   selector: 'lfx-formation-card',
-  imports: [ButtonComponent, FormationRecordEditDrawerComponent, TagComponent, SkeletonModule],
+  imports: [ButtonComponent, TagComponent, SkeletonModule],
   templateUrl: './formation-card.component.html',
 })
 export class FormationCardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
+  private readonly drawerService = inject(UiDrawerService);
 
   /**
    * Renders the card from an already-loaded checklist response instead of the project context —
@@ -97,7 +99,6 @@ export class FormationCardComponent {
   /** Emitted after a successful save so the host reloads the checklist and the card re-renders the new stage. */
   public readonly recordSaved = output<void>();
 
-  protected readonly editVisible = signal(false);
   /** Open required ("gating") items, from the checklist response already on the page — shown in the confirmation step. */
   protected readonly openRequiredCount = computed(() => this.formation()?.gating_items_open ?? 0);
 
@@ -125,6 +126,29 @@ export class FormationCardComponent {
   });
 
   protected readonly adminToolUrl: Signal<string> = this.initAdminToolUrl();
+
+  /**
+   * Opens the stage / legal-entity edit drawer through `UiDrawerService` (focus entry and return, dialog name
+   * and Escape come with it). After a save, the active project's stage is re-read — a no-op on the foundation
+   * drill-down, where the context is the foundation and not the edited child — and the host reloads the checklist.
+   */
+  protected onEdit(): void {
+    const projectUid = this.view()?.uid;
+    if (!projectUid) return;
+
+    this.drawerService
+      .open<boolean, FormationRecordEditDrawerData, FormationRecordEditDrawerComponent>(FormationRecordEditDrawerComponent, {
+        data: { projectUid, openRequiredCount: this.openRequiredCount() },
+        width: 520,
+      })
+      .closed.pipe(take(1))
+      .subscribe((saved) => {
+        if (saved) {
+          this.projectContextService.refreshActiveProject(projectUid);
+          this.recordSaved.emit();
+        }
+      });
+  }
 
   /**
    * Input mode wins outright — no per-field fallback to `ProjectContextService`. See the class

@@ -1,15 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import type { Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationRecordEditDrawerComponent } from './formation-record-edit-drawer.component';
@@ -28,63 +27,82 @@ function stored(overrides: Partial<Project> = {}): Project {
   } as Project;
 }
 
+/** The drawer keeps its form state in protected signals; tests drive them the way the bound uikit controls do. */
+interface DrawerState {
+  stage: { (): string | null; set(value: string | null): void };
+  legalEntityType: { set(value: string | null): void };
+  legalEntityName: { set(value: string): void };
+  dissolutionDate: { set(value: string): void };
+  onSave(): void;
+  onBack(): void;
+}
+
 describe('FormationRecordEditDrawerComponent', () => {
   let fixture: ComponentFixture<FormationRecordEditDrawerComponent>;
-  const query = (selector: string): Element | null => document.body.querySelector(selector);
-  const form = (): FormGroup => (fixture.componentInstance as unknown as { form: FormGroup }).form;
+  const state = (): DrawerState => fixture.componentInstance as unknown as DrawerState;
+  const query = (selector: string): Element | null => fixture.nativeElement.querySelector(selector);
 
-  async function render(options: { project?: Project; update?: ReturnType<typeof vi.fn>; openRequiredCount?: number } = {}) {
+  async function render(options: { project?: Project; update?: ReturnType<typeof vi.fn>; openRequiredCount?: number; load?: ReturnType<typeof vi.fn> } = {}) {
     TestBed.resetTestingModule();
-    const getProjectRecord = vi.fn(() => of(options.project ?? stored()));
+    const getProjectRecord = options.load ?? vi.fn(() => of(options.project ?? stored()));
     const updateFormationRecord = options.update ?? vi.fn(() => of(stored()));
     const add = vi.fn();
+    const close = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [FormationRecordEditDrawerComponent],
       providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
         provideNoopAnimations(),
+        { provide: DIALOG_DATA, useValue: { projectUid: 'proj-1', openRequiredCount: options.openRequiredCount ?? 0 } },
+        { provide: DialogRef, useValue: { close, id: 'dialog-1' } },
         { provide: MessageService, useValue: { add } },
         { provide: ProjectService, useValue: { getProjectRecord, updateFormationRecord } },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(FormationRecordEditDrawerComponent);
-    fixture.componentRef.setInput('projectUid', 'proj-1');
-    fixture.componentRef.setInput('openRequiredCount', options.openRequiredCount ?? 0);
     fixture.detectChanges();
-    fixture.componentInstance.visible.set(true);
     await fixture.whenStable();
     fixture.detectChanges();
 
-    return { updateFormationRecord, getProjectRecord, add };
+    return { updateFormationRecord, getProjectRecord, add, close };
   }
 
   async function save(): Promise<void> {
-    (fixture.componentInstance as unknown as { onSave(): void }).onSave();
+    state().onSave();
     await fixture.whenStable();
     fixture.detectChanges();
   }
 
-  it('loads the stored record into the form when opened', async () => {
+  it('reads the record once when the drawer opens and fills the form', async () => {
     const { getProjectRecord } = await render();
 
+    expect(getProjectRecord).toHaveBeenCalledTimes(1);
     expect(getProjectRecord).toHaveBeenCalledWith('proj-1');
-    expect(form().value).toMatchObject({ stage: 'Formation - Engaged', legal_entity_name: 'Cascade Data LLC', legal_entity_type: 'Series LLC' });
+    expect(state().stage()).toBe('Formation - Engaged');
+    expect(query('[data-testid="formation-record-edit-loading"]')).toBeNull();
   });
 
   it('sends only the fields that changed', async () => {
     const { updateFormationRecord } = await render();
-    form().patchValue({ legal_entity_name: 'Cascade Data Inc.' });
+    state().legalEntityName.set('Cascade Data Inc.');
 
     await save();
 
     expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { legal_entity_name: 'Cascade Data Inc.' });
   });
 
-  it('does not call the API when nothing changed', async () => {
-    const { updateFormationRecord, add } = await render();
+  it('does not send an untouched name whose stored value has surrounding whitespace', async () => {
+    const { updateFormationRecord } = await render({ project: stored({ legal_entity_name: '  Cascade Data LLC ' }) });
+    state().stage.set('Formation - On Hold');
+
+    await save();
+
+    expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { stage: 'Formation - On Hold' });
+  });
+
+  it('does not call the API when nothing changed, even if the stored values have stray whitespace', async () => {
+    const { updateFormationRecord, add } = await render({ project: stored({ legal_entity_name: '  Cascade Data LLC ' }) });
 
     await save();
 
@@ -92,23 +110,54 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Nothing to save' }));
   });
 
-  it('shows the dissolution date field only for Archived and blocks saving without it', async () => {
+  it('does not resend a stored dissolution date when only the stage changes to Archived', async () => {
+    const { updateFormationRecord } = await render({ project: stored({ entity_dissolution_date: '2026-09-30' }) });
+    state().stage.set('Archived');
+
+    await save(); // Archived asks for confirmation first
+    await save();
+
+    expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { stage: 'Archived' });
+  });
+
+  it('shows the dissolution date field only for Archived and blocks Archived when none is set', async () => {
     const { updateFormationRecord } = await render();
     expect(query('[data-testid="formation-record-dissolution-date"]')).toBeNull();
 
-    form().patchValue({ stage: 'Archived' });
+    state().stage.set('Archived');
     fixture.detectChanges();
     expect(query('[data-testid="formation-record-dissolution-date"]')).not.toBeNull();
 
     await save();
 
-    expect(query('[data-testid="formation-record-dissolution-date-error"]')?.textContent).toContain('Archiving needs a dissolution date.');
+    expect(fixture.nativeElement.textContent).toContain('Archiving needs a dissolution date.');
+    expect(updateFormationRecord).not.toHaveBeenCalled();
+  });
+
+  it('sends a newly entered dissolution date with Archived', async () => {
+    const { updateFormationRecord } = await render();
+    state().stage.set('Archived');
+    state().dissolutionDate.set('2026-10-31');
+
+    await save();
+    await save();
+
+    expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { stage: 'Archived', entity_dissolution_date: '2026-10-31' });
+  });
+
+  it('blocks clearing the dissolution date of an already-Archived project', async () => {
+    const { updateFormationRecord } = await render({ project: stored({ stage: 'Archived', entity_dissolution_date: '2026-10-31' }) });
+    state().dissolutionDate.set('');
+
+    await save();
+
+    expect(fixture.nativeElement.textContent).toContain('Archiving needs a dissolution date.');
     expect(updateFormationRecord).not.toHaveBeenCalled();
   });
 
   it('asks for confirmation before Active, naming the checklist effect and open required count, then saves on confirm', async () => {
     const { updateFormationRecord } = await render({ openRequiredCount: 3 });
-    form().patchValue({ stage: 'Active' });
+    state().stage.set('Active');
 
     await save();
 
@@ -124,7 +173,7 @@ describe('FormationRecordEditDrawerComponent', () => {
 
   it('describes Formation - Disengaged as freezing the checklist', async () => {
     await render({ openRequiredCount: 1 });
-    form().patchValue({ stage: 'Formation - Disengaged' });
+    state().stage.set('Formation - Disengaged');
 
     await save();
 
@@ -133,9 +182,21 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(text).toContain('1 required item is still open');
   });
 
+  it('drops a pending confirmation when the stage pick changes', async () => {
+    await render();
+    state().stage.set('Active');
+    await save();
+    expect(query('[data-testid="formation-record-confirmation"]')).not.toBeNull();
+
+    state().stage.set('Formation - On Hold');
+    fixture.detectChanges();
+
+    expect(query('[data-testid="formation-record-confirmation"]')).toBeNull();
+  });
+
   it('does not ask for confirmation when moving between formation sub-stages', async () => {
     const { updateFormationRecord } = await render();
-    form().patchValue({ stage: 'Formation - On Hold' });
+    state().stage.set('Formation - On Hold');
 
     await save();
 
@@ -145,48 +206,47 @@ describe('FormationRecordEditDrawerComponent', () => {
 
   it('keeps a stored Confidential stage visible but never sends it unless the user changed the stage', async () => {
     const { updateFormationRecord } = await render({ project: stored({ stage: 'Formation - Confidential' }) });
-    form().patchValue({ legal_entity_name: 'Renamed LLC' });
+    state().legalEntityName.set('Renamed LLC');
 
     await save();
 
     expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { legal_entity_name: 'Renamed LLC' });
   });
 
-  it('treats a cleared legal entity type (null from the select) as an empty-string change', async () => {
+  it('treats a cleared legal entity type as an empty-string change', async () => {
     const { updateFormationRecord } = await render();
-    form().patchValue({ legal_entity_type: null });
+    state().legalEntityType.set(null);
 
     await save();
 
     expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { legal_entity_type: '' });
   });
 
-  it('blocks clearing the dissolution date of an already-Archived project', async () => {
-    const { updateFormationRecord } = await render({ project: stored({ stage: 'Archived', entity_dissolution_date: '2026-10-31' }) });
-    form().patchValue({ entity_dissolution_date: '' });
+  it('shows a retry when the record cannot be read, and does not offer Save', async () => {
+    const load = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })))
+      .mockReturnValue(of(stored()));
+    await render({ load });
+
+    expect(query('[data-testid="formation-record-edit-load-error"]')).not.toBeNull();
+
+    (query('[data-testid="formation-record-edit-retry"]') as HTMLElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(query('[data-testid="formation-record-edit-load-error"]')).toBeNull();
+    expect(state().stage()).toBe('Formation - Engaged');
+  });
+
+  it('ignores Save while the record is still loading', async () => {
+    const { updateFormationRecord } = await render({ load: vi.fn(() => NEVER) });
 
     await save();
 
-    expect(query('[data-testid="formation-record-dissolution-date-error"]')).not.toBeNull();
     expect(updateFormationRecord).not.toHaveBeenCalled();
-  });
-
-  it('refetches on reopen after a failed load', async () => {
-    const { getProjectRecord } = await render();
-    getProjectRecord.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
-    fixture.componentInstance.visible.set(false);
-    fixture.componentInstance.visible.set(true);
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(query('[data-testid="formation-record-edit-load-error"]')).not.toBeNull();
-
-    fixture.componentInstance.visible.set(false);
-    fixture.componentInstance.visible.set(true);
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(getProjectRecord).toHaveBeenCalledTimes(3);
-    expect(query('[data-testid="formation-record-edit-load-error"]')).toBeNull();
   });
 
   it.each([
@@ -199,7 +259,7 @@ describe('FormationRecordEditDrawerComponent', () => {
   ])('maps a %s response to the table copy', async (status, body, copy) => {
     const update = vi.fn(() => throwError(() => new HttpErrorResponse({ status, error: body })));
     await render({ update });
-    form().patchValue({ legal_entity_name: 'Changed' });
+    state().legalEntityName.set('Changed');
 
     await save();
 
@@ -207,16 +267,21 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(!!query('[data-testid="formation-record-edit-reload"]')).toBe(status === 409);
   });
 
-  it('closes, toasts and emits saved after a successful save', async () => {
-    const { add } = await render();
-    const saved = vi.fn();
-    fixture.componentInstance.saved.subscribe(saved);
-    form().patchValue({ legal_entity_name: 'Changed' });
+  it('toasts and closes the drawer with true after a successful save', async () => {
+    const { add, close } = await render();
+    state().legalEntityName.set('Changed');
 
     await save();
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
-    expect(saved).toHaveBeenCalledOnce();
-    expect(fixture.componentInstance.visible()).toBe(false);
+    expect(close).toHaveBeenCalledWith(true);
+  });
+
+  it('closes with false on cancel', async () => {
+    const { close } = await render();
+
+    (query('[data-testid="formation-record-cancel"]') as HTMLElement).click();
+
+    expect(close).toHaveBeenCalledWith(false);
   });
 });
