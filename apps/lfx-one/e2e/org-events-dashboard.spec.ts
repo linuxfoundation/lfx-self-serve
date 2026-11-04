@@ -115,7 +115,7 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ totalEvents: 12, pastEvents: 3, upcomingEvents: 9, servedAttribution: 'company_email' }),
+      body: JSON.stringify({ totalEvents: 12, pastEvents: 3, upcomingEvents: 9, servedAttribution: 'all' }),
     })
   );
 
@@ -182,7 +182,7 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         total: 12,
         pageSize: 10,
         offset,
-        servedAttribution: 'company_email',
+        servedAttribution: 'all',
       }),
     });
   });
@@ -196,7 +196,7 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         eventName: 'Open Source Summit',
         total: 1,
         notListedCount: 2,
-        servedAttribution: 'company_email',
+        servedAttribution: 'all',
         // Opaque positional id, as the server now sends it — the address never reaches the client.
         data: [{ contactId: '0', name: 'Jane Doe', jobTitle: 'Engineer' }],
       }),
@@ -428,7 +428,7 @@ test.describe('Org Events Dashboard', () => {
         body: JSON.stringify({ data: [], total: 0, pageSize: 10, offset: 0, servedAttribution: 'account' }),
       })
     );
-    await page.goto(`${ORG_EVENTS_URL}?tab=past`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${ORG_EVENTS_URL}?tab=past&attribution=company_email`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('org-events-attribution-unavailable')).toContainText('No company-email data is available');
   });
 });

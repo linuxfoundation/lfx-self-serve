@@ -87,17 +87,30 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
   it('reads with the defaults and drops them from the URL', async () => {
     await mount('/?tab=events');
 
-    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '730d', attribution: 'company_email', participation: 'registered' });
+    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '730d', attribution: 'all', participation: 'all' });
     expect(TestBed.inject(Router).url).not.toContain('participation');
     expect(TestBed.inject(Router).url).not.toContain('attribution');
   });
 
+  it('offers All as the first Count option and Counted by All relations as the first Counted by option', async () => {
+    await mount('/?tab=events');
+    const component = fixture.componentInstance as unknown as {
+      participationOptions: { label: string; value: string }[];
+      attributionOptions: { label: string; value: string }[];
+    };
+
+    expect(component.participationOptions.map((option) => option.label)).toEqual(['All', 'Registered', 'Attended']);
+    expect(component.attributionOptions[0]).toEqual({ label: 'All relations', value: 'all' });
+    expect(form().controls['participation'].value).toBe('all');
+    expect(form().controls['attribution'].value).toBe('all');
+  });
+
   it('restores Count and Counted by from the URL and reads with them', async () => {
-    await mount('/?tab=events&range=90d&participation=attended&attribution=all');
+    await mount('/?tab=events&range=90d&participation=attended&attribution=company_email');
 
     expect(form().controls['participation'].value).toBe('attended');
-    expect(form().controls['attribution'].value).toBe('all');
-    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '90d', attribution: 'all', participation: 'attended' });
+    expect(form().controls['attribution'].value).toBe('company_email');
+    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '90d', attribution: 'company_email', participation: 'attended' });
   });
 
   it('writes a non-default pick to the URL and refetches, then drops it again at the default', async () => {
@@ -106,11 +119,25 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     form().controls['participation'].setValue('attended');
     await settle();
     expect(TestBed.inject(Router).url).toContain('participation=attended');
-    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'company_email', participation: 'attended' });
+    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'all', participation: 'attended' });
 
     form().controls['participation'].setValue('registered');
     await settle();
+    expect(TestBed.inject(Router).url).toContain('participation=registered');
+    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'all', participation: 'registered' });
+
+    form().controls['participation'].setValue('all');
+    await settle();
     expect(TestBed.inject(Router).url).not.toContain('participation');
+    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'all', participation: 'all' });
+
+    form().controls['attribution'].setValue('company_email');
+    await settle();
+    expect(TestBed.inject(Router).url).toContain('attribution=company_email');
+
+    form().controls['attribution'].setValue('all');
+    await settle();
+    expect(TestBed.inject(Router).url).not.toContain('attribution');
   });
 
   it('keeps Counted by behind "More filters", counting a non-default pick on the link', async () => {
@@ -154,9 +181,9 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     expect(testId('org-people-event-attendees-not-listed')).toBeNull();
   });
 
-  // Events and Foundations are counted from the rows in both modes; Speakers and Attendees show the summary's own numbers (which
-  // include people the rows never name) until the rows are narrowed.
-  it('shows the summary Speakers and Attendees unfiltered and the row counts once a foundation narrows the rows', async () => {
+  // All four tiles show the summary's own numbers (which include people the rows never name) until the rows are narrowed, so the
+  // tiles agree with each other and with the All Employees Event Attendees tile.
+  it('shows the four summary tiles unfiltered and the row counts once a foundation narrows the rows', async () => {
     await mount('/?tab=events', {
       ...RESPONSE,
       details: [detail(1, 'event-a', { isSpeaker: true }), detail(1, 'event-b'), detail(2, 'event-a', { personKey: null, displayName: 'Registered attendee' })],
@@ -164,7 +191,7 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     });
     const tile = (name: string): string | undefined => testId(`org-people-event-attendees-stat-${name}`)?.firstElementChild?.textContent?.trim();
 
-    expect([tile('speakers'), tile('attendees'), tile('events'), tile('foundations')]).toEqual(['9', '5', '2', '1']);
+    expect([tile('speakers'), tile('attendees'), tile('events'), tile('foundations')]).toEqual(['9', '5', '7', '4']);
 
     form().patchValue({ foundation: 'lf' });
     await settle();
@@ -174,13 +201,13 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
   });
 
   it('says so when Counted by fell back to the account', async () => {
-    await mount('/?tab=events', { ...RESPONSE, servedAttribution: 'account' });
+    await mount('/?tab=events&attribution=company_email', { ...RESPONSE, servedAttribution: 'account' });
 
     expect(testId('org-people-event-attendees-attribution-unavailable')?.textContent).toContain(ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE);
   });
 
   it('does not show the note when the served attribution is the one picked', async () => {
-    await mount('/?tab=events');
+    await mount('/?tab=events', { ...RESPONSE, servedAttribution: 'all' });
 
     expect(testId('org-people-event-attendees-attribution-unavailable')).toBeNull();
   });

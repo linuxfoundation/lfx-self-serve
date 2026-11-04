@@ -6,7 +6,10 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import {
   ORG_DEFAULT_PROJECT_SCOPE_LABEL,
+  ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE,
   ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE,
+  ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
+  ORG_EVENTS_SPEAKERS_CAPTION_PHRASE,
   ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
   ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE,
@@ -14,7 +17,7 @@ import {
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
   ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
-import type { Account, DashboardMetricCard, OrgTrainingStats } from '@lfx-one/shared/interfaces';
+import type { Account, DashboardMetricCard, OrgEventsAttribution, OrgTrainingStats } from '@lfx-one/shared/interfaces';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
@@ -44,7 +47,8 @@ const TRAINING_STATS: OrgTrainingStats = {
 
 async function buildMetrics(
   maintainers: object = { accountId: ACCOUNT_ID, maintainerRoles: 20, monthlyData: [12, 15], monthlyLabels: ['Jan 2030', 'Feb 2030'] },
-  trainingStats: Observable<OrgTrainingStats> = of(TRAINING_STATS)
+  trainingStats: Observable<OrgTrainingStats> = of(TRAINING_STATS),
+  servedAttribution: OrgEventsAttribution = 'all'
 ): Promise<DashboardMetricCard[]> {
   const selectedAccount = signal<Account>({ accountId: ACCOUNT_ID, accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
   const analytics = {
@@ -57,7 +61,7 @@ async function buildMetrics(
         accountName: 'Acme Motors',
         totalAttended: 200,
         totalSpeakers: 40,
-        servedAttribution: 'company_email',
+        servedAttribution,
         attendeesMonthlyData: [50],
         speakersMonthlyData: [10],
         monthlyLabels: ['Jan 2030'],
@@ -256,19 +260,32 @@ describe('OrgOverviewInvolvementComponent maintainer roles', () => {
 });
 
 describe('OrgOverviewInvolvementComponent events', () => {
-  it('says registered, counts distinct people and explains the headline is not the sum of the monthly points', async () => {
+  it('says registered or attended, counts distinct people and explains the headline is not the sum of the monthly points', async () => {
     const metrics = await buildMetrics();
     const attendees = metrics.find((metric) => metric.title === 'Event Attendees');
     const speakers = metrics.find((metric) => metric.title === 'Event Speakers');
 
     expect(attendees?.value).toBe('200');
     expect(attendees?.subtitle).toBe(ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE);
-    expect(attendees?.subtitle).toContain('registered');
+    expect(attendees?.subtitle).toBe('Employees who registered or attended foundation events');
+    expect(attendees?.tooltipText).toContain(ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.all);
+    expect(attendees?.tooltipText).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.all);
     expect(attendees?.tooltipText).toContain(ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE);
     expect(attendees?.tooltipText).not.toContain(ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE);
     expect(attendees?.chartCaption).toContain('Distinct people per month');
     expect(speakers?.value).toBe('40');
+    expect(speakers?.subtitle).toBe('Employee speakers accepted at foundation events');
+    expect(speakers?.tooltipText).toContain(ORG_EVENTS_SPEAKERS_CAPTION_PHRASE);
+    expect(speakers?.tooltipText).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.all);
     expect(speakers?.tooltipText).toContain(ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE);
+  });
+
+  it('adds the fallback note only when the served attribution is not the all-relations default', async () => {
+    const metrics = await buildMetrics(undefined, undefined, 'account');
+    const attendees = metrics.find((metric) => metric.title === 'Event Attendees');
+
+    expect(attendees?.tooltipText).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.account);
+    expect(attendees?.tooltipText).toContain(ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE);
   });
 });
 
@@ -306,7 +323,7 @@ describe('OrgOverviewInvolvementComponent organization scope', () => {
                 accountName: '',
                 totalAttended: 0,
                 totalSpeakers: 0,
-                servedAttribution: 'company_email',
+                servedAttribution: 'all',
                 attendeesMonthlyData: [],
                 speakersMonthlyData: [],
                 monthlyLabels: [],
