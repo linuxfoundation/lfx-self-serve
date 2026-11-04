@@ -138,7 +138,7 @@ You filter a People tab with the search box and menus above its table. Which men
 
 **Employment** offers **Current employees**, **Former employees** and **All employees** (the default). On **All Employees** under **Current employees**, the **Code Contributors** card leaves out people who have since left. With **All employees** it shows the same number as the **Contributors** tab's **Contributors** card for the same time range, project type, organization scope and team members choice.
 
-The code count offers **All code contributions** (the default), **All commits** and **Only main branch commits**. It changes the code numbers, not who is listed. What each option counts is in [What do All code contributions, All commits and Only main branch commits count?](../code-contributions/#what-do-all-code-contributions-all-commits-and-only-main-branch-commits-count).
+The code count offers **All code contributions** (the default), **All commits** and **Only main branch commits**. It changes the code numbers, not who is listed, with one exception: when the **All Employees** activity filter is on **Code contributions** (or **Commits**), only people whose count under the chosen option is above zero are shown. Someone with reviews or comments but no commits drops out when you switch to **All commits**. What each option counts is in [What do All code contributions, All commits and Only main branch commits count?](../code-contributions/#what-do-all-code-contributions-all-commits-and-only-main-branch-commits-count).
 
 ## What does Team members change on People?
 
