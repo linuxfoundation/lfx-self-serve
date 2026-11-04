@@ -17,7 +17,7 @@ import {
   ValidationError,
 } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import { SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
+import { MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -29,6 +29,7 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
+import { MailingListSyncPreviewDialogComponent } from '../mailing-list-sync-preview-dialog/mailing-list-sync-preview-dialog.component';
 import { CommitteeGeneralSettingsComponent } from '../committee-general-settings/committee-general-settings.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
 import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
@@ -132,6 +133,12 @@ export class CommitteeSettingsTabComponent {
   // actually succeed; this flag alone controls whether the card renders at all, so it stays off
   // until the feature is ready to roll out to users, independent of when the server flag flips.
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
+
+  // Dark-launch gate for the "Sync Now" preview/apply entry point on each associated mailing list
+  // card — same flag as the Mailing List Settings sync toggle (#4024) and the committee detail Auto
+  // Sync drawer (#4025), so all three committee/mailing-list sync surfaces roll out together.
+  // Default false: unflagged, "Sync Now" stays hidden even for editors.
+  public syncPreviewEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
 
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
   // control renders visible-but-disabled instead of accepting an edit that will 403, matching the
@@ -250,6 +257,26 @@ export class CommitteeSettingsTabComponent {
         },
         error: () => deny(),
       });
+  }
+
+  public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
+    // closable: false is only the initial state — lockDynamicDialogWhile (inside the dialog) flips
+    // config.closable back to true as soon as loading/applying finishes, so the header X and Escape
+    // remain live dismissal paths once the diff or the apply result is showing. Refresh unconditionally
+    // on close rather than gating on `{ applied: true }`: reloading an unchanged list is cheap, and this
+    // way a native dismiss after a successful apply can't skip the subscriber-count refresh (#4911 review).
+    const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
+      header: `Sync Now — ${ml.group_name}`,
+      width: '800px',
+      modal: true,
+      closable: false,
+      draggable: false,
+      data: { mailingListUid: ml.uid, mailingListName: ml.group_name },
+    });
+
+    if (!ref) return;
+
+    ref.onClose.pipe(take(1)).subscribe(() => this.refreshMl$.next());
   }
 
   public removeMailingList(ml: GroupsIOMailingList): void {

@@ -71,3 +71,24 @@ export enum MailingListMemberModStatus {
   MODERATOR = 'moderator',
   OWNER = 'owner',
 }
+
+/**
+ * Sync-diff/sync-apply member type (committee ↔ mailing list sync)
+ * @description Indicates which side of the sync a member originates from
+ */
+export enum SyncMemberType {
+  COMMITTEE_MEMBER = 'committee_member',
+  MAILING_LIST_MEMBER = 'mailing_list_member',
+}
+
+/**
+ * Sync-apply per-row outcome
+ * @description Result of applying a single add/remove row during sync-apply
+ */
+export enum SyncApplyOutcome {
+  ADDED = 'added',
+  INVITED = 'invited',
+  REMOVED = 'removed',
+  SKIPPED_CROSS_LIST = 'skipped_cross_list',
+  FAILED = 'failed',
+}

@@ -1221,6 +1221,11 @@ export interface MailingListPickerDialogResult {
   selectedUids: Set<string>;
 }
 
+export interface MailingListSyncPreviewDialogData {
+  mailingListUid: string;
+  mailingListName: string;
+}
+
 export interface DescriptionDialogData {
   mode: 'view' | 'edit';
   description: string;
