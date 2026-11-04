@@ -167,9 +167,11 @@ test('an untouched public form moves on to Writing quietly when someone else ans
   }
 });
 
-test('a second window of the same profile hears that its sibling answered, and keeps its typed draft read-only', async ({ context, page }, info) => {
-  // One browser profile, two windows: the pages share the context's storage, as two tabs of the same person do.
-  const sibling = page;
+/**
+ * One browser profile, two windows of the private Boilerplates run page: the sibling starts the run and gets the questions;
+ * the second window resumes the stored attempt and types. Both read the shared run; its phase is the server's one truth.
+ */
+async function sameProfileWindows(context: BrowserContext, sibling: Page) {
   const fixture = await setupQuestionsNavigation(sibling);
   const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === fixture.intake.agentId);
   if (!type) throw new Error('Missing synthetic Boilerplates document type');
@@ -221,7 +223,11 @@ test('a second window of the same profile hears that its sibling answered, and k
   const myAnswer = mine.locator('textarea[data-test="mktg-run-questions-answer-goal"]');
   await expect(myAnswer).toHaveValue('Grow adoption');
   await myAnswer.fill('Grow synthetic adoption among reviewers');
-  const myUrl = mine.url();
+  return { sibling, mine, shared, myUrl: mine.url() };
+}
+
+test('a second window of the same profile hears that its sibling answered, and keeps its typed draft read-only', async ({ context, page }, info) => {
+  const { sibling, mine, shared, myUrl } = await sameProfileWindows(context, page);
   await sibling.getByTestId('mktg-run-questions-send').getByRole('button').click();
   await expect(sibling.getByTestId('mktg-run-questions')).toHaveCount(0);
   await expect(mine.getByTestId('mktg-run-progress-answered-note')).toHaveText(OTHER_WINDOW_NOTE, { timeout: HEARD_TIMEOUT });
@@ -230,6 +236,23 @@ test('a second window of the same profile hears that its sibling answered, and k
   await expect(mine).toHaveURL(myUrl);
   expect(shared.posts).toEqual({ sibling: 1, mine: 0 });
   await mine.screenshot({ path: info.outputPath('same-profile-window-kept-draft.png'), fullPage: true });
+});
+
+test('a private window hears that someone on the team answered when nobody in this profile sent', async ({ context, page }, info) => {
+  const { mine, shared, myUrl } = await sameProfileWindows(context, page);
+  // Another person answered through their own route: the server moved on, and no window of this profile has a marker.
+  shared.phase = 'writing';
+  await expect(mine.getByTestId('mktg-run-progress-answered-note')).toHaveText(TEAM_NOTE, { timeout: HEARD_TIMEOUT });
+  await expectKeptDraft(mine, 'goal', 'Grow synthetic adoption among reviewers');
+  // Directly under the line, as on the public page: the writing steps come after the kept draft.
+  const noteBox = await mine.getByTestId('mktg-run-progress-answered-note').boundingBox();
+  const keptBox = await mine.getByTestId('mktg-run-questions-locked').boundingBox();
+  const liveBox = await mine.getByTestId('mktg-run-progress-live').boundingBox();
+  expect(noteBox && keptBox && liveBox && noteBox.y < keptBox.y && keptBox.y < liveBox.y).toBe(true);
+  await expect(mine.getByTestId('mktg-agent-run-questions')).toHaveCount(0);
+  await expect(mine).toHaveURL(myUrl);
+  expect(shared.posts).toEqual({ sibling: 0, mine: 0 });
+  await mine.screenshot({ path: info.outputPath('private-window-team-note-kept-draft.png'), fullPage: true });
 });
 
 test('a send that lost to another writer keeps the sent draft read-only under the named notice', async ({ browser }, info) => {

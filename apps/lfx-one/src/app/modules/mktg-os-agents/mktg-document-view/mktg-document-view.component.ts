@@ -134,6 +134,7 @@ import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-
 import { MktgClosedRunMessageComponent } from '../components/mktg-closed-run-message/mktg-closed-run-message.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
+import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { AeoGeoReportComponent } from '../components/aeo-geo-report/aeo-geo-report.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
@@ -196,6 +197,7 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
     MktgRunActivityComponent,
     MktgSkeletonComponent,
     MktgRunProgressComponent,
+    MktgRunQuestionsComponent,
     MktgClosedRunMessageComponent,
   ],
   providers: [DialogService],

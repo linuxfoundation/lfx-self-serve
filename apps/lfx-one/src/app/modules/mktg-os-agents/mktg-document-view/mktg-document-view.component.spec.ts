@@ -825,6 +825,30 @@ describe('MktgDocumentViewComponent', () => {
     expect(component?.['view']()).toBe(body);
   });
 
+  it('keeps the typed draft read-only beside the produced revision when the remembered notice carries it', async () => {
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    const body = component?.['view']();
+    const questionsId = 'c'.repeat(64);
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: 'b'.repeat(64),
+      questionsId,
+      message: 'Someone on your team already answered these — the asset is ready. Your draft is kept below.',
+      kept: {
+        questionsId,
+        questions: [{ key: 'audience', label: 'Audience', question: 'Who is this for?', why: '', suggestedAnswer: 'Synthetic maintainers', basis: [] }],
+        draft: { index: 0, answers: { audience: 'Synthetic typed audience' }, dirty: true },
+      },
+    });
+    await settle();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the asset is ready. Your draft is kept below.');
+    const box = query('mktg-run-questions-locked')?.querySelector('textarea') as HTMLTextAreaElement;
+    expect(box.disabled).toBe(true);
+    expect(box.value).toBe('Synthetic typed audience');
+    expect(query('mktg-run-questions-locked')?.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
+    expect(component?.['view']()).toBe(body);
+  });
+
   it('re-reads a stored document on focus and observes another writer revision and approval without manual reload', async () => {
     await render('/documents/brand-kit/living');
     const next = revision(3, { latest: true });

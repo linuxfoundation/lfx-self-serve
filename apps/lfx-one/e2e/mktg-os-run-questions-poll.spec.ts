@@ -15,6 +15,9 @@ import { setupQuestionsNavigation } from './helpers/mktg-os-questions-navigation
  * another state replaces it, and no Refresh button is offered.
  */
 type Phase = 'questions' | 'omitted' | 'newer-round' | 'writing' | 'landed';
+/** The suggestion the form opens with, and the edit that makes the draft the user's own. */
+const OPENING_ANSWER = 'Synthetic maintainers';
+const TYPED_ANSWER = 'Synthetic project maintainers and contributors';
 
 // Each step waits for the real questions poll (MKTG_RUN_POLL.questionsIntervalMs); two steps and a render need more than the 30 s default.
 test.describe.configure({ timeout: 60000 });
@@ -70,8 +73,8 @@ async function openWaitingRun(page: Page, info: TestInfo) {
   }, `/project/mktg-os-agents/${FAQ_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&run=${runId}`);
   const answer = page.locator('textarea[data-test="mktg-run-questions-answer-audience"]');
   await expect(page.getByTestId('mktg-run-questions-title')).toHaveText('A few questions before the draft');
-  await expect(answer).toHaveValue('Synthetic maintainers');
-  await answer.fill('Synthetic project maintainers and contributors');
+  await expect(answer).toHaveValue(OPENING_ANSWER);
+  await answer.fill(TYPED_ANSWER);
   await page.getByTestId('mktg-run-public-progress').screenshot({ path: info.outputPath('01-waiting-with-questions.png') });
   /** Move the stubbed server on and wait until the page has read it at least once. */
   const serve = async (phase: Phase) => {
@@ -87,7 +90,7 @@ test('a poll that omits the questions keeps the answer form and the unsent edit'
   await serve('omitted');
   await serve('omitted');
   await expect(page.getByTestId('mktg-run-questions-title')).toHaveText('A few questions before the draft');
-  await expect(answer).toHaveValue('Synthetic project maintainers and contributors');
+  await expect(answer).toHaveValue(TYPED_ANSWER);
   await expect(page.getByTestId('mktg-run-progress-owner-note')).toHaveCount(0);
   await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Waiting for your answers');
   await page.getByTestId('mktg-run-public-progress').screenshot({ path: info.outputPath('02-kept-after-omitting-poll.png') });
@@ -105,23 +108,46 @@ test('a newer questions round replaces the held one', async ({ page }, info) => 
 });
 
 test('a terminal state clears the questions and lands on the produced revision', async ({ page }, info) => {
+  const { answer, serve } = await openWaitingRun(page, info);
+  await serve('omitted');
+  // Retyped back to what it opened with: an untouched form, which moves on quietly (law 3, nothing of the user's to keep).
+  await answer.fill(OPENING_ANSWER);
+  await serve('landed');
+  await expect(page.getByTestId('mktg-faq-view')).toContainText('Synthetic produced question', { timeout: POLL_TIMEOUT });
+  await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-document-view-answered-note')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-run-questions-locked')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('02-landed.png'), fullPage: true });
+});
+
+test('a typed draft whose run landed first is kept read-only beside the produced revision', async ({ page }, info) => {
   const { serve } = await openWaitingRun(page, info);
   await serve('omitted');
   await serve('landed');
   await expect(page.getByTestId('mktg-faq-view')).toContainText('Synthetic produced question', { timeout: POLL_TIMEOUT });
-  await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
-  await page.screenshot({ path: info.outputPath('02-landed.png'), fullPage: true });
+  // The answer came from elsewhere and the asset is already there: the line says so, and nothing typed disappears (law 7).
+  await expect(page.getByTestId('mktg-document-view-answered-note')).toContainText(
+    'Someone on your team already answered these — the asset is ready. Your draft is kept below.'
+  );
+  const kept = page.getByTestId('mktg-run-questions-locked').locator('textarea[data-test="mktg-run-questions-answer-audience"]');
+  await expect(kept).toBeDisabled();
+  await expect(kept).toHaveValue(TYPED_ANSWER);
+  await expect(page.getByTestId('mktg-run-questions-locked').getByTestId('mktg-run-questions-send')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('02-landed-with-kept-draft.png'), fullPage: true });
 });
 
 test('the waiting state offers no Refresh button and re-renders on its next poll', async ({ page }, info) => {
-  const { serve } = await openWaitingRun(page, info);
+  const { answer, serve } = await openWaitingRun(page, info);
   const live = page.getByTestId('mktg-run-progress-live');
   await expect(live.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
   await expect(page.getByTestId('mktg-run-progress-questions-refresh')).toHaveCount(0);
   await expect(page.getByTestId('mktg-document-view-refresh-progress')).toHaveCount(0);
+  // An untouched form (retyped unchanged counts as untouched): the next poll re-renders Writing on its own, silently.
+  await answer.fill(OPENING_ANSWER);
   await serve('writing');
   await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Writing', { timeout: POLL_TIMEOUT });
   await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-run-progress-answered-note')).toHaveCount(0);
   await expect(live.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
   await page.getByTestId('mktg-run-public-progress').screenshot({ path: info.outputPath('02-writing-without-a-click.png') });
 });

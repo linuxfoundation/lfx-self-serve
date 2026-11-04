@@ -456,8 +456,13 @@ form was typed (an answer differs, trimmed, from what it opened with): the notic
 answered there (the sibling window's accepted send reaches shared storage, never this window's
 memory copy, so the attempt store reads storage for that look, and the save that retires the held
 block carries the stored answered round forward rather than erasing it), and the typed draft stays
-below; an untouched form moves on to Writing quietly. One notice text builder serves both paths
-and both forms, public and private. Identifier-like names are not echoed. A genuinely new server questions
+below; an untouched form moves on to Writing quietly. While either form's own send is open, a poll
+changes nothing: the server claims the block before it replies, so the reply, or its 409, settles
+it. A poll that finds the run already completed says "the asset is ready" instead of "the agent is
+writing", and the notice travels with the kept block (`MktgRunAnsweredNotice.kept`): the progress
+reader draws the block directly under its line on both pages, and the document the run landed on
+shows the same line with the draft beside the produced revision. One notice text builder serves
+both paths and both forms, public and private. Identifier-like names are not echoed. A genuinely new server questions
 block remains answerable; other 409/412 responses refresh the current row. The waiting state
 checks on its own (`MKTG_RUN_POLL.questionsIntervalMs`) and keeps a held block through polls that
 omit it; it offers no Refresh button, and Refresh appears only once automatic checks pause after

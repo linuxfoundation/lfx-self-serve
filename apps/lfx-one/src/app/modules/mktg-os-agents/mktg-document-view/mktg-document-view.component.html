@@ -209,6 +209,15 @@
 
     @if (answeredNotice(); as concurrent) {
       <lfx-message severity="info" [text]="concurrent.message" data-testid="mktg-document-view-answered-note" />
+      <!-- The draft this browser typed stays readable beside the revision the run produced; nothing typed disappears. -->
+      @if (concurrent.kept; as kept) {
+        <lfx-mktg-run-questions
+          [questions]="kept.questions"
+          [projectName]="projectName()"
+          [locked]="true"
+          [initialDraft]="kept.draft"
+          data-testid="mktg-run-questions-locked" />
+      }
     }
     @if (restoreNotice()) {
       <lfx-message severity="info" [text]="restoreNotice()" data-testid="mktg-document-view-restored-intake" />

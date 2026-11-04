@@ -157,8 +157,11 @@ export class MktgRunProgressComponent {
   /** The draft kept read-only under the answered notice, until a newer block, another run or leaving. */
   private readonly keptDraft = signal<MktgRunKeptDraft | null>(null);
   protected readonly keptBlock = computed(() => {
+    if (!this.visibleAnswersNotice()) return null;
     const kept = this.keptDraft();
-    return kept && this.visibleAnswersNotice() && kept.questionsId === this.answeredQuestionsId() ? kept : null;
+    if (kept && kept.questionsId === this.answeredQuestionsId()) return kept;
+    // The private run page keeps its block with the notice it retains, so both pages draw the draft right under the line.
+    return this.retainedAnswersNotice()?.kept ?? null;
   });
   protected readonly publicQuestions = this.initPublicQuestions();
 
@@ -452,7 +455,7 @@ export class MktgRunProgressComponent {
                 if (readerSubject && readerSubject !== this.user.user()?.sub) return;
                 const previous = this.loaded();
                 const shown = this.publicQuestions();
-                const answeredElsewhere: { runId: string; questionsId: string }[] = [];
+                const answeredElsewhere: { runId: string; questionsId: string; landed: boolean }[] = [];
                 this.loadedSelector.set(request.runId);
                 // A poll of the same block must not reset the stepper or overwrite unsent edits.
                 this.loaded.set({
@@ -483,12 +486,12 @@ export class MktgRunProgressComponent {
                       this.publicDraftTyped(held) &&
                       mktgRunMovedPast(row)
                     )
-                      answeredElsewhere.push({ runId: row.runId, questionsId: held });
+                      answeredElsewhere.push({ runId: row.runId, questionsId: held, landed: row.state === 'completed' });
                     return row;
                   }),
                 });
                 // Collected inside the map, acted on after it: the notice must not re-enter the state being set.
-                for (const { runId, questionsId } of answeredElsewhere) this.noticeAnsweredElsewhere(runId, questionsId);
+                for (const { runId, questionsId, landed } of answeredElsewhere) this.noticeAnsweredElsewhere(runId, questionsId, landed);
                 this.loadedSubject.set(readerSubject);
                 this.observed.emit({ ...cycle, detail: this.loaded() ?? cycle.detail });
                 if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) return;
@@ -561,11 +564,12 @@ export class MktgRunProgressComponent {
     if (!runId || (this.runId() && this.runId() !== runId) || (this.selectedRun() && this.selectedRun()?.runId !== runId)) return;
     this.answersError.set('');
     this.answersNotice.set(notice);
-    if (notice) this.alreadyAnswered.emit({ runId, questionsId, message: notice });
+    // A send that lost keeps what was typed, read-only, under the notice; an accepted send keeps nothing.
+    const kept = notice ? this.publicDraft() : null;
+    if (notice) this.alreadyAnswered.emit({ runId, questionsId, message: notice, ...(kept && { kept }) });
     this.answeredRunId.set(runId);
     this.answeredQuestionsId.set(questionsId);
-    // A send that lost keeps what was typed, read-only, under the notice; an accepted send keeps nothing.
-    this.keptDraft.set(notice ? this.publicDraft() : null);
+    this.keptDraft.set(kept);
     this.loaded.update(
       (detail) =>
         detail && { ...detail, runs: detail.runs?.map((row) => (row.runId === runId ? { ...row, state: 'writing', pendingQuestions: undefined } : row)) }
@@ -615,18 +619,19 @@ export class MktgRunProgressComponent {
    * browser's answer. The same words and channel as a send that lost: the notice, the answered ids and the kept draft are
    * set and `alreadyAnswered` is emitted; the run row is not rewritten to writing (it already says so) and nothing is
    * re-read. The name is "another window" when this profile's stored attempt shows the block answered there, else the
-   * conflict fallback.
+   * conflict fallback; a run the poll found already completed says the asset is ready rather than being written.
    */
-  private noticeAnsweredElsewhere(runId: string, questionsId: string): void {
+  private noticeAnsweredElsewhere(runId: string, questionsId: string, landed: boolean): void {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === this.agentKey());
     const sameProfile = !!type?.catalogAgentId && this.attempts.answeredInAnotherWindow(this.project(), type.catalogAgentId, questionsId);
-    const notice = mktgRunAnsweredElsewhereNotice(null, sameProfile);
+    const notice = mktgRunAnsweredElsewhereNotice(null, sameProfile, landed);
+    const kept = this.publicDraft();
     this.answersError.set('');
     this.answersNotice.set(notice);
-    this.alreadyAnswered.emit({ runId, questionsId, message: notice });
+    this.alreadyAnswered.emit({ runId, questionsId, message: notice, ...(kept && { kept }) });
     this.answeredRunId.set(runId);
     this.answeredQuestionsId.set(questionsId);
-    this.keptDraft.set(this.publicDraft());
+    this.keptDraft.set(kept);
   }
 
   /** Only the exact scoped server conflict can retire this browser's answer form. */

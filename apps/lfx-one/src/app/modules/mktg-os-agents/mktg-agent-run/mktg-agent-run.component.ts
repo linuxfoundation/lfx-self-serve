@@ -373,15 +373,10 @@ export class MktgAgentRunComponent {
   protected readonly progressHeadless = computed(
     () => this.publicIdentityPending() || this.checkingRun() || this.phase() === 'questions' || (!!this.errorText() && !this.navigation())
   );
-  /** The block kept read-only under the answered notice, with the draft typed into it. */
-  protected readonly keptQuestions = computed(() => {
+  /** The block kept read-only under the answered notice; the progress reader draws it, with the draft, from that notice. */
+  private readonly keptQuestions = computed(() => {
     const kept = this.questionsPending();
     return this.questionsLocked() && kept && this.answeredNotice()?.questionsId === kept.questionsId ? kept : null;
-  });
-  protected readonly keptDraft = computed(() => {
-    const kept = this.keptQuestions();
-    const draft = this.privateDraft();
-    return kept && draft?.questionsId === kept.questionsId ? draft.draft : null;
   });
   /** The row ids of every `url-list` field, in display order, keyed by field key. */
   protected readonly linkRows = signal<Record<string, string[]>>({});
@@ -814,7 +809,13 @@ export class MktgAgentRunComponent {
 
   protected onAlreadyAnswered(notice: MktgRunAnsweredNotice): void {
     if (notice.runId !== this.publicRunId()) return;
-    this.answeredNotice.set(notice);
+    // The reader echoes a notice this page gave it without the kept block; the block heard first stays.
+    const current = this.answeredNotice();
+    const scoped = current?.questionsId === notice.questionsId && current.kept && !notice.kept ? { ...notice, kept: current.kept } : notice;
+    this.answeredNotice.set(scoped);
+    // Remembered so the document the run lands on shows the same line, with the draft, beside the produced revision.
+    const projectUid = this.publicProject();
+    if (projectUid) this.concurrentAnswers.remember(projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scoped);
   }
 
   protected onRetryPublicLanding(): void {
@@ -915,17 +916,23 @@ export class MktgAgentRunComponent {
     // window's answer. A typed draft hears it as the send-time 409 does; an untouched form moves on quietly below.
     const held = this.questionsPending();
     if (held && !this.questionsLocked() && !this.answersSending() && this.privateDraftTyped(held.questionsId) && (run ? mktgRunMovedPast(run) : true)) {
-      this.hearAnswered(held, held.attempt.runId || this.publicRunId(), projectUid, agentId, mktgRunAnsweredElsewhereNotice(null, answeredInAnotherWindow));
+      const landed = !run || run.state === 'completed';
+      this.hearAnswered(
+        held,
+        held.attempt.runId || this.publicRunId(),
+        projectUid,
+        agentId,
+        mktgRunAnsweredElsewhereNotice(null, answeredInAnotherWindow, landed)
+      );
       return;
     }
     // A kept block stays until a newer round or another run; the run's later states change nothing below it.
     if (this.keptQuestions()) return;
-    // Server writing/storing/landed (or a new questions block) beats a stale local questions draft.
-    if (this.phase() === 'questions' || this.questionsPending()) {
-      if (!this.answersSending()) {
-        this.generationSub?.unsubscribe();
-        this.generationSub = null;
-      }
+    // Server writing/storing/landed (or a new questions block) beats a stale local questions draft — unless this window's
+    // own send is open: the server claims the block before it replies, so the reply, or its 409, settles the block.
+    if ((this.phase() === 'questions' || this.questionsPending()) && !this.answersSending()) {
+      this.generationSub?.unsubscribe();
+      this.generationSub = null;
       this.clearQuestions();
       this.phase.set('running');
     }
@@ -2550,6 +2557,8 @@ export class MktgAgentRunComponent {
   private hearAnswered(pending: MktgRunQuestionsPending, runId: string, projectUid: string, agentId: string, notice: string): void {
     this.answersSending.set(false);
     this.hasAcknowledgement.set(true);
+    // A poll may have cleared the block while the send was open; the block heard about is the one kept.
+    this.questionsPending.set(pending);
     this.questionsLocked.set(true);
     this.phase.set('running');
     this.checkingRun.set(false);
@@ -2564,7 +2573,13 @@ export class MktgAgentRunComponent {
         pendingQuestions: undefined,
         answeredQuestionsId: pending.questionsId,
       });
-    const scopedNotice = { runId, questionsId: pending.questionsId, message: notice };
+    const draft = this.privateDraft();
+    const kept: MktgRunKeptDraft = {
+      questionsId: pending.questionsId,
+      questions: pending.questions,
+      draft: draft?.questionsId === pending.questionsId ? draft.draft : { index: 0, answers: {} },
+    };
+    const scopedNotice: MktgRunAnsweredNotice = { runId, questionsId: pending.questionsId, message: notice, kept };
     this.answeredNotice.set(scopedNotice);
     this.concurrentAnswers.remember(projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scopedNotice);
     this.discoveredRunId.set(runId);

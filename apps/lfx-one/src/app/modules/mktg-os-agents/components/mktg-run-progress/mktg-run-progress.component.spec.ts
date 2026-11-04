@@ -363,11 +363,13 @@ describe('MktgRunProgressComponent', () => {
     );
     await fixture.whenStable();
     expect(text()).toContain('Synthetic writer already answered these — the agent is writing. Your draft is kept below.');
-    expect(announced).toHaveBeenCalledWith({
-      runId,
-      questionsId: waiting.pendingQuestions.questionsId,
-      message: 'Synthetic writer already answered these — the agent is writing. Your draft is kept below.',
-    });
+    expect(announced).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId,
+        questionsId: waiting.pendingQuestions.questionsId,
+        message: 'Synthetic writer already answered these — the agent is writing. Your draft is kept below.',
+      })
+    );
     expect(answer).toHaveBeenCalledOnce();
   });
 
@@ -547,6 +549,8 @@ describe('MktgRunProgressComponent', () => {
     };
 
     it.each(['writing', 'storing', 'completed'] as const)('says so when a poll shows the held block moved to %s', async (state) => {
+      // A run the poll already finds landed says the asset is ready; one still being written says so.
+      const expected = state === 'completed' ? notice.replace('the agent is writing', 'the asset is ready') : notice;
       await setup();
       read.mockReturnValue(of(detail([waiting])));
       const announced = vi.fn();
@@ -554,7 +558,7 @@ describe('MktgRunProgressComponent', () => {
       await fixture.whenStable();
       await type('Synthetic edited audience');
       await poll([{ ...run, state }]);
-      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')?.textContent?.trim()).toBe(notice);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]')?.textContent?.trim()).toBe(expected);
       // The typed draft stays under the notice, read-only: disabled box with the typed text, no Send, the stepper still there.
       const kept = fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]');
       expect(kept).not.toBeNull();
@@ -562,12 +566,43 @@ describe('MktgRunProgressComponent', () => {
       expect(kept.querySelector('textarea').value).toBe('Synthetic edited audience');
       expect(kept.querySelector('[data-testid="mktg-run-questions-send"]')).toBeNull();
       expect(kept.querySelector('[data-testid="mktg-run-questions-chips"]')).not.toBeNull();
-      expect(announced).toHaveBeenCalledExactlyOnceWith({ runId, questionsId: waiting.pendingQuestions.questionsId, message: notice });
+      // The notice travels with the kept block, so the page that hears it (and the document the run lands on) can keep the draft.
+      expect(announced).toHaveBeenCalledExactlyOnceWith({
+        runId,
+        questionsId: waiting.pendingQuestions.questionsId,
+        message: expected,
+        kept: expect.objectContaining({ questionsId: waiting.pendingQuestions.questionsId, questions: waiting.pendingQuestions.questions }),
+      });
       expect(answer).not.toHaveBeenCalled();
       // The next poll of the same writing run says it once and keeps the block.
       await poll([{ ...run, state }]);
       expect(announced).toHaveBeenCalledOnce();
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-locked"]')).not.toBeNull();
+    });
+
+    it('draws the block a retained notice carries right under the line, as the private run page relies on', async () => {
+      await setup();
+      read.mockReturnValue(of(detail([{ ...run, state: 'writing' }])));
+      fixture.componentRef.setInput('retainedAnswersNotice', {
+        runId,
+        questionsId: waiting.pendingQuestions.questionsId,
+        message: notice,
+        kept: {
+          questionsId: waiting.pendingQuestions.questionsId,
+          questions: waiting.pendingQuestions.questions,
+          draft: { index: 0, answers: { audience: 'Synthetic private goal' }, dirty: true },
+        },
+      });
+      await fixture.whenStable();
+      const note = fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-answered-note"]');
+      expect(note?.textContent?.trim()).toBe(notice);
+      const kept = note.nextElementSibling;
+      expect(kept?.getAttribute('data-testid')).toBe('mktg-run-questions-locked');
+      expect(kept.querySelector('textarea').disabled).toBe(true);
+      expect(kept.querySelector('textarea').value).toBe('Synthetic private goal');
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-live"]')?.compareDocumentPosition(kept) & Node.DOCUMENT_POSITION_PRECEDING
+      ).toBeTruthy();
     });
 
     it('names the other window when this profile answered the block there', async () => {

@@ -60,6 +60,7 @@ test.describe('Marketing OS Documents structure', () => {
       await expect(page.getByTestId('mktg-run-progress-questions-refresh')).toHaveCount(0);
       await expect(page.getByTestId('mktg-run-public-progress').getByRole('button', { name: 'Refresh' })).toHaveCount(0);
       await expect(page.getByTestId('mktg-run-progress-owner-note')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-run-public-progress')).not.toContainText('write access');
       await expect(page.getByTestId('mktg-run-public-progress').locator('h1')).toHaveCount(1);
       await expect(page.locator('main main')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
