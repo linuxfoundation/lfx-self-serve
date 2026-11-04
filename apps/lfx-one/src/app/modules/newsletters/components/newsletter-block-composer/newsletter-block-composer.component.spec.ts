@@ -4,7 +4,8 @@
 import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DomSanitizer } from '@angular/platform-browser';
-import { NewsletterComposerBlock, NewsletterLayout } from '@lfx-one/shared/interfaces';
+import { NewsletterComposerBlock, NewsletterLayout, NewsletterTemplateManifest } from '@lfx-one/shared/interfaces';
+import { ConfirmationService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,8 +59,9 @@ describe('NewsletterBlockComposerComponent — Outline keyboard nesting', () => 
         { provide: PLATFORM_ID, useValue: 'server' },
         {
           provide: NewsletterManifestService,
-          useValue: { ensureLoaded: () => of(null), getBlock, manifest: signal(null), loading: signal(false), error: signal(null) },
+          useValue: { ensureLoaded: () => of(null), getBlock, manifest: signal(null), loading: signal(false), error: signal(null), templates: signal([]) },
         },
+        ConfirmationService,
         { provide: NewsletterService, useValue: {} },
         // initServerRender's debounced pipeline reads activeContextUid() before the
         // platform guard, so the stub must expose it or the timer throws post-assert.
@@ -138,5 +140,109 @@ describe('NewsletterBlockComposerComponent — Outline keyboard nesting', () => 
     api().blocks.set([container('c1', []), leaf('x', 'text'), c2]);
     // A pointer user could drop x into c2; the keyboard control must reach it too.
     expect(nestTargets().get('x')).toBe(c2);
+  });
+});
+
+/**
+ * Starter blocks and the template picker. Runs on the server platform, so the
+ * manifest fetch in ngOnInit stays dormant and the private methods are driven
+ * directly; ensureLoaded returns the manifest under test.
+ */
+describe('NewsletterBlockComposerComponent — starter blocks and template picker', () => {
+  let fixture: ComponentFixture<NewsletterBlockComposerComponent>;
+  let component: NewsletterBlockComposerComponent;
+  let confirm: ReturnType<typeof vi.fn>;
+  let manifest: NewsletterTemplateManifest;
+
+  const entry = (blockType: string) => ({ block_type: blockType, label: blockType, category: 'Body', schema: {}, template: '' });
+  const api = () =>
+    component as unknown as {
+      blocks: { set: (b: NewsletterComposerBlock[]) => void; (): NewsletterComposerBlock[] };
+      selectedTemplateKey: () => string;
+      templateForm: { controls: { template: { value: string; setValue: (v: string, o?: unknown) => void } } };
+    } & Record<string, (...args: unknown[]) => unknown>;
+  const types = (): string[] =>
+    api()
+      .blocks()
+      .map((b) => b.block_type);
+
+  beforeEach(() => {
+    manifest = {
+      wrapper_key: 'w',
+      blocks: [entry('header'), entry('intro'), entry('footer')],
+      starter_blocks: [{ block_type: 'intro' }, { block_type: 'missing' }, { block_type: 'header' }],
+    } as unknown as NewsletterTemplateManifest;
+    TestBed.configureTestingModule({
+      imports: [NewsletterBlockComposerComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'server' },
+        {
+          provide: NewsletterManifestService,
+          useValue: {
+            ensureLoaded: () => of(manifest),
+            getBlock: () => undefined,
+            manifest: signal(null),
+            loading: signal(false),
+            error: signal(null),
+            templates: signal([]),
+          },
+        },
+        ConfirmationService,
+        { provide: NewsletterService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => 'p1' } },
+        { provide: NewsletterRendererService, useValue: { collectEditableFields: () => new Set() } },
+        { provide: DomSanitizer, useValue: { bypassSecurityTrustHtml: (v: string) => v, sanitize: (_: unknown, v: string) => v } },
+      ],
+    });
+    fixture = TestBed.createComponent(NewsletterBlockComposerComponent);
+    component = fixture.componentInstance;
+    confirm = vi.spyOn(TestBed.inject(ConfirmationService), 'confirm') as unknown as ReturnType<typeof vi.fn>;
+  });
+
+  it('adds the starter blocks in manifest order, skipping types the palette lacks, and emits once', () => {
+    const emitted: NewsletterLayout[] = [];
+    component.layoutChange.subscribe((l) => emitted.push(l));
+
+    api()['addStarterBlocks'](manifest);
+
+    expect(types()).toEqual(['intro', 'header']);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].blocks.map((b) => b.block_type)).toEqual(['intro', 'header']);
+  });
+
+  it('adds nothing and emits nothing when the manifest has no starters', () => {
+    const emitted: NewsletterLayout[] = [];
+    component.layoutChange.subscribe((l) => emitted.push(l));
+
+    api()['addStarterBlocks']({ ...manifest, starter_blocks: [] });
+
+    expect(types()).toEqual([]);
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('switches an empty canvas to the picked template without asking, and seeds its starters', () => {
+    api()['onTemplatePicked']('aaif-weekly-agentic');
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(api().selectedTemplateKey()).toBe('aaif-weekly-agentic');
+    expect(types()).toEqual(['intro', 'header']);
+  });
+
+  it('asks before replacing blocks, and keeps them when the author declines', () => {
+    api().blocks.set([{ id: 'b1', block_type: 'intro', label: 'Intro', isContainer: false, content: { body: 'kept' } }]);
+    const before = api().selectedTemplateKey();
+
+    api()['onTemplatePicked']('aaif-weekly-agentic');
+    expect(confirm).toHaveBeenCalledTimes(1);
+    const options = confirm.mock.calls[0][0] as { reject: () => void; accept: () => void };
+    options.reject();
+
+    expect(api().selectedTemplateKey()).toBe(before);
+    expect(api().templateForm.controls.template.value).toBe(before);
+    expect(api().blocks()[0].content['body']).toBe('kept');
+
+    options.accept();
+    expect(api().selectedTemplateKey()).toBe('aaif-weekly-agentic');
+    expect(types()).toEqual(['intro', 'header']);
   });
 });

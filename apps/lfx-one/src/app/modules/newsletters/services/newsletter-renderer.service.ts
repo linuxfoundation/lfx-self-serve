@@ -468,7 +468,7 @@ const TAG_MAP: Record<string, TagMapping> = {
 const INTRINSIC_TAGS = new Set(['div', 'span', 'p', 'strong', 'em', 'b', 'i', 'u', 'br', 'ul', 'ol', 'li', 'small']);
 
 /** Elements the canvas never renders, children included. The server still sends them in the email. */
-const DROPPED_TAGS = new Set(['style', 'script', 'head', 'title', 'meta', 'link']);
+const DROPPED_TAGS = new Set(['style', 'script', 'head', 'title', 'meta']);
 
 /** Self-closing HTML elements (no children, no close tag). */
 const VOID_TAGS = new Set(['img', 'hr', 'br']);

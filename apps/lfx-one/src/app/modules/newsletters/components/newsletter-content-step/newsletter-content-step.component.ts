@@ -60,6 +60,9 @@ export class NewsletterContentStepComponent implements OnInit {
   // Gates the block composer to the pilot projects. When false, only the simple
   // rich-text editor is available and the Blocks/Simple toggle is hidden.
   public readonly blocksEnabled = input<boolean>(false);
+  // True until the draft is first saved. Only a new draft opens in blocks with
+  // starter blocks; an empty saved draft (e.g. the author chose Basic) does not.
+  public readonly newDraft = input<boolean>(false);
   // The newsletter's owning project UID, threaded to the block composer so its
   // render-preview call is scoped to the newsletter's project (which an edit
   // route can carry distinct from the ambient lens context), not the active lens.
@@ -74,8 +77,9 @@ export class NewsletterContentStepComponent implements OnInit {
   protected readonly generateDrawerVisible = signal<boolean>(false);
 
   // === Writable signals ===
-  // Which body editor is showing. Defaults to the basic (simple) editor for a
-  // new draft; ngOnInit reseeds it to blocks when a loaded draft carries a layout.
+  // Which body editor is showing. Defaults to the basic (simple) editor.
+  // ngOnInit switches to blocks for a draft with a layout, or for a new unsaved
+  // draft on desktop (with starter blocks).
   protected readonly editorMode = signal<NewsletterEditorMode>('simple');
   // True when a new draft opened straight into blocks, so the composer starts
   // from the template set's starter blocks.
@@ -136,13 +140,13 @@ export class NewsletterContentStepComponent implements OnInit {
     }
     // Infer the editor from the draft. A PRESENT layout means the composer, even
     // after its last block is removed (an empty-but-present layout is still
-    // authoritative upstream). A draft with an authored html body stays on the
-    // basic editor. A draft with neither is new, so it opens in blocks with the
-    // template set's starter blocks (desktop only).
+    // authoritative upstream). Any other saved draft stays on the basic editor.
+    // A new, unsaved draft with no body opens in blocks with the template set's
+    // starter blocks (desktop only).
     const layout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
     if (layout !== null) {
       this.editorMode.set('blocks');
-    } else if (!this.isMobile() && stripHtml(this.form().get('bodyHtml')?.value ?? '').length === 0) {
+    } else if (this.newDraft() && !this.isMobile() && stripHtml(this.form().get('bodyHtml')?.value ?? '').length === 0) {
       this.seedStarterBlocks.set(true);
       this.editorMode.set('blocks');
     }

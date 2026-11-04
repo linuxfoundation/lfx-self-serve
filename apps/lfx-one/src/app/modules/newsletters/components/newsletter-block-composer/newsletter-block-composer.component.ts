@@ -25,8 +25,11 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import {
   NEWSLETTER_DEFAULT_TEMPLATE_KEY,
+  NEWSLETTER_FALLBACK_TEMPLATE_KEY,
+  NEWSLETTER_TEMPLATE_LABELS,
   NEWSLETTER_BODY_HTML_MAX_BYTES,
   NEWSLETTER_GMAIL_WARN_BYTES,
   NEWSLETTER_SPACING_DEFAULT,
@@ -45,10 +48,13 @@ import {
   NewsletterFieldSchema,
   NewsletterLayout,
   NewsletterTemplateManifest,
+  NewsletterTemplateOption,
 } from '@lfx-one/shared/interfaces';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, debounceTime, map, of, switchMap } from 'rxjs';
 
 import { NewsletterBlockFieldsComponent } from '../newsletter-block-fields/newsletter-block-fields.component';
@@ -91,12 +97,13 @@ import { NewsletterRendererService } from '../../services/newsletter-renderer.se
  */
 @Component({
   selector: 'lfx-newsletter-block-composer',
-  imports: [DragDropModule, ReactiveFormsModule, InputTextComponent, NewsletterBlockFieldsComponent],
+  imports: [DragDropModule, ReactiveFormsModule, ConfirmDialogModule, InputTextComponent, SelectComponent, NewsletterBlockFieldsComponent],
   templateUrl: './newsletter-block-composer.component.html',
   styleUrl: './newsletter-block-composer.component.scss',
 })
 export class NewsletterBlockComposerComponent implements OnInit {
   // === Services ===
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly manifestService = inject(NewsletterManifestService);
   private readonly newsletterService = inject(NewsletterService);
@@ -131,6 +138,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // Palette search. Backed by a FormControl (LFX wrappers are FormGroup-bound);
   // `blockSearch` mirrors the control value as a signal for the filter computed.
   protected readonly searchForm = new FormGroup({ search: new FormControl<string>('', { nonNullable: true }) });
+  // The template set picker. Its value follows selectedTemplateKey.
+  protected readonly templateForm = new FormGroup({ template: new FormControl<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY, { nonNullable: true }) });
 
   // === Writable Signals ===
   protected readonly isBrowser = signal<boolean>(false);
@@ -164,10 +173,10 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected readonly leftPanelCollapsed = signal<boolean>(false);
   protected readonly fieldsCollapsed = signal<boolean>(false);
   // The block library (embedded template set) the palette + emitted layout use.
-  // Seeded once in ngOnInit from the saved layout's `template_key`, then the
-  // `templateKey` input, then the default. There is no library picker yet, so a
-  // new draft uses the default library; choosing a library is a follow-up.
+  // Seeded in ngOnInit from the saved layout's `template_key`, then the
+  // `templateKey` input, then the default. The author changes it with the picker.
   protected readonly selectedTemplateKey = signal<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
+  protected readonly templateOptions: Signal<NewsletterTemplateOption[]> = this.initTemplateOptions();
 
   // The canvas container — the positioned ancestor the floating toolbar is
   // measured against, and the root we scan for `data-nl-field` elements.
@@ -360,9 +369,13 @@ export class NewsletterBlockComposerComponent implements OnInit {
     // same default library (aaif-user-community) and its chrome, and a blank key
     // would otherwise build a `/templates//manifest` request that 404s the palette.
     // Persisting the resolved key (toLayout) keeps save + render consistent.
-    const seededKey = seed?.template_key?.trim();
+    // A saved layout with blocks but no key renders in the service's fallback
+    // set, so it opens in that set rather than the new-draft default.
+    const seededKey = seed?.template_key?.trim() || (seed?.blocks?.length ? NEWSLETTER_FALLBACK_TEMPLATE_KEY : '');
     const activeKey = seededKey || this.templateKey()?.trim() || NEWSLETTER_DEFAULT_TEMPLATE_KEY;
     this.selectedTemplateKey.set(activeKey);
+    this.templateForm.controls.template.setValue(activeKey, { emitEvent: false });
+    this.templateForm.controls.template.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((key) => this.onTemplatePicked(key));
 
     if (seed?.blocks?.length) {
       this.blocks.set(seed.blocks.map((block) => this.hydrate(block)));
@@ -385,6 +398,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
           this.reconcileContainers(manifest);
           if (this.seedStarterBlocks() && this.blocks().length === 0) this.addStarterBlocks(manifest);
         });
+      this.manifestService.loadTemplates(this.projectUid()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
     }
   }
 
@@ -856,6 +870,18 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * straight on the element; Angular discards and recreates the element on the
    * NEXT (non-frozen) re-render, which drops the old listeners with it.
    */
+  /** Picker options: the service's template sets, plus the active one if the list has not loaded. */
+  private initTemplateOptions(): Signal<NewsletterTemplateOption[]> {
+    return computed(() => {
+      const active = this.selectedTemplateKey();
+      const options = this.manifestService.templates().map((t) => ({ label: NEWSLETTER_TEMPLATE_LABELS[t.key] ?? t.label, value: t.key }));
+      if (!options.some((o) => o.value === active)) {
+        options.unshift({ label: NEWSLETTER_TEMPLATE_LABELS[active] ?? humanizeFieldKey(active), value: active });
+      }
+      return options;
+    });
+  }
+
   private initInlineEditingEffect(): void {
     afterRenderEffect(() => {
       if (!isPlatformBrowser(this.platformId)) return;
@@ -1436,7 +1462,42 @@ export class NewsletterBlockComposerComponent implements OnInit {
     });
   }
 
-  /** Project the canvas into a NewsletterLayout and emit it. */
+  /**
+   * The author picked a template set. Its block types differ from the current
+   * set's, so the canvas is cleared and restarted from the new set's starter
+   * blocks, after a confirm when the canvas has blocks.
+   */
+  private onTemplatePicked(key: string): void {
+    if (!key || key === this.selectedTemplateKey()) return;
+    if (this.blocks().length === 0) {
+      this.switchTemplate(key);
+      return;
+    }
+    this.confirmationService.confirm({
+      key: 'newsletter-composer-template',
+      header: 'Change template?',
+      message: "Changing the template removes the blocks on the canvas and starts from the new template's starter blocks. Continue?",
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Change template',
+      rejectLabel: 'Keep current',
+      accept: () => this.switchTemplate(key),
+      reject: () => this.templateForm.controls.template.setValue(this.selectedTemplateKey(), { emitEvent: false }),
+    });
+  }
+
+  private switchTemplate(key: string): void {
+    this.selectedTemplateKey.set(key);
+    this.selectedBlockId.set(null);
+    this.blocks.set([]);
+    this.emit();
+    this.manifestService
+      .ensureLoaded(key, this.projectUid())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((manifest) => {
+        if (manifest && this.selectedTemplateKey() === key && this.blocks().length === 0) this.addStarterBlocks(manifest);
+      });
+  }
+
   /** Add the manifest's starter blocks in order, skipping any type the palette lacks. */
   private addStarterBlocks(manifest: NewsletterTemplateManifest): void {
     const starters = (manifest.starter_blocks ?? [])
@@ -1448,6 +1509,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
     this.emit();
   }
 
+  /** Project the canvas into a NewsletterLayout and emit it. */
   private emit(): void {
     this.layoutChange.emit(this.toLayout());
   }

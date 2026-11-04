@@ -977,6 +977,12 @@ export interface NewsletterTemplateInfo {
   label: string;
 }
 
+/** One option in the composer's template set picker. */
+export interface NewsletterTemplateOption {
+  label: string;
+  value: string;
+}
+
 /** Response of GET /projects/{uid}/newsletters/templates. */
 export interface NewsletterTemplatesResponse {
   templates: NewsletterTemplateInfo[];

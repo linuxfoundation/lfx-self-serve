@@ -81,7 +81,7 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
 
   // Build the fixture after matchMedia is stubbed so ngOnInit reads the intended
   // viewport. blocksEnabled is on (the composer's pilot gate) for every case here.
-  async function createWith(form: FormGroup): Promise<void> {
+  async function createWith(form: FormGroup, opts: { newDraft?: boolean } = {}): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [NewsletterContentStepComponent],
       providers: [provideNoopAnimations(), ConfirmationService, { provide: PLATFORM_ID, useValue: 'browser' }],
@@ -100,6 +100,7 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
     fixture = TestBed.createComponent(NewsletterContentStepComponent);
     fixture.componentRef.setInput('form', form);
     fixture.componentRef.setInput('blocksEnabled', true);
+    fixture.componentRef.setInput('newDraft', opts.newDraft ?? false);
     await fixture.whenStable();
     fixture.detectChanges();
   }
@@ -142,7 +143,7 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
   it('opens a new draft in blocks with the starter blocks on desktop', async () => {
     stubMatchMedia(false);
     StubBlockComposerComponent.seedStarters = false;
-    await createWith(makeForm(null));
+    await createWith(makeForm(null), { newDraft: true });
 
     expect(q('newsletter-content-composer')).not.toBeNull();
     expect(StubBlockComposerComponent.seedStarters).toBe(true);
@@ -152,7 +153,16 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
     stubMatchMedia(false);
     const form = makeForm(null);
     form.get('bodyHtml')!.setValue('<p>Written in the basic editor</p>');
-    await createWith(form);
+    await createWith(form, { newDraft: true });
+
+    expect(fixture.nativeElement.querySelector('lfx-rich-editor')).not.toBeNull();
+    expect(q('newsletter-content-composer')).toBeNull();
+  });
+
+  it('keeps an empty saved draft on the basic editor', async () => {
+    // e.g. the author switched to Basic, which clears both bodies, then came back.
+    stubMatchMedia(false);
+    await createWith(makeForm(null));
 
     expect(fixture.nativeElement.querySelector('lfx-rich-editor')).not.toBeNull();
     expect(q('newsletter-content-composer')).toBeNull();

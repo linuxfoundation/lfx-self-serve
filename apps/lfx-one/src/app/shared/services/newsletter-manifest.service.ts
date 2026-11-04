@@ -47,6 +47,7 @@ export class NewsletterManifestService {
   private readonly resolvedKeys = new Set<string>();
   // The template-catalog request, shared across subscribers once issued.
   private templatesStream: Observable<NewsletterTemplateInfo[]> | null = null;
+  private templatesUid: string | null = null;
   // The latest template key any caller requested. Every shared-state write in
   // load() is gated on it, so a slow earlier switch's response can't publish its
   // manifest / loading / error over a newer switch. (The composer's own sequence
@@ -80,20 +81,20 @@ export class NewsletterManifestService {
    * active library — rather than surfacing an error, so a missing catalog
    * endpoint never blocks composing.
    */
-  public loadTemplates(): Observable<NewsletterTemplateInfo[]> {
+  public loadTemplates(projectUid?: string | null): Observable<NewsletterTemplateInfo[]> {
     if (!isPlatformBrowser(this.platformId)) {
       return of([]);
     }
-    if (this.templatesStream) {
+    const uid = projectUid || this.projectContext.activeContextUid();
+    if (!uid) {
+      return of([]);
+    }
+    if (this.templatesStream && this.templatesUid === uid) {
       return this.templatesStream;
     }
 
-    const projectUid = this.projectContext.activeContextUid();
-    if (!projectUid) {
-      return of([]);
-    }
-
-    this.templatesStream = this.http.get<NewsletterTemplatesResponse>(`/api/projects/${encodeURIComponent(projectUid)}/newsletters/templates`).pipe(
+    this.templatesUid = uid;
+    this.templatesStream = this.http.get<NewsletterTemplatesResponse>(`/api/projects/${encodeURIComponent(uid)}/newsletters/templates`).pipe(
       map((response) => response.templates ?? []),
       tap((templates) => this.templatesSignal.set(templates)),
       catchError((err: unknown) => {

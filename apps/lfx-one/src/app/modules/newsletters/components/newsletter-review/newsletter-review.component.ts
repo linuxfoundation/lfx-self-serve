@@ -8,7 +8,12 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
-import { NEWSLETTER_DEFAULT_TEMPLATE_KEY, NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS, NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES } from '@lfx-one/shared/constants';
+import {
+  NEWSLETTER_FALLBACK_TEMPLATE_KEY,
+  NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS,
+  NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES,
+  NEWSLETTER_TEMPLATE_LABELS,
+} from '@lfx-one/shared/constants';
 import { NewsletterLayout, NewsletterScheduleWindowError } from '@lfx-one/shared/interfaces';
 import { humanizeFieldKey, stripHtml } from '@lfx-one/shared/utils';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
@@ -109,12 +114,12 @@ export class NewsletterReviewComponent implements OnInit {
     const layout = this.bodyLayoutValue();
     if (!layout) return ''; // html-only draft: no library
     // A keyless layout is NOT a neutral render: newsletter-service resolves an
-    // omitted/blank key to the default library (aaif-user-community) and renders
-    // its chrome. Label it with that default library's curated name so the review
-    // card matches what recipients actually receive; fall back to a humanized key
-    // when the catalog hasn't loaded.
-    const key = layout.template_key?.trim() || NEWSLETTER_DEFAULT_TEMPLATE_KEY;
-    return this.manifestService.templates().find((t) => t.key === key)?.label ?? humanizeFieldKey(key);
+    // omitted/blank key to its fallback library (aaif-user-community) and renders
+    // its chrome. Label it with that library's name so the review card matches
+    // what recipients actually receive; fall back to a humanized key when the
+    // catalog hasn't loaded.
+    const key = layout.template_key?.trim() || NEWSLETTER_FALLBACK_TEMPLATE_KEY;
+    return NEWSLETTER_TEMPLATE_LABELS[key] ?? this.manifestService.templates().find((t) => t.key === key)?.label ?? humanizeFieldKey(key);
   });
   protected readonly subjectDisplay = computed(() => this.subjectValue().trim() || 'Untitled draft');
   protected readonly hasSubject = computed(() => this.subjectValue().trim().length > 0);

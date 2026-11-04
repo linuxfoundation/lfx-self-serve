@@ -71,6 +71,12 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
   protected readonly form = signal<FormGroup | null>(null);
   /** Bumped on every form rebuild so the field rows remount. lfx-rich-editor binds to its first control only. */
   protected readonly formVersion = signal(0);
+  // A new array on every rebuild. @for only re-reads its track keys when the
+  // collection changes, and two blocks of one type share the same field entries.
+  protected readonly fieldRows = computed(() => {
+    this.formVersion();
+    return [...this.fieldEntries()];
+  });
 
   // === Computed Signals ===
   // The non-slot fields to render, flattened with their key (ordered by schema).

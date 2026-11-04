@@ -71,11 +71,21 @@ export const NEWSLETTER_SPACING_MARGIN_KEY = '_spacing_margin';
 export const NEWSLETTER_SPACING_KEYS = [NEWSLETTER_SPACING_PADDING_KEY, NEWSLETTER_SPACING_MARGIN_KEY] as const;
 export const NEWSLETTER_SPACING_DEFAULT = '0px';
 
-// Fallback embedded template set the block composer loads when a newsletter
-// carries no explicit `template_key` (e.g. a brand-new draft). The full AAIF
-// set is the render superset in the newsletter service, so it's the safe
-// default; a draft with a stored `template_key` uses that instead.
-export const NEWSLETTER_DEFAULT_TEMPLATE_KEY = 'aaif-user-community';
+// Template set a new draft starts with: the AAIF members newsletter (the ED
+// weekly). The author can pick another set in the composer.
+export const NEWSLETTER_DEFAULT_TEMPLATE_KEY = 'aaif-member';
+
+// Template set the newsletter service renders a layout with no `template_key`
+// in (declarative.FallbackTemplateKey). Kept apart from the default above so a
+// saved keyless layout still labels and loads as the service renders it.
+export const NEWSLETTER_FALLBACK_TEMPLATE_KEY = 'aaif-user-community';
+
+// Picker labels for the known template sets. Unknown keys use the service's label.
+export const NEWSLETTER_TEMPLATE_LABELS: Record<string, string> = {
+  'aaif-member': 'AAIF members (ED weekly)',
+  'aaif-user-community': 'AAIF user community',
+  'aaif-weekly-agentic': 'AAIF weekly agentic',
+};
 
 // UI-enforced minimum lead time for arming a schedule (LFXV2-2685). Must be
 // >= the upstream's *effective* floor, which the send orchestrator computes

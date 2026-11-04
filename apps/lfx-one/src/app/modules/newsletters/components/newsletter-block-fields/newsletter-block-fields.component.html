@@ -9,7 +9,7 @@
           <p class="text-sm text-gray-500" data-testid="newsletter-composer-fields-none">This block has no editable fields.</p>
         }
 
-        @for (entry of fieldEntries(); track trackByFormKey($index, entry)) {
+        @for (entry of fieldRows(); track trackByFormKey($index, entry)) {
           <div
             role="group"
             [attr.aria-labelledby]="'nlfld-' + entry.key"
