@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import type { Formation, FormationCardView } from '@lfx-one/shared/interfaces';
@@ -11,6 +12,8 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { filter, map, switchMap } from 'rxjs';
+
+import { FormationRecordEditDrawerComponent } from '../formation-record-edit-drawer/formation-record-edit-drawer.component';
 
 /**
  * The Formation sidebar card (GH-1955) — sub-stage pill, announcement date, slug, and — for
@@ -64,7 +67,7 @@ import { filter, map, switchMap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-formation-card',
-  imports: [TagComponent, SkeletonModule],
+  imports: [ButtonComponent, FormationRecordEditDrawerComponent, TagComponent, SkeletonModule],
   templateUrl: './formation-card.component.html',
 })
 export class FormationCardComponent {
@@ -84,6 +87,19 @@ export class FormationCardComponent {
    * from `ProjectContextService`, as on the project dashboard sidebar.
    */
   public readonly formation = input<Formation | null>(null);
+
+  /**
+   * Whether to offer the stage / legal-entity edit panel (#5134) — the checklist response's
+   * `can_edit_record` (writer ∧ formation-team member). Only the two checklist hosts pass it; the
+   * project dashboard sidebar leaves it `false`, so that surface keeps the read-only card.
+   */
+  public readonly canEditRecord = input<boolean>(false);
+  /** Emitted after a successful save so the host reloads the checklist and the card re-renders the new stage. */
+  public readonly recordSaved = output<void>();
+
+  protected readonly editVisible = signal(false);
+  /** Open required ("gating") items, from the checklist response already on the page — shown in the confirmation step. */
+  protected readonly openRequiredCount = computed(() => this.formation()?.gating_items_open ?? 0);
 
   protected readonly view: Signal<FormationCardView | null> = this.initView();
   /**

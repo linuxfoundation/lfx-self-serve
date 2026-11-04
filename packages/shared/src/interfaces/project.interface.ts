@@ -45,6 +45,9 @@ export interface Project {
   legal_parent_uid: string;
   autojoin_enabled: boolean;
   formation_date: string;
+  /** Present on the upstream record; optional because older query-service projections omit it. */
+  entity_dissolution_date?: string;
+  entity_formation_document_url?: string;
   logo_url: string;
   repository_url: string;
   website_url: string;

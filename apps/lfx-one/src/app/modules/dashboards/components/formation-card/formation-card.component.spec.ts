@@ -3,6 +3,8 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { MessageService } from 'primeng/api';
 import { Formation, Project, ProjectSettings } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
@@ -158,7 +160,7 @@ describe('FormationCardComponent', () => {
     const links = fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]');
     expect(links).not.toBeNull();
     expect(text()).toContain('Admin only');
-    expect(text()).toContain('Open in admin tool');
+    expect(text()).toContain('Other fields in admin tool');
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-tool-link"]').getAttribute('href')).toBe(
       'https://pcc.dev.platform.linuxfoundation.org/project/sfid-1'
     );
@@ -257,8 +259,14 @@ describe('FormationCardComponent', () => {
       await TestBed.configureTestingModule({
         imports: [FormationCardComponent],
         providers: [
-          { provide: ProjectService, useValue: { getProjectSfid: getProjectSfidSpy, getProject: getProjectSpy } },
+          {
+            provide: ProjectService,
+            useValue: { getProjectSfid: getProjectSfidSpy, getProject: getProjectSpy, getProjectRecord: () => of(project('Formation - Engaged')) },
+          },
           { provide: ProjectContextService, useValue: throwingProjectContext() },
+          // The edit drawer the card hosts toasts through MessageService and animates via p-drawer.
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          provideNoopAnimations(),
         ],
       }).compileComponents();
 
@@ -267,6 +275,34 @@ describe('FormationCardComponent', () => {
       await fixture.whenStable();
       fixture.detectChanges();
     }
+
+    describe('edit action (#5134)', () => {
+      it('offers the edit button only when the host passes canEditRecord', async () => {
+        await renderWithInput(formation());
+        expect(fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"]')).toBeNull();
+
+        fixture.componentRef.setInput('canEditRecord', true);
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"]')).not.toBeNull();
+      });
+
+      it('keeps the read-only copy when editing is not allowed, and drops it when it is', async () => {
+        await renderWithInput(formation());
+        expect(text()).toContain('Stage and legal entity are set by the formation team');
+
+        fixture.componentRef.setInput('canEditRecord', true);
+        fixture.detectChanges();
+        expect(text()).not.toContain('Stage and legal entity are set by the formation team');
+      });
+
+      it('does not offer the edit button without a project uid', async () => {
+        await renderWithInput(formation({ parent_project_uid: undefined }));
+        fixture.componentRef.setInput('canEditRecord', true);
+        fixture.detectChanges();
+
+        expect(fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"]')).toBeNull();
+      });
+    });
 
     it('renders the sub-stage, announcement date and slug from the response, never from the project context', async () => {
       await renderWithInput(formation());

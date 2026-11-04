@@ -3044,12 +3044,14 @@ describe('ProjectService.updateFormationRecord', () => {
     const [, , path, etag, body] = updateWithETag.mock.calls[0];
     expect(path).toBe('/projects/project-1');
     expect(etag).toBe('7');
-    const { uid: _uid, created_at: _created, updated_at: _updated, ...expectedBase } = stored;
+    const expectedBase: Record<string, unknown> = { ...stored };
+    for (const key of ['uid', 'created_at', 'updated_at']) delete expectedBase[key];
     expect(body).toEqual({ ...expectedBase, stage: 'Active', legal_entity_name: 'Cascade Data Inc.' });
   });
 
   it('drops a cleared field and defaults a missing parent_uid to empty', async () => {
-    const { parent_uid: _parent, ...rootProject } = stored;
+    const rootProject: Record<string, unknown> = { ...stored };
+    delete rootProject['parent_uid'];
     fetchWithETag.mockResolvedValue({ data: rootProject, etag: '3' });
 
     await service.updateFormationRecord(req, 'project-1', { legal_entity_name: '' });
