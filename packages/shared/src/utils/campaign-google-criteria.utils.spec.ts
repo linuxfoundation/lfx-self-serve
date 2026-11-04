@@ -292,11 +292,13 @@ describe('googleDeviceBidModifierRefusal', () => {
   });
 });
 
-// Google applies a device bid adjustment under Maximize Clicks and not under Smart Bidding (except a
-// -100% exclusion): https://support.google.com/google-ads/answer/2732132. The sentence must not say
-// Google ignores it under Maximize Clicks, where the refusal is campaign-service's Manual-CPC-only rule.
+// Google applies a device bid adjustment under Maximize Clicks, applies it to the CPA target under
+// Target CPA (https://support.google.com/google-ads/answer/6268632), and does not apply it under the
+// other Smart Bidding strategies (except a -100% exclusion):
+// https://support.google.com/google-ads/answer/2732132. The sentence must not say Google ignores it
+// under Maximize Clicks or Target CPA, where the refusal is campaign-service's Manual-CPC-only rule.
 describe('googleDeviceAdjustmentNotSentSentence', () => {
-  it.each(['maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'])("gives Google's reason under Smart Bidding (%s)", (strategy) => {
+  it.each(['maximize-conversions', 'maximize-conversion-value', 'target-roas'])("gives Google's reason where Google ignores it (%s)", (strategy) => {
     expect(googleDeviceAdjustmentNotSentSentence(strategy)).toBe(
       `Google Ads doesn't apply a device bid adjustment under ${GOOGLE_BIDDING_STRATEGY_LABELS[strategy as keyof typeof GOOGLE_BIDDING_STRATEGY_LABELS]}, except a -100% exclusion, so LFX One doesn't send one.`
     );
@@ -305,6 +307,12 @@ describe('googleDeviceAdjustmentNotSentSentence', () => {
   it("gives LFX One's policy under Maximize Clicks, where Google would apply it", () => {
     const sentence = googleDeviceAdjustmentNotSentSentence('maximize-clicks');
     expect(sentence).toBe("LFX One sends a device bid adjustment only under Manual CPC, so it doesn't send one under Maximize Clicks.");
+    expect(sentence).not.toContain("doesn't apply");
+  });
+
+  it("gives LFX One's policy under Target CPA, where Google adjusts the CPA target", () => {
+    const sentence = googleDeviceAdjustmentNotSentSentence('target-cpa');
+    expect(sentence).toBe("LFX One sends a device bid adjustment only under Manual CPC, so it doesn't send one under Target CPA.");
     expect(sentence).not.toContain("doesn't apply");
   });
 });

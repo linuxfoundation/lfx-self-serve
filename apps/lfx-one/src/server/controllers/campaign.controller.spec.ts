@@ -4469,8 +4469,8 @@ describe('CampaignController.createCampaign cutover', () => {
   const WITH_MANUAL = 'Set it to 0 to exclude the device, remove it, or bid with Manual CPC, then create again.';
   const WITHOUT_MANUAL = 'Set it to 0 to exclude the device or remove it, then create again.';
 
-  // The reason is Google's under Smart Bidding, and LFX One's (campaign-service's) policy under
-  // Maximize Clicks, where Google does apply a device adjustment.
+  // The reason is Google's where Google ignores a device adjustment, and LFX One's (campaign-service's)
+  // policy under Maximize Clicks and Target CPA, where Google does apply one.
   const SMART = (label: string) => `Google Ads doesn't apply a device bid adjustment under ${label}, except a -100% exclusion, so LFX One doesn't send one.`;
   it.each([
     ['display with no strategy, whose default is Maximize Conversions', { campaignTypes: ['display'] }, SMART('Maximize Conversions'), WITHOUT_MANUAL],
@@ -4481,7 +4481,12 @@ describe('CampaignController.createCampaign cutover', () => {
       "LFX One sends a device bid adjustment only under Manual CPC, so it doesn't send one under Maximize Clicks.",
       WITH_MANUAL,
     ],
-    ['search under Target CPA', { biddingStrategy: 'target-cpa', targetCpa: 20 }, SMART('Target CPA'), WITH_MANUAL],
+    [
+      'search under Target CPA',
+      { biddingStrategy: 'target-cpa', targetCpa: 20 },
+      "LFX One sends a device bid adjustment only under Manual CPC, so it doesn't send one under Target CPA.",
+      WITH_MANUAL,
+    ],
   ])('refuses a device bid adjustment on %s, before the dispatcher', async (_label, overrides, reason, wayOut) => {
     await controller.createCampaign(
       buildReq(googleBody({ ...overrides, deviceBidModifiers: [{ device: 'TABLET', bidModifier: 0 }, MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),

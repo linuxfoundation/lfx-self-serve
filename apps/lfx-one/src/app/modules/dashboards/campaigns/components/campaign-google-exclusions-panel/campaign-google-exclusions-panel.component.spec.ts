@@ -145,6 +145,20 @@ describe('CampaignGoogleExclusionsPanelComponent', () => {
     expect(geos.at(-1)).toEqual(['1023191']);
   });
 
+  it('moves focus to the geo target id box when the last chip is removed by keyboard, though the chip row unmounts', async () => {
+    render({ geos: ['DE'] });
+    const dismiss = query('implementation-google-excluded-geo-chip-DE')?.querySelector('[data-testid="ui-chip-dismiss"]') as HTMLButtonElement;
+    dismiss.focus();
+    dismiss.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    dismiss.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(geos.at(-1)).toEqual([]);
+    expect(query('implementation-google-excluded-geo-chips')).toBeNull();
+    expect(document.activeElement).toBe(query('implementation-google-excluded-geo-id')?.querySelector('input'));
+  });
+
   it('shows each error under its section and links it with aria-describedby', () => {
     render({});
     expect(query('implementation-google-demographics')?.getAttribute('aria-describedby')).toBe('google-demographics-hint');

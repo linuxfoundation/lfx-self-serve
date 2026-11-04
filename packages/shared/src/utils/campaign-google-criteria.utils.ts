@@ -22,7 +22,7 @@ import {
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
-  GOOGLE_SMART_BIDDING_STRATEGIES,
+  GOOGLE_DEVICE_ADJUSTMENT_IGNORED_STRATEGIES,
   googleAdsEchoed,
   googleAdsTrimSpace,
   isCanonicalGoogleAdsResourceId,
@@ -326,16 +326,18 @@ export function googleChannelOffersManualCpc(channel: GoogleCampaignChannel): bo
  * Shared by the refusal below and the Implementation tab's hint and held notice, so the three say the
  * same.
  *
- * Two different reasons, and the sentence must not merge them. Under Smart Bidding
- * ({@link GOOGLE_SMART_BIDDING_STRATEGIES}) Google Ads itself does not apply a device bid adjustment,
- * except a -100% exclusion. Under Maximize Clicks Google DOES apply it (Google's "About bid
- * adjustments", https://support.google.com/google-ads/answer/2732132); it is campaign-service's
- * `validateBiddingPlan`, which takes a device adjustment only under Manual CPC, that refuses it there,
- * so saying Google would ignore it would be false. An unknown name gets the second, policy wording.
+ * Two different reasons, and the sentence must not merge them. Under Maximize Conversions, Maximize
+ * Conversion Value and Target ROAS ({@link GOOGLE_DEVICE_ADJUSTMENT_IGNORED_STRATEGIES}) Google Ads
+ * itself does not apply a device bid adjustment, except a -100% exclusion. Under Maximize Clicks Google
+ * DOES apply it (Google's "About bid adjustments", https://support.google.com/google-ads/answer/2732132),
+ * and under Target CPA it applies it to the device's CPA target
+ * (https://support.google.com/google-ads/answer/6268632); it is campaign-service's `validateBiddingPlan`,
+ * which takes a device adjustment only under Manual CPC, that refuses it there, so saying Google would
+ * ignore it would be false. An unknown name gets the second, policy wording.
  */
 export function googleDeviceAdjustmentNotSentSentence(strategy: string): string {
   const named = GOOGLE_BIDDING_STRATEGY_LABELS[strategy as keyof typeof GOOGLE_BIDDING_STRATEGY_LABELS] ?? googleAdsEchoed(strategy);
-  if ((GOOGLE_SMART_BIDDING_STRATEGIES as readonly string[]).includes(strategy)) {
+  if ((GOOGLE_DEVICE_ADJUSTMENT_IGNORED_STRATEGIES as readonly string[]).includes(strategy)) {
     return `Google Ads doesn't apply a device bid adjustment under ${named}, except a -100% exclusion, so LFX One doesn't send one.`;
   }
   return `LFX One sends a device bid adjustment only under ${GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc']}, so it doesn't send one under ${named}.`;
@@ -356,9 +358,10 @@ export function googleDeviceAdjustmentNotSentSentence(strategy: string): string 
  *
  * THEN the strategy, in a second pass over the whole list, because upstream runs it later and
  * separately: `validateCriteriaPlan` judges every entry before `validateBiddingPlan` refuses any
- * NON-ZERO modifier while the strategy is anything but `manual-cpc`. Under Smart Bidding Google
- * itself would accept such an adjustment and not apply it; under Maximize Clicks Google applies it,
- * and the refusal is campaign-service's Manual-CPC-only policy. This mirrors that policy, and
+ * NON-ZERO modifier while the strategy is anything but `manual-cpc`. Under Maximize Conversions,
+ * Maximize Conversion Value and Target ROAS Google itself would accept such an adjustment and not
+ * apply it; under Maximize Clicks Google applies it, and under Target CPA it applies it to the CPA
+ * target, so there the refusal is campaign-service's Manual-CPC-only policy. This mirrors that policy, and
  * {@link googleDeviceAdjustmentNotSentSentence} says which of the two reasons applies. Non-zero includes `1`, the 0% adjustment the device
  * control starts at, so "Adjust bid" left at 0% is refused too. `0` is not: it is the device
  * exclusion, which Google honours under automated bidding, so refusing it would stop a create

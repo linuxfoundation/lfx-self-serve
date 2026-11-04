@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Component, DestroyRef, EnvironmentProviders, input, output, PLATFORM_ID, Provider, type WritableSignal } from '@angular/core';
+import { Component, DestroyRef, EnvironmentProviders, input, output, PLATFORM_ID, Provider, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -8023,6 +8023,19 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
     c['onGoogleDeviceBidModifiersChange']([{ device: 'MOBILE', bidModifier: 0.05 }]);
     expect(c['googleDeviceBidModifiersError']()).toContain('bid modifier of 0.05');
     expect(c['canSubmit']()).toBe(false);
+  });
+
+  // #5094 review: an unresolved strategy skips only the strategy pass. The per-entry checks still run,
+  // so an overlapping window holds Create rather than reaching the BFF's 400.
+  describe('with no resolved strategy', () => {
+    it('still refuses an overlapping window', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      Object.defineProperty(c, 'googleBiddingStrategy', { value: signal(null) });
+      c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS, { ...MONDAY_EVENINGS, startHour: 20, bidModifier: undefined }]);
+
+      expect(c['googleAdSchedulesError']()).toContain('overlaps MONDAY 18:00-24:00');
+      expect(c['canSubmit']()).toBe(false);
+    });
   });
 
   /**

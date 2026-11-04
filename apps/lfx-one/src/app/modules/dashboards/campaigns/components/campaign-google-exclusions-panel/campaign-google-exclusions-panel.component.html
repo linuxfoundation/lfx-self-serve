@@ -73,6 +73,7 @@
           }
         </lfx-ui-multi-select>
         <lfx-ui-input
+          #geoIdInput
           class="w-48"
           label="Geo target id"
           size="small"
@@ -92,7 +93,7 @@
           data-testid="implementation-google-excluded-geo-add" />
       </div>
       @if (excludedGeoTargets().length > 0) {
-        <lfx-ui-chip-group ariaLabel="Excluded locations" data-testid="implementation-google-excluded-geo-chips">
+        <lfx-ui-chip-group ariaLabel="Excluded locations" [fallbackFocus]="geoIdFocus" data-testid="implementation-google-excluded-geo-chips">
           @for (entry of excludedGeoTargets(); track entry) {
             <lfx-ui-chip [label]="entry" (dismissed)="removeExcludedGeo(entry)" [attr.data-testid]="'implementation-google-excluded-geo-chip-' + entry" />
           }

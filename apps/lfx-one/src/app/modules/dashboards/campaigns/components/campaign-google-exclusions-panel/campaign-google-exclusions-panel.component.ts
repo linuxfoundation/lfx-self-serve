@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model, signal, Signal } from '@angular/core';
+import { Component, computed, ElementRef, input, model, signal, Signal, viewChild } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   GOOGLE_ADS_AGE_RANGE_LABELS,
@@ -12,7 +12,7 @@ import {
   GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
   googleAdsTrimSpace,
 } from '@lfx-one/shared/constants';
-import type { GoogleAdsAgeRange, GoogleAdsGender, GoogleExclusionOptionView } from '@lfx-one/shared/interfaces';
+import type { GoogleAdsAgeRange, GoogleAdsGender, GoogleExclusionOptionView, UiFocusable } from '@lfx-one/shared/interfaces';
 import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
 import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
 import { UiChipComponent } from '@shared/uikit/chip/chip.component';
@@ -49,6 +49,12 @@ export class CampaignGoogleExclusionsPanelComponent {
 
   /** The geo target id typed but not yet added. */
   protected readonly geoIdDraft = signal('');
+  private readonly geoIdInput = viewChild('geoIdInput', { read: ElementRef<HTMLElement> });
+  /**
+   * The chip group's `fallbackFocus`: removing the LAST excluded location unmounts the group, so focus
+   * goes to the geo target id box, which stays, rather than falling to the page body.
+   */
+  protected readonly geoIdFocus: UiFocusable = { focus: () => this.geoIdInput()?.nativeElement.querySelector('input')?.focus() };
 
   protected readonly maxExcludedGeos = GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS;
   /** The same closed country list the targeted-countries select offers: upstream resolves a code only through this map. */

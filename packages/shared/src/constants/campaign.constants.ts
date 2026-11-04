@@ -4985,16 +4985,17 @@ export const GOOGLE_BIDDING_ROAS_STRATEGIES = ['maximize-conversion-value', 'tar
 export const GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES = ['target-cpa', 'target-roas'] as const;
 
 /**
- * The Smart Bidding strategies: Google Ads applies neither an ad-schedule bid adjustment nor a device
- * bid adjustment under them, apart from a -100% device exclusion (Google's "About bid adjustments",
- * https://support.google.com/google-ads/answer/2732132). Under Target CPA a device adjustment acts on
- * the target rather than the bid. Names why a device adjustment is not sent under one of these, as
- * opposed to Maximize Clicks, where Google applies it and only campaign-service's Manual-CPC-only rule
- * (`validateBiddingPlan`) refuses it.
+ * The strategies under which Google Ads does not apply a device bid adjustment, apart from a -100%
+ * device exclusion: Maximize Conversions, Maximize Conversion Value and Target ROAS (Google's "About
+ * bid adjustments", https://support.google.com/google-ads/answer/2732132). Target CPA is NOT here:
+ * Google applies a device adjustment there as an adjustment of the device's CPA target
+ * (https://support.google.com/google-ads/answer/6268632), so a device adjustment is withheld under it
+ * only by campaign-service's Manual-CPC-only rule (`validateBiddingPlan`), as under Maximize Clicks.
+ * Names which of the two reasons `googleDeviceAdjustmentNotSentSentence` gives. Not the ad-schedule
+ * rule, which is {@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES} and refuses Target CPA as well.
  */
-export const GOOGLE_SMART_BIDDING_STRATEGIES = [
+export const GOOGLE_DEVICE_ADJUSTMENT_IGNORED_STRATEGIES = [
   'maximize-conversions',
-  'target-cpa',
   'maximize-conversion-value',
   'target-roas',
 ] as const satisfies readonly (typeof GOOGLE_BIDDING_STRATEGIES)[number][];
@@ -5003,8 +5004,8 @@ export const GOOGLE_SMART_BIDDING_STRATEGIES = [
  * The strategies under which Google Ads applies an ad-schedule bid adjustment: Manual CPC and
  * Maximize Clicks. Google's "About bid adjustments"
  * (https://support.google.com/google-ads/answer/2732132) lists Maximize Clicks as honouring ad
- * schedule adjustments, and Smart Bidding ({@link GOOGLE_SMART_BIDDING_STRATEGIES}) as not
- * supporting them.
+ * schedule adjustments, and Smart Bidding (Maximize Conversions, Target CPA, Maximize Conversion
+ * Value, Target ROAS) as not supporting them.
  *
  * Under Smart Bidding Google stores a schedule's bid modifier and does not bid it, so a window
  * adjusted under one of them would report a successful create and never bid differently.

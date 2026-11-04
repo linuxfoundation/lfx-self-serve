@@ -3605,20 +3605,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleDemographicExclusionsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS));
   protected readonly googleExcludedGeoTargetsAvailable = computed(() => this.googleBiddingChannel() !== null);
   /** The shared age-range refusal, else the gender one — the BFF's order — or `null`; `canSubmit` blocks on it. */
-  protected readonly googleDemographicExclusionsError = computed(() => {
-    if (!this.googleDemographicExclusionsAvailable()) return null;
-    const channel = this.googleBiddingChannel();
-    return googleExcludedAgeRangesRefusal(this.googleExcludedAgeRanges(), channel) ?? googleExcludedGendersRefusal(this.googleExcludedGenders(), channel);
-  });
+  protected readonly googleDemographicExclusionsError: Signal<string | null> = this.initGoogleDemographicExclusionsError();
   /**
    * The shared excluded-location refusal, judged against the targeted list the request will ACTUALLY
    * send (`googleEffectiveGeoTargets`, event-country fallback included), which is the list the BFF
    * compares for the clash. `canSubmit` blocks on it.
    */
-  protected readonly googleExcludedGeoTargetsError = computed(() => {
-    if (!this.googleExcludedGeoTargetsAvailable()) return null;
-    return googleExcludedGeoListRefusal(googleUpperCodeList(this.googleExcludedGeoTargets()), googleUpperCodeList(this.googleEffectiveGeoTargets()));
-  });
+  protected readonly googleExcludedGeoTargetsError: Signal<string | null> = this.initGoogleExcludedGeoTargetsError();
   /** The held-targeting sentence, or `''`; one string feeds the visible notice and the live region, as for languages. */
   protected readonly googleTargetingWithheldMessage: Signal<string> = this.initGoogleTargetingWithheldMessage();
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
@@ -8568,12 +8561,34 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /**
+   * The per-entry checks (range, repeat, overlap, per-day cap) run whenever the section is shown;
+   * only the strategy pass needs a resolved channel and strategy. With either unresolved the judge
+   * runs under Manual CPC, a strategy that takes schedule adjustments and so skips that pass, and
+   * Search, which decides only the strategy pass's wording.
+   */
   private initGoogleAdSchedulesError(): Signal<string | null> {
     return computed(() => {
+      if (!this.googleAdSchedulesAvailable()) return null;
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
-      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null) return null;
+      if (!channel || strategy === null) return googleAdScheduleRefusal(this.googleAdSchedules(), 'manual-cpc', 'search');
       return googleAdScheduleRefusal(this.googleAdSchedules(), strategy, channel);
+    });
+  }
+
+  private initGoogleDemographicExclusionsError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleDemographicExclusionsAvailable()) return null;
+      const channel = this.googleBiddingChannel();
+      return googleExcludedAgeRangesRefusal(this.googleExcludedAgeRanges(), channel) ?? googleExcludedGendersRefusal(this.googleExcludedGenders(), channel);
+    });
+  }
+
+  private initGoogleExcludedGeoTargetsError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleExcludedGeoTargetsAvailable()) return null;
+      return googleExcludedGeoListRefusal(googleUpperCodeList(this.googleExcludedGeoTargets()), googleUpperCodeList(this.googleEffectiveGeoTargets()));
     });
   }
 
@@ -8615,8 +8630,9 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * Why the device control offers only Default bid and Exclude: campaign-service refuses a non-zero
-   * device modifier under any strategy but Manual CPC (`validateBiddingPlan`). Under Smart Bidding
-   * Google would not apply one anyway; under Maximize Clicks it would, so the shared
+   * device modifier under any strategy but Manual CPC (`validateBiddingPlan`). Under Maximize
+   * Conversions, Maximize Conversion Value and Target ROAS Google would not apply one anyway; under
+   * Maximize Clicks and Target CPA it would, so the shared
    * `googleDeviceAdjustmentNotSentSentence` gives whichever reason is true. The way back differs by channel — Search can switch to Manual CPC,
    * Display and Video offer no Manual CPC here — so the sentence says which. `null` while the device
    * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}.
