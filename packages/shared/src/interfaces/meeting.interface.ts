@@ -390,6 +390,8 @@ export interface Meeting {
   participant_count?: number;
   /** Attended count for past meetings (response only) */
   attended_count?: number;
+  /** Guest responses for the date a row without an occurrence shows; organizers only, with `include=attendance`. */
+  rsvp_summary?: MeetingRsvpSummary;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
   /** RFC3339 start time of the next upcoming occurrence (server-computed by the meeting service).
@@ -469,6 +471,8 @@ export interface MeetingOccurrence {
    * not compute the effective recurrence.
    */
   recurrence?: MeetingRecurrence | null;
+  /** Guest responses for this date; organizers only, with `include=attendance`. */
+  rsvp_summary?: MeetingRsvpSummary;
 }
 
 /**
@@ -1070,6 +1074,8 @@ export interface PastMeeting extends Meeting {
   occurrence_id: string;
   /** Composite meeting and occurrence ID (e.g., "99152950841-1630560600000"); used as the canonical id downstream */
   meeting_and_occurrence_id?: string;
+  /** Attendance tally; organizers only, with `include=attendance`. */
+  attendance_summary?: PastMeetingAttendanceSummary;
   /** Platform-specific meeting ID (e.g., Zoom meeting ID) */
   platform_meeting_id: string;
   /** Array of session objects with start/end times */
@@ -1761,6 +1767,33 @@ export type RsvpResponse = 'accepted' | 'maybe' | 'declined';
  * @description Defines which occurrences of a recurring meeting the RSVP applies to
  */
 export type RsvpScope = 'single' | 'all' | 'this_and_following';
+
+/**
+ * Guest responses for one upcoming meeting date, as the meeting page counts them
+ * @description `invited` = `yes` + `maybe` + `no` + `no_response`.
+ */
+export interface MeetingRsvpSummary {
+  /** Registrants invited to the meeting */
+  invited: number;
+  /** Guests who answered Yes */
+  yes: number;
+  /** Guests who answered Maybe */
+  maybe: number;
+  /** Guests who answered No */
+  no: number;
+  /** Guests with no answer for this date */
+  no_response: number;
+}
+
+/**
+ * Attendance of one past meeting, as the meeting page counts it
+ */
+export interface PastMeetingAttendanceSummary {
+  /** Participant records: invited guests plus anyone who joined uninvited */
+  invited: number;
+  /** Participants who joined */
+  attended: number;
+}
 
 /**
  * RSVP counts by response type

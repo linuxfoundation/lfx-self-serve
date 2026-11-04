@@ -189,7 +189,7 @@ export function filterMeetingsHome(
  * Whether the viewer organizes the meeting on the home: owner/creator, the `organizer` flag, or listed in `organizers`.
  * @description Wider than the row's Edit/Delete gate (the flag alone), so it must not gate actions.
  */
-function isMeetingHomeOrganizer(meeting: Meeting, viewerUsername: string | null): boolean {
+export function isMeetingHomeOrganizer(meeting: Meeting, viewerUsername: string | null): boolean {
   if (meeting.organizer === true || isMeetingOrganizedByViewer(meeting, viewerUsername)) return true;
   const viewer = normalizeUsername(viewerUsername);
   return !!viewer && (meeting.organizers ?? []).some((entry) => normalizeUsername(entry) === viewer);

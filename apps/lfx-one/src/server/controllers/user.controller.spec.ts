@@ -244,16 +244,21 @@ describe('UserController.getUserPastMeetings include param', () => {
   });
 
   it.each([
-    [{ include: 'artifacts' }, true],
-    [{ include: 'everything' }, false],
-    [{ include: ['artifacts', 'artifacts'] }, false],
-    [{}, false],
-  ])('passes includeArtifacts for query %j as %s', async (query, includeArtifacts) => {
+    [{ include: 'artifacts' }, true, false],
+    [{ include: 'artifacts,attendance' }, true, true],
+    [{ include: 'attendance' }, false, true],
+    [{ include: 'everything' }, false, false],
+    [{ include: ['artifacts', 'artifacts'] }, false, false],
+    [{}, false, false],
+  ])('passes the include flags for query %j as artifacts=%s attendance=%s', async (query, includeArtifacts, includeAttendance) => {
     const next = vi.fn();
 
     await controller.getUserPastMeetings({ query, path: '/api/user/past-meetings', log: {} } as any, buildRes(), next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(userSvc.getUserPastMeetings).toHaveBeenCalledWith(expect.anything(), 'user@example.com', undefined, undefined, { includeArtifacts });
+    expect(userSvc.getUserPastMeetings).toHaveBeenCalledWith(expect.anything(), 'user@example.com', undefined, undefined, {
+      includeArtifacts,
+      includeAttendance,
+    });
   });
 });
