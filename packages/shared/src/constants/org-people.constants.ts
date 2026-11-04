@@ -23,6 +23,7 @@ import type {
   PeopleTabConfig,
   PeopleTabId,
 } from '../interfaces';
+import { DEFAULT_ORG_EVENTS_ATTRIBUTION } from './org-events-filters.constants';
 import { ORG_LENS_DEFAULT_TIME_RANGE } from './org-lens-time-range.constants';
 
 /** Org People page tabs in visible order (`all` is the default). */
@@ -225,8 +226,9 @@ export const ORG_EVENT_ATTENDEES_INITIAL_LIMIT = 30;
 /** Zero-valued Event Attendees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   accountId: '',
-  attendees: [],
   details: [],
+  summary: { attendeesCount: 0, listedAttendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 },
+  servedAttribution: DEFAULT_ORG_EVENTS_ATTRIBUTION,
   foundationOptions: [],
   eventOptions: [],
 };

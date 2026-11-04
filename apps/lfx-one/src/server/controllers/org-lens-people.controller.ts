@@ -25,6 +25,7 @@ import { ServiceValidationError } from '../errors';
 import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { parseOptionalOrgCommitFilters, parseOrgCommitFilters, parseOrgScope, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
+import { parseOrgEventsFilters } from '../helpers/org-events-filters.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
@@ -538,7 +539,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/event-attendees — bundled rows + details + stats + filter options for the Event Attendees tab (LFXV2-1875). */
+  /** GET /api/orgs/:orgUid/lens/people/event-attendees?range&attribution&participation — person × event rows + summary + filter options for the Event Attendees tab (LFXV2-1875, lfx-self-serve#4598). */
   public async getEventAttendees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const startTime = logger.startOperation(req, 'get_org_lens_people_event_attendees', {
@@ -548,11 +549,12 @@ export class OrgLensPeopleController {
     try {
       assertOrgUid(orgUid, 'get_org_lens_people_event_attendees');
 
-      const response = await this.eventAttendeesService.getEventAttendees(orgUid);
+      const { range, attribution, participation } = parseOrgEventsFilters(req, 'get_org_lens_people_event_attendees');
+      const response = await this.eventAttendeesService.getEventAttendees(orgUid, { range, attribution, participation });
 
       logger.success(req, 'get_org_lens_people_event_attendees', startTime, {
         org_uid: orgUid,
-        attendee_count: response.attendees.length,
+        attendee_count: response.summary.attendeesCount,
         detail_count: response.details.length,
         foundation_count: response.foundationOptions.length,
         event_count: response.eventOptions.length,

@@ -162,6 +162,7 @@ export * from './mktg-run-navigation.utils';
 export * from './org-employment.utils';
 export * from './org-team-members.utils';
 export * from './org-scope.utils';
+export * from './org-events-filters.utils';
 export * from './social-share.utils';
 export * from './org-trainee-pairs.utils';
 export * from './org-training-view-state.utils';

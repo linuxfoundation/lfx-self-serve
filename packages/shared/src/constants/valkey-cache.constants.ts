@@ -142,6 +142,13 @@ export const VALKEY_CACHE = {
   /** Freshness window for the per-org Snowflake-backed Org Lens cache (1 hour). */
   ORG_LENS_SNOWFLAKE_TTL_SECONDS: 3600,
 
+  /**
+   * Freshness window for Org Lens reads that carry a person's name or title (the Events attendee drawer and the People ->
+   * Event Attendees rows): 15 minutes, so an upstream erasure leaves the cache well inside the 1-hour erasure target together
+   * with the 15-minute lag of `platinum_lfx_one_org_event_participation`. Count-only reads keep the 1-hour window above.
+   */
+  ORG_LENS_NAMED_TTL_SECONDS: 900,
+
   /** Freshness window for the per-committee Snowflake-backed engagement cache (1 hour, matching the Org Lens TTL). */
   COMMITTEE_ENGAGEMENT_TTL_SECONDS: 3600,
 
@@ -278,8 +285,12 @@ export const VALKEY_CACHE = {
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
     // event) grain is irreducible — the tab's stat cards and filters recompute client-side over
-    // every detail row — so the remaining excess is real data, not repetition.
-    'org-lens-sf:v1:people-event-attendees:v2': 2 * 1_048_576,
+    // every detail row — so the remaining excess is real data, not repetition. `v3` (lfx-self-serve#4598) reads listed
+    // person × event rows of ORG_EVENT_PARTICIPATION per range, attribution and participation (the unlisted are counted,
+    // never sent). Each row repeats the person's name, title and person key, and drops the roster identity columns of
+    // `v2`, so its size is NOT measured: the 2 MiB cap is carried over from `v2` as a starting point and must be measured
+    // on dev data (largest org, `all` range) before release.
+    'org-lens-sf:v1:people-event-attendees:v3': 2 * 1_048_576,
     // `v4` (lfx-self-serve#4159) is read per range over enrollments of any age (lf-dbt#3118 lifted the 12-month cap).
     // Measured 2026-10-27 on the dev build with the same SQL size estimate and × 1.06 calibration as `people-all:v4`:
     // largest value 6,782,106 bytes (largest org measured, All time; the next two 5.39 MB and 3.20 MB). Only All time on those three

@@ -13,6 +13,7 @@ The Organization section covers pages in the Organization lens. These steps appl
 ## What you can do
 
 - Open **Dashboard**, the Org Overview, to see the organization's involvement and its foundations and projects
+- Open **Events**, or **People** → **Event Attendees**, to see which events the organization's people registered for or attended, and choose how they are counted
 - Open **Projects** to see the projects in the organization's shared workspaces, its influence on each one, and how it ranks against other organizations
 - Open **People** → **Org Lens Access** to see who can open the organization and, as an Admin, add, change or remove their access
 - Open **EasyCLA** to view and manage the corporate CLAs (Contributor License Agreements) that organization holds
@@ -31,6 +32,7 @@ Go to **app.lfx.dev**, switch to the **Organization** lens, and select the organ
 
 - [Choose and switch an organization](./choose-an-organization/) — pick the organization you are viewing, switch to another, and read the organization in a page address
 - [Manage Org Lens Access](./manage-org-lens-access/) — add, change or remove who can open the organization
+- [Events and Event Attendees](./org-events/) — the filters, defaults and what each option counts on the Events page and on People → Event Attendees
 - [Org Overview dashboard](./org-overview/) — what each card on the Organization lens Dashboard shows and where its links go
 - [Projects and project detail](./projects/) — the organization's projects, workspaces, and each project's influence and leaderboards
 - [EasyCLA](./easycla/) — corporate CLAs for the selected organization
