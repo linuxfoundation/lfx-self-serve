@@ -667,8 +667,8 @@ export class UserService {
    * @param email - User's email address for participant lookup (attendance enrichment)
    * @param projectUid - Optional project UID to filter meetings by
    * @param foundationUid - Optional foundation UID to filter meetings by (OR across child projects)
-   * @param options - `includeArtifacts` adds `has_recording` / `has_ai_summary` (batched recording and summary index lookups);
-   *   `includeAttendance` adds `attendance_summary` to the meetings the viewer organizes
+   * @param options - `includeArtifacts` adds `has_recording` / `recording_share_url` / `has_ai_summary` (batched recording and
+   *   summary index lookups); `includeAttendance` adds `attendance_summary` to the meetings the viewer organizes
    * @returns Array of PastMeeting objects the user has some direct FGA grant on
    */
   public async getUserPastMeetings(
@@ -780,10 +780,10 @@ export class UserService {
 
     // No ids means the artifact lookups issue no requests.
     const pastMeetingIds = options?.includeArtifacts ? pastOnly.map((meeting) => meeting.id) : [];
-    const [enriched, recordingFlags, primarySummaries] = await Promise.all([
+    const [enriched, recordingUrls, primarySummaries] = await Promise.all([
       this.meetingService.getMeetingProjectName(req, pastOnly),
-      this.fetchPastMeetingArtifacts<PastMeetingRecording, boolean>(req, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
-        Boolean(getLargestSessionShareUrl(recording ?? null))
+      this.fetchPastMeetingArtifacts<PastMeetingRecording, string | null>(req, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
+        getLargestSessionShareUrl(recording ?? null)
       ),
       // selectPrimaryPastMeetingSummary reads only `data` from each item.
       this.fetchPastMeetingArtifacts<PastMeetingSummary, PastMeetingSummary | null>(req, 'v1_past_meeting_summary', pastMeetingIds, (summaries) =>
@@ -799,7 +799,10 @@ export class UserService {
     const withAccess = options?.includeAttendance ? await attachPastMeetingAttendanceSummaries(req, accessed) : accessed;
     if (!options?.includeArtifacts) return withAccess;
     for (const meeting of withAccess) {
-      meeting.has_recording = recordingFlags.get(meeting.id);
+      const recordingUrl = recordingUrls.get(meeting.id);
+      meeting.has_recording = recordingUrl === undefined ? undefined : recordingUrl !== null;
+      // Sent with the feed so the home page copies it within the click (Safari drops clipboard access after an await).
+      if (recordingUrl) meeting.recording_share_url = recordingUrl;
       meeting.has_ai_summary = primarySummaries.has(meeting.id) ? getPastMeetingSummaryContent(meeting, primarySummaries.get(meeting.id)) !== null : undefined;
     }
     return withAccess;

@@ -944,7 +944,7 @@ export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
 /** Max concurrent query-service batches when flagging recordings or AI summaries on the Me-lens past feed. */
 export const PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY = 5;
 
-/** `include` value that makes GET /api/user/past-meetings add `has_recording` / `has_ai_summary`. */
+/** `include` value that makes GET /api/user/past-meetings add `has_recording` / `recording_share_url` / `has_ai_summary`. */
 export const USER_PAST_MEETINGS_INCLUDE_ARTIFACTS = 'artifacts';
 
 /** `include` value that makes GET /api/user/meetings and /api/user/past-meetings add organizer attendance summaries. */

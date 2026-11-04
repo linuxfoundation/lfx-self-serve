@@ -2,18 +2,19 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact [Npx] design values: a 256px block, 74px in a centre column of 900px or less; the page's centre is the @container. -->
-@if (hasRecording() || hasSummary()) {
+@if (recordingUrl() || hasSummary()) {
   <div class="-mr-[4px] flex w-[74px] flex-none items-center justify-end gap-[10px] @[901px]:w-[256px]" data-testid="meetings-home-row-artifacts">
-    @if (hasRecording()) {
-      <lfx-ui-button
-        class="hidden @[901px]:inline-block"
+    @if (recordingUrl(); as recordingUrl) {
+      <lfx-ui-split-button
+        class="hidden @[901px]:inline-flex"
+        label="Recording"
         variant="secondary"
         icon="fa-light fa-circle-play"
-        [loading]="loadingRecording()"
-        (click)="openRecording()"
-        data-testid="meetings-home-row-recording">
-        Recording
-      </lfx-ui-button>
+        secondaryIcon="fa-light fa-link"
+        secondaryTooltip="Copy recording link"
+        (triggered)="openRecording(recordingUrl)"
+        (secondaryTriggered)="copyRecordingLink(recordingUrl)"
+        data-testid="meetings-home-row-recording" />
       <lfx-ui-button
         class="@[901px]:hidden"
         variant="secondary"
@@ -21,8 +22,7 @@
         ariaLabel="Recording"
         lfxUiTooltip="Recording"
         iconOnly
-        [loading]="loadingRecording()"
-        (click)="openRecording()"
+        (click)="openRecording(recordingUrl)"
         data-testid="meetings-home-row-recording-icon" />
     }
     @if (hasSummary()) {

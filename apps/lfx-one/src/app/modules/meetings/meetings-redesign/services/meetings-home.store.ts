@@ -89,7 +89,7 @@ export class MeetingsHomeStore {
     this.upcomingLoadingState,
     this.upcomingFailedState
   );
-  // Carries `has_recording` / `has_ai_summary` for the past rows' Recording and AI Summary buttons.
+  // Carries `recording_share_url` / `has_ai_summary` for the past rows' Recording and AI Summary buttons.
   private readonly pastMeetings: Signal<PastMeeting[]> = this.initFeed(
     () => this.userService.getUserPastMeetings({ includeArtifacts: true }),
     this.userService.pastMeetingsRefresh$,

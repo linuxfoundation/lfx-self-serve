@@ -4,9 +4,6 @@
 import { MeetingVisibilityKind } from '../enums';
 import type { MeetingHomeArtifact, MeetingResponseFilterOption, MeetingRsvpChoice, MeetingsHomeFilters, MeetingVisibilityInfo } from '../interfaces';
 
-/** The recording of a past meetings home row. */
-export const MEETINGS_HOME_RECORDING_ARTIFACT: MeetingHomeArtifact = { noun: 'recording', title: 'Recording' };
-
 /** The AI summary of a past meetings home row. */
 export const MEETINGS_HOME_SUMMARY_ARTIFACT: MeetingHomeArtifact = { noun: 'summary', title: 'AI Summary' };
 

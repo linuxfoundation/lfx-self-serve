@@ -41,6 +41,7 @@ import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
+import { UiSplitButtonComponent } from '@shared/uikit/split-button/split-button.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
@@ -48,12 +49,21 @@ import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-pro
 
 /**
  * Last meeting card of the meetings home right column: the viewer's most recent past meeting with its recording and AI summary.
- * @description Each button shows only once its artifact has loaded and exists; a failed lookup hides it. Both open the
- * meetings home dialogs.
+ * @description Each button shows only once its artifact has loaded and exists; a failed lookup hides it. Recording opens
+ * in a new tab and its split half copies the link; AI Summary opens the meetings home dialog.
  */
 @Component({
   selector: 'lfx-last-meeting-card',
-  imports: [DatePipe, MeetingProjectLogoComponent, UiBadgeComponent, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent, UiTooltipDirective],
+  imports: [
+    DatePipe,
+    MeetingProjectLogoComponent,
+    UiBadgeComponent,
+    UiButtonComponent,
+    UiEmptyStateComponent,
+    UiSkeletonComponent,
+    UiSplitButtonComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './last-meeting-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
@@ -139,11 +149,12 @@ export class LastMeetingCardComponent {
     this.dialogs.openSummary(row, summary, (change) => this.summaryChange.emit(change));
   }
 
-  protected openRecording(event: Event): void {
-    event.stopPropagation();
-    const row = this.row();
-    const shareUrl = this.recordingUrl();
-    if (row && shareUrl) this.dialogs.openRecording(row, shareUrl);
+  protected openRecording(shareUrl: string): void {
+    this.dialogs.openRecording(shareUrl);
+  }
+
+  protected copyRecordingLink(shareUrl: string): void {
+    this.dialogs.copyRecordingLink(shareUrl);
   }
 
   /** "Wed, 8:00 AM · 60m" in the viewer's zone, per the design. */

@@ -408,7 +408,7 @@ describe('MeetingHomeRowComponent', () => {
     });
 
     it('shows Recording and AI Summary in place of the RSVP controls, and never on upcoming rows', async () => {
-      const meeting = buildMeeting({ has_recording: true, has_ai_summary: true });
+      const meeting = buildMeeting({ has_recording: true, recording_share_url: 'https://zoom.example/rec', has_ai_summary: true });
       const past = await render(buildRow(meeting), 'past');
       const upcoming = await render(buildRow(meeting));
 
