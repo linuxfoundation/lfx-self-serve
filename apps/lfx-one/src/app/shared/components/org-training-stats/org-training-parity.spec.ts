@@ -382,7 +382,8 @@ describe('Former employee on the people list: cards = table-derived sums + forme
   });
 
   it('shows cards equal to the table sums plus the former pairs, and a note with the former people count', async () => {
-    const host = await renderTraineesPage(DETAILS, QUERY, withFormerStats, formerOnPeopleList);
+    // No filter: the former count is the range's, so the note (and this equality) holds while no filter narrows the cards.
+    const host = await renderTraineesPage(DETAILS, '?range=all', withFormerStats, formerOnPeopleList);
     const cards = Object.fromEntries(snapshotTiles(host).map((tile) => [tile.testId, Number(tile.value)]));
     // columns: chevron, name, status, courses, certs, trainings, in progress, recent
     const sums = [3, 4, 5, 6].map((index) =>
@@ -399,6 +400,12 @@ describe('Former employee on the people list: cards = table-derived sums + forme
     expect(cards['org-training-stat-courses-taken']).toBe(sums[0] + formerOnPeopleList.pairs);
     expect(cards['org-training-stat-people-with-training-activity']).toBe(PEOPLE.length + formerOnPeopleList.people);
     expect(host.querySelector('[data-testid="org-people-trainees-former-note"]')?.textContent).toContain('1 former employee on the people list');
+  });
+
+  it("hides the note while a filter narrows the cards, since the former count is the range's unfiltered one", async () => {
+    const host = await renderTraineesPage(DETAILS, QUERY, withFormerStats, formerOnPeopleList);
+
+    expect(host.querySelector('[data-testid="org-people-trainees-former-note"]')).toBeNull();
   });
 });
 

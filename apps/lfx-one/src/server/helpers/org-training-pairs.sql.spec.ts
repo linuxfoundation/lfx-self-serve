@@ -31,9 +31,9 @@ describe('buildOrgTrainingPairsCte', () => {
     const { cte } = buildOrgTrainingPairsCte('acct', QUERY);
 
     const rowsInRange = cte.slice(cte.indexOf('rows_in_range AS'), cte.indexOf('pairs AS'));
-    expect(rowsInRange).toMatch(/NULLIF\(LEFT\(TRIM\(COURSE_NAME\), 200\), ''\)\s+AS COURSE_NAME/);
-    expect(rowsInRange).toMatch(/NULLIF\(LEFT\(TRIM\(COURSE_LEVEL\), 200\), ''\)\s+AS COURSE_LEVEL/);
-    expect(rowsInRange).toMatch(/NULLIF\(LEFT\(TRIM\(COURSE_FORMAT\), 200\), ''\)\s+AS COURSE_FORMAT/);
+    expect(rowsInRange).toMatch(/NULLIF\(TRIM\(LEFT\(TRIM\(COURSE_NAME\), 200\)\), ''\)\s+AS COURSE_NAME/);
+    expect(rowsInRange).toMatch(/NULLIF\(TRIM\(LEFT\(TRIM\(COURSE_LEVEL\), 200\)\), ''\)\s+AS COURSE_LEVEL/);
+    expect(rowsInRange).toMatch(/NULLIF\(TRIM\(LEFT\(TRIM\(COURSE_FORMAT\), 200\)\), ''\)\s+AS COURSE_FORMAT/);
     // The activity window still reads the raw timestamp, and no filter value is trimmed in SQL: it arrives trimmed.
     expect(rowsInRange).toContain('AND ACTIVITY_TS IS NOT NULL');
     expect(cte).not.toContain('TRIM(?)');

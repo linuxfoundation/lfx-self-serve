@@ -153,6 +153,15 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
     expect(trainingCard(metrics).tooltipText).not.toMatch(/as of|as-of/i);
   });
 
+  it('shows dashes, and does not throw, for a legacy-shaped stats payload that lacks the newer fields (rolling deployment)', async () => {
+    const legacy = { range: '730d', peopleWithTrainingActivity: 1830 } as unknown as OrgTrainingStats;
+    const metrics = await buildMetrics(undefined, of(legacy));
+
+    expect(trainingCard(metrics).value).toBe('—');
+    expect(certifiedCard(metrics).value).toBe('—');
+    expect(trainingCard(metrics).loading).toBe(false);
+  });
+
   it("never shows the previous organization's number while the next organization's stats load", async () => {
     const selectedAccount = signal<Account>({ accountId: ACCOUNT_ID, accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
     const pending = new Subject<OrgTrainingStats>();

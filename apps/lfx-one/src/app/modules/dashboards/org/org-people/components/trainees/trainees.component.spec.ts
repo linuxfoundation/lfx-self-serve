@@ -18,7 +18,7 @@ import type {
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensTrainingService } from '@services/org-lens-training.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { firstValueFrom, Observable, of, throwError, timer } from 'rxjs';
+import { firstValueFrom, Observable, of, Subject, throwError, timer } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../../../../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
@@ -282,6 +282,47 @@ describe('TraineesComponent', () => {
         await mount('/?tab=training');
 
         expect(note()).toBeNull();
+      });
+
+      it.each([
+        ['foundation', 'foundation=f-1'],
+        ['trainingProject', 'trainingProject=proj-k8s'],
+        ['course', 'course=Kubernetes%20Basics'],
+        ['level', 'level=Beginner'],
+        ['format', 'format=E-Learning'],
+      ])('hides the unfiltered count while a %s filter narrows the cards', async (_key, filter) => {
+        withFormer(2, 5);
+        await mount(`/?tab=training&${filter}`);
+
+        expect(note()).toBeNull();
+      });
+
+      it('hides the note while a new range or organization is loading, and shows the new count once it arrives', async () => {
+        withFormer(2, 5);
+        await mount('/?tab=training');
+        expect(note()).not.toBeNull();
+
+        const pending = new Subject<OrgTraineesResponse>();
+        getTrainees.mockImplementation(() => pending.asObservable());
+        await TestBed.inject(Router).navigateByUrl('/?tab=training&range=30d');
+        await settle();
+        expect(note()).toBeNull();
+
+        pending.next({ ...responseFor('30d'), formerOnPeopleList: { people: 1, pairs: 1 } });
+        await settle();
+        expect(note()).toContain('1 former employee');
+      });
+
+      it('does not crash on a response from before the field existed (rolling deployment)', async () => {
+        getTrainees.mockImplementation((_orgUid: string, range: OrgLensTimeRange) => {
+          const legacy: Partial<OrgTraineesResponse> = { ...responseFor(range) };
+          delete legacy.formerOnPeopleList;
+          return of(legacy as OrgTraineesResponse);
+        });
+        await mount('/?tab=training');
+
+        expect(note()).toBeNull();
+        expect(stat('courses-taken')).toBe('4');
       });
     });
 

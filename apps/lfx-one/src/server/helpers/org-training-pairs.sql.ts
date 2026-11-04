@@ -15,7 +15,7 @@ const PEOPLE_TRAINING_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING';
  * and format this way, so a pair's attribute, its filter, its group key and its dropdown option are one string.
  */
 function normalizedAttribute(column: string): string {
-  return `NULLIF(LEFT(TRIM(${column}), ${MAX_ORG_TRAINING_FILTER_VALUE_LENGTH}), '')`;
+  return `NULLIF(TRIM(LEFT(TRIM(${column}), ${MAX_ORG_TRAINING_FILTER_VALUE_LENGTH})), '')`;
 }
 
 /** Pair attribute column each filter narrows (all bound as params, never inlined). */

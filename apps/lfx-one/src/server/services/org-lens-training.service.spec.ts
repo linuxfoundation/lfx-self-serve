@@ -132,12 +132,19 @@ describe('OrgLensTrainingService — filter option values', () => {
         // Spaces only, as the SQL TRIM: a tab is part of the value in both.
         row({ COURSE_NAME: '\tTabbed' }),
         row({ COURSE_NAME: longName, FOUNDATION_ID: ' f-1 ', FOUNDATION_NAME: 'Foundation One' }),
+        // A space lands on the cut: the offered value is trimmed again, so requesting it matches the pair.
+        row({ COURSE_NAME: `${'x'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH - 1)} suffix` }),
       ],
     });
 
     const options = await service.getFilterOptions(ACCOUNT, '730d', 'org-grant');
 
-    expect(options.courses.map((o) => o.value)).toEqual(['\tTabbed', 'Course A', longName.slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH)]);
+    expect(options.courses.map((o) => o.value)).toEqual([
+      '\tTabbed',
+      'Course A',
+      longName.slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH),
+      'x'.repeat(MAX_ORG_TRAINING_FILTER_VALUE_LENGTH - 1),
+    ]);
     expect(options.levels).toEqual([{ label: 'Beginner', value: 'Beginner' }]);
     expect(options.formats).toEqual([]);
     expect(options.foundations).toEqual([{ label: 'Foundation One', value: 'f-1' }]);

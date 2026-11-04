@@ -52,7 +52,7 @@ export function orgTrainingStatTooltip(stat: OrgTrainingStatDefinition, range: O
   return `${orgTrainingStatDefinitionText(stat, range)} ${formattedAsOf.charAt(0).toUpperCase()}${formattedAsOf.slice(1)}.`;
 }
 
-function statReading(key: OrgTrainingStatKey, stats: OrgTrainingStats): { value: number | null; asOf: string | null } {
+function statReading(key: OrgTrainingStatKey, stats: OrgTrainingStats): { value: number | null | undefined; asOf: string | null | undefined } {
   switch (key) {
     case 'rosterMembers':
       return { value: stats.rosterMembers, asOf: stats.rosterMembersAsOf };
@@ -102,8 +102,12 @@ function tileDisplay(key: OrgTrainingStatKey, value: number | null): string {
 export function buildOrgTrainingStatTiles(stats: OrgTrainingStats | null, range: OrgLensTimeRange): OrgTrainingStatTileVm[] {
   return ORG_TRAINING_STAT_TILES.map((layout) => {
     const definition = ORG_TRAINING_STAT_DEFINITIONS[layout.key];
-    const { value, asOf } = stats ? statReading(layout.key, stats) : { value: null, asOf: null };
-    const noRoster = stats !== null && layout.key === 'rosterMembers' && value === null;
+    const reading = stats ? statReading(layout.key, stats) : { value: null, asOf: null };
+    // A legacy payload may lack the as-of too: the date is then unavailable.
+    const asOf = reading.asOf ?? null;
+    // Only an explicit null roster means "no program"; a field a legacy payload lacks (undefined) is just unavailable.
+    const noRoster = stats !== null && layout.key === 'rosterMembers' && reading.value === null;
+    const value = typeof reading.value === 'number' && Number.isFinite(reading.value) ? reading.value : null;
     const tooltip = tileTooltip(definition, range, stats, asOf, noRoster);
     const display = tileDisplay(layout.key, value);
     return {

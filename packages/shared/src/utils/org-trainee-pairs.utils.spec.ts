@@ -64,6 +64,14 @@ describe('resolveOrgTraineePairs', () => {
     expect(resolveOrgTraineePairs([row({ courseName: '   ' })])[0].courseName).toBeNull();
   });
 
+  it('trims again after the 200-character cut, so a pair carries the value an option offers', () => {
+    const cut = `${'x'.repeat(199)} suffix`;
+    const [pair] = resolveOrgTraineePairs([row({ courseName: cut })]);
+
+    expect(pair.courseName).toBe('x'.repeat(199));
+    expect(resolveOrgTraineePairs([row({ courseName: pair.courseName })])[0].courseName).toBe(pair.courseName);
+  });
+
   it('takes foundation and project names from the row with the greatest id', () => {
     const [pair] = resolveOrgTraineePairs([
       row({ foundationId: 'f-1', foundationName: 'One', projectId: 'pr-9', projectName: 'Nine' }),

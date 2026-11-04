@@ -25,13 +25,14 @@ export function trimOrgTrainingSpaces(value: string): string {
 }
 
 /**
- * A course name, level or format (or an option value) as the pairs SQL reads it, `NULLIF(LEFT(TRIM(col), 200), '')`:
- * spaces trimmed, cut to {@link MAX_ORG_TRAINING_FILTER_VALUE_LENGTH}, null when blank. The one rule the BFF, the
+ * A course name, level or format (or an option value) as the pairs SQL reads it, `NULLIF(TRIM(LEFT(TRIM(col), 200)), '')`:
+ * spaces trimmed, cut to {@link MAX_ORG_TRAINING_FILTER_VALUE_LENGTH}, trimmed again (so the rule is idempotent), null when blank. The one rule the BFF, the
  * dropdown options and the Trainees client share, so an option the dropdown offers is the string the pairs carry.
  */
 export function normalizeOrgTrainingFilterValue(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
-  const normalized = trimOrgTrainingSpaces(value).slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH);
+  // Trim again after the cut: a space at the cut point would otherwise end the value, and normalizing the result again would shorten it.
+  const normalized = trimOrgTrainingSpaces(trimOrgTrainingSpaces(value).slice(0, MAX_ORG_TRAINING_FILTER_VALUE_LENGTH));
   return normalized === '' ? null : normalized;
 }
 

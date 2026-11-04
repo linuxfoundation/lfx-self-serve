@@ -165,3 +165,21 @@ describe('trimOrgTrainingSpaces / normalizeOrgTrainingFilterValue', () => {
     expect(normalizeOrgTrainingFilterValue(undefined)).toBeNull();
   });
 });
+
+describe('normalizeOrgTrainingFilterValue is idempotent at the 200-character cutoff', () => {
+  const cut = `${'x'.repeat(199)} suffix`;
+
+  it('trims again after the cut, so normalizing an offered value returns it unchanged', () => {
+    const once = normalizeOrgTrainingFilterValue(cut);
+    expect(once).toBe('x'.repeat(199));
+    expect(normalizeOrgTrainingFilterValue(once)).toBe(once);
+  });
+
+  it('is idempotent for padded, long and mixed inputs', () => {
+    for (const value of [`  ${'y'.repeat(198)}  tail`, `${'z'.repeat(200)}  `, `${' '.repeat(5)}${'a'.repeat(199)} b`, ` ${'c '.repeat(150)}`]) {
+      const once = normalizeOrgTrainingFilterValue(value);
+      expect(normalizeOrgTrainingFilterValue(once)).toBe(once);
+      expect(once === null || (once.length <= 200 && once === once.replace(/^ +| +$/g, ''))).toBe(true);
+    }
+  });
+});

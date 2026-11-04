@@ -18,7 +18,7 @@ vi.mock('./valkey.service', () => ({ withOrgCache: vi.fn() }));
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn() } }));
 
 import { countOrgTraineePairs, resolveOrgTraineePairs } from '../../../../../packages/shared/src/utils/org-trainee-pairs.utils';
-import { matchesOrgTrainingFilters } from '../../../../../packages/shared/src/utils/org-training-view-state.utils';
+import { matchesOrgTrainingFilters, normalizeOrgTrainingFilterValue } from '../../../../../packages/shared/src/utils/org-training-view-state.utils';
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { buildOrgTrainingPairsCte } from '../helpers/org-training-pairs.sql';
 import { OrgLensTrainingService } from './org-lens-training.service';
@@ -603,5 +603,47 @@ describe('pairs SQL run against SQLite over mixed-attribute rows', () => {
 
     expect([stats.coursesTaken, stats.peopleWithTrainingActivity, stats.certifications]).toEqual([0, 0, 0]);
     expect(execute.mock.calls.some(([, binds]) => (binds as string[]).includes('Expert'))).toBe(false);
+  });
+});
+
+describe('the 200-character cutoff of a pair attribute (idempotent normalization)', () => {
+  // A name whose 200th character is a space once cut: `x` x199, then ` suffix`.
+  const CUT_NAME = `${'x'.repeat(199)} suffix`;
+  const OFFERED = 'x'.repeat(199);
+
+  function insertCutRow(): void {
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(
+        ACCOUNT,
+        'p-cut',
+        'cut-course',
+        'cut-course',
+        'Enrolled',
+        '2026-10-01 00:00:00',
+        'Training',
+        'f-a',
+        'Foundation A',
+        'proj-a',
+        'Project A',
+        CUT_NAME,
+        ' Beginner ',
+        'E-Learning',
+        1,
+        '2026-10-30 04:15:00'
+      );
+  }
+
+  it('trims again after the cut, so the pair carries the value the dropdown offers and a request for it matches', async () => {
+    insertCutRow();
+    const { cte, binds } = buildOrgTrainingPairsCte(ACCOUNT, query({}));
+    const { rows } = await execute.getMockImplementation()!(`WITH ${cte} SELECT COURSE_NAME, COURSE_LEVEL FROM f WHERE PERSON_KEY = 'p-cut'`, binds);
+
+    expect(rows).toEqual([{ COURSE_NAME: OFFERED, COURSE_LEVEL: 'Beginner' }]);
+    expect(normalizeOrgTrainingFilterValue(OFFERED)).toBe(OFFERED);
+    expect(normalizeOrgTrainingFilterValue(CUT_NAME)).toBe(OFFERED);
+
+    const stats = await service.getTrainingStats(ACCOUNT, query({ course: OFFERED }), 'auditor-entitlement');
+    expect(stats.coursesTaken).toBe(1);
   });
 });

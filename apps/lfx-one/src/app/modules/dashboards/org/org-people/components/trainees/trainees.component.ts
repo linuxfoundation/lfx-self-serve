@@ -128,7 +128,7 @@ export class TraineesComponent {
   /** The shared strip's numbers for the URL's range and filters; null while loading or when the read fails. */
   protected readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
 
-  /** Note under the strip when former employees on the people list count in the cards but are not table rows; null when there are none. */
+  /** Note under the strip when former employees on the people list count in the cards but are not table rows; null when there are none, while loading, or when a filter narrows the cards. */
   protected readonly formerNote: Signal<string | null> = computed(() => this.initFormerNote());
 
   // Learners not on the people list carry no course data, so no foundation, project, course, level or format can match them.
@@ -417,7 +417,10 @@ export class TraineesComponent {
   }
 
   private initFormerNote(): string | null {
-    const people = this.response().formerOnPeopleList.people;
+    // The count is the range's, unfiltered: it is exact only while no filter narrows the cards, and only for the response the table shows now.
+    if (this.isLoading() || this.courseFilterPicked() || this.trainingStats() === null) return null;
+    // A payload from before the field existed (rolling deployment) carries no count.
+    const people = this.response().formerOnPeopleList?.people ?? 0;
     if (people <= 0) return null;
     const subject =
       people === 1 ? '1 former employee on the people list also counts' : `${people.toLocaleString('en-US')} former employees on the people list also count`;

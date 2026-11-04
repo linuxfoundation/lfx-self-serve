@@ -125,3 +125,41 @@ describe('orgTrainingTableNote', () => {
     expect(orgTrainingTableNote('all')).toContain('at any time');
   });
 });
+
+describe('buildOrgTrainingStatTiles with a legacy-shaped payload (rolling deployment)', () => {
+  // The previous release's /training/stats payload: none of the newer fields, and the old names.
+  const legacy = { range: '730d', peopleWithTrainingActivity: 40, certifiedEmployees: 8 } as unknown as OrgTrainingStats;
+
+  it('shows missing readings as unavailable (an em dash) and never throws', () => {
+    const tiles = Object.fromEntries(buildOrgTrainingStatTiles(legacy, '730d').map((tile) => [tile.key, tile]));
+
+    expect(tiles['peopleWithTrainingActivity'].display).toBe('40');
+    for (const key of [
+      'rosterMembers',
+      'coursesTaken',
+      'certifications',
+      'certifiedPeople',
+      'trainingsCompleted',
+      'completionRate',
+      'coursesInProgress',
+      'peopleInTraining',
+    ]) {
+      expect(tiles[key].value, key).toBeNull();
+      expect(tiles[key].display, key).toBe('—');
+    }
+  });
+
+  it('keeps the "no LF Education training program" note for an explicit null roster only', () => {
+    const roster = buildOrgTrainingStatTiles(legacy, '730d')[0];
+    expect(roster.caption).not.toBe(ORG_TRAINING_NO_ROSTER_NOTE);
+    expect(roster.tooltip).not.toContain(ORG_TRAINING_NO_ROSTER_NOTE);
+
+    const noProgram = buildOrgTrainingStatTiles({ ...legacy, rosterMembers: null }, '730d')[0];
+    expect(noProgram.caption).toBe(ORG_TRAINING_NO_ROSTER_NOTE);
+  });
+
+  it('treats a non-finite reading as unavailable', () => {
+    const tile = buildOrgTrainingStatTiles({ ...stats, coursesTaken: Number.NaN }, '730d').find((entry) => entry.key === 'coursesTaken')!;
+    expect(tile.display).toBe('—');
+  });
+});
