@@ -4,7 +4,7 @@ description: How to create and send an NPS survey to the members of one or more 
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, create, nps, feedback, reminders, email, schedule]
-last_updated: 2026-10-28
+last_updated: 2026-11-04
 intercom_collection: Surveys
 ---
 
@@ -23,7 +23,7 @@ The **Create Survey** form is a four-step wizard: **Audience & Type**, **Timing 
 
 ## Step 1: Audience & Type
 
-1. Under **Target Audience**, select the group to survey. Use the **Search groups…** box to find it. At least one is required, or you see "Please select at least one group." If you came from a group, that group is already chosen.
+1. Under **Target Audience**, open the **Select groups** dropdown and tick the group to survey. Use the **Search groups…** box at the top of the list to find it, then click outside the list to close it. At least one is required, or you see "Please select at least one group." If you came from a group, that group is already chosen.
 2. Under **NPS Survey Template**, open the list that reads **Select Survey** and choose a template. A template is required, or you see "Please select a survey template."
 
 The form lets you tick more than one group, but a survey is currently created for the first group you select only, and it is named after that group, for example "Technical Advisory Committee Survey". To survey several groups, create one survey for each. The form also notes that for Board groups, surveys are sent only to voting representatives.
