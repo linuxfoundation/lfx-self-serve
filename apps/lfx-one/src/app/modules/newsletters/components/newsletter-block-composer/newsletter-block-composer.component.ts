@@ -27,7 +27,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import {
   NEWSLETTER_DEFAULT_TEMPLATE_KEY,
-  NEWSLETTER_GMAIL_CLIP_BYTES,
+  NEWSLETTER_BODY_HTML_MAX_BYTES,
   NEWSLETTER_GMAIL_WARN_BYTES,
   NEWSLETTER_SPACING_DEFAULT,
   NEWSLETTER_SPACING_MARGIN_KEY,
@@ -161,8 +161,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected readonly leftPanelCollapsed = signal<boolean>(false);
   protected readonly fieldsCollapsed = signal<boolean>(false);
   // The block library (embedded template set) the palette + emitted layout use.
-  // Seeded in ngOnInit from the saved layout's `template_key`, then the
-  // `templateKey` input, then the default. Changing it swaps the palette.
+  // Seeded once in ngOnInit from the saved layout's `template_key`, then the
+  // `templateKey` input, then the default. There is no library picker yet, so a
+  // new draft uses the default library; choosing a library is a follow-up.
   protected readonly selectedTemplateKey = signal<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
 
   // The canvas container — the positioned ancestor the floating toolbar is
@@ -207,19 +208,21 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // Byte size of the SENT email — the authoritative server render once it's
   // available, falling back to the client estimate meanwhile (via sourceHtml) so
   // the indicator never shows a misleading 0.0 KB before the first render or on a
-  // render error. Drives the Gmail-clipping status (Gmail clips over ~102 KB).
+  // render error. Drives the size status against the newsletter service's 100,000-byte
+  // limit, which sits just under Gmail's ~102 KB clipping point.
   protected readonly emailBytes: Signal<number> = computed(() => {
     const html = this.sourceHtml();
     return html ? new TextEncoder().encode(html).length : 0;
   });
   protected readonly emailSizeLabel: Signal<string> = computed(() => `${(this.emailBytes() / 1024).toFixed(1)} KB`);
-  // 'error' takes precedence over the byte thresholds: on a rejected render the
-  // byte count reflects the smaller client estimate (the server render was
-  // refused), so it would otherwise read as 'ok' while every save fails.
-  protected readonly emailSizeStatus: Signal<'error' | 'ok' | 'warn' | 'clip'> = computed(() => {
-    if (this.renderFailed()) return 'error';
+  // 'limit' comes first: the service rejects a render over the limit, so the
+  // author should see the size, not the generic error. Otherwise 'error' takes
+  // precedence over the warning: on a rejected render the byte count reflects the
+  // smaller client estimate, so it would read as 'ok' while every save fails.
+  protected readonly emailSizeStatus: Signal<'error' | 'ok' | 'warn' | 'limit'> = computed(() => {
     const bytes = this.emailBytes();
-    if (bytes >= NEWSLETTER_GMAIL_CLIP_BYTES) return 'clip';
+    if (bytes >= NEWSLETTER_BODY_HTML_MAX_BYTES) return 'limit';
+    if (this.renderFailed()) return 'error';
     if (bytes >= NEWSLETTER_GMAIL_WARN_BYTES) return 'warn';
     return 'ok';
   });
@@ -1457,13 +1460,12 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /**
    * Map the canvas blocks back to the shared NewsletterLayout shape.
    *
-   * `template_key` records the selected block library so the newsletter renders
-   * (send + preview) and reopens with the SAME template shown in the always-
-   * visible Template picker — WYSIWYG. It is always persisted from the picker's
-   * current value (`selectedTemplateKey`), which ngOnInit normalizes to the
-   * default library when a draft is keyless — the render path resolves a blank
-   * key to that same default (aaif-user-community) and its chrome, so persisting
-   * the resolved key keeps the picker, the save, and the send in agreement.
+   * `template_key` records the block library so the newsletter renders (send and
+   * preview) and reopens with the same library it was composed in. It is always
+   * persisted from `selectedTemplateKey`, which ngOnInit normalizes to the default
+   * library when a draft is keyless. The render path resolves a blank key to that
+   * same default (aaif-user-community), so persisting the resolved key keeps the
+   * canvas, the save and the send in agreement.
    */
   private toLayout(): NewsletterLayout {
     return {

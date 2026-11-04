@@ -18,9 +18,12 @@ export const NEWSLETTER_RAW_CONTENT_MAX_LENGTH = 50_000;
 // share action) can validate up front instead of relying on an opaque upstream 400.
 export const NEWSLETTER_SUBJECT_MAX_LENGTH = 200;
 export const NEWSLETTER_BODY_MAX_LENGTH = 100_000;
-// Structured layout is JSON, so it runs larger than the rendered HTML; bound the
-// serialized size defensively (body_html has its own cap) to reject runaway payloads.
-export const NEWSLETTER_BODY_LAYOUT_MAX_LENGTH = 500_000;
+// Structured layout is JSON, so it runs larger than the rendered HTML. Bound its
+// serialized size in bytes so a save or test send, with the echoed body_html
+// beside it, stays under the newsletter service's 1 MiB request limit.
+export const NEWSLETTER_BODY_LAYOUT_MAX_BYTES = 800_000;
+// render-preview's wrapper_content carries only a few edition.* fields.
+export const NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES = 16_384;
 
 // Cap must exceed the default AI_NEWSLETTER_SYSTEM_PROMPT (~6.2k chars) plus reasonable
 // customization headroom — otherwise the default prompt fails the frontend validator on init
@@ -96,9 +99,8 @@ export const NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS = 72;
 // pilot for the blocks editor.
 export const NEWSLETTER_BLOCKS_PROJECT_SLUGS: readonly string[] = ['agentic-ai-foundation'];
 
-// Gmail clips a message once its rendered HTML exceeds ~102 KB (hiding
-// everything past the cut behind a "[Message clipped] View entire message"
-// link). The block composer warns as the email approaches that ceiling and
-// flags a clip once it is crossed.
+// The newsletter service rejects a rendered email over 100,000 bytes (422),
+// which keeps it under Gmail's ~102 KB clipping point. The block composer warns
+// as the email approaches that limit and shows the limit once it is reached.
 export const NEWSLETTER_GMAIL_WARN_BYTES = 90 * 1024;
-export const NEWSLETTER_GMAIL_CLIP_BYTES = 102 * 1024;
+export const NEWSLETTER_BODY_HTML_MAX_BYTES = 100_000;

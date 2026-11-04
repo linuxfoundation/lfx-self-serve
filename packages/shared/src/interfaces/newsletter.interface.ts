@@ -867,7 +867,7 @@ export interface NewsletterChartData {
  * Mirrors the `type` discriminator in each block's parsed SCHEMA comment.
  * `slot` is the container child-list marker and is not rendered as an input.
  */
-export type NewsletterFieldType = 'text' | 'textarea' | 'richtext' | 'number' | 'array' | 'image' | 'select' | 'slot';
+export type NewsletterFieldType = 'text' | 'textarea' | 'richtext' | 'number' | 'boolean' | 'array' | 'image' | 'select' | 'slot';
 
 /** One option of a `select` field: the value stored and the label shown. */
 export interface NewsletterFieldOption {
@@ -892,7 +892,7 @@ export interface NewsletterFieldDefinition {
 
 /**
  * JSON Schema describing a block's editable fields, keyed by field name. Authored
- * in the declarative templates pulled at build time and rendered into form
+ * in the declarative templates the newsletter service embeds and serves, and rendered into form
  * controls by the editor's fields panel.
  */
 export type NewsletterFieldSchema = Record<string, NewsletterFieldDefinition>;
@@ -944,7 +944,7 @@ export interface NewsletterLayout {
   blocks: NewsletterBlock[];
 }
 
-/** Palette entry describing one block type (from the build-time template pull). */
+/** Palette entry describing one block type, from the newsletter service's template manifest. */
 export interface NewsletterBlockManifestEntry {
   block_type: string;
   label: string;
@@ -957,15 +957,15 @@ export interface NewsletterBlockManifestEntry {
   /** For container blocks: the block types allowed as children. */
   allowed_block_types?: string[];
   /**
-   * Raw declarative template HTML (the element tree, SCHEMA comment stripped)
-   * bundled at build time. The client-side renderer parses + binds it to draw a
+   * Raw declarative template HTML (the element tree, SCHEMA comment stripped),
+   * served with the manifest. The client-side renderer parses + binds it to draw a
    * styled preview on the composer canvas. Optional: absent when a manifest is
    * generated without templates (older asset versions).
    */
   template?: string;
 }
 
-/** Provenance of the template manifest (the pinned, build-time template repo). */
+/** Provenance of the template manifest (the template repo the service embeds). */
 export interface NewsletterTemplateSource {
   repo: string;
   commit: string;
@@ -1054,8 +1054,8 @@ export interface NewsletterTemplateManifest {
   source?: NewsletterTemplateSource;
   /**
    * Raw page-chrome wrapper template HTML (header / footer + a
-   * `<slot name="body" />` where the composed blocks render). Bundled at build
-   * time for the client-side preview. Optional: absent when no wrapper template
+   * `<slot name="body" />` where the composed blocks render), served with the
+   * manifest for the client-side preview. Optional: absent when no wrapper template
    * was found at generation time.
    */
   wrapper?: string;

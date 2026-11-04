@@ -37,8 +37,26 @@ export class NewsletterPreviewComponent {
     return head.startsWith('<!doctype') || head.startsWith('<html');
   });
   // The complete document is writer-rendered email HTML (the same body dispatched
-  // to recipients). It is shown only inside a fully-sandboxed iframe (no scripts,
-  // no same-origin), so bypassing sanitization here affects only that isolated
-  // frame — it cannot script or reach the host page.
-  public readonly trustedDocument: Signal<SafeHtml> = computed(() => this.sanitizer.bypassSecurityTrustHtml(this.bodyHtml()));
+  // to recipients). It is shown only inside a sandboxed iframe with no scripts and
+  // no same-origin access, so bypassing sanitization here affects only that
+  // isolated frame and cannot script or reach the host page. A <base
+  // target="_blank"> is added so every link opens in a new tab rather than inside
+  // the frame, which most sites refuse to be loaded in.
+  public readonly trustedDocument: Signal<SafeHtml> = computed(() => this.sanitizer.bypassSecurityTrustHtml(withBlankLinkTarget(this.bodyHtml())));
+}
+
+/** Adds `<base target="_blank">` to a complete HTML document so its links open in a new tab. */
+export function withBlankLinkTarget(html: string): string {
+  const base = '<base target="_blank">';
+  const head = /<head[^>]*>/i.exec(html);
+  if (head) {
+    const at = head.index + head[0].length;
+    return html.slice(0, at) + base + html.slice(at);
+  }
+  const root = /<html[^>]*>/i.exec(html);
+  if (root) {
+    const at = root.index + root[0].length;
+    return html.slice(0, at) + '<head>' + base + '</head>' + html.slice(at);
+  }
+  return base + html;
 }

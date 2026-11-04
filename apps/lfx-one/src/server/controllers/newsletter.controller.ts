@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  NEWSLETTER_BODY_LAYOUT_MAX_LENGTH,
+  NEWSLETTER_BODY_LAYOUT_MAX_BYTES,
+  NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES,
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
@@ -718,14 +719,13 @@ export class NewsletterController {
       fieldErrors['body_html'] = 'Body is required';
     } else if (!layoutValid && typeof payload?.body_html === 'string' && payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
       // Only cap authored body_html on the HTML-only path. In blocks mode the
-      // upstream ignores request body_html and re-derives it from body_layout, so
-      // capping the (server-rendered, echoed-back) body_html here would reject the
-      // autosave of a large composed email the composer only means to WARN about
-      // (the ~102 KB Gmail-clipping threshold). The layout has its own size cap.
+      // upstream ignores request body_html and re-derives it from body_layout,
+      // and rejects a derived body over 100,000 bytes itself. The layout has its
+      // own size cap.
       fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
     }
-    if (layoutValid && JSON.stringify(payload.body_layout).length > NEWSLETTER_BODY_LAYOUT_MAX_LENGTH) {
-      fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
+    if (layoutValid && Buffer.byteLength(JSON.stringify(payload.body_layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
+      fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
     }
 
     if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
@@ -752,9 +752,8 @@ export class NewsletterController {
 
     // A layout test send recompiles the email from body_layout upstream (the
     // request body_html is the echoed server render), so require/cap body_html
-    // only on the HTML-only path. Otherwise a large composed newsletter — one the
-    // composer only WARNS about at the ~102 KB Gmail-clipping threshold — cannot
-    // be test-sent. Size-cap the layout itself instead.
+    // only on the HTML-only path, and size-cap the layout itself instead. The
+    // upstream rejects a derived body over 100,000 bytes on its own.
     // A PRESENT body_layout is the upstream test-send trigger and is
     // authoritative (body_html is ignored), so route on presence — not on
     // whether it has blocks. An empty present layout must be REJECTED (it would
@@ -764,8 +763,8 @@ export class NewsletterController {
     if (layout !== undefined && layout !== null) {
       if (!Array.isArray(layout.blocks) || layout.blocks.length === 0) {
         fieldErrors['body_layout'] = 'Add at least one block before sending';
-      } else if (JSON.stringify(layout).length > NEWSLETTER_BODY_LAYOUT_MAX_LENGTH) {
-        fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
+      } else if (Buffer.byteLength(JSON.stringify(layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
+        fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
       }
     } else if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
       fieldErrors['body_html'] = 'Body is required';
@@ -802,8 +801,15 @@ export class NewsletterController {
     const layout = payload?.body_layout;
     if (!layout || typeof layout !== 'object' || !Array.isArray(layout.blocks)) {
       fieldErrors['body_layout'] = 'A body_layout with a blocks array is required';
-    } else if (JSON.stringify(layout).length > NEWSLETTER_BODY_LAYOUT_MAX_LENGTH) {
-      fieldErrors['body_layout'] = `body_layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_LENGTH} characters or fewer`;
+    } else if (Buffer.byteLength(JSON.stringify(layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
+      fieldErrors['body_layout'] = `body_layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
+    }
+
+    const wrapperContent: unknown = payload?.wrapper_content;
+    if (wrapperContent !== undefined && (wrapperContent === null || typeof wrapperContent !== 'object' || Array.isArray(wrapperContent))) {
+      fieldErrors['wrapper_content'] = 'wrapper_content must be an object';
+    } else if (wrapperContent !== undefined && Buffer.byteLength(JSON.stringify(wrapperContent), 'utf8') > NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES) {
+      fieldErrors['wrapper_content'] = `wrapper_content must be ${NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES} bytes or fewer when serialized`;
     }
 
     if (Object.keys(fieldErrors).length > 0) {

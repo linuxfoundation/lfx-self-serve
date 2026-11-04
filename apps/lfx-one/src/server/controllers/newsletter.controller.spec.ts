@@ -37,13 +37,14 @@ const {
 // config — mock the barrels the controller imports from directly, same as
 // committee.controller.spec.ts / project.controller.spec.ts.
 // The caps here are deliberately far SMALLER than production (real
-// NEWSLETTER_BODY_MAX_LENGTH is 100_000 and NEWSLETTER_BODY_LAYOUT_MAX_LENGTH is
-// 500_000) so the over-cap tests can trip them with a modest fixture. Assertions
+// NEWSLETTER_BODY_MAX_LENGTH is 100_000 and NEWSLETTER_BODY_LAYOUT_MAX_BYTES is
+// 800_000) so the over-cap tests can trip them with a modest fixture. Assertions
 // exercise the code path, not the production threshold — the "exceeds the cap"
 // tests reject against these mocked values, not the real ones.
 vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_BODY_MAX_LENGTH: 50_000,
-  NEWSLETTER_BODY_LAYOUT_MAX_LENGTH: 5_000,
+  NEWSLETTER_BODY_LAYOUT_MAX_BYTES: 5_000,
+  NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES: 200,
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH: 10_000,
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH: 5_000,
@@ -463,6 +464,23 @@ describe('NewsletterController.renderPreview — validateRenderPreviewPayload', 
     const next = await run({ body_layout: { wrapper_key: 'default', blocks } });
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(renderPreview).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a non-object', 'nope'],
+    ['an array', ['a']],
+    ['null', null],
+    ['an object over the (mocked) cap', { edition: { date: 'x'.repeat(500) } }],
+  ])('rejects wrapper_content that is %s', async (_label, wrapper_content) => {
+    const next = await run({ body_layout: { wrapper_key: 'default', blocks: [] }, wrapper_content });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(renderPreview).not.toHaveBeenCalled();
+  });
+
+  it('passes small wrapper_content through', async () => {
+    renderPreview.mockResolvedValue({ body_html: '<p>x</p>' });
+    const next = await run({ body_layout: { wrapper_key: 'default', blocks: [] }, wrapper_content: { edition: { date: '4 Nov' } } });
+    expect(next).not.toHaveBeenCalled();
   });
 });
 

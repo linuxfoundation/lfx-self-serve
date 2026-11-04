@@ -39,6 +39,13 @@
                 <lfx-input-number [form]="fg" [control]="entry.key" styleClass="w-full" [dataTest]="'newsletter-composer-field-input-' + entry.key">
                 </lfx-input-number>
               }
+              @case ('boolean') {
+                <lfx-toggle
+                  [form]="fg"
+                  [control]="entry.key"
+                  [ariaLabel]="entry.displayLabel"
+                  [dataTest]="'newsletter-composer-field-input-' + entry.key"></lfx-toggle>
+              }
               @case ('select') {
                 <lfx-select
                   [form]="fg"

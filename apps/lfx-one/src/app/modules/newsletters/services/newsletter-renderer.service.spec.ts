@@ -118,6 +118,30 @@ describe('NewsletterRendererService (browser)', () => {
     expect(hidden).not.toContain('Section title');
   });
 
+  it('escapes literal template text as well as bound values outside edit mode', () => {
+    // The parser decodes entities, so a template's literal `&lt;img ...&gt;` reaches the
+    // binder as `<img ...>`; it must come out as text, not as a live tag.
+    const html = service.renderBlock('<text>Hi &lt;img src=x onerror=alert(1)&gt; {{name}}</text>', { name: 'Ada' });
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('Ada');
+  });
+
+  it('honours unless= and field == literal guards the same way as the server', () => {
+    const template = '<section><text unless="italic == false">Italic intro</text><text if="italic == false">Plain intro</text></section>';
+    const italic = service.renderBlock(template, { italic: true });
+    expect(italic).toContain('Italic intro');
+    expect(italic).not.toContain('Plain intro');
+
+    const plain = service.renderBlock(template, { italic: false });
+    expect(plain).toContain('Plain intro');
+    expect(plain).not.toContain('Italic intro');
+
+    const missing = service.renderBlock('<text unless="subtitle">Fallback</text>', {});
+    expect(missing).toContain('Fallback');
+    expect(service.renderBlock('<text if="layout != compact">Wide</text>', { layout: 'compact' })).not.toContain('Wide');
+  });
+
   it('renders a <slot> <separator> BETWEEN children only (matching the server)', () => {
     const templateOf = (bt: string): string | undefined => (bt === 'child' ? '<text>{{t}}</text>' : undefined);
     const template = '<section><slot name="children"><separator><hr class="sep-rule"></separator></slot></section>';

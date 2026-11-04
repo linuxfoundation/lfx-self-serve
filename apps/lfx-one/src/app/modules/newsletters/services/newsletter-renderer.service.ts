@@ -217,14 +217,18 @@ export class NewsletterRendererService {
     // edit-mode "keep empty" decision below and the placeholder marker.
     const selfEdit = selfEditableField(node);
 
-    // Conditional: drop the element when the guarded field is empty — UNLESS
-    // we're in edit mode and the guard is this element's OWN inline-editable
-    // field. There we keep the (empty) element so the author can click into its
-    // placeholder, rather than have a freshly-dragged block render nothing.
-    if (attrs['if'] !== undefined && !truthy(getPath(ctx.content, attrs['if']))) {
+    // Conditional: drop the element when its if= fails or its unless= holds,
+    // with the same rules as the server (see evalCondition) — EXCEPT in edit
+    // mode when the if= guard is this element's OWN inline-editable field. There
+    // we keep the (empty) element so the author can click into its placeholder,
+    // rather than have a freshly-dragged block render nothing.
+    if (attrs['if'] !== undefined && !evalCondition(ctx.content, attrs['if'])) {
       if (!(ctx.editMode && selfEdit?.field === attrs['if'])) {
         return '';
       }
+    }
+    if (attrs['unless'] !== undefined && evalCondition(ctx.content, attrs['unless'])) {
+      return '';
     }
 
     // Loop: repeat this element (minus `each` and `if`) once per array item,
@@ -239,6 +243,7 @@ export class NewsletterRendererService {
       const rest = { ...attrs };
       delete rest['each'];
       delete rest['if'];
+      delete rest['unless'];
       return arr
         .map((item, i) => {
           // Track the indexed path to this item (e.g. `jobs.0`) so inline-edit
@@ -492,18 +497,47 @@ function getPath(obj: Record<string, unknown>, path: string): unknown {
   }, obj);
 }
 
+/**
+ * Evaluate an if= or unless= expression, mirroring evalCondition in the newsletter service's
+ * declarative binder so the canvas shows what the server sends:
+ * - `field` is true when the field is truthy;
+ * - `field == literal` is true when the field's text form equals the literal (a missing field is
+ *   the empty string, and a boolean `false` equals the literal `false`);
+ * - `field != literal` is its negation.
+ */
+function evalCondition(content: Record<string, unknown>, expr: string): boolean {
+  const m = /^\s*([\w.$]+)\s*(==|!=)\s*(.*?)\s*$/.exec(expr);
+  if (m) {
+    const v = getPath(content, m[1]);
+    const equal = (v == null ? '' : String(v)) === m[3];
+    return m[2] === '==' ? equal : !equal;
+  }
+  return truthy(getPath(content, expr.trim()));
+}
+
 function truthy(v: unknown): boolean {
   if (Array.isArray(v)) return v.length > 0;
   if (typeof v === 'string') return v.trim().length > 0;
   return !!v;
 }
 
-/** Resolve `{{field}}` bindings in text, HTML-escaping each substituted value. */
+/**
+ * Resolve `{{field}}` bindings in a text node. Both the substituted values and the literal text
+ * around them are HTML-escaped: the parser has already decoded the template's entities, so a
+ * literal `&lt;img&gt;` arrives here as `<img>` and must not be emitted as markup.
+ */
 function resolveBindings(text: string, content: Record<string, unknown>): string {
-  return text.replace(/\{\{\s*([\w.$]+)\s*\}\}/g, (_, key: string) => {
-    const v = getPath(content, key);
-    return v == null ? '' : escapeHtml(String(v));
-  });
+  const re = /\{\{\s*([\w.$]+)\s*\}\}/g;
+  let out = '';
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    out += escapeHtml(text.slice(last, match.index));
+    const v = getPath(content, match[1]);
+    out += v == null ? '' : escapeHtml(String(v));
+    last = match.index + match[0].length;
+  }
+  return out + escapeHtml(text.slice(last));
 }
 
 /** Resolve `{{field}}` bindings for an attribute value (escaped for quotes). */

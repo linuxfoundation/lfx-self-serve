@@ -506,7 +506,7 @@
         </div>
       </div>
 
-      <!-- Email-size indicator: bytes + Gmail-clipping status. Hidden until the
+      <!-- Email-size indicator: bytes + size status against the 100 KB limit. Hidden until the
          manifest loads, so it never shows a misleading 0.0 KB before the email
          can be rendered. -->
       <div class="flex items-center justify-end gap-1.5 text-xs" data-testid="newsletter-composer-size">
@@ -520,9 +520,11 @@
                 >This layout can't be sent yet. It may be too large or contain an unsupported block.</span
               >
             }
-            @case ('clip') {
+            @case ('limit') {
               <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
-              <span class="font-medium text-red-600">{{ emailSizeLabel() }} — over Gmail's ~102 KB limit; it will be clipped.</span>
+              <span class="font-medium text-red-600" data-testid="newsletter-composer-size-limit"
+                >{{ emailSizeLabel() }} — over the 100 KB limit. Remove some content before you save or send.</span
+              >
             }
             @case ('warn') {
               <i class="fa-light fa-triangle-exclamation text-amber-500" aria-hidden="true"></i>

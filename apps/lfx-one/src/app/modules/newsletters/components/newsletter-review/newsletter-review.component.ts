@@ -102,8 +102,7 @@ export class NewsletterReviewComponent implements OnInit {
     return `${count} ${count === 1 ? 'recipient' : 'recipients'}`;
   });
   // Label for the newsletter's block library (blocks-mode drafts only; empty for
-  // html-only drafts). Prefer the catalog's curated label so the name matches
-  // the composer picker exactly; fall back to humanizing the key when the
+  // html-only drafts). Prefer the catalog's curated label; fall back to humanizing the key when the
   // catalog hasn't loaded (e.g. landing straight on review without opening the
   // editor this session).
   protected readonly templateLabel = computed(() => {

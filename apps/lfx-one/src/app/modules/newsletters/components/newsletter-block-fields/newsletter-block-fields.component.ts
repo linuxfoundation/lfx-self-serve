@@ -9,6 +9,7 @@ import { InputNumberComponent } from '@components/input-number/input-number.comp
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { SelectComponent } from '@components/select/select.component';
+import { ToggleComponent } from '@components/toggle/toggle.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
 import { NewsletterComposerBlock, NewsletterFieldDefinition, NewsletterFieldEntry, NewsletterFieldSchema } from '@lfx-one/shared/interfaces';
@@ -38,7 +39,16 @@ import { humanizeFieldKey } from '@lfx-one/shared/utils';
  */
 @Component({
   selector: 'lfx-newsletter-block-fields',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, TextareaComponent, RichEditorComponent, InputNumberComponent, SelectComponent],
+  imports: [
+    ReactiveFormsModule,
+    ButtonComponent,
+    InputTextComponent,
+    TextareaComponent,
+    RichEditorComponent,
+    InputNumberComponent,
+    SelectComponent,
+    ToggleComponent,
+  ],
   templateUrl: './newsletter-block-fields.component.html',
 })
 export class NewsletterBlockFieldsComponent implements OnDestroy {
@@ -310,7 +320,9 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
 
   /** Empty seed value for a scalar field type. */
   private emptyFor(type: NewsletterFieldDefinition['type']): unknown {
-    return type === 'number' ? null : '';
+    if (type === 'number') return null;
+    if (type === 'boolean') return false;
+    return '';
   }
 
   private teardownForm(): void {

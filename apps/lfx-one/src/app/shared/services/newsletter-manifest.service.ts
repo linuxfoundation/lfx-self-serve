@@ -33,9 +33,8 @@ export class NewsletterManifestService {
   private readonly manifestSignal = signal<NewsletterTemplateManifest | null>(null);
   private readonly loadingSignal = signal<boolean>(false);
   private readonly errorSignal = signal<boolean>(false);
-  // The available template sets (block libraries) the user can pick from. Empty
-  // until loaded / on failure — the composer synthesizes a single entry for the
-  // active key so its library picker still renders.
+  // The available template sets (block libraries). Empty until loaded or on
+  // failure. Today only the review card reads it, for the library's label.
   private readonly templatesSignal = signal<NewsletterTemplateInfo[]>([]);
 
   // One cached request per template key, shared across subscribers.
