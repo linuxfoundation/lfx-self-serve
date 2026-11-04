@@ -114,7 +114,8 @@ export function renderMktgSlidesExportFormMessage(form: MktgSlidesExportForm, no
     `DECK ID: ${form.deck_id ?? MKTG_SLIDES_EXPORT_DECK_NONE}`,
     `DECK TITLE: ${form.deck_title ?? defaultMktgSlidesExportDeckTitle(form.project_name, runDate)}`,
     `LOGO URL: ${form.logo_url ?? 'none'}`,
-    // The variant lines are always rendered: the exporter's parser reads every head line by label, and refuses a missing one.
+    // The variant lines are always rendered, so the two sides read the same five lines; slides-export 1.1.2 reads `none`, an
+    // empty value and an absent line alike as "not supplied", and 1.1.1 ignores lines it does not read.
     `LOGO SYMBOL URL: ${form.logo_symbol_url ?? 'none'}`,
     `LOGO REVERSED URL: ${form.logo_reversed_url ?? 'none'}`,
     `LOGO ONE-COLOR URL: ${form.logo_one_color_url ?? 'none'}`,
