@@ -6,8 +6,11 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import {
   ORG_DEFAULT_PROJECT_SCOPE_LABEL,
+  ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE,
   ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
+  ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE,
+  ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE,
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
   ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
@@ -54,6 +57,7 @@ async function buildMetrics(
         accountName: 'Acme Motors',
         totalAttended: 200,
         totalSpeakers: 40,
+        servedAttribution: 'company_email',
         attendeesMonthlyData: [50],
         speakersMonthlyData: [10],
         monthlyLabels: ['Jan 2030'],
@@ -251,6 +255,23 @@ describe('OrgOverviewInvolvementComponent maintainer roles', () => {
   });
 });
 
+describe('OrgOverviewInvolvementComponent events', () => {
+  it('says registered, counts distinct people and explains the headline is not the sum of the monthly points', async () => {
+    const metrics = await buildMetrics();
+    const attendees = metrics.find((metric) => metric.title === 'Event Attendees');
+    const speakers = metrics.find((metric) => metric.title === 'Event Speakers');
+
+    expect(attendees?.value).toBe('200');
+    expect(attendees?.subtitle).toBe(ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE);
+    expect(attendees?.subtitle).toContain('registered');
+    expect(attendees?.tooltipText).toContain(ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE);
+    expect(attendees?.tooltipText).not.toContain(ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE);
+    expect(attendees?.chartCaption).toContain('Distinct people per month');
+    expect(speakers?.value).toBe('40');
+    expect(speakers?.tooltipText).toContain(ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE);
+  });
+});
+
 describe('OrgOverviewInvolvementComponent active contributors', () => {
   it('names the default view and the company under the headline and states the trend window under the chart', async () => {
     const metrics = await buildMetrics();
@@ -285,6 +306,7 @@ describe('OrgOverviewInvolvementComponent organization scope', () => {
                 accountName: '',
                 totalAttended: 0,
                 totalSpeakers: 0,
+                servedAttribution: 'company_email',
                 attendeesMonthlyData: [],
                 speakersMonthlyData: [],
                 monthlyLabels: [],

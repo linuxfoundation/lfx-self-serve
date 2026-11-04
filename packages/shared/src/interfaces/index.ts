@@ -326,6 +326,7 @@ export * from './project-participating-orgs.internal.interface';
 
 // Org Events interfaces
 export * from './org-events.interface';
+export * from './org-events-filters.interface';
 
 // Org Events internal backend query-row shapes
 export * from './org-events-internal.interface';

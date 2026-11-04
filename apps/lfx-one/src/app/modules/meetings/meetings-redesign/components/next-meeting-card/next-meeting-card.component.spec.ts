@@ -151,6 +151,23 @@ describe('NextMeetingCardComponent', () => {
     ]);
   });
 
+  it("shows the date's RSVP counts with a legend for an organized meeting, and nothing without counts", async () => {
+    const series = buildMeeting({ rsvp_summary: { invited: 9, yes: 9, maybe: 0, no: 0, no_response: 0 } });
+    const occurrence = {
+      occurrence_id: 'o-1',
+      title: 'Series title',
+      start_time: series.start_time,
+      duration: 60,
+      rsvp_summary: { invited: 10, yes: 4, maybe: 3, no: 1, no_response: 2 },
+    };
+    const organized = await render(buildRow(series, undefined, { occurrence, occurrenceId: 'o-1' }));
+    const other = await render(buildRow(buildMeeting()));
+
+    expect(text(organized, 'meetings-home-attendance-label')).toBe('4 of 10 attending · 40%');
+    expect(query(organized, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 4 Maybe 3 No 1');
+    expect(query(other, 'meetings-home-next-card-attendance')).toBeNull();
+  });
+
   it('badges only Private and Restricted meetings on the tile', async () => {
     const badges = async (overrides: Partial<Meeting>): Promise<string[]> => {
       const fixture = await render(buildRow(buildMeeting(overrides)));

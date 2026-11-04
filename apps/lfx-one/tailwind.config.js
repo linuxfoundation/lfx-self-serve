@@ -47,6 +47,7 @@ import {
   lfxColors,
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
+  MEETING_HOME_ATTENDANCE_BG_CLASSES,
   MEETING_VISIBILITY_BG_CLASSES,
   MENTION_SENTIMENT_CONFIG,
   MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE,
@@ -154,6 +155,8 @@ export default {
     ...Object.values(MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Meetings home visibility badge fills (MEETING_VISIBILITY_BG_CLASSES in @lfx-one/shared, not scanned here)
     ...Object.values(MEETING_VISIBILITY_BG_CLASSES),
+    // Meetings home attendance bar and legend fills (MEETING_HOME_ATTENDANCE_BG_CLASSES, not scanned here)
+    ...Object.values(MEETING_HOME_ATTENDANCE_BG_CLASSES),
     // Social Listening platform icon colors (MENTION_PLATFORM_CONFIG in @lfx-one/shared, not scanned here)
     ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.colorClass),
     // Social Listening analytics distribution bars (barClass on MENTION_PLATFORM_CONFIG / MENTION_SENTIMENT_CONFIG)

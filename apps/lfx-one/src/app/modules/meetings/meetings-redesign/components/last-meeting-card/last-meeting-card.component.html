@@ -135,6 +135,10 @@
       }
     </div>
 
+    @if (attendance(); as attendance) {
+      <lfx-meeting-home-attendance class="mb-[14px] mt-[4px]" [attendance]="attendance" data-testid="meetings-home-last-card-attendance" />
+    }
+
     @if (recordingUrl() || summaryContent()) {
       <div class="flex flex-col gap-[8px]">
         @if (recordingUrl(); as recordingUrl) {

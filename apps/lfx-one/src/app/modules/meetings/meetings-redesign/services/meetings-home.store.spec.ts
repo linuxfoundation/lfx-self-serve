@@ -166,7 +166,8 @@ describe('MeetingsHomeStore', () => {
 
       expect(userService['getUserMeetings']).toHaveBeenCalledTimes(1);
       expect(userService['getUserPastMeetings']).toHaveBeenCalledTimes(1);
-      expect(userService['getUserPastMeetings']).toHaveBeenCalledWith({ includeArtifacts: true });
+      expect(userService['getUserMeetings']).toHaveBeenCalledWith({ includeAttendance: true });
+      expect(userService['getUserPastMeetings']).toHaveBeenCalledWith({ includeArtifactsAndAttendance: true });
       expect(store.upcomingLoading()).toBe(true);
       expect(store.pastLoading()).toBe(true);
 
@@ -731,6 +732,18 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.lastMeetingLoading()).toBe(false);
       expect(store.pastLoading()).toBe(true);
+      expect(store.lastMeeting()?.key).toBe('m-past-b');
+    });
+
+    it("takes the attendance counts from the full past feed's record of the same meeting", () => {
+      const store = create();
+      const latest = buildPastMeeting('b', inDays(-1));
+      latestPast$.next([latest]);
+      expect(store.lastMeeting()?.meeting).not.toHaveProperty('attendance_summary');
+
+      past$.next([{ ...latest, attendance_summary: { invited: 8, attended: 3 } }]);
+
+      expect((store.lastMeeting()?.meeting as PastMeeting).attendance_summary).toEqual({ invited: 8, attended: 3 });
       expect(store.lastMeeting()?.key).toBe('m-past-b');
     });
 

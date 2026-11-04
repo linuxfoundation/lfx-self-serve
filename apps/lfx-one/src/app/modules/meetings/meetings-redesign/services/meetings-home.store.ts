@@ -15,6 +15,7 @@ import {
   MeetingRsvp,
   MeetingsHomeFilters,
   PastMeeting,
+  PastMeetingAttendanceSummary,
   PastMeetingSummary,
   UiToastRef,
 } from '@lfx-one/shared/interfaces';
@@ -86,14 +87,14 @@ export class MeetingsHomeStore {
   public readonly lastMeetingFailed: Signal<boolean> = this.lastMeetingFailedState.asReadonly();
 
   private readonly upcomingMeetings: Signal<Meeting[]> = this.initFeed(
-    () => this.userService.getUserMeetings(),
+    () => this.userService.getUserMeetings({ includeAttendance: true }),
     this.userService.meetingsRefresh$,
     this.upcomingLoadingState,
     this.upcomingFailedState
   );
-  // Carries `recording_share_url` / `has_ai_summary` for the past rows' Recording and AI Summary buttons.
+  // Carries `recording_share_url` / `has_ai_summary` for the Recording and AI Summary buttons, and organizer attendance.
   private readonly pastMeetings: Signal<PastMeeting[]> = this.initFeed(
-    () => this.userService.getUserPastMeetings({ includeArtifacts: true }),
+    () => this.userService.getUserPastMeetings({ includeArtifactsAndAttendance: true }),
     this.userService.pastMeetingsRefresh$,
     this.pastLoadingState,
     this.pastFailedState
@@ -104,6 +105,10 @@ export class MeetingsHomeStore {
     this.userService.pastMeetingsRefresh$,
     this.lastMeetingLoadingState,
     this.lastMeetingFailedState
+  );
+  // The latest-past feed has no attendance counts; the full past feed's record of the same meeting does.
+  private readonly pastAttendanceById: Signal<Map<string, PastMeetingAttendanceSummary>> = computed(
+    () => new Map(this.pastMeetings().flatMap((meeting) => (meeting.attendance_summary ? [[meeting.id, meeting.attendance_summary] as const] : [])))
   );
   // Past records may outlive their meeting, so past rows are hidden only until their feed answers again.
   private readonly deletedPastIds: WritableSignal<ReadonlySet<string>> = linkedSignal({ source: this.pastMeetings, computation: () => new Set<string>() });
@@ -158,7 +163,7 @@ export class MeetingsHomeStore {
   public readonly lastMeeting: Signal<MeetingHomeRow | null> = computed(
     () =>
       this.latestPastMeetings()
-        .map((meeting) => toPastMeetingHomeRow(meeting))
+        .map((meeting) => toPastMeetingHomeRow(this.withPastAttendance(meeting)))
         .find((row) => row !== null && !this.deletedLatestPastIds().has(getMeetingSeriesUid(row.meeting))) ?? null
   );
   private readonly fetchedLastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = this.initLastMeetingArtifact((id) =>
@@ -233,6 +238,11 @@ export class MeetingsHomeStore {
     const rows = this.concurrentNextRows();
     const row = rows[Math.min(Math.max(this.nextCardIndex() + step, 0), rows.length - 1)];
     if (row) this.nextCardKey.set(row.key);
+  }
+
+  private withPastAttendance(meeting: PastMeeting): PastMeeting {
+    const summary = this.pastAttendanceById().get(meeting.id);
+    return summary && !meeting.attendance_summary ? { ...meeting, attendance_summary: summary } : meeting;
   }
 
   private initClock(): Signal<Date> {

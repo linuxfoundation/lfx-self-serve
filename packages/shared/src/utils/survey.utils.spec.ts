@@ -5,12 +5,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { Survey, SurveyCommittee, SurveyResponseItem } from '../interfaces/survey.interface';
 import {
+  buildSurveyEmailBodies,
   buildSurveyFollowUpMailto,
   buildSurveyResponsesCsvRows,
   getSurveyEmailStages,
   getSurveyEngagementRates,
   getSurveyResyncScope,
   renderSurveyEmailForRecipient,
+  toSurveyTemplateVariables,
 } from './survey.utils';
 
 const survey = {
@@ -185,5 +187,25 @@ describe('getSurveyResyncScope', () => {
   it('offers no resync when the project has no committee on the survey or no project is active', () => {
     expect(getSurveyResyncScope(withCommittees('p-1', 'p-2'), 'p-9')).toBeNull();
     expect(getSurveyResyncScope(withCommittees('p-1'), null)).toBeNull();
+  });
+});
+
+describe('toSurveyTemplateVariables', () => {
+  it('adds the leading dot Go templates require', () => {
+    expect(toSurveyTemplateVariables('{{FirstName}}, hi {{ ProjectName }}')).toBe('{{.FirstName}}, hi {{.ProjectName}}');
+  });
+
+  it('leaves already-dotted placeholders unchanged', () => {
+    expect(toSurveyTemplateVariables('{{.FirstName}}')).toBe('{{.FirstName}}');
+  });
+});
+
+describe('buildSurveyEmailBodies', () => {
+  it('expands the survey button and dots every placeholder', () => {
+    const { html, text } = buildSurveyEmailBodies('Dear {{FirstName}}\n{{SurveyButton}}');
+    expect(html).toContain('{{.FirstName}}');
+    expect(html).toContain('<a href="{{.SurveyLink}}"');
+    expect(html).not.toMatch(/\{\{[^.]/);
+    expect(text).toBe('Dear {{.FirstName}}\n{{.SurveyLink}}');
   });
 });

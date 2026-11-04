@@ -164,6 +164,15 @@ describe('LastMeetingCardComponent', () => {
     expect(query(fixture, 'meetings-home-last-card-recurring')).toBeNull();
   });
 
+  it('shows the attendance of a meeting the viewer organized, and nothing without counts', async () => {
+    const organized = await render({ row: rowOf(buildMeeting({ attendance_summary: { invited: 8, attended: 6 } })), summary: null });
+    const other = await render({ row: rowOf(buildMeeting()), summary: null });
+
+    expect(organized.nativeElement.querySelector('[data-testid="meetings-home-attendance-label"]')?.textContent?.trim()).toBe('6 of 8 attended · 75%');
+    expect(organized.nativeElement.querySelector('[data-testid="meetings-home-attendance-poor"]')).toBeNull();
+    expect(query(other, 'meetings-home-last-card-attendance')).toBeNull();
+  });
+
   it('opens the meeting page when the card is clicked', async () => {
     const fixture = await render({ row: rowOf(buildMeeting()), summary: null });
 

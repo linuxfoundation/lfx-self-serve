@@ -3,6 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
+import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, model, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -10,7 +11,8 @@ import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { catchError, combineLatest, finalize, of, skip, switchMap } from 'rxjs';
 
-import type { OrgEventAttendeesDrawerResponse, OrgEventAttendeeVm } from '@lfx-one/shared/interfaces';
+import { DEFAULT_ORG_EVENTS_ATTRIBUTION, DEFAULT_ORG_EVENTS_PARTICIPATION, ORG_EVENTS_PARTICIPATION_OPTIONS } from '@lfx-one/shared/constants';
+import type { OrgEventAttendeeVm, OrgEventsAttribution, OrgEventsParticipation } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
@@ -18,7 +20,7 @@ import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 @Component({
   selector: 'lfx-event-attendees-drawer',
-  imports: [FormsModule, DrawerModule, InputTextModule],
+  imports: [DecimalPipe, FormsModule, DrawerModule, InputTextModule],
   templateUrl: './event-attendees-drawer.component.html',
 })
 export class EventAttendeesDrawerComponent {
@@ -29,12 +31,29 @@ export class EventAttendeesDrawerComponent {
   public readonly eventId = input<string>('');
   public readonly eventName = input<string>('');
   public readonly attendeeCount = input<number>(0);
+  public readonly attribution = input<OrgEventsAttribution>(DEFAULT_ORG_EVENTS_ATTRIBUTION);
+  public readonly participation = input<OrgEventsParticipation>(DEFAULT_ORG_EVENTS_PARTICIPATION);
 
   protected readonly searchTerm = signal('');
   protected readonly loading = signal(false);
+  // A failed read is not a count of zero: the opener's count stays and the list says it could not load.
+  protected readonly loadFailed = signal(false);
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
 
+  // The status badge on every row says what the drawer counts: Registered or Attended.
+  protected readonly participationLabel = computed(() => ORG_EVENTS_PARTICIPATION_OPTIONS.find((option) => option.value === this.participation())?.label ?? '');
+
   private readonly attendeesData = this.initAttendeesData();
+
+  // People the option counts but the list may not name ("N more counted, not listed").
+  protected readonly notListedCount = computed(() => this.attendeesData()?.notListedCount ?? 0);
+
+  // The counted total for the current selection: listed people plus the people counted but not listed, taken from the same response as the rows.
+  // Until the first response lands, the count the opener passed in.
+  protected readonly countedTotal = computed(() => {
+    const data = this.attendeesData();
+    return data ? data.data.length + data.notListedCount : this.attendeeCount();
+  });
 
   protected readonly filteredAttendees = computed<OrgEventAttendeeVm[]>(() => {
     const term = this.searchTerm().toLowerCase().trim();
@@ -45,16 +64,20 @@ export class EventAttendeesDrawerComponent {
 
   private initAttendeesData() {
     return toSignal(
-      combineLatest([toObservable(this.visible), toObservable(this.eventId)]).pipe(
+      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.attribution), toObservable(this.participation)]).pipe(
         skip(1),
-        switchMap(([isVisible, currentEventId]) => {
+        switchMap(([isVisible, currentEventId, attribution, participation]) => {
           if (!isVisible || !currentEventId) return of(null);
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return of(null);
           this.searchTerm.set('');
+          this.loadFailed.set(false);
           this.loading.set(true);
-          return this.eventsService.getEventAttendees(accountId, currentEventId).pipe(
-            catchError(() => of({ eventId: currentEventId, eventName: this.eventName(), total: 0, data: [] } as OrgEventAttendeesDrawerResponse)),
+          return this.eventsService.getEventAttendees(accountId, currentEventId, { attribution, participation }).pipe(
+            catchError(() => {
+              this.loadFailed.set(true);
+              return of(null);
+            }),
             finalize(() => this.loading.set(false))
           );
         })

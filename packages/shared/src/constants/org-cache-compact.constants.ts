@@ -7,10 +7,9 @@ import type {
   EventAttendeeEventOptionRow,
   EventAttendeeFoundationOptionRow,
   OrgLensProjectPerson,
-  OrgPeopleAllEventAttendeeRow,
   OrgPeopleAllRowRaw,
   OrgPeopleAllTraineeRow,
-  OrgPeopleEventRow,
+  OrgEventParticipationRow,
   OrgPeopleFoundationOptionRow,
   OrgPeopleTrainingRow,
   OrgTrainingOutsideLearnerRow,
@@ -91,16 +90,6 @@ export const ORG_PEOPLE_ALL_ROW_COLUMNS = [
 /** `CompactOrgAllEmployeesRawCache.foundationRaw`. */
 export const ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS = ['FOUNDATION_ID', 'FOUNDATION_NAME'] as const satisfies readonly (keyof OrgPeopleFoundationOptionRow)[];
 
-/** `CompactOrgEventAttendeesRawCache.attendeeRows`. */
-export const ORG_EVENT_ATTENDEE_ROW_COLUMNS = [
-  'PERSON_KEY',
-  'LFID',
-  'CDP_MEMBER_ID',
-  'NAME',
-  'TITLE',
-  'EMAIL',
-] as const satisfies readonly (keyof OrgPeopleAllEventAttendeeRow)[];
-
 /** `CompactOrgEventAttendeesRawCache.events` — the event-level columns lifted out of every detail row. */
 export const ORG_EVENT_DICTIONARY_COLUMNS = [
   'EVENT_ID',
@@ -113,16 +102,22 @@ export const ORG_EVENT_DICTIONARY_COLUMNS = [
   'EVENT_END_DATE',
   'FOUNDATION_ID',
   'FOUNDATION_NAME',
-] as const satisfies readonly (keyof OrgPeopleEventRow)[];
+] as const satisfies readonly (keyof OrgEventParticipationRow)[];
 
 /** `CompactOrgEventAttendeesRawCache.details` — what genuinely varies per (person, event) row. */
-export const ORG_EVENT_DETAIL_COLUMNS = ['PERSON_KEY', 'IS_SPEAKER', 'IS_PAST_EVENT'] as const satisfies readonly (keyof OrgPeopleEventRow)[];
+export const ORG_EVENT_DETAIL_COLUMNS = [
+  'PARTICIPANT_REF',
+  'PERSON_KEY',
+  'DISPLAY_NAME',
+  'JOB_TITLE',
+  'IS_SPEAKER',
+] as const satisfies readonly (keyof OrgEventParticipationRow)[];
 
 /** `CompactOrgEventAttendeesRawCache.foundationRows`. */
 export const ORG_EVENT_FOUNDATION_OPTION_COLUMNS = ['FOUNDATION_ID', 'FOUNDATION_NAME'] as const satisfies readonly (keyof EventAttendeeFoundationOptionRow)[];
 
 /** `CompactOrgEventAttendeesRawCache.eventRows`. */
-export const ORG_EVENT_OPTION_COLUMNS = ['EVENT_ID', 'EVENT_NAME', 'EVENT_END_DATE'] as const satisfies readonly (keyof EventAttendeeEventOptionRow)[];
+export const ORG_EVENT_OPTION_COLUMNS = ['EVENT_ID', 'EVENT_NAME', 'EVENT_DATE'] as const satisfies readonly (keyof EventAttendeeEventOptionRow)[];
 
 /** `CompactOrgTraineesRawCache.traineeRows`. */
 export const ORG_TRAINEE_ROW_COLUMNS = [

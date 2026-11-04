@@ -406,7 +406,7 @@ describe('MeetingComposerHostComponent', () => {
       vi.spyOn(formService, 'validateForSubmit').mockReturnValue(true);
     });
 
-    it('raises a sticky bottom-right uikit toast carrying the created meeting', () => {
+    it('raises a timed bottom-right uikit toast carrying the created meeting', () => {
       vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
 
       component['onSubmit']();
@@ -416,9 +416,8 @@ describe('MeetingComposerHostComponent', () => {
         position: 'bottom-right',
         message: 'Meeting created',
         description: 'Weekly sync',
-        duration: 0,
-        dismissible: true,
       });
+      expect(lastUiToast().duration).toBeUndefined();
       expect(lastUiToast().actions?.map((action) => action.label)).toEqual(['Edit meeting', 'View meeting']);
       expect(messageService.add).not.toHaveBeenCalled();
     });
@@ -442,7 +441,7 @@ describe('MeetingComposerHostComponent', () => {
 
       await openCreate();
 
-      // Sticky toasts never expire, so creating several meetings in a row would stack them over the drawer.
+      // A toast still on screen would otherwise sit over the reopened drawer.
       expect(first.dismiss).toHaveBeenCalledTimes(1);
     });
 
