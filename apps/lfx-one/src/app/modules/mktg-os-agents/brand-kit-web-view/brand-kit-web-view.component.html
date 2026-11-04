@@ -755,27 +755,122 @@
             <p [class]="caption" data-testid="brand-kit-web-view-sources-read-empty">Nothing was read.</p>
           }
         </div>
+        @let sources = sourcesView();
+        <!-- The agent's own words for what failed, what is missing and what it noticed; the UI never rewrites a reason.
+             Under an approved revision, each item the approval's snapshot lists says when it was accepted. -->
         <div [class]="card">
-          <h3 [class]="cardTitle">Could not be read</h3>
-          @if (v.report.sources_failed.length > 0) {
+          <h3 [class]="cardTitle">{{ sourcesTitles.failed }}</h3>
+          @if (sources.failed.length > 0) {
             <ul class="flex flex-col gap-1.5 text-sm" data-testid="brand-kit-web-view-sources-failed">
-              @for (failed of v.report.sources_failed; track $index) {
+              @for (failed of sources.failed; track failed.key) {
                 <li class="flex flex-col">
-                  <span class="text-gray-800">{{ failed.name }}</span>
-                  <span class="text-xs text-amber-700">{{ failed.reason }}</span>
+                  <span class="text-gray-800">{{ failed.title }}</span>
+                  <span class="text-xs text-amber-700">{{ failed.text }}</span>
+                  @if (failed.detail) {
+                    <span [class]="caption">{{ failed.detail }}</span>
+                  }
+                  @if (failed.accepted) {
+                    <span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
+                  }
                 </li>
               }
             </ul>
           } @else {
-            <p [class]="caption" data-testid="brand-kit-web-view-sources-failed-empty">{{ noSourceFailedNote }}</p>
+            <p [class]="caption" data-testid="brand-kit-web-view-sources-failed-empty">{{ sourcesEmpty.failed }}</p>
+          }
+        </div>
+        <div [class]="card">
+          <h3 [class]="cardTitle">{{ sourcesTitles.missing }}</h3>
+          @if (sources.missing.length > 0) {
+            <ul class="flex flex-col gap-1.5 text-sm" data-testid="brand-kit-web-view-missing-assets">
+              @for (missing of sources.missing; track missing.key) {
+                <li class="flex flex-col">
+                  <span class="text-gray-800">{{ missing.title }}</span>
+                  <span class="text-xs text-amber-700">{{ missing.text }}</span>
+                  @if (missing.fix) {
+                    <span class="text-xs text-gray-700">{{ fixPrefix }}{{ missing.fix }}</span>
+                  }
+                  @if (missing.accepted) {
+                    <span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          } @else {
+            <p [class]="caption" data-testid="brand-kit-web-view-missing-assets-empty">{{ sourcesEmpty.missing }}</p>
+          }
+        </div>
+        <div [class]="card">
+          <h3 [class]="cardTitle">{{ sourcesTitles.warnings }}</h3>
+          @if (sources.warnings.length > 0) {
+            <ul class="flex flex-col gap-1.5 text-sm" data-testid="brand-kit-web-view-warnings">
+              @for (warning of sources.warnings; track warning.key) {
+                <li class="flex flex-col">
+                  <span class="text-gray-800">{{ warning.text }}</span>
+                  @if (warning.source) {
+                    @if (sourceHref(warning.source); as href) {
+                      <a class="text-xs text-blue-600 hover:text-blue-800" [href]="href" target="_blank" rel="noopener noreferrer"
+                        >{{ warning.source }}<span class="sr-only"> (opens in a new tab)</span></a
+                      >
+                    } @else {
+                      <span [class]="caption">{{ warning.source }}</span>
+                    }
+                  }
+                  @if (warning.accepted) {
+                    <span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          } @else {
+            <p [class]="caption" data-testid="brand-kit-web-view-warnings-empty">{{ sourcesEmpty.warnings }}</p>
+          }
+        </div>
+        <div [class]="card">
+          <h3 [class]="cardTitle">{{ sourcesTitles.conflicts }}</h3>
+          @if (sources.conflicts.length > 0) {
+            <ul class="flex flex-col gap-2 text-sm" data-testid="brand-kit-web-view-color-conflicts">
+              @for (conflict of sources.conflicts; track conflict.key) {
+                <li class="flex flex-col gap-1">
+                  <span class="text-gray-800">{{ conflict.name }}</span>
+                  <!-- The Colour chapter's swatch card, one per value seen, at list size: the hex on its own ground, where it was seen beside it. -->
+                  <ul class="flex flex-col gap-2">
+                    @for (value of conflict.values; track $index) {
+                      <li class="flex overflow-hidden rounded-xl border border-gray-200 bg-white">
+                        <div
+                          class="flex h-12 w-24 shrink-0 items-end p-2 font-mono text-xs font-medium"
+                          [ngClass]="{ 'border-r border-gray-200': value.light }"
+                          [style.background]="value.hex">
+                          <span [style.color]="value.ink">{{ value.hex }}</span>
+                        </div>
+                        <span class="min-w-0 self-center break-all px-3 py-2 text-xs text-gray-500">{{ value.source }}</span>
+                      </li>
+                    }
+                  </ul>
+                  <span class="text-xs text-gray-700"
+                    >{{ keptWord }} <span class="font-mono">{{ conflict.chosen }}</span></span
+                  >
+                  @if (conflict.accepted) {
+                    <span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          } @else {
+            <p [class]="caption" data-testid="brand-kit-web-view-color-conflicts-empty">{{ sourcesEmpty.conflicts }}</p>
           }
         </div>
         <div [class]="card">
           <h3 [class]="cardTitle">Gaps</h3>
-          @if (v.report.gaps.length > 0) {
+          @if (sources.gaps.length > 0) {
             <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800" data-testid="brand-kit-web-view-gaps">
-              @for (gap of v.report.gaps; track $index) {
-                <li>{{ gap }}</li>
+              @for (gap of sources.gaps; track $index) {
+                <li>
+                  {{ gap.text }}
+                  @if (gap.accepted) {
+                    <span class="block text-xs text-gray-500" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
+                  }
+                </li>
               }
             </ul>
             @if (acceptedGapsNote(); as accepted) {

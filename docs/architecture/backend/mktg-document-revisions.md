@@ -114,7 +114,14 @@ writer's lock. S3 passes the original ETag through `If-Match`.
 The optional `approvals` map on the same current record stores each revision's
 `approvedAt` and opaque effective-sub `approvedBy`; it is never part of hashed
 revision bytes. Missing or malformed optional annotations mean no approvals,
-not a corrupt critical pointer. Approve uses the existing `writeCurrent` CAS to
+not a corrupt critical pointer. Since the brand kit's report v2, approve also
+writes `accepted` beside them: the stable keys of what the revision's sidecar
+report showed at that moment (`mktgAcceptedSnapshotOf`: failed sources by
+`source`, or the v1 `name`; missing assets by `asset`; warnings by `code|text`;
+gaps by their exact text; colour conflicts by `name`), empty lists when the
+sidecar has no report. The read is tolerant (`readMktgRevisionAccepted`): a
+malformed snapshot is dropped and the approval kept, as for approvals made
+before it existed, and the view then derives what it can. Approve uses the existing `writeCurrent` CAS to
 add an annotation and select that revision atomically. Already approved and
 current is a no-op; selecting an earlier approval preserves its original
 approval time and actor. Make current only moves selection: it never approves

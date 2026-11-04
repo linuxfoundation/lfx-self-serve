@@ -66,6 +66,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/linkedin-post-presentation.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/aeo-geo.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-asset.utils')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
@@ -678,12 +679,69 @@ describe('MktgDocumentStoreService', () => {
       expect(store.reads.filter((key) => key.endsWith('current.json'))).toHaveLength(1);
       expect(revisionKeys().map((key) => storedObject(key).body)).toEqual(bytes);
       expect(record.revisionId).toBe(first.id);
-      expect(record.approvals[first.id]).toEqual({ approvedAt: record.changedAt, approvedBy: 'auth0|not-the-lfid' });
+      // An envelope without a report still gets its snapshot, empty: the key is present on every approval made from now on.
+      const accepted = { sources_failed: [], missing_assets: [], warnings: [], gaps: [], color_conflicts: [] };
+      expect(record.approvals[first.id]).toEqual({ approvedAt: record.changedAt, approvedBy: 'auth0|not-the-lfid', accepted });
       expect(result?.approvedCurrent).toEqual({ revisionId: first.id, number: 1 });
-      expect(result?.approval).toEqual({ approvedAt: record.changedAt, approvedBy: { name: 'The writer' } });
+      expect(result?.approval).toEqual({ approvedAt: record.changedAt, approvedBy: { name: 'The writer' }, accepted });
       expect(JSON.stringify(result)).not.toContain('auth0|');
       expect(JSON.stringify(result)).not.toContain('revisionIds');
       expect([...store.objects.keys()].filter((key) => !revisionKeys().includes(key))).toEqual([key]);
+    });
+
+    it('writes what the report showed into the approval as its snapshot, and reads it back with the approval', async () => {
+      const full = {
+        ...envelope('# Reported'),
+        report: {
+          sources_read: ['https://synthetic.example/'],
+          sources_failed: [{ name: 'https://synthetic.example/legacy', reason: 'HTTP 404' }],
+          gaps: ['No stacked logo was supplied.'],
+          notes: '',
+          version: 2,
+          findings: {
+            sources_failed: [{ source: 'https://synthetic.example/brand', kind: 'brand_page', reason: 'The page does not exist.', detail: 'HTTP 404' }],
+            missing_assets: [{ asset: 'logo_stacked', reason: 'No stacked logo was uploaded.' }],
+            warnings: [{ code: 'font_unverified', text: 'The typeface could not be verified.' }],
+          },
+          color_conflicts: [{ name: 'Coral', values: [{ hex: '#FF702D', source: 'brand_page: x' }], chosen: '#FF702D' }],
+        },
+      };
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, full, 'reported');
+      const result = await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      const accepted = {
+        sources_failed: ['https://synthetic.example/brand'],
+        missing_assets: ['logo_stacked'],
+        warnings: ['font_unverified|The typeface could not be verified.'],
+        gaps: ['No stacked logo was supplied.'],
+        color_conflicts: ['Coral'],
+      };
+      const record = JSON.parse(storedObject(key).body);
+      expect(record.approvals[first.id]).toEqual({ approvedAt: record.changedAt, approvedBy: 'auth0|not-the-lfid', accepted });
+      expect(result?.approval).toEqual({ approvedAt: record.changedAt, approvedBy: { name: 'The writer' }, accepted });
+      const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      expect(detail?.revisions.find((revision) => revision.id === first.id)?.approval?.accepted).toEqual(accepted);
+    });
+
+    it('snapshots a v1 report by its legacy failed names, and a revision without a report with empty lists', async () => {
+      const v1 = { ...envelope('# Legacy'), report: { sources_read: [], sources_failed: [{ name: 'logo.zip', reason: 'cut' }], gaps: ['A gap.'], notes: '' } };
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, v1, 'legacy');
+      const result = await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      expect(result?.approval?.accepted).toEqual({ sources_failed: ['logo.zip'], missing_assets: [], warnings: [], gaps: ['A gap.'], color_conflicts: [] });
+      const bare = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Bare'), 'bare');
+      const second = await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', bare.id);
+      expect(second?.approval?.accepted).toEqual({ sources_failed: [], missing_assets: [], warnings: [], gaps: [], color_conflicts: [] });
+    });
+
+    it('drops a malformed stored snapshot and keeps the approval', async () => {
+      const { first } = await twoRevisions();
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      const record = JSON.parse(storedObject(key).body);
+      record.approvals[first.id].accepted = { sources_failed: 'not a list', gaps: [] };
+      storedObject(key).body = JSON.stringify(record);
+      const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      const approval = detail?.revisions.find((revision) => revision.id === first.id)?.approval;
+      expect(approval).toEqual({ approvedAt: record.changedAt, approvedBy: { name: 'The writer' } });
+      expect(detail?.approvedCurrent).toEqual({ revisionId: first.id, number: 1 });
     });
 
     it('does not write when the current revision is already approved', async () => {

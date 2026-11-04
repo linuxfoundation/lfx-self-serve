@@ -278,6 +278,52 @@ export interface BrandKitReportFindings {
   warnings: BrandKitReportWarning[];
 }
 
+/** One line of a Sources tab group, with whether the current approval accepted it. */
+export interface BrandKitSourcesItem {
+  /** The stable key the approval snapshot stores. */
+  key: string;
+  title: string;
+  text: string;
+  /** Small grey text under the line (a failed source's machine detail). */
+  detail: string | null;
+  /** A second line, "Fix: …", when the agent names one. */
+  fix: string | null;
+  /** Where a warning was seen, as a link when it is a URL. */
+  source: string | null;
+  accepted: boolean;
+}
+
+/** One value of a conflicting colour, drawn as the Colour chapter draws a swatch: the hex on its own ground, in a legible ink. */
+export interface BrandKitSourcesConflictValue {
+  hex: string;
+  source: string;
+  /** A light colour needs a border to stand off the white card. */
+  light: boolean;
+  ink: string;
+}
+
+/** One colour seen with different values; the swatches in the order the agent gave. */
+export interface BrandKitSourcesConflict {
+  key: string;
+  name: string;
+  values: BrandKitSourcesConflictValue[];
+  chosen: string;
+  accepted: boolean;
+}
+
+/** The Sources tab as rendered: the four groups, the gaps with their markers, and the marker text. */
+export interface BrandKitSourcesView {
+  failed: BrandKitSourcesItem[];
+  missing: BrandKitSourcesItem[];
+  warnings: BrandKitSourcesItem[];
+  conflicts: BrandKitSourcesConflict[];
+  gaps: { text: string; accepted: boolean }[];
+  /** "Accepted when vN was approved" once the approval carries a snapshot; empty otherwise. */
+  acceptedMarker: string;
+  /** True when the current approval has no snapshot: the view falls back to the derived gaps line. */
+  legacyApproval: boolean;
+}
+
 /**
  * The skill's report: shown to the reviewer, never stored as content. The v1 fields are always there; the v2 fields
  * (brand-kit ≥ 2.2.0) are optional, and a v1 report renders as it always did.
