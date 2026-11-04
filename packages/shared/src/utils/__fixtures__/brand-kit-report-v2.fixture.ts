@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { BrandKitEnvelope, BrandKitReport } from '../../interfaces/brand-kit.interface';
+import { isBrandKitEnvelope } from '../mktg-document-redraft.utils';
 import envelope from './brand-kit-report-v2.envelope.json';
 
 /**
@@ -13,7 +14,9 @@ import envelope from './brand-kit-report-v2.envelope.json';
  * without touching another's.
  */
 export function brandKitReportV2Envelope(): BrandKitEnvelope {
-  return structuredClone(envelope) as unknown as BrandKitEnvelope;
+  const value: unknown = structuredClone(envelope);
+  if (!isBrandKitEnvelope(value)) throw new Error('brand-kit-report-v2 fixture no longer validates');
+  return value;
 }
 
 /** The report of {@link brandKitReportV2Envelope}, on its own. */

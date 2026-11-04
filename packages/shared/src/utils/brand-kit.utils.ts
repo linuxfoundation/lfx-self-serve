@@ -52,18 +52,21 @@ import {
   BRAND_KIT_MODES,
   BRAND_KIT_OPAQUE_FILE_STEM_REGEX,
   BRAND_KIT_PALETTE_MAX,
-  BRAND_KIT_REPORT_ASSETS,
-  BRAND_KIT_REPORT_LIST_MAX,
-  BRAND_KIT_REPORT_RULE_BASES,
-  BRAND_KIT_REPORT_SOURCE_KINDS,
-  BRAND_KIT_REPORT_TEXT_MAX_CHARS,
-  BRAND_KIT_REPORT_V2,
-  BRAND_KIT_REPORT_WARNING_CODES,
   BRAND_KIT_PALETTE_MIN,
   BRAND_KIT_PROJECT_SLUG_REGEX,
   BRAND_KIT_QUESTIONS_CONTRACT_ID,
   BRAND_KIT_REFUSAL_CLAUSE,
   BRAND_KIT_REFUSAL_OPENINGS,
+  BRAND_KIT_REPORT_ASSETS,
+  BRAND_KIT_REPORT_BARE_URL_REGEX,
+  BRAND_KIT_REPORT_CONFLICT_VALUES,
+  BRAND_KIT_REPORT_LIST_MAX,
+  BRAND_KIT_REPORT_RULE_BASES,
+  BRAND_KIT_REPORT_RULES_MAX,
+  BRAND_KIT_REPORT_SOURCE_KINDS,
+  BRAND_KIT_REPORT_TEXT_MAX_CHARS,
+  BRAND_KIT_REPORT_V2,
+  BRAND_KIT_REPORT_WARNING_CODES,
   BRAND_KIT_REQUIRED_HEADINGS,
   BRAND_KIT_SHA256_REGEX,
   BRAND_KIT_TYPE_STEPS,
@@ -1005,7 +1008,10 @@ export function findBrandKitReportErrors(report: unknown): string[] {
 
 /**
  * The v2 fields (brand-kit ≥ 2.2.0), each checked only when present: absent means the v1 report. A present field with
- * a bad shape is an error, so our agent's malformed output surfaces instead of vanishing from the Sources tab.
+ * a bad shape is an error, so our agent's malformed output surfaces instead of vanishing from the Sources tab. The
+ * limits are the contract's as written: reason, text and fix are trimmed sentences of 1–300 characters and never a
+ * bare URL; `detail` and a conflict's `name` are non-empty text with no cap; each list holds at most 50 entries, the
+ * rules at most 200; a conflict lists 2–4 values.
  */
 function reportV2Errors(report: UnknownRecord): string[] {
   const errors: string[] = [];
@@ -1023,7 +1029,7 @@ function reportV2Errors(report: UnknownRecord): string[] {
         isText(entry['source']) &&
         isOneOf(entry['kind'], BRAND_KIT_REPORT_SOURCE_KINDS) &&
         isSentence(entry['reason']) &&
-        (entry['detail'] === undefined || isSentence(entry['detail']));
+        (entry['detail'] === undefined || isText(entry['detail']));
       const missingOk = (entry: unknown): boolean =>
         isRecord(entry) &&
         onlyKeys(entry, ['asset', 'reason', 'fix']) &&
@@ -1051,11 +1057,16 @@ function reportV2Errors(report: UnknownRecord): string[] {
   const conflictOk = (entry: unknown): boolean =>
     isRecord(entry) &&
     onlyKeys(entry, ['name', 'values', 'chosen']) &&
-    isSentence(entry['name']) &&
-    isListOf(entry['values'], valueOk) &&
+    isText(entry['name']) &&
+    Array.isArray(entry['values']) &&
+    entry['values'].length >= BRAND_KIT_REPORT_CONFLICT_VALUES.min &&
+    entry['values'].length <= BRAND_KIT_REPORT_CONFLICT_VALUES.max &&
+    entry['values'].every(valueOk) &&
     isHex(entry['chosen']);
   if (report['color_conflicts'] !== undefined && !isListOf(report['color_conflicts'], conflictOk)) {
-    errors.push('report.color_conflicts must be a list of { name, values: [{ hex, source }], chosen }');
+    errors.push(
+      `report.color_conflicts must be a list of { name, values: [{ hex, source }] (${BRAND_KIT_REPORT_CONFLICT_VALUES.min}–${BRAND_KIT_REPORT_CONFLICT_VALUES.max}), chosen }`
+    );
   }
   const ruleOk = (entry: unknown): boolean =>
     isRecord(entry) &&
@@ -1063,20 +1074,24 @@ function reportV2Errors(report: UnknownRecord): string[] {
     isText(entry['path']) &&
     isOneOf(entry['basis'], BRAND_KIT_REPORT_RULE_BASES) &&
     (entry['uses'] === undefined || (isTextList(entry['uses']) && entry['uses'].length <= BRAND_KIT_REPORT_LIST_MAX));
-  if (report['rules'] !== undefined && !isListOf(report['rules'], ruleOk)) {
-    errors.push('report.rules must be a list of { path, basis, uses? }');
+  if (report['rules'] !== undefined && !isListOf(report['rules'], ruleOk, BRAND_KIT_REPORT_RULES_MAX)) {
+    errors.push(`report.rules must be a list of at most ${BRAND_KIT_REPORT_RULES_MAX} { path, basis, uses? }`);
   }
   return errors;
 }
 
-/** A report sentence: text of 1–300 characters. */
+/**
+ * A report sentence: trimmed text of 1–300 characters that is not a bare URL (a URL inside a sentence is fine; a
+ * reason that is only an address belongs in `source`). The looser reading of the agent's own rule, so the UI never
+ * rejects what the agent accepts.
+ */
 function isSentence(value: unknown): value is string {
-  return isText(value) && value.length <= BRAND_KIT_REPORT_TEXT_MAX_CHARS;
+  return isText(value) && value === value.trim() && value.length <= BRAND_KIT_REPORT_TEXT_MAX_CHARS && !BRAND_KIT_REPORT_BARE_URL_REGEX.test(value);
 }
 
-/** A report list: at most 50 entries, each of the given shape. */
-function isListOf(value: unknown, ok: (entry: unknown) => boolean): boolean {
-  return Array.isArray(value) && value.length <= BRAND_KIT_REPORT_LIST_MAX && value.every(ok);
+/** A report list: at most `max` entries (50 unless the contract says otherwise), each of the given shape. */
+function isListOf(value: unknown, ok: (entry: unknown) => boolean, max = BRAND_KIT_REPORT_LIST_MAX): boolean {
+  return Array.isArray(value) && value.length <= max && value.every(ok);
 }
 
 function isOneOf(value: unknown, allowed: readonly string[]): value is string {

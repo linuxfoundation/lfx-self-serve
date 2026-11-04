@@ -492,11 +492,16 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-gaps')?.querySelectorAll('li')).toHaveLength(1);
       const panel = query('brand-kit-web-view-panel-sources')?.textContent ?? '';
       // Nothing from the v2 fields reaches the page yet: no plain reason, no missing asset, no warning, no conflict, no rule.
-      expect(panel).not.toContain(v2.findings?.sources_failed[0].reason ?? 'fixture');
-      expect(panel).not.toContain(v2.findings?.missing_assets[0].reason ?? 'fixture');
-      expect(panel).not.toContain(v2.findings?.warnings[0].text ?? 'fixture');
-      expect(panel).not.toContain(v2.color_conflicts?.[0].values[0].source ?? 'fixture');
-      expect(panel).not.toContain('lf-reference');
+      for (const text of [
+        v2.findings?.sources_failed[0].reason,
+        v2.findings?.missing_assets[0].reason,
+        v2.findings?.warnings[0].text,
+        v2.color_conflicts?.[0].values[0].source,
+        v2.rules?.find((rule) => rule.basis === 'lf-reference')?.basis,
+      ]) {
+        expect(text).toBeTruthy();
+        expect(panel).not.toContain(text ?? 'fixture');
+      }
     });
 
     it('says so where the run left nothing to report, and leaves the Sources and gaps tab uncounted', async () => {
