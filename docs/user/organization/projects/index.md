@@ -90,7 +90,7 @@ When the filters match no projects, the table says **No results for filters** an
 **Organization scope** chooses which of the company's organizations count toward contributors. On the Projects page it **Applies to the Contributors column only.**
 
 - **Insights organization**, the default, counts only the organization on the company's LFX Insights page, in the repositories LFX Insights counts. Maintainer roles are not affected.
-- **All related organizations** counts every organization linked to the company account, such as subsidiaries, acquisitions, and duplicate records, in every repository. The number in parentheses is how many related organizations there are.
+- **All related organizations** counts every organization linked to the company account, such as subsidiaries, acquisitions, and duplicate records, in every repository. The number in parentheses is how many of those related organizations have code activity in the past two years.
 
 When the company has no LFX Insights organization with code activity in the past two years, the menu is locked on **All related organizations**. Its info button says **This company has no LFX Insights organization with code activity in the past two years; counts include every related organization.**
 
@@ -98,7 +98,7 @@ Your choice is kept when you open a project's detail page and when you return to
 
 ## What does Team members change?
 
-**Team members** chooses whether people marked as team members in the Community Data Platform count toward the **Contributors** column. It does not change any other column.
+**Team members** chooses whether people marked as team members in LFX count toward the **Contributors** column. It does not change any other column.
 
 - **Exclude team members**, the default, leaves them out, as LFX Insights does.
 - **Include team members** counts them.
@@ -195,13 +195,13 @@ You change a project detail page with the tabs, the time range, and, on **Leader
 3. On **Leaderboards**, select **Calculated Influence** or **Activity Count** to choose what the leaderboards rank.
 4. Select **More filters** to show **Organization scope**.
 
-On a project detail page, **Organization scope** **Applies to contributor, commit and pull request counts, and to which leaderboard row is this company's.** Maintainer roles, health, and influence bands are the same under both choices. See [What does Organization scope change?](#what-does-organization-scope-change).
+On a project detail page, **Organization scope** **Applies to contributor, commit and pull request counts, and to which leaderboard row is this company's.** Maintainer roles and health are the same under both choices. The band next to **Our Technical Influence** and **Our Ecosystem Influence** follows the chosen scope: under **Insights organization** it is that organization's own, and none is shown if it has no leaderboard rank on the project, even when a related organization has one. Under **All related organizations** it comes from the company's best-ranked organization. See [What does Organization scope change?](#what-does-organization-scope-change).
 
 ## What does the Our Influence tab show?
 
 The **Our Influence** tab shows the organization's share of the project's activity, in two rows of cards: **Our Technical Influence** and **Our Ecosystem Influence**. The chip next to each heading is the organization's band, such as **Leading**. Use the arrows at the right of a heading to scroll its cards.
 
-Each card shows a chart of the organization's activity over the time range, a headline figure, and a short sentence. For example, the **Commits** card can say **Employees made** a percentage **of all commits.** A card with no activity shows **No data** in place of its chart.
+Each card shows a chart of the organization's activity over the time range, a headline figure, and a short sentence. For example, the **Commits** card can say **Employees made** a percentage **of all commits.** A card whose chart has no data points for the time range shows **No data** in place of its chart. A recorded zero is still data, so a period with no activity draws a chart at zero.
 
 | Card                       | Group     | What it counts                                                                                                                   |
 | -------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------- |
