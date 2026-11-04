@@ -1503,6 +1503,8 @@ export class MktgDocumentViewComponent {
     const newer = detail.runs?.find(
       (row) =>
         row.runId !== notice.runId &&
+        row.state !== 'failed' &&
+        !readMktgRetiredRunHint(row) &&
         (row.state === 'questions' || row.state === 'writing' || row.state === 'storing' || (!!own && Date.parse(row.startedAt) > Date.parse(own.startedAt)))
     );
     return newer?.runId ?? null;

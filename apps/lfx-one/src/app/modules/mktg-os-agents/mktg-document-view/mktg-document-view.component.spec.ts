@@ -895,6 +895,29 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-answered-note')?.textContent).not.toContain('the asset is ready');
   });
 
+  it('keeps the notice while its run writes on, whatever newer failed or retired rows the history gains', async () => {
+    const run = started('writing');
+    const questionsId = 'c'.repeat(64);
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    await render('/documents/brand-kit/living');
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: run.runId,
+      questionsId,
+      message: 'Someone on your team already answered these — the agent is writing. Your draft is kept below.',
+      kept: { questionsId, questions: [], draft: { index: 0, answers: {}, dirty: true } },
+    });
+    await settle();
+    // A later start that failed at once, and a later one discarded: neither is a run this page follows.
+    const newerFailed = { ...started('failed'), runId: 'd'.repeat(64), startedAt: '2026-10-19T08:10:00Z' };
+    const newerDiscarded = { ...started('writing'), runId: 'e'.repeat(64), startedAt: '2026-10-19T08:11:00Z', state: 'discarded' as const };
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run, newerFailed, newerDiscarded] }));
+    window.dispatchEvent(new Event('focus'));
+    await settle();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('the agent is writing. Your draft is kept below.');
+    expect(query('mktg-run-questions-locked')).not.toBeNull();
+    expect(TestBed.inject(MktgRunAnswersService).notice(PROJECT.uid, 'brand-kit', 'living')?.runId).toBe(run.runId);
+  });
+
   it.each([
     ['failed', (run: MktgDocumentRunProgress) => [{ ...run, state: 'failed' as const }]],
     [

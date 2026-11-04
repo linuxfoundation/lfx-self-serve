@@ -129,7 +129,8 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   if (lateConflict) {
     await expect(page.getByTestId('mktg-faq-view')).toContainText('Synthetic cross-device draft', { timeout: 20000 });
     releaseConflict();
-    await expect(page.getByTestId('mktg-document-view-answered-note')).toContainText('Another Writer already answered these — the agent is writing.');
+    // The landed document's complete read lists no such run any more: the late line is true when read — the asset is ready.
+    await expect(page.getByTestId('mktg-document-view-answered-note')).toContainText('Another Writer already answered these — the asset is ready.');
     expect(submitted).toHaveLength(1);
     await page.screenshot({ path: info.outputPath('late-conflict-on-landed-document.png'), fullPage: true });
     return;
