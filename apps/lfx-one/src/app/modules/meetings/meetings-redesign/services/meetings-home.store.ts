@@ -273,7 +273,8 @@ export class MeetingsHomeStore {
     const shown = this.refreshFailedToast;
     if (shown && this.toast.toasts().some((item) => item.id === shown.id)) return;
     this.refreshFailedToast = this.toast.show({
-      variant: 'dark',
+      variant: 'warning',
+      position: 'bottom-center',
       message: "Couldn't refresh your meetings",
       description: 'Showing the list as it was last loaded.',
       duration: 5000,
