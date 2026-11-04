@@ -128,12 +128,13 @@ describe('brandKitColorConflictViews', () => {
   it('gives nothing for a v1 report or another agent’s', () => {
     expect(brandKitColorConflictViews(V1_REPORT)).toEqual([]);
     expect(brandKitReportColorConflicts(null)).toEqual([]);
-    expect(brandKitColorConflictViews({ ...V1_REPORT, color_conflicts: undefined } as BrandKitReport)).toEqual([]);
+    const withoutConflicts: BrandKitReport = { ...V1_REPORT, color_conflicts: undefined };
+    expect(brandKitColorConflictViews(withoutConflicts)).toEqual([]);
   });
 });
 
 describe('mktgReportNeedsApprovalReview', () => {
-  it.each([
+  const cases: [string, BrandKitReport | null, boolean][] = [
     ['no report', null, false],
     ['a clean v1 report', V1_REPORT, false],
     ['a failed source', { ...V1_REPORT, sources_failed: [{ name: 'Docs', reason: '404' }] }, true],
@@ -141,7 +142,8 @@ describe('mktgReportNeedsApprovalReview', () => {
     ['a colour conflict only', { ...V1_REPORT, color_conflicts: brandKitReportV2RulesFixture().color_conflicts, rules: [] }, true],
     ['an LF-reference rule only', { ...V1_REPORT, color_conflicts: [], rules: [{ path: 'chapters.voice', basis: 'lf-reference' }] }, true],
     ['project rules only', { ...V1_REPORT, color_conflicts: [], rules: [{ path: 'chapters.voice', basis: 'project' }] }, false],
-  ] as const)('with %s: %s', (_case, report, expected) => {
+  ];
+  it.each(cases)('with %s: %s', (_case, report, expected) => {
     expect(mktgReportNeedsApprovalReview(report)).toBe(expected);
   });
 });

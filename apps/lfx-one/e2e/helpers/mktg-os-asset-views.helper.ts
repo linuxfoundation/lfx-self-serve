@@ -11,7 +11,7 @@ import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slid
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants/persona.constants';
 import { SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants/project-context.constants';
 import type { BoilerplatesEnvelope } from '@lfx-one/shared/interfaces/boilerplates.interface';
-import type { BrandKitReport } from '@lfx-one/shared/interfaces/brand-kit.interface';
+import type { BrandKitReport } from '@lfx-one/shared/interfaces';
 import type { FaqEnvelope } from '@lfx-one/shared/interfaces/faq.interface';
 import type { FoundationMessageGoal } from '@lfx-one/shared/interfaces/foundation-message.interface';
 import type { MktgFrameworkAsset, MktgRunResultResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';

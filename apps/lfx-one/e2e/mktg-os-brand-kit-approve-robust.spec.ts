@@ -20,7 +20,8 @@ for (const width of [1440, 1024, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await openAssetDocument(page, 'brand-kit', 200, true, false, brandKitDraftRevisionResponse(brandKitReportV2RulesFixture()));
     await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
-    const dialog = page.getByRole('dialog', { name: 'Approve with open gaps?' });
+    // Found by its test id, not its header: the words are the content spec's.
+    const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('mktg-document-view-approve-confirm') });
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
     await expect(dialog.getByTestId('mktg-document-view-approve-conflicts')).toBeVisible();
     await expect(dialog.getByTestId('mktg-document-view-approve-conflict')).toHaveCount(1);
@@ -69,9 +70,10 @@ test.describe('at a laptop width', () => {
     await expect(page.getByTestId('brand-kit-web-view-chapters')).toBeVisible();
     await expect(page.locator('[data-testid^="brand-kit-web-view-chapter-basis-"]')).toHaveCount(0);
     await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
-    const dialog = page.getByRole('dialog', { name: 'Approve with open gaps?' });
+    const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('mktg-document-view-approve-confirm') });
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
-    await expect(dialog).toContainText('https://synthetic-foundation.example/brand — HTTP 404');
+    // Today's list is there (one failed source); the two new sections are not.
+    await expect(dialog.getByTestId('mktg-document-view-approve-confirm').locator(':scope > ul > li')).toHaveCount(1);
     await expect(dialog.getByTestId('mktg-document-view-approve-conflicts')).toHaveCount(0);
     await expect(dialog.getByTestId('mktg-document-view-approve-rules')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('approve-dialog-v1.png'), fullPage: true });

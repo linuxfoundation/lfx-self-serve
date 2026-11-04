@@ -8,6 +8,7 @@
 
 import { expect, test } from '@playwright/test';
 import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { brandKitDraftRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
 
@@ -103,6 +104,17 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
     await page.screenshot({ path: info.outputPath('approved-directly.png'), fullPage: true });
+  });
+
+  test('a v1 report keeps today’s dialog: the open-gaps header and the failed source, no conflicts or rules section', async ({ page }, info) => {
+    const report = { ...brandKitTestRevision().report, sources_failed: [{ name: 'https://synthetic-foundation.example/brand', reason: 'HTTP 404' }] };
+    await openAssetDocument(page, 'brand-kit', 200, true, false, brandKitDraftRevisionResponse(report));
+    await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
+    const dialog = page.getByRole('dialog', { name: 'Approve with open gaps?' });
+    await expect(dialog).toContainText('https://synthetic-foundation.example/brand — HTTP 404');
+    await expect(dialog).not.toContainText('Colour conflicts');
+    await expect(dialog).not.toContainText('Rules from the LF reference, not the project');
+    await page.screenshot({ path: info.outputPath('approve-dialog-v1.png'), fullPage: true });
   });
 
   test('the Overview’s chapter cards say where each chapter’s rules come from: the project, the LF reference, or how many of them', async ({ page }, info) => {

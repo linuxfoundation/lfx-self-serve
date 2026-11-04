@@ -22,7 +22,7 @@
             <li class="flex flex-col gap-1" data-testid="mktg-document-view-approve-conflict">
               <span class="font-medium text-gray-900">{{ conflict.name }}</span>
               <ul class="flex flex-col gap-1">
-                @for (value of conflict.values; track $index) {
+                @for (value of conflict.values; track value.hex) {
                   <li class="flex min-w-0 flex-wrap items-center gap-2 [overflow-wrap:anywhere]">
                     <span class="h-4 w-4 shrink-0 rounded-full border border-gray-200" [style.background]="value.hex" aria-hidden="true"></span>
                     <span class="font-mono text-gray-900">{{ value.hex }}</span>
