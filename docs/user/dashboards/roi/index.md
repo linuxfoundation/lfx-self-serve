@@ -4,7 +4,7 @@ description: What the Org Lens ROI Metrics page shows, and where to find the ful
 audience: [all]
 product_area: Dashboards
 tags: [org, org lens, roi, return on investment, investment, return, estimation method, markup]
-last_updated: 2026-10-30
+last_updated: 2026-11-02
 intercom_collection: Dashboards
 ---
 
@@ -17,6 +17,7 @@ Find the page in the **LF Staff Only** section at the bottom of the Org Lens men
 - **Total investment** — public contribution activity (commits, community participation, meetings, events, memberships, and training), priced at standard rates that are the same for every organization. Direct spending comes from LF records, and staff time is priced at flat benchmark rates, not anyone's actual or reported compensation.
 - **Total return** — the estimated economic value received back from the projects you contributed to
 - **Net return**, **ROI**, and **BCR** — return less investment, that difference as a share of investment, and return per dollar invested (always exactly one more than ROI)
+- **Value drivers** — breaks down which factors drive your organization's contribution return, and how they compare against typical organization-project pairs. See [Value drivers in the ROI documentation](../../roi/#value-drivers) for how to read the decomposition and understand its limitations.
 
 ## Estimation method
 

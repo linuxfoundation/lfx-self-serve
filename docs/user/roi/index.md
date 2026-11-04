@@ -4,7 +4,7 @@ description: How the Org Lens ROI page estimates your organization's investment 
 audience: [all]
 product_area: Dashboards
 tags: [org, org lens, roi, return on investment, investment, return, estimation method, markup]
-last_updated: 2026-10-30
+last_updated: 2026-11-02
 intercom_collection: Dashboards
 ---
 
@@ -24,6 +24,40 @@ The estimates come from the LFX Open Source Software (OSS) Contribution ROI mode
 - **Net return** — total return less investment. Net return is never negative. When the model's value estimate would fall below investment, it is raised to break-even, so a net return of zero means the project returned at least what it cost.
 - **ROI** — net return divided by investment, shown as a percentage. Blank when there is no investment to divide by.
 - **BCR** — total return divided by investment (benefit-cost ratio). Note that BCR = ROI + 1.
+
+## Value drivers
+
+The **Projects** panel on the ROI Metrics page has a **Value drivers** tab. It shows how much each value driver contributes to your portfolio's return, relative to the typical organization-project pair.
+
+### What a bar means
+
+- The middle line, labelled **Typical**, is the typical organization-project pair: the average across all pairs LFX models.
+- A bar to the right (green) means that driver contributes **more return** to your portfolio than it does for a typical pair. A bar to the left (amber) means it contributes **less**.
+- A bar of +14% means 14% more return than typical from that driver. A bar of -5% means 5% less.
+- A bar at 0 means your portfolio is typical for that driver. It does not mean the driver provides no value.
+- The bars are percentages relative to typical. They do not add up to your total return.
+
+### The five categories
+
+| Category            | Measured from                                                    |
+| ------------------- | ---------------------------------------------------------------- |
+| Revenue boosters    | Developer productivity and standardization leadership            |
+| Strategic           | Talent acquisition and development, and competitive intelligence |
+| Prosocial           | Ecosystem goodwill                                               |
+| Risk mitigation     | Technical debt reduction and project longevity                   |
+| Direct cost savings | Shared R&D                                                       |
+
+Each driver is measured through signals in public LFX contribution data, such as contributor and maintainer counts, how much of your work is shared with other organizations, and governance engagement.
+
+### How far to trust it
+
+- **Association, not cause.** The bars show activity that tends to go with higher or lower return. They do not show that the activity causes it, and they are not based on anything your organization reported.
+- **Part of the picture.** The model explains only part of the variation in return. The bars show that explained part.
+- **Small portfolios.** Value driver decomposition can be sensitive to small portfolios. Treat these results as directional. The tab appears only for organizations with at least 5 projects that also pass the ROI display gate. Others see an empty state.
+- **Risk mitigation** partly reflects project maturity: mature projects carry a longevity premium that applies to every organization contributing to them.
+- **Direct cost savings** is measured by a single driver, shared R&D, and can differ noticeably between the two estimation methods. The other categories mostly agree.
+
+The tab covers your whole portfolio and ignores the project picker. It follows the estimation method you choose in **Model assumptions**.
 
 ## Where to start
 
