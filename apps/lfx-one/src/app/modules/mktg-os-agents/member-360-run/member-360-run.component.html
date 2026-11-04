@@ -76,10 +76,11 @@
           }
         </section>
       }
-      @if (retrying()) {
-        <p role="status" class="text-xs text-gray-500" data-testid="member-360-retrying">{{ retryingText }}</p>
-      } @else if (error()) {
+      <!-- A terminal, actionable error (a failed submission) outranks the transient connection line. -->
+      @if (error()) {
         <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
+      } @else if (retrying()) {
+        <p role="status" class="text-xs text-gray-500" data-testid="member-360-retrying">{{ retryingText }}</p>
       }
     } @else {
       <form [formGroup]="form" (ngSubmit)="run()" class="flex flex-col gap-5">
@@ -212,7 +213,7 @@
         <h2 class="font-semibold">Run history</h2>
         @if (historyLoading()) {
           <p role="status">Loading run history…</p>
-        } @else if (!historyError() && !history().length) {
+        } @else if (!historyError() && !historyRetrying() && !history().length) {
           <p class="text-sm text-gray-500">No Member 360 runs yet.</p>
         }
         @for (run of history(); track run.documentId) {

@@ -276,9 +276,8 @@ export class MktgFamilyExportActionsComponent {
         this.writer() &&
         !this.checking() &&
         !this.lookupError() &&
-        // A failing first read holds Export; a transient re-read of a loaded lookup keeps it (law 5: the last loaded content
-        // stays and stays usable), as the Slides panel does.
-        !(this.lookupRetrying() && !this.lookup()) &&
+        // A failed first read leaves no lookup, so Export is held; a transient re-read of a loaded lookup keeps it (law 5:
+        // the last loaded content stays and stays usable), as the Slides panel does.
         !!this.lookup()?.currentMembers.length &&
         !this.busy()
     );
@@ -339,11 +338,14 @@ export class MktgFamilyExportActionsComponent {
               let first = true;
               let denied = false;
               const read = () => {
-                // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
+                // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401
+                // too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
                 if (denied) return EMPTY;
-                // Only the first read shows the checking line: a retry keeps the plain line until it succeeds (no flicker).
+                // Only a first read with nothing loaded shows the checking line: a retry keeps the plain line until it
+                // succeeds (no flicker), and a re-read after an export keeps the loaded lookup usable (law 5) instead of
+                // entering a checking state that a filtered transient failure could never leave.
                 if (first) {
-                  this.checking.set(true);
+                  if (!this.lookup()) this.checking.set(true);
                   this.lookupError.set('');
                 }
                 const fresh = refresh || !first;

@@ -10,8 +10,12 @@ import { kitTest as test, kitDocuments, kitJson, kitRevision, openKit, setupKit 
  * The slides export panel's last-export lookup: a failed read keeps checking on its own behind
  * one plain line (law 3) and offers no "Check again" button; Export is unavailable until a check succeeds.
  */
-/** A failed lookup recovers on the poller's next scheduled read: the healthy interval plus a margin. */
-const LOOKUP_RECOVERY_TIMEOUT = 15_000;
+/**
+ * A failed lookup recovers on the poller's retry: the first retry's backoff is ≤ 10 s (5 s floor plus full jitter to 2×)
+ * and the second's ≤ 20 s (to 4×). Sized at the second retry's ceiling plus a margin, so a retry that raced the route
+ * switch and failed too cannot flake the wait.
+ */
+const LOOKUP_RECOVERY_TIMEOUT = 25_000;
 
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 

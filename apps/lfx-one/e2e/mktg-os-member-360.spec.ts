@@ -20,6 +20,14 @@ import { member360Revision } from './fixtures/mock-data/member-360.mock';
 import { SYNTHETIC_ORG_NAME, SYNTHETIC_SECOND_ORG_LEGAL_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
 test.use({ storageState: { cookies: [], origins: [] } });
+
+/**
+ * A failed read recovers on the poller's retry: the first retry's backoff is ≤ 10 s (5 s floor plus full jitter to 2×)
+ * and the second's ≤ 20 s (to 4×). Sized at the second retry's ceiling plus a margin, so a retry that raced the route
+ * switch and failed too cannot flake the wait.
+ */
+const POLL_RECOVERY_TIMEOUT = 25_000;
+
 test.describe.configure({ timeout: 60000 });
 test.beforeEach(({ page, isMobile }) => {
   if (isMobile) expect(page.viewportSize()?.width).toBeLessThan(640);
@@ -156,7 +164,7 @@ test('an unavailable initial roster stays neutral, shows the one plain line with
   await expect(page.getByRole('button', { name: 'Retry history' })).toHaveCount(0);
   await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
   available = true;
-  await expect(page.getByTestId('member-360-intake')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('member-360-intake')).toBeVisible({ timeout: POLL_RECOVERY_TIMEOUT });
   await expect(page.getByTestId('mktg-skeleton')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('member-roster-recovered.png'), fullPage: true });
 });
@@ -532,7 +540,7 @@ for (const state of ['resume', 'send-error', 'already-answered', 'load-error', '
     await page.getByTestId('member-360-run').getByRole('button').click();
     if (state === 'load-error') {
       // A 503 on the run check is transient: one quiet status line while the poller retries, no error box and no button.
-      await expect(page.getByTestId('member-360-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: 15000 });
+      await expect(page.getByTestId('member-360-retrying')).toContainText(MKTG_POLL_RETRYING_TEXT, { timeout: POLL_RECOVERY_TIMEOUT });
       await expect(page.getByTestId('member-360-retrying')).toHaveAttribute('role', 'status');
       await expect(page.getByTestId('member-360-error')).toHaveCount(0);
       await expect(page.getByTestId('member-360-state-refresh')).toHaveCount(0);

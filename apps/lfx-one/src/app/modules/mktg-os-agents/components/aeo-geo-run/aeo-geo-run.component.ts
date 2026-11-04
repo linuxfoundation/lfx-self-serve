@@ -191,7 +191,8 @@ export class AeoGeoRunComponent {
           // The strict read keeps the failure's status: a transient one (network, 408, 429, 5xx) is retried by the shared
           // poller on its capped backoff and on tab return, focus or reconnect, behind one quiet line; a refused or missing
           // project (401/403/404, any other final) is a plain state, latched, so no wake sends the same request again
-          // (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll). No Try again button.
+          // (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's choice, since a session-expiry
+          // 401 needs a sign-in, not a poll). No Try again button.
           let projectFinal = false;
           const readProject = (): Observable<Project> => {
             if (projectFinal) return EMPTY;

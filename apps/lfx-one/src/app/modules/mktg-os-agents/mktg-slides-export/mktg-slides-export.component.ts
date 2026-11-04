@@ -57,7 +57,8 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
   selector: 'lfx-mktg-slides-export',
   imports: [DatePipe, ButtonComponent, MessageComponent, MktgSkeletonComponent],
   templateUrl: './mktg-slides-export.component.html',
-  // Document history is secondary: unknown history hides after the paint cap; a failure shows the plain line while the poller re-reads.
+  // Document history is secondary: unknown history hides after the paint cap; a failure shows the plain line, and a
+  // transient one is re-read by the poller.
   host: { '[class.hidden]': '!visible()' },
 })
 export class MktgSlidesExportComponent {
@@ -192,8 +193,8 @@ export class MktgSlidesExportComponent {
         )
         .subscribe((response) => {
           if (!response) {
-            // Keep the cap timer running so a first failure shows the plain line (while the poller re-reads) only after
-            // the cap, without inserting a bar before the document's initial paint.
+            // Keep the cap timer running so a first failure shows the plain line only after the cap (a transient one is
+            // re-read by the poller), without inserting a bar before the document's initial paint.
             this.lookupFailed.set(true);
             this.lookupAnswered.emit(JSON.stringify(this.lastTarget()));
             return;
@@ -300,7 +301,8 @@ export class MktgSlidesExportComponent {
     let denied = false;
     let first = true;
     const read = (): Observable<MktgSlidesExportLastResponse | null> => {
-      // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
+      // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401 too is the
+      // operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
       if (denied) return EMPTY;
       // The first lookup of a target, a re-check after the documents changed and a retry after a failure hold Export;
       // a wake re-read (tab return, focus, reconnect) of a settled lookup keeps it available.

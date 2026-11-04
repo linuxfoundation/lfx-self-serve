@@ -185,6 +185,33 @@ describe('Family export slot', () => {
     vi.restoreAllMocks();
   });
 
+  it('keeps the actions usable when the re-read after a finished export fails transiently: status line, lookup kept, no checking state', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const { fixture, root, button } = await setup();
+    button('slides')?.click();
+    await fixture.whenStable();
+    api.last.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    run.next({ mode: 'create', logoNote: null, skippedMembers: [], result: { status: 'ready', record: familyExportRecord() } });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(root.textContent).toContain('Your deck is ready');
+    // The loaded lookup stays usable (law 5); the re-read's failure is the plain line, not the checking line.
+    expect(fixture.componentInstance['lookup']()).not.toBeNull();
+    expect(fixture.componentInstance['checking']()).toBe(false);
+    expect(root.querySelector('[data-testid="family-export-loading"]')).toBeNull();
+    expect(root.querySelector('[data-testid="family-export-lookup-retrying"]')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+    expect(button('slides')?.disabled).toBe(false);
+    api.last.mockReturnValue(of({ ...lookup(), last: familyExportRecord() }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(root.querySelector('[data-testid="family-export-lookup-retrying"]')).toBeNull();
+    expect(button('slides')?.disabled).toBe(false);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it('shows approval-empty and reader-disabled states without calling the exporter', async () => {
     api.last.mockReturnValue(of({ ...lookup(), currentMembers: [] }));
     const { fixture, root, button } = await setup();
