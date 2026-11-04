@@ -1,20 +1,34 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, demographic exclusions and excluded locations for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, demographic exclusions, excluded locations, display paths, more ads and negative keywords for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
-tags: [campaigns, paid marketing, google ads, ad schedule, devices, bid adjustment, demographics, excluded locations, implement]
+tags:
+  [
+    campaigns,
+    paid marketing,
+    google ads,
+    ad schedule,
+    devices,
+    bid adjustment,
+    demographics,
+    excluded locations,
+    display path,
+    responsive search ads,
+    negative keywords,
+    implement,
+  ]
 last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 
-When you create a Google Ads campaign from the **Campaigns** page in the Foundation lens, the **Implement** tab lets you limit when the campaign runs, change how much it bids on each device, and keep it from serving to some age ranges, genders or places. Every setting is optional. If you leave them alone, the campaign serves all day, every day, at the same bid on every device, to every age and gender, everywhere it targets, which is Google's default.
+When you create a Google Ads campaign from the **Campaigns** page in the Foundation lens, the **Implement** tab lets you limit when the campaign runs, change how much it bids on each device, and keep it from serving to some age ranges, genders or places. On a Search campaign it also lets you set the ad's display path, add up to two more ads, and add negative keywords. Every setting is optional. If you leave them alone, the campaign serves all day, every day, at the same bid on every device, to every age and gender, everywhere it targets, which is Google's default, with one ad and no negative keywords beyond any filled in from the brief.
 
 ## Where to find them
 
 1. Open **Campaigns** in the Foundation lens and choose **Paid Marketing**.
 2. Open the **Implement** tab for a brief that includes Google Ads.
-3. Tick a campaign type, such as **Search Campaign**. The **Ad schedule** and **Devices** sections appear below the language settings when the type supports them, followed by **Demographic exclusions** and **Excluded locations**.
+3. Tick a campaign type, such as **Search Campaign**. The **Ad schedule** and **Devices** sections appear below the language settings when the type supports them, followed by **Demographic exclusions** and **Excluded locations**. On Search, **Display path**, **More ads** and **Negative keywords** appear below **Headlines** and **Descriptions**.
 
 | Campaign type   | Ad schedule                                    | Devices                     | Demographic exclusions | Excluded locations |
 | --------------- | ---------------------------------------------- | --------------------------- | ---------------------- | ------------------ |
@@ -63,8 +77,30 @@ The campaign does not serve in the places listed here.
 - You can exclude up to 60 places. This limit is separate from the 60 places you can target.
 - A place cannot be both targeted and excluded, even when the two are written differently, such as `US` and its id `2840`. If you have added no target country, postal code or radius, the campaign targets the event country, so you cannot exclude that country either.
 
+## Display path, more ads and negative keywords (Search only)
+
+**Display path** sets the text Google shows after your domain in the ad, as in example.com/kubecon/na.
+
+- **Path 1** and **Path 2** take up to 15 characters each. Characters in Chinese, Japanese and Korean, and other full-width characters, count as two.
+- A path cannot hold spaces or any of / ? # & =.
+- **Path 2** needs **Path 1**.
+
+**More ads** adds responsive search ads to the campaign's ad group. The **Headlines** and **Descriptions** sections are ad 1.
+
+- Select **Add another ad** for ad 2 and ad 3. Google Ads takes at most 3 ads in one ad group.
+- Each ad needs at least one headline and one description. It takes up to 15 headlines of 30 characters and up to 4 descriptions of 90 characters.
+- An ad can have its own display path. If you leave it blank, the ad uses the **Display path** above.
+- **Remove ad** deletes an ad.
+
+**Negative keywords** are searches the campaign never pays for. They are added when the campaign is created.
+
+- The box starts with the negative keywords suggested by the brief. Edit, add or delete lines freely, or empty the box to add none.
+- Enter one keyword per line, up to 60 keywords of up to 80 characters each. Use only letters, digits, spaces and & ' - .
+- **Match type** (Exact, Phrase or Broad) applies to every keyword in the box. Exact is the default.
+- You can add more negative keywords from **Optimize** once the campaign is live.
+
 ## If something is wrong
 
-If a window, adjustment, exclusion or excluded place would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
+If a window, adjustment, exclusion, excluded place, display path, ad or negative keyword would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
-If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Excluded locations are sent for every campaign type.
+If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Display paths, more ads and negative keywords are kept the same way when you switch away from Search, and are not sent. Excluded locations are sent for every campaign type.
