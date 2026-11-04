@@ -9,6 +9,7 @@ import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
   Meeting,
   MeetingDashboardView,
+  MeetingHomeAttendance,
   MeetingHomeRow,
   MeetingHomeRowLink,
   MeetingHomeRowOrganizer,
@@ -21,6 +22,7 @@ import {
   formatDuration,
   formatMeetingDateTime,
   getMeetingGroupNames,
+  getMeetingHomeAttendance,
   getMeetingHomeRowLink,
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
@@ -39,6 +41,7 @@ import { MeetingsHomeJoinService } from '../../services/meetings-home-join.servi
 import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeActionsComponent } from '../meeting-home-actions/meeting-home-actions.component';
+import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingHomeArtifactsComponent } from '../meeting-home-artifacts/meeting-home-artifacts.component';
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
@@ -53,6 +56,7 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
     DatePipe,
     MeetingHomeActionsComponent,
     MeetingHomeArtifactsComponent,
+    MeetingHomeAttendanceComponent,
     MeetingProjectLogoComponent,
     MeetingRsvpControlsComponent,
     UiAvatarComponent,
@@ -92,6 +96,7 @@ export class MeetingHomeRowComponent {
   protected readonly recurrenceLabel: Signal<string | null> = computed(() => getMeetingRecurrenceLabel(this.row().meeting, this.row().occurrence));
   protected readonly recurrenceTooltip: Signal<string | null> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence));
   protected readonly attended: Signal<boolean> = this.initAttended();
+  protected readonly attendance: Signal<MeetingHomeAttendance | null> = computed(() => getMeetingHomeAttendance(this.row(), this.past()));
   protected readonly organizers: Signal<MeetingHomeRowOrganizer[]> = computed(() =>
     getMeetingHomeRowOrganizers(this.row().meeting, this.userService.viewerUsername())
   );

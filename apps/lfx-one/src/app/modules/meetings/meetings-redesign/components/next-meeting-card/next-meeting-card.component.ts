@@ -7,6 +7,7 @@ import { Router } from '@angular/router';
 import { DEFAULT_EARLY_JOIN_TIME, MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
+  MeetingHomeAttendance,
   MeetingHomeJoinState,
   MeetingHomeRow,
   MeetingHomeRowLink,
@@ -17,6 +18,7 @@ import {
 import {
   formatMeetingTimeRange,
   getMeetingGroupNames,
+  getMeetingHomeAttendance,
   getMeetingHomeRowLink,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
@@ -31,6 +33,7 @@ import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
+import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
 /**
@@ -41,7 +44,16 @@ import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-pro
  */
 @Component({
   selector: 'lfx-next-meeting-card',
-  imports: [DatePipe, MeetingProjectLogoComponent, UiBadgeComponent, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent, UiTooltipDirective],
+  imports: [
+    DatePipe,
+    MeetingHomeAttendanceComponent,
+    MeetingProjectLogoComponent,
+    UiBadgeComponent,
+    UiButtonComponent,
+    UiEmptyStateComponent,
+    UiSkeletonComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './next-meeting-card.component.html',
   styleUrl: './next-meeting-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -73,6 +85,7 @@ export class NextMeetingCardComponent {
   protected readonly when: Signal<string> = this.initWhen();
   protected readonly recurrenceTooltip: Signal<string | null> = this.fromRow((row) => getMeetingRecurrenceTooltip(row.meeting, row.occurrence));
   protected readonly groups: Signal<string[]> = this.fromRow((row) => getMeetingGroupNames(row.meeting), []);
+  protected readonly attendance: Signal<MeetingHomeAttendance | null> = this.fromRow((row) => getMeetingHomeAttendance(row, false), null);
   protected readonly earlyJoinMinutes: Signal<number> = this.fromRow(
     (row) => row.meeting.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME,
     DEFAULT_EARLY_JOIN_TIME

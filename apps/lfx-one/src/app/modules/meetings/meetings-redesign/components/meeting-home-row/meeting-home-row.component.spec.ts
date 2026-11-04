@@ -425,6 +425,32 @@ describe('MeetingHomeRowComponent', () => {
     });
   });
 
+  describe('organizer attendance', () => {
+    it("shows the date's RSVP counts with a tooltip on the bar, and widens the actions over 860px", async () => {
+      const fixture = await render(buildRow(buildMeeting({ rsvp_summary: { invited: 16, yes: 12, maybe: 2, no: 1, no_response: 1 } })));
+
+      expect(text(fixture, 'meetings-home-attendance-label')).toBe('12 of 16 attending · 75%');
+      expect(query(fixture, 'meetings-home-attendance-bar')?.getAttribute('aria-label')).toBe('Yes 12, Maybe 2, No 1, No response 1');
+      expect(query(fixture, 'meetings-home-attendance-legend')).toBeNull();
+      expect(classes(fixture, 'meetings-home-row-actions')).toContain('@[861px]:min-w-[330px]');
+      expect(classes(fixture, 'meetings-home-row')).toContain('@[601px]:grid-cols-[auto_minmax(0,1fr)_minmax(240px,auto)_auto]');
+    });
+
+    it('shows past attendance with the poorly-attended note', async () => {
+      const fixture = await render(buildRow(buildMeeting({ attendance_summary: { invited: 20, attended: 9 } })), 'past');
+
+      expect(text(fixture, 'meetings-home-attendance-label')).toBe('9 of 20 attended · 45%');
+      expect(text(fixture, 'meetings-home-attendance-poor')).toBe('This meeting was poorly attended');
+    });
+
+    it('shows nothing and keeps the plain layout without counts', async () => {
+      const fixture = await render(buildRow(buildMeeting()));
+
+      expect(query(fixture, 'meetings-home-row-attendance')).toBeNull();
+      expect(classes(fixture, 'meetings-home-row-actions')).not.toContain('@[861px]:min-w-[330px]');
+    });
+  });
+
   describe('past', () => {
     it('uses the grey band and marks a meeting I attended', async () => {
       const fixture = await render(buildRow(buildMeeting({ user_attended: true })), 'past');
