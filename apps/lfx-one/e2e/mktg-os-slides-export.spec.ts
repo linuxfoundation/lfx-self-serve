@@ -24,6 +24,21 @@ test('a failed last-export lookup shows the one plain line with no Check again b
   const type = kitDocuments(true).groups.find((group) => group.type.agentKey === 'foundation-message')?.type;
   if (!type) throw new Error('Missing synthetic framework type');
   const revision = kitRevision(type).revision;
+  // The helper's framework is a Draft, whose Export is hidden by design; the viewed revision must be the approved current
+  // for the Export button to exist. Registered after the helper's routes, so these answer first.
+  const approval = { approvedAt: '2026-10-29T10:00:00Z', approvedBy: null };
+  const approved = {
+    ...kitRevision(type),
+    approval,
+    revision: { ...revision, approval },
+    revisions: [{ ...revision, approval }],
+    approvedCurrent: { revisionId: revision.id, number: revision.number },
+  };
+  const documentPath = '/api/mktg-agents/documents/foundation-message/living';
+  await page.route(
+    (url) => url.pathname === documentPath || url.pathname.startsWith(`${documentPath}/revisions/`),
+    (route) => kitJson(route, approved)
+  );
   let failing = true;
   let lookups = 0;
   await page.route(
