@@ -14,6 +14,10 @@ import {
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
+  MENTORSHIP_ENABLED_FLAG,
+  MENTORSHIP_FOUNDATION_PROGRAMS_PATH,
+  MENTORSHIP_PROJECT_PROGRAMS_PATH,
+  MENTORSHIP_PROJECT_PROGRAMS_TITLE,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_EASYCLA_PATH,
@@ -76,6 +80,8 @@ export class SidebarNavService {
   private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens Donations entry (#415), matching `cfOrgDonationsGuard`. */
   private readonly isCfOrgDonationsEnabled = this.featureFlagService.getBooleanFlag(CF_ORG_DONATIONS_FLAG, false);
+  /** Dark-launch gate for the Projects and Foundation lens Mentorship Programs entries (lfx-mentorship#398); sidebar only. */
+  private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
   /**
@@ -220,12 +226,15 @@ export class SidebarNavService {
         // Mktg OS agents is dark-launched: when its flag is on, the entry is inserted between
         // Documents (last of projectLensItems) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
-        // Initiatives (#347) follows canWrite — CF lists a project's initiatives to its writers only.
-        const initiativesItems = this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem] : [];
+        // Initiatives (#347) follows canWrite — CF lists a project's initiatives to its writers only. So does Mentorship
+        // Programs (lfx-mentorship#398), right after it and dark-launched behind `mentorship-enabled`: the gateway lists a
+        // project's programs on `mentorship_program_creator`, which its writers hold.
+        const mentorshipItems = this.isMentorshipEnabled() ? [this.projectMentorshipProgramsNavItem] : [];
+        const writerItems = this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem, ...mentorshipItems] : [];
         // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
         const coreItems = this.canSeeNewsletters() ? this.withProjectNewslettersNavItem(this.projectLensItems) : this.projectLensItems;
         // Participating Organizations (#2091) is shown to every project-lens viewer — the BFF enforces project `viewer`.
-        const items = [...coreItems, this.projectParticipatingOrgsNavItem, ...initiativesItems, ...mktgOsItems, this.projectGovernanceSection];
+        const items = [...coreItems, this.projectParticipatingOrgsNavItem, ...writerItems, ...mktgOsItems, this.projectGovernanceSection];
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
@@ -582,9 +591,12 @@ export class SidebarNavService {
         }
       );
 
-      // CF lists a project's initiatives to its writers only (403 otherwise), so the entry follows canWrite (#347).
+      // CF lists a project's initiatives to its writers only (403 otherwise), so the entry follows canWrite (#347). So does
+      // Mentorship Programs (lfx-mentorship#398), right after it and dark-launched behind `mentorship-enabled`: the gateway
+      // lists a foundation's programs on `mentorship_program_creator`, which its writers hold.
       if (this.projectContextService.menuCanWrite()) {
         items.push(this.foundationInitiativesNavItem);
+        if (this.isMentorshipEnabled()) items.push(this.foundationMentorshipProgramsNavItem);
       }
 
       if (this.isMktgOsAgentsEnabled()) {
@@ -789,6 +801,22 @@ export class SidebarNavService {
     icon: 'fa-light fa-box-dollar',
     routerLink: '/project/initiatives',
     testId: 'sidebar-project-initiatives',
+  };
+
+  // --- Project / Foundation — Mentorship Programs (lfx-mentorship#398; every program of the lens project, for its admins) ---
+  private readonly projectMentorshipProgramsNavItem: SidebarMenuItem = {
+    label: MENTORSHIP_PROJECT_PROGRAMS_TITLE,
+    icon: 'fa-light fa-chalkboard-user',
+    routerLink: MENTORSHIP_PROJECT_PROGRAMS_PATH,
+    testId: 'sidebar-project-mentorship-programs',
+  };
+
+  /** The foundation's programs and its sub-projects'. */
+  private readonly foundationMentorshipProgramsNavItem: SidebarMenuItem = {
+    label: MENTORSHIP_PROJECT_PROGRAMS_TITLE,
+    icon: 'fa-light fa-chalkboard-user',
+    routerLink: MENTORSHIP_FOUNDATION_PROGRAMS_PATH,
+    testId: 'sidebar-foundation-mentorship-programs',
   };
 
   // --- Project — Participating Organizations (#2091) ---

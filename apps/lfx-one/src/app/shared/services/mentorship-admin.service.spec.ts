@@ -64,6 +64,39 @@ describe('MentorshipAdminService', () => {
     expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
   });
 
+  it('reads a project’s programs from its admin endpoint, encoding the uid, with the filters as query params', () => {
+    let total = -1;
+    service.getProjectPrograms('proj 1', { search: 'c++', status: 'hidden', offset: 12, limit: 12 }).subscribe((response) => (total = response.total));
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/projects/proj%201/programs');
+    expect(req.request.urlWithParams).toContain('search=c%2B%2B');
+    expect(req.request.params.get('status')).toBe('hidden');
+    expect(req.request.params.get('offset')).toBe('12');
+    expect(req.request.params.get('limit')).toBe('12');
+    req.flush({ data: [], total: 4 } satisfies MentorshipProgramsResponse);
+    expect(total).toBe(4);
+  });
+
+  it('asks for the sub-projects’ programs too for the Foundation lens', () => {
+    service.getProjectPrograms('p1', { includeSubprojects: true }).subscribe();
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/projects/p1/programs');
+    expect(req.request.params.get('includeSubprojects')).toBe('true');
+    req.flush({ data: [], total: 0 } satisfies MentorshipProgramsResponse);
+  });
+
+  it('logs a project program list failure by status and lets the 403 reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.getProjectPrograms('p1').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/projects/p1/programs');
+    expect(req.request.params.keys()).toEqual([]);
+    req.flush('forbidden', { status: 403, statusText: 'Forbidden' });
+    expect(status).toBe(403);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getProjectPrograms failed', { status: 403, statusText: 'Forbidden' });
+  });
+
   it('loads the program page from the admin endpoint, encoding the id', () => {
     let page: MentorshipAdminProgramPage | undefined;
     service.getProgram('grid flow').subscribe((value) => (page = value));

@@ -8,6 +8,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { readMentorshipLfxProfileFields } from '../helpers/mentorship-lfx-profile.helper';
 import { parseIntQuery, parseTrimmedString } from '../helpers/mentorship-params.helper';
+import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { isMentorshipProgramReviewDecision, MentorshipService } from '../services/mentorship.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -56,13 +57,21 @@ export class MentorshipController {
         throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_lf_projects' });
       }
 
+      // The Foundation lens wizard lists the foundation's direct sub-projects here (lfx-mentorship#398).
+      // A repeated parentUid is a 400, so a scoping filter never silently drops to every project.
+      const parentUid = parseTrimmedString(getStrictStringQueryParam(req, 'parentUid', 'get_mentorship_lf_projects'));
+      if (parentUid !== undefined && !isUuid(parentUid)) {
+        throw ServiceValidationError.forField('parentUid', 'parentUid must be a UUID.', { operation: 'get_mentorship_lf_projects' });
+      }
+
       const projects = await this.mentorshipService.getLfProjects(req, {
         search: parseTrimmedString(req.query['search']),
         pageToken: parseTrimmedString(req.query['page_token']),
         limit: parseIntQuery(req.query['page_size']),
+        ...(parentUid && { parentUid }),
       });
 
-      logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length });
+      logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length, parentUid });
       res.json(projects);
     } catch (error) {
       next(error);

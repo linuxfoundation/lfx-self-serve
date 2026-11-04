@@ -306,6 +306,21 @@ describe('MentorshipService LF project search', () => {
     });
   });
 
+  it('lists only the direct sub-projects of a parent, searched the same way', async () => {
+    const parentUid = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+    proxyRequest.mockResolvedValue(page([project('uid-1', 'Alpha')]));
+
+    await service.getLfProjects(buildReq(), { search: 'alp', limit: 5, parentUid });
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'project',
+      parent: `project:${parentUid}`,
+      name: 'alp',
+      sort: 'best_match',
+      page_size: 5,
+    });
+  });
+
   it('resumes from the page token it is given', async () => {
     proxyRequest.mockResolvedValue(page([project('uid-1', 'Alpha')]));
 

@@ -87,6 +87,8 @@ import {
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramsUrl,
   buildMentorshipPublicUrl,
+  getMentorshipAdminBasePath,
+  getMentorshipLensQueryParams,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
@@ -908,6 +910,27 @@ describe('buildMentorshipProgramsUrl', () => {
   it("links one program's page, URL-encoding its id", () => {
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org/', 'prog_gridflow')).toBe('https://mentorship.example.org/programs/prog_gridflow');
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org', 'prog/with space')).toBe('https://mentorship.example.org/programs/prog%2Fwith%20space');
+  });
+});
+
+describe('getMentorshipAdminBasePath', () => {
+  it('keeps the Project and Foundation lenses on their Mentorship Programs and every other lens on the Me lens Admin', () => {
+    expect(getMentorshipAdminBasePath('project')).toBe('/project/mentorship');
+    expect(getMentorshipAdminBasePath('foundation')).toBe('/foundation/mentorship');
+    expect(getMentorshipAdminBasePath('me')).toBe('/mentorship/admin');
+    expect(getMentorshipAdminBasePath('org')).toBe('/mentorship/admin');
+    expect(getMentorshipAdminBasePath(undefined)).toBe('/mentorship/admin');
+  });
+});
+
+describe('getMentorshipLensQueryParams', () => {
+  it('names the lens project on the Project and Foundation lenses only, once it is known', () => {
+    expect(getMentorshipLensQueryParams('project', 'gridflow')).toEqual({ project: 'gridflow' });
+    expect(getMentorshipLensQueryParams('foundation', 'lf-energy')).toEqual({ project: 'lf-energy' });
+    expect(getMentorshipLensQueryParams('project', undefined)).toEqual({});
+    expect(getMentorshipLensQueryParams('project', '')).toEqual({});
+    expect(getMentorshipLensQueryParams('me', 'gridflow')).toEqual({});
+    expect(getMentorshipLensQueryParams(undefined, 'gridflow')).toEqual({});
   });
 });
 
