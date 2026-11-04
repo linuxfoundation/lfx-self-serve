@@ -88,13 +88,13 @@ The campaign does not serve in the places listed here.
 **More ads** adds responsive search ads to the campaign's ad group. The **Headlines** and **Descriptions** sections are ad 1.
 
 - Select **Add another ad** for ad 2 and ad 3. Google Ads takes at most 3 ads in one ad group.
-- Each ad needs at least one headline and one description. It takes up to 15 headlines of 30 characters and up to 4 descriptions of 90 characters.
+- Each ad needs at least one headline and one description. It takes up to 15 headlines of 30 characters and up to 4 descriptions of 90 characters. In headlines and descriptions, on ad 1 too, Chinese, Japanese, Korean and other full-width characters count as two.
 - An ad can have its own display path. If you leave it blank, the ad uses the **Display path** above.
 - **Remove ad** deletes an ad.
 
 **Negative keywords** are searches the campaign never pays for. They are added when the campaign is created.
 
-- The box starts with the negative keywords suggested by the brief. Edit, add or delete lines freely, or empty the box to add none.
+- The box starts with the negative keywords suggested by the brief, up to 60, leaving out any that Google Ads would not accept. They are sent with the campaign unless you edit them or empty the box.
 - Enter one keyword per line, up to 60 keywords of up to 80 characters each. Use only letters, digits, spaces and & ' - .
 - **Match type** (Exact, Phrase or Broad) applies to every keyword in the box. Exact is the default.
 - You can add more negative keywords from **Optimize** once the campaign is live.
