@@ -12,6 +12,8 @@ import {
   MKTG_SLIDES_EXPORT_GUILD_HANDLE,
   MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE,
   MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX,
+  MKTG_SLIDES_EXPORT_LOGO_VARIANT_FIELDS,
+  MKTG_SLIDES_EXPORT_LOGO_VARIANTS,
   MKTG_SLIDES_EXPORT_MAX_LOGO_URL_CHARS,
   MKTG_SLIDES_EXPORT_POLL,
   MKTG_SLIDES_EXPORT_RECORD_SCHEMA,
@@ -36,8 +38,12 @@ import {
   MktgSlidesExportEnvelope,
   MktgSlidesExportForm,
   MktgSlidesExportLastResponse,
+  MktgSlidesExportLogoFields,
   MktgSlidesExportLogoNote,
+  MktgSlidesExportLogoVariant,
+  MktgSlidesExportLogoVariantUrls,
   MktgSlidesExportLogContext,
+  MktgSlidesExportPublishedLogo,
   MktgSlidesExportRecord,
   MktgSlidesExportResultContext,
   MktgSlidesExportResultResponse,
@@ -80,6 +86,7 @@ import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID, MKTG_SLIDES_EXPORT_FOLDER_ID_ENV 
 import { ConflictError, ResourceNotFoundError } from '../errors';
 import { getAvatarCdnPrefix } from '../utils/avatar-url.util';
 import { rasterizeLogoSvg } from '../utils/mktg-logo-png.util';
+import { logoVariantSvgSources } from '../utils/mktg-logo-variants.util';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
@@ -106,7 +113,12 @@ import { ObjectStoreService } from './object-store.service';
  *    stores SVG. This server draws the stored kit's primary logo as a PNG
  *    (never bytes from the browser: what is published is always the kit's
  *    own logo) and publishes it to the public, CDN-fronted image bucket
- *    under a content-addressed key.
+ *    under a content-addressed key. Beside it go the variants the deck's
+ *    layouts place (slides-export 1.1.2 or later): the symbol, the reversed
+ *    and one-colour lockups and the reversed symbol, derived from the kit's
+ *    logo files the way the web view draws them and published the same way;
+ *    a variant that cannot be drawn or published is left out of the intake
+ *    and the deck keeps that slot's template mark.
  *    Where there is no public URL (local development: no CDN prefix, and the
  *    object store is not reachable from Google) no logo is sent: the deck
  *    still takes the kit's colours and typeface, and the result says so.
@@ -160,7 +172,7 @@ export class MktgSlidesExportService {
       project_name: projectName,
       run_date: runDate,
       ...(deckId ? { deck_id: deckId } : { folder_id: this.folderId(), deck_title: mktgSlidesExportDeckTitle(input.agentKey, projectName, runDate) }),
-      ...(logo.url && { logo_url: logo.url }),
+      ...this.logoFormFields(logo),
       assets,
     };
 
@@ -171,6 +183,7 @@ export class MktgSlidesExportService {
       assets: Object.keys(assets),
       has_logo: !!logo.url,
       logo_note: logo.note,
+      logo_variants: Object.keys(logo.variants),
     });
 
     const sessionId = await this.guildService.createSession(req, {
@@ -289,7 +302,7 @@ export class MktgSlidesExportService {
       run_date: runDate,
       assets,
       ...(last ? { deck_id: last.deckId } : { folder_id: this.folderId(), deck_title: `${projectName} · ${familyName} · ${runDate}` }),
-      ...(logo.url && { logo_url: logo.url }),
+      ...this.logoFormFields(logo),
     };
     const sessionId = await this.guildService.createSession(req, {
       message: renderMktgSlidesExportFormMessage(form),
@@ -308,6 +321,7 @@ export class MktgSlidesExportService {
       assets: Object.keys(assets),
       skipped: skippedMembers,
       mode: input.mode,
+      logo_variants: Object.keys(logo.variants),
     });
     this.finishInBackground(req, sessionId, () => this.getFamilyResult(req, sessionId, snapshot), { family: input.familyId });
     return { sessionId, snapshot, skippedMembers, logoNote: logo.note };
@@ -473,15 +487,18 @@ export class MktgSlidesExportService {
    * drawing is skipped where there is none. A kit whose logo is still a
    * placeholder has no logo to send, as in the print (`mktgPrintBrand`): a
    * placeholder mark never reaches a deck.
+   *
+   * Beside a published primary go the variants the deck's layouts place,
+   * each drawn from its own SVG source (`logoVariantSvgSources`) under the
+   * same size rules and published under the same key scheme. A variant that
+   * cannot be drawn or published is left out, with one log line: the note is
+   * the primary's alone, and the deck keeps that slot's template mark.
    */
-  private async publishLogo(
-    req: Request,
-    project: string,
-    kit: BrandKitRevision | null
-  ): Promise<{ url: string | null; note: MktgSlidesExportLogoNote | null }> {
-    const svg = kit?.chapters.logo.placeholder ? null : kit?.chapters.logo.files.primary?.svg;
-    if (!svg) {
-      return { url: null, note: 'no-logo' };
+  private async publishLogo(req: Request, project: string, kit: BrandKitRevision | null): Promise<MktgSlidesExportPublishedLogo> {
+    const logo = kit?.chapters.logo;
+    const svg = logo?.placeholder ? null : logo?.files.primary?.svg;
+    if (!logo || !svg) {
+      return { url: null, note: 'no-logo', variants: {} };
     }
 
     let cdnPrefix: string | null;
@@ -489,11 +506,11 @@ export class MktgSlidesExportService {
       cdnPrefix = getAvatarCdnPrefix();
     } catch (error) {
       logger.warning(req, 'mktg_slides_export_logo', 'The public image prefix is misconfigured — exporting without the logo', { err: error });
-      return { url: null, note: 'not-published' };
+      return { url: null, note: 'not-published', variants: {} };
     }
     if (!cdnPrefix) {
       logger.debug(req, 'mktg_slides_export_logo', 'No public image URL in this environment — exporting without the logo', {});
-      return { url: null, note: 'not-public' };
+      return { url: null, note: 'not-public', variants: {} };
     }
 
     const drawn = await rasterizeLogoSvg(svg);
@@ -503,10 +520,51 @@ export class MktgSlidesExportService {
         detail: drawn.detail,
         svg_chars: svg.length,
       });
-      return { url: null, note: drawn.reason === 'live-text' ? 'live-text' : 'not-drawn' };
+      return { url: null, note: drawn.reason === 'live-text' ? 'live-text' : 'not-drawn', variants: {} };
+    }
+    const primary = await this.publishLogoPng(req, project, drawn.png, 'primary');
+    if (!primary.url) {
+      return { ...primary, variants: {} };
     }
 
-    const png = Buffer.from(drawn.png);
+    const variants: MktgSlidesExportLogoVariantUrls = {};
+    const sources = logoVariantSvgSources(logo.files, logo.symbol_viewbox);
+    for (const variant of MKTG_SLIDES_EXPORT_LOGO_VARIANTS) {
+      const source = sources[variant];
+      if (!source) {
+        continue;
+      }
+      const drawnVariant = await rasterizeLogoSvg(source);
+      if (drawnVariant.png === null) {
+        // The source is the kit's own artwork, so a refusal is input the user controls: traced, not alerted.
+        logger.debug(req, 'mktg_slides_export_logo', 'A logo variant could not be drawn as a PNG — the deck keeps that slot’s template mark', {
+          variant,
+          reason: drawnVariant.reason,
+          detail: drawnVariant.detail,
+        });
+        continue;
+      }
+      const { url } = await this.publishLogoPng(req, project, drawnVariant.png, variant);
+      if (url) {
+        variants[variant] = url;
+      }
+    }
+    return { url: primary.url, note: null, variants };
+  }
+
+  /**
+   * Publish one drawn logo PNG to the public image bucket under its
+   * content-addressed key, or say why not: a URL Google cannot take
+   * (`not-public`), or a failed upload (`not-published`, logged with the
+   * variant it was).
+   */
+  private async publishLogoPng(
+    req: Request,
+    project: string,
+    bytes: Uint8Array,
+    variant: 'primary' | MktgSlidesExportLogoVariant
+  ): Promise<{ url: string | null; note: MktgSlidesExportLogoNote | null }> {
+    const png = Buffer.from(bytes);
     const key = `${MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX}/${project}/${createHash('sha256').update(png).digest('hex')}.png`;
     try {
       const { url } = await this.objectStore.putPublicImage(req, key, png, MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE);
@@ -515,9 +573,28 @@ export class MktgSlidesExportService {
       }
       return { url, note: null };
     } catch (error) {
-      logger.warning(req, 'mktg_slides_export_logo', 'The logo could not be published — exporting without it', { key, bytes: png.length, err: error });
+      logger.warning(req, 'mktg_slides_export_logo', 'The logo could not be published — exporting without it', { variant, key, bytes: png.length, err: error });
       return { url: null, note: 'not-published' };
     }
+  }
+
+  /**
+   * The logo URLs as the form carries them: the primary, then each variant
+   * that was published, under its own field. The one code path for the
+   * document and the family export, so both decks get the same logos.
+   */
+  private logoFormFields(logo: MktgSlidesExportPublishedLogo): MktgSlidesExportLogoFields {
+    const fields: MktgSlidesExportLogoFields = {};
+    if (logo.url) {
+      fields.logo_url = logo.url;
+    }
+    for (const variant of MKTG_SLIDES_EXPORT_LOGO_VARIANTS) {
+      const url = logo.variants[variant];
+      if (url) {
+        fields[MKTG_SLIDES_EXPORT_LOGO_VARIANT_FIELDS[variant]] = url;
+      }
+    }
+    return fields;
   }
 
   /**

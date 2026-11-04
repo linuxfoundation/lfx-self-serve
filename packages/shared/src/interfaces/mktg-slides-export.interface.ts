@@ -13,6 +13,7 @@ import {
   MKTG_SLIDES_EXPORT_ASSET_KINDS,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_LOGO_NOTES,
+  MKTG_SLIDES_EXPORT_LOGO_VARIANT_FIELDS,
   MKTG_SLIDES_EXPORT_LOGO_VARIANTS,
   MKTG_SLIDES_EXPORT_MODES,
   MKTG_SLIDES_EXPORT_SLIDE_KINDS,
@@ -39,6 +40,12 @@ export type MktgSlidesExportLogoVariant = (typeof MKTG_SLIDES_EXPORT_LOGO_VARIAN
 
 /** The variant URLs that could be drawn and published, by variant; a variant that could not is absent. */
 export type MktgSlidesExportLogoVariantUrls = Partial<Record<MktgSlidesExportLogoVariant, string>>;
+
+/** The form field a variant's URL travels in. */
+export type MktgSlidesExportLogoVariantField = (typeof MKTG_SLIDES_EXPORT_LOGO_VARIANT_FIELDS)[MktgSlidesExportLogoVariant];
+
+/** The form's logo fields: the primary and each variant, each present only when its PNG was published. */
+export type MktgSlidesExportLogoFields = Pick<MktgSlidesExportForm, 'logo_url' | MktgSlidesExportLogoVariantField>;
 
 /** What went wrong with an export, as the plain message names it. */
 export type MktgSlidesExportFailure = keyof typeof MKTG_SLIDES_EXPORT_FAILURE_MESSAGES;
@@ -287,6 +294,19 @@ export interface MktgSlidesExportStarted {
   revision: MktgSlidesExportRevisionRef;
   mode: MktgSlidesExportMode;
   logoNote: MktgSlidesExportLogoNote | null;
+}
+
+/**
+ * The kit's logo as the BFF published it for a deck (server-side): the
+ * primary's public URL, or why there is none (the note the start answers
+ * with), and the URL of each variant that could be drawn and published
+ * beside it. The variants carry no note: one that is missing leaves its
+ * slot to the deck's template mark.
+ */
+export interface MktgSlidesExportPublishedLogo {
+  url: string | null;
+  note: MktgSlidesExportLogoNote | null;
+  variants: MktgSlidesExportLogoVariantUrls;
 }
 
 /** Export scope retained by server-side background poll logs. */

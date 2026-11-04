@@ -17,6 +17,9 @@ const store = vi.hoisted(() => ({
   publicImages: new Map<string, Buffer>(),
   clock: 0,
   failPublicPut: false,
+  /** The 1-based ordinals of the public image uploads of a test that throw (the bucket failing on one PNG, not all). */
+  failPublicPutOrdinals: [] as number[],
+  publicPuts: 0,
 }));
 const guildMocks = vi.hoisted(() => ({ createSession: vi.fn(), getRawEventPayloads: vi.fn() }));
 const loggerMocks = vi.hoisted(() => ({
@@ -124,7 +127,8 @@ vi.mock('./object-store.service', () => ({
       return object ? { body: object.body, metadata: object.metadata, etag: String(object.lastModified.getTime()) } : null;
     }
     public async putPublicImage(_req: unknown, key: string, buffer: Buffer): Promise<{ url: string | null }> {
-      if (store.failPublicPut) {
+      store.publicPuts += 1;
+      if (store.failPublicPut || store.failPublicPutOrdinals.includes(store.publicPuts)) {
         throw new Error('bucket unavailable');
       }
       store.publicImages.set(key, buffer);
@@ -174,10 +178,39 @@ async function approveNewest(documentStore: MktgDocumentStoreService, type: Mktg
   await documentStore.approveRevision(req, PROJECT, type, 'living', revision.id);
 }
 
-async function seedKit(documentStore: MktgDocumentStoreService, options: { svg?: string | null; placeholder?: boolean } = {}): Promise<void> {
+/** A synthetic lockup with content to recolour: a filled mark on the left half, a stroke-only rule on the right. */
+const LOCKUP_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><path d="M1 1h8v8H1z" fill="#1f6feb"/><path d="M11 5h8" stroke="#d62" stroke-width="2" fill="none"/></svg>';
+/** The crop of LOCKUP_SVG that is its mark alone. */
+const SYMBOL_VIEWBOX = '0 0 10 10';
+const LOGO_URL = new RegExp(`^https://cdn\\.example\\.test/mktg-slides-logos/${PROJECT}/[0-9a-f]{64}\\.png$`);
+
+/** The head lines of the sent intake that carry the logo URLs, by label. */
+function sentLogoLines(): Record<string, string> {
+  const lines: Record<string, string> = {};
+  for (const line of sentMessage().split('\n').slice(6, 11)) {
+    const [label, value] = line.split(': ');
+    lines[label] = value;
+  }
+  return lines;
+}
+
+async function seedKit(
+  documentStore: MktgDocumentStoreService,
+  options: { svg?: string | null; placeholder?: boolean; symbolViewBox?: string | null; symbol?: string | null; reversed?: string | null } = {}
+): Promise<void> {
   const kit = brandKitTestRevision();
   if (options.svg !== undefined) {
     kit.chapters.logo.files.primary = options.svg === null ? null : { ref: 'logo.svg', svg: options.svg };
+  }
+  if (options.symbol !== undefined) {
+    kit.chapters.logo.files.symbol = options.symbol === null ? null : { ref: 'symbol.svg', svg: options.symbol };
+  }
+  if (options.reversed !== undefined) {
+    kit.chapters.logo.files.reversed = options.reversed === null ? null : { ref: 'reversed.svg', svg: options.reversed };
+  }
+  if (options.symbolViewBox !== undefined) {
+    kit.chapters.logo.symbol_viewbox = options.symbolViewBox;
   }
   if (options.placeholder !== undefined) {
     kit.chapters.logo.placeholder = options.placeholder;
@@ -282,6 +315,8 @@ describe('MktgSlidesExportService', () => {
     store.publicImages.clear();
     store.clock = 0;
     store.failPublicPut = false;
+    store.failPublicPutOrdinals = [];
+    store.publicPuts = 0;
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
     directoryMocks.getUserInfo.mockResolvedValue({ success: true, data: { name: 'The writer' } });
     guildMocks.createSession.mockResolvedValue('session-1');
@@ -355,6 +390,27 @@ describe('MktgSlidesExportService', () => {
       expect(assets.kit).toEqual(documentKit);
       expect(assets.boilerplates).toEqual(bp);
       expect(assets.faq).toEqual([{ q: 'What is this project?', a: 'A synthetic project.' }]);
+    });
+
+    it('sends the kit’s logo and every variant on a family export too, through the same path as a document export', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedFramework(documentStore);
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+
+      const started = await service.startFamilyExport(req, familyInput);
+
+      const lines = sentLogoLines();
+      expect(Object.keys(lines)).toEqual(['LOGO URL', 'LOGO SYMBOL URL', 'LOGO REVERSED URL', 'LOGO ONE-COLOR URL', 'LOGO SYMBOL REVERSED URL']);
+      for (const url of Object.values(lines)) {
+        expect(url).toMatch(LOGO_URL);
+      }
+      expect(started.logoNote).toBeNull();
+      expect(loggerMocks.info).toHaveBeenCalledWith(
+        req,
+        'mktg_family_export_start',
+        expect.any(String),
+        expect.objectContaining({ logo_variants: ['symbol', 'reversed', 'one_color', 'symbol_reversed'] })
+      );
     });
 
     it('refuses an unreadable approved asset with family-specific copy before calling Guild', async () => {
@@ -625,6 +681,130 @@ describe('MktgSlidesExportService', () => {
       expect(sentMessage()).toContain('\nASSETS: kit\n');
       expect(sentMessage()).toMatch(/\nDECK TITLE: Example Project · Brand kit · /);
       expect(started.logoNote).toBeNull();
+    });
+
+    it('draws and publishes the symbol, reversed, one-colour and reversed-symbol PNGs beside the primary and sends all five URLs', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(Object.keys(lines)).toEqual(['LOGO URL', 'LOGO SYMBOL URL', 'LOGO REVERSED URL', 'LOGO ONE-COLOR URL', 'LOGO SYMBOL REVERSED URL']);
+      for (const url of Object.values(lines)) {
+        expect(url).toMatch(LOGO_URL);
+      }
+      // Five different images, each under its own content-addressed key.
+      expect(new Set(Object.values(lines)).size).toBe(5);
+      expect(store.publicImages.size).toBe(5);
+      const sizeOf = (label: string): { width: number; height: number } | null =>
+        pngSize(store.publicImages.get(lines[label].replace('https://cdn.example.test/', '')) as Buffer);
+      // The lockups keep the primary's 2:1; the symbol crops are square — each PNG fitted on its own longest side.
+      expect(sizeOf('LOGO URL')).toEqual({ width: 1200, height: 600 });
+      expect(sizeOf('LOGO REVERSED URL')).toEqual({ width: 1200, height: 600 });
+      expect(sizeOf('LOGO ONE-COLOR URL')).toEqual({ width: 1200, height: 600 });
+      expect(sizeOf('LOGO SYMBOL URL')).toEqual({ width: 1200, height: 1200 });
+      expect(sizeOf('LOGO SYMBOL REVERSED URL')).toEqual({ width: 1200, height: 1200 });
+      expect(loggerMocks.info).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_start',
+        'Composed the Slides export intake',
+        expect.objectContaining({ has_logo: true, logo_variants: ['symbol', 'reversed', 'one_color', 'symbol_reversed'] })
+      );
+      // The client payload is unchanged: the start answers with the primary's note only.
+      expect(started.logoNote).toBeNull();
+      expect(Object.keys(started).sort()).toEqual(['logoNote', 'mode', 'revision', 'sessionId']);
+    });
+
+    it('sends no symbol lines when the kit has neither a symbol file nor a symbol viewBox, and still the reversed and one-colour lockups', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: null });
+
+      await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL URL']).toBe('none');
+      expect(lines['LOGO REVERSED URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO ONE-COLOR URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(store.publicImages.size).toBe(3);
+    });
+
+    it('sends the primary alone, four `none` lines after it, when every variant fails to publish; the start’s note stays the primary’s', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+      store.failPublicPutOrdinals = [2, 3, 4, 5];
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(Object.entries(lines).filter(([label]) => label !== 'LOGO URL')).toEqual([
+        ['LOGO SYMBOL URL', 'none'],
+        ['LOGO REVERSED URL', 'none'],
+        ['LOGO ONE-COLOR URL', 'none'],
+        ['LOGO SYMBOL REVERSED URL', 'none'],
+      ]);
+      expect(started.logoNote).toBeNull();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'mktg_slides_export_logo', expect.any(String), expect.objectContaining({ variant: 'symbol' }));
+      expect(loggerMocks.info).toHaveBeenCalledWith(req, 'mktg_slides_export_start', expect.any(String), expect.objectContaining({ logo_variants: [] }));
+    });
+
+    it('drops the one variant whose upload throws and still sends the others', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+      // The uploads go primary, symbol, reversed, one_color, symbol_reversed: the third is the reversed lockup.
+      store.failPublicPutOrdinals = [3];
+
+      await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO REVERSED URL']).toBe('none');
+      for (const label of ['LOGO URL', 'LOGO SYMBOL URL', 'LOGO ONE-COLOR URL', 'LOGO SYMBOL REVERSED URL']) {
+        expect(lines[label]).toMatch(LOGO_URL);
+      }
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'mktg_slides_export_logo', expect.any(String), expect.objectContaining({ variant: 'reversed' }));
+      expect(loggerMocks.info).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_start',
+        expect.any(String),
+        expect.objectContaining({ logo_variants: ['symbol', 'one_color', 'symbol_reversed'] })
+      );
+    });
+
+    it('drops a variant that cannot be drawn — an uploaded reversed file that sets live text — and still sends the others', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, {
+        svg: LOCKUP_SVG,
+        symbolViewBox: SYMBOL_VIEWBOX,
+        reversed: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><text x="0" y="2" font-size="2">Orbit</text></svg>',
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO REVERSED URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toMatch(LOGO_URL);
+      expect(started.logoNote).toBeNull();
+      expect(loggerMocks.debug).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ variant: 'reversed', reason: 'live-text' })
+      );
+    });
+
+    it('publishes no variant when the primary itself could not be published', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+      store.failPublicPutOrdinals = [1];
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      expect(started.logoNote).toBe('not-published');
+      expect(store.publicPuts).toBe(1);
+      expect(Object.values(sentLogoLines())).toEqual(['none', 'none', 'none', 'none', 'none']);
     });
 
     it('sends no logo, and says why, when the SVG reaches outside itself, sets live text, cannot be drawn, or cannot be published', async () => {
