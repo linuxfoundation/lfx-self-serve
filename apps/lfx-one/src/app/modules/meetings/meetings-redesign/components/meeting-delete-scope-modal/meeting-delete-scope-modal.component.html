@@ -32,11 +32,18 @@
         label="Cancel a single occurrence"
         [disabled]="!occurrenceOptions.length"
         data-testid="meetings-home-delete-scope-occurrence" />
-      <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600">{{
-        occurrenceOptions.length
-          ? 'Only the occurrence you pick will be canceled. The rest of the series will remain.'
-          : 'There are no upcoming occurrences left to cancel on their own.'
-      }}</span>
+      <!-- The uikit radio has no description slot, so a click on the description picks the option too. -->
+      <span
+        class="pl-[24px] text-[13px] leading-[18px] text-gray-600"
+        [class.cursor-pointer]="occurrenceOptions.length"
+        (click)="occurrenceOptions.length && scope.set('occurrence')"
+        data-testid="meetings-home-delete-scope-occurrence-description"
+        >{{
+          occurrenceOptions.length
+            ? 'Only the occurrence you pick will be canceled. The rest of the series will remain.'
+            : 'There are no upcoming occurrences left to cancel on their own.'
+        }}</span
+      >
       @if (scope() === 'occurrence') {
         <div class="mt-[6px] pl-[24px]">
           <lfx-ui-select
@@ -54,7 +61,12 @@
     </span>
     <span class="flex flex-col gap-[4px]">
       <lfx-ui-radio class="[&_label]:font-medium" value="series" label="Delete the entire series" data-testid="meetings-home-delete-scope-series" />
-      <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600">Every occurrence of this recurring meeting will be permanently deleted.</span>
+      <span
+        class="cursor-pointer pl-[24px] text-[13px] leading-[18px] text-gray-600"
+        (click)="scope.set('series')"
+        data-testid="meetings-home-delete-scope-series-description"
+        >Every occurrence of this recurring meeting will be permanently deleted.</span
+      >
     </span>
   </lfx-ui-radio-group>
 
