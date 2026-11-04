@@ -11,6 +11,7 @@ const {
   getVoteStatusCounts,
   getMyVotes,
   getVoteReminderRecipients,
+  getVoteSummaryPreview,
   getVoteVoters,
   getVoteResults,
   sendVoteReminders,
@@ -27,6 +28,7 @@ const {
   getVoteStatusCounts: vi.fn(),
   getMyVotes: vi.fn(),
   getVoteReminderRecipients: vi.fn(),
+  getVoteSummaryPreview: vi.fn(),
   getVoteVoters: vi.fn(),
   getVoteResults: vi.fn(),
   sendVoteReminders: vi.fn(),
@@ -45,6 +47,7 @@ vi.mock('../services/vote.service', () => ({
     public getVoteStatusCounts = getVoteStatusCounts;
     public getMyVotes = getMyVotes;
     public getVoteReminderRecipients = getVoteReminderRecipients;
+    public getVoteSummaryPreview = getVoteSummaryPreview;
     public getVoteVoters = getVoteVoters;
     public getVoteResults = getVoteResults;
     public sendVoteReminders = sendVoteReminders;
@@ -248,6 +251,57 @@ describe('VoteController reminders (#3769)', () => {
       expect(getVoteReminderRecipients).toHaveBeenCalledWith(req, 'vote-1');
       expect(json).toHaveBeenCalledWith(recipients);
       expect(next).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getVoteSummaryPreview (#4830)', () => {
+    it('rejects a missing uid without checking access or reading', async () => {
+      await controller.getVoteSummaryPreview(request({ uid: ' ' }), res, next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(assertVoteWrite).not.toHaveBeenCalled();
+      expect(getVoteSummaryPreview).not.toHaveBeenCalled();
+    });
+
+    it('passes a write-gate rejection to next(error) without reading recipients', async () => {
+      const forbidden = new MicroserviceError('You do not have access to manage this vote.', 403, 'FORBIDDEN', {});
+      assertVoteWrite.mockRejectedValue(forbidden);
+      await controller.getVoteSummaryPreview(request({ uid: 'vote-1' }), res, next);
+      expect(next).toHaveBeenCalledWith(forbidden);
+      expect(getVoteSummaryPreview).not.toHaveBeenCalled();
+      expect(json).not.toHaveBeenCalled();
+    });
+
+    it('checks vote write access, then returns the preview and logs counts only', async () => {
+      const preview = {
+        ready: [{ uid: 'r-1', user_name: 'Avery Example', user_email: 'avery@acme-motors.example' }],
+        missing_email: [{ uid: 'r-2', user_name: 'Blake Example' }],
+        unique_email_count: 1,
+        shared_email_voter_count: 0,
+      };
+      assertVoteWrite.mockResolvedValue(undefined);
+      getVoteSummaryPreview.mockResolvedValue(preview);
+      const req = request({ uid: 'vote-1' });
+      await controller.getVoteSummaryPreview(req, res, next);
+      expect(assertVoteWrite).toHaveBeenCalledWith(req, 'vote-1', 'get_vote_summary_preview');
+      expect(getVoteSummaryPreview).toHaveBeenCalledWith(req, 'vote-1');
+      expect(json).toHaveBeenCalledWith(preview);
+      expect(success).toHaveBeenCalledWith(req, 'get_vote_summary_preview', undefined, {
+        vote_uid: 'vote-1',
+        ready_count: 1,
+        missing_email_count: 1,
+        unique_email_count: 1,
+      });
+      expect(JSON.stringify(success.mock.calls)).not.toContain('@acme-motors.example');
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('passes a not-ended conflict from the service to next(error)', async () => {
+      const conflict = new ConflictError('This vote has not closed yet.', 'VOTE_SUMMARY_NOT_ENDED', {});
+      assertVoteWrite.mockResolvedValue(undefined);
+      getVoteSummaryPreview.mockRejectedValue(conflict);
+      await controller.getVoteSummaryPreview(request({ uid: 'vote-1' }), res, next);
+      expect(next).toHaveBeenCalledWith(conflict);
+      expect(json).not.toHaveBeenCalled();
     });
   });
 
