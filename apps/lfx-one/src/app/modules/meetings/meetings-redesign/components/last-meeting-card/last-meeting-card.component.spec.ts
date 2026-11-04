@@ -113,12 +113,24 @@ describe('LastMeetingCardComponent', () => {
     expect(text(fixture, 'meetings-home-last-card-empty')).toContain('Your past meetings will appear here.');
   });
 
+  it('badges only Private and Restricted meetings on the tile', async () => {
+    const badges = async (overrides: Partial<PastMeeting>): Promise<string[]> => {
+      const fixture = await render({ row: rowOf(buildMeeting(overrides)), summary: null });
+      return Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="meetings-home-last-card-visibility-"]')).map(
+        (badge) => (badge as HTMLElement).dataset['testid'] ?? ''
+      );
+    };
+
+    expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: false })).toEqual([]);
+    expect(await badges({ visibility: MeetingVisibility.PRIVATE, restricted: false })).toEqual(['meetings-home-last-card-visibility-private']);
+    expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: true })).toEqual(['meetings-home-last-card-visibility-restricted']);
+  });
+
   it('renders the tile, project, title, when line and the type and recurring tags', async () => {
     const meeting = buildMeeting({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } });
     const fixture = await render({ row: rowOf(meeting), summary: null });
 
     expect(text(fixture, 'meetings-home-last-card-date')).toContain(String(START.getDate()));
-    expect(query(fixture, 'meetings-home-last-card-visibility-public')).toBeTruthy();
     expect(query(fixture, 'meetings-home-last-card-project')?.getAttribute('aria-label')).toBe('Jump to project: Kubernetes');
     expect(text(fixture, 'meetings-home-last-card-title')).toBe('Steering sync');
     const day = START.toLocaleString('en-US', { weekday: 'short' });

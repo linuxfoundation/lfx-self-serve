@@ -4,6 +4,7 @@
 import { DatePipe, formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import { MeetingHomeRow, MeetingHomeRowLink, MeetingHomeRowProject, MeetingHomeRowType, MeetingVisibilityInfo } from '@lfx-one/shared/interfaces';
 import {
@@ -22,6 +23,8 @@ import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.com
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
+import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
+
 /**
  * Next meeting card of the meetings home page: the soonest upcoming date with Join and a countdown.
  * @description Clicking the card opens the meeting; the project eyebrow opens the project. Shows an empty card without a date.
@@ -37,6 +40,7 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 })
 export class NextMeetingCardComponent {
   private readonly router = inject(Router);
+  private readonly joinService = inject(MeetingsHomeJoinService);
 
   /** The soonest upcoming date; null shows the empty card. */
   public readonly row = input.required<MeetingHomeRow | null>();
@@ -50,17 +54,17 @@ export class NextMeetingCardComponent {
   public readonly joinUrl = input<string | null>(null);
 
   protected readonly link: Signal<MeetingHomeRowLink | null> = this.fromRow((row) => getMeetingHomeRowLink(row, 'upcoming'));
-  protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = this.fromRow((row) => getMeetingVisibilityBadges(row.meeting), []);
+  // Public needs no badge on the tile, as on the list rows.
+  protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = this.fromRow(
+    (row) => getMeetingVisibilityBadges(row.meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC),
+    []
+  );
   protected readonly project: Signal<MeetingHomeRowProject | null> = this.fromRow((row) => getMeetingHomeRowProject(row.meeting));
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = this.fromRow((row) => getMeetingHomeRowType(row.meeting));
   protected readonly when: Signal<string> = this.initWhen();
   protected readonly recurrenceTooltip: Signal<string | null> = this.fromRow((row) => getMeetingRecurrenceTooltip(row.meeting, row.occurrence));
   protected readonly startsIn: Signal<string | null> = this.fromRow((row) => getMeetingStartsInLabel(row.startTime, this.now()));
-  protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
-    [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
-    [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
-    [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
-  };
+  protected readonly visibilityBg = MEETING_VISIBILITY_BG_CLASSES;
 
   protected open(): void {
     const link = this.link();
@@ -80,14 +84,7 @@ export class NextMeetingCardComponent {
   /** Opens the join link built for the viewer, or the meeting page's join flow when it is not available. */
   protected join(): void {
     const meeting = this.row()?.meeting;
-    if (!meeting || !this.joinable()) return;
-
-    const url = this.joinUrl();
-    if (url) {
-      window.open(url, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    void this.router.navigate(['/meetings', meeting.id], { queryParams: meeting.password ? { password: meeting.password } : {} });
+    if (meeting && this.joinable()) this.joinService.join(meeting, this.joinUrl());
   }
 
   private initWhen(): Signal<string> {

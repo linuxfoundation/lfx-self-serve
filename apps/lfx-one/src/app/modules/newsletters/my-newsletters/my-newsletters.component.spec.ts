@@ -477,4 +477,20 @@ describe('MyNewslettersComponent', () => {
     await settle();
     expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('10');
   });
+  it('shows views as email opens plus unique page views, and a dash when both are unknown', async () => {
+    await respond(
+      feedOf(
+        [
+          row({ total_opens: 40, page_view_count: 2 }),
+          row({ id: 'web', subject: 'Web only', page_view_count: 0 }),
+          row({ id: 'unknown', subject: 'Unknown views' }),
+        ],
+        true
+      )
+    );
+    expect(find('my-newsletters-views-issue')!.textContent!.trim()).toBe('42');
+    expect(find('my-newsletters-views-issue')!.getAttribute('aria-label')).toBe('Viewed 42 times');
+    expect(find('my-newsletters-views-web')!.textContent!.trim()).toBe('0');
+    expect(find('my-newsletters-views-unknown')!.textContent!.trim()).toBe('—');
+  });
 });

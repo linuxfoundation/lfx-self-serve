@@ -177,7 +177,7 @@ export function filterMeetingsHome(
   return rows.filter((row) => {
     const meeting = row.meeting;
     if (query && !matchesMeetingSearch(row, query)) return false;
-    if (filters.project && meeting.project_uid !== filters.project) return false;
+    if (!matchesEntityFilters(meeting, filters)) return false;
     if (filters.meetingType && meeting.meeting_type !== filters.meetingType) return false;
     if (!matchesRsvpFilter(row, filters.rsvp)) return false;
     if (filters.organizedByMe && !isMeetingOrganizedByViewer(meeting, viewerUsername)) return false;
@@ -187,16 +187,19 @@ export function filterMeetingsHome(
 
 /** Number of applied filters, for the Filters button badge. Search does not count. */
 export function countAppliedMeetingFilters(filters: MeetingsHomeFilters): number {
-  return [!!filters.project, !!filters.meetingType, filters.rsvp !== 'all', filters.organizedByMe, filters.hideDeclined].filter(Boolean).length;
+  return [filters.foundation, filters.project, filters.meetingType, filters.rsvp !== 'all', filters.organizedByMe, filters.hideDeclined].filter(Boolean).length;
 }
 
-/** One chip per applied filter, in popover order; the project chip names the project from `rows`, else its UID. */
+/** One chip per applied filter, in popover order; foundation and project chips take the name from `rows`, else the UID. */
 export function buildMeetingFilterChips(filters: MeetingsHomeFilters, rows: readonly MeetingHomeRow[]): MeetingFilterChip[] {
   const chips: MeetingFilterChip[] = [];
+  const nameOf = (uid: string): string => rows.find((row) => row.meeting.project_uid === uid)?.meeting.project_name || uid;
 
+  if (filters.foundation) {
+    chips.push({ key: 'foundation', label: `${MEETINGS_HOME_FILTER_CHIP_LABELS.foundation}: ${nameOf(filters.foundation)}` });
+  }
   if (filters.project) {
-    const name = rows.find((row) => row.meeting.project_uid === filters.project)?.meeting.project_name;
-    chips.push({ key: 'project', label: `${MEETINGS_HOME_FILTER_CHIP_LABELS.project}: ${name || filters.project}` });
+    chips.push({ key: 'project', label: `${MEETINGS_HOME_FILTER_CHIP_LABELS.project}: ${nameOf(filters.project)}` });
   }
   if (filters.meetingType) {
     chips.push({ key: 'meetingType', label: `${MEETINGS_HOME_FILTER_CHIP_LABELS.meetingType}: ${filters.meetingType}` });
@@ -256,6 +259,22 @@ export function formatMeetingTimeRange(start: string | Date, durationMinutes: nu
   const fromLabel = sameZone && from['dayPeriod'] === to['dayPeriod'] ? '' : ` ${from['dayPeriod']}${sameZone ? '' : ` ${from['timeZoneName']}`}`;
 
   return `${from['hour']}:${from['minute']}${fromLabel} – ${to['hour']}:${to['minute']} ${to['dayPeriod']} ${to['timeZoneName']}`;
+}
+
+/**
+ * Date line of a meeting dialog or popover row in the viewer's zone, e.g. "Thu, Oct 1 · 6:30 – 7:30 AM PDT".
+ * @description Without a duration it shows only the start time: "Thu, Oct 1 · 6:30 AM PDT". `timeZone` defaults to the viewer's own.
+ */
+export function formatMeetingDateTime(start: string | Date, durationMinutes?: number, timeZone?: string): string {
+  const startDate = new Date(start);
+  if (Number.isNaN(startDate.getTime())) return '';
+
+  const day = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone }).format(startDate);
+  const time =
+    durationMinutes === undefined
+      ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone, timeZoneName: 'short' }).format(startDate)
+      : formatMeetingTimeRange(startDate, durationMinutes, timeZone);
+  return `${day} · ${time}`;
 }
 
 /** Countdown copy: "Meeting starts in N min" under an hour, "Meeting starts in N h" under a day, otherwise null. */
@@ -406,6 +425,13 @@ function resolveRowRsvp(meeting: Meeting, occurrenceId: string | null, isNextDat
 function matchesMeetingSearch(row: MeetingHomeRow, query: string): boolean {
   if (row.title.toLowerCase().includes(query)) return true;
   return (row.meeting.committees ?? []).some((committee) => committee.name?.toLowerCase().includes(query));
+}
+
+/** Project wins; a foundation matches its own meetings and its non-foundation child projects'. */
+function matchesEntityFilters(meeting: Meeting, filters: MeetingsHomeFilters): boolean {
+  if (filters.project) return meeting.project_uid === filters.project;
+  if (!filters.foundation) return true;
+  return meeting.project_uid === filters.foundation || (meeting.parent_project_uid === filters.foundation && !meeting.is_foundation);
 }
 
 function matchesRsvpFilter(row: MeetingHomeRow, filter: MeetingResponseFilter): boolean {

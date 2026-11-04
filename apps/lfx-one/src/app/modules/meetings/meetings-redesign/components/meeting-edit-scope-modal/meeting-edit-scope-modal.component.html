@@ -3,7 +3,7 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <lfx-ui-modal heading="Edit meeting" data-testid="meetings-home-edit-scope-modal">
-  <div class="flex flex-col gap-[4px] rounded-[8px] border border-gray-200 bg-gray-50 px-[14px] py-[12px]" data-testid="meetings-home-edit-scope-info">
+  <div class="flex flex-col gap-[4px] rounded-[12px] border border-gray-200 bg-gray-50 px-[14px] py-[12px]" data-testid="meetings-home-edit-scope-info">
     @if (project) {
       <span class="flex min-w-0 items-start gap-[6px] text-[12px] text-gray-600">
         <lfx-ui-avatar class="mt-px flex-none" shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
@@ -26,7 +26,7 @@
 
   <lfx-ui-radio-group ariaLabel="What to edit" [(value)]="scope" data-testid="meetings-home-edit-scope-options">
     <span class="flex flex-col gap-[4px] self-stretch">
-      <lfx-ui-radio value="occurrence" label="A single occurrence" data-testid="meetings-home-edit-scope-occurrence" />
+      <lfx-ui-radio class="[&_label]:font-medium" value="occurrence" label="A single occurrence" data-testid="meetings-home-edit-scope-occurrence" />
       <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600"
         >Change the time, title, or agenda of one occurrence without changing the rest of the series.</span
       >
@@ -46,7 +46,7 @@
       }
     </span>
     <span class="flex flex-col gap-[4px]">
-      <lfx-ui-radio value="series" label="The entire series" data-testid="meetings-home-edit-scope-series" />
+      <lfx-ui-radio class="[&_label]:font-medium" value="series" label="The entire series" data-testid="meetings-home-edit-scope-series" />
       <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600">Edit the title, schedule, guests, and settings for every upcoming occurrence.</span>
     </span>
   </lfx-ui-radio-group>

@@ -582,7 +582,7 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     // change, so the guard has to reject the shape too — decoding one would read `projects.k`/
     // `projects.r` off an array and serve an empty page for the whole TTL.
     const legacy = { orgSlug: 'acme', orgName: ORG_NAME, dataUpdatedAt: '2026-01-01T00:00:00.000Z', projects: [{ slug: 'k8s', name: 'Kubernetes' }] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all`)!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all:exclude`)!, JSON.stringify(legacy));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
@@ -714,29 +714,117 @@ describe('OrgLensProjectsService.getProjects organization scope (lfx-self-serve-
   });
 
   it('lists only Insights-scoped contributors under insights, participants unscoped, under a key ending in the scope', async () => {
-    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'insights');
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'insights', 'include');
 
     expect(resolveOrgScope).toHaveBeenLastCalledWith(expect.anything(), ACCOUNT_ID, 'insights');
 
     expect(peopleSql()).toContain("AND INVOLVEMENT_ROLE <> 'maintainer' AND (INVOLVEMENT_ROLE <> 'contributor' OR COALESCE(IS_INSIGHTS_SCOPE, FALSE))\n");
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:insights`)!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:insights:include`)!)).toBe(true);
   });
 
   it("reads today's people SQL under all", async () => {
-    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all');
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'include');
 
     expect(peopleSql()).toContain("AND INVOLVEMENT_ROLE <> 'maintainer'\n");
     expect(peopleSql()).not.toContain('IS_INSIGHTS_SCOPE');
     expect(resolveOrgScope).toHaveBeenLastCalledWith(expect.anything(), ACCOUNT_ID, 'all');
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all`)!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all:include`)!)).toBe(true);
   });
 
   it('serves all to an account without an Insights organization', async () => {
     resolveOrgScope.mockResolvedValue('all');
 
-    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'insights');
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'insights', 'include');
 
     expect(peopleSql()).not.toContain('IS_INSIGHTS_SCOPE');
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all`)!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all:include`)!)).toBe(true);
+  });
+});
+
+describe('OrgLensProjectsService.getProjects team members (lfx-self-serve-ops#1246)', () => {
+  const service = new OrgLensProjectsService();
+  const TEAM_MEMBER_GATE = "AND (INVOLVEMENT_ROLE <> 'contributor' OR NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE))";
+
+  const peopleCalls = (): unknown[][] =>
+    execute.mock.calls.filter(([query]) => String(query).includes('ORG_LENS_PROJECT_PEOPLE') && !String(query).includes('ORG_MAINTAINER_ROLES'));
+  const keyFor = (scope: string, teamMembers: string): string =>
+    buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:${scope}:${teamMembers}`)!;
+
+  beforeEach(() => {
+    resolveOrgScope.mockImplementation(async (_snowflake: unknown, _accountId: string, scope: string) => scope);
+    execute.mockReset();
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) return { rows: [] };
+      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
+        // A team member's contributor row is left out by the gate, as the warehouse would.
+        const rows = [
+          { PROJECT_SLUG: 'k8s', PARTICIPANT_ID: 'p-1', INVOLVEMENT_ROLE: 'contributor', PARTICIPANT_NAME: 'Ada', PARTICIPANT_AVATAR_URL: null },
+          { PROJECT_SLUG: 'k8s', PARTICIPANT_ID: 'p-team', INVOLVEMENT_ROLE: 'contributor', PARTICIPANT_NAME: 'Team', PARTICIPANT_AVATAR_URL: null },
+          { PROJECT_SLUG: 'k8s', PARTICIPANT_ID: 'p-team', INVOLVEMENT_ROLE: 'participant', PARTICIPANT_NAME: 'Team', PARTICIPANT_AVATAR_URL: null },
+        ];
+        return {
+          rows: sql.includes('IS_CDP_TEAM_MEMBER') ? rows.filter((row) => !(row.PARTICIPANT_ID === 'p-team' && row.INVOLVEMENT_ROLE === 'contributor')) : rows,
+        };
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) return { rows: [projectsRow({ PROJECT_SLUG: 'k8s' })] };
+      return { rows: [] };
+    });
+  });
+
+  it('leaves team members out of the contributors by default, keeping them as participants, under a key ending in exclude', async () => {
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all');
+
+    const [sql, , options] = peopleCalls()[0];
+    expect(String(sql)).toContain(`AND INVOLVEMENT_ROLE <> 'maintainer' ${TEAM_MEMBER_GATE}\n`);
+    expect(options).toEqual({ expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+    expect(response.projects[0]?.contributors.map((person) => person.id)).toEqual(['p-1']);
+    expect(response.projects[0]?.participants.map((person) => person.id)).toEqual(['p-team']);
+    expect(response.teamMembersUnavailable).toBeUndefined();
+    expect(cacheValues.has(keyFor('all', 'exclude'))).toBe(true);
+  });
+
+  it('applies both contributor gates under insights and exclude', async () => {
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'insights', 'exclude');
+
+    expect(String(peopleCalls()[0][0])).toContain(
+      `AND INVOLVEMENT_ROLE <> 'maintainer' AND (INVOLVEMENT_ROLE <> 'contributor' OR COALESCE(IS_INSIGHTS_SCOPE, FALSE)) ${TEAM_MEMBER_GATE}\n`
+    );
+  });
+
+  it('counts team members under include, without the flag in the SQL, under its own key', async () => {
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'include');
+
+    const [sql, , options] = peopleCalls()[0];
+    expect(String(sql)).not.toContain('IS_CDP_TEAM_MEMBER');
+    expect(options).toBeUndefined();
+    expect(response.projects[0]?.contributors.map((person) => person.id)).toEqual(['p-1', 'p-team']);
+    expect(cacheValues.has(keyFor('all', 'include'))).toBe(true);
+    expect(cacheValues.has(keyFor('all', 'exclude'))).toBe(false);
+  });
+
+  it('serves each pick from its own cache entry', async () => {
+    const excluded = await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'exclude');
+    const included = await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'include');
+    const reads = execute.mock.calls.length;
+
+    expect((await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'exclude')).projects[0]?.contributors).toEqual(excluded.projects[0]?.contributors);
+    expect((await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'include')).projects[0]?.contributors).toEqual(included.projects[0]?.contributors);
+    expect(execute.mock.calls.length).toBe(reads);
+  });
+
+  it('falls back to include, flags it and stores nothing while the team-member flag is not in the warehouse', async () => {
+    const people = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('IS_CDP_TEAM_MEMBER')) {
+        throw new Error("SQL compilation error: error line 9 at position 70\ninvalid identifier 'IS_CDP_TEAM_MEMBER'");
+      }
+      return people(sql);
+    });
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'exclude');
+
+    expect(response.teamMembersUnavailable).toBe(true);
+    expect(response.projects[0]?.contributors.map((person) => person.id)).toEqual(['p-1', 'p-team']);
+    expect(cacheValues.size).toBe(0);
   });
 });

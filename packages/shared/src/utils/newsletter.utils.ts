@@ -43,3 +43,14 @@ export function shareButtonAriaLabel(visibleCount: number | null): string {
   if (visibleCount === null) return 'Share';
   return visibleCount === 1 ? 'Share, shared 1 time' : `Share, shared ${visibleCount.toLocaleString('en-US')} times`;
 }
+
+/**
+ * The single "views" number shown for a newsletter: email opens (`total_opens`) plus unique web page views
+ * (`page_view_count`), which the newsletter service stores separately. A missing half counts as 0 so one
+ * known source still shows; null (hide the number) only when both are unknown. A reader who opens the
+ * email and then reads online counts in both halves, by design.
+ */
+export function combinedViewCount(opens: number | null | undefined, pageViews: number | null | undefined): number | null {
+  if (opens == null && pageViews == null) return null;
+  return (opens ?? 0) + (pageViews ?? 0);
+}

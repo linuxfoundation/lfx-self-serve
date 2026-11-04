@@ -1740,6 +1740,14 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     expect(Object.fromEntries(result.map((m) => [m.id, m.has_ai_summary]))).toEqual({ 'invited:1': false, 'organized:1': true });
   });
 
+  it('does not flag a whitespace-only summary', async () => {
+    mockIndexes([pastMeeting('blank:1'), pastMeeting('real:1')], [], [summary('blank:1', { content: ' \n\t ' }), summary('real:1')]);
+
+    const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
+
+    expect(Object.fromEntries(result.map((m) => [m.id, m.has_ai_summary]))).toEqual({ 'blank:1': false, 'real:1': true });
+  });
+
   it('leaves only the failed flag undefined when one index lookup fails', async () => {
     mockIndexes([pastMeeting('m1:1')], new Error('recording index down'), [summary('m1:1')]);
 

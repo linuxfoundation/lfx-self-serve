@@ -56,7 +56,7 @@ describe('OrgLensProjectsController organization scope (lfx-self-serve-ops#1219)
     await controller.getProjects(buildReq({ orgName: 'Acme', slugs: 'k8s', ...query }), buildRes(), next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(getProjects).toHaveBeenCalledWith(ORG_UID, 'Acme', ['k8s'], expected);
+    expect(getProjects).toHaveBeenCalledWith(ORG_UID, 'Acme', ['k8s'], expected, 'exclude');
   });
 
   it('rejects an unknown scope with a 400 before the service', async () => {
@@ -67,5 +67,38 @@ describe('OrgLensProjectsController organization scope (lfx-self-serve-ops#1219)
     expect(getProjects).not.toHaveBeenCalled();
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('OrgLensProjectsController team members (lfx-self-serve-ops#1246)', () => {
+  const controller = new OrgLensProjectsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getProjects.mockResolvedValue({ orgSlug: 'acme', orgName: 'Acme', dataUpdatedAt: '2026-10-30T00:00:00Z', projects: [] });
+  });
+
+  it.each([
+    [{}, 'exclude'],
+    [{ teamMembers: 'exclude' }, 'exclude'],
+    [{ teamMembers: 'include' }, 'include'],
+  ])('passes the team members pick of %o to the service as %s', async (query, expected) => {
+    const next = vi.fn();
+
+    await controller.getProjects(buildReq({ orgName: 'Acme', slugs: 'k8s', ...query }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getProjects).toHaveBeenCalledWith(ORG_UID, 'Acme', ['k8s'], 'insights', expected);
+  });
+
+  it('rejects an unknown team members pick with a 400 naming the field before the service', async () => {
+    const next = vi.fn();
+
+    await controller.getProjects(buildReq({ teamMembers: 'only' }), buildRes(), next);
+
+    expect(getProjects).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+    expect((next.mock.calls[0][0] as Error).message).toContain('teamMembers');
   });
 });

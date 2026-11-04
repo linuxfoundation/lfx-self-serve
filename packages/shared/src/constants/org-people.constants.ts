@@ -110,10 +110,11 @@ export const ORG_EMPLOYMENT_LABEL = 'Employment';
 export const DEFAULT_ORG_EMPLOYMENT: OrgEmploymentFilter = 'all';
 
 /**
- * Team members filter on People → Contributors, People → All Employees and the Code Contributions page
- * (lfx-self-serve#4685): people marked as team members in the Community Data Platform (CDP). Excluded by default,
- * on LFX Insights' rule, which leaves them out of code-based numbers only: code counts, contributors and maintainer
- * roles. Seats, events and training are not affected. The Overview's contributors and maintainer roles follow the default.
+ * Team members filter on People → Contributors, People → All Employees, the Code Contributions page (lfx-self-serve#4685)
+ * and the Projects page's Contributors column (lfx-self-serve-ops#1246): people marked as team members in the Community
+ * Data Platform (CDP). Excluded by default, on LFX Insights' rule, which leaves them out of code-based numbers only: code
+ * counts, contributors and maintainer roles. Seats, events and training are not affected. The Overview's contributors
+ * and maintainer roles follow the default.
  */
 export const ORG_TEAM_MEMBERS_OPTIONS: readonly OrgTeamMembersOption[] = [
   { label: 'Exclude team members', value: 'exclude' },
@@ -132,6 +133,9 @@ export const ORG_TEAM_MEMBERS_LABEL = 'Team members';
 /** Tooltip on the team members filter. */
 export const ORG_TEAM_MEMBERS_TOOLTIP =
   'People marked as team members in the Community Data Platform. LFX Insights leaves them out of code contributions and maintainer roles; Org Lens does too by default. Seats, events and training are not affected.';
+
+/** Tooltip on the Projects page's team members filter, where only the Contributors column follows the pick (lfx-self-serve-ops#1246). */
+export const ORG_TEAM_MEMBERS_PROJECTS_TOOLTIP = `${ORG_TEAM_MEMBERS_TOOLTIP} On this page it applies to the Contributors column only.`;
 
 /** Note shown when Exclude team members is picked but the team-member data cannot be read (lfx-self-serve#4685). */
 export const ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE = 'Team-member data is unavailable; counts include team members.';

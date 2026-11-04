@@ -99,7 +99,16 @@ export class MeetingRsvpControlsComponent {
     const stopClosingOnDestroy = this.destroyRef.onDestroy(() => ref.close());
     ref.closed.pipe(take(1)).subscribe((scope) => {
       stopClosingOnDestroy();
-      if (scope) this.submit(row, response, scope);
+      if (!scope) return;
+      // Another date of the series started saving while the dialog was open.
+      if (this.busy())
+        this.toast.show({
+          variant: 'dark',
+          message: 'RSVP Not Saved',
+          description: 'Another response to this meeting is still saving. Try again.',
+          duration: 5000,
+        });
+      else this.submit(row, response, scope);
     });
   }
 

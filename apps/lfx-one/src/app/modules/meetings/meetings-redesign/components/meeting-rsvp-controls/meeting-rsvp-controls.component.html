@@ -14,15 +14,15 @@
         [disabled]="busy()"
         [attr.aria-label]="'Your RSVP: ' + answer.label + '. Change'"
         data-testid="meetings-home-rsvp-status">
-        <!-- 112px wide per the design, so the chip keeps its size across answers. -->
-        <lfx-ui-badge class="w-[112px] justify-center" [tone]="answer.tone">
+        <!-- 112px wide per the design, so the chip keeps its size across answers; chevron at the right edge. -->
+        <lfx-ui-badge class="w-[112px]" [tone]="answer.tone">
           @if (saving()) {
             <lfx-ui-spinner tone="current" [size]="12" label="Saving RSVP" />
           } @else {
             <i [class]="answer.icon + ' ' + iconColor[answer.response]" aria-hidden="true"></i>
           }
           {{ answer.label }}
-          <i class="fa-light fa-chevron-down opacity-70" aria-hidden="true"></i>
+          <i class="fa-light fa-chevron-down ml-auto opacity-70" aria-hidden="true"></i>
         </lfx-ui-badge>
       </button>
       @if (scopeLabel(); as scope) {

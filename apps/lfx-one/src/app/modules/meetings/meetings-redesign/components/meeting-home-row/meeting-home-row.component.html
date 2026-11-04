@@ -8,17 +8,23 @@
   data-testid="meetings-home-row">
   <!-- Date tile: azure band upcoming, grey band past -->
   <div
-    class="relative col-start-1 row-start-1 flex h-[42px] w-[40px] flex-none flex-col rounded-[10px] border border-gray-200 bg-white @[861px]:h-[48px] @[861px]:w-[46px]"
+    class="relative col-start-1 row-start-1 flex h-[42px] w-[40px] flex-none flex-col rounded-[8px] border border-gray-200 bg-white @[861px]:h-[48px] @[861px]:w-[46px] @[861px]:rounded-[10px]"
     data-testid="meetings-home-row-date">
     <span
-      class="flex h-[14px] flex-none items-center justify-center text-[8.5px] font-semibold uppercase leading-none tracking-[.08em]"
-      [class]="past() ? 'rounded-t-[9px] bg-gray-200 text-gray-900' : '-mx-px -mt-px rounded-t-[10px] bg-blue-500 text-white'"
+      class="flex h-[13px] flex-none items-center justify-center text-[8px] font-semibold uppercase leading-none tracking-[.08em] @[861px]:h-[14px] @[861px]:text-[8.5px]"
+      [class]="
+        past()
+          ? 'rounded-t-[7px] bg-gray-200 text-gray-900 @[861px]:rounded-t-[9px]'
+          : '-mx-px -mt-px rounded-t-[8px] bg-blue-500 text-white @[861px]:rounded-t-[10px]'
+      "
       data-testid="meetings-home-row-date-month"
       >{{ row().startTime | date: 'MMM' }}</span
     >
-    <span class="flex flex-auto items-center justify-center text-[19px] leading-none text-gray-900" data-testid="meetings-home-row-date-day">{{
-      row().startTime | date: 'd'
-    }}</span>
+    <span
+      class="flex flex-auto items-center justify-center text-[16px] leading-none text-gray-900 @[861px]:text-[19px]"
+      data-testid="meetings-home-row-date-day"
+      >{{ row().startTime | date: 'd' }}</span
+    >
     <span class="absolute -right-[11px] -top-[11px] flex">
       @for (badge of visibilityBadges(); track badge.kind) {
         <span
@@ -40,14 +46,22 @@
     @if (project(); as project) {
       @if (project.url; as url) {
         <a
-          class="group/eyebrow mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-[12px] text-gray-500 transition-colors duration-150 hover:text-gray-900 focus-visible:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 motion-reduce:transition-none"
+          class="group/eyebrow mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-label-12 text-gray-500 transition-colors duration-150 hover:text-gray-900 focus-visible:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 motion-reduce:transition-none"
           [href]="url"
           [attr.aria-label]="project.label"
           [lfxUiTooltip]="project.name"
           [lfxUiTooltipDisabled]="!projectTruncated()"
           (click)="onLinkClick($event, url, false)"
           data-testid="meetings-home-row-project">
-          <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+          <!-- Design logo: 5px-corner square, grey fill and border, 8px semibold initial. -->
+          <lfx-ui-avatar
+            class="!rounded-[5px] border border-gray-200 !bg-gray-100 !text-[8px] !font-semibold !text-gray-600 !shadow-none"
+            shape="rounded"
+            [size]="16"
+            [name]="project.name"
+            [initials]="project.initial"
+            [src]="project.logo"
+            decorative />
           <span
             #projectName
             class="min-w-0 truncate underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
@@ -60,9 +74,17 @@
         </a>
       } @else {
         <span
-          class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-[12px] text-gray-500"
+          class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-label-12 text-gray-500"
           data-testid="meetings-home-row-project">
-          <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+          <!-- Design logo: 5px-corner square, grey fill and border, 8px semibold initial. -->
+          <lfx-ui-avatar
+            class="!rounded-[5px] border border-gray-200 !bg-gray-100 !text-[8px] !font-semibold !text-gray-600 !shadow-none"
+            shape="rounded"
+            [size]="16"
+            [name]="project.name"
+            [initials]="project.initial"
+            [src]="project.logo"
+            decorative />
           <span
             #projectName
             class="min-w-0 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
@@ -81,7 +103,7 @@
       <a
         #titleElement
         data-dd-privacy="mask"
-        class="min-w-0 truncate text-[14px] font-medium text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+        class="min-w-0 truncate text-label-14 font-medium text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
         [href]="link().url"
         [attr.target]="link().newTab ? '_blank' : null"
         [attr.rel]="link().newTab ? 'noopener noreferrer' : null"
@@ -101,10 +123,11 @@
     </span>
 
     <!-- Each item carries its leading "·"; the clipped left edge hides the one that opens a line. -->
-    <span class="-m-[2px] overflow-hidden p-[2px] text-[12px] text-gray-500" data-testid="meetings-home-row-meta">
+    <span class="-m-[2px] overflow-hidden p-[2px] text-label-12 text-gray-500" data-testid="meetings-home-row-meta">
       <span class="-ml-[16px] flex flex-wrap gap-y-[2px]">
         @for (part of when(); track $index) {
-          <span class="relative whitespace-nowrap pl-[16px]" data-testid="meetings-home-row-when"
+          <!-- May wrap inside on narrow rows, so the start time is never clipped. -->
+          <span class="relative pl-[16px]" data-testid="meetings-home-row-when"
             ><span class="absolute left-0 w-[16px] text-center" aria-hidden="true">·</span>{{ part }}</span
           >
         }
@@ -168,11 +191,16 @@
         <lfx-meeting-home-artifacts [row]="row()" />
       </div>
     } @else {
-      <!-- On line 2 at 480px or less, so the title keeps a readable width on phones. -->
+      <!-- On line 2 at 480px or less, so the title keeps a readable width on phones; Join sits after the RSVP. -->
       <div
-        class="col-[2/-1] row-start-2 hidden justify-self-end has-[span]:flex @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:ml-[14px] @[861px]:ml-0"
+        class="col-[2/-1] row-start-2 hidden items-center justify-self-end gap-[18px] has-[button]:flex has-[span]:flex @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:ml-[14px] @[861px]:ml-0"
         data-testid="meetings-home-row-rsvp-cell">
         <lfx-meeting-rsvp-controls [row]="row()" />
+        @if (joinable()) {
+          <lfx-ui-button size="small" icon="fa-light fa-video" [ariaLabel]="'Join ' + row().title" (click)="join()" data-testid="meetings-home-row-join"
+            >Join</lfx-ui-button
+          >
+        }
       </div>
     }
     <!-- -4px keeps the 32px menu centred on the 24px RSVP buttons. -->

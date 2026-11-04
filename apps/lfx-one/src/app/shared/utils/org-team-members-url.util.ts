@@ -3,7 +3,7 @@
 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { FormControl } from '@angular/forms';
-import type { ActivatedRoute, Router } from '@angular/router';
+import type { ActivatedRoute, Params, Router } from '@angular/router';
 import { DEFAULT_ORG_TEAM_MEMBERS, ORG_TEAM_MEMBERS_QUERY_PARAM } from '@lfx-one/shared/constants';
 import type { OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
 import { orgTeamMembersUrlParam, parseOrgTeamMembersFilter } from '@lfx-one/shared/utils';
@@ -17,14 +17,15 @@ export function readOrgTeamMembers(route: ActivatedRoute): OrgTeamMembersFilter 
 /**
  * Keeps a team members picker and `?teamMembers=` in step (lfx-self-serve#4685), so the pick carries across People tabs:
  * a pick is written to the URL (dropped at the default), and a query-only navigation sets the picker. Each side acts
- * only when the other differs, so neither echoes the other. Call from an injection context (constructor).
+ * only when the other differs, so neither echoes the other. `onPick` is merged into the URL with a pick, for a page
+ * whose other params the pick invalidates (the Projects list's `page`). Call from an injection context (constructor).
  */
-export function syncOrgTeamMembersWithUrl(control: FormControl<OrgTeamMembersFilter>, route: ActivatedRoute, router: Router): void {
+export function syncOrgTeamMembersWithUrl(control: FormControl<OrgTeamMembersFilter>, route: ActivatedRoute, router: Router, onPick: Params = {}): void {
   control.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed()).subscribe((teamMembers) => {
     if (teamMembers === readOrgTeamMembers(route)) return;
     void router.navigate([], {
       relativeTo: route,
-      queryParams: { [ORG_TEAM_MEMBERS_QUERY_PARAM]: orgTeamMembersUrlParam(teamMembers) },
+      queryParams: { ...onPick, [ORG_TEAM_MEMBERS_QUERY_PARAM]: orgTeamMembersUrlParam(teamMembers) },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });

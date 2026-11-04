@@ -227,6 +227,22 @@ describe('MeetingRsvpControlsComponent', () => {
       expect(showToast).not.toHaveBeenCalled();
     });
 
+    it('tells the viewer instead of saving when another date of the series starts saving while the dialog is open', async () => {
+      const fixture = await render(buildRow(buildMeeting(RECURRING)));
+
+      await press(fixture, 'meetings-home-rsvp-accepted');
+      submitting.set(new Set(['synthetic-meeting']));
+      closed.next('all');
+
+      expect(submit).not.toHaveBeenCalled();
+      expect(showToast).toHaveBeenCalledWith({
+        variant: 'dark',
+        message: 'RSVP Not Saved',
+        description: 'Another response to this meeting is still saving. Try again.',
+        duration: 5000,
+      });
+    });
+
     it('closes an open dialog without saving when the row goes away', async () => {
       const fixture = await render(buildRow(buildMeeting(RECURRING)));
 

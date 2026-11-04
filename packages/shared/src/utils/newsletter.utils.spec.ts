@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { addShareToTally, newsletterIssuePath, shareButtonAriaLabel, visibleShareCount } from './newsletter.utils';
+import { addShareToTally, combinedViewCount, newsletterIssuePath, shareButtonAriaLabel, visibleShareCount } from './newsletter.utils';
 
 describe('newsletterIssuePath', () => {
   it('builds the relative permalink path from a project slug and newsletter id', () => {
@@ -47,5 +47,24 @@ describe('shareButtonAriaLabel', () => {
     expect(shareButtonAriaLabel(null)).toBe('Share');
     expect(shareButtonAriaLabel(1)).toBe('Share, shared 1 time');
     expect(shareButtonAriaLabel(12500)).toBe('Share, shared 12,500 times');
+  });
+});
+
+describe('combinedViewCount', () => {
+  it('sums email opens and unique page views', () => {
+    expect(combinedViewCount(12, 5)).toBe(17);
+  });
+
+  it('shows the known half when the other is unknown', () => {
+    expect(combinedViewCount(12, undefined)).toBe(12);
+    expect(combinedViewCount(null, 5)).toBe(5);
+  });
+
+  it('keeps a known zero', () => {
+    expect(combinedViewCount(0, 0)).toBe(0);
+  });
+
+  it('is null only when both halves are unknown', () => {
+    expect(combinedViewCount(undefined, null)).toBeNull();
   });
 });

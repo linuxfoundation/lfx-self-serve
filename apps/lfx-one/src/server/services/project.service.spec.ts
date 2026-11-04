@@ -59,6 +59,8 @@ vi.mock('@lfx-one/shared/constants', async () => {
   return {
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
     ACCESS_CHECK_BATCH_SIZE: apiConstants.ACCESS_CHECK_BATCH_SIZE,
+    // The real fetchAllQueryResources paginator reads its page cap from this barrel (#4964).
+    QUERY_SERVICE_MAX_PAGES: apiConstants.QUERY_SERVICE_MAX_PAGES,
     // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
     // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
     CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },

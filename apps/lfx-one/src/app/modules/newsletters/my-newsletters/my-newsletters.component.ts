@@ -15,7 +15,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { NEWSLETTER_INVITE_QUERY_PARAM } from '@lfx-one/shared/constants';
 import { MyNewsletter, MyNewsletterFoundation, MyNewsletterFoundationsState, MyNewsletterRow, NewsletterInviteDialogData } from '@lfx-one/shared/interfaces';
-import { newsletterIssuePath } from '@lfx-one/shared/utils';
+import { combinedViewCount, newsletterIssuePath } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -111,7 +111,12 @@ export class MyNewslettersComponent {
    * template function per row (frontend-checklist.md § 4).
    */
   protected readonly filteredNewsletterRows: Signal<MyNewsletterRow[]> = computed(() =>
-    this.filteredNewsletters().map((newsletter) => ({ ...newsletter, issuePath: this.issuePath(newsletter), shareCount: newsletter.share_count ?? null }))
+    this.filteredNewsletters().map((newsletter) => ({
+      ...newsletter,
+      issuePath: this.issuePath(newsletter),
+      shareCount: newsletter.share_count ?? null,
+      viewCount: combinedViewCount(newsletter.total_opens, newsletter.page_view_count),
+    }))
   );
   protected readonly showProjectFilter: Signal<boolean> = computed(() => this.projectOptions().length > 1);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!(this.searchTerm().trim() || this.projectFilter()));

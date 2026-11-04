@@ -14,8 +14,10 @@ const {
   getReadableNewsletter,
   assertPublisherRead,
   recordShare,
+  recordPageView,
 } = vi.hoisted(() => ({
   recordShare: vi.fn(),
+  recordPageView: vi.fn(),
   assertPublisherRead: vi.fn(),
   getReadableNewsletter: vi.fn(),
   getMyNewsletters: vi.fn(),
@@ -50,6 +52,7 @@ vi.mock('../services/newsletter.service', () => ({
     public scheduleNewsletter = scheduleNewsletter;
     public cancelScheduleNewsletter = cancelScheduleNewsletter;
     public recordShare = recordShare;
+    public recordPageView = recordPageView;
   },
 }));
 vi.mock('../services/ai.service', () => ({ AiService: class {} }));
@@ -440,5 +443,57 @@ describe('NewsletterController.recordShare (#4958)', () => {
     await new NewsletterController().recordShare(req({ channel: 'x', user: 'someone-else' }), buildRes(), vi.fn());
 
     expect(recordShare).toHaveBeenCalledWith(expect.anything(), PROJECT, NEWSLETTER, { channel: 'x' });
+  });
+});
+
+describe('NewsletterController.recordPageView', () => {
+  const PROJECT = '11111111-1111-1111-1111-111111111111';
+  const NEWSLETTER = '22222222-2222-2222-2222-222222222222';
+  const req = (params = { projectUid: PROJECT, newsletterUid: NEWSLETTER }) => ({ params, body: {}, path: '/x' }) as any;
+
+  it('proxies the view and answers 204 once the reader ladder allows the issue', async () => {
+    getReadableNewsletter.mockResolvedValue({ id: NEWSLETTER, status: 'sent' });
+    recordPageView.mockResolvedValue(undefined);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new NewsletterController().recordPageView(req(), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getReadableNewsletter).toHaveBeenCalledWith(expect.anything(), PROJECT, NEWSLETTER);
+    expect(recordPageView).toHaveBeenCalledWith(expect.anything(), PROJECT, NEWSLETTER);
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('rejects non-UUID path params before proxying', async () => {
+    const next = vi.fn();
+
+    await new NewsletterController().recordPageView(req({ projectUid: PROJECT, newsletterUid: 'n1' }), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(recordPageView).not.toHaveBeenCalled();
+  });
+
+  it('never records a view for a caller the reader ladder denies', async () => {
+    const denied = new Error('members only');
+    getReadableNewsletter.mockRejectedValue(denied);
+    const next = vi.fn();
+
+    await new NewsletterController().recordPageView(req(), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(denied);
+    expect(recordPageView).not.toHaveBeenCalled();
+  });
+
+  it('forwards an upstream failure to the error handler', async () => {
+    const failure = new Error('upstream down');
+    getReadableNewsletter.mockResolvedValue({ id: NEWSLETTER, status: 'sent' });
+    recordPageView.mockRejectedValue(failure);
+    const next = vi.fn();
+
+    await new NewsletterController().recordPageView(req(), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(failure);
   });
 });

@@ -498,6 +498,8 @@
               [committee]="committee()"
               [members]="members()"
               [membersLoading]="membersLoading()"
+              [membersError]="membersError()"
+              [membersReady]="membersReady()"
               [invites]="invites()"
               [invitesLoading]="invitesLoading()"
               [applications]="applications()"
@@ -510,6 +512,7 @@
               [engagementLoading]="engagementLoading()"
               [engagementWindow]="engagementWindow()"
               (engagementWindowChange)="onEngagementWindowChange($event)"
+              (retryMembers)="retryMembers()"
               (refresh)="onMembersRefreshed()" />
           }
         }
