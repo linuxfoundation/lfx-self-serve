@@ -95,8 +95,17 @@ describe('brandKitConflictSourceLabel', () => {
 
 describe('brandKitColorConflictViews', () => {
   it('marks the kept value of every conflict and names each source in words', () => {
-    const views = brandKitColorConflictViews(brandKitReportV2RulesFixture());
-    expect(views).toEqual([
+    const report = brandKitReportV2RulesFixture();
+    const black = {
+      name: 'Black',
+      values: [
+        { hex: '#171717', source: 'site_css: https://synthetic-foundation.example/site.css' },
+        { hex: '#000000', source: 'brand_page: https://synthetic-foundation.example/brand' },
+      ],
+      chosen: '#000000',
+    };
+    report.color_conflicts = [...(report.color_conflicts ?? []), black];
+    expect(brandKitColorConflictViews(report)).toEqual([
       {
         name: 'Coral',
         chosen: '#FF702D',
@@ -109,8 +118,8 @@ describe('brandKitColorConflictViews', () => {
         name: 'Black',
         chosen: '#000000',
         values: [
-          { hex: '#000000', source: 'From the brand page — synthetic-foundation.example', kept: true },
           { hex: '#171717', source: 'From the site’s CSS — synthetic-foundation.example', kept: false },
+          { hex: '#000000', source: 'From the brand page — synthetic-foundation.example', kept: true },
         ],
       },
     ]);

@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 test.describe('Brand Kit approval with colour conflicts and LF-reference rules', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });
 
-  test('shows the colour conflicts with both values, their sources and the one kept, and the rules per chapter; Cancel writes nothing', async ({
+  test('shows the colour conflict with both values, their sources and the one kept, and the rules per chapter; Cancel writes nothing', async ({
     page,
   }, info) => {
     await openAssetDocument(page, 'brand-kit', 200, true, false, brandKitDraftRevisionResponse(brandKitReportV2RulesFixture()));
@@ -34,16 +34,14 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     const conflicts = dialog.getByTestId('mktg-document-view-approve-conflicts');
     await expect(conflicts.getByRole('heading')).toHaveText('Colour conflicts');
     const items = dialog.getByTestId('mktg-document-view-approve-conflict');
-    await expect(items).toHaveCount(2);
-    await expect(items.nth(0)).toContainText('Coral');
-    await expect(items.nth(0)).toContainText('#FF702D');
-    await expect(items.nth(0)).toContainText('From the brand page — synthetic-foundation.example');
-    await expect(items.nth(0)).toContainText('#FF7D2D');
-    await expect(items.nth(0)).toContainText('From the site’s CSS — synthetic-foundation.example');
-    await expect(items.nth(0)).toContainText('kept #FF702D');
-    await expect(items.nth(0)).not.toContainText('kept #FF7D2D');
-    await expect(items.nth(1)).toContainText('Black');
-    await expect(items.nth(1)).toContainText('kept #000000');
+    await expect(items).toHaveCount(1);
+    await expect(items.first()).toContainText('Coral');
+    await expect(items.first()).toContainText('#FF702D');
+    await expect(items.first()).toContainText('From the brand page — synthetic-foundation.example');
+    await expect(items.first()).toContainText('#FF7D2D');
+    await expect(items.first()).toContainText('From the site’s CSS — synthetic-foundation.example');
+    await expect(items.first()).toContainText('kept #FF702D');
+    await expect(items.first()).not.toContainText('kept #FF7D2D');
     // No raw source key or stylesheet path reaches the reviewer.
     await expect(dialog).not.toContainText('brand_page:');
     await expect(dialog).not.toContainText('_next/static');
@@ -81,7 +79,7 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
     // Nothing failed and nothing is open: no list before the two sections.
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm').locator(':scope > ul')).toHaveCount(0);
-    await expect(dialog.getByTestId('mktg-document-view-approve-conflict')).toHaveCount(2);
+    await expect(dialog.getByTestId('mktg-document-view-approve-conflict')).toHaveCount(1);
     await expect(dialog.getByTestId('mktg-document-view-approve-rule')).toHaveCount(5);
     await page.screenshot({ path: info.outputPath('approve-dialog-review-header.png'), fullPage: true });
 

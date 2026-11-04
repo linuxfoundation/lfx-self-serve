@@ -23,7 +23,7 @@ for (const width of [1440, 1024, 390]) {
     const dialog = page.getByRole('dialog', { name: 'Approve with open gaps?' });
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
     await expect(dialog.getByTestId('mktg-document-view-approve-conflicts')).toBeVisible();
-    await expect(dialog.getByTestId('mktg-document-view-approve-conflict')).toHaveCount(2);
+    await expect(dialog.getByTestId('mktg-document-view-approve-conflict')).toHaveCount(1);
     await expect(dialog.getByTestId('mktg-document-view-approve-rules')).toBeVisible();
     await expect(dialog.getByTestId('mktg-document-view-approve-rule')).toHaveCount(5);
     await expect(dialog.getByTestId('mktg-document-view-approve-cancel')).toBeVisible();

@@ -313,24 +313,6 @@ export const BRAND_KIT_REPORT_RULES_MAX = 200;
 /** A colour conflict lists the values seen: at least two (or it is no conflict), at most four. */
 export const BRAND_KIT_REPORT_CONFLICT_VALUES = { min: 2, max: 4 } as const;
 
-/**
- * The words the approve dialog and the Kit page use for a v2 report's colour
- * conflicts and rule bases: one set, so every surface that shows them reads
- * the same. Plain language, never a path or a basis id.
- */
-export const BRAND_KIT_REPORT_V2_LABELS = {
-  /** The approve dialog's section of colour conflicts. */
-  colorConflicts: 'Colour conflicts',
-  /** Before the hex the kit keeps: `kept #FF702D`. */
-  kept: 'kept',
-  /** The approve dialog's section of rules the LF reference supplied. */
-  lfReferenceRules: 'Rules from the LF reference, not the project',
-  /** A chapter whose rules all come from the project's own sources. */
-  basisProject: 'From the project',
-  /** A chapter whose rules all come from the LF reference kit; with a count, `LF reference default for 20 of 21 rules`. */
-  basisLfReference: 'LF reference default',
-} as const;
-
 /** The exact lengths the chapters' fixed lists have (the agent's envelope schema). */
 export const BRAND_KIT_CHAPTER_COUNTS = {
   colorways: 4,
@@ -491,3 +473,24 @@ export const BRAND_KIT_PROJECT_UID_REGEX = MKTG_ARTIFACT_PARTITION_REGEX;
 
 /** Lowercase hex SHA-256 pattern — alias of the shared {@link MKTG_ARTIFACT_SHA256_REGEX}. */
 export const BRAND_KIT_SHA256_REGEX = MKTG_ARTIFACT_SHA256_REGEX;
+
+// ---------------------------------------------------------------------------
+// The approve dialog and the overview's basis pills (report v2, brand-kit ≥
+// 2.2.0): every word they print, so a copy change is a one-file fix. The
+// Sources tab keeps its own names for the words the two surfaces share.
+// ---------------------------------------------------------------------------
+
+/** The approve dialog's header when the report has a source that could not be read or an open gap (what "Approve anyway" accepts). */
+export const BRAND_KIT_APPROVE_HEADER_GAPS = 'Approve with open gaps?';
+/** The approve dialog's header when the report has only what the reviewer should see first: colour conflicts or LF-reference rules. */
+export const BRAND_KIT_APPROVE_HEADER = 'Approve this version?';
+/** The approve dialog's section of colour conflicts. */
+export const BRAND_KIT_APPROVE_CONFLICTS_TITLE = 'Colour conflicts';
+/** Before the hex the kit keeps: `kept #FF702D`. */
+export const BRAND_KIT_APPROVE_CONFLICT_KEPT_PREFIX = 'kept ';
+/** The approve dialog's section of rules the LF reference supplied; each line is `{Chapter}: {n} of {m} rules` (brandKitLfReferenceRuleLines). */
+export const BRAND_KIT_APPROVE_RULES_TITLE = 'Rules from the LF reference, not the project';
+/** A chapter whose rules all come from the project's own sources. */
+export const BRAND_KIT_CHAPTER_BASIS_PROJECT = 'From the project';
+/** A chapter whose rules all come from the LF reference kit; mixed chapters read `LF reference default for {n} of {m} rules` (brandKitChapterBasisLabel). */
+export const BRAND_KIT_CHAPTER_BASIS_LF = 'LF reference default';

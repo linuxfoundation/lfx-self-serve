@@ -8,7 +8,7 @@
 // source in words. One reading for every surface; a v1 report, or any other
 // agent's report, has none of it and renders as it always did.
 
-import { BRAND_KIT_CHAPTERS, BRAND_KIT_FOUND_IN_KINDS, BRAND_KIT_REPORT_V2_LABELS } from '../constants/brand-kit.constants';
+import { BRAND_KIT_CHAPTER_BASIS_LF, BRAND_KIT_CHAPTER_BASIS_PROJECT, BRAND_KIT_CHAPTERS, BRAND_KIT_FOUND_IN_KINDS } from '../constants/brand-kit.constants';
 import type {
   BrandKitChapterRuleBasis,
   BrandKitColorConflictView,
@@ -82,9 +82,9 @@ function ruleWord(count: number): string {
  * the LF reference, or how many of its rules the reference supplied.
  */
 export function brandKitChapterBasisLabel(chapter: BrandKitChapterRuleBasis): string {
-  if (chapter.lfReference === 0) return BRAND_KIT_REPORT_V2_LABELS.basisProject;
-  if (chapter.project === 0) return BRAND_KIT_REPORT_V2_LABELS.basisLfReference;
-  return `${BRAND_KIT_REPORT_V2_LABELS.basisLfReference} for ${chapter.lfReference} of ${chapter.total} ${ruleWord(chapter.total)}`;
+  if (chapter.lfReference === 0) return BRAND_KIT_CHAPTER_BASIS_PROJECT;
+  if (chapter.project === 0) return BRAND_KIT_CHAPTER_BASIS_LF;
+  return `${BRAND_KIT_CHAPTER_BASIS_LF} for ${chapter.lfReference} of ${chapter.total} ${ruleWord(chapter.total)}`;
 }
 
 /** One line per chapter with at least one LF-reference rule: `Logo: 20 of 21 rules`. */

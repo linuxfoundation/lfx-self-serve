@@ -3,7 +3,7 @@
 
 import type { BrandKitReport, BrandKitReportRule } from '../../interfaces/brand-kit.interface';
 
-/** The report's rule paths and bases exactly as the agent lane's report-v2 QA fixture lists them: 47 rules over the six chapters. */
+/** The report's rule paths, bases and uses exactly as the agent lane's report-v2 QA fixture (6f5ee832) lists them: 47 rules over the six chapters. */
 const RULES: [string, BrandKitReportRule['basis'], string[]?][] = [
   ['chapters.logo.files', 'project'],
   ['chapters.logo.placeholder', 'lf-reference', ['chapters.logo.files']],
@@ -15,11 +15,11 @@ const RULES: [string, BrandKitReportRule['basis'], string[]?][] = [
   ['chapters.logo.clear_space', 'lf-reference'],
   ['chapters.logo.minimum_size.rule', 'lf-reference'],
   ['chapters.logo.symbol', 'lf-reference'],
-  ['chapters.logo.partnership[0]', 'lf-reference'],
-  ['chapters.logo.partnership[1]', 'lf-reference'],
-  ['chapters.logo.partnership[2]', 'lf-reference'],
-  ['chapters.logo.partnership[3]', 'lf-reference'],
-  ['chapters.logo.partnership[4]', 'lf-reference'],
+  ['chapters.logo.partnership[0]', 'lf-reference', ['chapters.color.palette']],
+  ['chapters.logo.partnership[1]', 'lf-reference', ['chapters.color.palette']],
+  ['chapters.logo.partnership[2]', 'lf-reference', ['chapters.color.palette']],
+  ['chapters.logo.partnership[3]', 'lf-reference', ['chapters.color.palette']],
+  ['chapters.logo.partnership[4]', 'lf-reference', ['chapters.color.palette']],
   ['chapters.logo.watchouts[0]', 'lf-reference'],
   ['chapters.logo.watchouts[1]', 'lf-reference'],
   ['chapters.logo.watchouts[2]', 'lf-reference'],
@@ -40,26 +40,25 @@ const RULES: [string, BrandKitReportRule['basis'], string[]?][] = [
   ['chapters.type.rules[0]', 'lf-reference', ['chapters.type.family']],
   ['chapters.type.rules[1]', 'lf-reference', ['chapters.type.family']],
   ['chapters.type.rules[2]', 'lf-reference', ['chapters.type.family']],
-  ['chapters.visual.icons.rules[0]', 'lf-reference'],
-  ['chapters.visual.icons.rules[1]', 'lf-reference'],
-  ['chapters.visual.icons.rules[2]', 'lf-reference'],
-  ['chapters.visual.icons.rules[3]', 'lf-reference'],
+  ['chapters.visual.icons.rules[0]', 'lf-reference', ['chapters.color.palette']],
+  ['chapters.visual.icons.rules[1]', 'lf-reference', ['chapters.color.palette']],
+  ['chapters.visual.icons.rules[2]', 'lf-reference', ['chapters.color.palette']],
+  ['chapters.visual.icons.rules[3]', 'lf-reference', ['chapters.color.palette']],
   ['chapters.visual.icons.recommended', 'lf-reference'],
-  ['chapters.visual.imagery.rule', 'lf-reference'],
+  ['chapters.visual.imagery.rule', 'lf-reference', ['chapters.color.palette']],
   ['chapters.visual.imagery.avoid[0]', 'lf-reference'],
   ['chapters.visual.imagery.avoid[1]', 'lf-reference'],
   ['chapters.visual.imagery.avoid[2]', 'lf-reference'],
-  ['chapters.usage.summary', 'lf-reference', ['chapters.color.palette']],
+  ['chapters.usage.summary', 'lf-reference', ['chapters.type.family']],
   ['chapters.usage.examples', 'lf-reference', ['chapters.color.palette']],
   ['chapters.voice', 'project'],
 ];
 
 /**
  * A v2 Brand Kit report in the shape of the agent lane's report-v2 QA fixture
- * (brand-kit 2.2.0 on a real site), with synthetic sources: two colour
- * conflicts (Coral #FF702D on the brand page against #FF7D2D in the site's
- * CSS, Black #000000 against #171717, the brand page's kept both times) and
- * 47 rules — logo 1 project + 20 LF reference, color 1 + 4, type 3 + 6,
+ * (brand-kit 2.2.0's computed envelope on a real site), with synthetic
+ * sources: one colour conflict (Coral #FF702D on the brand page against
+ * #FF7D2D in the site's CSS, the brand page's kept) and 47 rules — logo 1 project + 20 LF reference, color 1 + 4, type 3 + 6,
  * visual 0 + 9, usage 0 + 2, voice 1 + 0. What the approve dialog and the
  * Kit page's basis pills are tested against. Fresh on every call.
  */
@@ -100,14 +99,6 @@ export function brandKitReportV2RulesFixture(): BrandKitReport {
           { hex: '#FF7D2D', source: `site_css: ${css}` },
         ],
         chosen: '#FF702D',
-      },
-      {
-        name: 'Black',
-        values: [
-          { hex: '#000000', source: `brand_page: ${site}/brand` },
-          { hex: '#171717', source: `site_css: ${css}` },
-        ],
-        chosen: '#000000',
       },
     ],
     rules: RULES.map(([path, basis, uses]) => (uses ? { path, basis, uses } : { path, basis })),

@@ -44,7 +44,20 @@ describe('Approval with open gaps dialog', () => {
   });
 
   it('shows a v2 report’s colour conflicts, both values with their sources and the one kept, and the chapters the LF reference supplied rules to', async () => {
-    const root = await render(brandKitReportV2RulesFixture());
+    // The agent fixture carries one conflict; a second, hand-made one proves the per-conflict rendering (the kept value need not come first).
+    const report = brandKitReportV2RulesFixture();
+    report.color_conflicts = [
+      ...(report.color_conflicts ?? []),
+      {
+        name: 'Black',
+        values: [
+          { hex: '#171717', source: 'site_css: https://synthetic-foundation.example/site.css' },
+          { hex: '#000000', source: 'brand_page: https://synthetic-foundation.example/brand' },
+        ],
+        chosen: '#000000',
+      },
+    ];
+    const root = await render(report);
     // Today's list stays.
     expect(root.textContent).toContain('https://synthetic-foundation.example/brand-guidelines — HTTP 404');
     expect(root.textContent).toContain('No logo files');
@@ -62,8 +75,8 @@ describe('Approval with open gaps dialog', () => {
     ]);
     expect(items[1].querySelector('span')?.textContent).toBe('Black');
     expect(values(items[1])).toEqual([
-      ['', '#000000', 'From the brand page — synthetic-foundation.example', 'kept #000000'],
       ['', '#171717', 'From the site’s CSS — synthetic-foundation.example'],
+      ['', '#000000', 'From the brand page — synthetic-foundation.example', 'kept #000000'],
     ]);
     // Each value draws its swatch in its own colour.
     const swatches = Array.from(items[0].querySelectorAll<HTMLElement>('[aria-hidden="true"]')).map((swatch) => swatch.style.background.toLowerCase());

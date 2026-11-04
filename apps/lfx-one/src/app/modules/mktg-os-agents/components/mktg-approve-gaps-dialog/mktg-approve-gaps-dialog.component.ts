@@ -3,7 +3,7 @@
 
 import { Component, inject } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { BRAND_KIT_REPORT_V2_LABELS } from '@lfx-one/shared/constants';
+import { BRAND_KIT_APPROVE_CONFLICT_KEPT_PREFIX, BRAND_KIT_APPROVE_CONFLICTS_TITLE, BRAND_KIT_APPROVE_RULES_TITLE } from '@lfx-one/shared/constants';
 import type { MktgAssetReport } from '@lfx-one/shared/interfaces';
 import { brandKitColorConflictViews, brandKitLfReferenceRuleLines, brandKitReportRules } from '@lfx-one/shared/utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -28,7 +28,9 @@ export class MktgApproveGapsDialogComponent {
   public readonly colorConflicts = brandKitColorConflictViews(this.report);
   /** One line per chapter the LF reference supplied rules to; empty for a v1 report. */
   public readonly lfReferenceRules = brandKitLfReferenceRuleLines(brandKitReportRules(this.report));
-  protected readonly labels = BRAND_KIT_REPORT_V2_LABELS;
+  protected readonly conflictsTitle = BRAND_KIT_APPROVE_CONFLICTS_TITLE;
+  protected readonly keptPrefix = BRAND_KIT_APPROVE_CONFLICT_KEPT_PREFIX;
+  protected readonly rulesTitle = BRAND_KIT_APPROVE_RULES_TITLE;
 
   protected close(approve: boolean): void {
     this.ref.close(approve);
