@@ -39,11 +39,13 @@ import {
   MktgSlidesExportForm,
   MktgSlidesExportLastResponse,
   MktgSlidesExportLogoFields,
-  MktgSlidesExportLogoNote,
+  MktgSlidesExportLogoImage,
   MktgSlidesExportLogoVariant,
   MktgSlidesExportLogoVariantUrls,
   MktgSlidesExportLogContext,
   MktgSlidesExportPublishedLogo,
+  MktgSlidesExportPublishedPng,
+  MktgLogoVariantSvgSource,
   MktgSlidesExportRecord,
   MktgSlidesExportResultContext,
   MktgSlidesExportResultResponse,
@@ -527,29 +529,64 @@ export class MktgSlidesExportService {
       return { ...primary, variants: {} };
     }
 
-    const variants: MktgSlidesExportLogoVariantUrls = {};
+    // Each variant is drawn and uploaded on its own, all four at once: the
+    // draws run on the rasterizer's thread pool and the uploads are independent
+    // I/O, so the start waits for the slowest, not the sum. A variant that
+    // fails, or throws, drops out alone; the URLs are assembled in the
+    // intake's order.
     const sources = logoVariantSvgSources(logo.files, logo.symbol_viewbox);
-    for (const variant of MKTG_SLIDES_EXPORT_LOGO_VARIANTS) {
-      const source = sources[variant];
-      if (!source) {
-        continue;
-      }
-      const drawnVariant = await rasterizeLogoSvg(source);
-      if (drawnVariant.png === null) {
-        // The source is the kit's own artwork, so a refusal is input the user controls: traced, not alerted.
-        logger.debug(req, 'mktg_slides_export_logo', 'A logo variant could not be drawn as a PNG — the deck keeps that slot’s template mark', {
+    const published = await Promise.allSettled(
+      MKTG_SLIDES_EXPORT_LOGO_VARIANTS.map((variant) => this.publishLogoVariant(req, project, variant, sources[variant]))
+    );
+    const variants: MktgSlidesExportLogoVariantUrls = {};
+    MKTG_SLIDES_EXPORT_LOGO_VARIANTS.forEach((variant, index) => {
+      const outcome = published[index];
+      if (outcome.status === 'rejected') {
+        logger.warning(req, 'mktg_slides_export_logo', 'A logo variant failed unexpectedly — the deck keeps that slot’s template mark', {
           variant,
-          reason: drawnVariant.reason,
-          detail: drawnVariant.detail,
+          err: outcome.reason,
         });
-        continue;
+      } else if (outcome.value) {
+        variants[variant] = outcome.value;
       }
-      const { url } = await this.publishLogoPng(req, project, drawnVariant.png, variant);
-      if (url) {
-        variants[variant] = url;
-      }
-    }
+    });
     return { url: primary.url, note: null, variants };
+  }
+
+  /**
+   * Draw one logo variant from its SVG source and publish it; its public URL,
+   * or null when it had no source, could not be drawn or could not be
+   * published. A source the server derived (a crop or a recolour) that will
+   * not draw is this server's own transform failing, so it is logged as a
+   * warning; an upload that will not draw is the kit's own artwork, input the
+   * user controls, so it is traced at debug, as logging-patterns.md asks.
+   */
+  private async publishLogoVariant(
+    req: Request,
+    project: string,
+    variant: MktgSlidesExportLogoVariant,
+    source: MktgLogoVariantSvgSource | undefined
+  ): Promise<string | null> {
+    if (!source) {
+      return null;
+    }
+    const message = 'A logo variant could not be drawn as a PNG — the deck keeps that slot’s template mark';
+    if (source.svg === null) {
+      // The primary drew, so a recolour that cannot be made is this server's transform failing, not the kit's artwork.
+      logger.warning(req, 'mktg_slides_export_logo', message, { variant, derived: true, reason: 'not-derived' });
+      return null;
+    }
+    const drawn = await rasterizeLogoSvg(source.svg);
+    if (drawn.png === null) {
+      const detail = { variant, derived: source.derived, reason: drawn.reason, detail: drawn.detail };
+      if (source.derived) {
+        logger.warning(req, 'mktg_slides_export_logo', message, detail);
+      } else {
+        logger.debug(req, 'mktg_slides_export_logo', message, detail);
+      }
+      return null;
+    }
+    return (await this.publishLogoPng(req, project, drawn.png, variant)).url;
   }
 
   /**
@@ -558,12 +595,7 @@ export class MktgSlidesExportService {
    * (`not-public`), or a failed upload (`not-published`, logged with the
    * variant it was).
    */
-  private async publishLogoPng(
-    req: Request,
-    project: string,
-    bytes: Uint8Array,
-    variant: 'primary' | MktgSlidesExportLogoVariant
-  ): Promise<{ url: string | null; note: MktgSlidesExportLogoNote | null }> {
+  private async publishLogoPng(req: Request, project: string, bytes: Uint8Array, variant: MktgSlidesExportLogoImage): Promise<MktgSlidesExportPublishedPng> {
     const png = Buffer.from(bytes);
     const key = `${MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX}/${project}/${createHash('sha256').update(png).digest('hex')}.png`;
     try {

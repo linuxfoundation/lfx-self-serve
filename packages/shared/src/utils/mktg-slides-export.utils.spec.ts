@@ -14,7 +14,12 @@ import {
   MKTG_SLIDES_EXPORT_LOGO_NOTES,
   MKTG_SLIDES_EXPORT_RECORD_SCHEMA,
 } from '../constants/mktg-slides-export.constants';
-import { MktgSlidesExportBranded, MktgSlidesExportContent, MktgSlidesExportRecord } from '../interfaces/mktg-slides-export.interface';
+import {
+  MktgSlidesExportBranded,
+  MktgSlidesExportContent,
+  MktgSlidesExportLogoVariantCounts,
+  MktgSlidesExportRecord,
+} from '../interfaces/mktg-slides-export.interface';
 import {
   buildMktgSlidesExportPrefix,
   buildMktgSlidesExportRecordKey,
@@ -234,15 +239,15 @@ describe('validateMktgSlidesExportEnvelope', () => {
 
   it('accepts a 1.1.2 envelope whose branded block counts the logo variants, and keeps them in the hashed content JSON', () => {
     // The validator checks named keys only, so the 1.1.2 counts pass through; the content JSON is hashed as emitted, counts included.
-    const extra = { logo_variants: { primary: 9, symbol: 2, reversed: 3, one_color: 1, symbol_reversed: 1 } };
-    const branded: MktgSlidesExportBranded = { ...BRANDED, ...extra };
+    const logoVariants: MktgSlidesExportLogoVariantCounts = { primary: 9, symbol: 2, reversed: 3, one_color: 1, symbol_reversed: 1 };
+    const branded: MktgSlidesExportBranded = { ...BRANDED, logo_variants: logoVariants };
     const content: MktgSlidesExportContent = {
       assets: ['kit'],
       slides: [{ index: 1, kind: 'title', layout: 'TITLE', title: 'Example Project', object_id: 'sx1_s01' }],
       branded,
     };
     expect(validateMktgSlidesExportEnvelope(envelope({ content }))).toEqual({ valid: true, errors: [] });
-    expect(JSON.parse(mktgSlidesExportContentJson(content))).toMatchObject({ branded: extra });
+    expect(JSON.parse(mktgSlidesExportContentJson(content))).toMatchObject({ branded: { logo_variants: logoVariants } });
     expect(mktgSlidesExportContentJson(content)).toBe(JSON.stringify(content));
   });
 

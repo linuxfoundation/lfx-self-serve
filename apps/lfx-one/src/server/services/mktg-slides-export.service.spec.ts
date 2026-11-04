@@ -19,6 +19,8 @@ const store = vi.hoisted(() => ({
   failPublicPut: false,
   /** The 1-based ordinals of the public image uploads of a test that throw (the bucket failing on one PNG, not all). */
   failPublicPutOrdinals: [] as number[],
+  /** The PNGs whose upload throws, by content: the variants upload at once, so one of them is picked by its bytes, not its turn. */
+  failPublicPutImages: [] as Buffer[],
   publicPuts: 0,
 }));
 const guildMocks = vi.hoisted(() => ({ createSession: vi.fn(), getRawEventPayloads: vi.fn() }));
@@ -128,7 +130,7 @@ vi.mock('./object-store.service', () => ({
     }
     public async putPublicImage(_req: unknown, key: string, buffer: Buffer): Promise<{ url: string | null }> {
       store.publicPuts += 1;
-      if (store.failPublicPut || store.failPublicPutOrdinals.includes(store.publicPuts)) {
+      if (store.failPublicPut || store.failPublicPutOrdinals.includes(store.publicPuts) || store.failPublicPutImages.some((image) => image.equals(buffer))) {
         throw new Error('bucket unavailable');
       }
       store.publicImages.set(key, buffer);
@@ -145,6 +147,8 @@ import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-k
 import { isMktgSlidesExportStale } from '../../../../../packages/shared/src/utils/mktg-slides-export.utils';
 import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID } from '../constants';
 import { ConflictError } from '../errors';
+import { rasterizeLogoSvg } from '../utils/mktg-logo-png.util';
+import { recolourLogoSvg } from '../utils/mktg-logo-variants.util';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { MktgSlidesExportService } from './mktg-slides-export.service';
 import { ObjectStoreService } from './object-store.service';
@@ -316,6 +320,7 @@ describe('MktgSlidesExportService', () => {
     store.clock = 0;
     store.failPublicPut = false;
     store.failPublicPutOrdinals = [];
+    store.failPublicPutImages = [];
     store.publicPuts = 0;
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
     directoryMocks.getUserInfo.mockResolvedValue({ success: true, data: { name: 'The writer' } });
@@ -754,8 +759,8 @@ describe('MktgSlidesExportService', () => {
     it('drops the one variant whose upload throws and still sends the others', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
-      // The uploads go primary, symbol, reversed, one_color, symbol_reversed: the third is the reversed lockup.
-      store.failPublicPutOrdinals = [3];
+      // The variants upload at once, so the reversed lockup is picked by its bytes: the primary recoloured white, as the server draws it.
+      store.failPublicPutImages = [Buffer.from((await rasterizeLogoSvg(recolourLogoSvg(LOCKUP_SVG, 'white') as string)).png as Uint8Array)];
 
       await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
 
@@ -791,8 +796,35 @@ describe('MktgSlidesExportService', () => {
         req,
         'mktg_slides_export_logo',
         expect.any(String),
-        expect.objectContaining({ variant: 'reversed', reason: 'live-text' })
+        expect.objectContaining({ variant: 'reversed', derived: false, reason: 'live-text' })
       );
+    });
+
+    it('warns, naming the variant, when a derived variant cannot be made, and still sends the ones it can', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // A primary with no viewBox and no size draws (the rasterizer sizes it), but gives the recolour no region to filter in.
+      await seedKit(documentStore, {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1h8v8H1z" fill="#1f6feb"/></svg>',
+        symbol: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#1f6feb"/></svg>',
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL REVERSED URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO REVERSED URL']).toBe('none');
+      expect(lines['LOGO ONE-COLOR URL']).toBe('none');
+      expect(started.logoNote).toBeNull();
+      for (const variant of ['reversed', 'one_color']) {
+        expect(loggerMocks.warning).toHaveBeenCalledWith(
+          req,
+          'mktg_slides_export_logo',
+          expect.any(String),
+          expect.objectContaining({ variant, derived: true, reason: 'not-derived' })
+        );
+      }
     });
 
     it('publishes no variant when the primary itself could not be published', async () => {

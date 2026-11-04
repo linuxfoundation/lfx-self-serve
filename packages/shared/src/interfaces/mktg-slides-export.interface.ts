@@ -38,6 +38,12 @@ export type MktgSlidesExportLogoNote = keyof typeof MKTG_SLIDES_EXPORT_LOGO_NOTE
 /** A logo variant sent beside the primary: the symbol, the reversed lockup, the one-colour lockup, the reversed symbol. */
 export type MktgSlidesExportLogoVariant = (typeof MKTG_SLIDES_EXPORT_LOGO_VARIANTS)[number];
 
+/** One of the logo images a deck places: the primary, or a variant. */
+export type MktgSlidesExportLogoImage = 'primary' | MktgSlidesExportLogoVariant;
+
+/** How many image requests the exporter sent per logo image (`content.branded.logo_variants`, slides-export 1.1.2); 0 for one not supplied. */
+export type MktgSlidesExportLogoVariantCounts = Record<MktgSlidesExportLogoImage, number>;
+
 /** The variant URLs that could be drawn and published, by variant; a variant that could not is absent. */
 export type MktgSlidesExportLogoVariantUrls = Partial<Record<MktgSlidesExportLogoVariant, string>>;
 
@@ -95,6 +101,8 @@ export interface MktgSlidesExportBranded {
   logos: number;
   logos_skipped: number;
   tables_header: string | null;
+  /** Per logo image, the requests that placed it; absent before slides-export 1.1.2. */
+  logo_variants?: MktgSlidesExportLogoVariantCounts;
 }
 
 /** What the deck holds, as the envelope reports it (the bytes `content_sha256` is computed over). */
@@ -275,8 +283,22 @@ export type MktgLogoPngFailure = 'external-reference' | 'live-text' | 'unreadabl
 /** The one colour a logo variant is recoloured to: white for the reversed variants, black for the one-colour lockup. */
 export type MktgLogoRecolourInk = 'white' | 'black';
 
+/** An SVG root's user space: its viewBox, or its size from the origin (server-side). */
+export interface MktgLogoUserSpace {
+  minX: number;
+  minY: number;
+  width: number;
+  height: number;
+}
+
+/** The SVG source of one logo variant: the text to draw (null when the server tried to derive it and could not), and whether the server derived it (a crop or a recolour) rather than took it as uploaded (server-side). */
+export interface MktgLogoVariantSvgSource {
+  svg: string | null;
+  derived: boolean;
+}
+
 /** The SVG source of each logo variant the server draws for a deck, by variant; a variant that cannot be derived is absent (server-side). */
-export type MktgLogoVariantSvgSources = Partial<Record<MktgSlidesExportLogoVariant, string>>;
+export type MktgLogoVariantSvgSources = Partial<Record<MktgSlidesExportLogoVariant, MktgLogoVariantSvgSource>>;
 
 /**
  * The kit's SVG logo drawn as a PNG on the server (server-side). `png` is a
@@ -308,6 +330,9 @@ export interface MktgSlidesExportPublishedLogo {
   note: MktgSlidesExportLogoNote | null;
   variants: MktgSlidesExportLogoVariantUrls;
 }
+
+/** One logo PNG as the BFF published it: its public URL, or why there is none (server-side). */
+export type MktgSlidesExportPublishedPng = Omit<MktgSlidesExportPublishedLogo, 'variants'>;
 
 /** Export scope retained by server-side background poll logs. */
 export type MktgSlidesExportLogContext = { agent: MktgSlidesExportAgentKey } | { family: string };
