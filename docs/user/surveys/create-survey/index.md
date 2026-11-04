@@ -26,6 +26,10 @@ The **Create Survey** form is a four-step wizard: **Audience & Type**, **Timing 
 1. Under **Target Audience**, open the **Select groups** dropdown and tick the group to survey. Use the **Search groups…** box at the top of the list to find it, then click outside the list to close it. At least one is required, or you see "Please select at least one group." If you came from a group, that group is already chosen.
 2. Under **NPS Survey Template**, open the list that reads **Select Survey** and choose a template. A template is required, or you see "Please select a survey template."
 
+   The list shows the current SurveyMonkey templates, so new or renamed templates appear without waiting for an app update. While the list loads, it shows a loading indicator and can't be opened. If the templates fail to load, you see "We couldn't load survey templates." Select **Try again** to reload them. You can't move to the next step until a template is chosen from a loaded list. If no templates exist yet, you see "No survey templates are available yet."
+
+   To ask for a template that isn't in the list, select **Contact support** next to **Need a new template?**. This opens the support chat. If support chat isn't available, you see a "Support Unavailable" message instead.
+
 The form lets you tick more than one group, but a survey is currently created for the first group you select only, and it is named after that group, for example "Technical Advisory Committee Survey". To survey several groups, create one survey for each. The form also notes that for Board groups, surveys are sent only to voting representatives.
 
 ## Step 2: Timing & Reminders
@@ -44,7 +48,7 @@ The form lets you tick more than one group, but a survey is currently created fo
 
 ## Step 3: Email Draft
 
-The survey is delivered by email. The form opens with a default subject and message that you can change.
+The survey is delivered by email. The form opens with a default subject and message that you can change. The default depends on the template you chose in step 1: a template with "Maintainer" in its name gets a message written for project maintainers, and every other template gets a general message for group members. If you go back and pick a different template, the subject and message switch to match it, but only if you haven't changed them. Your own edits are always kept.
 
 - **Subject Line** is required and can be up to 200 characters.
 - **Body** is required.
