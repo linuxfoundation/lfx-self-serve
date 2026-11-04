@@ -193,10 +193,10 @@ describe('MeetingRsvpControlsComponent', () => {
       await press(fixture, 'meetings-home-rsvp-declined');
 
       expect(showToast).toHaveBeenCalledWith({
-        variant: 'dark',
+        variant: 'error',
+        position: 'bottom-center',
         message: 'RSVP Failed',
         description: 'Only invited users are allowed to RSVP to this meeting.',
-        duration: 5000,
       });
       expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(false);
     });
@@ -236,7 +236,8 @@ describe('MeetingRsvpControlsComponent', () => {
 
       expect(submit).not.toHaveBeenCalled();
       expect(showToast).toHaveBeenCalledWith({
-        variant: 'dark',
+        variant: 'warning',
+        position: 'bottom-center',
         message: 'RSVP Not Saved',
         description: 'Another response to this meeting is still saving. Try again.',
         duration: 5000,

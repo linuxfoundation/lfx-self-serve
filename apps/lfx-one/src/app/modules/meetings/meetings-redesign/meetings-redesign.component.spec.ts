@@ -712,7 +712,7 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-home-empty-create')).toBeNull();
     });
 
-    it('shows no "No results" when the search matches only the Next meeting card', async () => {
+    it('shows no results with a reset when the search matches only the Next meeting card', async () => {
       const fixture = render();
       await fixture.whenStable();
       await loadFeeds(fixture, [buildMeeting(0, { title: 'Board Review' }), buildMeeting(1)]);
@@ -722,7 +722,9 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
 
       expect(rowTitles(fixture)).toEqual([]);
-      expect(query(fixture, 'meetings-home-no-results')).toBeNull();
+      expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No results found');
+      expect(query(fixture, 'meetings-home-no-results-reset')).toBeTruthy();
+      expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.textContent).toContain('Board Review');
     });
 
     it('shows no results with a reset that clears the search', async () => {
@@ -799,6 +801,16 @@ describe('MeetingsRedesignComponent', () => {
       expect(rowTitles(fixture)).toEqual(['Board Review', 'Tech Sync']);
       expect(document.activeElement).toBe(query(fixture, 'meetings-home-filters-button')?.querySelector('button'));
       fixture.nativeElement.remove();
+    });
+
+    it('shows no results when the filters match only the Next meeting card', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, [buildMeeting(0, { title: 'Board Review', created_by: { username: 'viewer', email: 'viewer@example.test' } }), buildMeeting(1)]);
+      await applyOrganizedByMe(fixture);
+
+      expect(rowTitles(fixture)).toEqual([]);
+      expect(query(fixture, 'meetings-home-no-results')).toBeTruthy();
     });
 
     it('clears the filters and the search from the No results reset', async () => {

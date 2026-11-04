@@ -216,7 +216,7 @@ describe('MeetingsHomeStore', () => {
       expect(store.pastFailed()).toBe(false);
       expect(console.error).toHaveBeenCalledWith('Failed to load meetings for the meetings home page:', expect.any(Error));
       expect(toast.show).toHaveBeenCalledTimes(1);
-      expect(toast.show).toHaveBeenCalledWith(expect.objectContaining({ variant: 'dark' }));
+      expect(toast.show).toHaveBeenCalledWith(expect.objectContaining({ variant: 'warning', position: 'bottom-center' }));
 
       const refreshed$ = new Subject<Meeting[]>();
       (userService['getUserMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(refreshed$);

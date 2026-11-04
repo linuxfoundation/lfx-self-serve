@@ -140,6 +140,8 @@ export class MeetingHomeActionsComponent {
   }
 
   protected remove(): void {
+    // A second click can land before the button renders as loading.
+    if (this.removing()) return;
     const ref = this.dialogRef;
     this.removing.set(true);
     this.selfRemoval

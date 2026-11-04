@@ -147,8 +147,13 @@ export class MeetingsRedesignComponent {
   protected readonly showCreate: Signal<boolean> = computed(
     () => this.canWriteMeetings() && !(this.store.tab() === 'upcoming' && this.tabEmpty() && !this.store.failed())
   );
-  /** The active tab has meetings, but none match the search and filters. */
-  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.matchingRows().length === 0);
+  /** The active tab has meetings, but none match the search and filters, or only the Next meeting card's date does. */
+  protected readonly noResults: Signal<boolean> = computed(
+    () =>
+      !this.store.loading() &&
+      !this.tabEmpty() &&
+      (this.store.matchingRows().length === 0 || (this.store.hasActiveQuery() && this.store.filteredRows().length === 0))
+  );
   /** "All N meetings loaded" once every row of a list longer than one page is shown. */
   protected readonly allLoaded: Signal<boolean> = computed(
     () => !this.store.loading() && !this.store.hasMore() && this.store.filteredRows().length > MEETINGS_HOME_PAGE_SIZE

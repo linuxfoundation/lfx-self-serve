@@ -103,7 +103,8 @@ export class MeetingRsvpControlsComponent {
       // Another date of the series started saving while the dialog was open.
       if (this.busy())
         this.toast.show({
-          variant: 'dark',
+          variant: 'warning',
+          position: 'bottom-center',
           message: 'RSVP Not Saved',
           description: 'Another response to this meeting is still saving. Try again.',
           duration: 5000,
@@ -137,7 +138,7 @@ export class MeetingRsvpControlsComponent {
         },
         error: (error: MeetingRsvpSubmitError) => {
           this.saving.set(null);
-          this.toast.show({ variant: 'dark', message: 'RSVP Failed', description: error.message, duration: 5000 });
+          this.toast.show({ variant: 'error', position: 'bottom-center', message: 'RSVP Failed', description: error.message });
         },
         complete: () => this.saving.set(null),
       });

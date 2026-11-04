@@ -39,7 +39,13 @@
           [value]="option.value"
           [label]="option.label"
           [attr.data-testid]="'meetings-home-rsvp-scope-' + option.value" />
-        <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600">{{ option.description }}</span>
+        <!-- The uikit radio has no description slot, so a click on the description picks the option too. -->
+        <span
+          class="cursor-pointer pl-[24px] text-[13px] leading-[18px] text-gray-600"
+          (click)="scope.set(option.value)"
+          [attr.data-testid]="'meetings-home-rsvp-scope-' + option.value + '-description'"
+          >{{ option.description }}</span
+        >
       </span>
     }
   </lfx-ui-radio-group>

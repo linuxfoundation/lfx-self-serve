@@ -125,7 +125,7 @@ describe('MeetingsHomeSummaryDialogComponent', () => {
       await click(fixture, 'meetings-home-dialog-summary-approve');
 
       expect(onChange).not.toHaveBeenCalled();
-      expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Failed to approve summary' }));
+      expect(showToast).toHaveBeenCalledWith({ variant: 'error', position: 'bottom-center', message: 'Failed to approve summary' });
       expect(query(fixture, 'meetings-home-dialog-summary-approve')).toBeTruthy();
     });
 
@@ -153,6 +153,21 @@ describe('MeetingsHomeSummaryDialogComponent', () => {
       expect(query(fixture, 'meetings-home-dialog-summary-content')?.textContent?.trim()).toBe('New notes');
     });
 
+    it('does not save a blank summary', async () => {
+      const fixture = await render(buildRow(true), buildSummary());
+
+      await click(fixture, 'meetings-home-dialog-summary-edit');
+      const editor = query(fixture, 'meetings-home-dialog-summary-editor')?.querySelector('textarea') as HTMLTextAreaElement;
+      editor.value = '  \n ';
+      editor.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      const save = query(fixture, 'meetings-home-dialog-summary-save')?.querySelector('button') as HTMLButtonElement;
+      expect(save.disabled).toBe(true);
+      save.click();
+
+      expect(update).not.toHaveBeenCalled();
+    });
+
     it('stays in edit mode after a failed save', async () => {
       update.mockReturnValue(throwError(() => new Error('synthetic')));
       const fixture = await render(buildRow(true), buildSummary());
@@ -161,7 +176,7 @@ describe('MeetingsHomeSummaryDialogComponent', () => {
       await click(fixture, 'meetings-home-dialog-summary-save');
 
       expect(onChange).not.toHaveBeenCalled();
-      expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Failed to update summary' }));
+      expect(showToast).toHaveBeenCalledWith({ variant: 'error', position: 'bottom-center', message: 'Failed to update summary' });
       expect(query(fixture, 'meetings-home-dialog-summary-editor')).toBeTruthy();
     });
 
