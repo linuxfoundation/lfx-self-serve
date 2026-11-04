@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgEventsAttribution } from './org-events-filters.interface';
+
 /** Role badge — once-a-speaker-always-Speaker on the per-person row (Item 4 R4.1); per-event truth on the expanded row. */
 export type OrgEventAttendeeRole = 'Speaker' | 'Attendee';
 
@@ -10,37 +12,47 @@ export type OrgEventAttendeeSortColumn = 'name' | 'role' | 'events' | 'lastAtten
 /** Sort direction — `1` ascending, `-1` descending. */
 export type OrgEventAttendeeSortDirection = 1 | -1;
 
-/** One detail row from `PLATINUM_LFX_ONE.ORG_PEOPLE_EVENTS` — finest grain the BFF returns; client groups by `(personKey, eventId)` for the expanded row. */
+/**
+ * One person × event row from `PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION` — the only grain the BFF returns. The client groups
+ * rows by `participantRef` for the main table and expands to the rows themselves; `participantRef` is an opaque number, stable
+ * only within one response. Only listable people are ever sent (the warehouse nulls name and title for everyone else), and no
+ * field can hold an email address.
+ */
 export interface OrgEventAttendeeDetailRow {
-  personKey: string;
+  /** Opaque per-person id within this account (dense rank over a normalized identity key). Group key for the main row. */
+  participantRef: number;
+  /** Roster person key; `null` for a listed person without a roster match — render the row non-clickable. */
+  personKey: string | null;
+  /** The listed name, or the neutral registrant label when the warehouse has none. Never an address. */
+  displayName: string;
+  jobTitle: string | null;
   eventId: string;
   eventName: string;
-  /** Freeform venue/location string from upstream (e.g. `Alte Kongresshalle, Munich`). NULL on ~7% of rows for a large covered organization; client falls back through `eventCity`/`eventCountry` to `foundationName`. */
+  /** Freeform venue/location string from upstream; client falls back through `eventCity`/`eventCountry` to `foundationName`. */
   eventLocation: string | null;
   eventCity: string | null;
   eventCountry: string | null;
-  /** Event marketing URL — stored for forward use (clickable event name in a future iteration); V1 expanded row renders the event name as plain text (Q4 lock 2026-06-02). */
+  /** Event marketing URL — stored for forward use; the expanded row renders the event name as plain text. */
   eventUrl: string | null;
   foundationId: string | null;
   foundationName: string | null;
-  /** ISO date `YYYY-MM-DD`. Anchors the per-event "Date" column in the expanded sub-table (R5.2). */
+  /** ISO date `YYYY-MM-DD`. */
   eventStartDate: string | null;
-  /** ISO date `YYYY-MM-DD`. Drives the time-window filter, the parent row's "Last Attended" column, and the Most Recent tiebreaker. */
+  /** ISO date `YYYY-MM-DD`. Drives the parent row's "Last Attended" column. */
   eventEndDate: string | null;
-  /** Per-event speaker flag — drives the per-event Role pill in the expanded sub-table. */
+  /** Per-event accepted-speaker flag — drives the per-event Role pill in the expanded sub-table. */
   isSpeaker: boolean;
-  /** Warehouse flag: the event ended before the model's build date. The tab checks `eventEndDate` against today instead, so a stale build cannot count a running event. */
-  isPastEvent: boolean;
 }
 
-/** Per-(account, person) main row source — joined client-side with `details` for filter-aware derivations. */
-export interface OrgEventAttendeeRow {
-  personKey: string;
-  lfid: string | null;
-  cdpMemberId: string | null;
-  name: string;
-  title: string | null;
-  email: string | null;
+/** Summary-row numbers for the picked (range, attribution, participation): the tiles and the "N counted, not listed" note. */
+export interface OrgEventAttendeesSummary {
+  /** Distinct people counted. */
+  attendeesCount: number;
+  /** Of those, the people the rows name. `attendeesCount - listedAttendeesCount` is the not-listed number. */
+  listedAttendeesCount: number;
+  speakersCount: number;
+  eventsCount: number;
+  foundationsCount: number;
 }
 
 /** Foundation dropdown option — only foundations the org has event-attendee rows for (R2.2 tab-scoped narrowing). */
@@ -55,23 +67,22 @@ export interface OrgEventAttendeeEventOption {
   eventName: string;
 }
 
-/** Stats-card shape for the Event Attendees tab — recomputed client-side from filtered details on every filter change (not shipped on the wire). */
+/** Stats-card shape for the Event Attendees tab — client-derived from the rows (not on the wire). */
 export interface OrgEventAttendeeStatsBaseline {
-  /** `COUNT(DISTINCT CASE WHEN isSpeaker THEN personKey END)` over the filtered set. */
   speakers: number;
-  /** `COUNT(DISTINCT personKey)` over the filtered set — includes speakers; mirrors the table row count. */
   attendees: number;
-  /** `COUNT(DISTINCT eventId)` over the filtered set. */
   events: number;
-  /** `COUNT(DISTINCT foundationId)` over the filtered set. */
   foundations: number;
 }
 
-/** Bundled GET response for `/api/orgs/:orgUid/lens/people/event-attendees`. */
+/** Bundled GET response for `/api/orgs/:orgUid/lens/people/event-attendees?range=&attribution=&participation=`. */
 export interface OrgEventAttendeesResponse {
   accountId: string;
-  attendees: OrgEventAttendeeRow[];
+  /** Person × event rows, newest event first; the browser applies no range or ended-only filter of its own. */
   details: OrgEventAttendeeDetailRow[];
+  summary: OrgEventAttendeesSummary;
+  /** The attribution the rows and summary use — `account` when `company_email` was picked but the company has no company-email data. */
+  servedAttribution: OrgEventsAttribution;
   foundationOptions: OrgEventAttendeeFoundationOption[];
   eventOptions: OrgEventAttendeeEventOption[];
 }
@@ -80,10 +91,12 @@ export interface OrgEventAttendeesResponse {
 
 /** Pre-decorated event-attendee main row VM — initials, avatar colour, filter-aware role/events/last-attended/most-recent. */
 export interface OrgEventAttendeeRowVm {
-  personKey: string;
+  /** Group key — one main row per `participantRef`. */
+  participantRef: number;
+  /** `null` renders the row non-clickable (listed person without a roster match). */
+  personKey: string | null;
   name: string;
   title: string | null;
-  email: string | null;
   initials: string;
   avatarColorClass: string;
   role: OrgEventAttendeeRole;
@@ -96,7 +109,7 @@ export interface OrgEventAttendeeRowVm {
   mostRecentFoundationName: string | null;
 }
 
-/** One collapsed row in the expanded "Events" sub-table — one per `(personKey, eventId)`. */
+/** One collapsed row in the expanded "Events" sub-table — one per `(participantRef, eventId)`. */
 export interface OrgEventAttendeeExpandedRowVm {
   eventId: string;
   eventName: string;
@@ -109,46 +122,4 @@ export interface OrgEventAttendeeExpandedRowVm {
   startLabel: string;
   /** ISO timestamp used as the primary sort key inside the sub-table — `eventEndDate` (matches the parent row's Last Attended semantic). */
   sortTs: string | null;
-}
-
-// Server-internal Snowflake row shapes (not on the wire) — kept here so the rule against local interfaces in `apps/lfx-one/` holds.
-
-/** Per-(account, person) row from `ORG_PEOPLE_ALL` filtered to people with at least one event registration. */
-export interface OrgPeopleAllEventAttendeeRow {
-  PERSON_KEY: string;
-  LFID: string | null;
-  CDP_MEMBER_ID: string | null;
-  NAME: string | null;
-  TITLE: string | null;
-  EMAIL: string | null;
-}
-
-/** Per-(account, person, event) row from `ORG_PEOPLE_EVENTS`. */
-export interface OrgPeopleEventRow {
-  PERSON_KEY: string;
-  EVENT_ID: string;
-  EVENT_NAME: string | null;
-  EVENT_LOCATION: string | null;
-  EVENT_CITY: string | null;
-  EVENT_COUNTRY: string | null;
-  EVENT_URL: string | null;
-  EVENT_START_DATE: Date | string | null;
-  EVENT_END_DATE: Date | string | null;
-  IS_SPEAKER: boolean | null;
-  IS_PAST_EVENT: boolean | null;
-  FOUNDATION_ID: string | null;
-  FOUNDATION_NAME: string | null;
-}
-
-/** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` row from the foundation-options query (event attendees). */
-export interface EventAttendeeFoundationOptionRow {
-  FOUNDATION_ID: string;
-  FOUNDATION_NAME: string;
-}
-
-/** Distinct `(EVENT_ID, EVENT_NAME, EVENT_END_DATE)` row from the event-options query — `EVENT_END_DATE` carried for ORDER BY only, never read downstream. */
-export interface EventAttendeeEventOptionRow {
-  EVENT_ID: string;
-  EVENT_NAME: string;
-  EVENT_END_DATE: Date | string | null;
 }

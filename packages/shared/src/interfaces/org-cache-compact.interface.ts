@@ -112,10 +112,9 @@ export interface CompactOrgAllEmployeesRawCache {
 
 /** Cached form of the Event Attendees raw warehouse reads. */
 export interface CompactOrgEventAttendeesRawCache {
-  attendeeRows: ColumnarTable;
   /** Distinct event-level field sets (name, location, city, country, url, dates, foundation), once each. */
   events: ColumnarTable;
-  /** Per-(person, event) rows reduced to the fields that actually vary per row: `PERSON_KEY`, `IS_SPEAKER`, `IS_PAST_EVENT`. */
+  /** Per-(person, event) rows reduced to the fields that actually vary per row: `PARTICIPANT_REF`, `PERSON_KEY`, `DISPLAY_NAME`, `JOB_TITLE`, `IS_SPEAKER`. */
   details: ColumnarTable;
   /** Aligned to `details.r`: which entry of `events.r` each detail row belongs to. */
   detailEvents: number[];

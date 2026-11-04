@@ -1,0 +1,65 @@
+---
+title: Events and Event Attendees
+description: How the Organization lens Events page and People → Event Attendees count people at events, what each filter (Range, Foundation, Count, Show, Counted by) does, and why some people are counted but not listed.
+audience: [all]
+product_area: Organization
+tags: [organization, org, org-lens, events, event-attendees, registered, attended, counted-by, filters]
+last_updated: 2026-11-03
+intercom_collection: Organization
+---
+
+These steps apply to anyone with access to at least one organization in the Organization lens. The Events page, People → Event Attendees and the **Event Attendees** and **Event Speakers** cards on the [Org Overview](../org-overview/) all use the same definitions, so the same selection gives the same number on each of them.
+
+## What is counted
+
+- Every number counts **people**, each once, not registrations. A person who registered for three events is one person in a total and three events in their own row.
+- **Registered** counts everyone who registered, except cancelled and denied registrations.
+- **Attended** counts only people marked as attended. Only events that have ended are counted. Upcoming events have no attendance yet, so they always show registrations.
+- People figures count events that have ended. Upcoming events appear on the Events page only.
+- **Speakers** are accepted speakers. The Events page also shows how many speaker proposals were submitted.
+
+## Counted by
+
+**Counted by** decides whom an event number is credited to. It is under **More filters**, and the link shows **More filters (1)** while a non-default option is picked.
+
+| Option                      | What it counts                                                                                                   |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Company email** (default) | People who registered with one of the organization's own email addresses.                                        |
+| **Account on registration** | Registrations credited to the organization's account, whatever address was used.                                 |
+| **All relations**           | Everyone related to the organization by either of the above, and its current employees. This is the widest view. |
+
+If the organization has no company-email data, **Company email** is not available: the numbers use **Account on registration** instead and the page says so.
+
+### People who are counted but not listed
+
+An attendee is named in an attendee list, row or drawer only when they registered with a company email address or are a current employee of the organization. Everyone else is counted in the totals but never named, and the page shows how many: **N counted, not listed**, or **N more counted, not listed** in an event's attendees drawer. A registrant with no usable name appears as **Registered attendee**. An event's speakers drawer works differently: it names the organization's accepted and submitted speakers for that event, whether or not they registered. Email addresses are never shown anywhere.
+
+## Events page
+
+Open **Events** in the Organization lens sidebar. The three tiles at the top, **Upcoming Events**, **Past Events** and **Total Events**, follow the filters below, except search, status and the tab you are on.
+
+| Filter                              | What it does                                                                                                                                                                                              |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Range** (Past tab only)           | Past events that ended within the last 30 days, 90 days, 1 year or 2 years, or all time. The default is 2 years.                                                                                          |
+| **Foundation**                      | Events of one foundation. The default is **All Foundations**; the list offers the foundations that have events under the current **Show** and **Counted by**.                                             |
+| **Count**                           | **Registered** (default) or **Attended**. It is disabled on the Upcoming tab, where registrations are always counted.                                                                                     |
+| **Show**                            | **My org's activity** (default): events where the organization has registrants, a submitted speaker or a sponsorship. **All foundation events** also lists events with no activity from the organization. |
+| **Counted by** (under More filters) | See [Counted by](#counted-by).                                                                                                                                                                            |
+
+The **Event Attendees** column header and cells explain what the number counts when you point at them. Select an attendee count to open the people behind it. Linux Foundation staff also see the event's registration goal next to the count.
+
+The filters are kept in the page address (`?range=`, `?foundation=`, `?participation=`, `?eventScope=`, `?attribution=`), left out while they are at their defaults, and carried when you switch between the Upcoming and Past tabs. **Clear filters** returns all of them, and the search and status, to their defaults.
+
+## People → Event Attendees
+
+Open **People** and then **Event Attendees**. The filters are **Range**, **Foundation**, **Event**, **Count** and, under **More filters**, **Counted by**; they mean the same as above and **Range**, **Count** and **Counted by** are also kept in the page address. Range, Count and Counted by are applied to the numbers themselves; **Foundation**, **Event** and the search narrow the people listed.
+
+- The tiles describe the current **Range**, **Count** and **Counted by**:
+  - **Attendees** and **Speakers** are the organization's totals for the selection, including people who are counted but not listed, with the **N counted, not listed** note under Attendees. When you narrow the list with search, **Foundation** or **Event**, they count the people listed instead (for Speakers, the listed people shown with a speaker role) and the note is hidden.
+  - **Events** and **Foundations** are the events and foundations the listed people took part in.
+- A person with a roster profile opens the person drawer when you select their name. A listed person without one is shown by name only.
+- Select a row to see the events that person registered for or attended in the selected range.
+
+## Org Overview
+
+The Overview cards always use the defaults: **Company email**, **Registered** and the last 2 years. They have no filters. Their headline counts each person once, so it is not the sum of the monthly points in the chart. To see other selections, open the Events page or People → Event Attendees.
