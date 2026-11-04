@@ -345,7 +345,6 @@ export function getMeetingHomeRowProject(
   if (!name) return null;
   return {
     name,
-    initial: Array.from(name)[0].toUpperCase(),
     logo: meeting.project_logo_url ?? '',
     url: getMeetingProjectUrl(meeting),
     label: `${meeting.is_foundation ? 'Jump to foundation' : 'Jump to project'}: ${name}`,

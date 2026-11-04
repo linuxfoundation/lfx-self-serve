@@ -43,7 +43,7 @@
       data-testid="meetings-home-row-actions-remove-info">
       @if (project(); as project) {
         <span class="flex min-w-0 items-start gap-[6px] text-[12px] text-gray-600" data-testid="meetings-home-row-actions-remove-project">
-          <lfx-ui-avatar class="mt-px" shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+          <lfx-meeting-project-logo class="mt-px" [src]="project.logo" />
           <span class="min-w-0 break-words">{{ project.name }}</span>
         </span>
       }

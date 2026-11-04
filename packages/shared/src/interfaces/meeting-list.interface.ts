@@ -81,8 +81,6 @@ export interface MeetingHomeRowLink {
 /** Project eyebrow of a meetings home row. */
 export interface MeetingHomeRowProject {
   name: string;
-  /** Shown in the logo tile when there is no logo. */
-  initial: string;
   /** Logo URL; empty when the project has none. */
   logo: string;
   /** Project or foundation overview; null without a project slug. */
