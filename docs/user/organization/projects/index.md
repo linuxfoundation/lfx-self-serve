@@ -8,11 +8,11 @@ last_updated: 2026-11-04
 intercom_collection: Organization
 ---
 
-These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. Adding projects and managing workspaces also needs Admin access to the organization. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Projects**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
+These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. Adding projects and managing workspaces also needs edit access to the organization, which its Admins have. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Projects**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
 
 ## What is the Projects page?
 
-The Projects page lists the open source projects in one of the selected organization's workspaces, with each project's health, the organization's influence on it, and how many of its people contribute and participate. Most are projects the organization is involved in. An Admin can also add projects it has no activity in yet. Its address is `/org/<organization>/projects`.
+The Projects page lists the open source projects in one of the selected organization's workspaces, with each project's health, the organization's influence on it, and how many of its people contribute and participate. Most are projects the organization is involved in. Someone who can edit the organization, such as an Admin, can also add projects it has no activity in yet. Its address is `/org/<organization>/projects`.
 
 The page heading is **Projects —** followed by the organization's name. The line under it is **The open source projects your organization influences, contributes to, and depends on.** The sidebar item that opens it is **Projects**.
 
@@ -115,23 +115,23 @@ Select **Export to CSV** to download the projects the table currently shows, acr
 
 ## What is a workspace?
 
-A workspace is a named list of projects that the Projects table shows. Workspaces are shared: everyone who can open the organization sees the same ones, and a change by one Admin appears for everyone.
+A workspace is a named list of projects that the Projects table shows. Workspaces are shared: everyone who can open the organization sees the same ones, and a change made by one person appears for everyone.
 
 **All Projects with Activities** is the workspace every organization starts with. It is filled with up to 50 of the organization's projects, those with the most participating employees first. It cannot be deleted.
 
-If you can only view the organization and no Admin has opened Projects for it yet, the table can say **No projects with activity yet** and **Projects will appear here once this organization has activity in the catalog.**
+If you can only view the organization and no one who can edit it has opened Projects for it yet, the table can say **No projects with activity yet** and **Projects will appear here once this organization has activity in the catalog.**
 
 ## Who can manage workspaces and add projects?
 
-Only an Admin of the selected organization can add projects, hide projects, and add, rename, or delete workspaces. See [Manage Org Lens Access](../manage-org-lens-access/) for who is an Admin.
+Only people who can edit the selected organization, such as its Admins, can add projects, hide projects, and add, rename, or delete workspaces. See [Manage Org Lens Access](../manage-org-lens-access/) for who is an Admin.
 
-When you are not an Admin, **Add Project** is unavailable and its hover text is **You have view-only access to this organization**. The workspace menu has no settings button and no **Add workspace**, and rows have no actions menu. An empty workspace you are viewing says **No projects in this workspace yet** and **An administrator of this organization can add projects to this workspace.**
+When you cannot edit the organization, **Add Project** is unavailable and its hover text is **You have view-only access to this organization**. The workspace menu has no settings button and no **Add workspace**, and rows have no actions menu. An empty workspace you are viewing says **No projects in this workspace yet** and **An administrator of this organization can add projects to this workspace.**
 
 **Add Project** is also unavailable while projects load, with the hover text **Projects are still loading**, and after a load error, with **Resolve the loading error first**.
 
 ## How do I add a project to a workspace?
 
-You add projects from **Add Project**, which adds them to the workspace the table is showing. You must be an Admin of the organization.
+You add projects from **Add Project**, which adds them to the workspace the table is showing. You must be able to edit the organization, for example as an Admin.
 
 1. Select the workspace in the workspace menu.
 2. Select **Add Project**. The dialog title is **Add project(s)**. A note says **This will be shared across all users in your company.**
@@ -147,7 +147,7 @@ A new, empty workspace says **No projects in this workspace yet** and **Add proj
 
 ## How do I hide a project from a workspace?
 
-You hide a project from the actions menu at the end of its row. You must be an Admin of the organization. Hiding removes the project from that workspace only. It does not change the project or the organization's activity in it.
+You hide a project from the actions menu at the end of its row. You must be able to edit the organization, for example as an Admin. Hiding removes the project from that workspace only. It does not change the project or the organization's activity in it.
 
 1. Select the three-dot button at the end of the row. Its name is **Row actions**.
 2. Select **Hide project from workspace**.
@@ -156,7 +156,7 @@ When it did not work, the page says **Could not update workspace** and **The pro
 
 ## How do I add, rename, or delete a workspace?
 
-You manage workspaces from the workspace menu at the left of the filters. You must be an Admin of the organization.
+You manage workspaces from the workspace menu at the left of the filters. You must be able to edit the organization, for example as an Admin.
 
 1. Open the workspace menu.
 2. To add one, select **Add workspace**. To change one, select the gear next to its name, labeled **Workspace settings**.
