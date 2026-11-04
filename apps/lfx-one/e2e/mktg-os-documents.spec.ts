@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
 import { MKTG_LAST_INTAKE_API } from '@lfx-one/shared/constants/mktg-last-intake.constants';
@@ -22,6 +22,16 @@ import {
 test.describe('Marketing OS current revisions', () => {
   /** A failed read is retried by the poller: the first retry's backoff is ≤ 10 s (5 s floor plus full jitter to 2×), plus a margin. */
   const progressReadTimeout = 15_000;
+  /** Two healthy poll intervals (5 s each) plus a margin: a visible list with an active run reads at least twice in this window. */
+  const HIDDEN_WINDOW_MS = 12_000;
+  /** A visible tab re-reads at once; this only covers the request reaching the page's listener. */
+  const WAKE_READ_TIMEOUT = 2_000;
+  /** Overrides the document's own visibilityState and fires the event the shared poller listens to. */
+  const setVisibility = (page: Page, state: DocumentVisibilityState): Promise<void> =>
+    page.evaluate((next) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => next });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, state);
   test.use({ viewport: { width: 1440, height: 1000 }, timezoneId: 'UTC' });
   test.beforeEach(async ({ page }) => {
     await suppressCookieBanner(page);
@@ -340,6 +350,32 @@ test.describe('Marketing OS current revisions', () => {
     await expect(link).toHaveAttribute('data-refresh-identity', 'kept');
     expect(await page.evaluate(() => window.scrollY)).toBe(scroll);
     await expect(page).toHaveURL(new RegExp(`type=${DOCUMENT_TYPE.agentKey}`));
+  });
+
+  test('a hidden tab stops every document poll and a visible one re-reads at once', async ({ page }) => {
+    const run = startedDocumentRun('writing');
+    await setupDocuments(page, { runs: [run] });
+    let reads = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'GET' && new URL(request.url()).pathname.startsWith('/api/mktg-agents/documents')) reads++;
+    });
+    await openDocuments(page, DOCUMENTS_URL);
+    await expect(page.getByTestId(`mktg-documents-started-run-${run.runId}`)).toContainText('Writing the document');
+    // The list polls the active run on its healthy interval while visible: at least one background read lands first.
+    const seen = reads;
+    await expect.poll(() => reads, { timeout: progressReadTimeout }).toBeGreaterThan(seen);
+    // Playwright has no visibility emulation and the helpers add none; the page's own visibilityState is overridden on the
+    // document instance and the event the shared poller listens to is dispatched (CDP's frozen lifecycle state would suspend
+    // the timers themselves, which proves nothing about the poller, and is chromium-only).
+    await setVisibility(page, 'hidden');
+    const hiddenAt = reads;
+    await page.waitForTimeout(HIDDEN_WINDOW_MS);
+    expect(reads).toBe(hiddenAt);
+    await setVisibility(page, 'visible');
+    // One immediate read per reader: the list and the selected type's living detail.
+    await expect.poll(() => reads, { timeout: WAKE_READ_TIMEOUT }).toBeGreaterThanOrEqual(hiddenAt + 1);
+    await expect(page.getByTestId(`mktg-documents-started-run-${run.runId}`)).toContainText('Writing the document');
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
   });
 
   test('a history within four rows has no expansion control', async ({ page }) => {
