@@ -653,10 +653,9 @@ describe('getMeetingProjectUrl', () => {
 });
 
 describe('getMeetingHomeRowProject', () => {
-  it('names the project with its initial, logo, link and accessible label', () => {
+  it('names the project with its logo, link and accessible label', () => {
     expect(getMeetingHomeRowProject({ project_name: ' cncf ', project_logo_url: 'logo.svg', project_slug: 'cncf', is_foundation: true })).toEqual({
       name: 'cncf',
-      initial: 'C',
       logo: 'logo.svg',
       url: '/foundation/overview?project=cncf',
       label: 'Jump to foundation: cncf',

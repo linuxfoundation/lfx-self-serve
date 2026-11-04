@@ -53,15 +53,7 @@
           [lfxUiTooltipDisabled]="!projectTruncated()"
           (click)="onLinkClick($event, url, false)"
           data-testid="meetings-home-row-project">
-          <!-- Design logo: 5px-corner square, grey fill and border, 8px semibold initial. -->
-          <lfx-ui-avatar
-            class="!rounded-[5px] border border-gray-200 !bg-gray-100 !text-[8px] !font-semibold !text-gray-600 !shadow-none"
-            shape="rounded"
-            [size]="16"
-            [name]="project.name"
-            [initials]="project.initial"
-            [src]="project.logo"
-            decorative />
+          <lfx-meeting-project-logo [src]="project.logo" />
           <span
             #projectName
             class="min-w-0 truncate underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
@@ -76,15 +68,7 @@
         <span
           class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-label-12 text-gray-500"
           data-testid="meetings-home-row-project">
-          <!-- Design logo: 5px-corner square, grey fill and border, 8px semibold initial. -->
-          <lfx-ui-avatar
-            class="!rounded-[5px] border border-gray-200 !bg-gray-100 !text-[8px] !font-semibold !text-gray-600 !shadow-none"
-            shape="rounded"
-            [size]="16"
-            [name]="project.name"
-            [initials]="project.initial"
-            [src]="project.logo"
-            decorative />
+          <lfx-meeting-project-logo [src]="project.logo" />
           <span
             #projectName
             class="min-w-0 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
@@ -157,15 +141,19 @@
             <span class="absolute left-0 w-[16px] text-center" aria-hidden="true">·</span>
             <span class="whitespace-nowrap">Organized by:</span>
             <span class="inline-flex flex-none items-center pl-[2px]">
+              <!-- One organizer is named beside the avatar, so only a stack of two or more gets tooltips. -->
+              @let stack = organizers().length > 1;
               @for (organizer of organizers(); track organizer.key) {
                 <!-- Outline, not ring: the avatar's background ring would paint over a focus ring. -->
                 <span
-                  role="img"
-                  tabindex="0"
                   class="inline-flex flex-none cursor-default rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
                   [style.margin-left.px]="$first ? 0 : -5"
-                  [attr.aria-label]="organizer.label"
+                  [attr.role]="stack ? 'img' : null"
+                  [attr.tabindex]="stack ? 0 : null"
+                  [attr.aria-label]="stack ? organizer.label : null"
+                  [attr.aria-hidden]="stack ? null : 'true'"
                   [lfxUiTooltip]="organizer.label"
+                  [lfxUiTooltipDisabled]="!stack"
                   data-testid="meetings-home-row-organizer-avatar">
                   <!-- Design initials are 8px semibold; the library scales them to 38% medium. -->
                   <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />

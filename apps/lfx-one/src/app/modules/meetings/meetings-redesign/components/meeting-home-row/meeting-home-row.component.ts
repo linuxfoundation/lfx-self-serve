@@ -37,6 +37,7 @@ import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.s
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeActionsComponent } from '../meeting-home-actions/meeting-home-actions.component';
 import { MeetingHomeArtifactsComponent } from '../meeting-home-artifacts/meeting-home-artifacts.component';
+import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
 
 /**
@@ -49,6 +50,7 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
     DatePipe,
     MeetingHomeActionsComponent,
     MeetingHomeArtifactsComponent,
+    MeetingProjectLogoComponent,
     MeetingRsvpControlsComponent,
     UiAvatarComponent,
     UiButtonComponent,

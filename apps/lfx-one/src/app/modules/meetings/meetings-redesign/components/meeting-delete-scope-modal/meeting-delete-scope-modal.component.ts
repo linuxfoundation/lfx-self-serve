@@ -17,7 +17,6 @@ import {
   getMeetingHomeRowType,
   isSameOccurrenceId,
 } from '@lfx-one/shared/utils';
-import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
@@ -26,6 +25,8 @@ import { UiRadioComponent } from '@shared/uikit/radio/radio.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 
+import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
+
 /**
  * Asks whether a delete of a recurring meeting cancels one date, and which, or deletes the series; closes with the choice, or nothing on Cancel.
  * @description Opens on the date it was given, as the legacy delete type dialog does; with no date left, only the series can go.
@@ -33,7 +34,7 @@ import { UiSelectComponent } from '@shared/uikit/select/select.component';
 @Component({
   selector: 'lfx-meeting-delete-scope-modal',
   imports: [
-    UiAvatarComponent,
+    MeetingProjectLogoComponent,
     UiButtonComponent,
     UiModalComponent,
     UiNoteComponent,

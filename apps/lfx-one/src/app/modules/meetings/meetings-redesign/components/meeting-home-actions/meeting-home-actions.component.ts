@@ -18,7 +18,6 @@ import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-rese
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiMenuItemComponent } from '@shared/uikit/menu/menu-item.component';
 import { UiMenuSeparatorComponent } from '@shared/uikit/menu/menu-separator.component';
@@ -30,6 +29,7 @@ import { finalize, take } from 'rxjs';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
+import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
 /**
  * The ⋯ menu of a meetings home row: Copy Link, and for upcoming meetings Edit Meeting, Resend Invite, Remove Myself and Delete Meeting.
@@ -37,7 +37,7 @@ import { MeetingsHomeEditService } from '../../services/meetings-home-edit.servi
  */
 @Component({
   selector: 'lfx-meeting-home-actions',
-  imports: [UiAvatarComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent, UiModalComponent],
+  imports: [MeetingProjectLogoComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent, UiModalComponent],
   templateUrl: './meeting-home-actions.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'inline-flex' },
