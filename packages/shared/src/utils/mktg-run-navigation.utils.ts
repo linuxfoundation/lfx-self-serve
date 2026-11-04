@@ -3,7 +3,7 @@
 
 import { MKTG_STARTED_RUN_ID_REGEX } from '../constants/mktg-document-store.constants';
 import { MKTG_RUN_ANSWERED } from '../constants/mktg-run.constants';
-import type { MktgRetiredRunHint } from '../interfaces/mktg-document-run.interface';
+import type { MktgDocumentRunProgress, MktgRetiredRunHint } from '../interfaces/mktg-document-run.interface';
 
 /** One safe attribution policy for public and owner-token answers conflicts. */
 export function mktgRunAnsweredBy(body: unknown, runId: string, questionsId: string): string | null {
@@ -13,6 +13,15 @@ export function mktgRunAnsweredBy(body: unknown, runId: string, questionsId: str
   if (('runId' in details && runId && details.runId !== runId) || ('questionsId' in details && details.questionsId !== questionsId)) return null;
   const name = 'answeredBy' in details && typeof details.answeredBy === 'string' ? details.answeredBy.trim() : '';
   return name && !/[<>@|:]/.test(name) ? name : 'Someone on your team';
+}
+
+/**
+ * Whether a server row still holds the questions block this browser shows. A `questions` row
+ * without its block (omitted for this reader, or a lookup the BFF could not verify) neither
+ * confirms a newer round nor retires the held one; only a visible newer round or another state does.
+ */
+export function mktgRunHoldsQuestions(run: Pick<MktgDocumentRunProgress, 'state' | 'pendingQuestions'> | null | undefined, questionsId: string): boolean {
+  return run?.state === 'questions' && (!run.pendingQuestions || run.pendingQuestions.questionsId === questionsId);
 }
 
 /** Read only the optional safe navigation hint, never a private record or its arbitrary fields. */

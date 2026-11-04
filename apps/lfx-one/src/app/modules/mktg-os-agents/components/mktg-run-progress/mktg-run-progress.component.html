@@ -28,9 +28,7 @@
       } @else if (runState() === 'questions') {
         Waiting for your answers.
         @if (!publicQuestions() && !answersError()) {
-          <span data-testid="mktg-run-progress-owner-note"
-            >Answering needs project write access or the browser that started this run. Refresh progress to check again.</span
-          >
+          <span data-testid="mktg-run-progress-owner-note">Answering needs project write access or the browser that started this run.</span>
         }
       } @else if (runState() === 'completed') {
         Written — confirming the produced revision…
@@ -42,19 +40,11 @@
       @if (publicQuestions(); as pending) {
         <lfx-mktg-run-questions [questions]="pending.questions" [projectName]="projectName()" [busy]="answersSending()" (answered)="onPublicAnswers($event)" />
       }
-      <div class="contents" data-testid="mktg-run-progress-questions-refresh">
-        <lfx-button
-          label="Refresh"
-          [text]="true"
-          [disabled]="answersSending()"
-          (onClick)="onRefreshProgress()"
-          data-testid="mktg-document-view-refresh-progress" />
-      </div>
     }
     @if (answersError()) {
       <lfx-message severity="error" [text]="answersError()" data-testid="mktg-run-progress-answers-error" />
     }
-    @if (warning() && runState() !== 'questions') {
+    @if (warning() && (runState() !== 'questions' || paused())) {
       <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-refresh-progress" />
     }
     @if (visibleRunActivity(); as activity) {
@@ -110,13 +100,7 @@
       } @else {
         <p class="text-sm text-gray-600">The agent is waiting for answers.</p>
         @if (!answersError()) {
-          <p class="text-sm text-gray-500" data-testid="mktg-run-progress-owner-note">
-            @if (runPage()) {
-              Answering needs project write access or the browser that started this run. Refresh progress to check again.
-            } @else {
-              Open the intake form to continue with an available questions block.
-            }
-          </p>
+          <p class="text-sm text-gray-500" data-testid="mktg-run-progress-owner-note">Open the intake form to continue with an available questions block.</p>
         }
       }
     } @else if (state === 'completed') {

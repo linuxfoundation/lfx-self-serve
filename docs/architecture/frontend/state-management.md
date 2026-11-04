@@ -430,8 +430,9 @@ are recovery hints, never evidence that a run is writing, waiting or complete. F
 observation gates the page behind one neutral, layout-shaped skeleton; no intake,
 old document or local questions appear first. Recorded state wins on open, focus and
 visibility return. A private questions block can continue only for the matching server
-run/questions turn; missing or contradictory recorded state retires that private
-block immediately. Capability-only agents without a document-run contract are not
+run/questions turn; a `questions` row that omits its block (a reader the BFF could not
+verify, or a non-writer poll) keeps the held block, and only a visible newer round or
+another recorded state retires it (`mktgRunHoldsQuestions`). Capability-only agents without a document-run contract are not
 promoted into public run-state evidence. Documents labels use only the recorded state. The shared
 visibility poller pauses hidden work, re-reads on focus and keeps live lists/documents
 fresh while idle as well as running. Selected closed-run detail requests carry the
@@ -459,8 +460,10 @@ without any session capability. An accepted answer resumes public progress;
 `MKTG_RUN_ANSWERED` retires the submitted questions block, shows the server's
 safe display name (or Another writer), and resumes writing progress without
 resending. Identifier-like names are not echoed. A genuinely new server questions
-block remains answerable; other 409/412 responses refresh the current row. A waiting reader can also Refresh progress after another
-browser answers; successful Send resumes normal polling. One-off answers remain creator-only.
+block remains answerable; other 409/412 responses refresh the current row. The waiting state
+checks on its own (`MKTG_RUN_POLL.questionsIntervalMs`) and keeps a held block through polls that
+omit it; it offers no Refresh button, and Refresh appears only once automatic checks pause after
+the poll deadline. Successful Send resumes normal polling. One-off answers remain creator-only.
 Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay
 on the document view. Revision workflows, not the retired inline feedback form,

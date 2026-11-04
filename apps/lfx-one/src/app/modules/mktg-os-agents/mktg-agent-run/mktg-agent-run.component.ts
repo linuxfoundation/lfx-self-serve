@@ -72,6 +72,7 @@ import {
   mktgSentenceCaseLabel,
   mktgKitAssetLabel,
   mktgRunAnsweredBy,
+  mktgRunHoldsQuestions,
   mktgRunRouteFor,
   readMktgRetiredRunHint,
   mktgLinkWarnings,
@@ -802,7 +803,11 @@ export class MktgAgentRunComponent {
 
   protected onPublicObserved(cycle: MktgDocumentReadCycle): void {
     if (cycle.detail.project !== this.publicProject() || this.publicIdentityPending()) return;
-    if (cycle.detail.progressUnavailable) {
+    const run = cycle.detail.runs?.find((entry) => entry.runId === this.publicRunId());
+    const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
+    const owned = (pending?.attempt?.runId ?? pending?.pendingQuestions?.attempt.runId) === this.publicRunId() ? pending : null;
+    // A partial read whose row still waits on the block this browser holds confirms it; any other partial read keeps the last state.
+    if (cycle.detail.progressUnavailable && !(owned?.pendingQuestions && mktgRunHoldsQuestions(run, owned.pendingQuestions.questionsId))) {
       if (this.checkingRun()) this.onPublicReadError();
       return;
     }
@@ -811,7 +816,6 @@ export class MktgAgentRunComponent {
       this.publicReadFailed = false;
       this.errorText.set('');
     }
-    const run = cycle.detail.runs?.find((entry) => entry.runId === this.publicRunId());
     if (
       run?.state === 'completed' &&
       run.project === this.publicProject() &&
@@ -827,8 +831,6 @@ export class MktgAgentRunComponent {
       (readMktgRetiredRunHint(run) || run?.state === 'failed' || (run?.pendingQuestions && run.pendingQuestions.questionsId !== notice.questionsId))
     )
       this.answeredNotice.set(null);
-    const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
-    const owned = (pending?.attempt?.runId ?? pending?.pendingQuestions?.attempt.runId) === this.publicRunId() ? pending : null;
     if (readMktgRetiredRunHint(run)) {
       this.generationSub?.unsubscribe();
       this.generationSub = null;
@@ -854,14 +856,15 @@ export class MktgAgentRunComponent {
       if (!run) {
         // Completion retires the question block, not the creator capability needed for its exact receipt.
         this.runAttempts.save({ ...owned, state: 'writing', pendingQuestions: undefined });
-      } else if (run && (run.state !== 'questions' || owned.pendingQuestions.questionsId !== run.pendingQuestions?.questionsId)) {
+      } else if (!mktgRunHoldsQuestions(run, owned.pendingQuestions.questionsId)) {
+        // Only a visible newer round or another state retires the held block; a poll that omits it does not.
         this.runAttempts.save({ ...owned, pendingQuestions: undefined, state: 'writing' });
       }
     }
     if (this.answersSending() && run?.state === 'questions') return;
     if (run?.state === 'questions') {
       const privateQuestions = owned?.pendingQuestions;
-      if (owned && privateQuestions && (!run || privateQuestions.questionsId === run.pendingQuestions?.questionsId)) {
+      if (owned && privateQuestions && mktgRunHoldsQuestions(run, privateQuestions.questionsId)) {
         if (this.questionsPending()?.questionsId !== privateQuestions.questionsId || this.phase() !== 'questions') {
           const token = this.route.snapshot.queryParamMap.get('questions');
           if (token && !this.freshMode()) this.runAttempts.consume(token, this.publicProject(), this.agent?.id ?? '');
@@ -1155,7 +1158,7 @@ export class MktgAgentRunComponent {
             return;
           }
           const recorded = this.publicProgressView();
-          if (recorded && (recorded.selectedRun()?.state !== 'questions' || recorded.selectedRun()?.pendingQuestions?.questionsId !== pending.questionsId)) {
+          if (recorded && !mktgRunHoldsQuestions(recorded.selectedRun(), pending.questionsId)) {
             this.answersSending.set(false);
             this.clearQuestions();
             this.phase.set('running');
@@ -1457,9 +1460,9 @@ export class MktgAgentRunComponent {
         }
         const saved = this.runAttempts.load(project, this.agent?.id ?? '');
         const sameQuestions =
-          run?.state === 'questions' &&
-          run.runId === (saved?.attempt?.runId ?? saved?.pendingQuestions?.attempt.runId) &&
-          run.pendingQuestions?.questionsId === saved?.pendingQuestions?.questionsId;
+          !!saved?.pendingQuestions &&
+          run?.runId === (saved.attempt?.runId ?? saved.pendingQuestions.attempt.runId) &&
+          mktgRunHoldsQuestions(run, saved.pendingQuestions.questionsId);
         const hasStoredDocument = documents.groups.some(
           (group) => group.type.catalogAgentId === this.agent?.id && group.documents.some((item) => item.revisionCount > 0)
         );

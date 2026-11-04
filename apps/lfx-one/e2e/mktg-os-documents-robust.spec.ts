@@ -56,9 +56,11 @@ test.describe('Marketing OS Documents structure', () => {
       await expect(live).toMatchAriaSnapshot('- status: /Waiting for your answers/');
       await expect(live).toContainText('Waiting for your answers');
       await expect(page.getByTestId('mktg-agent-run-form')).toHaveCount(0);
-      const refresh = page.getByTestId('mktg-document-view-refresh-progress').getByRole('button');
-      await refresh.focus();
-      await expect(refresh).toBeFocused();
+      // The waiting state checks on its own: no Refresh control to reach, and no note explaining it (a best practice needs none).
+      await expect(page.getByTestId('mktg-run-progress-questions-refresh')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-run-public-progress').getByRole('button', { name: 'Refresh' })).toHaveCount(0);
+      await expect(page.getByTestId('mktg-run-progress-owner-note')).toHaveText('Answering needs project write access or the browser that started this run.');
+      await expect(page.getByTestId('mktg-run-progress-owner-note')).not.toContainText('keeps checking');
       await expect(page.getByTestId('mktg-run-public-progress').locator('h1')).toHaveCount(1);
       await expect(page.locator('main main')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
