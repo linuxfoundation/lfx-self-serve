@@ -128,6 +128,14 @@ export interface UiCalendarWeek {
 /** Which side of its host a uikit tooltip prefers. */
 export type UiTooltipSide = 'top' | 'right' | 'bottom' | 'left';
 
+/** One "label value" pair in a uikit tooltip that lists counts, with an optional colour dot. */
+export interface UiTooltipItem {
+  label: string;
+  value: string;
+  /** Background class of the dot before the label, such as `bg-blue-500`; no dot when absent. */
+  dotClass?: string;
+}
+
 /** Size of a uikit toggle: `default` 28x16, `medium` 36x20 or `large` 44x24. */
 export type UiToggleSize = 'default' | 'medium' | 'large';
 

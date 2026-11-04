@@ -4,6 +4,7 @@
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <div
   class="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto_auto] items-start gap-x-0 gap-y-[10px] @[861px]:gap-x-[14px] px-[4px] py-[20px] transition-colors duration-150 hover:bg-gray-50 motion-reduce:transition-none @[861px]:flex @[861px]:flex-nowrap"
+  [class]="attendance() ? '@[601px]:grid-cols-[auto_minmax(0,1fr)_minmax(240px,auto)_auto]' : ''"
   (click)="open()"
   data-testid="meetings-home-row">
   <!-- Date tile: azure band upcoming, grey band past -->
@@ -42,7 +43,9 @@
     </span>
   </div>
 
-  <div class="@container/body col-start-2 row-start-1 ml-[14px] flex min-w-0 flex-col gap-[3px] @[861px]:ml-0 @[861px]:flex-1">
+  <div
+    class="@container/body col-start-2 row-start-1 ml-[14px] flex min-w-0 flex-col gap-[3px] @[861px]:ml-0 @[861px]:flex-1"
+    [class]="attendance() ? '@[601px]:row-span-3' : ''">
     @if (project(); as project) {
       @if (project.url; as url) {
         <a
@@ -188,6 +191,9 @@
   <!-- Top-right actions (RSVP or artifacts, menu); clicks here never open the row. -->
   <div
     class="contents @[861px]:ml-auto @[861px]:flex @[861px]:flex-none @[861px]:items-center @[861px]:gap-[18px]"
+    [class]="
+      attendance() ? '@[861px]:min-w-[330px] @[861px]:flex-wrap @[861px]:content-between @[861px]:justify-end @[861px]:gap-y-0 @[861px]:self-stretch' : ''
+    "
     (click)="$event.stopPropagation()"
     data-testid="meetings-home-row-actions">
     @if (past()) {
@@ -216,5 +222,13 @@
       [row]="row()"
       [view]="view()"
       data-testid="meetings-home-row-menu" />
+    @if (attendance(); as attendance) {
+      <!-- Under the actions on wide rows, clear of the menu; beside the body, then under it, as the row narrows. -->
+      <div
+        class="col-[2/-1] row-start-3 ml-[14px] mt-[4px] flex justify-start @[481px]:row-start-2 @[601px]:col-start-3 @[601px]:col-end-auto @[601px]:row-[2/span_2] @[601px]:self-end @[601px]:justify-end @[861px]:ml-0 @[861px]:mt-[6px] @[861px]:basis-full @[861px]:pr-[50px]"
+        data-testid="meetings-home-row-attendance">
+        <lfx-meeting-home-attendance class="w-full max-w-[280px]" variant="row" [attendance]="attendance" />
+      </div>
+    }
   </div>
 </div>

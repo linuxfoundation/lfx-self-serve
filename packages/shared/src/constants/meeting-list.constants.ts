@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibilityKind } from '../enums';
-import type { MeetingHomeArtifact, MeetingResponseFilterOption, MeetingRsvpChoice, MeetingsHomeFilters, MeetingVisibilityInfo } from '../interfaces';
+import type {
+  MeetingHomeArtifact,
+  MeetingHomeAttendanceKind,
+  MeetingResponseFilterOption,
+  MeetingRsvpChoice,
+  MeetingsHomeFilters,
+  MeetingVisibilityInfo,
+} from '../interfaces';
 
 /** The AI summary of a past meetings home row. */
 export const MEETINGS_HOME_SUMMARY_ARTIFACT: MeetingHomeArtifact = { noun: 'summary', title: 'AI Summary' };
@@ -51,6 +58,14 @@ export const MEETING_VISIBILITY_BG_CLASSES: Record<MeetingVisibilityKind, string
   [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
   [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
   [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
+};
+
+/** Tailwind fill of an attendance bar segment and legend dot per kind. */
+export const MEETING_HOME_ATTENDANCE_BG_CLASSES: Record<MeetingHomeAttendanceKind, string> = {
+  yes: 'bg-blue-500',
+  maybe: 'bg-amber-500',
+  no: 'bg-red-500',
+  attended: 'bg-blue-500',
 };
 
 /** Visibility badge icon and tooltip copy per kind. */

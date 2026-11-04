@@ -178,3 +178,37 @@ export interface MeetingHomeArtifact {
   /** Name in a toast title, e.g. "AI Summary". */
   title: string;
 }
+
+/** What a meetings home attendance count or bar segment measures. */
+export type MeetingHomeAttendanceKind = 'yes' | 'maybe' | 'no' | 'attended';
+
+/** One answer count in the meetings home attendance legend. */
+export interface MeetingHomeAttendanceCount {
+  kind: MeetingHomeAttendanceKind;
+  /** "Yes", "Maybe" or "No". */
+  label: string;
+  count: number;
+}
+
+/** One coloured part of the meetings home attendance bar. */
+export interface MeetingHomeAttendanceSegment {
+  kind: MeetingHomeAttendanceKind;
+  /** Width as a percentage of the invited count. */
+  percent: number;
+}
+
+/** Attendance shown to the organizer on a meetings home row or card. */
+export interface MeetingHomeAttendance {
+  /** "12 of 16 attending · 75%" upcoming, "9 of 20 attended · 45%" past. */
+  label: string;
+  /** Spoken description of the bar. */
+  ariaLabel: string;
+  /** Bar segments with a count above zero. */
+  segments: MeetingHomeAttendanceSegment[];
+  /** Yes, Maybe and No counts, zeros included; empty for a past meeting. */
+  answers: MeetingHomeAttendanceCount[];
+  /** Invitees with no answer; null for a past meeting. */
+  noResponse: number | null;
+  /** A past meeting that fewer than half of the invitees attended. */
+  poor: boolean;
+}

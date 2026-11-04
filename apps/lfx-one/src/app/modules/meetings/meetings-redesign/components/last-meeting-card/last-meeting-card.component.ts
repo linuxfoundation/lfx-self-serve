@@ -21,6 +21,7 @@ import { Router } from '@angular/router';
 import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
+  MeetingHomeAttendance,
   MeetingHomeRow,
   MeetingHomeRowLink,
   MeetingHomeRowProject,
@@ -30,6 +31,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   getMeetingGroupNames,
+  getMeetingHomeAttendance,
   getMeetingHomeRowLink,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
@@ -46,6 +48,7 @@ import { UiSplitButtonComponent } from '@shared/uikit/split-button/split-button.
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
+import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
 /**
@@ -57,6 +60,7 @@ import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-pro
   selector: 'lfx-last-meeting-card',
   imports: [
     DatePipe,
+    MeetingHomeAttendanceComponent,
     MeetingProjectLogoComponent,
     UiBadgeComponent,
     UiButtonComponent,
@@ -112,6 +116,10 @@ export class LastMeetingCardComponent {
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => {
     const row = this.row();
     return row ? getMeetingHomeRowType(row.meeting) : null;
+  });
+  protected readonly attendance: Signal<MeetingHomeAttendance | null> = computed(() => {
+    const row = this.row();
+    return row ? getMeetingHomeAttendance(row, true) : null;
   });
   /** Raw summary text the viewer may read; organizers also see one awaiting their approval. */
   protected readonly summaryContent: Signal<string | null> = this.initSummaryContent();
