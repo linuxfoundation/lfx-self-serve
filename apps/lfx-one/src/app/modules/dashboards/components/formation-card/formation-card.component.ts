@@ -136,10 +136,13 @@ export class FormationCardComponent {
     const projectUid = this.view()?.uid;
     if (!projectUid) return;
 
+    // Dismissal is refused while the PUT is in flight: closing would unsubscribe the write and skip the refreshes below.
+    const saveState = { inFlight: false };
     this.drawerService
       .open<boolean, FormationRecordEditDrawerData, FormationRecordEditDrawerComponent>(FormationRecordEditDrawerComponent, {
-        data: { projectUid, openRequiredCount: this.openRequiredCount() },
+        data: { projectUid, openRequiredCount: this.openRequiredCount(), saveState },
         width: 520,
+        canClose: () => !saveState.inFlight,
       })
       .closed.pipe(take(1))
       .subscribe((saved) => {

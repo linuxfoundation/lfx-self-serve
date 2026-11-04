@@ -946,4 +946,9 @@ export interface FormationRecordEditDrawerData {
   projectUid: string;
   /** Gating ("required for Active") items still open on the checklist — named in the confirmation step. */
   openRequiredCount: number;
+  /**
+   * Shared with the card, which owns the drawer's `canClose` guard: the drawer sets `inFlight` around the PUT so
+   * Escape, the backdrop and the close button cannot dismiss it (and unsubscribe the write) while it is pending.
+   */
+  saveState: { inFlight: boolean };
 }

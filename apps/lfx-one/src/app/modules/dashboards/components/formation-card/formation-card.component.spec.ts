@@ -315,7 +315,23 @@ describe('FormationCardComponent', () => {
 
       (fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"] button') as HTMLButtonElement).click();
 
-      expect(openDrawer).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ data: { projectUid: 'child-uid', openRequiredCount: 2 } }));
+      expect(openDrawer).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ data: { projectUid: 'child-uid', openRequiredCount: 2, saveState: { inFlight: false } } })
+      );
+    });
+
+    it('refuses dismissal while a save is in flight and allows it otherwise', async () => {
+      await renderWithInput(formation());
+      fixture.componentRef.setInput('canEditRecord', true);
+      fixture.detectChanges();
+
+      (fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"] button') as HTMLButtonElement).click();
+      const config = openDrawer.mock.calls[0][1] as { data: { saveState: { inFlight: boolean } }; canClose: () => boolean };
+
+      expect(config.canClose()).toBe(true);
+      config.data.saveState.inFlight = true;
+      expect(config.canClose()).toBe(false);
     });
 
     it('refreshes the active project and tells the host after a save, and does neither when the drawer is dismissed', async () => {

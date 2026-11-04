@@ -78,6 +78,9 @@ export const NOT_PROJECT_WRITER_CODE = 'NOT_PROJECT_WRITER';
 export const FORMATION_TEAM_REQUIRED_CODE = 'FORMATION_TEAM_REQUIRED';
 export const FORMATION_RECORD_CONFLICT_CODE = 'FORMATION_RECORD_CONFLICT';
 
+/** Success toast copy, including the propagation note from #5134: the checklist is updated asynchronously by formation-service. */
+export const FORMATION_RECORD_SUCCESS_MESSAGE = 'Updated. The checklist may take a minute to reflect the new stage.';
+
 /** User-facing copy per outcome, exactly as the #5134 error table. */
 export const FORMATION_RECORD_ERROR_MESSAGES = {
   notWriter: "You don't have permission to edit this project.",

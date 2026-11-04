@@ -39,7 +39,8 @@
         data-testid="formation-record-dissolution-date" />
     }
 
-    <lfx-ui-select label="Legal entity type" placeholder="Not set" [(value)]="legalEntityType" data-testid="formation-record-legal-entity-type">
+    <lfx-ui-select label="Legal entity type" [(value)]="legalEntityType" data-testid="formation-record-legal-entity-type">
+      <lfx-ui-option value="" label="Not set" />
       @for (type of legalEntityTypeOptions; track type) {
         <lfx-ui-option [value]="type" [label]="type" />
       }
@@ -66,7 +67,7 @@
       <lfx-ui-button variant="tertiary" (click)="onBack()" data-testid="formation-record-confirm-back">Back</lfx-ui-button>
       <lfx-ui-button variant="primary" [loading]="saving()" (click)="onSave()" data-testid="formation-record-confirm">Confirm and save</lfx-ui-button>
     } @else {
-      <lfx-ui-button variant="tertiary" (click)="onCancel()" data-testid="formation-record-cancel">Cancel</lfx-ui-button>
+      <lfx-ui-button variant="tertiary" [disabled]="saving()" (click)="onCancel()" data-testid="formation-record-cancel">Cancel</lfx-ui-button>
       <lfx-ui-button variant="primary" [disabled]="loading() || loadFailed()" [loading]="saving()" (click)="onSave()" data-testid="formation-record-save"
         >Save changes</lfx-ui-button
       >

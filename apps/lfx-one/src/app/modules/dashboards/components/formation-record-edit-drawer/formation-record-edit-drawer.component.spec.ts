@@ -8,7 +8,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import type { Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationRecordEditDrawerComponent } from './formation-record-edit-drawer.component';
@@ -39,6 +39,7 @@ interface DrawerState {
 
 describe('FormationRecordEditDrawerComponent', () => {
   let fixture: ComponentFixture<FormationRecordEditDrawerComponent>;
+  let saveState: { inFlight: boolean };
   const state = (): DrawerState => fixture.componentInstance as unknown as DrawerState;
   const query = (selector: string): Element | null => fixture.nativeElement.querySelector(selector);
 
@@ -48,12 +49,13 @@ describe('FormationRecordEditDrawerComponent', () => {
     const updateFormationRecord = options.update ?? vi.fn(() => of(stored()));
     const add = vi.fn();
     const close = vi.fn();
+    saveState = { inFlight: false };
 
     await TestBed.configureTestingModule({
       imports: [FormationRecordEditDrawerComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: DIALOG_DATA, useValue: { projectUid: 'proj-1', openRequiredCount: options.openRequiredCount ?? 0 } },
+        { provide: DIALOG_DATA, useValue: { projectUid: 'proj-1', openRequiredCount: options.openRequiredCount ?? 0, saveState } },
         { provide: DialogRef, useValue: { close, id: 'dialog-1' } },
         { provide: MessageService, useValue: { add } },
         { provide: ProjectService, useValue: { getProjectRecord, updateFormationRecord } },
@@ -213,9 +215,9 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { legal_entity_name: 'Renamed LLC' });
   });
 
-  it('treats a cleared legal entity type as an empty-string change', async () => {
+  it('clears the legal entity type through the empty "Not set" option, which is separate from the real "None" value', async () => {
     const { updateFormationRecord } = await render();
-    state().legalEntityType.set(null);
+    state().legalEntityType.set('');
 
     await save();
 
@@ -267,13 +269,61 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(!!query('[data-testid="formation-record-edit-reload"]')).toBe(status === 409);
   });
 
+  it('stores None as a real value, not as a clear', async () => {
+    const { updateFormationRecord } = await render();
+    state().legalEntityType.set('None');
+
+    await save();
+
+    expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { legal_entity_type: 'None' });
+  });
+
+  it('shows the archive copy when the BFF reports the dissolution date rule on the merged record', async () => {
+    const update = vi.fn(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: { code: 'VALIDATION_ERROR', errors: [{ field: 'entity_dissolution_date', message: 'Archiving needs a dissolution date.' }] },
+          })
+      )
+    );
+    await render({ update, project: stored({ entity_dissolution_date: '2026-09-30' }) });
+    state().stage.set('Archived');
+
+    await save();
+    await save();
+
+    expect(query('[data-testid="formation-record-edit-error"]')?.textContent).toContain('Archiving needs a dissolution date.');
+  });
+
+  it('marks the save in flight so the card can refuse dismissal, and disables Cancel meanwhile', async () => {
+    const pending = new Subject<Project>();
+    const { close } = await render({ update: vi.fn(() => pending) });
+    state().legalEntityName.set('Changed');
+
+    await save();
+
+    expect(saveState.inFlight).toBe(true);
+    expect((query('[data-testid="formation-record-cancel"] button') as HTMLButtonElement).disabled).toBe(true);
+
+    pending.next(stored());
+    pending.complete();
+    await fixture.whenStable();
+
+    expect(saveState.inFlight).toBe(false);
+    expect(close).toHaveBeenCalledWith(true);
+  });
+
   it('toasts and closes the drawer with true after a successful save', async () => {
     const { add, close } = await render();
     state().legalEntityName.set('Changed');
 
     await save();
 
-    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', detail: 'Updated. The checklist may take a minute to reflect the new stage.' })
+    );
     expect(close).toHaveBeenCalledWith(true);
   });
 

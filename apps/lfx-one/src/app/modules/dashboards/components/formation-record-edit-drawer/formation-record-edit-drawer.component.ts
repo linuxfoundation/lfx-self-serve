@@ -10,6 +10,7 @@ import {
   FORMATION_RECORD_EDITABLE_KEYS,
   FORMATION_RECORD_ERROR_MESSAGES,
   FORMATION_RECORD_SELECTABLE_STAGES,
+  FORMATION_RECORD_SUCCESS_MESSAGE,
   FORMATION_TEAM_REQUIRED_CODE,
   PROJECT_FORMATION_STAGE_LABELS,
   PROJECT_LEGAL_ENTITY_TYPES,
@@ -132,15 +133,19 @@ export class FormationRecordEditDrawerComponent {
 
   private submit(changes: UpdateFormationRecordRequest): void {
     this.saving.set(true);
+    this.data.saveState.inFlight = true;
     this.projectService
       .updateFormationRecord(this.data.projectUid, changes)
       .pipe(
-        finalize(() => this.saving.set(false)),
+        finalize(() => {
+          this.saving.set(false);
+          this.data.saveState.inFlight = false;
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: () => {
-          this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Formation record updated.' });
+          this.messageService.add({ severity: 'success', summary: 'Saved', detail: FORMATION_RECORD_SUCCESS_MESSAGE });
           this.dialogRef.close(true);
         },
         error: (error: HttpErrorResponse) => {
@@ -203,7 +208,8 @@ export class FormationRecordEditDrawerComponent {
     };
     this.baseline.set(stored);
     this.stage.set(stored.stage);
-    this.legalEntityType.set(stored.legal_entity_type || null);
+    // '' selects the "Not set" option, which is how the type is cleared (None is a real stored value).
+    this.legalEntityType.set(stored.legal_entity_type);
     this.legalEntityName.set(stored.legal_entity_name);
     this.formationDate.set(stored.formation_date);
     this.dissolutionDate.set(stored.entity_dissolution_date);
@@ -219,7 +225,13 @@ export class FormationRecordEditDrawerComponent {
     if (error.status === 403) {
       return code === FORMATION_TEAM_REQUIRED_CODE ? FORMATION_RECORD_ERROR_MESSAGES.notFormationTeam : FORMATION_RECORD_ERROR_MESSAGES.notWriter;
     }
-    if (error.status === 400) return FORMATION_RECORD_ERROR_MESSAGES.invalidValue;
+    if (error.status === 400) {
+      // The BFF reports the Archived rule as a field error on the merged record (e.g. another writer cleared the stored date).
+      const errors = (error.error as { errors?: { field?: string }[] } | null)?.errors;
+      return errors?.some((entry) => entry.field === 'entity_dissolution_date')
+        ? FORMATION_RECORD_ERROR_MESSAGES.archivedNeedsDissolutionDate
+        : FORMATION_RECORD_ERROR_MESSAGES.invalidValue;
+    }
     if (error.status === 404) return FORMATION_RECORD_ERROR_MESSAGES.notFound;
     if (error.status === 409) return FORMATION_RECORD_ERROR_MESSAGES.conflict;
     return FORMATION_RECORD_ERROR_MESSAGES.generic;
