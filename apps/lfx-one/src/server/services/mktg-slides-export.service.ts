@@ -120,7 +120,7 @@ import { ObjectStoreService } from './object-store.service';
  *    and one-colour lockups and the reversed symbol, derived from the kit's
  *    logo files the way the web view draws them and published the same way;
  *    a variant that cannot be drawn or published is left out of the intake
- *    and the deck keeps that slot's template mark.
+ *    and the deck drops that slot (slides-export 1.1.2).
  *    Where there is no public URL (local development: no CDN prefix, and the
  *    object store is not reachable from Google) no logo is sent: the deck
  *    still takes the kit's colours and typeface, and the result says so.
@@ -494,7 +494,7 @@ export class MktgSlidesExportService {
    * each drawn from its own SVG source (`logoVariantSvgSources`) under the
    * same size rules and published under the same key scheme. A variant that
    * cannot be drawn or published is left out, with one log line: the note is
-   * the primary's alone, and the deck keeps that slot's template mark.
+   * the primary's alone, and the deck drops that slot (slides-export 1.1.2).
    */
   private async publishLogo(req: Request, project: string, kit: BrandKitRevision | null): Promise<MktgSlidesExportPublishedLogo> {
     const logo = kit?.chapters.logo;
@@ -542,7 +542,7 @@ export class MktgSlidesExportService {
     MKTG_SLIDES_EXPORT_LOGO_VARIANTS.forEach((variant, index) => {
       const outcome = published[index];
       if (outcome.status === 'rejected') {
-        logger.warning(req, 'mktg_slides_export_logo', 'A logo variant failed unexpectedly — the deck keeps that slot’s template mark', {
+        logger.warning(req, 'mktg_slides_export_logo', 'A logo variant failed unexpectedly — the deck drops that slot', {
           variant,
           err: outcome.reason,
         });
@@ -557,9 +557,12 @@ export class MktgSlidesExportService {
    * Draw one logo variant from its SVG source and publish it; its public URL,
    * or null when it had no source, could not be drawn or could not be
    * published. A source the server derived (a crop or a recolour) that will
-   * not draw is this server's own transform failing, so it is logged as a
-   * warning; an upload that will not draw is the kit's own artwork, input the
-   * user controls, so it is traced at debug, as logging-patterns.md asks.
+   * not draw, or a recolour the server could not make of the artwork's shape,
+   * is logged as a warning: the primary drew, and someone should look at why
+   * its variant did not. An upload that will not draw is the kit's own
+   * artwork, input the user controls, so it is traced at debug, as
+   * logging-patterns.md asks. A variant is drawn with `requireInk`, so one
+   * that paints nothing (a crop of empty space) is dropped, not published.
    */
   private async publishLogoVariant(
     req: Request,
@@ -570,13 +573,13 @@ export class MktgSlidesExportService {
     if (!source) {
       return null;
     }
-    const message = 'A logo variant could not be drawn as a PNG — the deck keeps that slot’s template mark';
+    const message = 'A logo variant could not be drawn as a PNG — the deck drops that slot';
     if (source.svg === null) {
-      // The primary drew, so a recolour that cannot be made is this server's transform failing, not the kit's artwork.
+      // The primary drew, but the artwork has a shape the server cannot recolour safely (no user space, a root it cannot wrap).
       logger.warning(req, 'mktg_slides_export_logo', message, { variant, derived: true, reason: 'not-derived' });
       return null;
     }
-    const drawn = await rasterizeLogoSvg(source.svg);
+    const drawn = await rasterizeLogoSvg(source.svg, { requireInk: true });
     if (drawn.png === null) {
       const detail = { variant, derived: source.derived, reason: drawn.reason, detail: drawn.detail };
       if (source.derived) {

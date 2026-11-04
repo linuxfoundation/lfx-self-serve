@@ -827,6 +827,31 @@ describe('MktgSlidesExportService', () => {
       }
     });
 
+    it('drops a variant that draws as nothing — a symbol cropped out of empty space — with a warning, and still sends the others', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // The top-right of LOCKUP_SVG holds neither the mark nor the rule.
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: '10 0 10 3' });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO REVERSED URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO ONE-COLOR URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(started.logoNote).toBeNull();
+      expect(store.publicImages.size).toBe(3);
+      for (const variant of ['symbol', 'symbol_reversed']) {
+        expect(loggerMocks.warning).toHaveBeenCalledWith(
+          req,
+          'mktg_slides_export_logo',
+          expect.any(String),
+          expect.objectContaining({ variant, derived: true, reason: 'blank' })
+        );
+      }
+    });
+
     it('publishes no variant when the primary itself could not be published', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });

@@ -276,9 +276,15 @@ export interface MktgSlidesExportStartInput {
  * entity, or carries markup or references; `live-text` — a text element,
  * which the fontless server would draw as nothing; `unreadable` — the SVG
  * does not parse, has no size, or does not draw; `too-big` — the PNG is over
- * the Slides API's limit.
+ * the Slides API's limit; `blank` — nothing was painted, when the caller
+ * asked for ink (`requireInk`; the variants do, the primary does not).
  */
-export type MktgLogoPngFailure = 'external-reference' | 'live-text' | 'unreadable' | 'too-big';
+export type MktgLogoPngFailure = 'external-reference' | 'live-text' | 'unreadable' | 'too-big' | 'blank';
+
+/** How the server draws a logo PNG: `requireInk` refuses a drawing with no painted pixel (`blank`) instead of publishing a transparent image. */
+export interface MktgLogoPngOptions {
+  requireInk?: boolean;
+}
 
 /** The one colour a logo variant is recoloured to: white for the reversed variants, black for the one-colour lockup. */
 export type MktgLogoRecolourInk = 'white' | 'black';
@@ -289,6 +295,14 @@ export interface MktgLogoUserSpace {
   minY: number;
   width: number;
   height: number;
+}
+
+/** An SVG root tag as the server read it: its offsets in the text, whether it closes itself, and every value of each attribute by exact name (server-side). */
+export interface MktgLogoSvgRoot {
+  start: number;
+  end: number;
+  selfClosing: boolean;
+  attributes: Map<string, string[]>;
 }
 
 /** The SVG source of one logo variant: the text to draw (null when the server tried to derive it and could not), and whether the server derived it (a crop or a recolour) rather than took it as uploaded (server-side). */
@@ -322,8 +336,8 @@ export interface MktgSlidesExportStarted {
  * The kit's logo as the BFF published it for a deck (server-side): the
  * primary's public URL, or why there is none (the note the start answers
  * with), and the URL of each variant that could be drawn and published
- * beside it. The variants carry no note: one that is missing leaves its
- * slot to the deck's template mark.
+ * beside it. The variants carry no note: the deck drops the slot of one
+ * that is missing (slides-export 1.1.2).
  */
 export interface MktgSlidesExportPublishedLogo {
   url: string | null;

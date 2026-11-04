@@ -74,4 +74,15 @@ describe('rasterizeLogoSvg', () => {
     expect(await rasterizeLogoSvg(wordmark('<text><textPath href="#p">Orbit</textPath></text>'))).toMatchObject({ reason: 'live-text' });
     expect((await rasterizeLogoSvg(wordmark('<path d="M50 20h300v40H50z"/>'))).reason).toBeNull();
   });
+
+  it('publishes a drawing with no painted pixel unless the caller requires ink, and then refuses it as blank', async () => {
+    const empty = `<svg ${SVG_NS} viewBox="0 0 400 100"><rect width="400" height="100" fill="none"/></svg>`;
+    const painted = `<svg ${SVG_NS} viewBox="0 0 400 100"><rect x="390" y="90" width="10" height="10" fill="#000"/></svg>`;
+
+    // The primary's path is as it was: a transparent PNG is a PNG.
+    expect((await rasterizeLogoSvg(empty)).reason).toBeNull();
+    expect(await rasterizeLogoSvg(empty, { requireInk: true })).toEqual({ png: null, reason: 'blank', detail: '1200x300 with no painted pixel' });
+    // One painted pixel, in the last corner the scan reaches, is ink.
+    expect((await rasterizeLogoSvg(painted, { requireInk: true })).reason).toBeNull();
+  });
 });

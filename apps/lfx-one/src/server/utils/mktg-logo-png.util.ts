@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES, MKTG_SLIDES_EXPORT_LOGO_SIDE_PX } from '@lfx-one/shared/constants';
-import { MktgLogoPngResult } from '@lfx-one/shared/interfaces';
+import { MktgLogoPngOptions, MktgLogoPngResult } from '@lfx-one/shared/interfaces';
 import { renderAsync, Resvg, ResvgRenderOptions } from '@resvg/resvg-js';
 
 /**
@@ -47,6 +47,16 @@ export function isRasterizableLogoSvg(svg: string): boolean {
   return true;
 }
 
+/** Whether any pixel of an RGBA pixmap is painted: its alpha byte is not zero. */
+function hasInk(pixels: Uint8Array): boolean {
+  for (let alpha = 3; alpha < pixels.length; alpha += 4) {
+    if (pixels[alpha] !== 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * The kit's SVG logo as a PNG for the Slides API (which takes PNG, JPEG or
  * GIF only): its longest side at MKTG_SLIDES_EXPORT_LOGO_SIDE_PX, on a
@@ -62,8 +72,15 @@ export function isRasterizableLogoSvg(svg: string): boolean {
  * 2,000,000-character cap), and the PNG encode (`asPng`, which
  * un-premultiplies and deflates the drawn pixmap). Only the drawing itself
  * runs on libuv's thread pool.
+ *
+ * With `requireInk`, a drawing in which nothing is painted is refused
+ * (`blank`) before it is encoded: the alpha of every pixel is read once,
+ * about 1.4 million reads at the drawing size. The variants ask for it, so
+ * a crop of empty space or a recolour that lost its content is dropped
+ * rather than published as a transparent image; the primary does not, and
+ * keeps its failure values as they were.
  */
-export async function rasterizeLogoSvg(svg: string): Promise<MktgLogoPngResult> {
+export async function rasterizeLogoSvg(svg: string, options: MktgLogoPngOptions = {}): Promise<MktgLogoPngResult> {
   if (!isRasterizableLogoSvg(svg)) {
     return { png: null, reason: 'external-reference', detail: 'an href or entity that is not a fragment or an embedded image' };
   }
@@ -79,7 +96,11 @@ export async function rasterizeLogoSvg(svg: string): Promise<MktgLogoPngResult> 
     }
     const fitTo: ResvgRenderOptions['fitTo'] =
       width >= height ? { mode: 'width', value: MKTG_SLIDES_EXPORT_LOGO_SIDE_PX } : { mode: 'height', value: MKTG_SLIDES_EXPORT_LOGO_SIDE_PX };
-    const png = (await renderAsync(svg, { ...base, fitTo })).asPng();
+    const rendered = await renderAsync(svg, { ...base, fitTo });
+    if (options.requireInk && !hasInk(rendered.pixels)) {
+      return { png: null, reason: 'blank', detail: `${rendered.width}x${rendered.height} with no painted pixel` };
+    }
+    const png = rendered.asPng();
     if (png.length > MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES) {
       return { png: null, reason: 'too-big', detail: `${png.length} bytes` };
     }

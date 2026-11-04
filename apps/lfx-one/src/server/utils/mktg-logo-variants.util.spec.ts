@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@lfx-one/shared/utils', async () => await vi.importActual('@lfx-one/shared/utils/brand-kit.utils'));
 
 import { isRasterizableLogoSvg, rasterizeLogoSvg } from './mktg-logo-png.util';
-import { logoSvgUserSpace, logoVariantSvgSources, recolourLogoSvg } from './mktg-logo-variants.util';
+import { logoSvgRoot, logoSvgUserSpace, logoVariantSvgSources, recolourLogoSvg } from './mktg-logo-variants.util';
 
 const SVG_NS = 'xmlns="http://www.w3.org/2000/svg"';
 /** A synthetic lockup: a filled mark on the left, a stroke-only rule and an unpainted group on the right. */
@@ -45,19 +45,79 @@ function offsetMark(viewBox: string): string {
   return `<svg ${SVG_NS} viewBox="${viewBox}"><path d="M${minX + 1} ${minY + 1}h8v8h-8z" fill="#1f6feb"/></svg>`;
 }
 
-describe('logoSvgUserSpace', () => {
-  it('reads the root viewBox, with commas or exponents, as the user space', () => {
-    expect(logoSvgUserSpace(LOCKUP)).toEqual({ minX: 0, minY: 0, width: 20, height: 10 });
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="-50,-50, 3e2 300"/>`)).toEqual({ minX: -50, minY: -50, width: 300, height: 300 });
+describe('logoSvgRoot', () => {
+  it('reads the root tag token by token, either quote, every value whole, to its `>` or `/>`', () => {
+    const root = logoSvgRoot(
+      `<?xml version="1.0"?>\n<svg ${SVG_NS} aria-label='a "quoted" label with viewBox="9 9 9 9" inside' viewBox = "0 0 20 10"\n width='20'>${LOCKUP_BODY}</svg>`
+    );
+    expect(root?.start).toBe(22);
+    expect(root?.selfClosing).toBe(false);
+    expect(root?.attributes.get('viewBox')).toEqual(['0 0 20 10']);
+    expect(root?.attributes.get('width')).toEqual(['20']);
+    expect(root?.attributes.get('aria-label')).toEqual(['a "quoted" label with viewBox="9 9 9 9" inside']);
+    expect([...(root?.attributes.keys() ?? [])]).toEqual(['xmlns', 'aria-label', 'viewBox', 'width']);
+    const selfClosing = `<svg ${SVG_NS} data-x="a/>" viewBox="0 0 20 10"/>`;
+    expect(logoSvgRoot(selfClosing)).toMatchObject({ start: 0, selfClosing: true, end: selfClosing.length });
   });
 
-  it('falls back to a width and height in user units from the origin, and to nothing otherwise', () => {
+  it('keeps every value of a repeated name, and reads nothing it does not understand', () => {
+    expect(logoSvgRoot(`<svg ${SVG_NS} viewBox="0 0 1 1" viewBox="0 0 2 2"/>`)?.attributes.get('viewBox')).toEqual(['0 0 1 1', '0 0 2 2']);
+    // A valueless attribute, an unquoted value, a prefixed root, a tag that never closes, no root at all.
+    expect(logoSvgRoot(`<svg ${SVG_NS} hidden viewBox="0 0 20 10">`)).toBeNull();
+    expect(logoSvgRoot(`<svg ${SVG_NS} width=20>`)).toBeNull();
+    expect(logoSvgRoot(`<svg:svg xmlns:svg="http://www.w3.org/2000/svg" viewBox="0 0 10 10"/>`)).toBeNull();
+    expect(logoSvgRoot(`<svg ${SVG_NS} viewBox="0 0 20 10"`)).toBeNull();
+    expect(logoSvgRoot('not an svg')).toBeNull();
+    expect(logoSvgRoot(`<SVG ${SVG_NS}/>`)).toBeNull();
+  });
+});
+
+describe('logoSvgUserSpace', () => {
+  it('reads the root viewBox, in either quote, with commas or exponents, as the user space', () => {
+    expect(logoSvgUserSpace(LOCKUP)).toEqual({ minX: 0, minY: 0, width: 20, height: 10 });
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="-50,-50, 3e2 300"/>`)).toEqual({ minX: -50, minY: -50, width: 300, height: 300 });
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox='500 500 200 100'/>`)).toEqual({ minX: 500, minY: 500, width: 200, height: 100 });
+  });
+
+  it('reads a viewBox only when it can read it exactly as the parser does, and guesses nothing otherwise', () => {
+    // Another spelling of the name, which the parser ignores; the same beside the real one; a repeat.
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewbox="500 500 200 100" width="200" height="100"/>`)).toBeNull();
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewbox="500 500 200 100" viewBox="0 0 200 100"/>`)).toBeNull();
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 1 1" viewBox="0 0 2 2"/>`)).toBeNull();
+    // A character reference, which the parser decodes and the server does not.
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="&#53;00 500 200 100"/>`)).toBeNull();
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="&#50;00" height="100"/>`)).toBeNull();
+    // Numbers run together, which the parser reads as four and a split reads as three.
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="500-500 200 100"/>`)).toBeNull();
+    // A decoy inside another attribute's value is never read; the real viewBox is.
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} aria-label='x viewBox="500 500 200 100"' viewBox="0 0 200 100"/>`)).toEqual({
+      minX: 0,
+      minY: 0,
+      width: 200,
+      height: 100,
+    });
+    // Too many or too few numbers, a zero size, a value too long to be a viewBox.
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 10"/>`)).toBeNull();
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 0 10"/>`)).toBeNull();
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 ${'1'.repeat(60)} 10"/>`)).toBeNull();
+  });
+
+  it('falls back to a width and height in user units from the origin only without any viewBox, and to nothing otherwise', () => {
     expect(logoSvgUserSpace(`<svg ${SVG_NS} width="200" height="100px"/>`)).toEqual({ minX: 0, minY: 0, width: 200, height: 100 });
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} width=' 2e2 ' height='.5'/>`)).toEqual({ minX: 0, minY: 0, width: 200, height: 0.5 });
     expect(logoSvgUserSpace(`<svg ${SVG_NS} width="100%" height="100"/>`)).toBeNull();
     expect(logoSvgUserSpace(`<svg ${SVG_NS} width="200"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 0 10"/>`)).toBeNull();
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="200" height="0"/>`)).toBeNull();
     expect(logoSvgUserSpace(`<svg ${SVG_NS}/>`)).toBeNull();
     expect(logoSvgUserSpace('not an svg')).toBeNull();
+  });
+
+  it('refuses a size it cannot read in bounded time, however long the value', () => {
+    const started = performance.now();
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="${'1'.repeat(100_000)}x" height="100"/>`)).toBeNull();
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="${'1'.repeat(100_000)}" height="100"/>`)).toBeNull();
+    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 ${'1'.repeat(100_000)} 10"/>`)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(50);
   });
 });
 
@@ -73,18 +133,29 @@ describe('recolourLogoSvg', () => {
     expect(recolourLogoSvg(LOCKUP, 'black')).toContain(`values="${BLACK_MATRIX}"`);
   });
 
-  it('sets the region from the root’s own viewBox, or from its size when it has none', () => {
+  it('sets the region from the root’s own viewBox, or from its size when it has none, at full precision', () => {
     expect(recolourLogoSvg(offsetMark('300 0 100 100'), 'white')).toContain('x="290" y="-10" width="120" height="120"');
     expect(recolourLogoSvg(offsetMark('-50 -50 300 300'), 'white')).toContain('x="-80" y="-80" width="360" height="360"');
     expect(recolourLogoSvg(`<svg ${SVG_NS} width="20" height="10">${LOCKUP_BODY}</svg>`, 'white')).toContain('x="-2" y="-1" width="24" height="12"');
+    const tiny = `<svg ${SVG_NS} viewBox="0 0 0.0000002 0.0000001"><path d="M0 0h0.0000002v0.0000001H0z" fill="#1f6feb"/></svg>`;
+    expect(recolourLogoSvg(tiny, 'white')).toContain('x="-2e-8" y="-1e-8" width="2.4e-7" height="1.2e-7"');
+    expect(draw(recolourLogoSvg(tiny, 'white') as string).painted()).toBe(draw(tiny).painted());
   });
 
   it('is the same transform for the same input, so the published PNG keeps its content-addressed key', () => {
     expect(recolourLogoSvg(LOCKUP, 'white')).toBe(recolourLogoSvg(LOCKUP, 'white'));
   });
 
-  it('leaves a self-closing root, which paints nothing, as it is', () => {
+  it('leaves a self-closing root, which paints nothing, as it is — unless a `</svg>` follows it after all', () => {
     expect(recolourLogoSvg(`<svg ${SVG_NS} viewBox="0 0 10 3"/>`, 'white')).toBe(`<svg ${SVG_NS} viewBox="0 0 10 3"/>`);
+    expect(recolourLogoSvg(`<svg ${SVG_NS} viewBox="0 0 10 3"/><path d="M0 0h1v1z"/></svg>`, 'white')).toBeNull();
+  });
+
+  it('is not fooled by a `/>` or a `>` inside a root attribute’s value', () => {
+    const decoy = `<svg ${SVG_NS} data-x="a/>" data-y="b>c" viewBox="0 0 20 10">${LOCKUP_BODY}</svg>`;
+    const white = recolourLogoSvg(decoy, 'white');
+    expect(white).toContain(`data-y="b>c" viewBox="0 0 20 10"><defs>`);
+    expect(draw(white as string).at(50, 50)).toEqual(WHITE);
   });
 
   it('refuses, with null, an SVG it cannot wrap or place a region in, rather than hand back the colour original', () => {
@@ -98,6 +169,29 @@ describe('recolourLogoSvg', () => {
     // No user space to set the region in.
     expect(recolourLogoSvg(`<svg ${SVG_NS}><path d="M0 0h1v1z"/></svg>`, 'white')).toBeNull();
     expect(recolourLogoSvg(`<svg ${SVG_NS} width="100%" height="100%"><path d="M0 0h1v1z"/></svg>`, 'white')).toBeNull();
+    // A root tag the server cannot read whole.
+    expect(recolourLogoSvg(`<svg ${SVG_NS} hidden viewBox="0 0 20 10">${LOCKUP_BODY}</svg>`, 'white')).toBeNull();
+  });
+
+  it('reads the viewBox exactly as the parser does, so the region never misses the canvas: each shape draws whole or is refused', () => {
+    const mark = (root: string): string => `<svg ${SVG_NS} ${root}><path d="M501 501h8v8h-8z" fill="#1f6feb"/></svg>`;
+    const whole = [mark(`viewBox='500 500 200 100'`), mark(`aria-label='x viewBox="0 0 20 10"' viewBox="500 500 200 100"`)];
+    for (const svg of whole) {
+      const white = draw(recolourLogoSvg(svg, 'white') as string);
+      expect(white.painted(), svg).toBe(draw(svg).painted());
+      expect(white.painted(), svg).toBeGreaterThan(0);
+      expect(white.at(2, 2), svg).toEqual(WHITE);
+    }
+    const refused = [
+      mark(`viewbox="500 500 200 100" width="200" height="100"`),
+      mark(`viewbox="500 500 200 100" viewBox="0 0 200 100"`),
+      mark(`viewBox="&#53;00 500 200 100"`),
+      mark(`viewBox="500-500 200 100"`),
+      mark(`viewBox="500 500 200 100" viewBox="500 500 200 100"`),
+    ];
+    for (const svg of refused) {
+      expect(recolourLogoSvg(svg, 'white'), svg).toBeNull();
+    }
   });
 
   it('draws every painted pixel in the ink, fills and strokes alike, on a transparent background', () => {
