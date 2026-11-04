@@ -29,3 +29,46 @@ export const PROJECT_FORMATION_STAGE_LABELS: Partial<Record<ProjectStage, string
  * currently emits it.
  */
 export const DRAFT_STAGE_SENTINEL = 'Draft';
+
+/**
+ * Stages the formation team may set from the formation card (#5134): the four Formation
+ * sub-stages, Active and Archived. `Prospect` is deliberately absent, and `Formation - Confidential`
+ * is not a supported v2 stage — the BFF rejects anything outside this list.
+ */
+export const FORMATION_RECORD_SELECTABLE_STAGES: readonly ProjectStage[] = [
+  ProjectStage.FormationExploratory,
+  ProjectStage.FormationEngaged,
+  ProjectStage.FormationOnHold,
+  ProjectStage.FormationDisengaged,
+  ProjectStage.Active,
+  ProjectStage.Archived,
+];
+
+/** Stages whose selection needs a confirmation step stating the checklist effect (D5). */
+export const FORMATION_RECORD_CONFIRM_STAGES: readonly ProjectStage[] = [ProjectStage.Active, ProjectStage.Archived, ProjectStage.FormationDisengaged];
+
+/** Upstream `legal_entity_type` enum (lfx-v2-project-service `ProjectLegalEntityTypeAttribute`). */
+export const PROJECT_LEGAL_ENTITY_TYPES: readonly string[] = [
+  'Subproject',
+  'Incorporated Entity',
+  'Series LLC',
+  'Unofficial Subproject',
+  'Internal Allocation',
+  'None',
+];
+
+/** Error codes returned by `PUT /api/projects/:uid/formation-record`. */
+export const NOT_PROJECT_WRITER_CODE = 'NOT_PROJECT_WRITER';
+export const FORMATION_TEAM_REQUIRED_CODE = 'FORMATION_TEAM_REQUIRED';
+export const FORMATION_RECORD_CONFLICT_CODE = 'FORMATION_RECORD_CONFLICT';
+
+/** User-facing copy per outcome, exactly as the #5134 error table. */
+export const FORMATION_RECORD_ERROR_MESSAGES = {
+  notWriter: "You don't have permission to edit this project.",
+  notFormationTeam: 'Only the formation team can change stage and legal entity.',
+  archivedNeedsDissolutionDate: 'Archiving needs a dissolution date.',
+  invalidValue: "That value can't be saved. Check the fields and try again.",
+  conflict: 'Someone else changed this project. Reload to see the latest, then try again.',
+  notFound: "This project couldn't be found.",
+  generic: "Couldn't save. Try again.",
+} as const;

@@ -513,6 +513,13 @@ export interface FormationChecklistResponse {
    * 403s. Advisory only — the gateway still enforces; the BFF adds no write guard of its own.
    */
   can_set_status: boolean;
+  /**
+   * Whether the caller may edit the project's stage and legal entity from the formation card
+   * (#5134) — the same pair {@link can_set_status} mirrors: `writer_guard` on the project AND
+   * `member` on `team:formation`, fail-closed. Advisory for the UI; the BFF re-checks both before
+   * any upstream read on `PUT /api/projects/:uid/formation-record`.
+   */
+  can_edit_record: boolean;
 }
 
 /**

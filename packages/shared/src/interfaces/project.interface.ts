@@ -362,3 +362,18 @@ export interface PublicProjectSummary {
   logo_url: string | null;
   is_foundation: boolean;
 }
+
+/**
+ * `PUT /api/projects/:uid/formation-record` body (#5134). Every key is optional and only keys that
+ * are present change upstream — the BFF merges them onto the raw stored project and PUTs the full
+ * object back. Empty string clears a text/date/URL field. `legal_parent_uid` and announcement date
+ * are intentionally not editable here.
+ */
+export interface UpdateFormationRecordRequest {
+  stage?: ProjectStage | string;
+  legal_entity_name?: string;
+  legal_entity_type?: string;
+  formation_date?: string;
+  entity_dissolution_date?: string;
+  entity_formation_document_url?: string;
+}

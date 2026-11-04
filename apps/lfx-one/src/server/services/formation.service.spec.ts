@@ -654,6 +654,34 @@ describe('FormationService', () => {
       expect(result.can_set_status).toBe(false);
     });
 
+    it('resolves can_edit_record as writer AND team:formation membership (#5134)', async () => {
+      checkSingleAccess.mockResolvedValue(true);
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_edit_record).toBe(true);
+    });
+
+    it('reports can_edit_record false for a writer who is not on team:formation (#5134)', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_write).toBe(true);
+      expect(result.can_edit_record).toBe(false);
+    });
+
+    it('reports can_edit_record false for a team member who is not a writer (#5134)', async () => {
+      checkSingleAccess.mockResolvedValue(true);
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null });
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_edit_record).toBe(false);
+    });
+
     it('masks an upstream 404 on the checklist read as a not-found Formation', async () => {
       proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND'));
 
