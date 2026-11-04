@@ -75,7 +75,7 @@ The panel title is **Org Projects**. Under it is the foundation name, a middle d
 
 1. Select the number in **Org Projects**.
 2. To narrow the list, use **Search projects...**.
-3. Select a Linux Foundation (LF) project name to open that project. The panel closes. A project that is not an LF project is shown as text and is not a link.
+3. Select a Linux Foundation (LF) project name to open that project's detail page. The panel closes. See [What is a project detail page?](../projects/#what-is-a-project-detail-page). A project that is not an LF project is shown as text and is not a link.
 
 Each project shows an influence word under its name. The words **Leading**, **Contributing**, and **Participating** are the named levels. To the right, each project shows **LF maintainer roles**, **Contributors**, and **Commits**.
 
@@ -239,6 +239,7 @@ A dash (**—**) on the three **Active** cards, while the table says **Failed to
 
 - [Choose and switch an organization](../choose-an-organization/) — pick the organization these memberships belong to
 - [Org Overview dashboard](../org-overview/) — the **Dashboard**, including **View all on Memberships page ›**
+- [Projects and project detail](../projects/) — the organization's projects, and each project's influence and leaderboards
 - [Manage Org Lens Access](../manage-org-lens-access/) — who is an Admin, and who can edit the organization
 - [EasyCLA](../easycla/) — corporate CLAs (Contributor License Agreements) for the selected organization
 - [Organization FAQ](../faq/) — short answers about the Organization lens

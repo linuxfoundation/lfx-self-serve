@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
-import { formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import {
   MeetingEditScopeDialogData,
@@ -13,7 +12,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildMeetingOccurrenceOptions,
-  formatMeetingTimeRange,
+  formatMeetingDateTime,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   isSameOccurrenceId,
@@ -42,7 +41,7 @@ export class MeetingEditScopeModalComponent {
 
   protected readonly row = this.data.row;
   protected readonly project: MeetingHomeRowProject | null = getMeetingHomeRowProject(this.row.meeting);
-  protected readonly when = `${formatDate(this.row.startTime, 'EEE, MMM d', 'en-US')} · ${formatMeetingTimeRange(this.row.startTime, this.row.durationMinutes)}`;
+  protected readonly when = formatMeetingDateTime(this.row.startTime, this.row.durationMinutes);
   protected readonly meetingType: MeetingHomeRowType | null = getMeetingHomeRowType(this.row.meeting);
   protected readonly occurrenceOptions: MeetingOccurrenceOption[] = buildMeetingOccurrenceOptions(this.data.meeting, this.data.occurrence.occurrence_id);
   // The options always list the opening date: it is active and passed as the date to keep.

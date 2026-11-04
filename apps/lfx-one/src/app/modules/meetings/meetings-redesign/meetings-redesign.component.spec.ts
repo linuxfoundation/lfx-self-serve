@@ -5,7 +5,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 
+import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
 import { MeetingsRedesignComponent } from './meetings-redesign.component';
 
@@ -70,6 +71,8 @@ describe('MeetingsRedesignComponent', () => {
   let openCreateDialog: ReturnType<typeof vi.fn>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
   let refreshUserPastMeetings: ReturnType<typeof vi.fn>;
+  let elementScrollBy: ReturnType<typeof vi.fn<(options?: ScrollToOptions) => void>>;
+  let windowScrollBy: ReturnType<typeof vi.spyOn>;
 
   const render = (): ComponentFixture<MeetingsRedesignComponent> => {
     const fixture = TestBed.createComponent(MeetingsRedesignComponent);
@@ -125,6 +128,10 @@ describe('MeetingsRedesignComponent', () => {
     );
     vi.stubGlobal('matchMedia', (q: string) => ({ matches: desktop, media: q }));
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(HEADER_HEIGHT);
+    // jsdom has no element scrolling and only a logging window.scrollBy.
+    elementScrollBy = vi.fn<(options?: ScrollToOptions) => void>();
+    Object.defineProperty(HTMLElement.prototype, 'scrollBy', { value: elementScrollBy, configurable: true, writable: true });
+    windowScrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
     TestBed.configureTestingModule({
       providers: [
         {
@@ -136,6 +143,8 @@ describe('MeetingsRedesignComponent', () => {
             getUserMeetings: () => upcoming$,
             getUserPastMeetings: () => past$,
             getUserLatestPastMeetings: () => latestPast$,
+            meetingsRefresh$: new Subject<void>(),
+            pastMeetingsRefresh$: new Subject<void>(),
             authenticated: signal(true),
             meetingJoinIdentity: signal(null),
             confirmedMeetingRsvps: () => [],
@@ -156,7 +165,7 @@ describe('MeetingsRedesignComponent', () => {
           },
         },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
-        { provide: PersonaService, useValue: { personaLoaded } },
+        { provide: PersonaService, useValue: { personaLoaded, hasBoardRole: signal(false), hasProjectRole: signal(true) } },
         { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
       ],
@@ -164,6 +173,7 @@ describe('MeetingsRedesignComponent', () => {
   });
 
   afterEach(() => {
+    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollBy;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -254,6 +264,36 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-redesign-header-actions')?.className).toContain('max-w-full flex-none flex-wrap');
     });
 
+    it("gives way to the empty Upcoming state's own button, and stays on an empty Past tab", async () => {
+      const fixture = render();
+      await fixture.whenStable();
+
+      // Kept while the feed loads.
+      expect(query(fixture, 'meetings-home-create')).not.toBeNull();
+
+      await loadFeeds(fixture, []);
+      expect(query(fixture, 'meetings-home-empty-create')).not.toBeNull();
+      expect(query(fixture, 'meetings-home-create')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-header-actions')?.classList).toContain('hidden');
+
+      // The empty Past state has no Create of its own.
+      query(fixture, 'ui-tab-past')?.click();
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-empty-past')).not.toBeNull();
+      expect(query(fixture, 'meetings-home-create')).not.toBeNull();
+    });
+
+    it('stays beside the error when the Upcoming feed fails to load', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = render();
+      await fixture.whenStable();
+
+      upcoming$.error(new Error('down'));
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-error')).not.toBeNull();
+      expect(query(fixture, 'meetings-home-create')).not.toBeNull();
+    });
+
     it('takes focus once the last pending RSVP is answered, else the heading does', async () => {
       const fixture = render();
       await fixture.whenStable();
@@ -279,6 +319,17 @@ describe('MeetingsRedesignComponent', () => {
     });
   });
 
+  it('stops the tabs bar wrapping above 1024px in a centre of 440px or more, narrowing the search instead', async () => {
+    const fixture = render();
+    await fixture.whenStable();
+
+    const search = query(fixture, 'meetings-redesign-search');
+    expect(query(fixture, 'meetings-redesign-tabs-bar')?.className).toContain('flex-wrap');
+    expect(query(fixture, 'meetings-redesign-tabs-bar')?.className).toContain('min-[1025px]:@[440px]:flex-nowrap');
+    expect(search?.parentElement?.className).toContain('min-[1025px]:min-w-0 min-[1025px]:flex-nowrap');
+    expect(search?.className).toContain('min-[1025px]:w-[300px] min-[1025px]:min-w-0');
+  });
+
   it('folds the right column into a two-column grid and hides the description at 1024px and below', async () => {
     const fixture = render();
     await fixture.whenStable();
@@ -289,7 +340,7 @@ describe('MeetingsRedesignComponent', () => {
     expect(folded?.className).toContain('min-[1025px]:hidden');
     expect(folded?.parentElement?.classList).toContain('@container');
     expect(query(fixture, 'meetings-redesign-right-column')?.className).toContain('hidden');
-    expect(query(fixture, 'meetings-redesign-description')?.className).toContain('hidden text-[13px] text-gray-600 min-[1025px]:block');
+    expect(query(fixture, 'meetings-redesign-description')?.className).toContain('hidden text-[13px] text-gray-500 min-[1025px]:block');
   });
 
   it('shows skeleton Next meeting cards while the upcoming feed loads, and hides them when it fails', async () => {
@@ -523,6 +574,69 @@ describe('MeetingsRedesignComponent', () => {
       expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE + 5);
       expect(query(fixture, 'meetings-home-load-more')).toBeNull();
       expect(query(fixture, 'meetings-home-all-loaded')?.textContent?.trim()).toBe(`All ${MEETINGS_HOME_PAGE_SIZE + 5} meetings loaded`);
+    });
+
+    it('scrolls the list back to its start on a search, filter or tab change, so a page loads only on a scroll', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      const pastMeeting = { ...buildMeeting(99, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting;
+      await loadFeeds(
+        fixture,
+        Array.from({ length: MEETINGS_HOME_PAGE_SIZE * 2 + 1 }, (_, index) => buildMeeting(index)),
+        [pastMeeting]
+      );
+      observerCallback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+      await fixture.whenStable();
+      expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE * 2);
+
+      // Scrolled 500px into the list, or the chips above it; the header and tabs bar are 80px each.
+      let listTop = HEADER_HEIGHT * 2 - 500;
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        return new DOMRect(0, this.matches('[data-testid="meetings-home-filters-chips"], [data-testid="meetings-home-list"]') ? listTop : 0, 100, 1000);
+      });
+      elementScrollBy.mockClear();
+
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'meeting';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+      expect(elementScrollBy).toHaveBeenLastCalledWith({ top: -500 });
+
+      fixture.debugElement
+        .query(By.directive(MeetingsFiltersComponent))
+        .componentInstance.filters.set({ ...MEETINGS_HOME_DEFAULT_FILTERS, meetingType: 'Technical' });
+      await fixture.whenStable();
+      expect(elementScrollBy).toHaveBeenCalledTimes(2);
+      expect(elementScrollBy).toHaveBeenLastCalledWith({ top: -500 });
+
+      query(fixture, 'ui-tab-past')?.click();
+      await fixture.whenStable();
+      expect(elementScrollBy).toHaveBeenCalledTimes(3);
+
+      // A list that still starts below the tabs bar stays where it is.
+      listTop = HEADER_HEIGHT * 2;
+      query(fixture, 'ui-tab-upcoming')?.click();
+      await fixture.whenStable();
+      expect(elementScrollBy).toHaveBeenCalledTimes(3);
+    });
+
+    it('scrolls the window back to the list start at 1024px and below', async () => {
+      desktop = false;
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1), buildMeeting(2)]);
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        return new DOMRect(0, this.dataset['testid'] === 'meetings-home-list' ? -300 : 0, 100, 1000);
+      });
+      windowScrollBy.mockClear();
+
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'meeting';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      expect(windowScrollBy).toHaveBeenLastCalledWith({ top: -300 - HEADER_HEIGHT * 2 });
     });
 
     it('shows an error with a retry instead of the empty state when the feed fails', async () => {

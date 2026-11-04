@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, inject, linkedSignal, makeStateKey, PLATFORM_ID, signal, Signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
@@ -254,6 +254,17 @@ export class CommitteeViewComponent {
   private readonly projectWriterRetry = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
+  public readonly membersError = signal(false);
+  private readonly membersLoadedFor = signal<string | null>(null);
+  public readonly membersReady = computed(
+    () =>
+      !this.membersLoading() &&
+      !this.membersError() &&
+      !!this.committeeId() &&
+      this.membersLoadedFor() === this.committee()?.uid &&
+      committeeRouteIdMatches(this.committeeId(), this.committee()) &&
+      canViewCommitteeRoster(this.committee())
+  );
   public invitesLoading = signal<boolean>(true);
   public applicationsLoading = signal<boolean>(true);
   // Votes and surveys are pre-fetched here so the tab badge counts are available before the user
@@ -588,7 +599,7 @@ export class CommitteeViewComponent {
       // member — the backend counts roster members but may not include all manager entries.
       // Show null while loading so the badge only appears once the count is known.
       badge: () => {
-        if (this.membersLoading()) return null;
+        if (this.membersLoading() || this.membersError()) return null;
         if (canViewCommitteeRoster(this.committee())) return this.members().length;
         // Invite-only members who can send invites but whose roster is hidden fall back to
         // the server-computed total (the roster wasn't fetched, so members() is always []).
@@ -825,12 +836,19 @@ export class CommitteeViewComponent {
 
   public refreshMembers(): void {
     this.membersLoading.set(true);
+    this.membersLoadedFor.set(null);
     this.membersRefresh.update((v) => v + 1);
     // The caller's role lives on the committee payload (not the members list), so any
     // member-mutation that triggers a members refresh must also refetch the committee
     // — otherwise role-gated UI (CTAs, banners, tabs) keeps a stale `my_role` until the
     // user navigates away and back. Cheap: the committee GET is a single round-trip.
     this.refreshCommittee();
+  }
+
+  public retryMembers(): void {
+    this.membersLoadedFor.set(null);
+    this.membersLoading.set(true);
+    this.membersRefresh.update((value) => value + 1);
   }
 
   public onMembersRefreshed(): void {
@@ -1570,6 +1588,8 @@ export class CommitteeViewComponent {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
         switchMap(([committee]) => {
+          this.membersLoadedFor.set(null);
+          this.membersError.set(false);
           // Skip the roster fetch when member_visibility hides it from this caller (server enforces too)
           if (!committee?.uid || !canViewCommitteeRoster(committee)) {
             this.membersLoading.set(false);
@@ -1578,8 +1598,12 @@ export class CommitteeViewComponent {
 
           this.membersLoading.set(true);
 
-          return this.committeeService.getCommitteeMembers(committee.uid).pipe(
-            catchError(() => of([])),
+          return this.committeeService.getCommitteeMembers(committee.uid, new HttpParams().set('require_complete', 'true')).pipe(
+            tap(() => this.membersLoadedFor.set(committee.uid)),
+            catchError(() => {
+              this.membersError.set(true);
+              return of([]);
+            }),
             finalize(() => this.membersLoading.set(false))
           );
         })

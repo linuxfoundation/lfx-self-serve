@@ -89,7 +89,8 @@ export class AppComponent {
    * meeting with it, while `MeetingComposerService.isOpen()` stays true because only `close()` clears the
    * context: the composer is gone from the screen but still logically open, and a later flag-on remounts a
    * host that immediately reopens that stale context. So an open composer keeps itself mounted until it
-   * closes, and `hostEverMounted` holds it there afterwards so it can still retire the create toast it raised. This cannot let an untargeted user in: every entry point is gated on the same flag and the
+   * closes, and `hostEverMounted` holds it there afterwards so it can still retire the create toast it raised.
+   * This cannot let an untargeted user in: every entry point is gated on the same flag and the
    * deep-link routes render the pre-v2 screens, so `isOpen()` is false for them and neither the host nor
    * its chunk is ever reached (`canPrefetchComposer` stays on the flag alone).
    */

@@ -6,7 +6,7 @@ import { MeetingRegistrant } from '@lfx-one/shared/interfaces';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { Observable, take } from 'rxjs';
+import { take } from 'rxjs';
 
 /**
  * "Resend invite" flows shared by every surface that offers one.
@@ -15,9 +15,8 @@ import { Observable, take } from 'rxjs';
  * so the host passes it in. Upstream enforces the organizer relation; hosts gate the button on the
  * meeting's `organizer` flag. Registrants resend to themselves from a meeting card or the join page
  * (`resendOwn`): the server resolves which registrant that is, and upstream verifies it is theirs.
- * In-flight tracking and success/error toasts live here so the surfaces stay consistent; `resendOwn$` leaves
- * feedback to surfaces that show their own. The own-resend logic lives in {@link MeetingOwnInviteResendService},
- * which surfaces without PrimeNG use directly.
+ * In-flight tracking and success/error toasts live here so the surfaces stay consistent. The own-resend logic lives
+ * in {@link MeetingOwnInviteResendService}, which surfaces without PrimeNG or with their own feedback use directly.
  */
 @Injectable({ providedIn: 'root' })
 export class MeetingInviteResendService {
@@ -45,11 +44,10 @@ export class MeetingInviteResendService {
   /**
    * Resends the meeting invitation to the signed-in user's own registration, for the occurrence being viewed when the
    * surface has one (registrations can be scoped to a single occurrence). No confirmation: it only emails the
-   * caller, and a second click while one is in flight is ignored. Toasts the result; see {@link resendOwn$} for
-   * surfaces that show their own feedback.
+   * caller, and a second click while one is in flight is ignored. Toasts the result.
    */
   public resendOwn(meetingUid: string, occurrenceId?: string | null): void {
-    this.resendOwn$(meetingUid, occurrenceId).subscribe({
+    this.ownResend.resendOwn$(meetingUid, occurrenceId).subscribe({
       next: () =>
         this.messageService.add({
           severity: 'success',
@@ -60,18 +58,9 @@ export class MeetingInviteResendService {
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: this.describeOwnResendFailure(error),
+          detail: this.ownResend.describeOwnResendFailure(error),
         }),
     });
-  }
-
-  /**
-   * {@link resendOwn} without toasts: tracks the in-flight send from subscribe until it settles and completes without
-   * a value when the meeting id is empty or a send for it is already in flight. Pair errors with
-   * {@link describeOwnResendFailure} for user-facing copy.
-   */
-  public resendOwn$(meetingUid: string, occurrenceId?: string | null): Observable<{ message: string }> {
-    return this.ownResend.resendOwn$(meetingUid, occurrenceId);
   }
 
   public confirmAndResend(confirmationService: ConfirmationService, meetingUid: string, registrant: MeetingRegistrant): void {
@@ -91,11 +80,6 @@ export class MeetingInviteResendService {
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => this.resend(meetingUid, registrant, label),
     });
-  }
-
-  /** User-facing copy for a failed own-resend; see {@link MeetingOwnInviteResendService.describeOwnResendFailure}. */
-  public describeOwnResendFailure(error: unknown): string {
-    return this.ownResend.describeOwnResendFailure(error);
   }
 
   private resend(meetingUid: string, registrant: MeetingRegistrant, label: string): void {

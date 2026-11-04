@@ -126,6 +126,10 @@ export class UserService {
   // shared GET) so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
   private readonly userIdentitiesRefresh$ = new Subject<void>();
   public readonly identitiesRefresh$: Observable<void> = this.userIdentitiesRefresh$.asObservable();
+  /** Emits on every refreshUserMeetings() fetch, so a consumer whose feed failed can subscribe again. */
+  public readonly meetingsRefresh$: Observable<void> = this.userMeetingsRefresh$.asObservable();
+  /** Emits on every refreshUserPastMeetings() call. */
+  public readonly pastMeetingsRefresh$: Observable<void> = this.userPastMeetingsRefresh$.asObservable();
   // One shared identities GET for every consumer on the page: the endpoint reconciles into CDP, so
   // each extra concurrent GET re-sends the same CDP identity writes (#4523).
   private userIdentities$: Observable<EnrichedIdentity[]> | null = null;
@@ -140,7 +144,9 @@ export class UserService {
   private userMeetingsSubject: string | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
   private userPastMeetingsWithArtifacts$: Observable<PastMeeting[]> | null = null;
+  private userPastMeetingsSubject: string | null = null;
   private userLatestPastMeetings$: Observable<PastMeeting[]> | null = null;
+  private userLatestPastMeetingsSubject: string | null = null;
 
   public constructor() {
     // A late LFID claim changes meeting identity, not the effective subject's uploaded avatar.
@@ -503,6 +509,15 @@ export class UserService {
    */
   public getUserPastMeetings(options?: { includeArtifacts?: boolean }): Observable<PastMeeting[]> {
     const includeArtifacts = options?.includeArtifacts === true;
+    const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
+    // Rebuilt for a new viewer here too, so a read before the identity effect runs never replays the previous viewer's rows.
+    if (this.userPastMeetingsSubject !== subject) {
+      this.userPastMeetingsDestroy$.next();
+      this.userPastMeetingsDestroy$ = new Subject<void>();
+      this.userPastMeetings$ = null;
+      this.userPastMeetingsWithArtifacts$ = null;
+      this.userPastMeetingsSubject = subject;
+    }
     const cached = includeArtifacts ? this.userPastMeetingsWithArtifacts$ : this.userPastMeetings$;
     if (cached) return cached;
 
@@ -536,6 +551,13 @@ export class UserService {
    * rows when many concurrently-ongoing meetings sit at the head of the sort.
    */
   public getUserLatestPastMeetings(): Observable<PastMeeting[]> {
+    const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
+    if (this.userLatestPastMeetingsSubject !== subject) {
+      this.userLatestPastMeetingsDestroy$.next();
+      this.userLatestPastMeetingsDestroy$ = new Subject<void>();
+      this.userLatestPastMeetings$ = null;
+      this.userLatestPastMeetingsSubject = subject;
+    }
     if (!this.userLatestPastMeetings$) {
       const destroy$ = this.userLatestPastMeetingsDestroy$;
       const dropIfCurrent = (): void => {

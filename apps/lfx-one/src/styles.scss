@@ -4,6 +4,8 @@
 /* Google Fonts are linked from index.html (preconnect + stylesheet) so they start
    in parallel with this file instead of waiting on a CSS @import (GH-2290). */
 
+@use '@angular/cdk' as cdk;
+
 /* Navbar v2 — global because its body-level popovers/tooltips and the selectors' navbar variant sit
    outside the component's view; see the note in the partial. */
 @use 'styles/navbar';
@@ -12,6 +14,9 @@
 @use 'styles/ui-tokens.css';
 
 @layer tailwind-base, primeng, tailwind-utilities;
+
+/* LiveAnnouncer appends its region to body without loading the visually-hidden styles. */
+@include cdk.a11y-visually-hidden();
 
 /* The Brand Kit book is the kit's PRINT rendering: on screen the kit is its web
    view, and the book in its print-only wrapper (BRAND_KIT_PRINT_ONLY_CLASS) is

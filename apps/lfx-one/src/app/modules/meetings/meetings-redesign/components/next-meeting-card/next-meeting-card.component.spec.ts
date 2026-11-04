@@ -6,6 +6,8 @@ import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow } from '@lfx-one/shared/interfaces';
 import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
+import { MeetingService } from '@services/meeting.service';
+import { UserService } from '@services/user.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NextMeetingCardComponent } from './next-meeting-card.component';
@@ -82,7 +84,13 @@ describe('NextMeetingCardComponent', () => {
     navigate = vi.fn().mockResolvedValue(true);
     open = vi.fn();
     vi.stubGlobal('open', open);
-    TestBed.configureTestingModule({ providers: [{ provide: Router, useValue: { navigate, navigateByUrl: vi.fn() } }] });
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Router, useValue: { navigate, navigateByUrl: vi.fn() } },
+        { provide: UserService, useValue: {} },
+        { provide: MeetingService, useValue: {} },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -110,7 +118,6 @@ describe('NextMeetingCardComponent', () => {
     const fixture = await render(buildRow(meeting, start, { title: 'Occurrence title' }));
 
     expect(text(fixture, 'meetings-home-next-card-date')).toContain(String(start.getDate()));
-    expect(query(fixture, 'meetings-home-next-card-visibility-public')).toBeTruthy();
     expect(text(fixture, 'meetings-home-next-card-project')).toMatch(/Kubernetes$/);
     expect(text(fixture, 'meetings-home-next-card-title')).toBe('Occurrence title');
     const weekday = start.toLocaleString('en-US', { weekday: 'short' });
@@ -118,6 +125,19 @@ describe('NextMeetingCardComponent', () => {
     expect(text(fixture, 'meetings-home-next-card-type')).toBe('Technical');
     expect(text(fixture, 'meetings-home-next-card-recurring')).toBe('Recurring');
     expect(fixture.nativeElement.textContent).not.toContain('TOC');
+  });
+
+  it('badges only Private and Restricted meetings on the tile', async () => {
+    const badges = async (overrides: Partial<Meeting>): Promise<string[]> => {
+      const fixture = await render(buildRow(buildMeeting(overrides)));
+      return Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="meetings-home-next-card-visibility-"]')).map(
+        (badge) => (badge as HTMLElement).dataset['testid'] ?? ''
+      );
+    };
+
+    expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: false })).toEqual([]);
+    expect(await badges({ visibility: MeetingVisibility.PRIVATE, restricted: false })).toEqual(['meetings-home-next-card-visibility-private']);
+    expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: true })).toEqual(['meetings-home-next-card-visibility-restricted']);
   });
 
   it('shows no recurring tag for a one-off meeting', async () => {

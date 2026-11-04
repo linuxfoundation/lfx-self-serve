@@ -3,7 +3,7 @@
 
 import { formatDate, isPlatformBrowser, isPlatformServer } from '@angular/common';
 import { Component, computed, inject, linkedSignal, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { IMPERSONATION_READ_ONLY_ERROR_CODE, NEWSLETTER_INVITE_RELOOKUP_DELAY_MS, NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
@@ -20,7 +20,7 @@ import {
   NewsletterShareTarget,
   ServerRequestContext,
 } from '@lfx-one/shared/interfaces';
-import { addShareToTally, newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { addShareToTally, combinedViewCount, newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
@@ -134,8 +134,8 @@ export class NewsletterReaderComponent {
     return nl?.sent_at ? `Received ${formatDate(nl.sent_at, 'MMM d, y', 'en-US')}` : '';
   });
 
-  // === Computed: views (upstream `total_opens`; null when unknown so the rail hides it) ===
-  protected readonly viewCount = computed(() => this.newsletter()?.total_opens ?? null);
+  // === Computed: views (email opens + unique web page views; null when both are unknown so the rail hides it) ===
+  protected readonly viewCount = computed(() => combinedViewCount(this.newsletter()?.total_opens, this.newsletter()?.page_view_count));
 
   // === Computed: share URL (SSR-safe) ===
   protected readonly shareUrl = computed(() => {
@@ -148,6 +148,10 @@ export class NewsletterReaderComponent {
   // === Writable Signals (linked) ===
   /** Share count on the engagement rail's Share button: the server's `share_count`, bumped after each accepted share. Resets per issue. */
   protected readonly shareTally = linkedSignal<NewsletterShareTally>(() => ({ count: this.newsletter()?.share_count ?? null, channels: [] }));
+
+  public constructor() {
+    this.initPageViewTracking();
+  }
 
   // === Protected Methods ===
   protected openShare(): void {
@@ -279,6 +283,30 @@ export class NewsletterReaderComponent {
       ),
       { initialValue: loadingState }
     );
+  }
+
+  /**
+   * Records one unique web page view per readable, sent issue shown. Browser-only, so SSR never writes,
+   * and once per issue: `distinctUntilChanged` collapses the repeated state emissions of one load, and the
+   * server counts each user once per issue, ever, so a refresh is a no-op upstream. Denied readers and
+   * drafts are skipped. Each POST is subscribed on its own so leaving the page doesn't abort it; the
+   * on-screen count is not bumped, so reloads can't inflate what the reader sees.
+   */
+  private initPageViewTracking(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    toObservable(this.state)
+      .pipe(
+        map(({ project, newsletter, access }) =>
+          project && newsletter && newsletter.status === 'sent' && access && access.access !== 'denied' ? `${project.uid}/${newsletter.id}` : null
+        ),
+        distinctUntilChanged(),
+        filter((target): target is string => target !== null),
+        takeUntilDestroyed()
+      )
+      .subscribe((target) => {
+        const [projectUid, newsletterId] = target.split('/');
+        this.newsletterService.recordPageView(projectUid, newsletterId).subscribe();
+      });
   }
 
   private initJoinState(): Signal<NewsletterJoinState> {

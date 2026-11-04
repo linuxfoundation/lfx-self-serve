@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -11,6 +12,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
 import { VOTE_CLOSE_CONFIRMATION, VOTE_SUMMARY_NOT_ENDED, VOTE_SUMMARY_PRECHECK_FAILED, VOTE_SUMMARY_SEND_FAILED } from '@lfx-one/shared/constants';
+import { SendVoteSummaryResponse } from '@lfx-one/shared/interfaces';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
@@ -1458,11 +1460,14 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
   let table: VotesTableComponent;
   let sendVoteSummary: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
+  let announce: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.spyOn>;
   let capturedConfirmation: Confirmation | null;
   const ROWS = [
     vote('active', { writer: true }),
     vote('ended', { status: PollStatus.ENDED, writer: true }),
     vote('ended-reader', { status: PollStatus.ENDED, writer: false }),
+    vote('ended-second', { status: PollStatus.ENDED, writer: true }),
   ];
   const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
   async function sendSummaryItem(uid: string) {
@@ -1476,6 +1481,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
   beforeEach(async () => {
     sendVoteSummary = vi.fn().mockReturnValue(of({ recipient_count: 3, failed_count: 0, skipped_count: 0, uncertain_count: 0 }));
     messageAdd = vi.fn();
+    announce = vi.fn().mockResolvedValue(undefined);
     capturedConfirmation = null;
     await TestBed.configureTestingModule({
       imports: [VotesTableComponent],
@@ -1485,6 +1491,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
         { provide: VoteService, useValue: { sendVoteSummary, isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: { add: messageAdd } },
         { provide: MailingListService, useValue: {} },
+        { provide: LiveAnnouncer, useValue: { announce } },
       ],
     })
       .overrideComponent(VotesTableComponent, {
@@ -1499,7 +1506,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     // ConfirmationService is a component-level provider here (see the "deliberately not here"
     // comment on VotesTableComponent) — fetch it from the component's own injector, not the root.
     const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
-    vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation) => {
+    confirm = vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation) => {
       capturedConfirmation = confirmation;
       return confirmationService;
     });
@@ -1530,7 +1537,9 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     capturedConfirmation?.accept?.();
 
     expect(sendVoteSummary).toHaveBeenCalledWith('ended');
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Summary sent to 3 voter(s).' }));
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Summary sent: "Board ended"', detail: 'Summary sent to 3 voter(s).' })
+    );
   });
 
   /** Accepts the confirmation for the ended vote so the mocked sendVoteSummary result reaches the component. */
@@ -1545,7 +1554,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     sendVoteSummary.mockReturnValue(of({ recipient_count: 2, failed_count: 1, skipped_count: 0, uncertain_count: 0 }));
     await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary partially sent' }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary partially sent: "Board ended"' }));
     expect(messageAdd.mock.calls[0][0].detail).toContain('1 failed');
   });
 
@@ -1553,7 +1562,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     sendVoteSummary.mockReturnValue(of({ recipient_count: 2, failed_count: 0, skipped_count: 2, uncertain_count: 0 }));
     await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary partially sent' }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary partially sent: "Board ended"' }));
     expect(messageAdd.mock.calls[0][0].detail).toContain('2 skipped');
   });
 
@@ -1562,14 +1571,14 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     await sendSummary();
 
     expect(messageAdd).toHaveBeenCalledTimes(1);
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'No summaries sent' }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'No summaries sent: "Board ended"' }));
   });
 
   it('warns about duplicates when some outcomes are unconfirmed', async () => {
     sendVoteSummary.mockReturnValue(of({ recipient_count: 1, failed_count: 0, skipped_count: 0, uncertain_count: 2 }));
     await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary delivery unconfirmed', life: 8000 }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary delivery unconfirmed: "Board ended"', life: 8000 }));
     expect(messageAdd.mock.calls[0][0].detail).toContain('retrying may send duplicate summaries');
   });
 
@@ -1581,7 +1590,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     capturedConfirmation?.accept?.();
 
     expect(messageAdd).toHaveBeenCalledWith(
-      expect.objectContaining({ severity: 'error', summary: "Couldn't send summary", detail: 'This vote has not closed yet.' })
+      expect.objectContaining({ severity: 'error', summary: `Couldn't send summary: "Board ended"`, detail: 'This vote has not closed yet.' })
     );
   });
 
@@ -1589,7 +1598,9 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { code: VOTE_SUMMARY_PRECHECK_FAILED } })));
     await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Nothing was sent. Please try again.' }));
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: `Couldn't send summary: "Board ended"`, detail: 'Nothing was sent. Please try again.' })
+    );
   });
 
   it.each([
@@ -1599,7 +1610,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: status as number, error: { code: VOTE_SUMMARY_PRECHECK_FAILED } })));
     await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: `Couldn't send summary: "Board ended"`, detail }));
     expect(messageAdd.mock.calls[0][0].detail).not.toContain('try again');
   });
 
@@ -1618,7 +1629,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     await sendSummary();
 
     const toast = messageAdd.mock.calls[0][0];
-    expect(toast).toMatchObject({ severity: 'warn', summary: 'Summary delivery unconfirmed', life: 8000 });
+    expect(toast).toMatchObject({ severity: 'warn', summary: 'Summary delivery unconfirmed: "Board ended"', life: 8000 });
     expect(toast.detail).toContain('retrying may send duplicate summaries');
     expect(toast.detail).not.toContain('try again');
   });
@@ -1641,7 +1652,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     expect(messageAdd).toHaveBeenCalledWith(
       expect.objectContaining({
         severity: 'error',
-        summary: "Couldn't send summary",
+        summary: `Couldn't send summary: "Board ended"`,
         detail: 'No summaries were sent: 2 invited voter(s) have no email address; 1 send(s) failed.',
         life: 8000,
       })
@@ -1652,7 +1663,9 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
     await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No summaries were sent. Please try again.' }));
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: `Couldn't send summary: "Board ended"`, detail: 'No summaries were sent. Please try again.' })
+    );
   });
 
   it.each([
@@ -1666,9 +1679,219 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     await sendSummary();
 
     const toast = messageAdd.mock.calls[0][0];
-    expect(toast).toMatchObject({ severity: 'warn', summary: 'Summary delivery unconfirmed', life: 8000 });
+    expect(toast).toMatchObject({ severity: 'warn', summary: 'Summary delivery unconfirmed: "Board ended"', life: 8000 });
     expect(toast.detail).toContain('retrying may send duplicate summaries');
     expect(toast.detail).not.toContain('try again');
+  });
+
+  // #4831: the send is tracked per vote, so the row shows its own progress and only that vote's send is locked.
+  describe('sending state (#4831)', () => {
+    let pending: Subject<SendVoteSummaryResponse>;
+    const indicator = (uid: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-sending-summary-${uid}"]`);
+
+    /** Reopens ⋮ on the row (re-rendered first, so the click passes the current row) and returns the rebuilt items. */
+    async function menuItemsFor(uid: string) {
+      await settle();
+      moreButton(uid)!.click();
+      await settle();
+      return table['rowActionMenuItems']();
+    }
+
+    /** Accepts a send for the row and leaves the request open until `pending` settles. */
+    async function startSend(uid = 'ended'): Promise<void> {
+      await settle();
+      const item = await sendSummaryItem(uid);
+      item!.command!({});
+      capturedConfirmation?.accept?.();
+      await settle();
+    }
+
+    beforeEach(() => {
+      pending = new Subject<SendVoteSummaryResponse>();
+      sendVoteSummary.mockReturnValue(pending);
+    });
+
+    it('shows a spinner and "Sending summary…" under the sending vote only, with the spinner hidden from assistive technology', async () => {
+      await startSend();
+
+      const status = indicator('ended');
+      expect(status?.textContent).toContain('Sending summary…');
+      expect(status?.querySelector('lfx-ui-spinner')?.parentElement?.getAttribute('aria-hidden')).toBe('true');
+      expect(fixture.nativeElement.querySelector('[data-testid="votes-row-ended"]')?.contains(status)).toBe(true);
+      expect(indicator('ended-second')).toBeNull();
+      expect(indicator('active')).toBeNull();
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
+    it("locks only the sending vote's Send summary item and leaves other actions and votes available", async () => {
+      await startSend();
+
+      const items = await menuItemsFor('ended');
+      expect(items.find((item) => item.label === 'Send summary')).toBeUndefined();
+      expect(items.find((item) => item.label === 'Sending summary…')).toMatchObject({ disabled: true, icon: expect.stringContaining('animate-spin') });
+      for (const label of ['Copy link', 'Present', 'Clone']) {
+        expect(items.find((item) => item.label === label)?.disabled).toBeFalsy();
+      }
+
+      const other = (await menuItemsFor('ended-second')).find((item) => item.label === 'Send summary');
+      expect(other?.disabled).toBe(false);
+      other!.command!({});
+      capturedConfirmation?.accept?.();
+      await settle();
+
+      expect(sendVoteSummary).toHaveBeenCalledTimes(2);
+      expect(sendVoteSummary).toHaveBeenLastCalledWith('ended-second');
+      expect(indicator('ended')).toBeTruthy();
+      expect(indicator('ended-second')).toBeTruthy();
+    });
+
+    it('does not open a confirm or start a second request for a vote that is already sending', async () => {
+      await settle();
+      const item = await sendSummaryItem('ended');
+      item!.command!({});
+      const firstConfirmation = capturedConfirmation;
+      firstConfirmation?.accept?.();
+      await settle();
+
+      item!.command!({});
+      firstConfirmation?.accept?.();
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(sendVoteSummary).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['success', () => pending.next({ recipient_count: 3, failed_count: 0, skipped_count: 0, uncertain_count: 0 }), 'success'],
+      [
+        'a confirmed-unsent 502',
+        () =>
+          pending.error(
+            new HttpErrorResponse({
+              status: 502,
+              error: { code: VOTE_SUMMARY_SEND_FAILED, details: { recipient_count: 0, failed_count: 1, skipped_count: 0, uncertain_count: 0 } },
+            })
+          ),
+        'error',
+      ],
+      ['a dropped connection (status 0)', () => pending.error(new HttpErrorResponse({ status: 0 })), 'warn'],
+    ])('clears the indicator and restores the open summary menu after %s, keeping its toast', async (_label, settleRequest, severity) => {
+      await startSend();
+      expect(indicator('ended')).toBeTruthy();
+
+      // The confirmation is mocked, so close the initial popup explicitly before reopening it during the request.
+      if (table['rowActionMenuOpen']()) {
+        moreButton('ended')!.click();
+        await settle();
+      }
+      await menuItemsFor('ended');
+      expect(table['rowActionMenuOpen']()).toBe(true);
+      const panel = TestBed.inject(DOCUMENT).querySelector('[role="menu"]');
+      expect(panel?.querySelector('[role="menuitem"][aria-label="Sending summary…"]')?.getAttribute('aria-disabled')).toBe('true');
+
+      settleRequest();
+      await settle();
+
+      expect(indicator('ended')).toBeNull();
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity }));
+      // Do not reopen: settlement must update the menu that the manager is already looking at.
+      expect(panel?.isConnected).toBe(true);
+      expect(table['rowActionMenuOpen']()).toBe(true);
+      const items = table['rowActionMenuItems']();
+      expect(items.find((item) => item.label === 'Sending summary…')).toBeUndefined();
+      expect(items.find((item) => item.label === 'Send summary')?.disabled).toBe(false);
+      const restored = panel?.querySelector('[role="menuitem"][aria-label="Send summary"]');
+      expect(restored).toBeTruthy();
+      expect(restored?.getAttribute('aria-disabled')).not.toBe('true');
+    });
+
+    it("does not rewrite another pending vote's menu when a different send settles", async () => {
+      await startSend();
+      const secondPending = new Subject<SendVoteSummaryResponse>();
+      sendVoteSummary.mockReturnValue(secondPending);
+      await startSend('ended-second');
+      const otherItems = await menuItemsFor('ended-second');
+
+      pending.next({ recipient_count: 3, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
+      await settle();
+
+      expect(indicator('ended')).toBeNull();
+      expect(indicator('ended-second')).toBeTruthy();
+      expect(table['rowActionMenuItems']()).toBe(otherItems);
+      expect(otherItems.find((item) => item.label === 'Sending summary…')?.disabled).toBe(true);
+
+      secondPending.next({ recipient_count: 3, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
+      await settle();
+
+      expect(table['rowActionMenuItems']().find((item) => item.label === 'Send summary')?.disabled).toBe(false);
+    });
+
+    it('preserves an unrelated row and its keyboard focus when a send settles', async () => {
+      await startSend();
+      const other = fixture.nativeElement.querySelector('[data-testid="votes-name-ended-second"]') as HTMLButtonElement;
+      other.focus();
+      expect(TestBed.inject(DOCUMENT).activeElement).toBe(other);
+
+      pending.next({ recipient_count: 3, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
+      await settle();
+
+      expect(other.isConnected).toBe(true);
+      expect(TestBed.inject(DOCUMENT).activeElement).toBe(other);
+    });
+
+    it('identifies concurrent outcomes and retains both completions in the real live region', async () => {
+      const realAnnouncer = TestBed.runInInjectionContext(() => new LiveAnnouncer());
+      announce.mockImplementation((message, politeness) => realAnnouncer.announce(message, politeness));
+      const secondPending = new Subject<SendVoteSummaryResponse>();
+      sendVoteSummary.mockImplementation((uid: string) => (uid === 'ended' ? pending : secondPending));
+
+      try {
+        await startSend();
+        await startSend('ended-second');
+
+        secondPending.next({ recipient_count: 3, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
+        fixture.detectChanges();
+        expect(indicator('ended')).toBeTruthy();
+        expect(indicator('ended-second')).toBeNull();
+        pending.error(new HttpErrorResponse({ status: 0 }));
+        await settle();
+
+        expect(indicator('ended')).toBeNull();
+        expect(messageAdd).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({ severity: 'success', summary: expect.stringContaining('"Board ended-second"'), detail: 'Summary sent to 3 voter(s).' })
+        );
+        expect(messageAdd).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            severity: 'warn',
+            summary: 'Summary delivery unconfirmed: "Board ended"',
+            detail: expect.stringContaining('retrying may send duplicate summaries'),
+          })
+        );
+
+        const liveText = TestBed.inject(DOCUMENT).querySelector('.cdk-live-announcer-element')?.textContent;
+        expect(liveText).toContain('The summary send for "Board ended-second" has finished.');
+        expect(liveText).toContain('The summary send for "Board ended" has finished.');
+        expect(liveText).not.toContain('sent to');
+      } finally {
+        realAnnouncer.ngOnDestroy();
+      }
+    });
+
+    it('announces the start and a neutral finish that never claims delivery', async () => {
+      await startSend();
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(announce).toHaveBeenLastCalledWith('Sending the summary for "Board ended"…', 'polite');
+
+      pending.error(new HttpErrorResponse({ status: 0 }));
+      await settle();
+
+      expect(announce).toHaveBeenCalledTimes(2);
+      const [finished, politeness] = announce.mock.calls[1];
+      expect(finished).toBe('The summary send for "Board ended" has finished. See the notification for the result.');
+      expect(politeness).toBe('polite');
+      expect(finished).not.toContain('sent to');
+    });
   });
 });
 
@@ -1780,6 +2003,28 @@ describe('VotesTableComponent — mobile cards (#4148)', () => {
     expect(info).toBeTruthy();
     expect(info!.className).toContain('max-sm:min-w-[44px]');
     expect(info!.className).toContain('max-sm:min-h-[44px]');
+  });
+
+  it('shows the sending-summary indicator on the card, below the name and status row (#4831)', async () => {
+    await render(true, 'browser', [vote('closed', { status: PollStatus.ENDED, writer: true })]);
+    const table = fixture.componentInstance;
+    // The render helper's VoteService mock has no send; hold the request open so the card keeps its in-flight state.
+    Object.assign(TestBed.inject(VoteService), { sendVoteSummary: () => new Subject<SendVoteSummaryResponse>() });
+    const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
+    vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation) => {
+      confirmation.accept?.();
+      return confirmationService;
+    });
+
+    table['onSendSummary'](table['displayedVotes']()[0]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const card = q('[data-testid="votes-card-closed"]');
+    const status = q('[data-testid="votes-card-closed"] [data-testid="votes-sending-summary-closed"]');
+    expect(status?.textContent).toContain('Sending summary…');
+    expect(status?.previousElementSibling?.contains(q('[data-testid="votes-name-closed"]'))).toBe(true);
+    expect(card?.contains(status)).toBe(true);
   });
 });
 

@@ -110,6 +110,7 @@ describe('NewsletterReaderComponent', () => {
       joinNewsletterGroup: vi.fn(),
       getMyNewsletterFoundations: vi.fn().mockReturnValue(of(makeFoundationsResponse({ foundations: [] }))),
       recordShare: vi.fn().mockReturnValue(of(true)),
+      recordPageView: vi.fn().mockReturnValue(of(true)),
     };
     dialogService = { open: vi.fn() };
     const mockShareDialogService = {
@@ -369,6 +370,89 @@ describe('NewsletterReaderComponent', () => {
     expect(el.querySelector('lfx-newsletter-share-button')).toBeNull();
   });
 
+  it('shows views as email opens plus unique web page views', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(
+      of({ access: 'group_member', newsletter: makeNewsletter({ total_opens: 1248, page_view_count: 52 }) })
+    );
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="newsletter-reader-views-count"]')!.textContent!.trim()).toBe('1,300');
+  });
+
+  it('shows page views alone when total_opens is unknown', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter({ page_view_count: 7 }) }));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="newsletter-reader-views-count"]')!.textContent!.trim()).toBe('7');
+  });
+
+  describe('page views', () => {
+    it('records one page view for a readable sent issue, however often the page re-renders', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      fixture.detectChanges();
+      TestBed.tick();
+      fixture.detectChanges();
+      TestBed.tick();
+
+      expect(newsletterService.recordPageView).toHaveBeenCalledTimes(1);
+      expect(newsletterService.recordPageView).toHaveBeenCalledWith('proj-123', 'news-123');
+    });
+
+    it('records again when the reader navigates to another issue', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockImplementation((_project, id) => of({ access: 'group_member', newsletter: makeNewsletter({ id }) }));
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      fixture.detectChanges();
+      TestBed.tick();
+      paramMap$.next(
+        new Map([
+          ['projectSlug', 'kubernetes'],
+          ['id', 'news-456'],
+        ])
+      );
+      fixture.detectChanges();
+      TestBed.tick();
+
+      expect(newsletterService.recordPageView).toHaveBeenCalledTimes(2);
+      expect(newsletterService.recordPageView).toHaveBeenLastCalledWith('proj-123', 'news-456');
+    });
+
+    it('does not record a view when access is denied', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'denied', denied_reason: 'not_member_company' }));
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      fixture.detectChanges();
+      TestBed.tick();
+
+      expect(newsletterService.recordPageView).not.toHaveBeenCalled();
+    });
+
+    it('does not record a view of a draft a manager is previewing', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject({ writer: true })));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(
+        of({ access: 'manager', newsletter: makeNewsletter({ status: 'draft', sent_at: undefined }) })
+      );
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      fixture.detectChanges();
+      TestBed.tick();
+
+      expect(newsletterService.recordPageView).not.toHaveBeenCalled();
+    });
+  });
+
   it('hides views while total_opens is unknown but keeps the Share button', () => {
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
     vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
@@ -567,6 +651,18 @@ describe('NewsletterReaderComponent', () => {
 
       expect(component['access']()?.access).toBe('eligible');
       expect(newsletterService.joinNewsletterGroup).not.toHaveBeenCalled();
+    });
+
+    it('never records a page view on the server', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      component = fixture.componentInstance;
+      TestBed.tick();
+
+      expect(component['newsletter']()?.id).toBe('news-123');
+      expect(newsletterService.recordPageView).not.toHaveBeenCalled();
     });
   });
 

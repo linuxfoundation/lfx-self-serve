@@ -4,7 +4,7 @@ description: How to present a vote on screen, extend its deadline, send the resu
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, present, extend, clone, summary, qr-code, deadline]
-last_updated: 2026-11-02
+last_updated: 2026-11-03
 intercom_collection: Votes
 ---
 
@@ -69,8 +69,11 @@ The row shows the new deadline right away. You can only extend a vote that is st
 
 1. Select **⋮ → Send summary** on an ended vote.
 2. Confirm. The message warns that sending can't be undone.
+3. Wait for the result. While you stay on this page, the vote's row shows a spinner and **Sending summary…** under the vote's name until LFX reports the result (on a phone, below the name and status at the top of the vote's card). Its **⋮ → Sending summary…** item is unavailable, preventing another send for that vote from this page while the request is in progress. The vote's other menu actions, and the summaries of other ended votes, stay available. Screen readers announce when sending starts and when it finishes; the result itself appears in the message described below. The indicator only shows that LFX is still working on the request. It does not mean the emails have been delivered.
 
-After you send, LFX reports what it knows about each invited voter:
+The indicator and duplicate-click protection apply only while you stay on this page. Reloading, leaving and returning, or opening another tab does not preserve this state or confirm that sending stopped. Check with voters before sending again, since another send may duplicate summaries already sent.
+
+Each result message names the vote so you can distinguish summaries sent at the same time. After you send, LFX reports what it knows about each invited voter:
 
 - **Sent:** the email service accepted the summary for sending to the voter's email address. Delivery to their inbox is not confirmed.
 - **Skipped:** the voter has no email address on file, so nothing was sent to them. Skipped voters are reported, never silently left out.

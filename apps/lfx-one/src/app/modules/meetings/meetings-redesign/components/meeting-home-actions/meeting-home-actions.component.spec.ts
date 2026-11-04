@@ -292,8 +292,10 @@ describe('MeetingHomeActionsComponent', () => {
       expect(overlay.querySelector('[role="alertdialog"]')).not.toBeNull();
       expect(find('meetings-home-row-actions-remove-info')?.textContent).toContain('Synthetic sync');
       expect(find('meetings-home-row-actions-remove-project')?.lastElementChild?.textContent?.trim()).toBe('Synthetic Project');
-      expect(overlay.querySelector('[role="alertdialog"]')?.getAttribute('aria-describedby')).toBe(find('ui-modal-subtitle')?.id);
-      expect(find('ui-modal-subtitle')?.textContent?.trim()).toBe(
+      const message = find('meetings-home-row-actions-remove-message');
+      expect(find('meetings-home-row-actions-remove-info')?.compareDocumentPosition(message as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(overlay.querySelector('[role="alertdialog"]')?.getAttribute('aria-describedby')).toBe(message?.id);
+      expect(message?.textContent?.trim()).toBe(
         'Remove yourself from "Synthetic sync"? You will no longer be invited to any occurrence and will lose your RSVP. ' +
           "You stay in the committee, but it won't invite you to this meeting again."
       );
