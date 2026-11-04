@@ -158,12 +158,7 @@ export class MeetingHomeActionsComponent {
           if (result.remaining_registrant_ids.length > 0) {
             // The home list has no per-meeting refetch, so reload the feed to show what is left.
             this.userService.refreshUserMeetings();
-            this.toast.show({
-              variant: 'warning',
-              position: 'bottom-center',
-              message: 'Removal incomplete',
-              description: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
-            });
+            this.showError('Removal incomplete', 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.');
             return;
           }
           this.toast.show({ variant: 'dark', message: 'Removed', description: 'You have been removed from this meeting.' });

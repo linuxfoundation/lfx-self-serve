@@ -416,6 +416,18 @@ describe('filterMeetingsHome', () => {
     expect(filterMeetingsHome(rows, filters({ organizedByMe: true }), '', null)).toEqual([]);
   });
 
+  it('counts co-organizers as organizers for Organized by me and Hide declined', () => {
+    const declined = rsvp({ response_type: 'declined' });
+    const grace = { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' };
+    const coRows = [
+      row({ key: 'flag-1', meeting: buildMeeting({ id: 'flag', created_by: grace, organizer: true }), myRsvp: declined }),
+      row({ key: 'listed-1', meeting: buildMeeting({ id: 'listed', created_by: grace, organizers: ['auth0|ALovelace'] }), myRsvp: declined }),
+      row({ key: 'other-1', meeting: buildMeeting({ id: 'other', created_by: grace, organizers: ['ghopper'] }), myRsvp: declined }),
+    ];
+    expect(keys(filterMeetingsHome(coRows, filters({ hideDeclined: true }), '', 'alovelace'))).toEqual(['flag-1', 'listed-1']);
+    expect(keys(filterMeetingsHome(coRows, filters({ organizedByMe: true }), '', 'alovelace'))).toEqual(['flag-1', 'listed-1']);
+  });
+
   it('hides a series only when every listed date is declined', () => {
     expect(keys(filterMeetingsHome(rows, filters({ hideDeclined: true }), '', null))).toEqual(['board-1', 'board-2', 'board-3', 'quiet-1']);
   });
@@ -424,8 +436,7 @@ describe('filterMeetingsHome', () => {
     const declined = rsvp({ response_type: 'declined' });
     const extra = [
       row({ key: 'own-1', meeting: buildMeeting({ id: 'own', created_by: ada }), myRsvp: declined }),
-      // An FGA manage grant alone is not organizing
-      row({ key: 'grant-1', meeting: buildMeeting({ id: 'grant', organizer: true }), myRsvp: declined }),
+      row({ key: 'other-1', meeting: buildMeeting({ id: 'other' }), myRsvp: declined }),
       row({ key: 'off-1', meeting: buildMeeting({ id: 'off', is_invite_responses_enabled: false }), myRsvp: declined }),
     ];
     expect(keys(filterMeetingsHome(extra, filters({ hideDeclined: true }), '', 'alovelace'))).toEqual(['own-1', 'off-1']);
