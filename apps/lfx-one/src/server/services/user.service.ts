@@ -57,10 +57,10 @@ import {
   codePointLength,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
+  getPastMeetingSummaryContent,
   getSurveyDisplayStatus,
   hasMeetingEnded,
   isMeetingInviteResponsesEnabled,
-  isPastMeetingSummaryVisible,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   parseToInt,
@@ -790,9 +790,7 @@ export class UserService {
     if (!options?.includeArtifacts) return withAccess;
     for (const meeting of withAccess) {
       meeting.has_recording = recordingFlags.get(meeting.id);
-      meeting.has_ai_summary = primarySummaries.has(meeting.id)
-        ? this.isPastMeetingSummaryAvailable(primarySummaries.get(meeting.id) ?? null, meeting)
-        : undefined;
+      meeting.has_ai_summary = primarySummaries.has(meeting.id) ? getPastMeetingSummaryContent(meeting, primarySummaries.get(meeting.id)) !== null : undefined;
     }
     return withAccess;
   }
@@ -1258,12 +1256,6 @@ export class UserService {
         });
         return { participants: [] as PastMeetingParticipant[], loaded: false };
       });
-  }
-
-  // Organizers also count a summary awaiting approval (the card's review banner); other viewers need a visible one.
-  private isPastMeetingSummaryAvailable(summary: PastMeetingSummary | null, meeting: PastMeeting): boolean {
-    const hasContent = Boolean(summary?.summary_data?.edited_content || summary?.summary_data?.content);
-    return hasContent && (isPastMeetingSummaryVisible(summary) || meeting.organizer === true);
   }
 
   /** Maps past meeting ids to a value derived from their artifact rows via OR-tag batches; a failed batch's ids are omitted. */

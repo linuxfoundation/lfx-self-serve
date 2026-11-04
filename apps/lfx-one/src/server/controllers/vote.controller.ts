@@ -614,6 +614,44 @@ export class VoteController {
   }
 
   /**
+   * GET /votes/:uid/summary-recipients — who the on-demand close summary would reach (#4830).
+   * Gated on `vote#writer` before any read, like `reminder-recipients`; the service refuses a vote
+   * that has not ended. Returns names and addresses, so only counts are logged.
+   */
+  public async getVoteSummaryPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_vote_summary_preview', {
+      vote_uid: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_vote_summary_preview',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertVoteWrite(req, uid, 'get_vote_summary_preview');
+
+      const preview = await this.voteService.getVoteSummaryPreview(req, uid);
+
+      logger.success(req, 'get_vote_summary_preview', startTime, {
+        vote_uid: uid,
+        ready_count: preview.ready.length,
+        missing_email_count: preview.missing_email.length,
+        unique_email_count: preview.unique_email_count,
+      });
+
+      res.json(preview);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /votes/:uid/voters — every invited voter with their status, plus their current ballot on a
    * named vote (#3911) or participation only on a pseudo-anonymous vote (#3916).
    * Gated on `vote#writer` before any read: every vote auditor can read the underlying

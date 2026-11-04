@@ -18,7 +18,6 @@ import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-rese
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiMenuItemComponent } from '@shared/uikit/menu/menu-item.component';
 import { UiMenuSeparatorComponent } from '@shared/uikit/menu/menu-separator.component';
@@ -30,6 +29,7 @@ import { finalize, take } from 'rxjs';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
+import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
 /**
  * The ⋯ menu of a meetings home row: Copy Link, and for upcoming meetings Edit Meeting, Resend Invite, Remove Myself and Delete Meeting.
@@ -37,7 +37,7 @@ import { MeetingsHomeEditService } from '../../services/meetings-home-edit.servi
  */
 @Component({
   selector: 'lfx-meeting-home-actions',
-  imports: [UiAvatarComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent, UiModalComponent],
+  imports: [MeetingProjectLogoComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent, UiModalComponent],
   templateUrl: './meeting-home-actions.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'inline-flex' },
@@ -140,6 +140,8 @@ export class MeetingHomeActionsComponent {
   }
 
   protected remove(): void {
+    // A second click can land before the button renders as loading.
+    if (this.removing()) return;
     const ref = this.dialogRef;
     this.removing.set(true);
     this.selfRemoval
@@ -156,12 +158,7 @@ export class MeetingHomeActionsComponent {
           if (result.remaining_registrant_ids.length > 0) {
             // The home list has no per-meeting refetch, so reload the feed to show what is left.
             this.userService.refreshUserMeetings();
-            this.toast.show({
-              variant: 'warning',
-              position: 'bottom-center',
-              message: 'Removal incomplete',
-              description: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
-            });
+            this.showError('Removal incomplete', 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.');
             return;
           }
           this.toast.show({ variant: 'dark', message: 'Removed', description: 'You have been removed from this meeting.' });

@@ -25,7 +25,7 @@ const meta: Meta<UiSplitButtonComponent> = {
   parameters: { layout: 'padded' },
   // Compodoc cannot read the shared union aliases, so the selects are declared here; `menu` is a template, not a control.
   argTypes: {
-    variant: { control: 'select', options: ['primary', 'secondary'] },
+    variant: { control: 'select', options: ['primary', 'secondary', 'recording'] },
     size: { control: 'select', options: ['small', 'default', 'large'] },
     menu: { table: { disable: true } },
   },
@@ -71,5 +71,18 @@ export const Sizes: Story = {
 export const AtTheRightEdge: Story = {
   render: () => ({
     template: `<div class="flex justify-end"><lfx-ui-split-button label="Deploy" [menu]="deployMenu" /></div>${menuTemplate}`,
+  }),
+};
+
+/** Without a menu the right half is a second action: an icon button named by its tooltip. */
+export const WithAction: Story = {
+  render: () => ({
+    template: `
+      <div class="flex flex-col items-start gap-[16px]">
+        <lfx-ui-split-button size="large" label="Recording" variant="recording" icon="fa-light fa-play" secondaryIcon="fa-light fa-link" secondaryTooltip="Copy recording link" />
+        <lfx-ui-split-button label="Recording" variant="recording" icon="fa-light fa-play" secondaryIcon="fa-light fa-link" secondaryTooltip="Copy recording link" />
+        <lfx-ui-split-button label="Recording" variant="secondary" icon="fa-light fa-circle-play" secondaryIcon="fa-light fa-link" secondaryTooltip="Copy recording link" />
+        <lfx-ui-split-button label="Deploy" secondaryIcon="fa-light fa-clock" secondaryTooltip="Schedule deploy" />
+      </div>`,
   }),
 };

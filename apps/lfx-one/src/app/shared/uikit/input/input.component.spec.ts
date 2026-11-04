@@ -195,11 +195,11 @@ describe('UiInputComponent', () => {
   });
 
   it('drops the hover ring when disabled', async () => {
-    expect(wrapper().className).toContain('edge-hover');
+    expect(wrapper().className).toContain('edge-control-hover');
 
     await set('disabled', true);
 
-    expect(wrapper().className).not.toContain('edge-hover');
+    expect(wrapper().className).not.toContain('edge-control-hover');
   });
 
   it('projects an lfxUiInputAction control into the wrapper after the field', async () => {

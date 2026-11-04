@@ -56,6 +56,7 @@ import {
   filterUnlistedEmails,
   fromMeetingApiVotingStatuses,
   getMeetingOrganizerDisplayName,
+  getMeetingCommitteeSelectionKey,
   isCalendarDeadlinePast,
   isMeetingAccepted,
   isMeetingDeclinedForAllOccurrences,
@@ -2102,5 +2103,27 @@ describe('organizerDisplayName', () => {
 
   it('trims whitespace-only names', () => {
     expect(organizerDisplayName({ owner: { name: '   ', email: 'sam@acme-motors.example' } })).toBe('sam');
+  });
+});
+
+describe('getMeetingCommitteeSelectionKey', () => {
+  it('ignores group order, labels, duplicate statuses, and legacy status spellings', () => {
+    const legacy: MeetingCommittee = { uid: 'group-a', name: 'Old label' };
+    // Model the untyped wire value stored before the voting-status migration.
+    Reflect.set(legacy, 'allowed_voting_statuses', ['Voting Rep', 'Observer', 'Voting Rep']);
+    expect(getMeetingCommitteeSelectionKey([{ uid: 'group-b' }, legacy])).toBe(
+      getMeetingCommitteeSelectionKey([
+        { uid: 'group-a', name: 'New label', allowed_voting_statuses: ['observer', 'voting_rep'] },
+        { uid: 'group-b', allowed_voting_statuses: [] },
+      ])
+    );
+    expect(getMeetingCommitteeSelectionKey([null, undefined])).toBe(getMeetingCommitteeSelectionKey([]));
+  });
+
+  it('distinguishes group changes and voting-filter changes', () => {
+    const original = getMeetingCommitteeSelectionKey([{ uid: 'group-a', allowed_voting_statuses: ['voting_rep'] }]);
+    expect(original).not.toBe(getMeetingCommitteeSelectionKey([{ uid: 'group-b', allowed_voting_statuses: ['voting_rep'] }]));
+    expect(original).not.toBe(getMeetingCommitteeSelectionKey([{ uid: 'group-a', allowed_voting_statuses: ['observer'] }]));
+    expect(original).not.toBe(getMeetingCommitteeSelectionKey([{ uid: 'group-a' }]));
   });
 });

@@ -11,7 +11,7 @@ import { MEETINGS_HOME_JOIN_URL, MEETINGS_HOME_RECORDING_URL, MEETINGS_HOME_SUMM
 import { gotoMeetingsHome, homeRow, homeRows, homeToast, MEETINGS_HOME_TEST_OPTIONS, rightColumn } from './helpers/meetings-home.helper';
 import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
 
-const UPCOMING_TITLES = [TITLES.oneOff, TITLES.series, TITLES.series, TITLES.other];
+const UPCOMING_TITLES = [TITLES.next, TITLES.oneOff, TITLES.series, TITLES.series, TITLES.other];
 
 const rowTitles = (page: Page) => homeRows(page).getByTestId('meetings-home-row-title');
 const search = (page: Page) => page.getByRole('searchbox', { name: 'Search meetings' });
@@ -49,10 +49,9 @@ test.describe('Meetings home page', () => {
       await expect(page.getByRole('tab', { name: 'Upcoming, 5 meetings' })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByRole('tab', { name: 'Past, 2 meetings' })).toHaveAttribute('aria-selected', 'false');
 
-      await expect(page.getByTestId('meetings-home-day-group-label')).toHaveText(['Tomorrow', 'This week', 'This month', 'December']);
+      await expect(page.getByTestId('meetings-home-day-group-label')).toHaveText(['Today', 'Tomorrow', 'This week', 'This month', 'December']);
+      // The Next card's meeting stays in the list, so the tab count matches the rows.
       await expect(rowTitles(page)).toHaveText(UPCOMING_TITLES);
-      // The Next card's meeting is left out of the list.
-      await expect(homeRow(page, TITLES.next)).toHaveCount(0);
 
       const rail = rightColumn(page);
       await expect(rail.getByTestId('meetings-home-next-card-title')).toHaveText(TITLES.next);
@@ -85,6 +84,7 @@ test.describe('Meetings home page', () => {
       await search(page).fill('zzz-no-such-meeting');
       const noResults = page.getByTestId('meetings-home-no-results');
       await expect(noResults).toContainText('No results found');
+      await expect(noResults).toContainText('No meetings match your search');
       await page.getByTestId('meetings-home-no-results-reset').click();
       await expect(search(page)).toHaveValue('');
       await expect(rowTitles(page)).toHaveText(UPCOMING_TITLES);
@@ -165,23 +165,25 @@ test.describe('Meetings home page', () => {
   });
 
   test.describe('Empty states', () => {
-    test('no upcoming meetings shows the empty state without Create for a non-writer', async ({ page }) => {
+    test('no upcoming meetings shows the empty state, with Create Meeting only in the header', async ({ page }) => {
       await gotoMeetingsHome(page, { emptyUpcoming: true });
 
-      await expect(page.getByTestId('meetings-home-empty-upcoming')).toContainText('No upcoming meetings');
+      const empty = page.getByTestId('meetings-home-empty-upcoming');
+      await expect(empty).toContainText('No upcoming meetings');
+      await expect(empty.getByRole('button')).toHaveCount(0);
       await expect(rightColumn(page).getByTestId('meetings-home-next-card-empty')).toContainText('Your calendar is clear');
       await expect(search(page)).toHaveCount(0);
-      await expect(page.getByTestId('meetings-home-empty-create')).toHaveCount(0);
-      await expect(page.getByTestId('meetings-home-create')).toHaveCount(0);
+      await expect(page.getByTestId('meetings-home-create')).toContainText('Create Meeting');
     });
 
-    test('no upcoming meetings offers Create Meeting to a meeting writer', async ({ page }) => {
-      await gotoMeetingsHome(page, { emptyUpcoming: true, canWrite: true });
+    test('Create Meeting opens the target picker, which says so when the viewer can create nowhere', async ({ page }) => {
+      await page.route('**/api/create-picker/**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [], committees: [] }) })
+      );
+      await gotoMeetingsHome(page);
 
-      await expect(page.getByTestId('meetings-home-empty-upcoming')).toBeVisible();
-      await expect(page.getByTestId('meetings-home-empty-create')).toContainText('Create Meeting');
-      // The empty state's button replaces the header one.
-      await expect(page.getByTestId('meetings-home-create')).toHaveCount(0);
+      await page.getByTestId('meetings-home-create').click();
+      await expect(page.getByTestId('create-target-empty-state')).toHaveText('Nothing here yet — try searching for a project or group.');
     });
   });
 
@@ -383,7 +385,7 @@ test.describe('Meetings home page', () => {
 
       await panel.getByTestId('meetings-home-filters-apply').click();
       await expect(page.getByTestId('meetings-home-filters-chips')).toContainText('Foundation: Alpha Foundation');
-      await expect(rowTitles(page)).toHaveText([TITLES.oneOff, TITLES.other]);
+      await expect(rowTitles(page)).toHaveText([TITLES.next, TITLES.oneOff, TITLES.other]);
     });
   });
 
@@ -395,8 +397,9 @@ test.describe('Meetings home page', () => {
       await expect(page.getByTestId('meetings-home-all-loaded')).toHaveCount(0);
 
       await homeRows(page).last().scrollIntoViewIfNeeded();
-      await expect(homeRows(page)).toHaveCount(24);
-      await expect(page.getByTestId('meetings-home-all-loaded')).toHaveText('All 24 meetings loaded');
+      await expect(homeRows(page)).toHaveCount(25);
+      await expect(page.getByRole('tab', { name: 'Upcoming, 25 meetings' })).toBeVisible();
+      await expect(page.getByTestId('meetings-home-all-loaded')).toHaveText('All 25 meetings loaded');
     });
   });
 });

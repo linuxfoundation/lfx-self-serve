@@ -64,17 +64,17 @@ describe('MeetingsHomeRecordingDialogComponent', () => {
     expect(close).toHaveBeenCalled();
   });
 
-  it.each<[boolean, string]>([
-    [true, 'Recording URL copied to clipboard'],
-    [false, 'Failed to copy recording URL'],
-  ])('copies the link (copied: %s)', async (copied, message) => {
+  it.each<[boolean, string, string]>([
+    [true, 'dark', 'Recording URL copied to clipboard'],
+    [false, 'error', 'Failed to copy recording URL'],
+  ])('copies the link (copied: %s)', async (copied, variant, message) => {
     copy.mockReturnValue(copied);
     const fixture = await render();
 
     click(fixture, 'meetings-home-dialog-recording-copy');
 
     expect(copy).toHaveBeenCalledWith(SHARE_URL);
-    expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ message }));
+    expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ variant, message }));
   });
 
   it('opens the recording in a new tab', async () => {
