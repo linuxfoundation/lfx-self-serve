@@ -70,13 +70,13 @@ export class UiSplitButtonComponent {
   public readonly menu = input<TemplateRef<unknown> | null>(null);
   /** `primary` is the accent fill, `secondary` the neutral one and `recording` the green one. Never destructive. */
   public readonly variant = input<UiSplitButtonVariant>('primary');
-  /** `small` is 24px tall, `default` 32px and `large` 40px. Both halves share it; the chevron half is a square. */
+  /** `tiny` is 24px tall, `small` 28px, `default` 32px and `large` 40px. Both halves share it; the chevron half is a square. */
   public readonly size = input<UiButtonSize>('default');
   /** Font Awesome class string for a leading icon on the main action, e.g. `fa-light fa-rocket`. */
   public readonly icon = input<string>('');
   /** Accessible name of the chevron half. Defaults to "More options for" and the `label`. */
   public readonly menuLabel = input<string>('');
-  /** Disables both halves. */
+  /** Disables both halves. They keep the variant's colours at 45% opacity. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Font Awesome class string for the right half when there is no `menu`, e.g. `fa-light fa-link`. */
   public readonly secondaryIcon = input<string>('');
@@ -125,9 +125,10 @@ export class UiSplitButtonComponent {
       // Exact px: the button's 4px ui-accent-100 focus halo.
       const base =
         'relative inline-flex aspect-square shrink-0 items-center justify-center rounded-l-none border p-0 leading-none transition-[background-color,border-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus:outline-none focus-visible:z-10 focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight] hover:z-10';
-      // Same heights, corner radii and glyph sizes as the matching lfx-ui-button size. Exact px: the 10px and 14px radii have no ui-* utility.
+      // Same heights, corner radii and glyph sizes as the matching lfx-ui-button size. Exact px: the 10/11/14px radii have no ui-* utility.
       const sizes = {
-        small: 'h-ui-tiny rounded-r-[10px] text-[12px]',
+        tiny: 'h-ui-tiny rounded-r-[10px] text-[12px]',
+        small: 'h-ui-xsmall rounded-r-[11px] text-[13px]',
         default: 'h-ui-small rounded-r-ui-sm text-[14px]',
         large: 'h-ui-medium rounded-r-[14px] text-[18px]',
       };
@@ -141,8 +142,11 @@ export class UiSplitButtonComponent {
           'border-transparent bg-ui-success-600 text-ui-white shadow-[inset_1px_0_0_color-mix(in_srgb,var(--ui-white)_30%,transparent)] hover:bg-[color-mix(in_srgb,var(--ui-success-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-success-600)_76%,var(--ui-slate-900))]',
         secondary: '-ml-px border-ui-neutral-alpha-300 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
       };
-      // The glyph takes no pointer, so a click lands on the native disabled button, which never dispatches it.
-      const disabled = '-ml-px cursor-not-allowed [&_*]:pointer-events-none border-ui-neutral-alpha-200 bg-ui-neutral-50 text-ui-neutral-500';
+      // Disabled keeps the variant's colours at 45% opacity without hover or pressed steps; the glyph takes no pointer, so the native disabled button gets the click.
+      const disabled = `${variants[this.variant()]
+        .split(' ')
+        .filter((c) => !/^(hover|active):/.test(c))
+        .join(' ')} opacity-45 cursor-not-allowed [&_*]:pointer-events-none`;
       return [base, sizes[this.size()], this.disabled() ? disabled : `cursor-pointer ${variants[this.variant()]}`].join(' ');
     });
   }

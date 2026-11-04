@@ -26,7 +26,7 @@ const meta: Meta<UiSplitButtonComponent> = {
   // Compodoc cannot read the shared union aliases, so the selects are declared here; `menu` is a template, not a control.
   argTypes: {
     variant: { control: 'select', options: ['primary', 'secondary', 'recording'] },
-    size: { control: 'select', options: ['small', 'default', 'large'] },
+    size: { control: 'select', options: ['tiny', 'small', 'default', 'large'] },
     menu: { table: { disable: true } },
   },
   args: { label: 'Deploy', variant: 'primary', size: 'default', icon: '', menuLabel: '', disabled: false },
@@ -48,11 +48,13 @@ export const Large: Story = { args: { variant: 'secondary', size: 'large', label
 
 export const Small: Story = { args: { variant: 'secondary', size: 'small', label: 'Export' } };
 
+export const Tiny: Story = { args: { variant: 'secondary', size: 'tiny', label: 'Export' } };
+
 export const WithIcon: Story = { args: { icon: 'fa-light fa-rocket' } };
 
 export const Disabled: Story = { args: { disabled: true } };
 
-/** All three sizes of both variants, side by side. */
+/** All four sizes of both variants, side by side. */
 export const Sizes: Story = {
   render: () => ({
     template: `
@@ -60,9 +62,11 @@ export const Sizes: Story = {
         <lfx-ui-split-button size="large" label="Deploy" [menu]="deployMenu" />
         <lfx-ui-split-button label="Deploy" [menu]="deployMenu" />
         <lfx-ui-split-button label="Deploy" size="small" [menu]="deployMenu" />
+        <lfx-ui-split-button label="Deploy" size="tiny" [menu]="deployMenu" />
         <lfx-ui-split-button size="large" label="Export CSV" variant="secondary" [menu]="deployMenu" />
         <lfx-ui-split-button label="Export CSV" variant="secondary" [menu]="deployMenu" />
         <lfx-ui-split-button label="Export CSV" variant="secondary" size="small" [menu]="deployMenu" />
+        <lfx-ui-split-button label="Export CSV" variant="secondary" size="tiny" [menu]="deployMenu" />
       </div>${menuTemplate}`,
   }),
 };
