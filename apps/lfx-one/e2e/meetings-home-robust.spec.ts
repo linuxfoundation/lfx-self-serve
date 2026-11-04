@@ -61,7 +61,7 @@ test.describe('Meetings home page - Robust Tests', () => {
       await gotoMeetingsHome(page);
 
       const groups = page.getByTestId('meetings-home-list').getByTestId('meetings-home-day-group');
-      await expect(groups).toHaveCount(4);
+      await expect(groups).toHaveCount(5);
       for (const group of await groups.all()) {
         await expect(group.getByTestId('meetings-home-day-group-separator').getByRole('heading', { level: 2 })).toBeVisible();
         await expect(group.getByTestId('meetings-home-day-group-count')).toHaveText(/^1\b/);
@@ -78,7 +78,7 @@ test.describe('Meetings home page - Robust Tests', () => {
     test('rows expose date, title and actions, with RSVP controls only where the viewer can answer', async ({ page }) => {
       await gotoMeetingsHome(page);
 
-      await expect(homeRows(page)).toHaveCount(4);
+      await expect(homeRows(page)).toHaveCount(5);
       for (const row of await homeRows(page).all()) {
         for (const id of ['meetings-home-row-date-month', 'meetings-home-row-date-day', 'meetings-home-row-title', 'meetings-home-row-actions-trigger']) {
           await expect(row.getByTestId(id)).toBeVisible();
@@ -217,7 +217,7 @@ test.describe('Meetings home page - Robust Tests', () => {
       await expect(folded.getByTestId('meetings-redesign-folded-next-meeting').getByTestId('meetings-home-next-card')).toBeVisible();
       await expect(folded.getByTestId('meetings-redesign-folded-last-meeting').getByTestId('meetings-home-last-card')).toBeVisible();
       await expect(page.getByTestId('meetings-redesign-description')).toBeHidden();
-      await expect(homeRows(page)).toHaveCount(4);
+      await expect(homeRows(page)).toHaveCount(5);
     });
 
     test('a centre wider than 860px keeps the folded cards side by side and each row on one flex line', async ({ page, isMobile }) => {

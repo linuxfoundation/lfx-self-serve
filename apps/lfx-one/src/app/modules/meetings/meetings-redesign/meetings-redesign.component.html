@@ -43,10 +43,10 @@
         <!-- Hidden, not removed, while empty: no wrapped row on narrow screens, and Pending RSVPs still moves focus once emptied. -->
         <div
           class="flex max-w-full flex-none flex-wrap items-center gap-[12px]"
-          [class.hidden]="!store.pendingRsvpRows().length && !showCreate()"
+          [class.hidden]="!store.pendingRsvpRows().length && !personaLoaded()"
           data-testid="meetings-redesign-header-actions">
           <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="createButton() ?? heading" />
-          @if (showCreate()) {
+          @if (personaLoaded()) {
             <lfx-ui-button #createButton variant="tertiary-accent" icon="fa-light fa-plus" (click)="createMeeting()" data-testid="meetings-home-create">
               Create Meeting
             </lfx-ui-button>
@@ -221,26 +221,14 @@
         icon="fa-light fa-calendar"
         heading="No upcoming meetings"
         description="Meetings from your committees and projects will appear here."
-        data-testid="meetings-home-empty-upcoming">
-        @if (canWriteMeetings()) {
-          <lfx-ui-button
-            empty-state-action
-            variant="secondary-accent"
-            size="large"
-            icon="fa-light fa-plus"
-            (click)="createMeeting()"
-            data-testid="meetings-home-empty-create">
-            Create Meeting
-          </lfx-ui-button>
-        }
-      </lfx-ui-empty-state>
+        data-testid="meetings-home-empty-upcoming" />
     }
   } @else if (noResults()) {
     <lfx-ui-empty-state
       class="mt-[16px]"
       icon="fa-light fa-eyes"
       heading="No results found"
-      description="Try adjusting your filter criteria"
+      [description]="noResultsDescription()"
       data-testid="meetings-home-no-results">
       @if (store.hasActiveQuery()) {
         <lfx-ui-button

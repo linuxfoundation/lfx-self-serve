@@ -23,9 +23,9 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
+import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { PersonaService } from '@services/persona.service';
-import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
@@ -95,7 +95,6 @@ export class MeetingsRedesignComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly createArtifactDialog = inject(CreateArtifactDialogService);
   private readonly composer = inject(MeetingComposerService);
-  private readonly projectContext = inject(ProjectContextService);
   protected readonly store = inject(MeetingsHomeStore);
 
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
@@ -112,8 +111,6 @@ export class MeetingsRedesignComponent {
   protected readonly idPrefix = 'meetings-redesign';
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
   protected readonly personaLoaded = this.personaService.personaLoaded;
-  // shortcut: gated on meeting write access in the active project context. revisit: when Me-lens create gating is settled
-  protected readonly canWriteMeetings: Signal<boolean> = this.projectContext.canWriteMeetings;
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
   /** Measured tabs bar height; the day headings stick right below it. */
@@ -143,16 +140,11 @@ export class MeetingsRedesignComponent {
   });
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
-  /** Header Create Meeting; the empty Upcoming tab offers its own in the empty state instead, per the design. */
-  protected readonly showCreate: Signal<boolean> = computed(
-    () => this.canWriteMeetings() && !(this.store.tab() === 'upcoming' && this.tabEmpty() && !this.store.failed())
-  );
-  /** The active tab has meetings, but none match the search and filters, or only the Next meeting card's date does. */
-  protected readonly noResults: Signal<boolean> = computed(
-    () =>
-      !this.store.loading() &&
-      !this.tabEmpty() &&
-      (this.store.matchingRows().length === 0 || (this.store.hasActiveQuery() && this.store.filteredRows().length === 0))
+  /** The active tab has meetings, but none match the search and filters. */
+  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
+  /** Any applied filter wins over the search in the no-results copy. */
+  protected readonly noResultsDescription: Signal<string> = computed(() =>
+    countAppliedMeetingFilters(this.store.filters()) > 0 ? 'No meetings match your filters' : 'No meetings match your search'
   );
   /** "All N meetings loaded" once every row of a list longer than one page is shown. */
   protected readonly allLoaded: Signal<boolean> = computed(

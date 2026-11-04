@@ -79,10 +79,6 @@ export class MeetingRsvpControlsComponent {
   protected readonly current: Signal<MeetingRsvpChoice | null> = computed(
     () => this.choices.find((choice) => choice.response === this.row().myRsvp?.response_type) ?? null
   );
-  protected readonly scopeLabel: Signal<string | null> = computed(() => {
-    const rsvp = this.row().myRsvp;
-    return rsvp && this.row().meeting.recurrence ? getMeetingRsvpScopeLabel(rsvp) : null;
-  });
 
   protected choose(response: RsvpResponse): void {
     const row = this.row();

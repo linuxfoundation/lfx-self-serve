@@ -451,9 +451,8 @@ describe('MeetingsHomeStore', () => {
 
       store.loadMore();
 
-      // The soonest date sits in the Next meeting card, not the list.
-      expect(shown()).toBe(MEETINGS_HOME_PAGE_SIZE + 4);
-      expect(counted()).toBe(MEETINGS_HOME_PAGE_SIZE + 4);
+      expect(shown()).toBe(MEETINGS_HOME_PAGE_SIZE + 5);
+      expect(counted()).toBe(MEETINGS_HOME_PAGE_SIZE + 5);
       expect(store.hasMore()).toBe(false);
     });
 
@@ -480,26 +479,25 @@ describe('MeetingsHomeStore', () => {
   });
 
   describe('next meeting', () => {
-    it('takes the soonest date out of the Upcoming list, whatever the search, and keeps it in the tab rows', () => {
+    it('is the soonest date, whatever the search, and stays in the Upcoming list', () => {
       const store = create();
       upcoming$.next([buildMeeting({ id: 'later', start_time: inDays(3).toISOString() }), buildMeeting({ id: 'soon', start_time: inDays(1).toISOString() })]);
 
       expect(store.nextRow()?.meeting.id).toBe('soon');
-      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['later']);
-      expect(store.upcomingRows()).toHaveLength(2);
+      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['soon', 'later']);
 
-      store.setSearch('sync');
+      store.setSearch('nothing matches');
       expect(store.nextRow()?.meeting.id).toBe('soon');
-      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['later']);
+      expect(store.filteredRows()).toEqual([]);
     });
 
-    it('is the first date of a series, leaving its later dates in the list', () => {
+    it('is the first date of a series', () => {
       const store = create();
       const series = weeklyMeeting([inDays(1), inDays(8)]);
       upcoming$.next([series]);
 
       expect(store.nextRow()?.occurrenceId).toBe(seconds(inDays(1)));
-      expect(store.filteredRows().map((row) => row.occurrenceId)).toEqual([store.upcomingRows()[1].occurrenceId]);
+      expect(store.filteredRows()).toHaveLength(2);
     });
 
     it('passes over a date that is over but still in its join buffer for the one starting next', () => {
@@ -509,7 +507,7 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['over', 'up']);
       expect(store.nextRow()?.meeting.id).toBe('up');
-      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['over']);
+      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['over', 'up']);
     });
 
     it('builds the join link for the real viewer inside the join window only', () => {

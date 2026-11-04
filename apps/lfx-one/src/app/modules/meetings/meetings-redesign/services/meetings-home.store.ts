@@ -131,12 +131,10 @@ export class MeetingsHomeStore {
   public readonly nextRowJoinable: Signal<boolean> = this.joinService.joinable(this.nextRow, this.now);
   /** Join link for the next date, built for the real viewer while impersonating; null until joinable or when unavailable. */
   public readonly nextRowJoinUrl: Signal<string | null> = this.joinService.joinUrl(this.nextRow, this.nextRowJoinable);
-  /** The active tab's rows that match the search and filters, the Next meeting card's date included. */
-  public readonly matchingRows: Signal<MeetingHomeRow[]> = computed(() =>
+  /** The list's rows: the active tab's rows that match the search and filters, the Next meeting card's date included. */
+  public readonly filteredRows: Signal<MeetingHomeRow[]> = computed(() =>
     filterMeetingsHome(this.tabRows(), this.filters(), this.search(), this.userService.viewerUsername())
   );
-  /** The list's rows: the matching rows, with the Upcoming list leaving out the Next meeting card's date. */
-  public readonly filteredRows: Signal<MeetingHomeRow[]> = this.initFilteredRows();
   /** Rows shown so far; back to one page whenever the tab, search or filters change. */
   public readonly visibleCount: Signal<number> = this.visibleCountState.asReadonly();
   public readonly groups: Signal<MeetingDayGroup[]> = computed(() =>
@@ -286,14 +284,6 @@ export class MeetingsHomeStore {
       const rows = this.upcomingRows();
       const nowMs = this.now().getTime();
       return rows.find((row) => Date.parse(row.startTime) + row.durationMinutes * 60_000 > nowMs) ?? rows[0] ?? null;
-    });
-  }
-
-  private initFilteredRows(): Signal<MeetingHomeRow[]> {
-    return computed(() => {
-      const rows = this.matchingRows();
-      const nextKey = this.tab() === 'upcoming' ? this.nextRow()?.key : undefined;
-      return nextKey ? rows.filter((row) => row.key !== nextKey) : rows;
     });
   }
 
