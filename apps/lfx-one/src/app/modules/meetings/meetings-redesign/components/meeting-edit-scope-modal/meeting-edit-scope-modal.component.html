@@ -27,7 +27,11 @@
   <lfx-ui-radio-group ariaLabel="What to edit" [(value)]="scope" data-testid="meetings-home-edit-scope-options">
     <span class="flex flex-col gap-[4px] self-stretch">
       <lfx-ui-radio class="[&_label]:font-medium" value="occurrence" label="A single occurrence" data-testid="meetings-home-edit-scope-occurrence" />
-      <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600"
+      <!-- The uikit radio has no description slot, so a click on the description picks the option too. -->
+      <span
+        class="cursor-pointer pl-[24px] text-[13px] leading-[18px] text-gray-600"
+        (click)="scope.set('occurrence')"
+        data-testid="meetings-home-edit-scope-occurrence-description"
         >Change the time, title, or agenda of one occurrence without changing the rest of the series.</span
       >
       @if (scope() === 'occurrence') {
@@ -47,7 +51,12 @@
     </span>
     <span class="flex flex-col gap-[4px]">
       <lfx-ui-radio class="[&_label]:font-medium" value="series" label="The entire series" data-testid="meetings-home-edit-scope-series" />
-      <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600">Edit the title, schedule, guests, and settings for every upcoming occurrence.</span>
+      <span
+        class="cursor-pointer pl-[24px] text-[13px] leading-[18px] text-gray-600"
+        (click)="scope.set('series')"
+        data-testid="meetings-home-edit-scope-series-description"
+        >Edit the title, schedule, guests, and settings for every upcoming occurrence.</span
+      >
     </span>
   </lfx-ui-radio-group>
 

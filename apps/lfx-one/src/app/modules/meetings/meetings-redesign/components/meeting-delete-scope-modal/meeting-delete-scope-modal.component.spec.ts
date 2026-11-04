@@ -72,11 +72,32 @@ describe('MeetingDeleteScopeModalComponent', () => {
     expect(close).toHaveBeenCalledWith({ deleteType: 'series' });
   });
 
+  it('picks an option from a click on its description', async () => {
+    await render(buildData(MEETING, FIRST));
+
+    query('meetings-home-delete-scope-series-description')?.click();
+    await fixture.whenStable();
+
+    expect(radio('series').checked).toBe(true);
+    button('meetings-home-delete-scope-continue').click();
+    expect(close).toHaveBeenCalledWith({ deleteType: 'series' });
+  });
+
   it('opens with nothing chosen when it has no date of its own', async () => {
     await render(buildData(MEETING, null));
 
     expect(radio('occurrence').checked || radio('series').checked).toBe(false);
     expect(button('meetings-home-delete-scope-continue').disabled).toBe(true);
+  });
+
+  it('picks a single occurrence from a click on its description when it has no date of its own', async () => {
+    await render(buildData(MEETING, null));
+
+    query('meetings-home-delete-scope-occurrence-description')?.click();
+    await fixture.whenStable();
+
+    expect(radio('occurrence').checked).toBe(true);
+    expect(query('meetings-home-delete-scope-occurrence-select')).not.toBeNull();
   });
 
   it('opens on the series when no date is left to cancel', async () => {
@@ -85,5 +106,15 @@ describe('MeetingDeleteScopeModalComponent', () => {
     expect(radio('series').checked).toBe(true);
     expect(radio('occurrence').disabled).toBe(true);
     expect(query('meetings-home-delete-scope-options')?.textContent).toContain('There are no upcoming occurrences left to cancel on their own.');
+  });
+
+  it('keeps the series from a click on the disabled occurrence description', async () => {
+    await render(buildData({ ...MEETING, occurrences: [] }, null));
+
+    query('meetings-home-delete-scope-occurrence-description')?.click();
+    await fixture.whenStable();
+
+    expect(radio('series').checked).toBe(true);
+    expect(radio('occurrence').checked).toBe(false);
   });
 });
