@@ -24,34 +24,29 @@
           [class.opacity-0]="!scrolled() || tabsStuck()"
           aria-hidden="true"
           data-testid="meetings-redesign-header-fade"></span>
-        @if (personaLoaded()) {
-          <div class="flex min-w-0 flex-col gap-[4px]">
-            <!-- Focusable so focus has somewhere to go when the Pending RSVPs button hides. -->
-            <h1
-              #heading
-              tabindex="-1"
-              class="font-display text-[24px] font-light leading-[1.2] text-gray-900 outline-none"
-              data-testid="meetings-redesign-title">
-              Meetings
-            </h1>
-            <!-- Hidden at 1024px and below, per the design. -->
+        <div class="flex min-w-0 flex-col gap-[4px]">
+          <!-- Focusable and always rendered so focus has somewhere to go when the Pending RSVPs button hides. -->
+          <h1 #heading tabindex="-1" class="font-display text-[24px] font-light leading-[1.2] text-gray-900 outline-none" data-testid="meetings-redesign-title">
+            Meetings
+          </h1>
+          <!-- Hidden at 1024px and below, per the design. -->
+          @if (personaLoaded()) {
             <p class="hidden text-[13px] text-gray-500 min-[1025px]:block" data-testid="meetings-redesign-description">
               Meetings you're invited to or organizing, across all your projects.
             </p>
-          </div>
-        } @else {
-          <div class="flex min-w-0 flex-col gap-[8px]" data-testid="meetings-home-persona-loading">
-            <lfx-ui-skeleton width="12rem" height="28px" />
-            <lfx-ui-skeleton width="min(28rem, 100%)" height="14px" />
-          </div>
-        }
+          } @else {
+            <div class="hidden min-[1025px]:block" data-testid="meetings-home-persona-loading">
+              <lfx-ui-skeleton width="min(28rem, 100%)" height="14px" />
+            </div>
+          }
+        </div>
         <!-- Hidden, not removed, while empty: no wrapped row on narrow screens, and Pending RSVPs still moves focus once emptied. -->
         <div
           class="flex max-w-full flex-none flex-wrap items-center gap-[12px]"
-          [class.hidden]="!store.pendingRsvpRows().length && !showCreate()"
+          [class.hidden]="!store.pendingRsvpRows().length && !personaLoaded()"
           data-testid="meetings-redesign-header-actions">
-          <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="createButton() ?? heading()?.nativeElement ?? null" />
-          @if (showCreate()) {
+          <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="createButton() ?? heading" />
+          @if (personaLoaded()) {
             <lfx-ui-button #createButton variant="tertiary-accent" icon="fa-light fa-plus" (click)="createMeeting()" data-testid="meetings-home-create">
               Create Meeting
             </lfx-ui-button>
@@ -67,7 +62,7 @@
       <!-- Sticky tabs bar; the fade moves here from the header once it is stuck, then below a stuck day heading -->
       <div
         #tabsBar
-        class="sticky z-[5] -mt-[4px] flex flex-wrap items-end justify-between gap-x-[16px] gap-y-[12px] bg-white pt-[4px]"
+        class="sticky z-[5] -mt-[4px] flex flex-wrap items-end justify-between gap-x-[16px] gap-y-[12px] bg-white pt-[4px] min-[1025px]:@[440px]:flex-nowrap"
         [style.top.px]="stickyTop() + headerHeight()"
         data-testid="meetings-redesign-tabs-bar">
         <span
@@ -85,10 +80,11 @@
           (valueChange)="onTabChange($event)"
           data-testid="meetings-redesign-tabs" />
         @if (!tabEmpty()) {
-          <div class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto">
-            <!-- A fixed min width above 640px: the library's min(300px, 100%) sizes the row too narrow and wraps Filters. -->
+          <!-- Above 1024px, in a centre of 440px or more, the bar stays on one line and search narrows from 300px. -->
+          <div class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto min-[1025px]:min-w-0 min-[1025px]:flex-nowrap">
+            <!-- A fixed min width at 641-1024px: the library's min(300px, 100%) sizes the row too narrow and wraps Filters. -->
             <lfx-ui-search-input
-              class="w-full min-[641px]:w-auto min-[641px]:min-w-[300px]"
+              class="w-full min-[641px]:w-auto min-[641px]:min-w-[300px] min-[1025px]:w-[300px] min-[1025px]:min-w-0"
               placeholder="Search meetings"
               ariaLabel="Search meetings"
               [value]="store.search()"
@@ -225,26 +221,14 @@
         icon="fa-light fa-calendar"
         heading="No upcoming meetings"
         description="Meetings from your committees and projects will appear here."
-        data-testid="meetings-home-empty-upcoming">
-        @if (canWriteMeetings()) {
-          <lfx-ui-button
-            empty-state-action
-            variant="secondary-accent"
-            size="large"
-            icon="fa-light fa-plus"
-            (click)="createMeeting()"
-            data-testid="meetings-home-empty-create">
-            Create Meeting
-          </lfx-ui-button>
-        }
-      </lfx-ui-empty-state>
+        data-testid="meetings-home-empty-upcoming" />
     }
   } @else if (noResults()) {
     <lfx-ui-empty-state
       class="mt-[16px]"
       icon="fa-light fa-eyes"
       heading="No results found"
-      description="Try adjusting your filter criteria"
+      [description]="noResultsDescription()"
       data-testid="meetings-home-no-results">
       @if (store.hasActiveQuery()) {
         <lfx-ui-button

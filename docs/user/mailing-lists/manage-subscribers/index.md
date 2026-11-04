@@ -4,7 +4,7 @@ description: How to add subscribers to a mailing list, set their delivery mode a
 audience: [maintainer, board-member, executive-director]
 product_area: Mailing Lists
 tags: [mailing-lists, subscribers, members, moderator, delivery mode, add, remove]
-last_updated: 2026-10-28
+last_updated: 2026-11-03
 intercom_collection: Mailing Lists
 ---
 
@@ -35,6 +35,8 @@ The table has these columns:
 - **Actions**: edit and remove
 
 The table shows 10 subscribers per page, and you can switch to 25 or 50. It is sorted by email address. If nothing matches, you see "No subscribers found".
+
+If the subscriber list cannot be loaded completely, an error message appears instead of an empty table. Select **Retry** to load it again. A failed load does not mean the list has no subscribers.
 
 ### Search and filter
 

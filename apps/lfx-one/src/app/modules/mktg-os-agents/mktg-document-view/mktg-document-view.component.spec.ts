@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
+import { DATE_PIPE_DEFAULT_OPTIONS, Location } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { computed, linkedSignal, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter, Router } from '@angular/router';
+import { NavigationEnd, provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
   BRAND_KIT_CONTRACT_ID,
@@ -21,6 +21,7 @@ import {
   MKTG_DOCUMENT_TYPES,
   MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS,
   MKTG_RUN_POLL,
+  VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
   MKTG_RUN_ACTIVE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_AGENT_INTAKES,
@@ -61,7 +62,7 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
+import { filter, firstValueFrom, NEVER, of, Subject, take, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
@@ -216,7 +217,7 @@ describe('MktgDocumentViewComponent', () => {
   }
 
   /** A Messaging Framework document whose latest revision is the framework's JSON, as the store serves it. */
-  function useFrameworkRevision(viewingDraft = false): void {
+  function useFrameworkRevision(viewingDraft = false, newer?: MktgRevisionSummary): void {
     const FRAMEWORK = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message') as MktgDocumentType;
     const content = {
       mf: {
@@ -263,12 +264,13 @@ describe('MktgDocumentViewComponent', () => {
     const approval = viewingDraft ? null : { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
     const jsonRevision = revision(2, { latest: true, format: 'json', status: '', approval });
     const approvedCurrent = approval ? { revisionId: jsonRevision.id, number: jsonRevision.number } : null;
-    store.getDocument.mockReturnValue(of({ ...detail, type: FRAMEWORK, revisions: [jsonRevision], approvedCurrent }));
+    const revisions = newer ? [newer, jsonRevision] : [jsonRevision];
+    store.getDocument.mockReturnValue(of({ ...detail, type: FRAMEWORK, revisions, approvedCurrent }));
     store.getRevision.mockReturnValue(
       of({
         ...detail,
         type: FRAMEWORK,
-        revisions: [jsonRevision],
+        revisions,
         revision: jsonRevision,
         approval,
         approvedCurrent,
@@ -307,6 +309,22 @@ describe('MktgDocumentViewComponent', () => {
       return of({ ...history, project, revision: selected, markdown: `# Revision ${selected.number}\n`, sidecar: null });
     });
     return history;
+  }
+
+  function mockBannerFocusHistory() {
+    const history = mockNineRevisionHistory(3);
+    const current = history.revisions.find((row) => row.number === 3);
+    const viewed = history.revisions.find((row) => row.number === 1);
+    if (!current || !viewed) throw new Error('Missing synthetic focus revisions');
+    current.approval = { approvedAt: '2026-11-02T18:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    history.approvedCurrent = { revisionId: current.id, number: current.number };
+    store.getRevision.mockImplementation((project: string, _agent: string, _document: string, id: string) => {
+      const selected = history.revisions.find((row) => row.id === id);
+      if (!selected) throw new Error('Missing synthetic focus selection');
+      return of({ ...history, project, revision: selected, approval: selected.approval, markdown: `# Revision ${selected.number}\n`, sidecar: null });
+    });
+    const targetView: MktgRevisionResponse = { ...history, revision: current, approval: current.approval, markdown: '# Revision 3\n', sidecar: null };
+    return { viewed, current, targetView };
   }
 
   beforeEach(async () => {
@@ -825,16 +843,28 @@ describe('MktgDocumentViewComponent', () => {
     expect(component?.['view']()).toBe(body);
   });
 
-  it('re-reads a stored document on focus and observes another writer revision and approval without manual reload', async () => {
+  it('lands the creator on the produced revision after its acknowledged run completes on focus', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!component) throw new Error('Missing creator receiver');
+    // The local ACK selects this exact server-recorded run, including an any-device answer continuation.
+    component['handoffRunId'].set(started('writing').runId);
+    component['runDetail'].set({ ...detail, runs: [started('writing')] });
+    await settle(); // The acknowledged mode reaches the shared reader before the next focus event.
     const next = revision(3, { latest: true });
-    const updated = { ...detail, revisions: [next, { ...LATEST, latest: false }, OLDER], approvedCurrent: { revisionId: next.id, number: next.number } };
+    const updated = {
+      ...detail,
+      revisions: [next, { ...LATEST, latest: false }, OLDER],
+      approvedCurrent: { revisionId: next.id, number: next.number },
+      runs: [{ ...started('completed'), producedRevisionId: next.id }],
+    };
     store.getDocument.mockReturnValue(of(updated));
     store.getRevision.mockReturnValue(of({ ...updated, revision: next, approval: null, markdown: '# Synthetic current revision', sidecar: null }));
     window.dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(VISIBILITY_POLL_WAKE_DEBOUNCE_MS);
     await settle();
-    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
-    expect(component?.['view']()?.revision.id).toBe(next.id);
+    expect(component['view']()?.revision.id).toBe(next.id);
     expect(component?.['view']()?.approvedCurrent?.revisionId).toBe(next.id);
     expect(store.getRevision).toHaveBeenLastCalledWith(PROJECT.uid, 'brand-kit', 'living', next.id, true);
   });
@@ -1277,7 +1307,7 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-report-summary')).toBeNull();
       expect(query('mktg-document-view-retry')).toBeNull();
       expect(store.getRevision).toHaveBeenCalledWith('proj-1', agentKey, 'run-synthetic', LATEST.id, true);
-      expect(query('mktg-document-view-history-bar-make-current')).toBeNull();
+      expect(query('mktg-document-view-viewed-make-current')).toBeNull();
       expect(harness.routeNativeElement?.querySelectorAll('[data-testid^="mktg-document-view-restore-"]')).toHaveLength(0);
       const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent | undefined;
       if (!component) throw new Error('Document component missing.');
@@ -2539,11 +2569,23 @@ describe('MktgDocumentViewComponent', () => {
   it.each([LATEST, OLDER])('blocks revision links and Make current before the prepared ACK while viewing v$number', async (selected) => {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === ICP_INTAKE.agentId);
     if (!type) throw new Error('Missing catalog ICP fixture');
-    store.getDocument.mockReturnValue(of({ ...detail, type }));
+    const approved = revision(3, { latest: true, approval: { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } } });
+    const metadata = { ...detail, type, revisions: [approved, { ...LATEST, latest: false }, OLDER], approvedCurrent: { revisionId: approved.id, number: 3 } };
+    let response: MktgDocumentDetailResponse = {
+      ...metadata,
+      approvedCurrent: null,
+      revisions: metadata.revisions.map((row) => ({ ...row, approval: null })),
+    };
+    store.getDocument.mockImplementation(() => of(response));
     store.getRevision.mockImplementation((_project: string, _agent: string, _document: string, id: string) =>
-      of({ ...revisionResponse(id === OLDER.id ? OLDER : LATEST), type })
+      of({ ...revisionResponse(response.revisions.find((row) => row.id === id) ?? LATEST), ...response })
     );
     await render(`/documents/${type.agentKey}/living?revision=${selected.id}`);
+    const reader = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!reader) throw new Error('Missing pre-ACK reader');
+    response = metadata;
+    reader['onPublicProgress']({ detail: metadata, view: null });
+    await settle();
     const progress = new Subject<MktgGenerateProgress>();
     const pending: MktgPendingGeneration = {
       request: { agentId: ICP_INTAKE.agentId, projectUid: PROJECT.uid, intake: ICP_INTAKE, answers: {} },
@@ -2558,9 +2600,10 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
     if (!component) throw new Error('Missing prepared receiver');
+    expect(query('mktg-document-view-current-banner-open')).not.toBeNull();
     const links = [
       ...(harness.routeNativeElement?.querySelectorAll<HTMLAnchorElement>(
-        '[data-testid^="mktg-document-view-open-"], [data-testid="mktg-document-view-history-bar-back"]'
+        '[data-testid^="mktg-document-view-open-"], [data-testid="mktg-document-view-current-banner-open"]'
       ) ?? []),
     ];
     expect(links.length).toBeGreaterThan(0);
@@ -2571,11 +2614,7 @@ describe('MktgDocumentViewComponent', () => {
       expect(link.getAttribute('href')).toBeNull();
       link.click();
     }
-    const writes = [
-      ...(harness.routeNativeElement?.querySelectorAll<HTMLButtonElement>(
-        '[data-testid^="mktg-document-view-restore-"], [data-testid="mktg-document-view-history-bar-make-current"]'
-      ) ?? []),
-    ];
+    const writes = [...(harness.routeNativeElement?.querySelectorAll<HTMLButtonElement>('[data-testid^="mktg-document-view-restore-"]') ?? [])];
     expect(writes.length).toBeGreaterThan(0);
     expect(writes.every((button) => button.disabled)).toBe(true);
     component['onRestore'](OLDER);
@@ -2745,7 +2784,12 @@ describe('MktgDocumentViewComponent', () => {
     store.getDocument.mockReturnValue(of({ ...detail, runs: [started('writing')] }));
     await render('/documents/brand-kit/living');
     if (failure === 'metadata') store.getDocument.mockReturnValue(of({ ...detail, runs: [started('writing')], progressUnavailable: true }));
-    else store.getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    else {
+      const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+      component['localProgress'].set('writing'); // Creator's local pre-ACK body polling; a selected ACK intentionally redirects to its run.
+      await settle();
+      store.getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    }
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
     await settle();
     expect(progressReader()['warning']()).toContain('paused');
@@ -2762,13 +2806,14 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
   });
 
-  it('retains an acknowledged current-pointer write when a later body poll fails', async () => {
+  it('retains an acknowledged current-pointer write when a later metadata poll fails', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     store.getDocument.mockReturnValue(of({ ...detail, runs: [started('writing')] }));
     await render('/documents/brand-kit/living');
     query('mktg-document-view-restore-1')?.click();
     await settle();
-    store.getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    store.getDocument.mockReturnValue(of({ ...component['view'](), progressUnavailable: true }));
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     await settle();
     expect(query('mktg-document-view-current-1')).not.toBeNull();
@@ -2794,7 +2839,7 @@ describe('MktgDocumentViewComponent', () => {
     const pending = new Subject<unknown>();
     store.restoreRevision.mockReturnValue(pending);
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
-    query('mktg-document-view-history-bar-make-current')?.click();
+    query('mktg-document-view-viewed-make-current')?.click();
     await settle();
     store.getRevision.mockReturnValue(NEVER);
     subject.set('other-synthetic-owner');
@@ -2852,8 +2897,7 @@ describe('MktgDocumentViewComponent', () => {
     for (const token of ['bg-blue-700', 'text-white', 'font-bold', 'rounded-full', 'text-[12px]']) {
       expect(currentBadge?.classList.contains(token)).toBe(true);
     }
-    expect(query('mktg-document-view-restore-current')).toBeNull();
-    expect(query('mktg-document-view-history-bar')).toBeNull();
+    expect(query('mktg-document-view-viewed-make-current')).toBeNull();
     expect(query('mktg-document-view-current-since-2')).toBeNull();
     expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toContain('/families/positioning-brand?project=testorbit');
     expect(query('mktg-document-view-back-link')).toBeNull();
@@ -2891,13 +2935,11 @@ describe('MktgDocumentViewComponent', () => {
       })
     );
     await render(`/documents/brand-kit/living?revision=${survivor.id}`);
-    expect(query('mktg-document-view-history-bar-make-current')?.textContent).toContain('Make v1 current');
-    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe("You're viewing v1 · no name (stored before names were recorded)");
-    expect(query('mktg-document-view-history-bar-back')).toBeNull();
-    query('mktg-document-view-history-bar-make-current')?.click();
+    expect(query('mktg-document-view-viewed-make-current')?.textContent).toContain('Make current');
+    query('mktg-document-view-viewed-make-current')?.click();
     await settle();
     expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id);
-    expect(query('mktg-document-view-history-bar')).toBeNull();
+    expect(query('mktg-document-view-viewed-make-current')).toBeNull();
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current.');
   });
@@ -3019,7 +3061,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
   });
 
-  it('offers the open non-current revision in a subtle bar before the kit header actions without changing keyboard order', async () => {
+  it('offers the open non-current revision inside Revisions without moving content tabs or the breadcrumb action order', async () => {
     store.getRevision.mockReturnValue(of({ ...revisionResponse(OLDER), sidecar: kitSidecar() }));
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
 
@@ -3027,24 +3069,21 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, false);
     expect(query('mktg-document-view-version')?.textContent).toContain('v1');
     expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(2);
-    expect(query('mktg-document-view-restore-current')).toBeNull();
-    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe(
-      "You're viewing v1 · 13 Oct · no name (stored before names were recorded) · v2 is current"
-    );
-    expect(query('mktg-document-view-history-bar-make-current')?.textContent).toContain('Make v1 current');
-    expect(query('mktg-document-view-history-bar-back')?.getAttribute('href')).toBe(`/documents/brand-kit/living?revision=${LATEST.id}`);
-    const summary = query('mktg-document-view-history-bar-summary');
+    expect(query('mktg-document-view-viewed-make-current')).not.toBeNull();
+    expect(query('mktg-document-view-viewed-make-current')?.textContent).toContain('Make current');
+    const openLink = query('mktg-document-view-open-2');
     const runAgain = expectTitleCardRunAgain();
-    if (!summary) throw new Error('Missing history fixture');
-    expect(runAgain.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    if (!openLink) throw new Error('Missing open-revision link fixture');
+    expect(runAgain.compareDocumentPosition(openLink) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     const focusable = Array.from(harness.routeNativeElement?.querySelectorAll<HTMLElement>('a[href], button, [tabindex]') ?? []).filter(
       (element) => element.tabIndex >= 0 && !element.hasAttribute('disabled')
     );
     const navigationLink = query('mktg-breadcrumb-link-1');
     if (!navigationLink) throw new Error('Missing shared parent breadcrumb');
     expect(focusable[focusable.indexOf(navigationLink) + 1]).toBe(runAgain);
-    const bar = query('mktg-document-view-history-bar');
-    for (const token of ['sticky', 'h-[34px]', 'text-[13px]', 'bg-gray-50']) expect(bar?.classList.contains(token)).toBe(true);
+    const restoreCurrent = query('mktg-document-view-viewed-make-current');
+    expect(query('mktg-document-view-revisions')?.contains(restoreCurrent)).toBe(true);
+    expect(query('mktg-document-view-content')?.contains(restoreCurrent)).toBe(false);
     expect(query('mktg-document-view-hash')).toBeNull();
     expect(Array.from(query('mktg-document-view-about')?.querySelectorAll('dt') ?? [], (term) => term.textContent)).toEqual(['Agent', 'Stored']);
   });
@@ -3292,42 +3331,6 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-print-version')?.textContent).toContain('Version 2');
   });
 
-  it('makes the full truncated history summary available on keyboard focus rather than title', async () => {
-    const name = 'The writer responsible for the synthetic revision and its detailed review notes';
-    const selected = { ...OLDER, author: { name } };
-    store.getRevision.mockReturnValue(of({ ...detail, revisions: [LATEST, selected], revision: selected, markdown: '# Older' }));
-    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
-    const summary = query('mktg-document-view-history-bar-summary');
-    if (!summary) throw new Error('The history summary must be rendered');
-    expect(summary.getAttribute('tabindex')).toBe('0');
-    expect(summary.hasAttribute('title')).toBe(false);
-    expect(summary.getAttribute('aria-label')).toBe(`You're viewing v1 · 13 Oct · ${name} · v2 is current`);
-    summary.focus();
-    await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(summary.textContent));
-    summary.blur();
-  });
-
-  it.each([
-    { author: { name: 'The writer' }, label: 'The writer' },
-    { author: { name: null }, label: 'name unavailable' },
-    { author: null, label: 'no name (stored before names were recorded)' },
-  ])('uses the row attribution policy in the history bar: %j', async ({ author, label }) => {
-    const selected = { ...OLDER, author };
-    store.getRevision.mockReturnValue(of({ ...detail, revisions: [LATEST, selected], revision: selected, markdown: '# Older' }));
-    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
-    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe(`You're viewing v1 · 13 Oct · ${label} · v2 is current`);
-  });
-
-  it('never shows the history bar for a one-off run', async () => {
-    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run');
-    if (!type) throw new Error('The catalog must have a one-off type for this test');
-    const only = revision(1, { latest: true });
-    const documentId = `run-${'a'.repeat(24)}`;
-    store.getRevision.mockReturnValue(of({ ...detail, type, documentId, revisions: [only], revision: only, markdown: '# One run' }));
-    await render(`/documents/${type.agentKey}/${documentId}?revision=${only.id}`);
-    expect(query('mktg-document-view-history-bar')).toBeNull();
-  });
-
   it('keeps expanded Show all and the selected FAQ tab through two polls and a focus re-read', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const history = mockNineRevisionHistory();
@@ -3348,15 +3351,18 @@ describe('MktgDocumentViewComponent', () => {
     component?.['notice'].set('Synthetic retained reader notice');
     component?.['restoreNotice'].set('Synthetic retained restore notice');
     document.documentElement.scrollTop = 120;
-    // A pinned revision is reread directly; metadata reads are intentionally bypassed on this scope.
-    const reads = store.getRevision.mock.calls.length;
+    // An open remote revision polls metadata only; its body and unsent choices stay pinned.
+    const bodyReads = store.getRevision.mock.calls.length;
+    const reads = store.getDocument.mock.calls.length;
     await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
     await settle();
-    expect(store.getRevision.mock.calls.length).toBeGreaterThanOrEqual(reads + 2);
-    const afterPolls = store.getRevision.mock.calls.length;
+    expect(store.getDocument.mock.calls.length).toBeGreaterThanOrEqual(reads + 2);
+    const afterPolls = store.getDocument.mock.calls.length;
     window.dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(VISIBILITY_POLL_WAKE_DEBOUNCE_MS);
     await settle();
-    expect(store.getRevision.mock.calls.length).toBeGreaterThan(afterPolls);
+    expect(store.getDocument.mock.calls.length).toBeGreaterThan(afterPolls);
+    expect(store.getRevision).toHaveBeenCalledTimes(bodyReads);
     component?.['onRefreshProgress']();
     await settle();
     expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(9);
@@ -3387,7 +3393,6 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-controls')).toBe('mktg-document-view-revision-list');
     expect(query('mktg-document-view-revision-3')).toBeNull();
     expect(query('mktg-document-view-revision-4')).toBeNull();
-    expect(query('mktg-document-view-history-bar-summary')?.textContent).toContain('v2 is current');
     expect(query('mktg-document-view-show-all-revisions')?.textContent).toContain('Show all 9 ▾');
     query('mktg-document-view-show-all-revisions')?.click();
     await settle();
@@ -3427,7 +3432,6 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${history.revisions[2].id}`);
     expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(4);
     expect(query('mktg-document-view-revision-1')).toBeNull();
-    expect(query('mktg-document-view-history-bar-summary')?.textContent).toContain('v9 is current');
   });
 
   it('keeps expansion while opening another revision but resets it for another project', async () => {
@@ -3611,12 +3615,12 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/faq/living?revision=${draft.id}`);
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     const approve = query('mktg-document-view-approve')?.querySelector('button');
-    const history = query('mktg-document-view-history-bar-make-current') as HTMLButtonElement | null;
+    const viewedMakeCurrent = query('mktg-document-view-viewed-make-current') as HTMLButtonElement | null;
     const row = query('mktg-document-view-restore-1') as HTMLButtonElement | null;
-    for (const button of [approve, history, row]) expect(button?.disabled).toBe(false);
-    (first === 'approve' ? approve : history)?.click();
+    for (const button of [approve, viewedMakeCurrent, row]) expect(button?.disabled).toBe(false);
+    (first === 'approve' ? approve : viewedMakeCurrent)?.click();
     await settle();
-    for (const button of [approve, history, row]) expect(button?.disabled).toBe(true);
+    for (const button of [approve, viewedMakeCurrent, row]) expect(button?.disabled).toBe(true);
     component['onApprove']();
     component['onRestore'](OLDER);
     expect(store.approveRevision).toHaveBeenCalledTimes(first === 'approve' ? 1 : 0);
@@ -3627,7 +3631,7 @@ describe('MktgDocumentViewComponent', () => {
       pending.complete();
     }
     await settle();
-    for (const button of [approve, history, row]) expect(button?.disabled).toBe(false);
+    for (const button of [approve, viewedMakeCurrent, row]) expect(button?.disabled).toBe(false);
   });
 
   it.each(['brand-kit', 'foundation-message'] as const)(
@@ -3747,6 +3751,675 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     expect(component['railReady']()).toBe(false);
     expect(query('mktg-document-view-loading')).not.toBeNull();
+  });
+
+  it('picks up an idle approval and new revision without replacing the open content, tab or rail', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true);
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    vi.spyOn(comments, 'loaded').mockReturnValue(true);
+    vi.spyOn(comments, 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'foundation-message',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
+    await render('/documents/foundation-message/living?tab=numbers');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const loaded = component['view']();
+    if (!loaded) throw new Error('Missing synthetic framework');
+    expect(component['railReady']()).toBe(true);
+    const ids = ['mktg-document-view-title', 'mktg-framework-view-tab-numbers', 'mktg-document-view-content', 'mktg-document-view-revisions'];
+    const nodes = ids.map(query);
+    expect(nodes.every(Boolean)).toBe(true);
+    const approval = { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    const approved = revision(3, { latest: true, approval });
+    const next = {
+      ...loaded,
+      revisions: [approved, { ...loaded.revision, latest: false }],
+      current: { revisionId: approved.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: approved.id, number: approved.number },
+      runs: [],
+    };
+    store.getDocument.mockReturnValue(of(next));
+    const bodyReads = store.getRevision.mock.calls.length;
+    const reads = store.getDocument.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(store.getDocument).toHaveBeenCalledTimes(reads + 1);
+    expect(store.getRevision).toHaveBeenCalledTimes(bodyReads);
+    expect(component['view']()?.revision.id).toBe(loaded.revision.id);
+    expect(component['view']()?.markdown).toBe(loaded.markdown);
+    ids.forEach((id, index) => expect(query(id)).toBe(nodes[index]));
+    expect(query('mktg-framework-view-tab-numbers')?.getAttribute('aria-selected')).toBe('true');
+    expect(query('mktg-document-view-revision-label-3')?.textContent).toContain('Approved');
+    expect(query('mktg-document-view-current-3')).not.toBeNull();
+    expect(query('mktg-document-view-current-2')).toBeNull();
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Draft');
+    expect(component['railReady']()).toBe(true);
+    const line = query('mktg-document-view-current-banner');
+    expect(line?.textContent).toContain('v3 is now the current version, approved by Synthetic reviewer');
+    expect(line?.querySelector('a')?.getAttribute('href')).toContain(`revision=${approved.id}`);
+    expect(line?.querySelector('a')?.getAttribute('href')).toContain('tab=numbers');
+    line?.querySelector('a')?.click();
+    await settle();
+    expect(TestBed.inject(Router).url).toContain(`revision=${approved.id}`);
+    expect(query('mktg-document-view-current-banner-open')).toBeNull();
+  });
+
+  it.each([false, true])('pins the reader through an idle-discovered remote run and stored revision (approved=%s)', async (approved) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true);
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    vi.spyOn(comments, 'loaded').mockReturnValue(true);
+    vi.spyOn(comments, 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'foundation-message',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
+    await render('/documents/foundation-message/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const loaded = component['view']();
+    if (!loaded) throw new Error('Missing open synthetic framework');
+    expect(component['railReady']()).toBe(true);
+    const ids = ['mktg-document-view-title', 'mktg-document-view-content', 'mktg-document-view-revisions'];
+    const nodes = ids.map(query);
+    const tabs = query('mktg-framework-view-tabs');
+    const tabsTop = tabs?.getBoundingClientRect().top;
+    const readiness = query('mktg-document-view-readiness');
+    const readyText = readiness?.textContent;
+    expect(tabs && readiness).toBeTruthy();
+    let response: MktgDocumentDetailResponse = { ...loaded, runs: [{ ...started('writing'), agentKey: 'foundation-message' }] };
+    const remoteMarkdown = loaded.markdown.replace('A vision.', 'A remote vision.');
+    store.getDocument.mockImplementation(() => of(response));
+    store.getRevision.mockImplementation((_project: string, _agent: string, _document: string, id: string) => {
+      const row = response.revisions.find((entry) => entry.id === id);
+      if (!row) throw new Error('Missing requested synthetic revision');
+      return of({ ...loaded, ...response, revision: row, approval: row.approval, markdown: id === loaded.revision.id ? loaded.markdown : remoteMarkdown });
+    });
+    const reads = store.getRevision.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(component['remoteRevisionId']()).toBe(loaded.revision.id);
+    expect(progressReader().loadRevision()).toBe(false);
+    expect(query('mktg-document-view-readiness')).toBe(readiness);
+    expect(readiness?.textContent).toBe(readyText);
+    expect(query('mktg-framework-view-tabs')).toBe(tabs);
+    expect(tabs?.getBoundingClientRect().top).toBe(tabsTop);
+    expect(component['view']()?.markdown).toBe(loaded.markdown);
+    const approval = approved ? { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } } : null;
+    const newer = revision(3, { latest: true, approval, author: { name: 'Synthetic writer' } });
+    response = {
+      ...response,
+      runs: [],
+      revisions: [newer, { ...loaded.revision, latest: false }],
+      current: { revisionId: newer.id, changedAt: '2026-10-29T12:00:00Z', changedBy: { name: 'Synthetic writer' } },
+      approvedCurrent: approved ? { revisionId: newer.id, number: 3 } : null,
+    };
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(component['view']()?.revision.id).toBe(loaded.revision.id);
+    expect(component['view']()?.markdown).toBe(loaded.markdown);
+    expect(component['railReady']()).toBe(true);
+    ids.forEach((id, index) => expect(query(id)).toBe(nodes[index]));
+    expect(query('mktg-document-view-current-3')).not.toBeNull();
+    expect(query('mktg-document-view-readiness')).toBe(readiness);
+    expect(readiness?.textContent).toBe(readyText);
+    expect(query('mktg-framework-view-tabs')).toBe(tabs);
+    expect(tabs?.getBoundingClientRect().top).toBe(tabsTop);
+    const currentPill = query('mktg-document-view-current-3');
+    expect(currentPill).not.toBeNull();
+    if (approved) expect(query('mktg-document-view-current-banner')?.textContent).toContain('v3 is now the current version, approved by Synthetic reviewer');
+    else expect(query('mktg-document-view-current-banner-open')).toBeNull();
+    expect(query(approved ? 'mktg-document-view-current-banner-open' : 'mktg-document-view-open-3')?.getAttribute('href')).toContain(`revision=${newer.id}`);
+    for (let count = 0; count < 2; count++) {
+      const before = component['progressRefreshKey']();
+      component['onRefreshProgress']();
+      await settle();
+      expect(component['progressRefreshKey']()).not.toBe(before);
+      expect(Number.isFinite(Number(component['progressRefreshKey']()))).toBe(true);
+      expect(component['view']()?.revision.id).toBe(loaded.revision.id);
+      expect(component['view']()?.markdown).toBe(loaded.markdown);
+    }
+    expect(store.getRevision.mock.calls.slice(reads)).toHaveLength(0);
+    // Choosing Open is the explicit permission to change the viewed body.
+    await harness.navigateByUrl(`/documents/foundation-message/living?revision=${newer.id}`, MktgDocumentViewComponent);
+    await settle();
+    expect(component['remoteRevisionId']()).toBe('');
+    expect(component['view']()?.revision.id).toBe(newer.id);
+    expect(component['view']()?.markdown).toBe(remoteMarkdown);
+    expect(query('mktg-document-view-current-banner-open')).toBeNull();
+  });
+
+  it('loads current once when browser Back removes the historical revision selector, then resumes metadata-only polling', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const history = mockNineRevisionHistory(2);
+    const current = history.revisions.find((row) => row.latest);
+    const older = history.revisions.find((row) => row.number === 1);
+    if (!current || !older) throw new Error('Missing synthetic Back revisions');
+    await render('/documents/brand-kit/living?tab=sources');
+    const router = TestBed.inject(Router);
+    // The harness navigates imperatively instead of bootstrapping the app's browser listener.
+    router.initialNavigation();
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    await harness.navigateByUrl(`/documents/brand-kit/living?tab=sources&revision=${older.id}`, MktgDocumentViewComponent);
+    await settle();
+    expect(component['view']()?.revision.id).toBe(older.id);
+    const reads = store.getRevision.mock.calls.length;
+    const backNavigation = firstValueFrom(
+      router.events.pipe(
+        filter((event) => event instanceof NavigationEnd),
+        take(1)
+      )
+    );
+    TestBed.inject(Location).back();
+    await backNavigation;
+    await settle();
+    expect(TestBed.inject(Router).url).toBe('/documents/brand-kit/living?tab=sources');
+    expect(component['view']()?.revision.id).toBe(current.id);
+    expect(store.getRevision).toHaveBeenCalledTimes(reads + 1);
+    expect(component['readStoredBody']()).toBe(false);
+    const metadataReads = store.getDocument.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(store.getDocument.mock.calls.length).toBeGreaterThanOrEqual(metadataReads + 2);
+    expect(store.getRevision).toHaveBeenCalledTimes(reads + 1);
+    expect(component['view']()?.revision.id).toBe(current.id);
+  });
+
+  it.each([1, 3])('shows the banner only when deliberately opening v%i differs from approved current v3', async (number) => {
+    const approval = { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    const approved = revision(3, { latest: true, approval, format: 'json' });
+    const produced = revision(4, { format: 'json', author: { name: 'Synthetic writer' } });
+    const oldest = revision(1, { format: 'json' });
+    const selected = number === 1 ? oldest : approved;
+    const metadata = {
+      ...detail,
+      revisions: [produced, approved, oldest],
+      current: { revisionId: approved.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: approved.id, number: approved.number },
+    };
+    store.getDocument.mockReturnValue(of(metadata));
+    store.getRevision.mockReturnValue(of({ ...metadata, revision: selected, approval: selected.approval, markdown: '# Selected revision', sidecar: null }));
+    await render(`/documents/brand-kit/living?revision=${selected.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    component['remoteRevisionId'].set(selected.id);
+    await settle();
+    if (number === 1) expect(query('mktg-document-view-current-banner-open')?.getAttribute('href')).toContain(`revision=${approved.id}`);
+    else expect(query('mktg-document-view-current-banner-open')).toBeNull();
+    expect(component['view']()?.revision.id).toBe(selected.id);
+  });
+
+  it.each(['produced', 'approved'])('picks up v4 %s while preserving the approved v3 body', async (event) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const approval = { approvedAt: '2026-11-02T13:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    const viewed = revision(3, { latest: true, approval, format: 'json' });
+    let metadata: MktgDocumentDetailResponse = {
+      ...detail,
+      revisions: [viewed],
+      current: { revisionId: viewed.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: viewed.id, number: viewed.number },
+    };
+    store.getDocument.mockImplementation(() => of(metadata));
+    store.getRevision.mockReturnValue(of({ ...metadata, revision: viewed, approval, markdown: '# Approved v3', sidecar: null }));
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(query('mktg-document-view-current-banner-open')).toBeNull();
+    const reads = store.getRevision.mock.calls.length;
+    const next = revision(4, { latest: true, author: { name: 'Synthetic writer' }, approval: event === 'approved' ? approval : null });
+    metadata = {
+      ...metadata,
+      revisions: [next, { ...viewed, latest: false }],
+      current: { revisionId: next.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: event === 'approved' ? { revisionId: next.id, number: next.number } : null,
+    };
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    const line = query('mktg-document-view-current-banner');
+    if (event === 'approved') expect(line?.textContent).toContain('v4 is now the current version, approved by Synthetic reviewer');
+    else expect(query('mktg-document-view-current-banner-open')).toBeNull();
+    expect(query('mktg-document-view-revision-4')).not.toBeNull();
+    expect(query('mktg-document-view-current-4')).not.toBeNull();
+    if (event === 'approved') {
+      expect(query('mktg-document-view-meta')?.textContent).toContain('the kit still shows v4, approved by Synthetic reviewer');
+      expect(line).not.toBeNull();
+      expect(line?.getAttribute('role')).toBeNull();
+      expect(query('mktg-document-view-current-banner-status')?.textContent).toBe(component['currentBanner']()?.sentence);
+    } else {
+      expect(line).toBeNull();
+      expect(query('mktg-document-view-meta')?.textContent).not.toContain('the kit still shows');
+      expect(query('mktg-document-view-current-banner-status')?.textContent).toBe('');
+    }
+    expect(query(event === 'approved' ? 'mktg-document-view-current-banner-open' : 'mktg-document-view-open-4')?.getAttribute('href')).toContain(
+      `revision=${next.id}`
+    );
+    expect(component['view']()?.revision.id).toBe(viewed.id);
+    expect(component['view']()?.markdown).toBe('# Approved v3');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    if (event === 'approved') expect(query('mktg-document-view-current-banner')).toBe(line);
+    else expect(query('mktg-document-view-current-banner')).toBeNull();
+    expect(store.getRevision).toHaveBeenCalledTimes(reads);
+  });
+
+  it('updates the state banner through returning approvals and deliberate selection', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const approval = { approvedAt: '2026-11-02T13:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    const first = revision(3, { latest: true, approval, format: 'json' });
+    let metadata: MktgDocumentDetailResponse = {
+      ...detail,
+      revisions: [first, revision(2, { format: 'json' }), revision(1, { format: 'json' })],
+      current: { revisionId: first.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: first.id, number: first.number },
+    };
+    store.getDocument.mockImplementation(() => of(metadata));
+    store.getRevision.mockImplementation((_project: string, _agent: string, _document: string, id: string) => {
+      const selected = metadata.revisions.find((row) => row.id === id);
+      if (!selected) throw new Error('Missing synthetic pointer-return revision');
+      return of({ ...metadata, revision: selected, approval: selected.approval, markdown: `# Revision ${selected.number}`, sidecar: null });
+    });
+    const move = (number: number) => {
+      const selected = metadata.revisions.find((row) => row.number === number);
+      if (!selected) throw new Error('Missing synthetic approval destination');
+      metadata = {
+        ...metadata,
+        revisions: metadata.revisions.map((row) => ({ ...row, latest: row.id === selected.id, approval: row.id === selected.id ? approval : row.approval })),
+        current: { revisionId: selected.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+        approvedCurrent: { revisionId: selected.id, number },
+      };
+    };
+    await render(`/documents/brand-kit/living?revision=${revision(1).id}`);
+    expect(query('mktg-document-view-current-banner-open')?.getAttribute('href')).toContain(`revision=${first.id}`);
+    move(2);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-current-banner')?.textContent).toContain('v2 is now the current version, approved by Synthetic reviewer');
+    move(3);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-current-banner')?.textContent).toContain('v3 is now the current version, approved by Synthetic reviewer');
+    move(1);
+    await harness.navigateByUrl(`/documents/brand-kit/living?revision=${first.id}`, MktgDocumentViewComponent);
+    await settle();
+    expect(query('mktg-document-view-current-banner-open')?.getAttribute('href')).toContain(`revision=${revision(1).id}`);
+    move(3);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-current-banner-open')).toBeNull();
+    move(1);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-current-banner')?.textContent).toContain('v1 is now the current version, approved by Synthetic reviewer');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(component['view']()?.revision.id).toBe(first.id);
+  });
+
+  it('adds a produced row after the viewed revision becomes approved current', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const approval = { approvedAt: '2026-11-02T13:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    const viewed = revision(1, { format: 'json' });
+    const current = revision(3, { latest: true, approval, format: 'json' });
+    let metadata: MktgDocumentDetailResponse = {
+      ...detail,
+      revisions: [current, viewed],
+      current: { revisionId: current.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: current.id, number: current.number },
+    };
+    store.getDocument.mockImplementation(() => of(metadata));
+    store.getRevision.mockReturnValue(of({ ...metadata, revision: viewed, approval: null, markdown: '# Viewed v1', sidecar: null }));
+    await render(`/documents/brand-kit/living?revision=${viewed.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(query('mktg-document-view-current-banner-open')?.getAttribute('href')).toContain(`revision=${current.id}`);
+    const reads = store.getRevision.mock.calls.length;
+    metadata = {
+      ...metadata,
+      revisions: [
+        { ...current, latest: false },
+        { ...viewed, latest: true, approval },
+      ],
+      current: { revisionId: viewed.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: viewed.id, number: viewed.number },
+    };
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-current-banner-open')).toBeNull();
+    expect(component['view']()?.revision.id).toBe(viewed.id);
+    const produced = revision(4, { latest: true, author: { name: 'Synthetic writer' } });
+    metadata = {
+      ...metadata,
+      revisions: [produced, ...metadata.revisions.map((row) => ({ ...row, latest: false }))],
+      current: { revisionId: produced.id, changedAt: approval.approvedAt, changedBy: { name: 'Synthetic writer' } },
+    };
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-revision-4')).not.toBeNull();
+    expect(query('mktg-document-view-current-banner-open')).toBeNull();
+    expect(query('mktg-document-view-open-4')?.getAttribute('href')).toContain(`revision=${produced.id}`);
+    expect(component['view']()?.markdown).toBe('# Viewed v1');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-current-banner')).toBeNull();
+    expect(store.getRevision).toHaveBeenCalledTimes(reads);
+  });
+
+  it('resets dismissal on every pointer or viewed-revision key change and keeps the status region mounted', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const approval = { approvedAt: '2026-11-02T16:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    const revisions = [
+      revision(3, { latest: true, approval, format: 'json' }),
+      revision(2, { approval, format: 'json' }),
+      revision(1, { approval, format: 'json' }),
+    ];
+    let metadata: MktgDocumentDetailResponse = {
+      ...detail,
+      revisions,
+      approvedCurrent: { revisionId: revisions[0].id, number: 3 },
+      current: { revisionId: revisions[0].id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+    };
+    store.getDocument.mockImplementation(() => of(metadata));
+    store.getRevision.mockImplementation((_project: string, _agent: string, _document: string, id: string) => {
+      const selected = metadata.revisions.find((row) => row.id === id);
+      if (!selected) throw new Error('Missing synthetic banner revision');
+      return of({ ...metadata, revision: selected, approval: selected.approval, markdown: '{}', sidecar: kitSidecar() });
+    });
+    const move = (number: number) => {
+      const selected = revisions.find((row) => row.number === number);
+      if (!selected) throw new Error('Missing synthetic pointer destination');
+      metadata = {
+        ...metadata,
+        revisions: revisions.map((row) => ({ ...row, latest: row.id === selected.id })),
+        approvedCurrent: { revisionId: selected.id, number },
+        current: { revisionId: selected.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      };
+    };
+    await render(`/documents/brand-kit/living?revision=${revisions[2].id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const banner = query('mktg-document-view-current-banner');
+    const status = query('mktg-document-view-current-banner-status');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.textContent).toBe(component['currentBanner']()?.sentence);
+    expect(status?.querySelector('a, button')).toBeNull();
+    expect(banner?.getAttribute('role')).toBeNull();
+    expect(banner?.classList.contains('flex-col')).toBe(true);
+    expect(banner?.classList.contains('md:flex-row')).toBe(true);
+    const title = query('mktg-document-view-title');
+    const titleCard = query('mktg-document-view-title-card');
+    if (!title || !titleCard || !banner) throw new Error('Missing synthetic title or banner');
+    expect(banner.compareDocumentPosition(titleCard) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(query('mktg-document-view-revision-1')?.textContent).toContain('here');
+    expect(query('mktg-document-view-viewed-make-current')?.getAttribute('aria-describedby')).toBe('mktg-document-view-make-current-help');
+    const reads = store.getRevision.mock.calls.length;
+    const detailReads = store.getDocument.mock.calls.length;
+    move(2);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(store.getDocument).toHaveBeenCalledTimes(detailReads + 1);
+    expect(query('mktg-document-view-current-banner')).toBe(banner);
+    expect(banner.textContent).toContain('v2 is now the current version');
+    expect(query('mktg-document-view-current-2')).not.toBeNull();
+    expect(query('mktg-document-view-meta')?.textContent).toContain('the kit still shows v2, approved by Synthetic reviewer');
+    query('mktg-document-view-current-banner-dismiss')?.click();
+    await settle();
+    expect(document.activeElement).toBe(title);
+    expect(title.getAttribute('tabindex')).toBe('-1');
+    expect(query('mktg-document-view-current-banner')).toBeNull();
+    expect(query('mktg-document-view-current-banner-status')).toBe(status);
+    expect(status?.textContent).toBe('');
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-current-banner')).toBeNull();
+    expect(store.getRevision).toHaveBeenCalledTimes(reads);
+    move(3);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-current-banner')).not.toBeNull();
+    move(2);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-current-banner')?.textContent).toContain('v2 is now the current version');
+    query('mktg-document-view-current-banner-dismiss')?.click();
+    await settle();
+    await harness.navigateByUrl(`/documents/brand-kit/living?revision=${revisions[1].id}`, MktgDocumentViewComponent);
+    await settle();
+    expect(query('mktg-document-view-current-banner')).toBeNull();
+    await harness.navigateByUrl(`/documents/brand-kit/living?revision=${revisions[2].id}`, MktgDocumentViewComponent);
+    await settle();
+    expect(query('mktg-document-view-current-banner-open')?.getAttribute('href')).toContain(`revision=${revisions[1].id}`);
+    const openLink = query('mktg-document-view-current-banner-open');
+    if (!openLink) throw new Error('Missing current-version link');
+    openLink.focus();
+    expect(document.activeElement).toBe(openLink);
+    openLink.click();
+    await settle();
+    expect(query('mktg-document-view-current-banner')).toBeNull();
+    expect(query('mktg-document-view-viewed-make-current')).toBeNull();
+    expect(query('mktg-document-view-current-banner-status')).toBe(status);
+    expect(status?.textContent).toBe('');
+    expect(document.activeElement).toBe(query('mktg-document-view-title'));
+  });
+
+  it('moves focus from the banner Open link to the title only after its requested revision lands', async () => {
+    const { viewed, current } = mockBannerFocusHistory();
+    await render(`/documents/brand-kit/living?revision=${viewed.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const openLink = query('mktg-document-view-current-banner-open');
+    if (!openLink) throw new Error('Missing synthetic banner link');
+    openLink.focus();
+    expect(document.activeElement).toBe(openLink);
+    openLink.click();
+    await settle();
+    expect(component['view']()?.revision.id).toBe(current.id);
+    expect(component['pendingTitleFocus']).toBeNull();
+    expect(document.activeElement).toBe(query('mktg-document-view-title'));
+  });
+
+  it('does not steal focus on later row navigation after a banner Open body read fails', async () => {
+    const { viewed, current, targetView } = mockBannerFocusHistory();
+    await render(`/documents/brand-kit/living?revision=${viewed.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const failedRead = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 404 })));
+    store.getRevision.mockImplementationOnce(failedRead);
+    const bannerLink = query('mktg-document-view-current-banner-open');
+    if (!bannerLink) throw new Error('Missing failing banner link');
+    bannerLink.focus();
+    bannerLink.click();
+    await settle();
+    expect(failedRead).toHaveBeenCalledOnce();
+    expect(component['pendingTitleFocus']).toBeNull();
+    await harness.navigateByUrl(`/documents/brand-kit/living?revision=${viewed.id}`, MktgDocumentViewComponent);
+    await settle();
+    const pending = new Subject<MktgRevisionResponse>();
+    store.getRevision.mockImplementationOnce(() => pending);
+    const targetLink = query(`mktg-document-view-open-${current.number}`);
+    if (!targetLink) throw new Error('Missing later revision link');
+    targetLink.focus();
+    targetLink.click();
+    await settle();
+    const retainedRowLink = query('mktg-document-view-open-9');
+    if (!retainedRowLink) throw new Error('Missing retained row link');
+    retainedRowLink.focus();
+    expect(document.activeElement).toBe(retainedRowLink);
+    pending.next(targetView);
+    pending.complete();
+    await settle();
+    expect(component['view']()?.revision.id).toBe(current.id);
+    expect(document.activeElement).toBe(retainedRowLink);
+    expect(component['pendingTitleFocus']).toBeNull();
+  });
+
+  it('does not arm banner title focus for modifier or non-primary clicks', async () => {
+    const { viewed } = mockBannerFocusHistory();
+    await render(`/documents/brand-kit/living?revision=${viewed.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const link = query('mktg-document-view-current-banner-open');
+    if (!link) throw new Error('Missing synthetic modified-click link');
+    const url = TestBed.inject(Router).url;
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+      link.focus();
+      const event = new MouseEvent('click', { button: 0, ...modifier, bubbles: true, cancelable: true });
+      event.preventDefault();
+      link.dispatchEvent(event);
+      await settle();
+      expect(component['pendingTitleFocus']).toBeNull();
+      expect(document.activeElement).toBe(link);
+      expect(TestBed.inject(Router).url).toBe(url);
+    }
+  });
+
+  it('mounts the empty status region before the banner sentence arrives', async () => {
+    const response = { ...revisionResponse(OLDER), approvedCurrent: { revisionId: LATEST.id, number: LATEST.number } };
+    const pending = new Subject<MktgRevisionResponse>();
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(pending);
+    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const status = query('mktg-document-view-current-banner-status');
+    expect(status).not.toBeNull();
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.textContent).toBe('');
+    expect(query('mktg-document-view-current-banner')).toBeNull();
+    pending.next(response);
+    pending.complete();
+    await settle();
+    expect(query('mktg-document-view-current-banner-status')).toBe(status);
+    expect(status?.textContent).toBe(component['currentBanner']()?.sentence);
+    expect(status?.querySelector('a, button')).toBeNull();
+  });
+
+  it('uses the same unknown-approver wording as the header', async () => {
+    const viewed = revision(1, { format: 'json' });
+    const approved = revision(2, { latest: true, format: 'json', approval: { approvedAt: '2026-11-02T17:00:00Z', approvedBy: { name: null } } });
+    const metadata = { ...detail, revisions: [approved, viewed], approvedCurrent: { revisionId: approved.id, number: 2 } };
+    store.getDocument.mockReturnValue(of(metadata));
+    store.getRevision.mockReturnValue(of({ ...metadata, revision: viewed, approval: null, markdown: '{}', sidecar: kitSidecar() }));
+    await render(`/documents/brand-kit/living?revision=${viewed.id}`);
+    expect(query('mktg-document-view-meta')?.textContent).toContain('approved by a project writer');
+    expect(query('mktg-document-view-current-banner')?.textContent).toContain('approved by a project writer');
+  });
+
+  it('uses the pointer number without claiming an approver when its row is absent', async () => {
+    const missing = revision(5);
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(OLDER), approvedCurrent: { revisionId: missing.id, number: 5 } }));
+    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
+    expect(query('mktg-document-view-current-banner')?.textContent).toContain('v5 is now the current version. You are reading v1.');
+    expect(query('mktg-document-view-current-banner-open')?.getAttribute('href')).toContain(`revision=${missing.id}`);
+  });
+
+  it('picks up an older approval in the banner without replacing the viewed body', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const history = mockNineRevisionHistory(3);
+    history.revisions.forEach((row) => (row.format = 'json'));
+    const older = history.revisions.find((row) => row.number === 1);
+    if (!older) throw new Error('Missing synthetic older revision');
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const viewed = component['view']();
+    if (!viewed) throw new Error('Missing synthetic viewed revision');
+    const reads = store.getRevision.mock.calls.length;
+    const content = query('mktg-document-view-content');
+    expect(query('mktg-document-view-viewed-make-current')).toBeNull();
+    const approval = { approvedAt: '2026-11-02T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    store.getDocument.mockReturnValue(
+      of({
+        ...history,
+        revisions: history.revisions.map((row) => ({ ...row, latest: row.id === older.id, approval: row.id === older.id ? approval : row.approval })),
+        current: { revisionId: older.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+        approvedCurrent: { revisionId: older.id, number: older.number },
+      })
+    );
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    const line = query('mktg-document-view-current-banner');
+    expect(line?.textContent).toContain('v1 is now the current version, approved by Synthetic reviewer');
+    expect(line).not.toBeNull();
+    expect(line?.getAttribute('role')).toBeNull();
+    expect(query('mktg-document-view-current-banner-status')?.getAttribute('role')).toBe('status');
+    expect(query('mktg-document-view-current-banner-status')?.textContent).toBe(component['currentBanner']()?.sentence);
+    expect(query('mktg-document-view-current-banner-open')?.getAttribute('href')).toContain(`revision=${older.id}`);
+    expect(component['view']()?.revision.id).toBe(viewed.revision.id);
+    expect(component['view']()?.markdown).toBe(viewed.markdown);
+    expect(query('mktg-document-view-content')).toBe(content);
+    const restoreCurrent = query('mktg-document-view-viewed-make-current');
+    expect(restoreCurrent).not.toBeNull();
+    expect(query('mktg-document-view-current-1')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-current-banner')).toBe(line);
+    expect(query('mktg-document-view-viewed-make-current')).toBe(restoreCurrent);
+    expect(store.getRevision).toHaveBeenCalledTimes(reads);
+  });
+
+  it('shows only the produced row on initial read and leaves the DOM untouched on no-change polls', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true, revision(3, { author: { name: 'Synthetic writer' } }));
+    await render('/documents/foundation-message/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const snapshot = component['runDetail']();
+    expect(query('mktg-document-view-current-banner-open')).toBeNull();
+    store.getDocument.mockImplementation(() => of(structuredClone(snapshot)));
+    const records: MutationRecord[] = [];
+    const observer = new MutationObserver((batch) => records.push(...batch));
+    const root = harness.routeNativeElement;
+    if (!root) throw new Error('Missing document root');
+    observer.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+    try {
+      const reads = store.getDocument.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 2);
+      await settle();
+      records.push(...observer.takeRecords());
+      expect(store.getDocument).toHaveBeenCalledTimes(reads + 2);
+      expect(records).toEqual([]);
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it('coalesces visible plus focus into one return read, with no reads while hidden', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true);
+    await render('/documents/foundation-message/living');
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    try {
+      const reads = store.getDocument.mock.calls.length;
+      window.dispatchEvent(new Event('focus'));
+      await vi.advanceTimersByTimeAsync(VISIBILITY_POLL_WAKE_DEBOUNCE_MS);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(reads + 1);
+      visibility.mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 2);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(reads + 1);
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      await vi.advanceTimersByTimeAsync(VISIBILITY_POLL_WAKE_DEBOUNCE_MS);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(reads + 2);
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
+  it('refreshes the viewed revision approval state in place when that revision becomes current', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true);
+    await render('/documents/foundation-message/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const loaded = component['view']();
+    if (!loaded) throw new Error('Missing synthetic draft');
+    const approval = { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    store.getDocument.mockReturnValue(
+      of({ ...loaded, revisions: [{ ...loaded.revision, approval }], approvedCurrent: { revisionId: loaded.revision.id, number: loaded.revision.number } })
+    );
+    const content = query('mktg-document-view-content');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-content')).toBe(content);
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Approved');
+    expect(query('mktg-document-view-approve')).toBeNull();
+    expect(query('mktg-document-view-current-banner-open')).toBeNull();
   });
 
   it('keeps content and an accepted approval alive through progressive refresh', async () => {
@@ -3991,7 +4664,7 @@ describe('MktgDocumentViewComponent', () => {
   it('makes the open revision current without adding one', async () => {
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
 
-    query('mktg-document-view-history-bar-make-current')?.click();
+    query('mktg-document-view-viewed-make-current')?.click();
     await settle();
 
     expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
@@ -4000,7 +4673,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current. No revision was added.');
     expect(query('mktg-document-view-saving-status')?.textContent).toBe('');
-    expect(query('mktg-document-view-history-bar')).toBeNull();
+    expect(query('mktg-document-view-viewed-make-current')).toBeNull();
     expect(query('mktg-document-view-current-since-1')).toBeNull();
     expect(query('mktg-document-view-current-1')?.textContent).toBe('Current');
     expect(query('mktg-document-view-current-since-2')).toBeNull();
@@ -4016,13 +4689,12 @@ describe('MktgDocumentViewComponent', () => {
     const status = query('mktg-document-view-saving-status');
     expect(status?.getAttribute('role')).toBe('status');
     expect(status?.textContent).toBe('');
-    query('mktg-document-view-history-bar-make-current')?.click();
+    query('mktg-document-view-viewed-make-current')?.click();
     await settle();
     expect(status?.textContent).toBe('Saving revision 1…');
     expect(status?.closest('[aria-busy]')).toBeNull();
-    expect(query('mktg-document-view-history-bar-make-current')?.textContent?.trim()).toBe('Saving…');
-    expect(query('mktg-document-view-history-bar')?.getAttribute('aria-busy')).toBe('true');
-    expect((query('mktg-document-view-history-bar-make-current') as HTMLButtonElement | null)?.disabled).toBe(true);
+    expect(query('mktg-document-view-viewed-make-current')?.textContent?.trim()).toBe('Saving…');
+    expect((query('mktg-document-view-viewed-make-current') as HTMLButtonElement | null)?.disabled).toBe(true);
     expect(pending.observed).toBe(true);
     harness.fixture.destroy();
     expect(pending.observed).toBe(true);
@@ -4040,13 +4712,12 @@ describe('MktgDocumentViewComponent', () => {
     store.restoreRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
 
-    query('mktg-document-view-history-bar-make-current')?.click();
+    query('mktg-document-view-viewed-make-current')?.click();
     await settle();
 
     expect(query('mktg-document-view-error')?.textContent).toContain('The revision could not be made current. Reload to check its state, then try again.');
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
-    expect((query('mktg-document-view-history-bar-make-current') as HTMLButtonElement | null)?.disabled).toBe(false);
-    expect(query('mktg-document-view-history-bar')?.getAttribute('aria-busy')).toBe('false');
+    expect((query('mktg-document-view-viewed-make-current') as HTMLButtonElement | null)?.disabled).toBe(false);
     expect(query('mktg-document-view-saving-status')?.textContent).toBe('');
   });
   it('renders a Brand Kit revision on the kit’s web view, in the content column, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
@@ -4132,6 +4803,51 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(true);
     }
   });
+
+  it.each(['foundation-message', 'brand-kit'] as const)(
+    'does not insert approved-current loading above %s tabs during a metadata-only re-read',
+    async (agentKey) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      const approval = { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+      if (agentKey === 'foundation-message') useFrameworkRevision();
+      else {
+        const selected = { ...LATEST, format: 'json' as const, approval };
+        const response = { ...revisionResponse(selected), approval, sidecar: kitSidecar(), approvedCurrent: { revisionId: selected.id, number: 2 } };
+        store.getDocument.mockReturnValue(of(response));
+        store.getRevision.mockReturnValue(of(response));
+      }
+      const comments = TestBed.inject(MktgDocumentCommentsService);
+      vi.spyOn(comments, 'loaded').mockReturnValue(true);
+      vi.spyOn(comments, 'selectedScope').mockReturnValue({ projectUid: PROJECT.uid, agentKey, documentId: 'living', revisionId: LATEST.id });
+      await render(`/documents/${agentKey}/living`);
+      const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+      const loaded = component['view']();
+      if (!loaded) throw new Error('Missing synthetic approved view');
+      const tabsId = agentKey === 'foundation-message' ? 'mktg-framework-view-tabs' : 'brand-kit-web-view-tabs';
+      const tabs = query(tabsId);
+      expect(tabs).not.toBeNull();
+      const top = tabs?.getBoundingClientRect().top;
+      const pending = new Subject<MktgRevisionResponse>();
+      store.getApprovedRevision.mockReturnValue(pending);
+      const newer = { ...loaded.revision, id: revision(3).id, number: 3, approval };
+      const next = { ...loaded, revisions: [newer, { ...loaded.revision, latest: false }], approvedCurrent: { revisionId: newer.id, number: 3 } };
+      store.getDocument.mockReturnValue(of(next));
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(pending.observed).toBe(true);
+      expect(component['approvedView']().loading).toBe(true);
+      expect(component['approvedReadIsExplicit']()).toBe(false);
+      expect(query('mktg-document-view-content')?.textContent).not.toContain('Loading the approved current');
+      expect(query(tabsId)).toBe(tabs);
+      expect(tabs?.getBoundingClientRect().top).toBe(top);
+      pending.next({ ...next, revision: newer, approval });
+      pending.complete();
+      await settle();
+      expect(component['approvedView']().loading).toBe(false);
+      expect(query(tabsId)).toBe(tabs);
+      expect(tabs?.getBoundingClientRect().top).toBe(top);
+    }
+  );
 
   it.each(['loading', 'error'] as const)('keeps approved PDF/Slides disabled while the approved payload is %s', async (state) => {
     useFrameworkRevision();

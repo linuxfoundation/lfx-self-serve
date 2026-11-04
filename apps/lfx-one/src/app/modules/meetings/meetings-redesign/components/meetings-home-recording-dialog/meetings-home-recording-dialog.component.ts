@@ -33,7 +33,7 @@ export class MeetingsHomeRecordingDialogComponent {
     if (this.clipboard.copy(this.shareUrl)) {
       this.toast.show({ variant: 'dark', message: 'Recording URL copied to clipboard' });
     } else {
-      this.toast.show({ variant: 'dark', message: 'Failed to copy recording URL', duration: 5000 });
+      this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Failed to copy recording URL' });
     }
   }
 

@@ -28,7 +28,7 @@
   <ng-container modalActions>
     @if (editing()) {
       <lfx-ui-button variant="secondary" [disabled]="saving()" (click)="cancelEdit()" data-testid="meetings-home-dialog-summary-cancel">Cancel</lfx-ui-button>
-      <lfx-ui-button [loading]="saving()" (click)="save()" data-testid="meetings-home-dialog-summary-save">Save</lfx-ui-button>
+      <lfx-ui-button [disabled]="!canSave()" [loading]="saving()" (click)="save()" data-testid="meetings-home-dialog-summary-save">Save</lfx-ui-button>
     } @else {
       @if (!readOnly) {
         <span class="mr-auto flex items-center gap-[12px]">

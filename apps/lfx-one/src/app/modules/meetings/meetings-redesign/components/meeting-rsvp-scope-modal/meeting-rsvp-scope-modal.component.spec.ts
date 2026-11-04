@@ -69,6 +69,17 @@ describe('MeetingRsvpScopeModalComponent', () => {
     expect(close).toHaveBeenCalledWith('this_and_following');
   });
 
+  it('picks an option from a click on its description', async () => {
+    const fixture = await render({ row: buildRow('1790845200'), response: 'declined' });
+
+    query(fixture, 'meetings-home-rsvp-scope-all-description')?.click();
+    await fixture.whenStable();
+
+    expect(radio(fixture, 'all').checked).toBe(true);
+    click(fixture, 'meetings-home-rsvp-scope-ok');
+    expect(close).toHaveBeenCalledWith('all');
+  });
+
   it('closes with nothing on Cancel', async () => {
     const fixture = await render({ row: buildRow('1790845200'), response: 'maybe' });
 

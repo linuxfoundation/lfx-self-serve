@@ -19,6 +19,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY,
   COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
+  COMMITTEE_ENGAGEMENT_MIN_INVITES,
   COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS,
   COMMITTEE_LABEL,
   NO_VOTING_STATUS_LABEL,
@@ -126,6 +127,8 @@ export class CommitteeMembersComponent implements OnInit {
   public committee = input.required<Committee | null>();
   public members = input.required<CommitteeMember[]>();
   public membersLoading = input<boolean>(true);
+  public readonly membersError = input(false);
+  public readonly membersReady = input(false);
   public invites = input<CommitteeInvite[]>([]);
   public invitesLoading = input<boolean>(false);
   public applications = input<CommitteeJoinApplication[]>([]);
@@ -151,6 +154,7 @@ export class CommitteeMembersComponent implements OnInit {
   public engagementWindow = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
 
   public readonly refresh = output<void>();
+  public readonly retryMembers = output<void>();
   public readonly engagementWindowChange = output<CommitteeEngagementWindow>();
 
   // Simple writable signals
@@ -367,6 +371,9 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   public openAddMemberDialog(): void {
+    if (!this.membersReady() || this.membersLoading() || this.membersError() || !this.canManageMembers()) {
+      return;
+    }
     // Snapshot member count before opening — used by the poll to detect when the
     // query-service index has caught up with the write (indexing lag).
     const countBeforeAdd = this.members().length;
@@ -399,7 +406,15 @@ export class CommitteeMembersComponent implements OnInit {
    */
   public openImportMembersDialog(): void {
     const committee = this.committee();
-    if (!committee?.uid || !this.canManageMembers() || this.membersLoading() || this.invitesLoading() || this.importSnapshotsLoading()) {
+    if (
+      !committee?.uid ||
+      !this.canManageMembers() ||
+      !this.membersReady() ||
+      this.membersError() ||
+      this.membersLoading() ||
+      this.invitesLoading() ||
+      this.importSnapshotsLoading()
+    ) {
       return;
     }
     const committeeUid = committee.uid;
@@ -1132,6 +1147,9 @@ export class CommitteeMembersComponent implements OnInit {
     }
     if (isLfStaffNonVotingSeat({ role: row.role, votingStatus: row.voting_status })) {
       return 'LF Staff seat — excluded from engagement metrics; attendance expectations do not apply';
+    }
+    if (row.classification === 'New') {
+      return `New member — scored once invited to ${COMMITTEE_ENGAGEMENT_MIN_INVITES} meetings`;
     }
     if (row.role === CommitteeMemberRole.CHAIR || row.role === CommitteeMemberRole.VICE_CHAIR || row.role === CommitteeMemberRole.LF_STAFF) {
       return `${row.role} — attended ${row.attended} of ${row.invited} invited meetings`;

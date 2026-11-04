@@ -163,7 +163,7 @@ export function groupMeetingsByDayBucket(
  * Applies search and filters to a tab's rows (AND).
  * @description Search is a case-insensitive substring over the title and committee names. Hide declined
  * drops a series when every one of its rows in `rows` is declined, so pass the tab's unfiltered rows. It never hides a
- * meeting the viewer organizes ({@link isMeetingOrganizedByViewer}) and is ignored while the RSVP filter is "Not going".
+ * meeting the viewer organizes ({@link isMeetingHomeOrganizer}) and is ignored while the RSVP filter is "Not going".
  */
 export function filterMeetingsHome(
   rows: readonly MeetingHomeRow[],
@@ -180,9 +180,19 @@ export function filterMeetingsHome(
     if (!matchesEntityFilters(meeting, filters)) return false;
     if (filters.meetingType && meeting.meeting_type !== filters.meetingType) return false;
     if (!matchesRsvpFilter(row, filters.rsvp)) return false;
-    if (filters.organizedByMe && !isMeetingOrganizedByViewer(meeting, viewerUsername)) return false;
-    return !declinedSeries?.has(meeting.id) || isMeetingOrganizedByViewer(meeting, viewerUsername);
+    if (filters.organizedByMe && !isMeetingHomeOrganizer(meeting, viewerUsername)) return false;
+    return !declinedSeries?.has(meeting.id) || isMeetingHomeOrganizer(meeting, viewerUsername);
   });
+}
+
+/**
+ * Whether the viewer organizes the meeting on the home: owner/creator, the `organizer` flag, or listed in `organizers`.
+ * @description Wider than the row's Edit/Delete gate (the flag alone), so it must not gate actions.
+ */
+export function isMeetingHomeOrganizer(meeting: Meeting, viewerUsername: string | null): boolean {
+  if (meeting.organizer === true || isMeetingOrganizedByViewer(meeting, viewerUsername)) return true;
+  const viewer = normalizeUsername(viewerUsername);
+  return !!viewer && (meeting.organizers ?? []).some((entry) => normalizeUsername(entry) === viewer);
 }
 
 /** Number of applied filters, for the Filters button badge. Search does not count. */
@@ -335,7 +345,6 @@ export function getMeetingHomeRowProject(
   if (!name) return null;
   return {
     name,
-    initial: Array.from(name)[0].toUpperCase(),
     logo: meeting.project_logo_url ?? '',
     url: getMeetingProjectUrl(meeting),
     label: `${meeting.is_foundation ? 'Jump to foundation' : 'Jump to project'}: ${name}`,

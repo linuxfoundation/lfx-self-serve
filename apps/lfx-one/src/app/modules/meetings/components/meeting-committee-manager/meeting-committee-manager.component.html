@@ -12,6 +12,12 @@
         <p class="text-sm text-amber-800">
           We couldn't load every {{ committeeLabel.singular.toLowerCase() }}'s members, so they haven't been added as guests.
         </p>
+        @if (membersPaginationLimit()) {
+          <p class="text-sm text-amber-800" data-testid="meeting-committee-members-limit">
+            The roster exceeded a safe loading limit. Try again if the problem was temporary. If it persists, remove the group selection where editable to
+            continue, or cancel and contact support. Saving with an incomplete roster is blocked.
+          </p>
+        }
       </div>
       <div class="flex">
         <lfx-button

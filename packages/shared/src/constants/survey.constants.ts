@@ -293,8 +293,41 @@ export const SURVEY_EMAIL_TEMPLATE_VARIABLES = {
 
 /**
  * Page size for the per-recipient survey responses list.
+ * The results drawer pages through every response so filters, rates and the CSV
+ * cover all recipients; 200 is the BFF's per_page cap.
  */
-export const SURVEY_RESPONSES_PAGE_SIZE = 25;
+export const SURVEY_RESPONSES_PAGE_SIZE = 200;
+
+/**
+ * Upper bound on response pages fetched for one survey (50 × 200 = 10,000 recipients),
+ * so a looping upstream page token can never fetch forever.
+ */
+export const SURVEY_RESPONSES_MAX_PAGES = 50;
+
+/**
+ * Most recipients one reminder request may name. Each one is emailed, and the write rate
+ * limiter counts requests, not recipients. Larger than any board or committee survey.
+ */
+export const SURVEY_REMINDER_MAX_RECIPIENTS = 1000;
+
+/**
+ * Error code for a reminder or resync refused before anything was sent, because the
+ * BFF couldn't verify the caller's access or the recipients (an upstream read or access
+ * check failed). The client can say nothing was sent and a retry is safe.
+ */
+export const SURVEY_FOLLOW_UP_PRECHECK_FAILED = 'SURVEY_FOLLOW_UP_PRECHECK_FAILED';
+
+/**
+ * Position of each invitation-email status in the funnel (higher = further along).
+ * A row at a later stage counts toward every earlier stage. "Responded" is deliberately
+ * absent: someone can answer through a copied personal link after their email bounced,
+ * so a response is not evidence of delivery, opening or clicking.
+ */
+export const SURVEY_RESPONSE_FUNNEL_RANK: Readonly<Record<string, number>> = {
+  delivered: 1,
+  opened: 2,
+  clicked: 3,
+};
 
 /**
  * Survey template options (NPS surveys)

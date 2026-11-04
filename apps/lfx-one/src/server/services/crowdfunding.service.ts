@@ -14,6 +14,7 @@ import {
   InitiativesResponse,
   InitiativesScope,
   MyDonationsResponse,
+  OrgDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
   RecurringDonation,
@@ -38,6 +39,7 @@ import {
   BackendGoalInput,
   BackendInitiative,
   BackendMyTransactionListResponse,
+  BackendOrgDonationListResponse,
   BackendSponsorshipTierInput,
   BackendSubscription,
   BackendTransactionList,
@@ -52,6 +54,7 @@ import {
   mapToInitiativeBase,
   mapToInitiativeDetail,
   mapMyTransactionToMyDonation,
+  mapOrgDonation,
   mapSubscriptionToRecurringDonation,
   mapToTransaction,
   mapPaymentMethodWire,
@@ -304,6 +307,22 @@ export class CrowdfundingService {
 
     logger.success(req, 'cf_get_my_donations', startTime, { total: raw.total_count });
     return { data: raw.data.map(mapMyTransactionToMyDonation), total: raw.total_count, pageSize: raw.limit, offset: raw.offset };
+  }
+
+  /** Donations matched to an organization (#415). CF's gateway rule requires auditor on the b2b_org and returns 403 otherwise. */
+  public async getOrgDonations(req: Request, orgUid: string, pageSize?: number, offset?: number): Promise<OrgDonationsResponse> {
+    const startTime = logger.startOperation(req, 'cf_get_org_donations', { orgUid, pageSize, offset });
+
+    const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
+    const off = offset ?? 0;
+    const raw = await cfFetch<BackendOrgDonationListResponse>(
+      req,
+      'getOrgDonations',
+      `/crowdfunding/organizations/${encodeURIComponent(orgUid)}/donations?limit=${limit}&offset=${off}`
+    );
+
+    logger.success(req, 'cf_get_org_donations', startTime, { total: raw.meta.total });
+    return { data: raw.data.map(mapOrgDonation), total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
   }
 
   public async getRecurringDonationById(req: Request, subscriptionId: string): Promise<RecurringDonation | null> {

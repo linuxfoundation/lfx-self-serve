@@ -11,7 +11,9 @@
     [style.margin-left.px]="$index === 0 ? 0 : overlap()" />
 }
 @if (overflow() > 0) {
+  <!-- The +N tile stays neutral, unlike the accent placeholder of a person. -->
   <lfx-ui-avatar
+    class="!bg-ui-neutral-50 !text-ui-neutral-600"
     [name]="overflow() + ' more'"
     [initials]="'+' + overflow()"
     [size]="size()"

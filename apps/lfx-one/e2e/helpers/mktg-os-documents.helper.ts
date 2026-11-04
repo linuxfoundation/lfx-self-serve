@@ -102,7 +102,6 @@ export async function setupDocuments(
     withoutCurrentRecord?: boolean;
     revisionCount?: 3 | 9;
     currentRevisionNumber?: number;
-    longDocument?: boolean;
     revisionAuthorName?: string;
     runs?: MktgDocumentRunProgress[];
     progressUnavailable?: boolean;
@@ -218,16 +217,7 @@ export async function setupDocuments(
     if (path.includes('/revisions/')) {
       const revision = detail.revisions.find((entry) => path.endsWith(entry.id));
       if (!revision) return fulfillDocumentJson(route, { code: 'NOT_FOUND' }, 404);
-      let markdown = `# Revision ${revision.number}\n\nSynthetic document text.`;
-      if (options.longDocument) {
-        markdown +=
-          '\n\n' +
-          Array.from(
-            { length: 24 },
-            (_, index) =>
-              `## Section ${index + 1}\n\nSynthetic document text for reading a long revision. The history bar should remain reachable while this content scrolls.`
-          ).join('\n\n');
-      }
+      const markdown = `# Revision ${revision.number}\n\nSynthetic document text.`;
       return fulfillDocumentJson(route, { ...detail, revision, markdown });
     }
     if (path.endsWith('/living')) return fulfillDocumentJson(route, options.empty ? { ...detail, revisions: [], current: null } : detail);

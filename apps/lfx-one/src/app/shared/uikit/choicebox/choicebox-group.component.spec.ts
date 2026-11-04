@@ -102,6 +102,8 @@ describe('UiChoiceboxGroupComponent and UiChoiceboxComponent', () => {
       expect(tiles()[0].classList).toContain('bg-ui-accent-50');
       expect(tiles()[0].classList).toContain('ring-ui-accent-500');
       await click(1);
+      expect(tiles()[0].classList).toContain('ring-ui-neutral-alpha-300');
+      expect(tiles()[0].classList).toContain('hover:ring-ui-neutral-alpha-400');
       expect(tiles()[0].classList).not.toContain('bg-ui-accent-50');
       expect(tiles()[1].classList).toContain('bg-ui-accent-50');
     });

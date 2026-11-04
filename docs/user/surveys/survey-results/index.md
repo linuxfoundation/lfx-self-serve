@@ -4,7 +4,7 @@ description: How to see participation, the Net Promoter Score, comments, and ind
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, results, nps, responses, comments, delivery status]
-last_updated: 2026-10-28
+last_updated: 2026-11-02
 intercom_collection: Surveys
 ---
 
@@ -33,6 +33,15 @@ At the top, three numbers and a progress bar show how the survey is going:
 - **Total Responses**: how many have responded
 - **Response Rate**: responses as a percentage of participants
 
+If you can manage the survey, a second row adds:
+
+- **Delivery Rate**: invitations delivered, out of all participants
+- **Open Rate**: delivered invitations that were opened
+- **Click Rate**: delivered invitations whose survey link was selected
+- **Comment Rate**: responses that include a comment
+
+Each rate shows its count underneath, for example "27 / 34". If these can't be loaded, the panel says so; close and reopen **Results** to try again.
+
 While the survey is open, this section is titled **Live Participation** and shows the results collected so far. The panel doesn't refresh itself. Reload the page and reopen **Results** to see new responses. A note at the bottom reminds you that final results are available after the survey closes. Once the survey closes, the section is titled **Final Results**.
 
 ### Net Promoter Score
@@ -57,7 +66,7 @@ The NPS is the percentage of promoters minus the percentage of detractors. Passi
 
 ### Participant Comments
 
-If anyone left a comment, a **Participant Comments** list appears below, with a count. Scroll the list to read them all. Comments are shown without names here. To see who wrote a comment, use the **Responses** tab.
+If you can manage the survey and anyone left a comment, a **Participant Comments** list appears below, newest first, with a count and the date of each comment. Scroll the list to read them all. Comments are shown without names here. To see who wrote a comment, use the **Responses** tab.
 
 ## Responses
 
@@ -65,14 +74,14 @@ The **Responses** tab lists each recipient and what they did. The heading shows 
 
 Each row shows:
 
-- **Recipient**: name and email address (select the email to write to them)
+- **Recipient**: name and email address (select the email to open a reminder to them in your mail app)
 - **Organization**: their organization and job title
 - **Delivery Status**: the latest status of the email, with the time it happened
 - **Response Date**: when they responded
 - **NPS Score**: the score they gave, colored by promoter, passive, or detractor
 - **Comment**: what they wrote
 
-Rows are arranged in sections that you can collapse or expand. Select a column heading to sort by it. The list loads in pages; select **Load more responses** to see more.
+Rows are arranged in sections that you can collapse or expand. Select a column heading to sort by it. The tab loads every recipient, so the list, filters, search and download always cover everyone. If some responses can't be loaded, a message says the list may be incomplete; close and reopen **Results** to try again.
 
 ### Filter and search
 
@@ -83,11 +92,33 @@ Use the controls above the list to narrow it down:
 - **Delivery Status**: **All**, **Responded**, **Clicked**, **Opened**, **Delivered**, **Failed**, or **Pending**
 - **Search Respondents**: find someone by name, email address, or organization
 
-Filters and search only look at the responses that are already loaded. If the list is long, select **Load more responses** until it is fully loaded before you rely on a filter or a search. Otherwise a person on a later page won't appear, and you may see "No respondents match your filters." even though a match exists.
-
 **Delivery Status** helps you find people who haven't responded yet. **Delivered**, **Opened**, and **Clicked** are stages of the invitation email, and **Responded** means they submitted a response. Check **Failed** and **Pending** rows to find invitations that didn't reach someone, so you can follow up another way.
 
 If nothing matches, you see "No respondents match your filters." If nobody has responded and no filter is set, you see "No responses yet."
+
+### Follow up with recipients
+
+On the **Responses** tab:
+
+- Select **Send reminders** to resend the survey email, with each person's personal link, to recipients in your project's groups who haven't responded. Everyone starts selected; clear anyone you don't want to remind. You can send to at most 1,000 people at a time. This is available while the survey is open, to people who manage the project (a group writer who isn't a project writer doesn't see it).
+- Select **Download CSV** to export every recipient's delivery status, response and comment. The file does not include personal survey links.
+- Open the **⋮** menu on a recipient's row to:
+  - **Send reminder**: resend the survey email to that recipient (open surveys, recipients who haven't responded).
+  - **Copy personal link**: copy the recipient's own survey link. Anyone with this link can answer as that recipient, so share it only with them.
+  - **Email recipient**: open your mail app with a reminder that includes their personal link.
+  - **View sent email**: see the survey email as that recipient received it, with their name, project and link filled in.
+
+Personal links are shown only to people who manage the project the recipient's group belongs to. A group writer who isn't a project writer sees the menu without **Copy personal link**, and the reminder email has no link.
+
+### Resync recipients
+
+If people joined the group after the survey was sent, you can send it to them too. This needs permission to manage the project (not only the group) and an open survey.
+
+1. Open the survey's **Results** and select the **⋮** menu in the header.
+2. Select **Resync recipients**. The dialog lists the group members who would receive the survey.
+3. Select **Send** to email them.
+
+A resync only adds recipients. People who already have the survey aren't emailed again, and no one is removed. On a survey sent to several foundations' boards, it only covers your project's groups. If part of a resync fails, the dialog tells you how many groups were already sent and lists who is still missing, so you can try again.
 
 ## Related
 

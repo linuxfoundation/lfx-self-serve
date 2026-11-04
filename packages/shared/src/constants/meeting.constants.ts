@@ -947,6 +947,15 @@ export const PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY = 5;
 /** `include` value that makes GET /api/user/past-meetings add `has_recording` / `has_ai_summary`. */
 export const USER_PAST_MEETINGS_INCLUDE_ARTIFACTS = 'artifacts';
 
+/** `include` value that makes GET /api/user/meetings and /api/user/past-meetings add organizer attendance summaries. */
+export const USER_MEETINGS_INCLUDE_ATTENDANCE = 'attendance';
+
+/** Meetings per query-service request when loading organizer attendance summaries. */
+export const MEETING_ATTENDANCE_BATCH_SIZE = 25;
+
+/** Max concurrent attendance batches per feed request. */
+export const MEETING_ATTENDANCE_CONCURRENCY = 4;
+
 /**
  * Max concurrent per-meeting recording fetches for dashboard "Recordings Available" counts.
  */

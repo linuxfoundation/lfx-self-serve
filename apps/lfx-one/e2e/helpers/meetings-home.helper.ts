@@ -30,8 +30,6 @@ export const MEETINGS_HOME_TEST_OPTIONS = { timezoneId: 'UTC', locale: 'en-US', 
 export interface MeetingsHomeStubOptions extends MeetingsHomeFeedOptions {
   /** Serve an empty upcoming feed. */
   emptyUpcoming?: boolean;
-  /** Meeting write access in the synthetic project context; gates Create Meeting. */
-  canWrite?: boolean;
   /** Query string appended to `/meetings`, e.g. `?time=past`. */
   query?: string;
   /** Viewer personas; a board persona shows the Foundation filter. Defaults to contributor. */
@@ -53,7 +51,7 @@ function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-/** Me lens, the given personas and a synthetic project context, so the Create gate never depends on the test account. */
+/** Me lens, the given personas and a synthetic project context, so the page never depends on the test account. */
 async function seedCookies(page: Page, personas: PersonaType[]): Promise<void> {
   const url = new URL(test.info().project.use.baseURL ?? 'http://localhost:4200').origin;
   const persona: PersistedPersonaState = { primary: personas[0], all: personas };
@@ -78,7 +76,7 @@ async function stubMeetingsHome(page: Page, options: MeetingsHomeStubOptions): P
     fulfillJson(route, { personas: options.personas ?? ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
   );
   await page.route(`**/api/projects/${MEETINGS_HOME_PROJECT.slug}*`, (route) =>
-    fulfillJson(route, { ...MEETINGS_HOME_PROJECT, parent_uid: '', writer: options.canWrite === true, meetingCoordinator: false })
+    fulfillJson(route, { ...MEETINGS_HOME_PROJECT, parent_uid: '', writer: false, meetingCoordinator: false })
   );
   await page.route('**/api/user/meetings*', (route) => fulfillJson(route, upcoming()));
   await page.route('**/api/user/past-meetings*', (route) => fulfillJson(route, past));
