@@ -150,7 +150,7 @@ export class SurveyResyncDialogComponent {
         : "Nothing was sent because your access couldn't be verified. Please try again.";
     }
     if (status === 403) return "You don't have permission to resync this survey's recipients.";
-    if (status === 404) return 'This survey or committee is no longer available, so nothing was sent. Refresh and try again.';
+    if (status === 404) return 'This survey or committee is no longer available. Refresh and try again.';
     if (status === 429) return 'Too many requests just now. Please try again in a minute.';
     return stage === 'load'
       ? "We couldn't check the committee for new members. Please try again."
