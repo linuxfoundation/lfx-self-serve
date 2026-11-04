@@ -98,7 +98,13 @@
         <div class="p-6 md:p-8 min-h-[680px]">
           <p-step-panel [value]="1" data-testid="survey-manage-panel-1">
             <ng-template #content>
-              <lfx-survey-audience-type [form]="form()" [formValue]="formValue" [isEditMode]="isEditMode()" [committeeContext]="committeeContext()">
+              <lfx-survey-audience-type
+                [form]="form()"
+                [formValue]="formValue"
+                [isEditMode]="isEditMode()"
+                [committeeContext]="committeeContext()"
+                [templatesState]="surveyTemplates()"
+                (retryTemplates)="retryTemplates()">
               </lfx-survey-audience-type>
             </ng-template>
           </p-step-panel>
@@ -117,7 +123,8 @@
 
           <p-step-panel [value]="4" data-testid="survey-manage-panel-4">
             <ng-template #content>
-              <lfx-survey-review [form]="form()" [isEditMode]="isEditMode()" (editStep)="goToStep($event)"> </lfx-survey-review>
+              <lfx-survey-review [form]="form()" [isEditMode]="isEditMode()" [templateOptions]="surveyTemplates().options" (editStep)="goToStep($event)">
+              </lfx-survey-review>
             </ng-template>
           </p-step-panel>
         </div>
