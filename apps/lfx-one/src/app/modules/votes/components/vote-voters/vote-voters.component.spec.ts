@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { formatDate } from '@angular/common';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { TableComponent } from '@components/table/table.component';
@@ -157,6 +158,37 @@ describe('VoteVotersComponent', () => {
         expect(label.classList.contains('break-words')).toBe(true);
         expect(label.classList.contains('truncate')).toBe(false);
       }
+    }
+  });
+
+  it('shows Voter, Choice, Role and Submitted columns with each row value under its heading (#5057)', async () => {
+    const submittedAt = '2026-10-20T10:00:00Z';
+    const voters: VoteVoter[] = [
+      { ...VOTERS[0], user_role: 'Chair', submitted_at: submittedAt },
+      VOTERS[1],
+      VOTERS[2],
+      { ...VOTERS[3], user_voting_status: undefined },
+    ];
+    const { fixture } = await mount({ voters: () => of(voters) });
+    current = fixture;
+
+    expect([...fixture.nativeElement.querySelectorAll('th')].map((th: Element) => th.textContent?.trim())).toEqual(['Voter', 'Choice', 'Role', 'Submitted']);
+
+    const expected = [
+      { uid: 'b-blake', choice: 'Not voted yet', role: ['Alternate'], submitted: '—' },
+      { uid: 'b-avery', choice: 'Yes', role: ['Voting Rep', 'Chair'], submitted: formatDate(submittedAt, 'MMM d, y, h:mm a', 'en-US') },
+      { uid: 'b-casey', choice: 'Abstained', role: ['Voting Rep'], submitted: '—' },
+      { uid: 'b-drew', choice: 'No', role: ['—'], submitted: '—' },
+    ];
+    expect(rowUids(fixture)).toEqual(expected.map((row) => row.uid));
+    for (const { uid, choice, role, submitted } of expected) {
+      const cells = [...byTestId(fixture, `vote-voters-row-${uid}`)!.querySelectorAll(':scope > td')];
+      expect(cells).toHaveLength(4);
+      expect(cells[0].querySelector(`[data-testid="vote-voters-open-ballot-${uid}"], [data-testid="vote-voters-name-${uid}"]`)).not.toBeNull();
+      expect(cells[1].getAttribute('data-testid')).toBe(`vote-voters-choice-${uid}`);
+      expect(cells[1].textContent).toContain(choice);
+      expect([...cells[2].querySelectorAll('span')].map((span) => span.textContent?.trim())).toEqual(role);
+      expect(cells[3].textContent?.trim()).toBe(submitted);
     }
   });
 

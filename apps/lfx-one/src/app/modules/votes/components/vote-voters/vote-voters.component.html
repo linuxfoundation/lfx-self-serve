@@ -199,8 +199,8 @@
         <ng-template #header>
           <tr>
             <th><span class="text-sm font-inter text-gray-500">Voter</span></th>
-            <th><span class="text-sm font-inter text-gray-500">Role</span></th>
             <th><span class="text-sm font-inter text-gray-500">Choice</span></th>
+            <th><span class="text-sm font-inter text-gray-500">Role</span></th>
             <th><span class="text-sm font-inter text-gray-500">Submitted</span></th>
           </tr>
         </ng-template>
@@ -232,16 +232,6 @@
                     }}</span>
                   }
                 </div>
-              </div>
-            </td>
-
-            <!-- Role -->
-            <td>
-              <div class="flex flex-col">
-                <span class="text-sm text-gray-700">{{ row.role || '—' }}</span>
-                @if (row.committeeRole) {
-                  <span class="text-xs text-gray-500">{{ row.committeeRole }}</span>
-                }
               </div>
             </td>
 
@@ -277,6 +267,16 @@
                   </div>
                 }
               }
+            </td>
+
+            <!-- Role -->
+            <td>
+              <div class="flex flex-col">
+                <span class="text-sm text-gray-700">{{ row.role || '—' }}</span>
+                @if (row.committeeRole) {
+                  <span class="text-xs text-gray-500">{{ row.committeeRole }}</span>
+                }
+              </div>
             </td>
 
             <!-- Submitted -->
