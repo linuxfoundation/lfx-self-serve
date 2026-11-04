@@ -3049,6 +3049,22 @@ describe('ProjectService.updateFormationRecord', () => {
     expect(body).toEqual({ ...expectedBase, stage: 'Active', legal_entity_name: 'Cascade Data Inc.' });
   });
 
+  it('restores an omitted description before the PUT (GET-to-PUT)', async () => {
+    const noDescription: Record<string, unknown> = { ...stored };
+    delete noDescription['description'];
+    fetchWithETag.mockResolvedValue({ data: noDescription, etag: '4' });
+
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: 'Cascade Data Inc.' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ description: '', legal_entity_name: 'Cascade Data Inc.' });
+  });
+
+  it('clears a field sent as null', async () => {
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: null });
+
+    expect(updateWithETag.mock.calls[0][4]).not.toHaveProperty('legal_entity_name');
+  });
+
   it('drops a cleared field and defaults a missing parent_uid to empty', async () => {
     const rootProject: Record<string, unknown> = { ...stored };
     delete rootProject['parent_uid'];

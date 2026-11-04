@@ -21,6 +21,22 @@ describe('validateFormationRecordBody', () => {
     expect(() => validateFormationRecordBody({ stage: 5 })).toThrowError(/stage/);
   });
 
+  it('accepts null for the five nullable fields and normalizes it to the clearing empty string', () => {
+    expect(
+      validateFormationRecordBody({
+        legal_entity_name: null,
+        legal_entity_type: null,
+        formation_date: null,
+        entity_dissolution_date: null,
+        entity_formation_document_url: null,
+      })
+    ).toEqual({ legal_entity_name: '', legal_entity_type: '', formation_date: '', entity_dissolution_date: '', entity_formation_document_url: '' });
+  });
+
+  it('keeps rejecting a null stage', () => {
+    expect(() => validateFormationRecordBody({ stage: null })).toThrowError(/stage/);
+  });
+
   it.each(['parent_uid', 'legal_parent_uid', 'slug', 'public', '__proto__'])('rejects the non-editable key %s (mass-assignment guard)', (key) => {
     const body = JSON.parse(`{"stage":"Active","${key}":"x"}`);
     expect(() => validateFormationRecordBody(body)).toThrowError(new RegExp(key));
@@ -60,6 +76,24 @@ describe('mergeFormationRecord', () => {
       funding_model: ['a'],
       entity_dissolution_date: '2026-10-31',
     });
+  });
+
+  it('restores an empty description the upstream GET omitted, so the full-replace PUT still carries the required key', () => {
+    const omitted: Record<string, unknown> = { slug: 's', name: 'N', parent_uid: 'p', stage: 'Active' };
+
+    expect(mergeFormationRecord(omitted, { legal_entity_name: 'Cascade Data LLC' })).toEqual({
+      slug: 's',
+      name: 'N',
+      description: '',
+      parent_uid: 'p',
+      stage: 'Active',
+      legal_entity_name: 'Cascade Data LLC',
+    });
+  });
+
+  it('turns a null edit into a cleared (dropped) field', () => {
+    const edits = validateFormationRecordBody({ legal_entity_name: null });
+    expect(mergeFormationRecord({ ...stored, legal_entity_name: 'Old' }, edits)).not.toHaveProperty('legal_entity_name');
   });
 
   it('does not mutate the stored object', () => {

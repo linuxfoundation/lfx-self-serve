@@ -38,6 +38,12 @@ export function validateFormationRecordBody(body: unknown): UpdateFormationRecor
   for (const key of FORMATION_RECORD_EDITABLE_KEYS) {
     if (!(key in input)) continue;
     const value = input[key];
+    // The five non-stage fields are nullable (#5134) — null clears the field, exactly like an empty string.
+    // A null stage is never valid: upstream requires a stage on every stored project.
+    if (value === null && key !== 'stage') {
+      result[key] = '';
+      continue;
+    }
     if (typeof value !== 'string') {
       throw ServiceValidationError.forField(key, INVALID);
     }
@@ -94,8 +100,8 @@ export function assertMergedRecordValid(merged: Record<string, unknown>): void {
 /**
  * Builds the full-replace PUT body: the raw stored project minus read-only fields, with only the
  * keys the caller sent applied. An empty string clears the field (the key is dropped — upstream
- * rejects empty strings on formatted fields). `parent_uid` is required upstream and may be absent
- * on a root project, so it defaults to `''`; every other stored field passes through untouched.
+ * rejects empty strings on formatted fields). `parent_uid` and `description` are required upstream but
+ * omitted from the GET when empty, so they default to `''`; every other stored field passes through untouched.
  */
 export function mergeFormationRecord(stored: Record<string, unknown>, edits: UpdateFormationRecordRequest): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...stored };
@@ -111,8 +117,12 @@ export function mergeFormationRecord(stored: Record<string, unknown>, edits: Upd
     }
   }
 
+  // Upstream omits empty values when serializing the GET, but the full-replace PUT requires these keys.
   if (typeof merged['parent_uid'] !== 'string') {
     merged['parent_uid'] = '';
+  }
+  if (typeof merged['description'] !== 'string') {
+    merged['description'] = '';
   }
 
   return merged;
