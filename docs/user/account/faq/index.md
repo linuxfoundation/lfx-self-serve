@@ -62,7 +62,7 @@ The Linux.com email alias is a one-time add-on for Individual Supporters that gi
 
 ## How do I enroll as an Individual Supporter?
 
-Go to [**Profile & Account**](/profile) and open the **Individual Enrollment** tab (`/profile/individual-enrollment`). Review the membership and its benefits, then select **Enroll**. See [Individual Enrollment](../individual-enrollment/).
+Go to [**Profile & Account**](/profile) and open the **Individual Enrollment** tab (`/profile/individual-enrollment`). Review the membership and its benefits, then select **Enroll as an Individual Supporter**. See [Individual Enrollment](../individual-enrollment/).
 
 ## How do I turn off auto-renew or stop my membership?
 
