@@ -120,7 +120,7 @@ You reassign them from the pencil on the person's row, which opens **Reassign Bo
 3. Under **Assign to**, enter the new person's **Email** (the box says **Enter the employee's email address...**), **First Name** and **Last Name**.
 4. Select **Save Changes** followed by the number of roles, such as **Save Changes (1 role)**. While it saves, the button says **Reassigning…**.
 
-A saved change shows **Board roles reassigned**, **Committee roles reassigned** or **Roles reassigned**. When only some roles were reassigned, it shows **Some reassignments did not succeed**. To change a single key contact, use the pencil on that role, which opens **Edit Key Contact**, the same dialog as on a membership page. Its steps are in [How do I change a key contact?](../memberships/#how-do-i-change-a-key-contact).
+A saved change shows **Board roles reassigned**, **Committee roles reassigned** or **Roles reassigned**. When only some board or committee roles were reassigned, it shows **Some reassignments did not succeed**. When only some key contact roles were reassigned, **Reassign Key Contact Roles** stays open and says how many succeeded, followed by **Reopen this dialog to retry the remaining roles with fresh state.** Close it and open it again before you retry. To change a single key contact, use the pencil on that role, which opens **Edit Key Contact**, the same dialog as on a membership page. Its steps are in [How do I change a key contact?](../memberships/#how-do-i-change-a-key-contact).
 
 ## What do the Event Attendees and Trainees tabs show?
 
