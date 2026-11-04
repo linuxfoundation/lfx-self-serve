@@ -4,7 +4,7 @@ description: How to read the Projects table for the selected organization, filte
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, projects, project-detail, workspaces, influence, leaderboard, health, contributors, participants]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Organization
 ---
 
@@ -34,15 +34,15 @@ When you cannot open the organization, Projects is replaced by the same access m
 
 Each row of the Projects table shows one project's health, the organization's technical and ecosystem influence on it, its influence trend over the past year, and how many of the organization's employees contribute and participate. Select a project name to open its detail page. Hover a column heading to read what it measures.
 
-| Column                   | What it shows                                                                                                                                                                                                                     |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Project**              | The project logo and name. The name opens the project's detail page                                                                                                                                                               |
-| **Health**               | The project's LFX Insights health label: **Excellent**, **Healthy**, **Fair**, **Concerning**, **Critical**, or **Unavailable**                                                                                                   |
-| **Technical influence**  | The organization's influence on the project's code activity (commits and pull requests), as a band: **Leading**, **Contributing**, **Participating**, or **Silent**                                                               |
-| **Ecosystem influence**  | The organization's influence on the project's non-code collaboration (documentation, committees, meetings, events), as the same bands. A project outside the Linux Foundation (LF) shows **Non-LF Project**                       |
-| **Influence Trend (1y)** | A line showing how the organization's combined influence changed over the rolling 12 months, and the change as a percentage                                                                                                       |
-| **Contributors**         | How many of the organization's employees contributed code to the project in the past 2 years, counted under the chosen **Organization scope**. The number opens the project's detail page with its **Contributors** card open     |
-| **Participants**         | How many of the organization's employees were involved in the project in any way in the past 2 years, including code contributions, documentation collaboration, events, and training. The number opens the project's detail page |
+| Column                   | What it shows                                                                                                                                                                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Project**              | The project logo and name. The name opens the project's detail page                                                                                                                                                                                        |
+| **Health**               | The project's LFX Insights health label: **Excellent**, **Healthy**, **Fair**, **Concerning**, **Critical**, or **Unavailable**                                                                                                                            |
+| **Technical influence**  | The organization's influence on the project's code activity (commits and pull requests), as a band: **Leading**, **Contributing**, **Participating**, or **Silent**                                                                                        |
+| **Ecosystem influence**  | The organization's influence on the project's non-code collaboration (documentation, committees, meetings, events), as the same bands. A project outside the Linux Foundation (LF) shows **Non-LF Project**                                                |
+| **Influence Trend (1y)** | A line showing how the organization's combined influence changed over the rolling 12 months, and the change as a percentage                                                                                                                                |
+| **Contributors**         | How many of the organization's employees contributed code to the project in the past 2 years, counted under the chosen **Organization scope** and **Team members** choices. The number opens the project's detail page with its **Contributors** card open |
+| **Participants**         | How many of the organization's employees were involved in the project in any way in the past 2 years, including code contributions, documentation collaboration, events, and training. The number opens the project's detail page                          |
 
 The hover text on both influence columns says **Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).** and **Comparing our company's share of these activities to the project total indicates greater influence in the project.** Each band also shows signal bars: four filled for **Leading**, down to one for **Silent**.
 
@@ -74,16 +74,16 @@ On that row, the project name is not a link. **Technical influence**, **Ecosyste
 
 ## How do I filter the Projects table?
 
-You filter the Projects table with the workspace, foundation, and employee menus above it, and with **Organization scope** under **More filters**. Each filter changes only the rows shown and goes back to page 1.
+You filter the Projects table with the workspace, foundation, and employee menus above it, which choose the rows shown. **Organization scope** and **Team members**, under **More filters**, change how the **Contributors** column counts. Each choice goes back to page 1.
 
 1. Open the workspace menu at the left, which shows the current workspace's name, and select a workspace under **Shared Workspaces**.
 2. Open the foundation menu. It starts on **All Foundations**. Type in **Search foundations…** to find one, and select it to keep only that foundation's projects.
 3. Open **All Employees** and select one or more people to keep only the projects they maintain, contribute to, or participate in.
-4. Select **More filters** to show **Organization scope**. While it is set to something other than its default, the link reads **More filters (1)**. Select **Fewer filters** to hide it again.
+4. Select **More filters** to show **Organization scope** and **Team members**. The link counts how many of the two are set to something other than their default, such as **More filters (1)**. Select **Fewer filters** to hide them again.
 
 When maintainer data cannot be read, the page says **Maintainer data is currently unavailable — the Employees filter matches contributors and participants only.**
 
-When the filters match no projects, the table says **No results for filters** and **Try a different workspace or clear your filters.** Select **Reset filters** to clear the workspace, foundation, employee, and organization scope choices at once.
+When the filters match no projects, the table says **No results for filters** and **Try a different workspace or clear your filters.** Select **Reset filters** to clear the workspace, foundation, employee, organization scope, and team members choices at once.
 
 ## What does Organization scope change?
 
@@ -95,6 +95,17 @@ When the filters match no projects, the table says **No results for filters** an
 When the company has no LFX Insights organization with code activity in the past two years, the menu is locked on **All related organizations**. Its info button says **This company has no LFX Insights organization with code activity in the past two years; counts include every related organization.**
 
 Your choice is kept when you open a project's detail page and when you return to Projects. See [Organization scope](../../dashboards/#organization-scope).
+
+## What does Team members change?
+
+**Team members** chooses whether people marked as team members in the Community Data Platform count toward the **Contributors** column. It does not change any other column.
+
+- **Exclude team members**, the default, leaves them out, as LFX Insights does.
+- **Include team members** counts them.
+
+When **Exclude team members** is chosen but the team-member data cannot be read, the page says **Team-member data is unavailable; counts include team members.**
+
+A project detail page has no **Team members** choice.
 
 ## How do I export the Projects table?
 
