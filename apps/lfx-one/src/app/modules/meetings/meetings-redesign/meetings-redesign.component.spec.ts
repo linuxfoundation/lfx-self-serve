@@ -306,6 +306,18 @@ describe('MeetingsRedesignComponent', () => {
       expect(pending().fallbackFocus()).toBe(query(fixture, 'meetings-redesign-title'));
     });
 
+    it('keeps the heading as the focus fallback while the persona loads', async () => {
+      personaLoaded.set(false);
+      canWriteMeetings.set(false);
+      const fixture = render();
+      await fixture.whenStable();
+      const pending: PendingRsvpsComponent = fixture.debugElement.query(By.directive(PendingRsvpsComponent)).componentInstance;
+
+      expect(query(fixture, 'meetings-home-persona-loading')).toBeTruthy();
+      expect(pending.fallbackFocus()).not.toBeNull();
+      expect(pending.fallbackFocus()).toBe(query(fixture, 'meetings-redesign-title'));
+    });
+
     it('refetches both feeds after the composer saves', async () => {
       const fixture = render();
       await fixture.whenStable();
@@ -530,18 +542,20 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-home-no-results')).toBeNull();
     });
 
-    it('shows a header skeleton until the persona loads', async () => {
+    it('shows the title and a description skeleton until the persona loads', async () => {
       personaLoaded.set(false);
       const fixture = render();
       await fixture.whenStable();
 
       expect(query(fixture, 'meetings-home-persona-loading')).toBeTruthy();
-      expect(query(fixture, 'meetings-redesign-title')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-title')?.textContent).toContain('Meetings');
+      expect(query(fixture, 'meetings-redesign-description')).toBeNull();
 
       personaLoaded.set(true);
       await fixture.whenStable();
 
-      expect(query(fixture, 'meetings-redesign-title')).toBeTruthy();
+      expect(query(fixture, 'meetings-home-persona-loading')).toBeNull();
+      expect(query(fixture, 'meetings-redesign-description')).toBeTruthy();
     });
 
     it('filters rows by the search text', async () => {
