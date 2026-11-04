@@ -1844,7 +1844,10 @@ describe('MktgAgentRunComponent', () => {
       expect(component['publicReceiver']()).toBe(true);
       expect(query('mktg-run-public-progress')?.querySelectorAll('h1, h2')).toHaveLength(1);
       expect(query('mktg-run-public-progress')?.querySelectorAll('p[role="status"]')).toHaveLength(1);
-      if (state === 'questions') expect(host().textContent).toContain('browser that started this run');
+      if (state === 'questions') {
+        expect(host().textContent).toContain('Waiting for your answers.');
+        expect(host().textContent).not.toContain('browser that started this run');
+      }
       expect(generate).not.toHaveBeenCalled();
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
     });
