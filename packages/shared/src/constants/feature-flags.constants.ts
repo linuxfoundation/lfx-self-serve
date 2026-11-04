@@ -45,6 +45,18 @@ export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
  */
 export const CF_ORG_DONATIONS_FLAG = 'cf-org-donations';
 /**
+ * Dark-launch gate for the Projects and Foundation lens **Mentorship Programs** sidebar entries (lfx-mentorship#398).
+ * Default false. **Sidebar only**: the `/project/mentorship` and `/foundation/mentorship` routes stay reachable by URL, the
+ * BFF stays open, and the gateway's `mentorship_program_creator` check on the project (its writers, or its mentorship
+ * program admins) is the authorization boundary.
+ *
+ * **Reused key.** `mentorship-enabled` once gated the whole Mentorship module; #4882 removed that gate when Mentorship went
+ * on for everyone in prod, and planned to delete the LaunchDarkly flag afterwards. This gate takes the key over, so before
+ * this ships the flag must be retargeted to what these entries should show (off, or the rollout audience), and it must not
+ * be deleted while this constant exists: a missing flag reads as `false` and hides both entries.
+ */
+export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
+/**
  * Dark-launch gate for Slack-webhook sharing (LFXV2-3080) — the settings card
  * (committee-settings-tab) and the "Share to Slack" action (weekly-brief-card) both check this
  * directly. Not a strict child of 'wg-weekly-brief': weekly-brief-card does render under that

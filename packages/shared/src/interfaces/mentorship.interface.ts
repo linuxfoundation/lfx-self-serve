@@ -107,6 +107,15 @@ export interface MentorshipLfProject {
 /** One lazy-load page of LF projects; `page_token` is the cursor for the next page and is left out once the list is exhausted. */
 export type MentorshipLfProjectsResponse = PaginatedResponse<MentorshipLfProject>;
 
+/** Query of `GET /api/mentorship/lf-projects`, the enroll wizard's project picker. */
+export interface MentorshipLfProjectsQuery {
+  search?: string;
+  pageToken?: string;
+  limit?: number;
+  /** Only this project's direct sub-projects: the Foundation lens wizard offers its foundation's sub-projects (lfx-mentorship#398). */
+  parentUid?: string;
+}
+
 /** Result of the program-name availability lookup. */
 export interface MentorshipNameAvailability {
   available: boolean;

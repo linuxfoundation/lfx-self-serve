@@ -102,7 +102,7 @@ describe('resolveMentorshipPrimaryEmail', () => {
 });
 
 describe('resolveMentorshipGithubProfileLink', () => {
-  it("builds the GitHub URL from the caller's connected GitHub login, looked up by their sub", async () => {
+  it("builds the GitHub URL from the caller's connected GitHub login, looked up with their request", async () => {
     const { service, listIdentitiesSafe } = identityServiceReturning([
       identity('linkedin', { email: 'test.user@example.com' }),
       identity('github', { nickname: 'test-user' }),
@@ -110,7 +110,7 @@ describe('resolveMentorshipGithubProfileLink', () => {
     const req = buildReq();
 
     await expect(resolveMentorshipGithubProfileLink(req, service)).resolves.toBe('https://github.com/test-user');
-    expect(listIdentitiesSafe).toHaveBeenCalledWith(req, 'auth0|test-user-1');
+    expect(listIdentitiesSafe).toHaveBeenCalledWith(req);
   });
 
   it('returns nothing, without a lookup, when there is no signed-in user', async () => {
