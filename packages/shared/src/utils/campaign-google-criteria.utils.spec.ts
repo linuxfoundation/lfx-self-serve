@@ -11,10 +11,13 @@ import {
 } from '../constants/campaign.constants';
 import type { NormalizedGoogleAdSchedule } from '../interfaces/campaign.interface';
 import {
+  googleAdScheduleBidModifierRefusal,
   googleAdScheduleRefusal,
   googleBidModifierRefusal,
   googleChannelOffersManualCpc,
+  googleBidAdjustmentRangeText,
   googleDemographicExclusionRefusal,
+  googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
   googleEffectiveBiddingStrategy,
   googleExcludedAgeRangeRefusal,
@@ -24,6 +27,8 @@ import {
   googleExcludedGeoClashRefusal,
   googleExcludedGeoListRefusal,
   googleExcludedGeoRefusal,
+  googleScheduleAdjustmentStrategiesOn,
+  googleStrategyTakesScheduleAdjustments,
   googleUpperCodeList,
 } from './campaign-google-criteria.utils';
 
@@ -46,26 +51,55 @@ const adSchedule = (overrides: Partial<NormalizedGoogleAdSchedule> = {}): Normal
 });
 
 describe('googleBidModifierRefusal', () => {
-  it('accepts 0, the do-not-serve opt-out, and both ends of the range', () => {
-    expect(googleBidModifierRefusal('ad schedule 1', 0)).toBeNull();
-    expect(googleBidModifierRefusal('ad schedule 1', 0.1)).toBeNull();
-    expect(googleBidModifierRefusal('ad schedule 1', 10)).toBeNull();
+  it('accepts 0, the device exclusion, and both ends of the range', () => {
+    expect(googleBidModifierRefusal('device bid modifier 1', 0)).toBeNull();
+    expect(googleBidModifierRefusal('device bid modifier 1', 0.1)).toBeNull();
+    expect(googleBidModifierRefusal('device bid modifier 1', 10)).toBeNull();
   });
 
   it('refuses a value between 0 and the minimum, above the maximum, or not finite', () => {
-    expect(googleBidModifierRefusal('ad schedule 1', 0.05)).toContain('bid modifier of 0.05');
-    expect(googleBidModifierRefusal('ad schedule 1', 10.5)).toContain('Google accepts 0 (do not serve) or 0.1 to 10');
-    expect(googleBidModifierRefusal('ad schedule 1', Number.NaN)).toContain('needs a finite bid modifier');
+    expect(googleBidModifierRefusal('device bid modifier 1', 0.05)).toContain('bid modifier of 0.05');
+    expect(googleBidModifierRefusal('device bid modifier 1', 10.5)).toContain('Google accepts 0 (do not serve) or 0.1 to 10');
+    expect(googleBidModifierRefusal('device bid modifier 1', Number.NaN)).toContain('needs a finite bid modifier');
+  });
+});
+
+// Google's CampaignCriterion contract: 0.1-10.0 on an ad schedule, 0 only as a device exclusion (#5088 review).
+describe('googleAdScheduleBidModifierRefusal', () => {
+  it('accepts both ends of the range, -90% and +900%', () => {
+    expect(googleAdScheduleBidModifierRefusal('ad schedule 1', 0.1)).toBeNull();
+    expect(googleAdScheduleBidModifierRefusal('ad schedule 1', 10)).toBeNull();
+  });
+
+  it('refuses 0, the -100% a device takes, and says how to stop serving at that time', () => {
+    expect(googleAdScheduleBidModifierRefusal('ad schedule 1', 0)).toBe(
+      'The Google Ads ad schedule 1 has a bid modifier of 0. Google accepts 0.1 to 10 on an ad schedule (-90% to +900%). A bid modifier of 0 excludes a device, not an ad schedule. To stop serving at that time, remove this window and keep at least one other: with windows, the campaign serves only in them; with none, it serves around the clock. Fix it and create again.'
+    );
+  });
+
+  it('refuses a value between 0 and the minimum, above the maximum, or not finite, without the device-only 0 advice', () => {
+    expect(googleAdScheduleBidModifierRefusal('ad schedule 1', 0.05)).toBe(
+      'The Google Ads ad schedule 1 has a bid modifier of 0.05. Google accepts 0.1 to 10 on an ad schedule (-90% to +900%). Fix it and create again.'
+    );
+    expect(googleAdScheduleBidModifierRefusal('ad schedule 1', 10.5)).not.toContain('0 (do not serve)');
+    expect(googleAdScheduleBidModifierRefusal('ad schedule 1', Number.NaN)).toContain('needs a finite bid modifier');
   });
 });
 
 describe('googleAdScheduleRefusal', () => {
   it('accepts a day split at noon, because touching windows do not overlap', () => {
-    expect(googleAdScheduleRefusal([adSchedule({ endHour: 12 }), adSchedule({ startHour: 12 })])).toBeNull();
+    expect(googleAdScheduleRefusal([adSchedule({ endHour: 12 }), adSchedule({ startHour: 12 })], 'manual-cpc', 'search')).toBeNull();
   });
 
   it('accepts a whole day ending at hour 24', () => {
-    expect(googleAdScheduleRefusal([adSchedule({ startHour: 0, endHour: 24 })])).toBeNull();
+    expect(googleAdScheduleRefusal([adSchedule({ startHour: 0, endHour: 24 })], 'manual-cpc', 'search')).toBeNull();
+  });
+
+  it('refuses a -100% window (bid modifier 0) and accepts -90% (0.1), its lowest adjustment', () => {
+    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 0 })], 'manual-cpc', 'search')).toContain(
+      'ad schedule 1 has a bid modifier of 0. Google accepts 0.1 to 10 on an ad schedule'
+    );
+    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 0.1 })], 'manual-cpc', 'search')).toBeNull();
   });
 
   it.each([
@@ -75,24 +109,89 @@ describe('googleAdScheduleRefusal', () => {
     ['a minute Google cannot represent', adSchedule({ startMinute: 10 }), 'start minute of 10'],
     ['a bid modifier out of range', adSchedule({ bidModifier: 20 }), 'bid modifier of 20'],
   ])('refuses %s', (_label, schedule, message) => {
-    expect(googleAdScheduleRefusal([schedule])).toContain(message);
+    expect(googleAdScheduleRefusal([schedule], 'manual-cpc', 'search')).toContain(message);
   });
 
   it('names an overlap with the window it clashes with', () => {
-    expect(googleAdScheduleRefusal([adSchedule(), adSchedule({ startHour: 16, endHour: 18 })])).toBe(
+    expect(googleAdScheduleRefusal([adSchedule(), adSchedule({ startHour: 16, endHour: 18 })], 'manual-cpc', 'search')).toBe(
       'The Google Ads ad schedule 2 (MONDAY 16:00-18:00) overlaps MONDAY 09:00-17:00. Google rejects overlapping ad schedules on the same day, so merge them and create again.'
     );
   });
 
   it('collapses an exact repeat and refuses one with a different bid modifier', () => {
-    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 0.8 }), adSchedule({ bidModifier: 0.8 })])).toBeNull();
-    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 0.8 }), adSchedule({ bidModifier: 0.5 })])).toContain('with a different bid modifier');
+    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 0.8 }), adSchedule({ bidModifier: 0.8 })], 'manual-cpc', 'search')).toBeNull();
+    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 0.8 }), adSchedule({ bidModifier: 0.5 })], 'manual-cpc', 'search')).toContain(
+      'with a different bid modifier'
+    );
   });
 
   it('refuses one interval past the per-day limit', () => {
     const hourly = Array.from({ length: GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY + 1 }, (_, h) => adSchedule({ startHour: h, endHour: h + 1 }));
-    expect(googleAdScheduleRefusal(hourly.slice(0, -1))).toBeNull();
-    expect(googleAdScheduleRefusal(hourly)).toContain(`accepts at most ${GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} per day`);
+    expect(googleAdScheduleRefusal(hourly.slice(0, -1), 'manual-cpc', 'search')).toBeNull();
+    expect(googleAdScheduleRefusal(hourly, 'manual-cpc', 'search')).toContain(`accepts at most ${GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} per day`);
+  });
+
+  // Google stores an ad-schedule bid adjustment under Smart Bidding and ignores it; campaign-service
+  // forwards it, so LFX One refuses it here (#5088 review). Windows with no adjustment pass everywhere.
+  it.each(['manual-cpc', 'maximize-clicks'])('accepts an adjusted window under %s, where Google applies it', (strategy) => {
+    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 1.5 })], strategy, 'search')).toBeNull();
+  });
+
+  it.each(['maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'])(
+    'refuses any adjusted window under %s on Search, 1 (0%%) included, offering both strategies that apply it',
+    (strategy) => {
+      const label = GOOGLE_BIDDING_STRATEGY_LABELS[strategy as keyof typeof GOOGLE_BIDDING_STRATEGY_LABELS];
+      for (const bidModifier of [1.5, 1]) {
+        expect(googleAdScheduleRefusal([adSchedule(), adSchedule({ dayOfWeek: 'TUESDAY', bidModifier })], strategy, 'search')).toBe(
+          `The Google Ads ad schedule 2 has a bid modifier of ${bidModifier}. Google Ads applies an ad schedule bid adjustment only under Manual CPC or Maximize Clicks. Under ${label} it would ignore it, so LFX One doesn't send one. Clear its bid adjustment, or bid with Manual CPC or Maximize Clicks, then create again.`
+        );
+      }
+      expect(googleAdScheduleRefusal([adSchedule(), adSchedule({ dayOfWeek: 'TUESDAY' })], strategy, 'search')).toBeNull();
+    }
+  );
+
+  it.each([
+    ['display', 'Clear its bid adjustment, or bid with Maximize Clicks, then create again.'],
+    ['performance-max', 'Clear its bid adjustment, then create again.'],
+    ['video', 'Clear its bid adjustment, then create again.'],
+  ] as const)('on %s offers only the strategies it can bid', (channel, fix) => {
+    const refusal = googleAdScheduleRefusal([adSchedule({ bidModifier: 0.8 })], 'maximize-conversions', channel) ?? '';
+    expect(refusal.endsWith(` ${fix}`)).toBe(true);
+  });
+
+  it('judges every entry before the strategy, so a window Google refuses is named first', () => {
+    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 1.5 }), adSchedule({ dayOfWeek: 'TUESDAY', bidModifier: 0 })], 'target-cpa', 'search')).toContain(
+      'ad schedule 2 has a bid modifier of 0. Google accepts 0.1 to 10'
+    );
+  });
+
+  it('names an unknown strategy as written, since Google applies no adjustment it does not know', () => {
+    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 1.5 })], 'retired-strategy', 'search')).toContain('Under retired-strategy it would ignore it');
+  });
+});
+
+describe('googleBidAdjustmentRangeText', () => {
+  it("prints Google's range from the modifier bounds", () => {
+    expect(googleBidAdjustmentRangeText()).toBe('-90% to +900%');
+  });
+});
+
+describe('googleScheduleAdjustmentStrategiesOn / googleStrategyTakesScheduleAdjustments', () => {
+  it('lists the strategies that apply a schedule adjustment, as each channel offers them', () => {
+    expect(googleScheduleAdjustmentStrategiesOn('search')).toEqual(['manual-cpc', 'maximize-clicks']);
+    expect(googleScheduleAdjustmentStrategiesOn('display')).toEqual(['maximize-clicks']);
+    expect(googleScheduleAdjustmentStrategiesOn('performance-max')).toEqual([]);
+    expect(googleScheduleAdjustmentStrategiesOn('video')).toEqual([]);
+    // Demand Gen offers Maximize Clicks but takes no ad schedules, and upstream refuses its schedule modifiers.
+    expect(googleScheduleAdjustmentStrategiesOn('demand-gen')).toEqual([]);
+  });
+
+  it('is true only for Manual CPC and Maximize Clicks', () => {
+    expect(
+      ['manual-cpc', 'maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'].map(
+        googleStrategyTakesScheduleAdjustments
+      )
+    ).toEqual([true, true, false, false, false, false]);
   });
 });
 
@@ -128,7 +227,8 @@ describe('googleDeviceBidModifierRefusal', () => {
   });
 
   // campaign-service's `validateBiddingPlan`: under any strategy but manual-cpc, every NON-ZERO device
-  // modifier is refused, 1 (a 0% adjustment) included, and 0 (the exclusion) is not.
+  // modifier is refused, 1 (a 0% adjustment) included, and 0 (the exclusion) is not. The reason given
+  // is Google's under Smart Bidding and LFX One's policy under Maximize Clicks, where Google applies it.
   it.each(['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'])(
     'refuses any non-zero modifier under %s on Search, 1 (0%%) included, offering Manual CPC as a way out',
     (strategy) => {
@@ -142,7 +242,7 @@ describe('googleDeviceBidModifierRefusal', () => {
           'search'
         );
         expect(refusal).toBe(
-          `The Google Ads device bid modifier 2 gives MOBILE a bid modifier of ${bidModifier}. Google Ads applies a device bid adjustment only under Manual CPC. Under ${GOOGLE_BIDDING_STRATEGY_LABELS[strategy as keyof typeof GOOGLE_BIDDING_STRATEGY_LABELS]} it would ignore it, so LFX One doesn't send one. Set it to 0 to exclude the device, remove it, or bid with Manual CPC, then create again.`
+          `The Google Ads device bid modifier 2 gives MOBILE a bid modifier of ${bidModifier}. ${googleDeviceAdjustmentNotSentSentence(strategy)} Set it to 0 to exclude the device, remove it, or bid with Manual CPC, then create again.`
         );
       }
     }
@@ -151,7 +251,7 @@ describe('googleDeviceBidModifierRefusal', () => {
   it.each(['display', 'video'] as const)('leaves Manual CPC out of the way out on %s, which does not offer it', (channel) => {
     const refusal = googleDeviceBidModifierRefusal([{ device: 'MOBILE', bidModifier: 1.2 }], 'maximize-conversions', channel);
     expect(refusal).toBe(
-      "The Google Ads device bid modifier 1 gives MOBILE a bid modifier of 1.2. Google Ads applies a device bid adjustment only under Manual CPC. Under Maximize Conversions it would ignore it, so LFX One doesn't send one. Set it to 0 to exclude the device or remove it, then create again."
+      "The Google Ads device bid modifier 1 gives MOBILE a bid modifier of 1.2. Google Ads doesn't apply a device bid adjustment under Maximize Conversions, except a -100% exclusion, so LFX One doesn't send one. Set it to 0 to exclude the device or remove it, then create again."
     );
     expect(refusal).not.toContain('bid with Manual CPC');
   });
@@ -187,8 +287,25 @@ describe('googleDeviceBidModifierRefusal', () => {
 
   it('names an unknown strategy as written, since it is not Manual CPC either', () => {
     expect(googleDeviceBidModifierRefusal([{ device: 'MOBILE', bidModifier: 1.2 }], 'retired-strategy', 'search')).toContain(
-      'Under retired-strategy it would ignore it'
+      "LFX One sends a device bid adjustment only under Manual CPC, so it doesn't send one under retired-strategy."
     );
+  });
+});
+
+// Google applies a device bid adjustment under Maximize Clicks and not under Smart Bidding (except a
+// -100% exclusion): https://support.google.com/google-ads/answer/2732132. The sentence must not say
+// Google ignores it under Maximize Clicks, where the refusal is campaign-service's Manual-CPC-only rule.
+describe('googleDeviceAdjustmentNotSentSentence', () => {
+  it.each(['maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'])("gives Google's reason under Smart Bidding (%s)", (strategy) => {
+    expect(googleDeviceAdjustmentNotSentSentence(strategy)).toBe(
+      `Google Ads doesn't apply a device bid adjustment under ${GOOGLE_BIDDING_STRATEGY_LABELS[strategy as keyof typeof GOOGLE_BIDDING_STRATEGY_LABELS]}, except a -100% exclusion, so LFX One doesn't send one.`
+    );
+  });
+
+  it("gives LFX One's policy under Maximize Clicks, where Google would apply it", () => {
+    const sentence = googleDeviceAdjustmentNotSentSentence('maximize-clicks');
+    expect(sentence).toBe("LFX One sends a device bid adjustment only under Manual CPC, so it doesn't send one under Maximize Clicks.");
+    expect(sentence).not.toContain("doesn't apply");
   });
 });
 

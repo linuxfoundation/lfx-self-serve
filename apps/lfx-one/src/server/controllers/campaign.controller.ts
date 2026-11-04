@@ -1252,6 +1252,14 @@ export class CampaignController {
         // after it has resolved the language list. Same reason as the three guards above: an entry
         // Go refuses comes back as the orchestrator's opaque "platform campaign creation failed",
         // so every refusal is made here first, by name, in upstream's own order.
+        // The channel and EFFECTIVE bidding strategy both criteria judges below read: the
+        // `biddingStrategy` `googleBidding` forwards, read from it so the two cannot drift (it
+        // JS-trims, so a U+FEFF pad is already gone), or the channel default upstream picks when it
+        // forwards none. Resolved once, and only for a known channel: the schedule and device
+        // blocks use it only after their channel fences have passed.
+        const criteriaChannel = (GOOGLE_CAMPAIGN_CHANNELS as readonly unknown[]).includes(googleChannel) ? (googleChannel as GoogleCampaignChannel) : null;
+        const criteriaStrategy = criteriaChannel === null ? '' : googleEffectiveBiddingStrategy(this.googleBidding(body)['biddingStrategy'], criteriaChannel);
+
         const rawAdSchedules = body?.adSchedules;
         if (rawAdSchedules !== undefined && rawAdSchedules !== null) {
           const refuseAdSchedules = (message: string): void =>
@@ -1289,7 +1297,14 @@ export class CampaignController {
             // One call, not a per-entry loop: three of upstream's refusals — an exact repeat with a
             // different bid modifier, an overlap, and the per-day limit — are about an entry's
             // relationship to the entries before it and cannot be decided from the entry alone.
-            const scheduleRefusal = googleAdScheduleRefusal(this.googleAdScheduleList(rawAdSchedules));
+            // Judged under the EFFECTIVE strategy (`criteriaStrategy`): a schedule bid modifier is
+            // refused under Smart Bidding, where Google would store it and never bid it
+            // (campaign-service forwards it).
+            const scheduleRefusal = googleAdScheduleRefusal(
+              this.googleAdScheduleList(rawAdSchedules),
+              criteriaStrategy,
+              criteriaChannel as GoogleCampaignChannel
+            );
             if (scheduleRefusal) {
               refuseAdSchedules(scheduleRefusal);
               return;
@@ -1358,13 +1373,10 @@ export class CampaignController {
 
             // One call, not a per-entry loop: the repeated-device refusal is about an entry's
             // relationship to the entries before it and cannot be decided from the entry alone.
-            // Judged under the EFFECTIVE strategy — the `biddingStrategy` `googleBidding` forwards,
-            // read from it so the two cannot drift (it JS-trims, so a U+FEFF pad is already gone), or the channel default upstream picks
-            // when it forwards none — because `validateBiddingPlan` refuses any non-zero device
-            // modifier under all but Manual CPC, and Display's default is automated.
-            const channel = googleChannel as GoogleCampaignChannel;
-            const forwardedStrategy = this.googleBidding(body)['biddingStrategy'];
-            const deviceRefusal = googleDeviceBidModifierRefusal(devices, googleEffectiveBiddingStrategy(forwardedStrategy, channel), channel);
+            // Judged under the EFFECTIVE strategy (`criteriaStrategy`), because `validateBiddingPlan`
+            // refuses any non-zero device modifier under all but Manual CPC, and Display's default is
+            // automated.
+            const deviceRefusal = googleDeviceBidModifierRefusal(devices, criteriaStrategy, criteriaChannel as GoogleCampaignChannel);
             if (deviceRefusal) {
               refuseDevices(deviceRefusal);
               return;
@@ -6763,8 +6775,8 @@ export class CampaignController {
    *
    * `bidModifier` is the only field that is not zero-filled, and the asymmetry is the whole point:
    * upstream carries it as a `*float64` so that an omitted modifier stays distinguishable from `0`,
-   * which is the -100% opt-out. Filling it with a zero here would switch the campaign off for every
-   * window a caller listed without adjusting — a successful create that serves nowhere.
+   * the -100% modifier Google refuses on an ad schedule. Filling it with a zero here would turn every
+   * window a caller listed without adjusting into a refusal.
    */
   private googleAdScheduleList(raw: unknown): NormalizedGoogleAdSchedule[] {
     if (!Array.isArray(raw)) return [];

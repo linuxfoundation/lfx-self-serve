@@ -7949,18 +7949,29 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
     return c;
   }
 
+  // Display and Performance Max default to Maximize Conversions, under which the window's -20% is
+  // refused (Google would not bid it), so their payload is built but Create waits on it.
   it.each([
-    ['search', { includeSearch: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }],
-    ['display', { includeDisplay: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }],
-    ['performance-max', { includePerformanceMax: true }, { adSchedules: [MONDAY_EVENINGS] }],
-    ['demand-gen', { includeDemandGen: true }, {}],
-  ])('sends what %s accepts and holds the rest', (_channel, patch, expected) => {
-    const c = seedTargeting(patch);
+    ['search', { includeSearch: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, false],
+    ['display', { includeDisplay: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
+    ['performance-max', { includePerformanceMax: true }, { adSchedules: [MONDAY_EVENINGS] }, true],
+    ['demand-gen', { includeDemandGen: true }, {}, false],
+  ])(
+    'builds the payload %s accepts, holds the rest, and holds Create on an adjustment its default strategy ignores',
+    (_channel, patch, expected, heldByStrategy) => {
+      const c = seedTargeting(patch);
 
-    expect(c['googleTargetingPayload']()).toEqual(expected);
-    expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
-    expect(c['googleDeviceBidModifiers']()).toEqual([NO_TABLETS]);
-  });
+      expect(c['googleTargetingPayload']()).toEqual(expected);
+      expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
+      expect(c['googleDeviceBidModifiers']()).toEqual([NO_TABLETS]);
+      if (heldByStrategy) {
+        expect(c['googleAdSchedulesError']()).toContain('ad schedule 1 has a bid modifier of 0.8');
+        expect(c['canSubmit']()).toBe(false);
+      } else {
+        expect(c['googleAdSchedulesError']()).toBeNull();
+      }
+    }
+  );
 
   it('submits both lists on Search, copied rather than shared', async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
@@ -8043,7 +8054,9 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
         expect(c['googleDeviceAdjustmentsHeldMessage']()).toBe('');
         expect(c['canSubmit']()).toBe(true);
       } else {
-        expect(c['googleDeviceAdjustBlockedReason']()).toContain('Google Ads applies a device bid adjustment only under Manual CPC.');
+        expect(c['googleDeviceAdjustBlockedReason']()).toMatch(
+          /LFX One sends a device bid adjustment only under Manual CPC|Google Ads doesn't apply a device bid adjustment under/
+        );
         expect(c['googleDeviceBidModifiersError']()).toContain('gives MOBILE a bid modifier of 1.25');
         expect(c['googleDeviceAdjustmentsHeldMessage']()).toContain('The adjustment on Mobile phones is kept for a switch back');
         expect(c['canSubmit']()).toBe(false);
@@ -8057,13 +8070,13 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
       fixture.detectChanges();
       expect(c['googleDeviceAdjustBlockedReason']()).toBe(
-        "Google Ads applies a device bid adjustment only under Manual CPC. Under Maximize Clicks it would ignore it, so LFX One doesn't send one. You can keep the default bid or exclude a device. Choose Manual CPC as the bidding strategy to adjust bids by device."
+        "LFX One sends a device bid adjustment only under Manual CPC, so it doesn't send one under Maximize Clicks. You can keep the default bid or exclude a device. Choose Manual CPC as the bidding strategy to adjust bids by device."
       );
 
       c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true, googleBiddingStrategy: '' });
       fixture.detectChanges();
       expect(c['googleDeviceAdjustBlockedReason']()).toBe(
-        "Google Ads applies a device bid adjustment only under Manual CPC. Under Maximize Conversions it would ignore it, so LFX One doesn't send one. You can keep the default bid or exclude a device. Display campaigns cannot bid Manual CPC here."
+        "Google Ads doesn't apply a device bid adjustment under Maximize Conversions, except a -100% exclusion, so LFX One doesn't send one. You can keep the default bid or exclude a device. Display campaigns cannot bid Manual CPC here."
       );
       expect(query('implementation-google-devices-hint')?.textContent).toContain('Display campaigns cannot bid Manual CPC here.');
     });
@@ -8081,7 +8094,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       expect(c['canSubmit']()).toBe(false);
       expect(c['googleDeviceBidModifiers']()).toEqual([MOBILE_UP, NO_TABLETS]);
       const held =
-        "Google Ads applies a device bid adjustment only under Manual CPC. Under Maximize Conversions it would ignore it, so LFX One doesn't send one. The adjustment on Mobile phones is kept for a switch back, and Create Campaign waits until you set it to Default bid or Exclude, or choose Manual CPC again.";
+        "Google Ads doesn't apply a device bid adjustment under Maximize Conversions, except a -100% exclusion, so LFX One doesn't send one. The adjustment on Mobile phones is kept for a switch back, and Create Campaign waits until you set it to Default bid or Exclude, or choose Manual CPC again.";
       expect(query('implementation-google-device-adjustments-held')?.textContent?.trim()).toBe(held);
       expect(query('implementation-google-device-adjustments-held-live')?.textContent?.trim()).toBe(held);
       expect(query('implementation-google-devices-error')?.textContent).toContain('gives MOBILE a bid modifier of 1.25');
@@ -8157,6 +8170,150 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
 
     expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
     expect(c['googleDeviceBidModifiers']()).toEqual([NO_TABLETS]);
+  });
+
+  /**
+   * Google takes 0.1-10.0 on an ad schedule (0 is only a device exclusion) and applies a schedule
+   * adjustment only under Manual CPC and Maximize Clicks, ignoring it under Smart Bidding. Neither is
+   * refused upstream, so the shared judge refuses both, and the tab judges with it under the EFFECTIVE
+   * strategy (#5088 review). The windows themselves are sent under every strategy.
+   */
+  describe('ad schedule adjustments and the bidding strategy', () => {
+    const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+    const UNADJUSTED: CampaignAdSchedule = { dayOfWeek: 'MONDAY', startHour: 18, startMinute: 0, endHour: 24, endMinute: 0 };
+    const SENTENCE = 'Google Ads applies an ad schedule bid adjustment only under Manual CPC or Maximize Clicks.';
+
+    it.each([
+      ['search', { includeSearch: true }, 'manual-cpc', true],
+      ['search', { includeSearch: true }, 'maximize-clicks', true],
+      ['search', { includeSearch: true }, 'maximize-conversions', false],
+      ['search', { includeSearch: true }, 'target-cpa', false],
+      ['search', { includeSearch: true }, 'maximize-conversion-value', false],
+      ['search', { includeSearch: true }, 'target-roas', false],
+      ['display', { includeDisplay: true }, '', false],
+      ['display', { includeDisplay: true }, 'maximize-clicks', true],
+      ['performance-max', { includePerformanceMax: true }, '', false],
+    ])('on %s (%o) under strategy "%s", offers a schedule adjustment only where Google applies it', (_channel, patch, strategy, adjustable) => {
+      const c = seedChannel(fixture, patch);
+      c['campaignForm'].controls.googleBiddingStrategy.setValue(strategy);
+      c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS]);
+      fixture.detectChanges();
+
+      if (adjustable) {
+        expect(c['googleScheduleAdjustBlockedReason']()).toBeNull();
+        expect(c['googleAdSchedulesError']()).toBeNull();
+        expect(c['googleScheduleAdjustmentsHeldMessage']()).toBe('');
+        expect(query('implementation-google-ad-schedule-adjustment-0')?.readOnly).toBe(false);
+      } else {
+        expect(c['googleScheduleAdjustBlockedReason']()).toContain(SENTENCE);
+        expect(c['googleAdSchedulesError']()).toContain('The Google Ads ad schedule 1 has a bid modifier of 0.8.');
+        expect(c['googleScheduleAdjustmentsHeldMessage']()).toContain('The bid adjustment on 1 ad schedule window is kept for a switch back');
+        expect(c['canSubmit']()).toBe(false);
+        // Held, not dropped: the list still carries it for a switch back.
+        expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
+        expect(query('implementation-google-ad-schedule-adjustment-0')?.readOnly).toBe(true);
+      }
+    });
+
+    it('says which strategies give the adjustment back on each channel', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversions');
+      fixture.detectChanges();
+      expect(c['googleScheduleAdjustBlockedReason']()).toBe(
+        `${SENTENCE} Under Maximize Conversions it would ignore it, so LFX One doesn't send one. The windows still decide when the campaign serves. Choose Manual CPC or Maximize Clicks as the bidding strategy to adjust bids by time.`
+      );
+      expect(query('implementation-google-ad-schedule-hint')?.textContent).toContain('Choose Manual CPC or Maximize Clicks as the bidding strategy');
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true, googleBiddingStrategy: '' });
+      fixture.detectChanges();
+      expect(c['googleScheduleAdjustBlockedReason']()).toMatch(/Choose Maximize Clicks as the bidding strategy to adjust bids by time\.$/);
+
+      c['campaignForm'].patchValue({ includeDisplay: false, includePerformanceMax: true, googleBiddingStrategy: '' });
+      fixture.detectChanges();
+      expect(c['googleScheduleAdjustBlockedReason']()).toMatch(/Performance Max campaigns cannot bid Manual CPC or Maximize Clicks here\.$/);
+    });
+
+    it('holds an adjustment across a switch to Smart Bidding, blocking Create until it is cleared, and sends the window', async () => {
+      const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS, { ...UNADJUSTED, dayOfWeek: 'TUESDAY' }]);
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(true);
+      expect(query('implementation-google-schedule-adjustments-held')).toBeNull();
+
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversions');
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(false);
+      expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS, { ...UNADJUSTED, dayOfWeek: 'TUESDAY' }]);
+      const held = `${SENTENCE} Under Maximize Conversions it would ignore it, so LFX One doesn't send one. The bid adjustment on 1 ad schedule window is kept for a switch back, and Create Campaign waits until you clear it, or choose Manual CPC or Maximize Clicks.`;
+      expect(query('implementation-google-schedule-adjustments-held')?.textContent?.trim()).toBe(held);
+      expect(query('implementation-google-schedule-adjustments-held-live')?.textContent?.trim()).toBe(held);
+      expect(query('implementation-google-ad-schedule-error')?.textContent).toContain('ad schedule 1 has a bid modifier of 0.8');
+      c['submit']();
+      expect(createCampaign).not.toHaveBeenCalled();
+
+      // Clearing it in the panel lets Create through under the same strategy, window kept.
+      (query('implementation-google-ad-schedule-clear-0')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(c['googleAdSchedules']()).toEqual([UNADJUSTED, { ...UNADJUSTED, dayOfWeek: 'TUESDAY' }]);
+      expect(c['googleAdSchedulesError']()).toBeNull();
+      expect(query('implementation-google-schedule-adjustments-held')).toBeNull();
+      expect(c['googleTargetingPayload']()).toEqual({ adSchedules: [UNADJUSTED, { ...UNADJUSTED, dayOfWeek: 'TUESDAY' }] });
+    });
+
+    it('lets a held adjustment through again on a switch back to Manual CPC', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS, { ...MONDAY_EVENINGS, dayOfWeek: 'TUESDAY' }]);
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('target-roas');
+      fixture.detectChanges();
+      expect(c['googleScheduleAdjustmentsHeldMessage']()).toContain(
+        'The bid adjustments on 2 ad schedule windows are kept for a switch back, and Create Campaign waits until you clear them, or choose Manual CPC or Maximize Clicks.'
+      );
+
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('manual-cpc');
+      fixture.detectChanges();
+      expect(c['googleScheduleAdjustmentsHeldMessage']()).toBe('');
+      expect(c['googleAdSchedulesError']()).toBeNull();
+      expect(c['canSubmit']()).toBe(true);
+      expect(c['googleTargetingPayload']()).toEqual({ adSchedules: [MONDAY_EVENINGS, { ...MONDAY_EVENINGS, dayOfWeek: 'TUESDAY' }] });
+    });
+
+    it('restores a Display draft whose window is adjusted as held, since Display defaults to Maximize Conversions', () => {
+      const c = seedChannel(fixture, { includeDisplay: true });
+      restoreGoogleDraft(fixture, c, { includeDisplay: true, googleAdSchedules: [MONDAY_EVENINGS] });
+
+      expect(c['googleAdSchedules']()).toEqual([MONDAY_EVENINGS]);
+      expect(c['googleScheduleAdjustmentsHeldMessage']()).toContain('The bid adjustment on 1 ad schedule window is kept for a switch back');
+      expect(c['googleScheduleAdjustmentsHeldMessage']()).toMatch(/clear it, or choose Maximize Clicks\.$/);
+      expect(query('implementation-google-ad-schedule-adjustment-0')?.readOnly).toBe(true);
+      expect(c['canSubmit']()).toBe(false);
+    });
+
+    it('sends unadjusted windows under Smart Bidding with no notice', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversions');
+      c['onGoogleAdSchedulesChange']([UNADJUSTED]);
+      fixture.detectChanges();
+      expect(c['googleAdSchedulesError']()).toBeNull();
+      expect(c['googleScheduleAdjustmentsHeldMessage']()).toBe('');
+      expect(c['googleTargetingPayload']()).toEqual({ adSchedules: [UNADJUSTED] });
+    });
+
+    it('refuses a typed -100% under Manual CPC, since 0 is only a device exclusion', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleAdSchedulesChange']([UNADJUSTED]);
+      fixture.detectChanges();
+      const box = query('implementation-google-ad-schedule-adjustment-0') as HTMLInputElement;
+      box.value = '-100';
+      box.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      expect(c['googleAdSchedules']()[0].bidModifier).toBe(0);
+      expect(c['googleAdSchedulesError']()).toContain('A bid modifier of 0 excludes a device, not an ad schedule');
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-google-ad-schedule-error')?.textContent).toContain('remove this window and keep at least one other');
+    });
   });
 });
 

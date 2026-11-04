@@ -3069,11 +3069,12 @@ export type GoogleAdsScheduleMinute = (typeof GOOGLE_ADS_SCHEDULE_MINUTES)[numbe
  *
  * `bidModifier` is OPTIONAL and its absence is meaningful: an interval with no modifier restricts
  * WHEN the campaign serves without changing what it bids, which is the ordinary case. It cannot
- * default to 0, because 0 is the -100% opt-out — an entry written as "listed but unadjusted" would
- * instead switch the campaign off for that window while reporting a successful create. Upstream
- * carries the field as a pointer for exactly this reason, so an absent modifier must be OMITTED on
- * the wire rather than sent as a zero. Any other value must be between
- * {@link GOOGLE_ADS_MIN_BID_MODIFIER} and {@link GOOGLE_ADS_MAX_BID_MODIFIER}.
+ * default to 0: upstream reads 0 as the -100% modifier, which Google refuses on an ad schedule (it
+ * reserves 0 for device exclusions), so an entry written as "listed but unadjusted" would fail the
+ * create. Upstream carries the field as a pointer so absence stays distinguishable from 0, so an
+ * absent modifier must be OMITTED on the wire rather than sent as a zero. A present value must be between
+ * {@link GOOGLE_ADS_MIN_BID_MODIFIER} and {@link GOOGLE_ADS_MAX_BID_MODIFIER}, and is sent only under
+ * a strategy in {@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES}.
  */
 export interface CampaignAdSchedule {
   dayOfWeek: GoogleAdsScheduleDay;
@@ -3170,8 +3171,8 @@ export interface CampaignDeviceBidModifier {
  * quarter-hours.
  *
  * `bidModifier` stays OPTIONAL rather than being zero-filled like every other field: upstream reads
- * an absent modifier as "listed but unadjusted" and `0` as the -100% opt-out, so the two must stay
- * distinguishable all the way to the wire.
+ * an absent modifier as "listed but unadjusted" and `0` as the -100% modifier Google refuses on a
+ * schedule, so the two must stay distinguishable all the way to the wire.
  */
 export interface NormalizedGoogleAdSchedule extends Omit<CampaignAdSchedule, 'dayOfWeek' | 'startMinute' | 'endMinute'> {
   dayOfWeek: string;
@@ -3202,14 +3203,16 @@ export interface NormalizedGoogleDeviceBidModifier extends Omit<CampaignDeviceBi
 
 /**
  * One ad-schedule window as the Implementation tab's editor renders it: the day, the start and end
- * as minutes since midnight (24:00 is 1440), and the bid adjustment as a whole percentage, or `null`
- * when the window carries no adjustment.
+ * as minutes since midnight (24:00 is 1440), the bid adjustment as a whole percentage, or `null`
+ * when the window carries no adjustment, and whether that adjustment is HELD — kept, read-only and
+ * clearable, because the bidding strategy in force is one Google ignores it under.
  */
 export interface GoogleAdScheduleRowView {
   dayOfWeek: GoogleAdsScheduleDay;
   start: number;
   end: number;
   adjustment: number | null;
+  held: boolean;
 }
 
 /**

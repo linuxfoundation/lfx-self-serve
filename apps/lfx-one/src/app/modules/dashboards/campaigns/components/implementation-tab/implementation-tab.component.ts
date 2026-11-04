@@ -121,6 +121,7 @@ import {
   GOOGLE_BIDDING_ROAS_STRATEGIES,
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
+  GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES,
   GOOGLE_BIDDING_STRATEGY_LABELS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
@@ -285,13 +286,16 @@ import {
   googleCreativeImageDrift,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
-  googleDeviceAdjustmentIgnoredSentence,
+  googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
   googleExcludedAgeRangesRefusal,
   googleExcludedGendersRefusal,
   googleExcludedGeoListRefusal,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
+  googleScheduleAdjustmentIgnoredSentence,
+  googleScheduleAdjustmentStrategiesOn,
+  googleStrategyTakesScheduleAdjustments,
   googleUpperCodeList,
   isHttpUrl,
   isReversedCampaignFlight,
@@ -3568,8 +3572,20 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleAdSchedulesAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_AD_SCHEDULES));
   protected readonly googleDeviceBidModifiersAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS));
-  /** The shared refusal the BFF would answer the create with, or `null`; `canSubmit` blocks on it. */
-  protected readonly googleAdSchedulesError = computed(() => (this.googleAdSchedulesAvailable() ? googleAdScheduleRefusal(this.googleAdSchedules()) : null));
+  /**
+   * The shared refusal the BFF would answer the create with, or `null`; `canSubmit` blocks on it.
+   * Judged under the EFFECTIVE strategy, as for devices, so a window adjusted under a strategy Google
+   * ignores schedule adjustments under blocks Create here rather than failing the create.
+   */
+  protected readonly googleAdSchedulesError: Signal<string | null> = this.initGoogleAdSchedulesError();
+  /** Why the schedule windows offer no bid adjustment, or `null` while the effective strategy takes one. */
+  protected readonly googleScheduleAdjustBlockedReason: Signal<string | null> = this.initGoogleScheduleAdjustBlockedReason();
+  /**
+   * The held-adjustment sentence for ad schedules, or `''`: window adjustments that a strategy switch
+   * now refuses. Kept for a switch back, Create waits on the shared refusal, and one string feeds the
+   * visible notice and the always-mounted live region, as for devices.
+   */
+  protected readonly googleScheduleAdjustmentsHeldMessage: Signal<string> = this.initGoogleScheduleAdjustmentsHeldMessage();
   protected readonly googleDeviceBidModifiersError: Signal<string | null> = this.initGoogleDeviceBidModifiersError();
   /** Why the device control offers no Adjust bid, or `null` while the effective strategy is Manual CPC. */
   protected readonly googleDeviceAdjustBlockedReason: Signal<string | null> = this.initGoogleDeviceAdjustBlockedReason();
@@ -8552,10 +8568,56 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  private initGoogleAdSchedulesError(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null) return null;
+      return googleAdScheduleRefusal(this.googleAdSchedules(), strategy, channel);
+    });
+  }
+
   /**
-   * Why the device control offers only Default bid and Exclude: Google Ads would ignore a device
-   * adjustment under any strategy but Manual CPC, so campaign-service refuses a non-zero modifier
-   * there (`validateBiddingPlan`). The way back differs by channel — Search can switch to Manual CPC,
+   * Why the schedule windows offer no Bid adjustment box: Google Ads applies an ad-schedule bid
+   * adjustment only under Manual CPC and Maximize Clicks and ignores it under Smart Bidding, so the
+   * shared judge refuses one there. The windows themselves still apply. The way back names only the
+   * strategies the channel offers (`googleScheduleAdjustmentStrategiesOn`) — Search both, Display
+   * Maximize Clicks, Performance Max and Video neither. `null` while the schedule section is not shown.
+   */
+  private initGoogleScheduleAdjustBlockedReason(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null || googleStrategyTakesScheduleAdjustments(strategy)) return null;
+      const lead = `${googleScheduleAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The windows still decide when the campaign serves.`;
+      const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
+      const takes = GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES.map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]).join(' or ');
+      return offered.length > 0
+        ? `${lead} Choose ${offered.join(' or ')} as the bidding strategy to adjust bids by time.`
+        : `${lead} ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns cannot bid ${takes} here.`;
+    });
+  }
+
+  private initGoogleScheduleAdjustmentsHeldMessage(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null || googleStrategyTakesScheduleAdjustments(strategy)) return '';
+      const adjusted = this.googleAdSchedules().filter((s) => s.bidModifier !== undefined).length;
+      if (adjusted === 0) return '';
+      const one = adjusted === 1;
+      const pronoun = one ? 'it' : 'them';
+      const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
+      const way = offered.length > 0 ? `clear ${pronoun}, or choose ${offered.join(' or ')}` : `clear ${pronoun}`;
+      return `${googleScheduleAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The bid ${one ? 'adjustment' : 'adjustments'} on ${adjusted} ad schedule ${one ? 'window is' : 'windows are'} kept for a switch back, and Create Campaign waits until you ${way}.`;
+    });
+  }
+
+  /**
+   * Why the device control offers only Default bid and Exclude: campaign-service refuses a non-zero
+   * device modifier under any strategy but Manual CPC (`validateBiddingPlan`). Under Smart Bidding
+   * Google would not apply one anyway; under Maximize Clicks it would, so the shared
+   * `googleDeviceAdjustmentNotSentSentence` gives whichever reason is true. The way back differs by channel — Search can switch to Manual CPC,
    * Display and Video offer no Manual CPC here — so the sentence says which. `null` while the device
    * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}.
    */
@@ -8565,7 +8627,7 @@ export class ImplementationTabComponent implements OnInit {
       const strategy = this.googleBiddingStrategy();
       if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null || strategy === 'manual-cpc') return null;
       const manual = GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc'];
-      const lead = `${googleDeviceAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} You can keep the default bid or exclude a device.`;
+      const lead = `${googleDeviceAdjustmentNotSentSentence(strategy)} You can keep the default bid or exclude a device.`;
       return googleChannelOffersManualCpc(channel)
         ? `${lead} Choose ${manual} as the bidding strategy to adjust bids by device.`
         : `${lead} ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns cannot bid ${manual} here.`;
@@ -8584,7 +8646,7 @@ export class ImplementationTabComponent implements OnInit {
       const way = googleChannelOffersManualCpc(channel)
         ? `Default bid or Exclude, or choose ${GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc']} again`
         : 'Default bid or Exclude';
-      return `${googleDeviceAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The ${one ? 'adjustment' : 'adjustments'} on ${names} ${one ? 'is' : 'are'} kept for a switch back, and Create Campaign waits until you set ${one ? 'it' : 'them'} to ${way}.`;
+      return `${googleDeviceAdjustmentNotSentSentence(strategy)} The ${one ? 'adjustment' : 'adjustments'} on ${names} ${one ? 'is' : 'are'} kept for a switch back, and Create Campaign waits until you set ${one ? 'it' : 'them'} to ${way}.`;
     });
   }
 

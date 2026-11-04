@@ -1926,12 +1926,16 @@ export const GOOGLE_ADS_SCHEDULE_TIME_OPTIONS = Array.from({ length: 24 * 4 + 1 
 /**
  * Google's documented bid-adjustment range for an ad schedule or device criterion
  * (`campaign_criteria.go`'s `minBidModifier` / `maxBidModifier`): a multiplier of 0.1 through 10.0,
- * which is -90%..+900%.
+ * which is -90%..+900% (Google's "About bid adjustments",
+ * https://support.google.com/google-ads/answer/2732132).
  *
- * 0 is NOT below the minimum — it is the -100% "do not serve here at all" opt-out, and it sits
- * outside the range above rather than at its bottom end: upstream accepts it on its own, before the
- * range is ever tested. What upstream refuses is a value strictly between 0 and the minimum, so a
- * guard that simply tested `value < 0.1` would refuse the opt-out every day-parted campaign uses.
+ * On a DEVICE, 0 is NOT below the minimum — it is the -100% "do not serve on this device" exclusion,
+ * and it sits outside the range above rather than at its bottom end: upstream accepts it on its own,
+ * before the range is ever tested, and a device guard that simply tested `value < 0.1` would refuse
+ * the exclusion. On an AD SCHEDULE it is below the minimum: Google's `CampaignCriterion` contract
+ * reserves 0 for device exclusions and takes only 0.1 through 10.0 on a schedule, so
+ * `googleAdScheduleRefusal` refuses it even though campaign-service's shared `validateBidModifier`
+ * would forward it (#5088 review). A window is switched off by leaving it out of the schedule.
  */
 export const GOOGLE_ADS_MIN_BID_MODIFIER = 0.1;
 export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
@@ -4979,6 +4983,40 @@ export const GOOGLE_BIDDING_ROAS_STRATEGIES = ['maximize-conversion-value', 'tar
  * the label whose whole content is the number — and upstream refuses it by name.
  */
 export const GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES = ['target-cpa', 'target-roas'] as const;
+
+/**
+ * The Smart Bidding strategies: Google Ads applies neither an ad-schedule bid adjustment nor a device
+ * bid adjustment under them, apart from a -100% device exclusion (Google's "About bid adjustments",
+ * https://support.google.com/google-ads/answer/2732132). Under Target CPA a device adjustment acts on
+ * the target rather than the bid. Names why a device adjustment is not sent under one of these, as
+ * opposed to Maximize Clicks, where Google applies it and only campaign-service's Manual-CPC-only rule
+ * (`validateBiddingPlan`) refuses it.
+ */
+export const GOOGLE_SMART_BIDDING_STRATEGIES = [
+  'maximize-conversions',
+  'target-cpa',
+  'maximize-conversion-value',
+  'target-roas',
+] as const satisfies readonly (typeof GOOGLE_BIDDING_STRATEGIES)[number][];
+
+/**
+ * The strategies under which Google Ads applies an ad-schedule bid adjustment: Manual CPC and
+ * Maximize Clicks. Google's "About bid adjustments"
+ * (https://support.google.com/google-ads/answer/2732132) lists Maximize Clicks as honouring ad
+ * schedule adjustments, and Smart Bidding ({@link GOOGLE_SMART_BIDDING_STRATEGIES}) as not
+ * supporting them.
+ *
+ * Under Smart Bidding Google stores a schedule's bid modifier and does not bid it, so a window
+ * adjusted under one of them would report a successful create and never bid differently.
+ * campaign-service accepts such a modifier (its `validateBiddingPlan` refuses only device
+ * adjustments), so LFX One refuses it in `googleAdScheduleRefusal`, which the Implementation tab and
+ * the BFF both judge by. The windows themselves are honoured under every strategy; only the
+ * percentage is held.
+ */
+export const GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES = [
+  'manual-cpc',
+  'maximize-clicks',
+] as const satisfies readonly (typeof GOOGLE_BIDDING_STRATEGIES)[number][];
 
 /**
  * The channels that accept a conversion-action list at create time.
