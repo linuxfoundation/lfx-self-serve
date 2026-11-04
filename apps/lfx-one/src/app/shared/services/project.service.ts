@@ -12,7 +12,7 @@ import {
   UpdateFormationRecordRequest,
   WriterSummary,
 } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap, timeout } from 'rxjs';
+import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap, throwError, timeout } from 'rxjs';
 
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 
@@ -34,7 +34,12 @@ export class ProjectService {
    * show what is stored now, not a session-pinned copy, and errors surface to the caller.
    */
   public getProjectRecord(uid: string): Observable<Project> {
-    return this.http.get<Project>(`/api/projects/${encodeURIComponent(uid)}`);
+    return this.http.get<Project>(`/api/projects/${encodeURIComponent(uid)}`).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch project record:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   /**

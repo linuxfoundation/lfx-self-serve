@@ -23,7 +23,7 @@ import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
-import { filter, finalize, skip, switchMap, tap } from 'rxjs';
+import { catchError, EMPTY, filter, finalize, skip, switchMap, tap } from 'rxjs';
 
 /** Editable fields in the order the form renders them; the key doubles as the request key. */
 type RecordFormValue = Required<UpdateFormationRecordRequest>;
@@ -84,20 +84,30 @@ export class FormationRecordEditDrawerComponent {
   protected readonly confirmationMessage = computed(() => this.buildConfirmationMessage(this.stageValue(), this.openRequiredCount()));
 
   public constructor() {
-    this.form.controls.stage.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.stageValue.set(value));
+    this.form.controls.stage.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
+      this.stageValue.set(value);
+      // A pending confirmation describes the previously picked stage — drop it when the pick changes.
+      this.confirming.set(false);
+    });
 
     toObservable(this.visible)
       .pipe(
         skip(1),
         filter((visible) => visible),
         tap(() => this.resetForOpen()),
-        switchMap(() => this.projectService.getProjectRecord(this.projectUid()).pipe(finalize(() => this.loading.set(false)))),
+        // The failure is handled inside the inner stream so one failed open never ends the subscription — reopening must refetch.
+        switchMap(() =>
+          this.projectService.getProjectRecord(this.projectUid()).pipe(
+            catchError(() => {
+              this.loadFailed.set(true);
+              return EMPTY;
+            }),
+            finalize(() => this.loading.set(false))
+          )
+        ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe({
-        next: (project) => this.applyRecord(project),
-        error: () => this.loadFailed.set(true),
-      });
+      .subscribe((project) => this.applyRecord(project));
   }
 
   protected onReload(): void {
@@ -130,7 +140,9 @@ export class FormationRecordEditDrawerComponent {
       return;
     }
 
-    if (changes.stage === ProjectStage.Archived && !(changes.entity_dissolution_date ?? this.form.controls.entity_dissolution_date.value)) {
+    // Keyed on the effective stage, not just a stage change: clearing the date of an already-Archived project must be caught too.
+    const effectiveDissolutionDate = (changes.entity_dissolution_date ?? this.form.controls.entity_dissolution_date.value).trim();
+    if (this.form.controls.stage.value === ProjectStage.Archived && !effectiveDissolutionDate) {
       this.dissolutionDateError.set(FORMATION_RECORD_ERROR_MESSAGES.archivedNeedsDissolutionDate);
       return;
     }
@@ -174,7 +186,7 @@ export class FormationRecordEditDrawerComponent {
     const current = this.form.getRawValue();
     const changes: Record<string, string> = {};
     for (const key of Object.keys(current) as (keyof RecordFormValue)[]) {
-      const value = current[key].trim();
+      const value = (current[key] ?? '').trim();
       if (value !== (initial?.[key] ?? '')) {
         changes[key] = value;
       }

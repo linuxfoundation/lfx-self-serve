@@ -24,8 +24,8 @@ import { Project } from './project.interface';
  * flight only. No `proposed`/`withdrawn` here: those were Accept/Decline-era states (Epic 2,
  * #1962). No `activating` member: activating is derived readiness (see {@link Formation.is_activating}),
  * rendered as a separate "Gates cleared" badge (#1958) — never in the Stage column, which would
- * wrongly imply the project is about to flip (Active is set by the formation team in the admin
- * tool, normally on the announcement date).
+ * wrongly imply the project is about to flip (Active is set by the formation team,
+ * normally on the announcement date).
  */
 export type FormationSubStage = 'exploratory' | 'engaged' | 'on_hold';
 

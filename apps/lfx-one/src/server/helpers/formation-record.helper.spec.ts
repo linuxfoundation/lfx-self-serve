@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { mergeFormationRecord, validateFormationRecordBody } from './formation-record.helper';
+import { assertMergedRecordValid, mergeFormationRecord, validateFormationRecordBody } from './formation-record.helper';
 
 describe('validateFormationRecordBody', () => {
   it('returns trimmed recognised keys only', () => {
@@ -19,6 +19,18 @@ describe('validateFormationRecordBody', () => {
 
   it('rejects non-string values', () => {
     expect(() => validateFormationRecordBody({ stage: 5 })).toThrowError(/stage/);
+  });
+
+  it.each(['parent_uid', 'legal_parent_uid', 'slug', 'public', '__proto__'])('rejects the non-editable key %s (mass-assignment guard)', (key) => {
+    const body = JSON.parse(`{"stage":"Active","${key}":"x"}`);
+    expect(() => validateFormationRecordBody(body)).toThrowError(new RegExp(key));
+  });
+
+  it('rejects oversized free-text values', () => {
+    expect(() => validateFormationRecordBody({ legal_entity_name: 'a'.repeat(256) })).toThrowError(/legal_entity_name/);
+    expect(() => validateFormationRecordBody({ entity_formation_document_url: `https://x.example/${'a'.repeat(2048)}` })).toThrowError(
+      /entity_formation_document_url/
+    );
   });
 
   it('rejects an impossible calendar date', () => {
@@ -54,5 +66,16 @@ describe('mergeFormationRecord', () => {
     const copy = structuredClone(stored);
     mergeFormationRecord(stored, { stage: 'Archived', entity_dissolution_date: '2026-10-31' });
     expect(stored).toEqual(copy);
+  });
+});
+
+describe('assertMergedRecordValid', () => {
+  it('rejects an Archived record whose dissolution date was cleared', () => {
+    expect(() => assertMergedRecordValid({ stage: 'Archived' })).toThrowError(/entity_dissolution_date/);
+  });
+
+  it('accepts Archived with a date and any non-Archived record', () => {
+    expect(() => assertMergedRecordValid({ stage: 'Archived', entity_dissolution_date: '2026-10-31' })).not.toThrow();
+    expect(() => assertMergedRecordValid({ stage: 'Active' })).not.toThrow();
   });
 });

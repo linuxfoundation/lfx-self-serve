@@ -57,6 +57,22 @@ export const PROJECT_LEGAL_ENTITY_TYPES: readonly string[] = [
   'None',
 ];
 
+/** The only keys `PUT /api/projects/:uid/formation-record` may change; anything else in the body is rejected. */
+export const FORMATION_RECORD_EDITABLE_KEYS = [
+  'stage',
+  'legal_entity_name',
+  'legal_entity_type',
+  'formation_date',
+  'entity_dissolution_date',
+  'entity_formation_document_url',
+] as const;
+
+/** Read-only fields on the upstream project GET that must not be sent back on the full-replace PUT. */
+export const FORMATION_RECORD_READ_ONLY_KEYS = ['uid', 'created_at', 'updated_at', 'writer', 'auditor', 'meetingCoordinator'] as const;
+
+/** Upper bounds for the free-text formation-record fields, so oversized values never reach upstream. */
+export const FORMATION_RECORD_MAX_LENGTHS = { legal_entity_name: 255, entity_formation_document_url: 2048 } as const;
+
 /** Error codes returned by `PUT /api/projects/:uid/formation-record`. */
 export const NOT_PROJECT_WRITER_CODE = 'NOT_PROJECT_WRITER';
 export const FORMATION_TEAM_REQUIRED_CODE = 'FORMATION_TEAM_REQUIRED';

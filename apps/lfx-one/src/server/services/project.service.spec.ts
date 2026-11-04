@@ -3106,6 +3106,13 @@ describe('ProjectService.updateFormationRecord', () => {
     expect(fetchWithETag).not.toHaveBeenCalled();
   });
 
+  it('rejects clearing the dissolution date of an already-Archived project before the PUT', async () => {
+    fetchWithETag.mockResolvedValue({ data: { ...stored, stage: 'Archived', entity_dissolution_date: '2026-10-31' }, etag: '9' });
+
+    await expect(service.updateFormationRecord(req, 'project-1', { entity_dissolution_date: '' })).rejects.toMatchObject({ statusCode: 400 });
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
   it('accepts Archived with a dissolution date', async () => {
     await service.updateFormationRecord(req, 'project-1', { stage: 'Archived', entity_dissolution_date: '2026-10-31' });
 

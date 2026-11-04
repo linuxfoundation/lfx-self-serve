@@ -195,7 +195,7 @@ import {
   ResourceNotFoundError,
   ServiceValidationError,
 } from '../errors';
-import { mergeFormationRecord, validateFormationRecordBody } from '../helpers/formation-record.helper';
+import { assertMergedRecordValid, mergeFormationRecord, validateFormationRecordBody } from '../helpers/formation-record.helper';
 import { checkFormationTeamMembership } from '../helpers/formation-team.helper';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
@@ -1070,14 +1070,9 @@ export class ProjectService {
 
     try {
       const { data: stored, etag } = await this.etagService.fetchWithETag<Record<string, unknown>>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, operation);
-      const result = await this.etagService.updateWithETag<Record<string, unknown>>(
-        req,
-        'LFX_V2_SERVICE',
-        `/projects/${uid}`,
-        etag,
-        mergeFormationRecord(stored, edits),
-        operation
-      );
+      const merged = mergeFormationRecord(stored, edits);
+      assertMergedRecordValid(merged);
+      const result = await this.etagService.updateWithETag<Record<string, unknown>>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, etag, merged, operation);
 
       logger.success(req, operation, startTime, { project_id: uid, changed_keys: Object.keys(edits) });
       return result;
@@ -8409,7 +8404,7 @@ export class ProjectService {
         clientMessage: FORMATION_RECORD_ERROR_MESSAGES.conflict,
       });
     }
-    if (statusCode === 400) {
+    if (statusCode === 400 && !(error instanceof ServiceValidationError)) {
       return new InvalidRequestError(FORMATION_RECORD_ERROR_MESSAGES.invalidValue, 'INVALID_FORMATION_RECORD', options);
     }
     return error;

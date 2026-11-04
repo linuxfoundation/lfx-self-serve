@@ -152,6 +152,43 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { legal_entity_name: 'Renamed LLC' });
   });
 
+  it('treats a cleared legal entity type (null from the select) as an empty-string change', async () => {
+    const { updateFormationRecord } = await render();
+    form().patchValue({ legal_entity_type: null });
+
+    await save();
+
+    expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { legal_entity_type: '' });
+  });
+
+  it('blocks clearing the dissolution date of an already-Archived project', async () => {
+    const { updateFormationRecord } = await render({ project: stored({ stage: 'Archived', entity_dissolution_date: '2026-10-31' }) });
+    form().patchValue({ entity_dissolution_date: '' });
+
+    await save();
+
+    expect(query('[data-testid="formation-record-dissolution-date-error"]')).not.toBeNull();
+    expect(updateFormationRecord).not.toHaveBeenCalled();
+  });
+
+  it('refetches on reopen after a failed load', async () => {
+    const { getProjectRecord } = await render();
+    getProjectRecord.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+    fixture.componentInstance.visible.set(false);
+    fixture.componentInstance.visible.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('[data-testid="formation-record-edit-load-error"]')).not.toBeNull();
+
+    fixture.componentInstance.visible.set(false);
+    fixture.componentInstance.visible.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(getProjectRecord).toHaveBeenCalledTimes(3);
+    expect(query('[data-testid="formation-record-edit-load-error"]')).toBeNull();
+  });
+
   it.each([
     [403, { code: 'NOT_PROJECT_WRITER' }, "You don't have permission to edit this project."],
     [403, { code: 'FORMATION_TEAM_REQUIRED' }, 'Only the formation team can change stage and legal entity.'],

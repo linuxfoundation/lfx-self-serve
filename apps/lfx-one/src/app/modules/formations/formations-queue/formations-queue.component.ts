@@ -204,8 +204,7 @@ export class FormationsQueueComponent {
         {
           value: t.on_hold,
           label: 'On hold',
-          // Where the stage is changed — the sidebar card says the same of stage and legal entity.
-          subLine: 'Paused in the admin tool',
+          subLine: 'Paused by the formation team',
           icon: 'fa-light fa-pause',
           iconContainerClass: 'bg-amber-50 text-amber-600',
         },

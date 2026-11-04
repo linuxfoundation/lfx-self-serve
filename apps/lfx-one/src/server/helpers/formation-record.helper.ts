@@ -1,25 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FORMATION_RECORD_ERROR_MESSAGES, FORMATION_RECORD_SELECTABLE_STAGES, PROJECT_LEGAL_ENTITY_TYPES } from '@lfx-one/shared/constants';
+import {
+  FORMATION_RECORD_EDITABLE_KEYS,
+  FORMATION_RECORD_ERROR_MESSAGES,
+  FORMATION_RECORD_MAX_LENGTHS,
+  FORMATION_RECORD_READ_ONLY_KEYS,
+  FORMATION_RECORD_SELECTABLE_STAGES,
+  PROJECT_LEGAL_ENTITY_TYPES,
+} from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
 
 import { ServiceValidationError } from '../errors';
 
 import type { UpdateFormationRecordRequest } from '@lfx-one/shared/interfaces';
-
-/** The only keys the formation-record route may change; anything else in the body is rejected. */
-export const FORMATION_RECORD_EDITABLE_KEYS = [
-  'stage',
-  'legal_entity_name',
-  'legal_entity_type',
-  'formation_date',
-  'entity_dissolution_date',
-  'entity_formation_document_url',
-] as const satisfies readonly (keyof UpdateFormationRecordRequest)[];
-
-/** Read-only fields on the upstream GET that must not be sent back on the full-replace PUT. */
-const READ_ONLY_PROJECT_KEYS = ['uid', 'created_at', 'updated_at', 'writer', 'auditor', 'meetingCoordinator'] as const;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const INVALID = FORMATION_RECORD_ERROR_MESSAGES.invalidValue;
@@ -48,6 +42,12 @@ export function validateFormationRecordBody(body: unknown): UpdateFormationRecor
       throw ServiceValidationError.forField(key, INVALID);
     }
     result[key] = value.trim();
+  }
+
+  for (const [key, max] of Object.entries(FORMATION_RECORD_MAX_LENGTHS)) {
+    if ((result[key]?.length ?? 0) > max) {
+      throw ServiceValidationError.forField(key, INVALID);
+    }
   }
 
   if (Object.keys(result).length === 0) {
@@ -81,6 +81,17 @@ export function validateFormationRecordBody(body: unknown): UpdateFormationRecor
 }
 
 /**
+ * Re-checks the Archived rule against the merged record: clearing the dissolution date of an
+ * already-Archived project sends no `stage`, so the body-only check cannot see it. Runs after the
+ * read but before the PUT, so upstream is never asked to refuse it.
+ */
+export function assertMergedRecordValid(merged: Record<string, unknown>): void {
+  if (merged['stage'] === ProjectStage.Archived && !merged['entity_dissolution_date']) {
+    throw ServiceValidationError.forField('entity_dissolution_date', FORMATION_RECORD_ERROR_MESSAGES.archivedNeedsDissolutionDate);
+  }
+}
+
+/**
  * Builds the full-replace PUT body: the raw stored project minus read-only fields, with only the
  * keys the caller sent applied. An empty string clears the field (the key is dropped — upstream
  * rejects empty strings on formatted fields). `parent_uid` is required upstream and may be absent
@@ -88,7 +99,7 @@ export function validateFormationRecordBody(body: unknown): UpdateFormationRecor
  */
 export function mergeFormationRecord(stored: Record<string, unknown>, edits: UpdateFormationRecordRequest): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...stored };
-  for (const key of READ_ONLY_PROJECT_KEYS) {
+  for (const key of FORMATION_RECORD_READ_ONLY_KEYS) {
     delete merged[key];
   }
 

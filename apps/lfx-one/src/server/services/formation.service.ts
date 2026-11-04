@@ -74,10 +74,10 @@ import {
 import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
 import { mapUpstreamFormationChecklist, mapUpstreamFormationItem, sectionTitlesFromChecklist } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { checkFormationTeamMembership } from '../helpers/formation-team.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { BatchDeadlineExceededError, settleInBatches } from '../helpers/settle-in-batches.helper';
 import { stripAuthPrefix } from '../utils/auth-helper';
-import { checkFormationTeamMembership } from '../helpers/formation-team.helper';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
