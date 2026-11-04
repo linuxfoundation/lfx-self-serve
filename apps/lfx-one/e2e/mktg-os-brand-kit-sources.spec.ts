@@ -7,6 +7,11 @@ import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openBrandKitSources } from './helpers/mktg-os-brand-kit-sources.helper';
 
 const ACCEPTED_MARKER = 'Accepted when v1 was approved';
+// One literal per group, exactly as the agent's fixture writes it: the view never rewrites a reason.
+const FAILED_REASON = 'This page does not exist on the site (the server answered 404).';
+const STACKED_FIX = 'Fix: Upload the logo package (the ZIP linked on aaif.io/brand) or the stacked file in the form.';
+const CONFLICT_WARNING = "Coral is #FF702D on the brand page but the site's stylesheet also uses #FF7D2D; the kit keeps #FF702D.";
+const KEPT_CORAL = 'kept #FF702D';
 
 test.describe('Brand kit Sources tab: the report in the agent’s words', () => {
   test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -19,34 +24,44 @@ test.describe('Brand kit Sources tab: the report in the agent’s words', () => 
     for (const title of Object.values(BRAND_KIT_SOURCES_GROUP_TITLES)) await expect(panel.getByRole('heading', { name: title, exact: true })).toBeVisible();
 
     const failed = page.getByTestId('brand-kit-web-view-sources-failed');
-    await expect(failed.locator('li')).toHaveCount(findings.sources_failed.length);
-    await expect(failed).toContainText(findings.sources_failed[0].source);
-    await expect(failed).toContainText(findings.sources_failed[0].reason);
-    await expect(failed).toContainText(findings.sources_failed[0].detail ?? 'fixture');
+    await expect(failed.getByTestId('brand-kit-web-view-failed-item')).toHaveCount(findings.sources_failed.length);
+    const firstFailed = failed.getByTestId('brand-kit-web-view-failed-item').first();
+    await expect(firstFailed).toContainText(findings.sources_failed[0].source);
+    await expect(firstFailed.locator('span').nth(1)).toHaveText(FAILED_REASON);
+    await expect(firstFailed).toContainText(findings.sources_failed[0].detail ?? 'fixture');
 
     const missing = page.getByTestId('brand-kit-web-view-missing-assets');
-    await expect(missing.locator(':scope > li')).toHaveCount(findings.missing_assets.length);
-    for (const asset of findings.missing_assets) {
-      await expect(missing).toContainText(BRAND_KIT_REPORT_ASSET_LABELS[asset.asset]);
-      await expect(missing).toContainText(asset.reason);
-      if (asset.fix) await expect(missing).toContainText(`Fix: ${asset.fix}`);
+    const missingItems = missing.getByTestId('brand-kit-web-view-missing-item');
+    await expect(missingItems).toHaveCount(findings.missing_assets.length);
+    for (const [index, asset] of findings.missing_assets.entries()) {
+      await expect(missingItems.nth(index)).toContainText(BRAND_KIT_REPORT_ASSET_LABELS[asset.asset]);
+      await expect(missingItems.nth(index)).toContainText(asset.reason);
+      if (asset.fix) await expect(missingItems.nth(index)).toContainText(`Fix: ${asset.fix}`);
     }
+    await expect(missingItems.nth(1).locator('span').nth(2)).toHaveText(STACKED_FIX);
 
     const warnings = page.getByTestId('brand-kit-web-view-warnings');
-    await expect(warnings.locator(':scope > li')).toHaveCount(findings.warnings.length);
-    for (const warning of findings.warnings) {
-      await expect(warnings).toContainText(warning.text);
-      if (warning.source) await expect(warnings.getByRole('link', { name: new RegExp(warning.source) })).toHaveAttribute('href', warning.source);
-    }
+    const warningItems = warnings.getByTestId('brand-kit-web-view-warning-item');
+    await expect(warningItems).toHaveCount(findings.warnings.length);
+    for (const [index, warning] of findings.warnings.entries()) await expect(warningItems.nth(index)).toContainText(warning.text);
+    await expect(warningItems.first().locator('span').first()).toHaveText(CONFLICT_WARNING);
+    // The links, in the report's order: one per warning that names an http(s) source.
+    const links = warnings.getByTestId('brand-kit-web-view-warning-source-link');
+    const expectedHrefs = findings.warnings.map((warning) => warning.source).filter((source): source is string => !!source);
+    await expect(links).toHaveCount(expectedHrefs.length);
+    expect(await links.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href')))).toEqual(expectedHrefs);
 
     const conflicts = page.getByTestId('brand-kit-web-view-color-conflicts');
-    await expect(conflicts.locator(':scope > li')).toHaveCount(report.color_conflicts.length);
-    for (const conflict of report.color_conflicts) {
-      await expect(conflicts).toContainText(conflict.name);
-      for (const value of conflict.values) await expect(conflicts).toContainText(value.hex);
-      await expect(conflicts).toContainText(`kept ${conflict.chosen}`);
+    const conflictItems = conflicts.getByTestId('brand-kit-web-view-conflict-item');
+    await expect(conflictItems).toHaveCount(report.color_conflicts.length);
+    for (const [index, conflict] of report.color_conflicts.entries()) {
+      await expect(conflictItems.nth(index)).toContainText(conflict.name);
+      await expect(conflictItems.nth(index).getByTestId('brand-kit-web-view-conflict-value')).toHaveCount(conflict.values.length);
+      for (const value of conflict.values)
+        await expect(conflictItems.nth(index).getByTestId(`brand-kit-web-view-swatch-${value.hex.slice(1)}`)).toHaveText(value.hex);
+      await expect(conflictItems.nth(index)).toContainText(`kept ${conflict.chosen}`);
     }
-    await expect(conflicts.locator('div[style]')).toHaveCount(report.color_conflicts.reduce((count, conflict) => count + conflict.values.length, 0));
+    await expect(conflictItems.first().locator(':scope > span').last()).toHaveText(KEPT_CORAL);
 
     await expect(panel).not.toContainText('lf-reference');
     await expect(page.getByTestId('brand-kit-web-view-accepted')).toHaveCount(0);
@@ -56,7 +71,7 @@ test.describe('Brand kit Sources tab: the report in the agent’s words', () => 
   test('a v1 report shows its legacy failed list under Failed sources and the empty line in each other group', async ({ page }, info) => {
     const { report } = await openBrandKitSources(page, { report: 'v1' });
     const failed = page.getByTestId('brand-kit-web-view-sources-failed');
-    await expect(failed.locator('li')).toHaveCount(report.sources_failed.length);
+    await expect(failed.getByTestId('brand-kit-web-view-failed-item')).toHaveCount(report.sources_failed.length);
     await expect(failed).toContainText(report.sources_failed[0].name);
     await expect(failed).toContainText(report.sources_failed[0].reason);
     await expect(page.getByTestId('brand-kit-web-view-missing-assets-empty')).toHaveText(BRAND_KIT_SOURCES_EMPTY_LINES.missing);

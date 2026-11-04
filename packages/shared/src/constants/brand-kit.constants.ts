@@ -316,21 +316,21 @@ export const BRAND_KIT_REPORT_CONFLICT_VALUES = { min: 2, max: 4 } as const;
 /** The Sources tab's groups, in reading order. */
 export const BRAND_KIT_SOURCES_GROUPS = ['failed', 'missing', 'warnings', 'conflicts'] as const;
 /** What each group is called on the tab. */
-export const BRAND_KIT_SOURCES_GROUP_TITLES: Record<(typeof BRAND_KIT_SOURCES_GROUPS)[number], string> = {
+export const BRAND_KIT_SOURCES_GROUP_TITLES = {
   failed: 'Failed sources',
   missing: 'Missing assets',
   warnings: 'Warnings',
   conflicts: 'Colour conflicts',
-};
+} as const satisfies Record<(typeof BRAND_KIT_SOURCES_GROUPS)[number], string>;
 /** What each group says when it has nothing to list. */
-export const BRAND_KIT_SOURCES_EMPTY_LINES: Record<(typeof BRAND_KIT_SOURCES_GROUPS)[number], string> = {
+export const BRAND_KIT_SOURCES_EMPTY_LINES = {
   failed: MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
   missing: 'Nothing is missing.',
   warnings: 'No warnings.',
   conflicts: 'No colour conflicts.',
-};
+} as const satisfies Record<(typeof BRAND_KIT_SOURCES_GROUPS)[number], string>;
 /** How the tab names each asset the agent may report missing. */
-export const BRAND_KIT_REPORT_ASSET_LABELS: Record<(typeof BRAND_KIT_REPORT_ASSETS)[number], string> = {
+export const BRAND_KIT_REPORT_ASSET_LABELS = {
   logo_primary: 'Primary logo',
   logo_stacked: 'Stacked logo',
   logo_symbol: 'Symbol',
@@ -339,7 +339,7 @@ export const BRAND_KIT_REPORT_ASSET_LABELS: Record<(typeof BRAND_KIT_REPORT_ASSE
   font_weights: 'Font weights',
   palette_accent: 'Accent colour',
   framework: 'Messaging framework',
-};
+} as const satisfies Record<(typeof BRAND_KIT_REPORT_ASSETS)[number], string>;
 /** Before a conflict's chosen hex: the value the kit keeps. */
 export const BRAND_KIT_CONFLICT_KEPT_WORD = 'kept';
 /** Before a missing asset's fix, when the agent names one. */

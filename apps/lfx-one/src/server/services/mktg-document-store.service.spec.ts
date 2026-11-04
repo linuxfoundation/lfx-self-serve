@@ -732,6 +732,21 @@ describe('MktgDocumentStoreService', () => {
       expect(second?.approval?.accepted).toEqual({ sources_failed: [], missing_assets: [], warnings: [], gaps: [], color_conflicts: [] });
     });
 
+    it('records no snapshot for another document’s approval, whose payload stays as it was', async () => {
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Synthetic framework'), PROJECT, 'framework-1');
+      const first = (await service.getDocument(req, PROJECT, FRAMEWORK, 'living'))?.revisions[0];
+      if (!first) throw new Error('Missing synthetic framework revision');
+      const result = await service.approveRevision(req, PROJECT, FRAMEWORK, 'living', first.id);
+      const record = JSON.parse(storedObject(`documents/${PROJECT}/${FRAMEWORK.agentKey}/living/current.json`).body);
+      expect(record.approvals[first.id]).toEqual({ approvedAt: record.changedAt, approvedBy: 'auth0|not-the-lfid' });
+      expect(result?.approval).toEqual({ approvedAt: record.changedAt, approvedBy: { name: 'The writer' } });
+      const detail = await service.getDocument(req, PROJECT, FRAMEWORK, 'living');
+      expect(detail?.revisions.find((revision) => revision.id === first.id)?.approval).toEqual({
+        approvedAt: record.changedAt,
+        approvedBy: { name: 'The writer' },
+      });
+    });
+
     it('drops a malformed stored snapshot and keeps the approval', async () => {
       const { first } = await twoRevisions();
       await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);

@@ -23,6 +23,7 @@ describe('brandKitSourcesView', () => {
       detail: 'HTTP 404',
       fix: null,
       source: null,
+      href: null,
       accepted: false,
     });
     expect(view.missing.map((item) => item.title)).toEqual(['Primary logo', 'Stacked logo', 'Symbol', 'Reversed logo']);
@@ -34,6 +35,7 @@ describe('brandKitSourcesView', () => {
       detail: null,
       fix: stacked?.fix,
       source: null,
+      href: null,
       accepted: false,
     });
     expect(stacked?.fix).toBeTruthy();
@@ -45,13 +47,16 @@ describe('brandKitSourcesView', () => {
       detail: null,
       fix: null,
       source: report.findings?.warnings[0].source,
+      href: report.findings?.warnings[0].source,
       accepted: false,
     });
+    // Every warning source in the agent's envelope is a web address, so each is also its own link.
+    expect(view.warnings.map((warning) => warning.href)).toEqual(report.findings?.warnings.map((warning) => warning.source));
     expect(view.conflicts).toEqual(
       (report.color_conflicts ?? []).map((conflict) => ({
         key: conflict.name,
         name: conflict.name,
-        values: conflict.values.map((value) => ({ ...value, light: expect.any(Boolean), ink: expect.any(String) })),
+        values: conflict.values.map((value) => ({ ...value, hexDigits: value.hex.slice(1), light: expect.any(Boolean), ink: expect.any(String) })),
         chosen: conflict.chosen,
         accepted: false,
       }))
@@ -110,8 +115,27 @@ describe('brandKitSourcesView', () => {
 
   it('links a warning’s source only when it is a web address', () => {
     expect(brandKitSourceHref('https://synthetic.example/brand')).toBe('https://synthetic.example/brand');
+    expect(brandKitSourceHref('http://synthetic.example/')).toBe('http://synthetic.example/');
     expect(brandKitSourceHref('logo.svg')).toBeNull();
     expect(brandKitSourceHref('javascript:alert(1)')).toBeNull();
+    expect(brandKitSourceHref('data:text/html,hi')).toBeNull();
     expect(brandKitSourceHref(null)).toBeNull();
+  });
+
+  it('gives each warning its href in the view, so the template binds it and never computes it', () => {
+    const report = brandKitReportV2Fixture();
+    const warnings = [
+      { code: 'palette_from_page_text' as const, text: 'Seen on the site.', source: 'https://synthetic.example/brand' },
+      { code: 'palette_from_page_text' as const, text: 'Seen in a file.', source: 'logo.svg' },
+      { code: 'palette_from_page_text' as const, text: 'Seen in a script.', source: 'javascript:alert(1)' },
+      { code: 'palette_from_page_text' as const, text: 'Seen nowhere named.' },
+    ];
+    const view = brandKitSourcesView({ ...report, findings: { ...report.findings, sources_failed: [], missing_assets: [], warnings } }, null, null, DARK);
+    expect(view.warnings.map((warning) => [warning.source, warning.href])).toEqual([
+      ['https://synthetic.example/brand', 'https://synthetic.example/brand'],
+      ['logo.svg', null],
+      ['javascript:alert(1)', null],
+      [null, null],
+    ]);
   });
 });

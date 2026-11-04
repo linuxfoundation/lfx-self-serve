@@ -29,6 +29,7 @@ export function brandKitSourcesView(report: BrandKitReport, approval: MktgRevisi
     detail: null,
     fix: null,
     source: null,
+    href: null,
     accepted: has(accepted?.[group], key),
     ...extra,
   });
@@ -40,11 +41,18 @@ export function brandKitSourcesView(report: BrandKitReport, approval: MktgRevisi
     missing: (findings?.missing_assets ?? []).map((entry) =>
       item(entry.asset, BRAND_KIT_REPORT_ASSET_LABELS[entry.asset], entry.reason, 'missing_assets', { fix: entry.fix ?? null })
     ),
-    warnings: (findings?.warnings ?? []).map((entry) => item(mktgWarningAcceptedKey(entry), '', entry.text, 'warnings', { source: entry.source ?? null })),
+    warnings: (findings?.warnings ?? []).map((entry) =>
+      item(mktgWarningAcceptedKey(entry), '', entry.text, 'warnings', { source: entry.source ?? null, href: brandKitSourceHref(entry.source ?? null) })
+    ),
     conflicts: (report.color_conflicts ?? []).map((entry) => ({
       key: entry.name,
       name: entry.name,
-      values: entry.values.map((value) => ({ ...value, light: brandKitIsLight(value.hex), ink: brandKitLabelInk(value.hex, dark) })),
+      values: entry.values.map((value) => ({
+        ...value,
+        hexDigits: value.hex.slice(1),
+        light: brandKitIsLight(value.hex),
+        ink: brandKitLabelInk(value.hex, dark),
+      })),
       chosen: entry.chosen,
       accepted: has(accepted?.color_conflicts, entry.name),
     })),

@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { BrandKitReport } from '@lfx-one/shared/interfaces/brand-kit.interface';
-import type { MktgRevisionAccepted, MktgRevisionResponse } from '@lfx-one/shared/interfaces/mktg-document-store.interface';
+import type { BrandKitReport, MktgRevisionAccepted, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { brandKitReportV2Fixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2.fixture';
 import { mktgAcceptedSnapshotOf } from '@lfx-one/shared/utils/mktg-asset.utils';
 import { expect, Page } from '@playwright/test';

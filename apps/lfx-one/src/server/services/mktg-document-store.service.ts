@@ -542,8 +542,9 @@ export class MktgDocumentStoreService {
       throw ServiceValidationError.forField('revisionId', 'A revision must be stored before it can be approved.');
     }
     if (view.revision.latest && view.approval) return view;
-    // What the report shows at this moment is what this approval accepts; the Sources tab marks those items afterwards.
-    const accepted = mktgAcceptedSnapshotOf(view.sidecar?.['report']);
+    // A brand kit approval also records what its report shows at this moment: the Sources tab marks those items
+    // afterwards. Other documents' approvals stay as they were.
+    const accepted = type.agentKey === 'brand-kit' ? mktgAcceptedSnapshotOf(view.sidecar?.['report']) : null;
     const committed = await this.writeCurrent(
       req,
       project,

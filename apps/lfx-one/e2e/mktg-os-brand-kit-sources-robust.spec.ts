@@ -40,7 +40,7 @@ test.describe('Brand kit Sources tab structure', () => {
         }
       }
       // Every swatch card is filled and the same size as its neighbours.
-      const swatches = page.getByTestId(GROUP_TESTIDS.conflicts).locator('div[style]');
+      const swatches = page.getByTestId(GROUP_TESTIDS.conflicts).getByTestId(/^brand-kit-web-view-swatch-/);
       expect(await swatches.count()).toBeGreaterThan(0);
       const sizes = new Set(
         await swatches.evaluateAll((nodes) => nodes.map((node) => `${node.getBoundingClientRect().width}x${node.getBoundingClientRect().height}`))

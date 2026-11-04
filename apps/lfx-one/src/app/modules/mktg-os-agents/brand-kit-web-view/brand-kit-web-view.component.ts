@@ -46,7 +46,6 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   brandKitChapterSummaries,
-  brandKitSourceHref,
   brandKitSourcesView,
   buildBrandKitBookView,
   describeMktgAcceptedGaps,
@@ -141,7 +140,6 @@ export class BrandKitWebViewComponent {
   protected readonly sourcesEmpty = BRAND_KIT_SOURCES_EMPTY_LINES;
   protected readonly keptWord = BRAND_KIT_CONFLICT_KEPT_WORD;
   protected readonly fixPrefix = BRAND_KIT_MISSING_FIX_PREFIX;
-  protected readonly sourceHref = brandKitSourceHref;
   /** The Sources tab's groups, in the agent's words, each item marked when this approval's snapshot accepted it. */
   protected readonly sourcesView = computed(() => brandKitSourcesView(this.kit().report, this.approval(), this.versionNumber(), this.kit().kit.dark));
   /** Under an approved revision's gaps when the approval predates the snapshot: accepted at that approval, still open. */

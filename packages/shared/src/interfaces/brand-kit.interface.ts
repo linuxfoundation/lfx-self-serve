@@ -288,14 +288,18 @@ export interface BrandKitSourcesItem {
   detail: string | null;
   /** A second line, "Fix: …", when the agent names one. */
   fix: string | null;
-  /** Where a warning was seen, as a link when it is a URL. */
+  /** Where a warning was seen, shown as text. */
   source: string | null;
+  /** The source as a link, only when it is an http(s) address; anything else stays text. */
+  href: string | null;
   accepted: boolean;
 }
 
 /** One value of a conflicting colour, drawn as the Colour chapter draws a swatch: the hex on its own ground, in a legible ink. */
 export interface BrandKitSourcesConflictValue {
   hex: string;
+  /** The hex without its `#`, for the swatch's testid as the Colour chapter writes it. */
+  hexDigits: string;
   source: string;
   /** A light colour needs a border to stand off the white card. */
   light: boolean;
