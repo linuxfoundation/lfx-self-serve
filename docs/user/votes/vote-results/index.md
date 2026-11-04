@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, c
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, tallies, voters]
-last_updated: 2026-11-03
+last_updated: 2026-11-04
 intercom_collection: Votes
 ---
 
