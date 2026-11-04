@@ -266,7 +266,7 @@ When Projects or a project detail page fails to load, it shows a message naming 
 | **Failed to load leaderboard**                  | **Leaderboards**  | Select **Retry** on that board                                            |
 | **Failed to load influence trend**              | **Leaderboards**  | Select **Retry** under **Influence Trend**                                |
 
-**Project not found** comes with **We couldn't find that project for your organization.** The other failures come with **Please try again.**
+**Project not found** comes with **We couldn't find that project for your organization.** The other project detail failures come with **Please try again.**
 
 ## Related sections
 
