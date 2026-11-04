@@ -109,12 +109,10 @@ interface EventRow {
   FOUNDATION_NAME: string | null;
 }
 
+/** One row per course, its status resolved in lf-dbt (ORG_PEOPLE_TRAINING_COURSE_STATUS). */
 interface TrainingRow {
-  ACCOUNT_ID: string;
-  PERSON_KEY: string;
-  COURSE_OR_CERT_ID: string;
+  COURSE_ID: string;
   STATUS: string | null;
-  COURSE_ID: string | null;
   COURSE_NAME: string | null;
 }
 
@@ -367,7 +365,7 @@ export class OrgLensPeopleService {
     const eventsCount = eventRows.length;
     const events = eventRows.map((row) => this.mapEventRow(row, eventsCount));
 
-    const training = this.collapseTrainingRows(trainingRows);
+    const training = this.mapTrainingRows(trainingRows);
 
     return {
       personKey,
@@ -583,15 +581,16 @@ export class OrgLensPeopleService {
 
   /**
    * The raw roster rows and foundation labels of a range and project scope, or of the unranged roster (`null`).
-   * `people-all:v6:{range}:{projectScope}` | `people-all:v4:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
+   * `people-all:v8:{range}:{projectScope}` | `people-all:v8:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
    * ranged entry carries no code count and no organization scope (`v5` was per scope, with an Insights listing gate),
    * so one entry serves every commit scope, metric and organization scope, and the off-roster read classifies against
-   * the same entry the page lists.
+   * the same entry the page lists. `v7` (lfx-self-serve#4287; the roster was `v4:roster`): training foundation labels
+   * come from people-list rows only. `v8`: the people-list column is `IS_ON_PEOPLE_LIST`.
    */
   private readRosterRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
     return withOrgCompactCache(
       accountId,
-      range ? `people-all:v6:${range}:${projectScope}` : 'people-all:v4:roster',
+      range ? `people-all:v8:${range}:${projectScope}` : 'people-all:v8:roster',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchAllEmployeesRaw(accountId, range, projectScope),
       {
@@ -737,7 +736,9 @@ export class OrgLensPeopleService {
 
     // Distinct (foundation_id, foundation_name) pairs across the four detail sources; keeps the BFF confined to PLATINUM_LFX_ONE.
     // Code labels read the full-history daily code rows (ENGAGED_FOUNDATION_IDS' code source), not the 12-month
-    // ORG_PEOPLE_CODE_CONTRIBUTIONS, so an `all` range keeps a label for code older than a year.
+    // ORG_PEOPLE_CODE_CONTRIBUTIONS, so an `all` range keeps a label for code older than a year. Training labels read
+    // people-list rows only: ORG_PEOPLE_TRAINING also holds learners outside the list (lfx-self-serve#4287), who are
+    // not on this roster, so their foundations would offer a filter that matches nobody listed.
     const foundationQuery = `
       WITH pairs AS (
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
@@ -754,7 +755,7 @@ export class OrgLensPeopleService {
         UNION
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-        WHERE ACCOUNT_ID = ? AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
+        WHERE ACCOUNT_ID = ? AND IS_ON_PEOPLE_LIST AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
       )
       SELECT FOUNDATION_ID, FOUNDATION_NAME
       FROM pairs
@@ -798,14 +799,14 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * Committee, event and training rows. `v5`: the code rows moved to their own reads, which follow the opener's code
-   * filters (lfx-self-serve#4404), so a `v4` entry must miss.
+   * Committee, event and training rows. `v6`: the training rows are one per course, read from
+   * ORG_PEOPLE_TRAINING_COURSE_STATUS (lfx-self-serve#4439), so a `v5` entry (one row per training record) must miss. `v7`: the people-list column is `IS_ON_PEOPLE_LIST`.
    */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
     return this.withPersonCache(
       accountId,
       personKey,
-      `people-detail:v5:${personKey}`,
+      `people-detail:v7:${personKey}`,
       () => this.runEmployeeActivityFetch(accountId, personKey),
       isEmployeeActivityRaw
     );
@@ -1093,19 +1094,21 @@ export class OrgLensPeopleService {
     return result.rows;
   }
 
-  /** Certificates of any age, enrollments from the last 12 months only (the window the drawer has always shown). */
+  /**
+   * One row per course with its status resolved in lf-dbt (Certified wins over a re-enrollment): certificates of any
+   * age, in progress only when enrolled in the last 12 months (the window the drawer has always shown). People-list rows
+   * only: a learner linked to the account by their own enrollment (lfx-self-serve#4287) can share a former employee's
+   * key, and the drawer shows that person's activity as an employee.
+   */
   private async fetchTrainingRows(accountId: string, personKey: string): Promise<TrainingRow[]> {
     const query = `
       SELECT
-        ACCOUNT_ID,
-        PERSON_KEY,
-        COURSE_OR_CERT_ID,
-        STATUS,
         COURSE_ID,
+        STATUS,
         COURSE_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
-        AND (STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate()}))
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS
+      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ? AND IS_ON_PEOPLE_LIST
+        AND (STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate('LAST_ENROLLED_TS')}))
       ORDER BY STATUS ASC NULLS LAST, COURSE_NAME ASC NULLS LAST
     `;
     const result = await this.snowflakeService.execute<TrainingRow>(query, [accountId, personKey]);
@@ -1136,33 +1139,17 @@ export class OrgLensPeopleService {
     };
   }
 
-  /**
-   * One drawer row per course (`COURSE_ID`, else `COURSE_OR_CERT_ID`), Certified superseding Enrolled: since
-   * lf-dbt#3118 a person can carry a certificate row and a later re-enrollment row for the same course. Counts are
-   * over the collapsed rows, so they match what renders.
-   */
-  private collapseTrainingRows(trainingRows: TrainingRow[]): OrgAllEmployeeTraining[] {
-    const byCourse = new Map<string, TrainingRow>();
-    for (const row of trainingRows) {
-      const courseId = row.COURSE_ID ?? row.COURSE_OR_CERT_ID;
-      if (!courseId) {
-        continue;
-      }
-      const kept = byCourse.get(courseId);
-      if (!kept || (kept.STATUS !== 'Certified' && row.STATUS === 'Certified')) {
-        byCourse.set(courseId, row);
-      }
-    }
-    const rows = [...byCourse.values()];
-    const certificationsCount = rows.filter((row) => row.STATUS === 'Certified').length;
-    return rows.map((row) => this.mapTrainingRow(row, rows.length, certificationsCount));
+  /** Counts are over the rows shown, so they match what renders. */
+  private mapTrainingRows(trainingRows: TrainingRow[]): OrgAllEmployeeTraining[] {
+    const certificationsCount = trainingRows.filter((row) => row.STATUS === 'Certified').length;
+    return trainingRows.map((row) => this.mapTrainingRow(row, trainingRows.length, certificationsCount));
   }
 
   private mapTrainingRow(row: TrainingRow, coursesCount: number, certificationsCount: number): OrgAllEmployeeTraining {
     const status: OrgAllEmployeeTrainingStatus = row.STATUS === 'Certified' ? 'Certified' : 'Enrolled';
     return {
-      courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
-      courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
+      courseId: row.COURSE_ID,
+      courseName: row.COURSE_NAME ?? row.COURSE_ID,
       status,
       certificationsCount,
       coursesCount,

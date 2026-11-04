@@ -66,6 +66,7 @@ import {
   MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES,
   MONITOR_PLATFORM_BUTTON_COLORS,
   ORG_MEETINGS_KPI_ICON_CLASS,
+  ORG_TRAINING_STAT_TILES,
 } from '@lfx-one/shared/src/constants/index.ts';
 import plugin from 'tailwindcss/plugin';
 import PrimeUI from 'tailwindcss-primeui';
@@ -171,6 +172,8 @@ export default {
     ...Object.values(DELTA_DIRECTION_TEXT_CLASS).flatMap((classes) => classes.split(' ')),
     // Groups dashboard engagement stat cards (GROUPS_ENGAGEMENT_ICON_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(GROUPS_ENGAGEMENT_ICON_CLASS).flatMap((classes) => classes.split(' ')),
+    // Org Lens Training & Certifications stat strip icon tints (ORG_TRAINING_STAT_TILES in @lfx-one/shared, not scanned here)
+    ...ORG_TRAINING_STAT_TILES.flatMap((tile) => tile.iconClass.split(' ')),
     // Formation readiness strip — per-segment fill colors (FORMATION_ITEM_SEGMENT_COLORS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ITEM_SEGMENT_COLORS),
     // Formation checklist — row/section-header grid templates (container-query variants)

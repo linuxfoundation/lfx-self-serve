@@ -2042,57 +2042,6 @@ export class AnalyticsController {
     }
   }
 
-  /**
-   * GET /api/analytics/org-involvement-certified-employees-monthly
-   * Get cross-foundation certified employees monthly for an organization
-   * Query params: accountId (required)
-   */
-  public async orgCertifiedEmployeesMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_org_involvement_certified_employees_monthly');
-
-    try {
-      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_certified_employees_monthly');
-
-      const response = await this.orgInvolvementService.getCertifiedEmployeesMonthly(accountId);
-
-      logger.success(req, 'get_org_involvement_certified_employees_monthly', startTime, {
-        account_id: accountId,
-        total_certifications: response.totalCertifications,
-        total_certified_employees: response.totalCertifiedEmployees,
-        monthly_data_points: response.monthlyData.length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/analytics/org-involvement-training-enrollments
-   * Get cross-foundation training enrollments YTD for an organization
-   * Query params: accountId (required)
-   */
-  public async orgTrainingEnrollments(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_org_involvement_training_enrollments');
-
-    try {
-      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_training_enrollments');
-
-      const response = await this.orgInvolvementService.getTrainingEnrollments(accountId);
-
-      logger.success(req, 'get_org_involvement_training_enrollments', startTime, {
-        account_id: accountId,
-        total_enrollments: response.totalEnrollments,
-        daily_data_points: response.dailyData.length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
   // Marketing Analytics Endpoints
   // All marketing endpoints (Web Activities, Email CTR, Social Reach, Social Media, and the
   // ED dashboard KPIs) use `foundationSlug` — underlying Snowflake Platinum views key on a
