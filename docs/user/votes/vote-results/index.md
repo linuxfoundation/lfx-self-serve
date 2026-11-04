@@ -47,6 +47,8 @@ The page opens on the **Overview** tab and has these tabs:
 
 A tab shows no count when there is nothing to count.
 
+To send a reminder from the vote's page, use **Send reminder** in the page header. There is no separate reminder button in the **Voters** tab.
+
 The header shows the ballot privacy badge (for example, **Named ballot**); hover over it or focus it with the keyboard to read who can see what. The **Vote details** card lists when the vote was created and whether comments are enabled.
 
 Summary cards below the tab strip show participation:
