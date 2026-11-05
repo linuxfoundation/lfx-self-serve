@@ -307,9 +307,55 @@ describe('UiSplitButtonComponent', () => {
       await unnamed.whenStable();
 
       expect(unnamed.nativeElement.querySelector('[data-testid="ui-split-button-secondary"]').hasAttribute('aria-label')).toBe(false);
-      expect(warn).toHaveBeenCalledWith('lfx-ui-split-button: without a menu, the action half needs a secondaryTooltip.');
-      expect(warn).toHaveBeenCalledWith('lfx-ui-split-button: without a menu, the action half needs a secondaryIcon.');
+      expect(warn).toHaveBeenCalledWith('lfx-ui-split-button: without a menu, the action half needs a secondaryTooltip or a secondaryLabel.');
+      expect(warn).toHaveBeenCalledWith('lfx-ui-split-button: without a menu, the action half needs a secondaryIcon or a secondaryLabel.');
       unnamed.destroy();
+    });
+  });
+
+  describe('as a labelled pair', () => {
+    let pair: ComponentFixture<TestHostComponent>;
+    const half = (): HTMLButtonElement => pair.nativeElement.querySelector('[data-testid="ui-split-button-secondary"]') as HTMLButtonElement;
+
+    beforeEach(async () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ imports: [TestHostComponent] });
+      TestBed.overrideComponent(TestHostComponent, {
+        set: {
+          imports: [UiSplitButtonComponent],
+          template: `<lfx-ui-split-button label="Trend" icon="fa-light fa-chart-line" variant="secondary" size="small" secondaryLabel="Snapshot"
+            secondaryIcon="fa-light fa-table-list" (triggered)="log('trend')" (secondaryTriggered)="log('snapshot')" />`,
+        },
+      });
+      pair = TestBed.createComponent(TestHostComponent);
+      await pair.whenStable();
+    });
+
+    afterEach(() => pair.destroy());
+
+    it('shows the label and icon on the right half, named by its text rather than a tooltip, and without warnings', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      await pair.whenStable();
+
+      expect(half().textContent?.trim()).toBe('Snapshot');
+      expect(half().querySelector('i')?.className).toContain('fa-table-list');
+      expect(half().hasAttribute('aria-label')).toBe(false);
+      expect(pair.debugElement.query(By.css('[data-testid="ui-split-button-secondary"]')).injector.get(UiTooltipDirective).disabled()).toBe(true);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('sizes the right half like a button of the same size instead of an icon square', () => {
+      expect(half().className).not.toContain('aspect-square');
+      expect(half().className).toContain('px-[8px]');
+      expect(half().className).toContain('h-ui-xsmall');
+    });
+
+    it('emits each half on its own', async () => {
+      half().click();
+      (pair.nativeElement.querySelector('[data-testid="ui-split-button-main"] button') as HTMLButtonElement).click();
+      await pair.whenStable();
+
+      expect(pair.componentInstance.events()).toEqual(['snapshot', 'trend']);
     });
   });
 });

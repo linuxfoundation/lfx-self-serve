@@ -43,7 +43,7 @@ export type UiTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | '
 export type UiBadgeTone = UiTone;
 
 /** Look of a uikit badge: the role's `subtle` fill, its `solid` fill, or the neutral `outline` ring. */
-export type UiBadgeVariant = 'subtle' | 'solid' | 'outline';
+export type UiBadgeVariant = 'subtle' | 'solid' | 'outline' | 'line';
 
 /** Height of a uikit badge and chip: `sm` is 20px with 11px text, `md` is 24px with 12px text. */
 export type UiBadgeSize = 'sm' | 'md';

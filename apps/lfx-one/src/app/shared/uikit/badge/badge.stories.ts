@@ -30,6 +30,8 @@ export const Outline: Story = {
     template: `<div class="flex flex-wrap items-center gap-[12px]"><lfx-ui-badge variant="outline">Outline</lfx-ui-badge><lfx-ui-badge variant="outline" size="sm">v2.4.0</lfx-ui-badge></div>`,
   }),
 };
+/** The tone's solid colour as text and a 1px ring on a transparent fill, for a quiet coloured fact. */
+export const Line: Story = { render: () => ({ template: row('line') }) };
 export const Small: Story = { render: () => ({ template: row('subtle', 'sm') }) };
 export const SmallSolid: Story = { render: () => ({ template: row('solid', 'sm') }) };
 export const WithIcon: Story = {
