@@ -40,10 +40,12 @@ for (const width of [1440, 1024, 390]) {
     expect(box.x, diagnostic).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width, diagnostic).toBeLessThanOrEqual(width);
     expect(await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)), diagnostic).toBeLessThanOrEqual(width);
+    // The sticky footer spans the content's padding; nothing may pass the content's edge.
     const overflow = await dialog.getByTestId('mktg-document-view-approve-confirm').evaluate((element) => {
-      const right = element.getBoundingClientRect().right;
+      const content = element.closest('.p-dialog-content') ?? element;
+      const contentRight = content.getBoundingClientRect().right;
       return Array.from(element.querySelectorAll<HTMLElement>('*'))
-        .filter((child) => child.getBoundingClientRect().right > right + 1)
+        .filter((child) => child.getBoundingClientRect().right > contentRight + 1)
         .map((child) => `${child.tagName.toLowerCase()}[${child.getAttribute('data-testid') ?? ''}]`);
     });
     expect(overflow, diagnostic).toEqual([]);
@@ -60,7 +62,18 @@ for (const width of [1440, 390]) {
     await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
     const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('mktg-document-view-approve-confirm') });
     await expect(dialog.getByTestId('mktg-document-view-approve-anyway')).toBeVisible();
-    // Settled after the fade-in: the first section's top is not above the scrolling content's top, and focus is in the dialog.
+    // Settle the open animation (scale and fade) before any box is read.
+    await page.waitForFunction(() => {
+      const dialogElement = document.querySelector('.p-dialog');
+      if (!dialogElement) return false;
+      let element: Element | null = dialogElement;
+      while (element) {
+        if (parseFloat(getComputedStyle(element).opacity) < 1) return false;
+        element = element.parentElement;
+      }
+      return document.getAnimations().every((animation) => animation.playState !== 'running');
+    });
+    // Settled: the first section's top is not above the scrolling content's top, and focus is in the dialog.
     await expect
       .poll(
         () =>
