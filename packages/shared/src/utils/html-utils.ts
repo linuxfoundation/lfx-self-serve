@@ -262,8 +262,10 @@ export function plainTextToHtml(value: string | null | undefined): string {
   return (
     value
       .replace(/\r\n?/g, '\n')
-      // A blank line (whitespace only) ends a paragraph; runs of them leave empty pieces, filtered out.
-      .split(/\n[^\S\n]*\n/)
+      // Trimmed first so leading / trailing newlines do not become stray <br>s.
+      .trim()
+      // A run of blank lines (whitespace only) ends a paragraph, consumed whole.
+      .split(/\n(?:[^\S\n]*\n)+/)
       .filter((paragraph) => paragraph.trim())
       .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
       .join('')

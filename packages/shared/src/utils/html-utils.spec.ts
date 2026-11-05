@@ -158,6 +158,11 @@ describe('plainTextToHtml', () => {
     expect(plainTextToHtml('One\r\n\r\n\r\n  \r\nTwo\rthree')).toBe('<p>One</p><p>Two<br>three</p>');
   });
 
+  it('consumes an odd-length run of blank lines whole and ignores leading / trailing newlines', () => {
+    expect(plainTextToHtml('A\n\n\nB')).toBe('<p>A</p><p>B</p>');
+    expect(plainTextToHtml('\nA\nB\n')).toBe('<p>A<br>B</p>');
+  });
+
   it('escapes HTML-significant characters in plain text', () => {
     expect(plainTextToHtml('a < b && c > d')).toBe('<p>a &lt; b &amp;&amp; c &gt; d</p>');
   });
