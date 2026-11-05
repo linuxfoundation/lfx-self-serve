@@ -327,3 +327,12 @@ export interface MeetingDetailsOrganizer extends MeetingHomeRowOrganizer {
   /** Pre-filled `mailto:` about the meeting; null for the viewer or without a valid email. */
   mailto: string | null;
 }
+
+/** The artifacts of an ended date in the meeting details drawer; each is null when it does not exist or its lookup failed. */
+export interface MeetingDetailsArtifactData {
+  /** Share link of the largest recording session. */
+  recordingUrl: string | null;
+  /** Download link of the transcript file; only its presence is used. */
+  transcriptUrl: string | null;
+  summary: PastMeetingSummary | null;
+}

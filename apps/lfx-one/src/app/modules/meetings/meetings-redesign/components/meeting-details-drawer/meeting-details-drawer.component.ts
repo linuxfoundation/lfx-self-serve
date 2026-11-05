@@ -21,7 +21,6 @@ import {
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingVisibilityBadges,
-  isPastMeetingCalendarRow,
 } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
@@ -35,6 +34,8 @@ import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDetailsHeaderComponent } from './header/meeting-details-header.component';
 import { MeetingDetailsContext } from './meeting-details.context';
 import { MeetingDetailsProjectLinkComponent } from './project-link/meeting-details-project-link.component';
+import { MeetingDetailsArtifactsService } from './tools/meeting-details-artifacts.service';
+import { MeetingDetailsToolsComponent } from './tools/meeting-details-tools.component';
 
 /**
  * The meeting details drawer, opened by `MeetingsHomeDetailsService`: a sticky header, the title block, tabs for the agenda and
@@ -46,6 +47,7 @@ import { MeetingDetailsProjectLinkComponent } from './project-link/meeting-detai
   imports: [
     MeetingDetailsHeaderComponent,
     MeetingDetailsProjectLinkComponent,
+    MeetingDetailsToolsComponent,
     UiAvatarComponent,
     UiBadgeComponent,
     UiDrawerComponent,
@@ -56,6 +58,7 @@ import { MeetingDetailsProjectLinkComponent } from './project-link/meeting-detai
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [
     MeetingDetailsContext,
+    MeetingDetailsArtifactsService,
     { provide: MeetingsHomeStore, useFactory: () => inject<MeetingDetailsDrawerData>(DIALOG_DATA).injector.get(MeetingsHomeStore) },
     { provide: MeetingsHomeEditService, useFactory: () => inject<MeetingDetailsDrawerData>(DIALOG_DATA).injector.get(MeetingsHomeEditService) },
   ],
@@ -64,6 +67,7 @@ export class MeetingDetailsDrawerComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly userService = inject(UserService);
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
+  private readonly artifacts = inject(MeetingDetailsArtifactsService);
   protected readonly context = inject(MeetingDetailsContext);
 
   /** The big title has scrolled under the sticky header. */
@@ -72,7 +76,7 @@ export class MeetingDetailsDrawerComponent {
   protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = computed(() => getMeetingVisibilityBadges(this.context.meeting()));
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.context.meeting()));
   protected readonly groups: Signal<string[]> = computed(() => getMeetingGroupNames(this.context.meeting()));
-  protected readonly features: Signal<MeetingDetailsFeature[]> = this.initFeatures();
+  protected readonly features: Signal<MeetingDetailsFeature[]> = computed(() => getMeetingDetailsFeatures(this.context.meeting(), this.artifacts.flags()));
   protected readonly organizers: Signal<MeetingHomeRowOrganizer[]> = computed(() =>
     getMeetingHomeRowOrganizers(this.context.meeting(), this.userService.viewerUsername())
   );
@@ -97,19 +101,6 @@ export class MeetingDetailsDrawerComponent {
 
   protected selectTab(value: string): void {
     this.context.tab.set(value === 'guests' ? 'guests' : 'agenda');
-  }
-
-  /** Settings before the meeting; once it ended, the artifacts the past feed reports. */
-  private initFeatures(): Signal<MeetingDetailsFeature[]> {
-    return computed(() => {
-      const meeting = this.context.meeting();
-      const ended = this.context.state() === 'ended';
-      const past = isPastMeetingCalendarRow(meeting) ? meeting : null;
-      return getMeetingDetailsFeatures(
-        meeting,
-        ended ? { recording: past?.has_recording === true, transcript: false, summary: past?.has_ai_summary === true } : null
-      );
-    });
   }
 
   /** Shows the compact title once the big one has scrolled above the sticky header. */

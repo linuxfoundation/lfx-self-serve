@@ -104,7 +104,7 @@
         <!-- Schedule slot: occurrence, date, RSVP and join. -->
         <div class="flex flex-col gap-[12px] empty:hidden" data-testid="meeting-details-schedule"></div>
         <!-- Tools slot: host controls, attendance, artifacts and the viewer's own actions. -->
-        <div class="flex flex-col gap-[12px] empty:hidden" data-testid="meeting-details-tools"></div>
+        <lfx-meeting-details-tools data-testid="meeting-details-tools" />
       </div>
 
       <div class="col-start-1 row-start-3 flex min-w-0 flex-col gap-[24px] @[720px]:row-start-2" data-testid="meeting-details-content">
