@@ -21,13 +21,20 @@ import { FormationDetailComponent } from './formation-detail.component';
  */
 @Component({ selector: 'lfx-formation-checklist-section', standalone: true, template: '<div data-testid="stub-formation-checklist-section"></div>' })
 class StubFormationChecklistSectionComponent {
+  public reloadCount = 0;
   public readonly projectSlug = input<string | null>(null);
   public readonly responseLoaded = output<FormationChecklistResponse | null>();
+
+  public reload(): void {
+    this.reloadCount += 1;
+  }
 }
 
 @Component({ selector: 'lfx-formation-card', standalone: true, template: '<div data-testid="stub-formation-card"></div>' })
 class StubFormationCardComponent {
   public readonly formation = input<Formation | null>(null);
+  public readonly canEditRecord = input<boolean>(false);
+  public readonly recordSaved = output<void>();
 }
 
 @Component({ selector: 'lfx-formation-people-card', standalone: true, template: '<div data-testid="stub-formation-people-card"></div>' })
@@ -48,6 +55,7 @@ function checklistResponse(): FormationChecklistResponse {
     items: [],
     can_write: false,
     can_set_status: false,
+    can_edit_record: false,
   };
 }
 
@@ -189,6 +197,21 @@ describe('FormationDetailComponent', () => {
 
       const sidebar = fixture.nativeElement.querySelector('[data-testid="formation-detail-sidebar"]');
       expect(sidebar?.querySelector('[data-testid="stub-formation-card"]')).not.toBeNull();
+    });
+
+    it('passes can_edit_record to the card and reloads the checklist when the card reports a save (#5134)', async () => {
+      getProjectStrict.mockReturnValue(of(buildProject()));
+      await render('child-project');
+      emitChecklist({ ...checklistResponse(), can_edit_record: true });
+
+      const card = fixture.debugElement.query((node) => node.componentInstance instanceof StubFormationCardComponent)
+        .componentInstance as StubFormationCardComponent;
+      expect(card.canEditRecord()).toBe(true);
+
+      const section = fixture.debugElement.query((node) => node.componentInstance instanceof StubFormationChecklistSectionComponent)
+        .componentInstance as StubFormationChecklistSectionComponent;
+      card.recordSaved.emit();
+      expect(section.reloadCount).toBe(1);
     });
 
     it('passes the checklist formation — the CHILD project, not the foundation — down to the card', async () => {
