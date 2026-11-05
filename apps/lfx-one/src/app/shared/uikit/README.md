@@ -69,7 +69,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-command-menu`   | `UiCommandMenuComponent`   | Command palette in a modal via `UiCommandMenuService`: search, groups, shortcut hints, empty state; combobox and listbox                                                            |
 | `lfx-ui-multi-select`   | `UiMultiSelectComponent`   | Several values from the same `lfx-ui-option` rows: checkbox rows, Only action, count in the trigger; `[(values)]` and forms with `string[]`                                         |
 | `lfxUiPopover`          | `UiPopoverDirective`       | Non-modal dialog panel in the Menu material from any content: `aria-haspopup`, `aria-expanded`, Escape and outside click close; open it from `lfx-ui-button [popover]`              |
-| `lfx-ui-drawer`         | `UiDrawerComponent`        | Side sheet via `UiDrawerService` on the modal, floating 8px in: left or right, 560px, wide or custom px, header actions, close, scrolling body, footer, `splitFooter`; `canClose`   |
+| `lfx-ui-drawer`         | `UiDrawerComponent`        | Side sheet via `UiDrawerService` on the modal, floating 8px in: left/right, 560px, wide/custom px, header actions, close, scrolling body, footer, `splitFooter`, `bare`; `canClose` |
 | `UiDrawerService`       | `UiDrawerService`          | Opens content whose root is `lfx-ui-drawer` as a side sheet on the modal: focus trap, scroll lock, slide; `canClose` guards dismissal; returns a `DialogRef`                        |
 | `lfx-ui-chip`           | `UiChipComponent`          | Removable badge for an applied filter: accent subtle, 20px or 24px, regular-weight key prefix, × button named "Remove" and the label; `lfx-ui-chip-group` moves focus on removal    |
 
