@@ -7,6 +7,7 @@ import {
   FORMATION_RECORD_ERROR_MESSAGES,
   FORMATION_RECORD_MAX_LENGTHS,
   FORMATION_RECORD_READ_ONLY_KEYS,
+  FORMATION_RECORD_DATE_PATTERN,
   FORMATION_RECORD_SELECTABLE_STAGES,
   PROJECT_LEGAL_ENTITY_TYPES,
 } from '@lfx-one/shared/constants';
@@ -16,7 +17,6 @@ import { ServiceValidationError } from '../errors';
 
 import type { UpdateFormationRecordRequest } from '@lfx-one/shared/interfaces';
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const INVALID = FORMATION_RECORD_ERROR_MESSAGES.invalidValue;
 
 /**
@@ -146,7 +146,7 @@ function dissolutionDateRequiredError(): ServiceValidationError {
 }
 
 function isValidIsoDate(value: string): boolean {
-  if (!ISO_DATE.test(value)) return false;
+  if (!FORMATION_RECORD_DATE_PATTERN.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value);
 }

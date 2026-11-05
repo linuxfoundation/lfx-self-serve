@@ -8,6 +8,7 @@ import { getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
+import { MessageService } from 'primeng/api';
 import { catchError, map, Observable, of, Subject, tap, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -97,6 +98,7 @@ describe('FormationCardComponent', () => {
     await TestBed.configureTestingModule({
       imports: [FormationCardComponent],
       providers: [
+        { provide: MessageService, useValue: { add: vi.fn() } },
         {
           provide: ProjectService,
           useValue: {
@@ -254,12 +256,18 @@ describe('FormationCardComponent', () => {
     let openDrawer: ReturnType<typeof vi.fn>;
     let drawerClosed: Subject<boolean | undefined>;
     let refreshActiveProject: ReturnType<typeof vi.fn>;
+    let updateFormationRecord: ReturnType<typeof vi.fn>;
+    let messageAdd: ReturnType<typeof vi.fn>;
+    let putRequest: Subject<Project>;
 
     async function renderWithInput(value: Formation, admin: { sfid?: string | null; auditor?: boolean } = {}): Promise<void> {
       TestBed.resetTestingModule();
       drawerClosed = new Subject<boolean | undefined>();
       openDrawer = vi.fn(() => ({ closed: drawerClosed }));
       refreshActiveProject = vi.fn();
+      putRequest = new Subject<Project>();
+      updateFormationRecord = vi.fn(() => putRequest);
+      messageAdd = vi.fn();
       getProjectSpy = vi.fn(() => of(project('Formation - Engaged', { auditor: admin.auditor ?? false })));
       getProjectSfidSpy = vi.fn(() => of(admin.sfid ?? null));
       await TestBed.configureTestingModule({
@@ -267,10 +275,16 @@ describe('FormationCardComponent', () => {
         providers: [
           {
             provide: ProjectService,
-            useValue: { getProjectSfid: getProjectSfidSpy, getProject: getProjectSpy, getProjectRecord: () => of(project('Formation - Engaged')) },
+            useValue: {
+              getProjectSfid: getProjectSfidSpy,
+              getProject: getProjectSpy,
+              getProjectRecord: () => of(project('Formation - Engaged')),
+              updateFormationRecord,
+            },
           },
           { provide: ProjectContextService, useValue: throwingProjectContext() },
           { provide: UiDrawerService, useValue: { open: openDrawer } },
+          { provide: MessageService, useValue: { add: messageAdd } },
         ],
       }).compileComponents();
 
@@ -308,49 +322,107 @@ describe('FormationCardComponent', () => {
       });
     });
 
-    it('opens the edit drawer through UiDrawerService with the project uid and open required count', async () => {
-      await renderWithInput(formation({ gating_items_open: 2 }));
+    interface DrawerConfig {
+      data: { projectUid: string; openRequiredCount: number; save: (changes: { legal_entity_name: string }) => Observable<void> };
+    }
+    async function openEditDrawer(value = formation()): Promise<DrawerConfig> {
+      await renderWithInput(value);
       fixture.componentRef.setInput('canEditRecord', true);
       fixture.detectChanges();
-
       (fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"] button') as HTMLButtonElement).click();
+      return openDrawer.mock.calls[0][1] as DrawerConfig;
+    }
 
-      expect(openDrawer).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ data: { projectUid: 'child-uid', openRequiredCount: 2, saveState: { inFlight: false } } })
-      );
+    it('opens the edit drawer through UiDrawerService with the project uid, open required count and a save callback', async () => {
+      const config = await openEditDrawer(formation({ gating_items_open: 2 }));
+
+      expect(config.data).toEqual({ projectUid: 'child-uid', openRequiredCount: 2, save: expect.any(Function) });
     });
 
-    it('refuses dismissal while a save is in flight and allows it otherwise', async () => {
-      await renderWithInput(formation());
-      fixture.componentRef.setInput('canEditRecord', true);
-      fixture.detectChanges();
-
-      (fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"] button') as HTMLButtonElement).click();
-      const config = openDrawer.mock.calls[0][1] as { data: { saveState: { inFlight: boolean } }; canClose: () => boolean };
-
-      expect(config.canClose()).toBe(true);
-      config.data.saveState.inFlight = true;
-      expect(config.canClose()).toBe(false);
-    });
-
-    it('refreshes the active project and tells the host after a save, and does neither when the drawer is dismissed', async () => {
-      await renderWithInput(formation());
-      fixture.componentRef.setInput('canEditRecord', true);
-      fixture.detectChanges();
+    it('owns the write: the PUT runs once, refreshes the active project, tells the host and toasts, with the drawer only listening', async () => {
+      const config = await openEditDrawer();
       const saved = vi.fn();
       fixture.componentInstance.recordSaved.subscribe(saved);
-      const click = () => (fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"] button') as HTMLButtonElement).click();
+      const outcome = vi.fn();
 
-      click();
-      drawerClosed.next(false);
+      config.data.save({ legal_entity_name: 'Changed' }).subscribe(outcome);
+      expect(updateFormationRecord).toHaveBeenCalledWith('child-uid', { legal_entity_name: 'Changed' });
       expect(refreshActiveProject).not.toHaveBeenCalled();
-      expect(saved).not.toHaveBeenCalled();
 
-      click();
-      drawerClosed.next(true);
+      putRequest.next(project('Formation - Engaged'));
       expect(refreshActiveProject).toHaveBeenCalledWith('child-uid');
       expect(saved).toHaveBeenCalledOnce();
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+      expect(outcome).toHaveBeenCalledOnce();
+    });
+
+    it('completes the write and runs the refreshes even if the drawer is destroyed mid-PUT', async () => {
+      const config = await openEditDrawer();
+      const saved = vi.fn();
+      fixture.componentInstance.recordSaved.subscribe(saved);
+
+      // The drawer's own subscription is torn down with it; the write belongs to the card.
+      const drawerSubscription = config.data.save({ legal_entity_name: 'Changed' }).subscribe();
+      drawerSubscription.unsubscribe();
+      drawerClosed.next(undefined);
+      expect(putRequest.observed).toBe(true);
+
+      putRequest.next(project('Formation - Engaged'));
+      expect(refreshActiveProject).toHaveBeenCalledWith('child-uid');
+      expect(saved).toHaveBeenCalledOnce();
+    });
+
+    it('does not tell the host about a save for a project the card no longer shows', async () => {
+      const config = await openEditDrawer();
+      const saved = vi.fn();
+      fixture.componentInstance.recordSaved.subscribe(saved);
+
+      config.data.save({ legal_entity_name: 'Changed' }).subscribe();
+      fixture.componentRef.setInput('formation', formation({ parent_project_uid: 'other-uid', parent_project_slug: 'other-project' }));
+      fixture.detectChanges();
+      putRequest.next(project('Formation - Engaged'));
+
+      expect(refreshActiveProject).toHaveBeenCalledWith('child-uid');
+      expect(saved).not.toHaveBeenCalled();
+    });
+
+    it('does not emit after the card itself is destroyed, but still finishes the write', async () => {
+      const config = await openEditDrawer();
+      const saved = vi.fn();
+      fixture.componentInstance.recordSaved.subscribe(saved);
+
+      config.data.save({ legal_entity_name: 'Changed' }).subscribe();
+      fixture.destroy();
+      putRequest.next(project('Formation - Engaged'));
+
+      expect(refreshActiveProject).toHaveBeenCalledWith('child-uid');
+      expect(saved).not.toHaveBeenCalled();
+    });
+
+    it('stops listening for the drawer result when the card is destroyed', async () => {
+      await openEditDrawer();
+
+      fixture.destroy();
+
+      expect(drawerClosed.observed).toBe(false);
+    });
+
+    it('reports a failed write to the drawer and toasts only when the drawer is already gone', async () => {
+      const config = await openEditDrawer();
+      const failure = new Error('boom');
+      const outcome = vi.fn();
+
+      config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: outcome });
+      putRequest.error(failure);
+      expect(outcome).toHaveBeenCalledWith(failure);
+      expect(messageAdd).not.toHaveBeenCalled();
+      expect(refreshActiveProject).not.toHaveBeenCalled();
+
+      putRequest = new Subject<Project>();
+      drawerClosed.next(undefined);
+      config.data.save({ legal_entity_name: 'Again' }).subscribe({ error: () => undefined });
+      putRequest.error(failure);
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
     });
 
     it('renders the sub-stage, announcement date and slug from the response, never from the project context', async () => {

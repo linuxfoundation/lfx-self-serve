@@ -70,6 +70,9 @@ export const FORMATION_RECORD_EDITABLE_KEYS = [
 /** Read-only fields on the upstream project GET that must not be sent back on the full-replace PUT. */
 export const FORMATION_RECORD_READ_ONLY_KEYS = ['uid', 'created_at', 'updated_at', 'writer', 'auditor', 'meetingCoordinator'] as const;
 
+/** `YYYY-MM-DD` shape for the formation and dissolution dates — shared by the drawer's pre-check and the BFF's validation. */
+export const FORMATION_RECORD_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
 /** Upper bounds for the free-text formation-record fields, so oversized values never reach upstream. */
 export const FORMATION_RECORD_MAX_LENGTHS = { legal_entity_name: 255, entity_formation_document_url: 2048 } as const;
 

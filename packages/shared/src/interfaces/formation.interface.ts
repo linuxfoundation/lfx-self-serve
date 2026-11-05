@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from '../enums/formation.enum';
+import type { Observable } from 'rxjs';
+
 import type { TagSeverity } from './components.interface';
-import { Project } from './project.interface';
+import { Project, UpdateFormationRecordRequest } from './project.interface';
 
 /**
  * Formation domain types (GH-2163, epic #1965). Mirrors the object shapes planned for
@@ -947,8 +949,9 @@ export interface FormationRecordEditDrawerData {
   /** Gating ("required for Active") items still open on the checklist — named in the confirmation step. */
   openRequiredCount: number;
   /**
-   * Shared with the card, which owns the drawer's `canClose` guard: the drawer sets `inFlight` around the PUT so
-   * Escape, the backdrop and the close button cannot dismiss it (and unsubscribe the write) while it is pending.
+   * Sends the changes. The card owns the write — the request, cache eviction, toasts and host refreshes all run
+   * to completion even if the drawer is dismissed or destroyed mid-PUT — and the returned stream only reports
+   * the outcome (a replayed next/complete, or the HTTP error) to whoever is still listening.
    */
-  saveState: { inFlight: boolean };
+  save: (changes: UpdateFormationRecordRequest) => Observable<void>;
 }

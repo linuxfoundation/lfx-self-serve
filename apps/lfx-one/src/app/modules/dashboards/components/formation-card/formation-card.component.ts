@@ -1,18 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
-import type { Formation, FormationCardView, FormationRecordEditDrawerData } from '@lfx-one/shared/interfaces';
+import { FORMATION_RECORD_ERROR_MESSAGES, FORMATION_RECORD_SUCCESS_MESSAGE } from '@lfx-one/shared/constants';
+import type { Formation, FormationCardView, FormationRecordEditDrawerData, UpdateFormationRecordRequest } from '@lfx-one/shared/interfaces';
 import { formatAnnouncementDateLabel, getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
+import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { filter, map, switchMap, take } from 'rxjs';
+import { filter, map, Observable, ReplaySubject, switchMap, take } from 'rxjs';
 
 import { FormationRecordEditDrawerComponent } from '../formation-record-edit-drawer/formation-record-edit-drawer.component';
 
@@ -75,6 +77,13 @@ export class FormationCardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly drawerService = inject(UiDrawerService);
+  private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
+  /** Set on teardown so a write that outlives the card never emits on its destroyed output. */
+  private destroyed = false;
+  private readonly unregisterDestroyed = this.destroyRef.onDestroy(() => {
+    this.destroyed = true;
+  });
 
   /**
    * Renders the card from an already-loaded checklist response instead of the project context —
@@ -129,28 +138,53 @@ export class FormationCardComponent {
 
   /**
    * Opens the stage / legal-entity edit drawer through `UiDrawerService` (focus entry and return, dialog name
-   * and Escape come with it). After a save, the active project's stage is re-read — a no-op on the foundation
-   * drill-down, where the context is the foundation and not the edited child — and the host reloads the checklist.
+   * and Escape come with it). The card — not the drawer — owns the write ({@link saveRecord}), so a drawer
+   * dismissed or destroyed mid-PUT cannot cancel it: the request, cache eviction, toasts and refreshes all run.
    */
   protected onEdit(): void {
     const projectUid = this.view()?.uid;
     if (!projectUid) return;
 
-    // Dismissal is refused while the PUT is in flight: closing would unsubscribe the write and skip the refreshes below.
-    const saveState = { inFlight: false };
+    let drawerOpen = true;
+    const save = (changes: UpdateFormationRecordRequest): Observable<void> => this.saveRecord(projectUid, changes, () => drawerOpen);
     this.drawerService
       .open<boolean, FormationRecordEditDrawerData, FormationRecordEditDrawerComponent>(FormationRecordEditDrawerComponent, {
-        data: { projectUid, openRequiredCount: this.openRequiredCount(), saveState },
+        data: { projectUid, openRequiredCount: this.openRequiredCount(), save },
         width: 520,
-        canClose: () => !saveState.inFlight,
       })
-      .closed.pipe(take(1))
-      .subscribe((saved) => {
-        if (saved) {
-          this.projectContextService.refreshActiveProject(projectUid);
+      .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        drawerOpen = false;
+      });
+  }
+
+  /**
+   * Runs the PUT detached from the drawer (no `takeUntilDestroyed`: a sent write must complete) and replays the
+   * outcome to the drawer, which only listens. After a save the active project's stage is re-read (a no-op on the
+   * foundation drill-down, where the context is the foundation and not the edited child) and the host is told to
+   * reload the checklist — but only while this card still shows the project that was saved. If the drawer is gone
+   * when the write fails, the error is surfaced as a toast instead of an inline message nobody can see.
+   */
+  private saveRecord(projectUid: string, changes: UpdateFormationRecordRequest, isDrawerOpen: () => boolean): Observable<void> {
+    const outcome = new ReplaySubject<void>(1);
+    this.projectService.updateFormationRecord(projectUid, changes).subscribe({
+      next: () => {
+        this.messageService.add({ severity: 'success', summary: 'Saved', detail: FORMATION_RECORD_SUCCESS_MESSAGE });
+        this.projectContextService.refreshActiveProject(projectUid);
+        if (!this.destroyed && this.projectUid() === projectUid) {
           this.recordSaved.emit();
         }
-      });
+        outcome.next();
+        outcome.complete();
+      },
+      error: (error: unknown) => {
+        if (!isDrawerOpen()) {
+          this.messageService.add({ severity: 'error', summary: 'Not saved', detail: FORMATION_RECORD_ERROR_MESSAGES.generic });
+        }
+        outcome.error(error);
+      },
+    });
+    return outcome.asObservable();
   }
 
   /**

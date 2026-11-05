@@ -7,17 +7,17 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signa
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   FORMATION_RECORD_CONFIRM_STAGES,
+  FORMATION_RECORD_DATE_PATTERN,
   FORMATION_RECORD_DISSOLUTION_DATE_REQUIRED_CODE,
   FORMATION_RECORD_EDITABLE_KEYS,
   FORMATION_RECORD_ERROR_MESSAGES,
   FORMATION_RECORD_SELECTABLE_STAGES,
-  FORMATION_RECORD_SUCCESS_MESSAGE,
   FORMATION_TEAM_REQUIRED_CODE,
   PROJECT_FORMATION_STAGE_LABELS,
   PROJECT_LEGAL_ENTITY_TYPES,
 } from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
-import type { FormationRecordEditDrawerData, Project, UpdateFormationRecordRequest } from '@lfx-one/shared/interfaces';
+import type { FormationRecordEditDrawerData, FormationRecordValues, Project, UpdateFormationRecordRequest } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiDrawerComponent } from '@shared/uikit/drawer/drawer.component';
@@ -27,17 +27,13 @@ import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { MessageService } from 'primeng/api';
 import { finalize } from 'rxjs';
 
-/** The editable fields as normalized (trimmed, never null) strings — the shape both the baseline and the current form are compared in. */
-type RecordValues = Record<(typeof FORMATION_RECORD_EDITABLE_KEYS)[number], string>;
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 /**
  * Edit panel for a project's stage and legal entity (#5134), opened from the Formation sidebar card
  * through `UiDrawerService` (`docs/architecture/frontend/drawer-pattern.md`: new drawers use the uikit
  * drawer so focus entry/return, the dialog name and Escape are handled). The record is read once when
  * the drawer opens; only the fields the user actually changed are sent (the BFF merges them onto the
- * stored record). Moving to Active, Archived or Formation - Disengaged asks for a confirmation first —
+ * stored record), and the write itself is owned by the card (`data.save`) so it completes even if this drawer is
+ * dismissed mid-request; the drawer only reports the outcome. Moving to Active, Archived or Formation - Disengaged asks for a confirmation first —
  * warn, never block — since those complete or freeze the checklist. Closes with `true` after a save.
  */
 @Component({
@@ -72,7 +68,7 @@ export class FormationRecordEditDrawerComponent {
 
   protected readonly legalEntityTypeOptions = PROJECT_LEGAL_ENTITY_TYPES;
 
-  private readonly baseline = signal<RecordValues | null>(null);
+  private readonly baseline = signal<FormationRecordValues | null>(null);
 
   protected readonly stageOptions = computed(() => {
     const current = this.baseline()?.stage ?? '';
@@ -118,7 +114,9 @@ export class FormationRecordEditDrawerComponent {
       this.dissolutionDateError.set(FORMATION_RECORD_ERROR_MESSAGES.archivedNeedsDissolutionDate);
       return;
     }
-    const invalidDate = (['formation_date', 'entity_dissolution_date'] as const).some((key) => !!changes[key] && !ISO_DATE.test(changes[key] as string));
+    const invalidDate = (['formation_date', 'entity_dissolution_date'] as const).some(
+      (key) => !!changes[key] && !FORMATION_RECORD_DATE_PATTERN.test(changes[key] as string)
+    );
     if (invalidDate) {
       this.errorMessage.set(FORMATION_RECORD_ERROR_MESSAGES.invalidValue);
       return;
@@ -134,21 +132,15 @@ export class FormationRecordEditDrawerComponent {
 
   private submit(changes: UpdateFormationRecordRequest): void {
     this.saving.set(true);
-    this.data.saveState.inFlight = true;
-    this.projectService
-      .updateFormationRecord(this.data.projectUid, changes)
+    // UI-only subscription: tearing the drawer down stops listening, not the write (the card owns that).
+    this.data
+      .save(changes)
       .pipe(
-        finalize(() => {
-          this.saving.set(false);
-          this.data.saveState.inFlight = false;
-        }),
+        finalize(() => this.saving.set(false)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
-        next: () => {
-          this.messageService.add({ severity: 'success', summary: 'Saved', detail: FORMATION_RECORD_SUCCESS_MESSAGE });
-          this.dialogRef.close(true);
-        },
+        next: () => this.dialogRef.close(true),
         error: (error: HttpErrorResponse) => {
           this.confirmingStage.set(null);
           this.conflict.set(error.status === 409);
@@ -187,7 +179,7 @@ export class FormationRecordEditDrawerComponent {
     return changes as UpdateFormationRecordRequest;
   }
 
-  private currentValues(): RecordValues {
+  private currentValues(): FormationRecordValues {
     return {
       stage: this.normalize(this.stage()),
       legal_entity_type: this.normalize(this.legalEntityType()),
@@ -199,7 +191,7 @@ export class FormationRecordEditDrawerComponent {
   }
 
   private applyRecord(project: Project): void {
-    const stored: RecordValues = {
+    const stored: FormationRecordValues = {
       stage: this.normalize(project.stage),
       legal_entity_type: this.normalize(project.legal_entity_type),
       legal_entity_name: this.normalize(project.legal_entity_name),

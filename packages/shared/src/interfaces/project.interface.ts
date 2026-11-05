@@ -380,3 +380,6 @@ export interface UpdateFormationRecordRequest {
   entity_dissolution_date?: string | null;
   entity_formation_document_url?: string | null;
 }
+
+/** The editable formation-record fields as normalized (trimmed, never null) strings — the shape the edit drawer compares baseline and current values in. */
+export type FormationRecordValues = Record<keyof UpdateFormationRecordRequest, string>;

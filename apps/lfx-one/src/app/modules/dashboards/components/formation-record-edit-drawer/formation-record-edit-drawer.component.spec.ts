@@ -5,10 +5,10 @@ import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import type { Project } from '@lfx-one/shared/interfaces';
+import type { Project, UpdateFormationRecordRequest } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
-import { NEVER, of, Subject, throwError } from 'rxjs';
+import { map, NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationRecordEditDrawerComponent } from './formation-record-edit-drawer.component';
@@ -39,7 +39,6 @@ interface DrawerState {
 
 describe('FormationRecordEditDrawerComponent', () => {
   let fixture: ComponentFixture<FormationRecordEditDrawerComponent>;
-  let saveState: { inFlight: boolean };
   const state = (): DrawerState => fixture.componentInstance as unknown as DrawerState;
   const query = (selector: string): Element | null => fixture.nativeElement.querySelector(selector);
 
@@ -47,15 +46,23 @@ describe('FormationRecordEditDrawerComponent', () => {
     TestBed.resetTestingModule();
     const getProjectRecord = options.load ?? vi.fn(() => of(options.project ?? stored()));
     const updateFormationRecord = options.update ?? vi.fn(() => of(stored()));
+    const send = updateFormationRecord as unknown as (uid: string, changes: UpdateFormationRecordRequest) => Observable<Project>;
     const add = vi.fn();
     const close = vi.fn();
-    saveState = { inFlight: false };
 
     await TestBed.configureTestingModule({
       imports: [FormationRecordEditDrawerComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: DIALOG_DATA, useValue: { projectUid: 'proj-1', openRequiredCount: options.openRequiredCount ?? 0, saveState } },
+        {
+          provide: DIALOG_DATA,
+          useValue: {
+            projectUid: 'proj-1',
+            openRequiredCount: options.openRequiredCount ?? 0,
+            // The card owns the write; the drawer only gets the outcome stream.
+            save: (changes: UpdateFormationRecordRequest) => send('proj-1', changes).pipe(map(() => undefined)),
+          },
+        },
         { provide: DialogRef, useValue: { close, id: 'dialog-1' } },
         { provide: MessageService, useValue: { add } },
         { provide: ProjectService, useValue: { getProjectRecord, updateFormationRecord } },
@@ -327,34 +334,44 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(text).not.toContain('Archiving needs a dissolution date.');
   });
 
-  it('marks the save in flight so the card can refuse dismissal, and disables Cancel meanwhile', async () => {
+  it('disables Cancel while the save is pending and closes with true once it lands', async () => {
     const pending = new Subject<Project>();
     const { close } = await render({ update: vi.fn(() => pending) });
     state().legalEntityName.set('Changed');
 
     await save();
 
-    expect(saveState.inFlight).toBe(true);
     expect((query('[data-testid="formation-record-cancel"] button') as HTMLButtonElement).disabled).toBe(true);
 
     pending.next(stored());
     pending.complete();
     await fixture.whenStable();
 
-    expect(saveState.inFlight).toBe(false);
     expect(close).toHaveBeenCalledWith(true);
   });
 
-  it('toasts and closes the drawer with true after a successful save', async () => {
+  it('closes the drawer with true after a successful save and leaves the success toast to the card that owns the write', async () => {
     const { add, close } = await render();
     state().legalEntityName.set('Changed');
 
     await save();
 
-    expect(add).toHaveBeenCalledWith(
-      expect.objectContaining({ severity: 'success', detail: 'Updated. The checklist may take a minute to reflect the new stage.' })
-    );
     expect(close).toHaveBeenCalledWith(true);
+    expect(add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
+  it('ignores the outcome once it has been destroyed mid-save (the write itself is not its to cancel)', async () => {
+    const pending = new Subject<Project>();
+    const { close } = await render({ update: vi.fn(() => pending) });
+    state().legalEntityName.set('Changed');
+    await save();
+
+    fixture.destroy();
+    pending.next(stored());
+    pending.complete();
+
+    expect(pending.observed).toBe(false);
+    expect(close).not.toHaveBeenCalled();
   });
 
   it('closes with false on cancel', async () => {
