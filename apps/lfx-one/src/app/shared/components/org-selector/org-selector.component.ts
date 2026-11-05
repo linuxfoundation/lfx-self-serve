@@ -28,10 +28,9 @@ import {
   ORG_LENS_LIST_INCOMPLETE_NOTICE,
   ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL,
   ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL,
-  ROLLUP_ACCOUNT_NAME,
 } from '@lfx-one/shared/constants';
-import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
-import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
+import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgRollUpFamily, OrgRollUpSelectorRow, OrgSelectorRow } from '@lfx-one/shared/interfaces';
+import { orgRollUpAccount, resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { ElementIdService } from '@services/element-id.service';
 import { LensService } from '@services/lens.service';
@@ -110,32 +109,42 @@ export class OrgSelectorComponent {
   protected readonly selectedAccount: Signal<Account> = this.accountContextService.selectedAccount;
   protected readonly selectedAccountUid: Signal<string | null> = computed(() => this.selectedAccount().uid ?? null);
 
-  protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Organization');
+  protected readonly displayName: Signal<string> = computed(() => {
+    // A roll-up restored from the cookie or a deep link is selected before its family's name is
+    // known; read it from the family so the trigger catches up once the grant sets land.
+    const family = this.accountContextService.selectedRollUpFamily();
+    if (family) return orgRollUpAccount(family.rootUid, family.name).accountName;
+    return this.selectedAccount().accountName || 'Select Organization';
+  });
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedAccount().logoUrl ?? '');
 
   /**
-   * The All Organizations roll-up entry (#4132). Pinned above the organization rows, shown only to a
-   * caller holding two or more organizations, and never filtered out by a search — a query matching
-   * no organization still leaves the roll-up pickable.
+   * The family roll-up entries (#4132) — one per Salesforce family the caller holds two or more
+   * organizations in, so a caller whose grants reach two families gets two. Pinned above the
+   * organization rows and never filtered out by a search — a query matching no organization still
+   * leaves every roll-up pickable.
    *
-   * Not a grant: it carries no persona badge and no `(Original)` / `(Inherited)` suffix, and it
-   * leaves the labelling on the real rows untouched.
+   * Not grants: they carry no persona badge and no `(Original)` / `(Inherited)` suffix, and they
+   * leave the labelling on the real rows untouched.
    */
-  protected readonly showRollUpRow: Signal<boolean> = this.accountContextService.canSelectRollUp;
+  protected readonly rollUpRows: Signal<OrgRollUpSelectorRow[]> = computed(() => {
+    const selectedRootUid = this.accountContextService.selectedRollUpRootUid();
+    return this.accountContextService.eligibleRollUpFamilies().map((family: OrgRollUpFamily) => ({
+      rootUid: family.rootUid,
+      name: orgRollUpAccount(family.rootUid, family.name).accountName,
+      subtitle: `Combined view of related organizations · ${organizationCountLabel(family.orgUids.length)}`,
+      organizationCount: family.orgUids.length,
+      isSelected: family.rootUid === selectedRootUid,
+    }));
+  });
+  protected readonly showRollUpRow: Signal<boolean> = computed(() => this.rollUpRows().length > 0);
   protected readonly isRollUpSelected: Signal<boolean> = this.accountContextService.isRollUp;
-  protected readonly rollUpOrganizationCount: Signal<number> = this.accountContextService.rollUpOrganizationCount;
   /**
-   * The trigger renders this whenever the roll-up is selected, which includes the window where a
+   * The trigger renders this whenever a roll-up is selected, which includes the window where a
    * cookie-restored roll-up is admitted before the grant sets have landed — the count can read 0 or
    * 1 there, so the noun has to agree.
    */
-  protected readonly rollUpTriggerSubtitle: Signal<string> = computed(() => {
-    const count = this.rollUpOrganizationCount();
-    return `${count} ${count === 1 ? 'organization' : 'organizations'}`;
-  });
-  protected readonly rollUpSubtitle: Signal<string> = computed(() => `Combined view of related organizations · ${this.rollUpTriggerSubtitle()}`);
-  /** The row's name, from the same constant the trigger and the cookie-restored selection carry, so one rename covers every surface. */
-  protected readonly rollUpName = ROLLUP_ACCOUNT_NAME;
+  protected readonly rollUpTriggerSubtitle: Signal<string> = computed(() => organizationCountLabel(this.accountContextService.rollUpOrganizationCount()));
 
   protected readonly items: Signal<OrgItem[]> = this.orgNavigationService.items;
   protected readonly loading: Signal<boolean> = this.orgNavigationService.loading;
@@ -364,14 +373,16 @@ export class OrgSelectorComponent {
    * `listboxOptions()` is every option in the DOM; `displayedRows()` is only the organization rows.
    * The pinned roll-up is an option that sits outside that loop, so indexing the rows by a DOM
    * position selected the row *after* the focused one and dropped the last (PR #4415 review). Each
-   * option carries what it is (`data-option-kind`) and, for an organization, which one
-   * (`data-org-uid`), so the two lists cannot drift again.
+   * option carries what it is (`data-option-kind`) and which one — `data-org-uid` for an
+   * organization, `data-family-root` for a family roll-up — so the lists cannot drift again.
    *
    * Returns whether something was activated, so the caller only restores focus when it was.
    */
   protected activateOption(active: HTMLElement): boolean {
     if (active.dataset['optionKind'] === 'rollup') {
-      this.selectRollUp();
+      const rootUid = active.dataset['familyRoot'];
+      if (!rootUid) return false;
+      this.selectRollUp(rootUid);
       return true;
     }
     const uid = active.dataset['orgUid'];
@@ -382,31 +393,31 @@ export class OrgSelectorComponent {
   }
 
   /**
-   * Pick the roll-up. Mirrors `selectItem`'s contract: re-picking the current selection changes
-   * nothing, except on the not-found dead end, where the pick is the viewer's way out. A new pick
-   * lands on `/org/all/overview` (#4133) rather than carrying the current page across. No canonical
-   * fetch — the roll-up names a set, not a `b2b_org` row.
+   * Pick a family's roll-up. Mirrors `selectItem`'s contract: re-picking the current selection
+   * changes nothing, except on the not-found dead end, where the pick is the viewer's way out. A new
+   * pick lands on `/org/family-{rootUid}/overview` (#4133) rather than carrying the current page
+   * across. No canonical fetch — the roll-up names a set, not a `b2b_org` row.
    */
-  protected selectRollUp(): void {
+  protected selectRollUp(rootUid: string): void {
     // Re-picking the current selection changes nothing — FR-014, as `selectItem` applies it — with
     // the same not-found exception: on the dead end the pick is the viewer's way out, and the
     // selection there never made it into the address.
-    if (this.isRollUpSelected()) {
+    if (this.accountContextService.selectedRollUpRootUid() === rootUid) {
       if (this.orgLensNavigation.isOnNotFound()) {
-        this.orgLensNavigation.navigateToRollUpHome();
+        this.orgLensNavigation.navigateToRollUpHome(rootUid);
       }
       this.rollUpSelected.emit();
       this.popoverRef()?.hide();
       return;
     }
-    if (!this.accountContextService.selectRollUp()) {
+    if (!this.accountContextService.selectRollUp(rootUid)) {
       return;
     }
-    // #4133: a new roll-up pick lands on `/org/all/overview`, not the page it was made from. Unlike
+    // #4133: a new roll-up pick lands on the family's overview, not the page it was made from. Unlike
     // an organization switch, the roll-up does not support every page — Org Profile is single-org
     // by definition (#4125) — so carrying the current page across can land on one that has no
     // roll-up rendering at all.
-    this.orgLensNavigation.navigateToRollUpHome();
+    this.orgLensNavigation.navigateToRollUpHome(rootUid);
     // The host (navbar) commits a mobile Org Lens preview and closes its drawer off this; without
     // it a roll-up picked from the Me or Project lens stays an invisible selection change.
     this.rollUpSelected.emit();
@@ -763,4 +774,8 @@ export class OrgSelectorComponent {
     }
     return '';
   }
+}
+
+function organizationCountLabel(count: number): string {
+  return `${count} ${count === 1 ? 'organization' : 'organizations'}`;
 }

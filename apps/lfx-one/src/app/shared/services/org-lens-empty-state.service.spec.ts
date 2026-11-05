@@ -3,8 +3,8 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
 import { Account, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment, orgRollUpSegment } from '@lfx-one/shared/utils';
 import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
@@ -14,6 +14,9 @@ import { OrgLensEmptyStateService } from './org-lens-empty-state.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
+
+const ROLLUP_ROOT = '0014100000RootAAAA';
+const ROLLUP_SEGMENT = orgRollUpSegment(ROLLUP_ROOT);
 
 const HELD = 'held-org';
 const OTHER = 'other-org';
@@ -123,12 +126,12 @@ function setup(): Harness {
         useValue: {
           selectedAccount,
           hasOrgSelectorAccess,
-          canSelectRollUp,
+          canSelectRollUpFor: (rootUid: string | null) => rootUid === ROLLUP_ROOT && canSelectRollUp(),
           getStoredUid: () => 'cookie-uid',
           // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
           orgListPinUid: () => {
             const uid = selectedAccount().uid || 'cookie-uid';
-            return uid === ORG_ROLLUP_SEGMENT ? null : uid;
+            return isOrgRollUpSegment(uid) ? null : uid;
           },
         },
       },
@@ -206,7 +209,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
    * was short, and, for a contractor, sending them to the probe instead of their page.
    */
   it('treats the roll-up as held while the caller may select it', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.hasOrgSelectorAccess.set(true);
     h.canSelectRollUp.set(true);
     h.lookupOutcome.set('partial');
@@ -217,7 +220,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
   });
 
   it('does not treat the roll-up as held once the caller may no longer select it', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.canSelectRollUp.set(false);
 
     expect(h.service.selectedHeld()).toBe(false);
@@ -230,7 +233,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
    * and its Retry vanished there, and a contractor was probed with the reserved sentinel.
    */
   it('keeps the roll-up held through the partial window the admission path rides out', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.hasOrgSelectorAccess.set(true);
     h.canSelectRollUp.set(false);
     h.lookupOutcome.set('partial');
@@ -246,7 +249,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
    * page-level outage and its shared Retry disappeared behind a roll-up that could still be picked.
    */
   it('lets the outage win even when the seeds still make the roll-up selectable', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.hasOrgSelectorAccess.set(true);
     h.canSelectRollUp.set(true);
     h.lookupOutcome.set('failed');
@@ -257,7 +260,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
 
   // Rule 3 — a lower bound with nothing held at all is the same outage, not a window to ride out.
   it('lets the outage win for a partial lookup that leaves the caller holding nothing', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.hasOrgSelectorAccess.set(false);
     h.canSelectRollUp.set(false);
     h.lookupOutcome.set('partial');
@@ -268,7 +271,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
 
   // A failed lookup is not a lower bound: rule 2 owns that render, rather than a page over an outage.
   it('lets the outage win over an admitted roll-up when the lookup failed outright', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.hasOrgSelectorAccess.set(true);
     h.canSelectRollUp.set(false);
     h.lookupOutcome.set('failed');

@@ -89,6 +89,58 @@ export interface OrgSelectorRow {
   membershipStatus: string | null;
 }
 
+/** One Salesforce family the caller holds organizations in — the unit a roll-up combines (#4125). */
+export interface OrgRollUpFamily {
+  /** The family's top Salesforce account id; the roll-up's address and request key are built from it. */
+  rootUid: string;
+  /** Display name of the family's top account, or null when it is not known yet. */
+  name: string | null;
+  /** The caller's organizations in this family, de-duplicated. */
+  orgUids: string[];
+}
+
+/** One of the caller's organizations within a family, as `GET /api/orgs/me/roll-up-set` returns it (#4126). */
+export interface OrgRollUpSetOrg {
+  uid: string;
+  accountId: string;
+  name: string;
+  logoUrl: string | null;
+}
+
+/** One Salesforce family in the roll-up set (#4126). `orgs` are flat peers; the family's top account id appears once, as `rootUid`. */
+export interface OrgRollUpSetFamily {
+  /** The family's top Salesforce account id. */
+  rootUid: string;
+  rootName: string | null;
+  rootLogoUrl: string | null;
+  /** Only the organizations in this family the caller can access, alphabetical by name. */
+  orgs: OrgRollUpSetOrg[];
+}
+
+/** Wire shape of `GET /api/orgs/me/roll-up-set` (#4126) — the caller's organizations grouped by Salesforce family, families alphabetical by `rootName`. */
+export interface OrgRollUpSetResponse {
+  families: OrgRollUpSetFamily[];
+  /** True when the family walk was truncated or failed, so the families are a lower bound rather than the complete set. */
+  degraded: boolean;
+  lookupOutcome: OrgLensLookupOutcome;
+}
+
+/**
+ * Where the caller's families currently come from: `pending` until the roll-up set answers,
+ * `server` once it has, and `unavailable` when the BFF does not serve the endpoint yet — the
+ * switcher then falls back to grouping the grant sets client-side.
+ */
+export type OrgRollUpFamiliesSource = 'pending' | 'server' | 'unavailable';
+
+/** A family roll-up entry in the switcher, precomputed so the template reads prepared values rather than calling a method per change-detection pass. */
+export interface OrgRollUpSelectorRow {
+  rootUid: string;
+  name: string;
+  subtitle: string;
+  organizationCount: number;
+  isSelected: boolean;
+}
+
 /** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */
 export interface CascadingRoleGrant {
   /** Child org's uid (the inherited grant target). */

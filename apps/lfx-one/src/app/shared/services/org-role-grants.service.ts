@@ -30,6 +30,7 @@ export class OrgRoleGrantsService {
   private readonly inheritedWriterSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly inheritedAuditorSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly parentNameByUidInternal: WritableSignal<Map<string, string>> = signal<Map<string, string>>(new Map());
+  private readonly parentUidByUidInternal: WritableSignal<Map<string, string>> = signal<Map<string, string>>(new Map());
   private readonly loadedInternal: WritableSignal<boolean> = signal<boolean>(false);
   private readonly loadingInternal: WritableSignal<boolean> = signal<boolean>(false);
   private readonly errorInternal: WritableSignal<string | null> = signal<string | null>(null);
@@ -71,6 +72,8 @@ export class OrgRoleGrantsService {
   public readonly editorSet: Signal<Set<string>> = computed(() => new Set([...this.writerSetInternal(), ...this.inheritedWriterSetInternal()]));
   /** Child uid → parent display name; used to render the dropdown tooltip without a second lookup. */
   public readonly parentNameByUid: Signal<Map<string, string>> = this.parentNameByUidInternal.asReadonly();
+  /** Inherited row uid → the direct-granted parent it inherits from. Groups the caller's organizations into Salesforce families for the roll-up (#4125). */
+  public readonly parentUidByUid: Signal<Map<string, string>> = this.parentUidByUidInternal.asReadonly();
   public readonly loaded: Signal<boolean> = this.loadedInternal.asReadonly();
   public readonly loading: Signal<boolean> = this.loadingInternal.asReadonly();
   public readonly error: Signal<string | null> = this.errorInternal.asReadonly();
@@ -119,6 +122,7 @@ export class OrgRoleGrantsService {
         this.inheritedWriterSetInternal.set(new Set((response.cascadingWriters ?? []).map((entry: CascadingRoleGrant) => entry.uid)));
         this.inheritedAuditorSetInternal.set(new Set((response.cascadingAuditors ?? []).map((entry: CascadingRoleGrant) => entry.uid)));
         this.parentNameByUidInternal.set(this.buildParentNameMap(response));
+        this.parentUidByUidInternal.set(this.buildParentUidMap(response));
         this.isStaffInternal.set(response.isStaff === true);
         // Absent on an older server ⇒ false, so a rolling deploy never shows the contractor state by mistake.
         this.isContractorInternal.set(response.isContractor === true);
@@ -146,6 +150,7 @@ export class OrgRoleGrantsService {
         this.inheritedWriterSetInternal.set(new Set());
         this.inheritedAuditorSetInternal.set(new Set());
         this.parentNameByUidInternal.set(new Map());
+        this.parentUidByUidInternal.set(new Map());
         this.isStaffInternal.set(false);
         this.isContractorInternal.set(false);
         // The grants are unknown, not empty — same distinction the server's `degraded` draws.
@@ -210,6 +215,14 @@ export class OrgRoleGrantsService {
     }
     for (const entry of response.cascadingAuditors ?? []) {
       if (entry.uid && entry.parentName && !map.has(entry.uid)) map.set(entry.uid, entry.parentName);
+    }
+    return map;
+  }
+
+  private buildParentUidMap(response: RoleGrantsResponse): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const entry of [...(response.cascadingWriters ?? []), ...(response.cascadingAuditors ?? [])]) {
+      if (entry.uid && entry.parentUid && !map.has(entry.uid)) map.set(entry.uid, entry.parentUid);
     }
     return map;
   }

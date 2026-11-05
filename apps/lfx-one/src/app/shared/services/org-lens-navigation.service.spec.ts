@@ -215,22 +215,22 @@ describe('OrgLensNavigationService', () => {
   describe('navigateToRollUpHome', () => {
     it.each([['/org'], ['/org/people'], ['/org/easycla/abc-123']])('replaces an address that names no organization (%s)', (url) => {
       currentUrl = url;
-      service.navigateToRollUpHome();
-      expect(navigatedTo()).toBe('/org/all/overview');
+      service.navigateToRollUpHome('0014100000RootAAAA');
+      expect(navigatedTo()).toBe('/org/family-0014100000RootAAAA/overview');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true }));
     });
 
     it.each([['/org/acme-inc/projects'], ['/org/not-found']])('pushes from an address Back should return to (%s)', (url) => {
       currentUrl = url;
-      service.navigateToRollUpHome();
-      expect(navigatedTo()).toBe('/org/all/overview');
+      service.navigateToRollUpHome('0014100000RootAAAA');
+      expect(navigatedTo()).toBe('/org/family-0014100000RootAAAA/overview');
       expect(navigate.mock.calls[0][1]?.replaceUrl).toBeFalsy();
     });
 
     // Picked from another lens: there is no Org Lens address to canonicalize, so Back returns there.
     it('pushes from outside Org Lens', () => {
       currentUrl = '/meetings';
-      service.navigateToRollUpHome();
+      service.navigateToRollUpHome('0014100000RootAAAA');
       expect(navigate.mock.calls[0][1]?.replaceUrl).toBeFalsy();
     });
   });

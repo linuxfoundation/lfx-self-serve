@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { ORG_EASYCLA_PATH, ORG_ROLLUP_SEGMENT } from '../constants';
+import { ORG_EASYCLA_PATH, ROLLUP_ACCOUNT_NAME } from '../constants';
 import {
   isOrgRollUpSegment,
   isOrgSlugSegment,
@@ -12,6 +12,9 @@ import {
   orgEasyclaReturnPath,
   orgLensDestinationKey,
   orgLensPagePath,
+  orgRollUpAccount,
+  orgRollUpRootUid,
+  orgRollUpSegment,
   orgUrlSegment,
 } from './org-lens-url.utils';
 
@@ -139,45 +142,75 @@ describe('legacyOrgEasyclaReturnPath', () => {
   });
 });
 
-// lfx-self-serve#4125 — the All Organizations roll-up segment. It is an address for a *set*, so it
-// must travel like an organization segment through every builder while never being mistaken for a
-// slug the resolver could look up.
-describe('All Organizations roll-up segment', () => {
-  it('recognises only the reserved value', () => {
-    expect(isOrgRollUpSegment(ORG_ROLLUP_SEGMENT)).toBe(true);
-    expect(isOrgRollUpSegment('all')).toBe(true);
-    expect(isOrgRollUpSegment('All')).toBe(false);
-    expect(isOrgRollUpSegment('all-hands')).toBe(false);
+// lfx-self-serve#4125 — a family roll-up segment, `family-{top account id}`. It is an address for a
+// *set*, so it must travel like an organization segment through every builder while never being
+// mistaken for a slug the resolver could look up — and the top account id inside it is a
+// case-sensitive Salesforce id, so no step may lowercase it.
+describe('family roll-up segment', () => {
+  const ROOT = '0014100000RootAAAA';
+  const SEGMENT = `family-${ROOT}`;
+
+  it('builds and parses the family key from the top account id', () => {
+    expect(orgRollUpSegment(ROOT)).toBe(SEGMENT);
+    expect(orgRollUpRootUid(SEGMENT)).toBe(ROOT);
+  });
+
+  it('recognises only a well-formed, exact-case family key', () => {
+    expect(isOrgRollUpSegment(SEGMENT)).toBe(true);
+    expect(isOrgRollUpSegment('all')).toBe(false);
+    expect(isOrgRollUpSegment(`Family-${ROOT}`)).toBe(false);
+    expect(isOrgRollUpSegment(`family-${ROOT.toLowerCase()}`)).toBe(true);
+    expect(isOrgRollUpSegment('family-acme')).toBe(false);
+    expect(isOrgRollUpSegment(`family-${ROOT}x`)).toBe(false);
     expect(isOrgRollUpSegment(UID)).toBe(false);
     expect(isOrgRollUpSegment(undefined)).toBe(false);
     expect(isOrgRollUpSegment(null)).toBe(false);
+    expect(orgRollUpRootUid('family-acme')).toBeNull();
+    expect(orgRollUpRootUid(null)).toBeNull();
   });
 
-  // The resolver would answer "no such organization" for it, so it must never be offered one.
+  // The slug lowercasing used to swallow the id: `Family-001ABC…` became `family-001abc…`, a
+  // different (or no) Salesforce account. Only the prefix may change case.
+  it('normalizes the prefix and keeps the top account id exactly as addressed', () => {
+    expect(normalizeOrgSegment(` Family-${ROOT} `)).toBe(SEGMENT);
+    expect(normalizeOrgSegment(`FAMILY-${ROOT}`)).toBe(SEGMENT);
+    expect(orgRollUpRootUid(normalizeOrgSegment(`Family-${ROOT}`))).toBe(ROOT);
+  });
+
+  // The resolver would answer "no such organization" for it, so it must never be offered one — in
+  // any case, since slugs are matched after lowercasing.
   it('is not a slug segment', () => {
-    expect(isOrgSlugSegment(ORG_ROLLUP_SEGMENT)).toBe(false);
+    expect(isOrgSlugSegment(SEGMENT)).toBe(false);
+    expect(isOrgSlugSegment(SEGMENT.toLowerCase())).toBe(false);
+    expect(isOrgSlugSegment('family-acme')).toBe(true);
   });
 
-  // An organization whose indexed slug really is `all` is addressed by its SFID — the same fallback
-  // a reserved page name already gets (DR-007 §5), so the sentinel can never be ambiguous.
+  // An organization whose indexed slug has the roll-up shape is addressed by its SFID — the same
+  // fallback a reserved page name already gets (DR-007 §5), so the key can never be ambiguous.
   it('is reserved against a real organization claiming it as a slug', () => {
-    expect(orgUrlSegment({ uid: UID, slug: ORG_ROLLUP_SEGMENT })).toBe(UID);
+    expect(orgUrlSegment({ uid: UID, slug: SEGMENT.toLowerCase() })).toBe(UID);
   });
 
   it('is the address of the roll-up selection itself, whatever slug it carries', () => {
-    expect(orgUrlSegment({ uid: ORG_ROLLUP_SEGMENT, slug: null })).toBe(ORG_ROLLUP_SEGMENT);
-    expect(orgUrlSegment({ uid: ORG_ROLLUP_SEGMENT, slug: 'ignored' })).toBe(ORG_ROLLUP_SEGMENT);
+    expect(orgUrlSegment({ uid: SEGMENT, slug: null })).toBe(SEGMENT);
+    expect(orgUrlSegment({ uid: SEGMENT, slug: 'ignored' })).toBe(SEGMENT);
   });
 
-  // A feature fallback redirecting inside `/org/all/…` must keep the roll-up rather than dropping
-  // the viewer back to the legacy `/org/{page}` form under their cookie selection.
+  it('builds the synthetic selection with the key in both identifier fields', () => {
+    expect(orgRollUpAccount(ROOT, 'Acme')).toEqual({ accountId: SEGMENT, accountName: 'All Acme Organizations', membershipTier: '', uid: SEGMENT, slug: null });
+    expect(orgRollUpAccount(ROOT, null).accountName).toBe(ROLLUP_ACCOUNT_NAME);
+    expect(orgRollUpAccount(ROOT, '  ').accountName).toBe(ROLLUP_ACCOUNT_NAME);
+  });
+
+  // A feature fallback redirecting inside a roll-up must keep it rather than dropping the viewer
+  // back to the legacy `/org/{page}` form under their cookie selection.
   it('survives a page-path rebuild', () => {
-    expect(orgLensPagePath(['org', ORG_ROLLUP_SEGMENT, 'people'], 'contributions')).toBe('/org/all/contributions');
+    expect(orgLensPagePath(['org', SEGMENT, 'people'], 'contributions')).toBe(`/org/${SEGMENT}/contributions`);
   });
 
   // The sidebar tracks rows by destination; the roll-up is an organization, so it is stripped the
   // same way a slug or SFID is. Deliberately NOT page-listed — that would break this.
   it('is stripped from the destination key like any other organization segment', () => {
-    expect(orgLensDestinationKey('/org/all/people')).toBe('/org/people');
+    expect(orgLensDestinationKey(`/org/${SEGMENT}/people`)).toBe('/org/people');
   });
 });

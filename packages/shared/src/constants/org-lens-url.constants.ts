@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Account } from '../interfaces';
-
 /**
  * Org Lens URL scheme (spec 050 / lfx-self-serve#2570): `/org/{segment}/{page}` where `segment`
  * is the organization's lowercase slug, or its 18-char SFID when it has none. Shared by the
@@ -46,44 +44,37 @@ export const ORG_LENS_PAGE_SEGMENTS: Readonly<Record<string, true>> = {
 };
 
 /**
- * Reserved `/org/{segment}` value selecting the **All Organizations roll-up** — the combined view
- * over every organization the caller administers (lfx-self-serve#4125). A view mode, not an
- * organization: it names no `b2b_org` row, carries no grant of its own, and is expanded to the
- * caller's resolved organization set server-side on every request.
+ * Prefix of the reserved `/org/{segment}` value selecting a **family roll-up** — the combined view
+ * over the organizations the caller holds in one Salesforce family (lfx-self-serve#4125). The full
+ * segment is the prefix followed by the family's top Salesforce account id, e.g.
+ * `family-001A000000abcdeXYZ`: one roll-up per family, so a caller holding organizations in two
+ * families has two. A view mode, not an organization: it names no `b2b_org` row, carries no grant of
+ * its own, and is expanded to the caller's organizations in that family server-side on every request.
  *
  * Reserved rather than page-listed. It is deliberately **not** added to `ORG_LENS_PAGE_SEGMENTS`:
  * that map answers "is this segment a page", and callers act on the answer — `orgLensDestinationKey`
  * would stop stripping the segment and the sidebar would lose row identity across a switch. The
- * reservation is enforced in `isOrgSlugSegment` instead, so an organization whose indexed slug is
- * literally `all` is addressed by its SFID, the same fallback a reserved page name already gets
+ * reservation is enforced in `isOrgSlugSegment` instead, so an organization whose indexed slug has
+ * the roll-up shape is addressed by its SFID, the same fallback a reserved page name already gets
  * (DR-007 §5).
  */
-export const ORG_ROLLUP_SEGMENT = 'all';
-
-/** Display name of the All Organizations roll-up, shown wherever a concrete organization's name would be (#4125). */
-export const ROLLUP_ACCOUNT_NAME = 'All Organizations Roll-Up';
-
-/** Fewest organizations a roll-up is worth offering over: with one, it is the organization. */
-export const ROLLUP_MIN_ORGANIZATIONS = 2;
+export const ORG_ROLLUP_SEGMENT_PREFIX = 'family-';
 
 /**
- * Synthetic selection standing for the All Organizations roll-up (lfx-self-serve#4125). It is not a
- * `b2b_org` row: there is no Salesforce account behind it, so both identifier fields carry the
- * reserved segment instead (see the note on `accountId` below), and `slug` is a confirmed `null` so
- * nothing tries to learn one from the index. The segment is what every address, cookie and
- * `:orgUid` / `:accountId` request built from this selection ends up spelling, and what `isRollUp`
- * keys on.
+ * A family roll-up segment, capturing the family's top account id. The id is matched exactly as an
+ * SFID is (`ORG_ACCOUNT_ID_PATTERN`): Salesforce ids are case-sensitive, so the prefix is the only
+ * part `normalizeOrgSegment` may lowercase.
  */
-export const ROLLUP_ACCOUNT: Account = {
-  // The sentinel sits in BOTH identifier fields. The Org Lens endpoints key on `:orgUid`, but the
-  // Events family keys on `:accountId` (#4125's contract covers both), and consumers that filter on
-  // a falsy `accountId` would otherwise skip the roll-up and silently keep their previous result.
-  accountId: ORG_ROLLUP_SEGMENT,
-  accountName: ROLLUP_ACCOUNT_NAME,
-  membershipTier: '',
-  uid: ORG_ROLLUP_SEGMENT,
-  slug: null,
-};
+export const ORG_ROLLUP_SEGMENT_PATTERN = /^family-(001[A-Za-z0-9]{15})$/;
+
+/** The roll-up shape regardless of case — what a slug may never be, since slugs are matched after lowercasing. */
+export const ORG_ROLLUP_SEGMENT_RESERVED_PATTERN = /^family-001[a-z0-9]{15}$/i;
+
+/** Display name of a family roll-up whose family name is not known yet (cookie restore or deep link before the grant sets load). */
+export const ROLLUP_ACCOUNT_NAME = 'All Organizations Roll-Up';
+
+/** Fewest organizations in one family a roll-up is worth offering over: with one, it is the organization. */
+export const ROLLUP_MIN_ORGANIZATIONS = 2;
 
 /**
  * Query parameters an organization switch nulls (a `queryParamsHandling: 'merge'` navigation) on every Org Lens

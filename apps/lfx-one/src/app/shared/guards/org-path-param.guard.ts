@@ -7,7 +7,7 @@ import { inject, PLATFORM_ID } from '@angular/core';
 import { CanActivateFn, Router, UrlTree } from '@angular/router';
 import { ORG_NOT_FOUND_PATH, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
-import { isOrgAccountIdSegment, isOrgRollUpSegment, isOrgSlugSegment, normalizeOrgSegment, orgUrlSegment } from '@lfx-one/shared/utils';
+import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment, orgRollUpRootUid, orgUrlSegment } from '@lfx-one/shared/utils';
 import { catchError, map, of } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
@@ -74,36 +74,37 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
     return failClosed();
   }
 
-  // `/org/all/…` — the All Organizations roll-up (#4125/#4133). Adopted without a resolver round
-  // trip: the segment names a set the BFF expands per caller, not an indexed organization, so there
-  // is nothing to look up and nothing to canonicalize the address to.
+  // `/org/family-{top account id}/…` — one Salesforce family's roll-up (#4125/#4133). Adopted
+  // without a resolver round trip: the segment names a set the BFF expands per caller, not an
+  // indexed organization, so there is nothing to look up and nothing to canonicalize the address to.
   //
-  // Eligibility is re-derived rather than trusted from the address, so a hand-typed or bookmarked
-  // `/org/all` cannot put a caller into a mode they do not qualify for — but it is admitted while
-  // the grant sets are still loading (`admitWhilePending`). On a cold deep link the grants have not
-  // answered yet and a conglomerate admin whose siblings are inherited grants would otherwise be
-  // bounced to their single persona seed before anyone knows better. The service's reconciliation
-  // effect demotes them if the settled grants disagree.
+  // Eligibility is re-derived for THAT family rather than trusted from the address, so a hand-typed
+  // or bookmarked roll-up cannot put a caller into a mode they do not qualify for — but it is
+  // admitted while the grant sets are still loading (`admitWhilePending`). On a cold deep link the
+  // grants have not answered yet and a conglomerate admin whose siblings are inherited grants would
+  // otherwise be bounced to their single persona seed before anyone knows better. The service's
+  // reconciliation effect demotes them if the settled grants disagree.
   //
-  // A caller who genuinely no longer holds two organizations is re-pointed at the one they do have,
-  // not sent to the not-found dead end: FR-022 is about an address naming something unreachable,
-  // and this one names something that merely shrank.
-  if (isOrgRollUpSegment(segment)) {
-    if (accountContext.selectRollUp({ admitWhilePending: true })) {
+  // A caller who genuinely no longer holds two organizations in the family is re-pointed at one
+  // they do have, not sent to the not-found dead end: FR-022 is about an address naming something
+  // unreachable, and this one names something that merely shrank.
+  const rollUpRootUid = orgRollUpRootUid(segment);
+  if (rollUpRootUid) {
+    if (accountContext.selectRollUp(rollUpRootUid, { admitWhilePending: true })) {
       return true;
     }
     if (!isBrowser) {
       accountContext.clearAccount();
       return true;
     }
-    // Same page, the one organization they still hold. `canonicalizeAddress` swaps the second
-    // primary segment and keeps child segments, query and fragment — the address the viewer asked
-    // for, re-pointed, rather than a bounce to overview.
+    // Same page, an organization they still hold — in that family first. `canonicalizeAddress`
+    // swaps the second primary segment and keeps child segments, query and fragment — the address
+    // the viewer asked for, re-pointed, rather than a bounce to overview.
     //
     // The service owns which organization that is, and the address pin: it is the same decision
     // `demoteFromRollUp` makes when eligibility changes under a page that is already open, and the
     // two must not drift (#4415 review 9).
-    const fallback = accountContext.demoteAddressedRollUp();
+    const fallback = accountContext.demoteAddressedRollUp(rollUpRootUid);
     return fallback ? canonicalizeAddress(router, state.url, addressed, fallback) : notFound;
   }
 
