@@ -796,22 +796,17 @@ describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
     void document_markdown;
     const revision = readBrandKitRevision(sidecar);
     expect(revision?.report).toEqual(envelope.report);
-    expect(revision?.agentVersion).toBe('2.2.0');
+    expect(revision?.agentVersion).toBe('2.2.2');
     const report = envelope.report;
     expect(report.version).toBe(2);
     expect(report.findings?.sources_failed.map((entry) => entry.kind)).toEqual(['brand_page', 'logo_package']);
     expect(report.findings?.sources_failed[0]).toMatchObject({ detail: 'HTTP 404' });
     expect(report.findings?.missing_assets.map((entry) => entry.asset)).toEqual(['logo_primary', 'logo_stacked', 'logo_symbol', 'logo_reversed']);
     expect(report.findings?.missing_assets.every((entry) => !!entry.fix)).toBe(true);
-    expect(report.findings?.warnings.map((entry) => entry.code)).toEqual([
-      'color_conflict',
-      'live_type_wordmark',
-      'palette_from_page_text',
-      'brand_page_guessed',
-    ]);
+    expect(report.findings?.warnings.map((entry) => entry.code)).toEqual(['color_conflict', 'palette_from_page_text', 'brand_page_guessed']);
     expect(report.color_conflicts?.map((entry) => [entry.name, entry.chosen])).toEqual([['Coral', '#FF702D']]);
     expect(report.color_conflicts?.flatMap((entry) => entry.values.map((value) => value.hex))).toEqual(['#FF702D', '#FF7D2D']);
-    expect(report.rules).toHaveLength(47);
+    expect(report.rules).toHaveLength(56);
     // Every hex in the envelope is uppercase; no identifier but the synthetic one.
     expect(
       JSON.stringify(envelope)
@@ -915,6 +910,8 @@ describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
       { name: good.name, values: good.values },
       { ...good, values: [value('#FF702D'), value('coral')] },
       { ...good, name: '' },
+      // The kept value must be one of the values seen.
+      { ...good, chosen: '#FF7D2E' },
     ]) {
       expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [bad] }).join(' ')).toContain('report.color_conflicts');
     }
@@ -925,10 +922,13 @@ describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
     if (!good) throw new Error('fixture');
     const values = (count: number) =>
       Array.from({ length: count }, (_, index) => ({ hex: `#FF70${(20 + index).toString(16).toUpperCase().padStart(2, '0')}`, source: `synthetic ${index}` }));
-    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(1) }] }).join(' ')).toContain('report.color_conflicts');
-    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(5) }] }).join(' ')).toContain('report.color_conflicts');
-    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(2) }] })).toEqual([]);
-    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(4) }] })).toEqual([]);
+    const seen = (count: number) => ({ ...good, values: values(count), chosen: values(count)[0].hex });
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(1)] }).join(' ')).toContain('report.color_conflicts');
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(5)] }).join(' ')).toContain('report.color_conflicts');
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(2)] })).toEqual([]);
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [seen(4)] })).toEqual([]);
+    // The kept value is one of the values seen, whichever of them it is.
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...seen(3), chosen: values(3)[2].hex }] })).toEqual([]);
     // A conflict's name is text with no cap, unlike the sentences.
     expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, name: 'x'.repeat(400) }] })).toEqual([]);
   });

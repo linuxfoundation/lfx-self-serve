@@ -52,6 +52,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/boilerplates.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/faq.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-run-failure.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-asset.utils')),
   readFoundationMessageContent: (text: string): unknown => {
     try {
       const value = JSON.parse(text) as Record<string, unknown>;
@@ -73,6 +74,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-slides-export.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-family-export.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-kit.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
 }));
 vi.mock('./logger.service', () => ({ logger: loggerMocks }));
 vi.mock('./project.service', () => ({
