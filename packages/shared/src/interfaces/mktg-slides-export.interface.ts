@@ -3,15 +3,18 @@
 
 // Export to Google Slides: the exporter's form and result envelope
 // (slides-export-output/v1, mirroring marketing-os-agents
-// agents/slides-export 1.1.0, src/form.ts and src/envelope.ts; a Brand Kit
-// export's chapters need 1.1.0 or later), the BFF's routes and the export
-// record a deck is kept with, beside the document revision it was made from.
+// agents/slides-export 1.1.2, src/form.ts and src/envelope.ts; a Brand Kit
+// export's chapters need 1.1.0 or later, the logo variants 1.1.2 or later),
+// the BFF's routes and the export record a deck is kept with, beside the
+// document revision it was made from.
 
 import {
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
   MKTG_SLIDES_EXPORT_ASSET_KINDS,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_LOGO_NOTES,
+  MKTG_SLIDES_EXPORT_LOGO_VARIANT_FIELDS,
+  MKTG_SLIDES_EXPORT_LOGO_VARIANTS,
   MKTG_SLIDES_EXPORT_MODES,
   MKTG_SLIDES_EXPORT_SLIDE_KINDS,
 } from '../constants/mktg-slides-export.constants';
@@ -32,6 +35,24 @@ export type MktgSlidesExportSlideKind = (typeof MKTG_SLIDES_EXPORT_SLIDE_KINDS)[
 /** Why a deck carries no project logo; null when it does. */
 export type MktgSlidesExportLogoNote = keyof typeof MKTG_SLIDES_EXPORT_LOGO_NOTES;
 
+/** A logo variant sent beside the primary: the symbol, the reversed lockup, the one-colour lockup, the reversed symbol. */
+export type MktgSlidesExportLogoVariant = (typeof MKTG_SLIDES_EXPORT_LOGO_VARIANTS)[number];
+
+/** One of the logo images a deck places: the primary, or a variant. */
+export type MktgSlidesExportLogoImage = 'primary' | MktgSlidesExportLogoVariant;
+
+/** How many image requests the exporter sent per logo image (`content.branded.logo_variants`, slides-export 1.1.2); 0 for one not supplied. */
+export type MktgSlidesExportLogoVariantCounts = Record<MktgSlidesExportLogoImage, number>;
+
+/** The variant URLs that could be drawn and published, by variant; a variant that could not is absent. */
+export type MktgSlidesExportLogoVariantUrls = Partial<Record<MktgSlidesExportLogoVariant, string>>;
+
+/** The form field a variant's URL travels in. */
+export type MktgSlidesExportLogoVariantField = (typeof MKTG_SLIDES_EXPORT_LOGO_VARIANT_FIELDS)[MktgSlidesExportLogoVariant];
+
+/** The form's logo fields: the primary and each variant, each present only when its PNG was published. */
+export type MktgSlidesExportLogoFields = Pick<MktgSlidesExportForm, 'logo_url' | MktgSlidesExportLogoVariantField>;
+
 /** What went wrong with an export, as the plain message names it. */
 export type MktgSlidesExportFailure = keyof typeof MKTG_SLIDES_EXPORT_FAILURE_MESSAGES;
 
@@ -48,6 +69,14 @@ export interface MktgSlidesExportForm {
   deck_title?: string;
   /** A publicly fetchable PNG, JPEG or GIF URL of the project logo. */
   logo_url?: string;
+  /** A publicly fetchable PNG, JPEG or GIF URL of the logo's symbol alone (slides-export 1.1.2 or later). */
+  logo_symbol_url?: string;
+  /** A publicly fetchable PNG, JPEG or GIF URL of the reversed (white) lockup, for dark grounds (slides-export 1.1.2 or later). */
+  logo_reversed_url?: string;
+  /** A publicly fetchable PNG, JPEG or GIF URL of the one-colour (black) lockup (slides-export 1.1.2 or later). */
+  logo_one_color_url?: string;
+  /** A publicly fetchable PNG, JPEG or GIF URL of the reversed (white) symbol alone (slides-export 1.1.2 or later). */
+  logo_symbol_reversed_url?: string;
   /** One member per asset, as LFX One stores it. */
   assets: Partial<Record<MktgSlidesExportAssetKind, unknown>>;
 }
@@ -72,6 +101,8 @@ export interface MktgSlidesExportBranded {
   logos: number;
   logos_skipped: number;
   tables_header: string | null;
+  /** Per logo image, the requests that placed it; absent before slides-export 1.1.2. */
+  logo_variants?: MktgSlidesExportLogoVariantCounts;
 }
 
 /** What the deck holds, as the envelope reports it (the bytes `content_sha256` is computed over). */
@@ -245,17 +276,72 @@ export interface MktgSlidesExportStartInput {
  * entity, or carries markup or references; `live-text` — a text element,
  * which the fontless server would draw as nothing; `unreadable` — the SVG
  * does not parse, has no size, or does not draw; `too-big` — the PNG is over
- * the Slides API's limit.
+ * the Slides API's limit; `blank` — nothing was painted, when the caller
+ * asked for ink (`requireInk`; the variants do, the primary does not);
+ * `render-failed` — the render's child process died, overran its bound or
+ * answered unreadably (the rasterizer's native code aborts on some
+ * geometry, which no in-process catch can hold). The start's note treats
+ * `render-failed` as `unreadable`: the logo was not drawn.
  */
-export type MktgLogoPngFailure = 'external-reference' | 'live-text' | 'unreadable' | 'too-big';
+export type MktgLogoPngFailure = 'external-reference' | 'live-text' | 'unreadable' | 'too-big' | 'blank' | 'render-failed';
+
+/** How the server draws a logo PNG: `requireInk` refuses a drawing with no painted pixel (`blank`) instead of publishing a transparent image. */
+export interface MktgLogoPngOptions {
+  requireInk?: boolean;
+}
+
+/** What the server sends its render child on stdin: the rasterizer's resolved path, the SVG, and the rules to draw it by (server-side). */
+export interface MktgLogoRenderRequest {
+  resvgPath: string;
+  svg: string;
+  requireInk: boolean;
+  sidePx: number;
+  maxBytes: number;
+}
+
+/** The render child's one JSON line back: the PNG as base64, or why there is none (server-side). */
+export type MktgLogoRenderReply = { png: string } | { reason: MktgLogoPngFailure; detail: string };
+
+/** The one colour a logo variant is recoloured to: white for the reversed variants, black for the one-colour lockup. */
+export type MktgLogoRecolourInk = 'white' | 'black';
+
+/** The pixel size of a drawn PNG, read from its header (server-side). */
+export interface MktgLogoPngSize {
+  width: number;
+  height: number;
+}
+
+/** A logo variant drawn from an SVG as it is: an upload (`derived: false`), or the server's crop of the primary through the shared viewBox helper (`derived: true`) (server-side). */
+export interface MktgLogoVariantSvgSource {
+  kind: 'svg';
+  svg: string;
+  derived: boolean;
+}
+
+/** A logo variant the server derives by recolouring the drawn PNG of another logo image (the primary, or the symbol) to one ink; always the server's own (server-side). */
+export interface MktgLogoVariantRecolourSource {
+  kind: 'recolour';
+  of: 'primary' | 'symbol';
+  ink: MktgLogoRecolourInk;
+}
+
+/** What one logo variant is drawn from (server-side). */
+export type MktgLogoVariantSource = MktgLogoVariantSvgSource | MktgLogoVariantRecolourSource;
+
+/** What each logo variant is drawn from, by variant; a variant that does not apply to the kit (no symbol) is absent (server-side). */
+export type MktgLogoVariantSources = Partial<Record<MktgSlidesExportLogoVariant, MktgLogoVariantSource>>;
+
+/** The PNG of each logo image drawn so far in one export, by image: the bytes, or null when the server tried to draw it and could not (server-side). */
+export type MktgLogoDrawnPngs = Partial<Record<MktgSlidesExportLogoImage, Uint8Array | null>>;
 
 /**
  * The kit's SVG logo drawn as a PNG on the server (server-side). `png` is a
  * `Uint8Array` so the contract stays Node-free; the rasterizer returns a
  * `Buffer`. `detail` explains a failure, for the log only: a fixed sentence
  * for a refused SVG (`external-reference`, `live-text`), the parsed size or
- * the rasterizer's own error (`unreadable`), or the PNG's byte count
- * (`too-big`).
+ * the rasterizer's own error (`unreadable`), the PNG's byte count
+ * (`too-big`), the drawing's size (`blank`), or how the child ended and the
+ * tail of what it wrote to stderr (`render-failed`).
  */
 export type MktgLogoPngResult = { png: Uint8Array; reason: null } | { png: null; reason: MktgLogoPngFailure; detail: string };
 
@@ -266,6 +352,22 @@ export interface MktgSlidesExportStarted {
   mode: MktgSlidesExportMode;
   logoNote: MktgSlidesExportLogoNote | null;
 }
+
+/**
+ * The kit's logo as the BFF published it for a deck (server-side): the
+ * primary's public URL, or why there is none (the note the start answers
+ * with), and the URL of each variant that could be drawn and published
+ * beside it. The variants carry no note: the deck drops the slot of one
+ * that is missing (slides-export 1.1.2).
+ */
+export interface MktgSlidesExportPublishedLogo {
+  url: string | null;
+  note: MktgSlidesExportLogoNote | null;
+  variants: MktgSlidesExportLogoVariantUrls;
+}
+
+/** One logo PNG as the BFF published it: its public URL, or why there is none (server-side). */
+export type MktgSlidesExportPublishedPng = Omit<MktgSlidesExportPublishedLogo, 'variants'>;
 
 /** Export scope retained by server-side background poll logs. */
 export type MktgSlidesExportLogContext = { agent: MktgSlidesExportAgentKey } | { family: string };
