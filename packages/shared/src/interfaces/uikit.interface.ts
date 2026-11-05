@@ -21,8 +21,11 @@ export interface UiTabItem {
   disabledReason?: string;
 }
 
-/** Two-step density shared by the uikit tabs, collapse and note: `default`, or `small` for dense places. */
+/** Two-step density shared by the uikit tabs and collapse, and extended by `UiNoteSize`: `default`, or `small` for dense places. */
 export type UiDensitySize = 'default' | 'small';
+
+/** Size of a uikit note: the shared density, or `tiny` (24px, 12px text) inside rows, cards and data blocks. */
+export type UiNoteSize = UiDensitySize | 'tiny';
 
 /** Size of uikit tabs: `default` is 14px, `small` is 13px with tighter bottom padding (Meetings). The secondary variant ignores it. */
 export type UiTabsSize = UiDensitySize;
@@ -61,6 +64,16 @@ export interface UiAvatarItem {
   tone?: UiAvatarTone;
 }
 
+/** A status pinned to the top right of a uikit avatar, such as an RSVP answer or attendance. */
+export interface UiAvatarStatus {
+  /** Font Awesome class string for the glyph, such as `fa-solid fa-check`. */
+  icon: string;
+  /** Colour role of the circle. The glyph is white, or neutral-900 on `warning` for contrast. */
+  tone: UiTone;
+  /** What the status means, such as `RSVP: Yes`. It is the tooltip and is added to the avatar's accessible name. */
+  label: string;
+}
+
 /** Options for `UiModalService.open`. Every field is optional. */
 export interface UiModalConfig<D = unknown> {
   /** Passed to the modal content, which reads it with the CDK `DIALOG_DATA` token. */
@@ -80,12 +93,19 @@ export interface UiModalConfig<D = unknown> {
 /** Edge of the window a uikit drawer is anchored to. */
 export type UiDrawerSide = 'left' | 'right';
 
+/** Width preset of a uikit drawer: `default` is 560px (or `width`), `wide` is 75vw and at least 560px. */
+export type UiDrawerSize = 'default' | 'wide';
+
 /** Options for `UiDrawerService.open`. Every field is optional. Takes the modal options, except `role`: a drawer is always a `dialog`. */
 export interface UiDrawerConfig<D = unknown> extends Omit<UiModalConfig<D>, 'role'> {
   /** Edge the drawer slides in from. Defaults to `right`. */
   side?: UiDrawerSide;
-  /** Width in px. Defaults to 600; it never exceeds the window and fills it at 640px and narrower. */
+  /** Width preset. Defaults to `default`. */
+  size?: UiDrawerSize;
+  /** Custom width in px for the `default` size, in place of 560. It never exceeds the window less its 8px insets. */
   width?: number;
+  /** Same as the layout's `bare` input: no header or footer, and the content fills an unpadded scrolling body. Don't project the header or footer slots. Defaults to `false`. */
+  bare?: boolean;
   /**
    * Asked before the user dismisses the drawer with Escape, a backdrop click or the close button; return `false` to keep it open,
    * for example while a form has unsaved changes. It may return a promise, such as the answer of a confirm modal. A promise that
@@ -127,6 +147,14 @@ export interface UiCalendarWeek {
 
 /** Which side of its host a uikit tooltip prefers. */
 export type UiTooltipSide = 'top' | 'right' | 'bottom' | 'left';
+
+/** One "label value" pair in a uikit tooltip that lists counts, with an optional colour dot. */
+export interface UiTooltipItem {
+  label: string;
+  value: string;
+  /** Background class of the dot before the label, such as `bg-blue-500`; no dot when absent. */
+  dotClass?: string;
+}
 
 /** Size of a uikit toggle: `default` 28x16, `medium` 36x20 or `large` 44x24. */
 export type UiToggleSize = 'default' | 'medium' | 'large';
@@ -227,7 +255,7 @@ export type UiChoiceboxColumns = 1 | 2 | 3;
 /** Heading level (`aria-level`) of a uikit component's title, such as the collapse triggers and the empty state title. */
 export type UiHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
-/** Colour and urgency of a uikit toast. `error` announces assertively and stays until dismissed; `dark` is a short confirmation with a check. */
+/** Colour and urgency of a uikit toast. `error` announces assertively and stays until closed; `dark` is a short confirmation with a check. */
 export type UiToastVariant = 'default' | 'success' | 'warning' | 'error' | 'dark';
 
 /** Where `UiToastService` stacks a toast: the bottom-right corner or the bottom centre of the window. */
@@ -255,10 +283,8 @@ export interface UiToastConfig {
   position?: UiToastPosition;
   /** Up to two action buttons; any more are ignored. */
   actions?: UiToastAction[];
-  /** Milliseconds before the toast dismisses itself, `0` for never. Defaults to 5000, 3000 for `dark`, 8000 with actions, and never for `error`. */
+  /** Milliseconds before the toast dismisses itself. Defaults to 5000, 3000 for `dark`, 8000 with actions, and never for `error`. */
   duration?: number;
-  /** Shows the dismiss button. Defaults to `true`. */
-  dismissible?: boolean;
 }
 
 /** A toast in the stack, as `UiToastService` holds it. */

@@ -133,6 +133,26 @@ test.describe('Meetings home page - Robust Tests', () => {
       await expect(modal.getByTestId('meetings-home-rsvp-scope-cancel')).toBeVisible();
     });
 
+    test('Pending RSVPs opens a drawer of rows with a date tile, title link and RSVP buttons', async ({ page }) => {
+      await gotoMeetingsHome(page);
+
+      // The modal hides the page behind it, opener included, from the accessibility tree.
+      const button = page.getByTestId('meetings-home-pending-rsvps-button').getByRole('button', { includeHidden: true });
+      await button.click();
+      const drawer = page.getByRole('dialog', { name: 'Pending RSVPs' });
+      await expect(drawer.getByTestId('ui-drawer')).toBeVisible();
+      await expect(button).toHaveAttribute('aria-expanded', 'true');
+      const row = drawer.getByTestId('meetings-home-pending-rsvps-row').first();
+      for (const id of ['meetings-home-pending-rsvps-row-date-month', 'meetings-home-pending-rsvps-row-date-day', 'meetings-home-pending-rsvps-row-title']) {
+        await expect(row.getByTestId(id)).toBeVisible();
+      }
+      await expect(row.getByTestId('meetings-home-rsvp-accepted')).toBeVisible();
+
+      await page.keyboard.press('Escape');
+      await expect(drawer).toHaveCount(0);
+      await expect(button).toBeFocused();
+    });
+
     test('row menu is a menu with Copy Link', async ({ page }) => {
       await gotoMeetingsHome(page);
 
@@ -252,14 +272,17 @@ test.describe('Meetings home page - Robust Tests', () => {
       expect(menu.x).toBeGreaterThanOrEqual(rsvp.x + rsvp.width);
     });
 
-    test('past rows put Recording and AI Summary on the second line', async ({ page }) => {
+    test('past rows keep Recording and AI Summary on the first line, before the menu', async ({ page }) => {
       await gotoMeetingsHome(page, { query: '?time=past' });
 
       const row = homeRow(page, TITLES.pastRecent);
       await expect(row).toHaveCSS('display', 'grid');
       const line = await firstLine(row);
-      expect((await box(row.getByTestId('meetings-home-row-artifacts'))).y).toBeGreaterThanOrEqual(line.bottom);
-      expect((await box(row.getByTestId('meetings-home-row-actions-trigger'))).y).toBeLessThan(line.bottom);
+      const artifacts = await box(row.getByTestId('meetings-home-row-artifacts'));
+      const menu = await box(row.getByTestId('meetings-home-row-actions-trigger'));
+      expect(artifacts.y).toBeLessThan(line.bottom);
+      expect(menu.y).toBeLessThan(line.bottom);
+      expect(menu.x).toBeGreaterThanOrEqual(artifacts.x + artifacts.width);
     });
   });
 
@@ -289,6 +312,20 @@ test.describe('Meetings home page - Robust Tests', () => {
       const line = await firstLine(row);
       expect((await box(row.getByTestId('meetings-home-row-rsvp-cell'))).y).toBeGreaterThanOrEqual(line.bottom);
       expect((await box(row.getByTestId('meetings-home-row-actions-trigger'))).y).toBeLessThan(line.bottom);
+    });
+
+    test('Pending RSVPs drawer rows put Yes / Maybe / No on a second line, right-aligned', async ({ page }) => {
+      // No slide-in, so every box is read from the settled drawer.
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await gotoMeetingsHome(page);
+
+      await page.getByTestId('meetings-home-pending-rsvps-button').click();
+      const row = page.getByRole('dialog', { name: 'Pending RSVPs' }).getByTestId('meetings-home-pending-rsvps-row').first();
+      const title = await box(row.getByTestId('meetings-home-pending-rsvps-row-title'));
+      const rsvp = await box(row.getByTestId('meetings-home-rsvp'));
+      const rowBox = await box(row);
+      expect(rsvp.y).toBeGreaterThan(title.y + title.height);
+      expect(Math.abs(rowBox.x + rowBox.width - (rsvp.x + rsvp.width))).toBeLessThanOrEqual(1);
     });
   });
 });

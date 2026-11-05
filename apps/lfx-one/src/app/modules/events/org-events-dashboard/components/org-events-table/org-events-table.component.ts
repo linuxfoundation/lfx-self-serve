@@ -21,6 +21,8 @@ export class OrgEventsTableComponent {
   public readonly sortOrder = input<'ASC' | 'DESC'>('ASC');
   // Past tab (LFXV2-1900) drops the Action column; upcoming keeps it.
   public readonly showAction = input<boolean>(true);
+  // What the Event Attendees number counts and who it is credited to (the shared caption phrases), as the column's tooltip.
+  public readonly attendeesCaption = input<string>('');
   public readonly emptyStateTitle = input<string>('No upcoming events');
   public readonly emptyStateSubtitle = input<string>('No upcoming events were found for your organization.');
   public readonly emptyStateIcon = input<string>('fa-light fa-calendar-plus');

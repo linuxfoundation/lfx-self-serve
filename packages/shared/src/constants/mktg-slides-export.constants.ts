@@ -101,6 +101,38 @@ export const MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE = 'image/png';
 export const MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES = 1_048_576;
 /** Longest side the server draws the logo at, in pixels. */
 export const MKTG_SLIDES_EXPORT_LOGO_SIDE_PX = 1200;
+/**
+ * The bound on one logo render in its child process, in milliseconds: a
+ * render that has not answered by then is killed and the image is dropped.
+ * A logo at the drawing size renders in tens of milliseconds; the bound is
+ * for an input that never finishes.
+ */
+export const MKTG_SLIDES_EXPORT_LOGO_RENDER_TIMEOUT_MS = 10_000;
+/** The most a logo render's child may write back, in bytes: the largest PNG published, as base64, with room for its JSON line. */
+export const MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_OUTPUT_BYTES = 4 * 1_048_576;
+/**
+ * How many render children may be alive at once, server-wide: one export's
+ * own most (after the primary and the symbol, its other three variants draw
+ * at once), so a single export is never slowed, and exports that overlap
+ * queue their renders instead of each starting a child.
+ */
+export const MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_CHILDREN = 3;
+
+/**
+ * The logo variants sent beside the primary, in the order the intake's head
+ * lines carry them (slides-export 1.1.2 reads them; 1.1.1 ignores lines it
+ * does not read): the symbol, the reversed (white) lockup, the one-colour
+ * (black) lockup and the reversed symbol.
+ */
+export const MKTG_SLIDES_EXPORT_LOGO_VARIANTS = ['symbol', 'reversed', 'one_color', 'symbol_reversed'] as const;
+
+/** The form field each variant's URL travels in (`MktgSlidesExportForm`). */
+export const MKTG_SLIDES_EXPORT_LOGO_VARIANT_FIELDS = {
+  symbol: 'logo_symbol_url',
+  reversed: 'logo_reversed_url',
+  one_color: 'logo_one_color_url',
+  symbol_reversed: 'logo_symbol_reversed_url',
+} as const;
 
 /**
  * A runtime error is a failed export only once it has settled: a session can

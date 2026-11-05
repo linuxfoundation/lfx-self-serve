@@ -12,6 +12,9 @@ import { BrandKitRevision } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
+import { brandKitReportV2Fixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2.fixture';
+import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
+import { mktgAcceptedSnapshotOf } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { NEVER, of } from 'rxjs';
 import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField } from '@lfx-one/shared/utils';
@@ -340,6 +343,41 @@ describe('BrandKitWebViewComponent', () => {
       expect(document.activeElement).toBe(query('brand-kit-web-view-panel-color'));
     });
 
+    it('Overview: a pill under each chapter’s title says where its rules come from — the project, the LF reference, or how many of them the reference supplied', async () => {
+      const kit = brandKitTestRevision();
+      kit.report = brandKitReportV2RulesFixture();
+      fixture.componentRef.setInput('kit', kit);
+      await fixture.whenStable();
+      const pills = Object.fromEntries(
+        ['logo', 'color', 'type', 'visual', 'usage', 'voice'].map((id) => [id, query(`brand-kit-web-view-chapter-basis-${id}`)?.textContent?.trim() ?? null])
+      );
+      expect(pills).toEqual({
+        logo: 'LF reference default for 20 of 21 rules',
+        color: 'LF reference default for 4 of 5 rules',
+        type: 'LF reference default for 5 of 11 rules',
+        visual: 'LF reference default',
+        usage: 'LF reference default',
+        voice: 'LF reference default for 1 of 8 rules',
+      });
+      // The pill sits in its own row right under the chapter's heading row (title and number only), in the mode pill's style.
+      const heading = query('brand-kit-web-view-chapter-logo')?.querySelector('div');
+      expect(heading?.textContent).toContain('01');
+      expect(heading?.contains(query('brand-kit-web-view-chapter-basis-logo'))).toBe(false);
+      expect(heading?.nextElementSibling?.contains(query('brand-kit-web-view-chapter-basis-logo'))).toBe(true);
+      expect(query('brand-kit-web-view-chapter-basis-logo')?.className).toBe('rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600');
+      expect(query('brand-kit-web-view-panel-overview')?.textContent).not.toContain('chapters.');
+    });
+
+    it('Overview: no basis pill for a v1 report, nor for a chapter the report lists no rule for', async () => {
+      expect(host().querySelector('[data-testid^="brand-kit-web-view-chapter-basis-"]')).toBeNull();
+      const kit = brandKitTestRevision();
+      kit.report = { ...kit.report, version: 2, rules: [{ path: 'chapters.voice', basis: 'project' }] };
+      fixture.componentRef.setInput('kit', kit);
+      await fixture.whenStable();
+      expect(queryAll('brand-kit-web-view-chapter-basis-voice').map((pill) => pill.textContent?.trim())).toEqual(['From the project']);
+      expect(host().querySelectorAll('[data-testid^="brand-kit-web-view-chapter-basis-"]')).toHaveLength(1);
+    });
+
     it('Overview: a logo on a CDN is named as the logo you supplied — never its URL', async () => {
       const kit = brandKitTestRevision();
       kit.chapters.logo.files.primary = { ref: CDN_LOGO_URL, svg: '<svg xmlns="http://www.w3.org/2000/svg"/>' };
@@ -412,11 +450,14 @@ describe('BrandKitWebViewComponent', () => {
       expect(scale?.textContent).toContain('Eyebrow');
     });
 
-    it('Visual: the iconography rules and icons, the imagery rule and what to avoid, the graphic elements in the kit’s colours', async () => {
+    it('Visual: the iconography rules and the recommended set with no sample icon, the imagery rule and what to avoid, the graphic elements in the kit’s colours', async () => {
       await open('visual');
 
-      expect(query('brand-kit-web-view-icons')?.querySelectorAll('i')).toHaveLength(8);
-      expect(query('brand-kit-web-view-icons')?.textContent).toContain('Recommended set: Lucide');
+      const icons = query('brand-kit-web-view-icons');
+      expect(icons?.textContent).toContain('Line.');
+      expect(icons?.textContent).toContain('Label.');
+      expect(icons?.querySelectorAll('i')).toHaveLength(0);
+      expect(icons?.textContent).toContain('Recommended set: Lucide');
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Structure.');
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Hackers');
       expect(query('brand-kit-web-view-elements')?.textContent).toContain('Primary button');
@@ -474,6 +515,86 @@ describe('BrandKitWebViewComponent', () => {
 
       expect(query('brand-kit-web-view-gaps')?.querySelectorAll('li')).toHaveLength(1);
       expect(query('brand-kit-web-view-gaps-accepted')?.textContent?.trim()).toBe('Accepted when v3 was approved; still open.');
+    });
+
+    it('shows a v2 report’s findings in the agent’s words: failed sources, missing assets, warnings and colour conflicts', async () => {
+      const kit = brandKitTestRevision();
+      const v2 = brandKitReportV2Fixture();
+      kit.report = v2;
+      fixture.componentRef.setInput('kit', kit);
+      await fixture.whenStable();
+      expect(tab('sources').textContent?.trim()).toBe(`Sources and gaps (${v2.gaps.length + (v2.findings?.sources_failed.length ?? 0)})`);
+      await open('sources');
+
+      const failed = query('brand-kit-web-view-sources-failed');
+      expect(failed?.querySelectorAll('li')).toHaveLength(v2.findings?.sources_failed.length ?? 0);
+      expect(failed?.textContent).toContain(v2.findings?.sources_failed[0].source ?? 'fixture');
+      expect(failed?.textContent).toContain('This page does not exist on the site (the server answered 404).');
+      expect(failed?.textContent).toContain('HTTP 404');
+      const missing = query('brand-kit-web-view-missing-assets');
+      expect(Array.from(missing?.querySelectorAll('li') ?? []).map((item) => item.firstElementChild?.textContent?.trim())).toEqual([
+        'Primary logo',
+        'Stacked logo',
+        'Symbol',
+        'Reversed logo',
+      ]);
+      const stacked = v2.findings?.missing_assets[1];
+      expect(stacked?.fix).toBeTruthy();
+      expect(missing?.textContent).toContain(stacked?.reason ?? 'fixture');
+      expect(missing?.textContent).toContain(`Fix: ${stacked?.fix}`);
+      const warnings = query('brand-kit-web-view-warnings');
+      expect(warnings?.querySelectorAll('li')).toHaveLength(v2.findings?.warnings.length ?? 0);
+      expect(warnings?.textContent).toContain(v2.findings?.warnings[0].text ?? 'fixture');
+      expect(Array.from(warnings?.querySelectorAll('a') ?? []).map((link) => link.getAttribute('href'))).toEqual(
+        v2.findings?.warnings.map((warning) => warning.source)
+      );
+      const conflicts = query('brand-kit-web-view-color-conflicts');
+      const conflictList = v2.color_conflicts ?? [];
+      expect(conflicts?.querySelectorAll(':scope > li')).toHaveLength(conflictList.length);
+      expect(conflicts?.textContent).toContain('Coral');
+      expect(conflicts?.textContent).toContain('#FF7D2D');
+      for (const conflict of conflictList) expect(conflicts?.textContent).toContain(`kept ${conflict.chosen}`);
+      const swatches = Array.from(conflicts?.querySelectorAll('[data-testid^="brand-kit-web-view-swatch-"]') ?? []) as HTMLElement[];
+      expect(swatches).toHaveLength(conflictList.reduce((count, conflict) => count + conflict.values.length, 0));
+      // The Colour chapter's swatch card at list size: the hex sits on its own ground.
+      expect(swatches[0].closest('li')?.className).toContain('rounded-xl');
+      expect(swatches[0].textContent?.trim()).toBe(conflictList[0].values[0].hex);
+      expect(query('brand-kit-web-view-panel-sources')?.textContent).not.toContain('lf-reference');
+      expect(query('brand-kit-web-view-accepted')).toBeNull();
+    });
+
+    it('shows a v1 report’s legacy failed list in the Failed sources group and the empty lines in the others', async () => {
+      const kit = brandKitTestRevision();
+      kit.report = { ...kit.report, sources_failed: [{ name: 'https://one.example.org/brand', reason: 'HTTP 404' }] };
+      fixture.componentRef.setInput('kit', kit);
+      await open('sources');
+
+      expect(query('brand-kit-web-view-sources-failed')?.textContent).toContain('HTTP 404');
+      expect(query('brand-kit-web-view-missing-assets-empty')?.textContent?.trim()).toBe('Nothing is missing.');
+      expect(query('brand-kit-web-view-warnings-empty')?.textContent?.trim()).toBe('No warnings.');
+      expect(query('brand-kit-web-view-color-conflicts-empty')?.textContent?.trim()).toBe('No colour conflicts.');
+    });
+
+    it('marks each item the approval’s snapshot lists with when it was accepted, and leaves newer items unmarked', async () => {
+      const kit = brandKitTestRevision();
+      const report = brandKitReportV2Fixture();
+      const accepted = mktgAcceptedSnapshotOf(report);
+      report.findings?.warnings.push({ code: 'font_unverified', text: 'The typeface could not be verified.' });
+      kit.report = report;
+      fixture.componentRef.setInput('kit', kit);
+      fixture.componentRef.setInput('version', 4);
+      fixture.componentRef.setInput('approval', { approvedAt: '2026-11-04T10:00:00Z', approvedBy: { name: null }, accepted });
+      await open('sources');
+
+      const markers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="brand-kit-web-view-accepted"]')) as HTMLElement[];
+      // Every item the snapshot lists, and not the warning added since.
+      const listed = Object.values(accepted).reduce((count, keys) => count + keys.length, 0);
+      expect(markers).toHaveLength(listed);
+      expect(new Set(markers.map((marker) => marker.textContent?.trim()))).toEqual(new Set(['Accepted when v4 was approved']));
+      expect(query('brand-kit-web-view-warnings')?.querySelectorAll('li')).toHaveLength(accepted.warnings.length + 1);
+      expect(query('brand-kit-web-view-warnings')?.querySelectorAll('[data-testid="brand-kit-web-view-accepted"]')).toHaveLength(accepted.warnings.length);
+      // The per-item markers replace the derived line.
+      expect(query('brand-kit-web-view-gaps-accepted')).toBeNull();
     });
 
     it('says so where the run left nothing to report, and leaves the Sources and gaps tab uncounted', async () => {

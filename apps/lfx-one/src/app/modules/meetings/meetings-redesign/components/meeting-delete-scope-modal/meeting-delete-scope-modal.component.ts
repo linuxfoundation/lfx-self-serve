@@ -3,20 +3,8 @@
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
-import {
-  MeetingDeleteDialogData,
-  MeetingDeleteTypeResult,
-  MeetingHomeRowProject,
-  MeetingHomeRowType,
-  MeetingOccurrenceOption,
-} from '@lfx-one/shared/interfaces';
-import {
-  buildMeetingOccurrenceOptions,
-  formatMeetingDateTime,
-  getMeetingHomeRowProject,
-  getMeetingHomeRowType,
-  isSameOccurrenceId,
-} from '@lfx-one/shared/utils';
+import { MeetingDeleteDialogData, MeetingDeleteTypeResult, MeetingHomeRowProject, MeetingOccurrenceOption } from '@lfx-one/shared/interfaces';
+import { buildMeetingOccurrenceOptions, formatMeetingWhenFull, getMeetingHomeRowProject, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
@@ -52,8 +40,7 @@ export class MeetingDeleteScopeModalComponent {
 
   protected readonly row = this.data.row;
   protected readonly project: MeetingHomeRowProject | null = getMeetingHomeRowProject(this.row.meeting);
-  protected readonly when = formatMeetingDateTime(this.row.startTime, this.row.durationMinutes);
-  protected readonly meetingType: MeetingHomeRowType | null = getMeetingHomeRowType(this.row.meeting);
+  protected readonly when = formatMeetingWhenFull(this.row);
   protected readonly occurrenceOptions: MeetingOccurrenceOption[] = buildMeetingOccurrenceOptions(this.row.meeting, this.data.occurrence?.occurrence_id);
   protected readonly occurrenceId = signal<string | null>(
     this.occurrenceOptions.find((option) => isSameOccurrenceId(option.value, this.data.occurrence?.occurrence_id))?.value ?? null

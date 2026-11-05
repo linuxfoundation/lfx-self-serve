@@ -17,6 +17,7 @@ const {
   addProjectWriterToResource,
   checkAccess,
   checkSingleAccessStrict,
+  checkSingleAccess,
   execute,
   warning,
   startOperation,
@@ -31,6 +32,7 @@ const {
   addProjectWriterToResource: vi.fn(),
   checkAccess: vi.fn(),
   checkSingleAccessStrict: vi.fn(),
+  checkSingleAccess: vi.fn(),
   execute: vi.fn(),
   warning: vi.fn(),
   // Typed rather than a bare `vi.fn(() => 0)` so the metadata-masking suite below can index
@@ -56,7 +58,13 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const apiConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/api.constants')>(
     '../../../../../packages/shared/src/constants/api.constants'
   );
+  // Real values for the formation-record guard/validation constants (#5134), not hand copies.
+  const formationRecordConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-formation.constants')>(
+    '../../../../../packages/shared/src/constants/project-formation.constants'
+  );
   return {
+    ...formationRecordConstants,
+    FORMATION_TEAM_NAME: 'formation',
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
     ACCESS_CHECK_BATCH_SIZE: apiConstants.ACCESS_CHECK_BATCH_SIZE,
     // The real fetchAllQueryResources paginator reads its page cap from this barrel (#4964).
@@ -186,6 +194,7 @@ vi.mock('./access-check.service', () => ({
     public addProjectWriterToResource = addProjectWriterToResource;
     public checkAccess = checkAccess;
     public checkSingleAccessStrict = checkSingleAccessStrict;
+    public checkSingleAccess = checkSingleAccess;
   },
 }));
 vi.mock('./nats.service', () => ({
@@ -2987,5 +2996,181 @@ describe('ProjectService — getProjectSlugByUid', () => {
 
     expect(error).toBeInstanceOf(MicroserviceError);
     expect(error).toMatchObject({ statusCode: 503, code: 'SERVICE_UNAVAILABLE', transportFailure: true, originalError: failure });
+  });
+});
+
+describe('ProjectService.updateFormationRecord', () => {
+  let service: ProjectService;
+  const req = { path: '/api/projects/project-1/formation-record' } as Request;
+
+  // Synthetic stored project with fields the formation card never edits — they must survive the PUT.
+  const stored = {
+    uid: 'project-1',
+    slug: 'cascade-data',
+    name: 'Cascade Data',
+    description: 'Synthetic project',
+    parent_uid: 'parent-1',
+    public: true,
+    is_foundation: false,
+    stage: 'Formation - Engaged',
+    category: 'Data',
+    funding_model: ['Membership'],
+    charter_url: 'https://cascade-data.example/charter',
+    legal_entity_name: 'Cascade Data LLC',
+    legal_entity_type: 'Series LLC',
+    autojoin_enabled: true,
+    logo_url: 'https://cascade-data.example/logo.png',
+    website_url: 'https://cascade-data.example',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-02-01T00:00:00Z',
+  };
+
+  beforeEach(() => {
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    checkSingleAccessStrict.mockReset();
+    checkSingleAccess.mockReset();
+    checkSingleAccessStrict.mockResolvedValue(true);
+    checkSingleAccess.mockResolvedValue(true);
+    fetchWithETag.mockResolvedValue({ data: { ...stored }, etag: '7' });
+    updateWithETag.mockImplementation(async (_req: unknown, _svc: unknown, _path: unknown, _etag: unknown, body: unknown) => body);
+    service = new ProjectService();
+  });
+
+  it('writes the full stored object back with only the edited keys changed', async () => {
+    await service.updateFormationRecord(req, 'project-1', { stage: 'Active', legal_entity_name: 'Cascade Data Inc.' });
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/project-1', 'update_formation_record');
+    const [, , path, etag, body] = updateWithETag.mock.calls[0];
+    expect(path).toBe('/projects/project-1');
+    expect(etag).toBe('7');
+    const expectedBase: Record<string, unknown> = { ...stored };
+    for (const key of ['uid', 'created_at', 'updated_at']) delete expectedBase[key];
+    expect(body).toEqual({ ...expectedBase, stage: 'Active', legal_entity_name: 'Cascade Data Inc.' });
+  });
+
+  it('restores an omitted description before the PUT (GET-to-PUT)', async () => {
+    const noDescription: Record<string, unknown> = { ...stored };
+    delete noDescription['description'];
+    fetchWithETag.mockResolvedValue({ data: noDescription, etag: '4' });
+
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: 'Cascade Data Inc.' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ description: '', legal_entity_name: 'Cascade Data Inc.' });
+  });
+
+  it('clears a field sent as null', async () => {
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: null });
+
+    expect(updateWithETag.mock.calls[0][4]).not.toHaveProperty('legal_entity_name');
+  });
+
+  it('drops a cleared field and defaults a missing parent_uid to empty', async () => {
+    const rootProject: Record<string, unknown> = { ...stored };
+    delete rootProject['parent_uid'];
+    fetchWithETag.mockResolvedValue({ data: rootProject, etag: '3' });
+
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: '' });
+
+    const body = updateWithETag.mock.calls[0][4] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('legal_entity_name');
+    expect(body['parent_uid']).toBe('');
+  });
+
+  it('rejects a non-writer with NOT_PROJECT_WRITER before any upstream read', async () => {
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({ statusCode: 403, code: 'NOT_PROJECT_WRITER' });
+
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects a writer outside the formation team with FORMATION_TEAM_REQUIRED before any upstream read', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'FORMATION_TEAM_REQUIRED',
+    });
+
+    expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'team', id: 'formation', access: 'member' });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the writer check cannot be resolved', async () => {
+    checkSingleAccessStrict.mockRejectedValue(new Error('fga unavailable'));
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toThrow('fga unavailable');
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Prospect stage', { stage: 'Prospect' }],
+    ['Confidential stage', { stage: 'Formation - Confidential' }],
+    ['unknown key', { slug: 'renamed' }],
+    ['Archived with an explicitly cleared dissolution date', { stage: 'Archived', entity_dissolution_date: '' }],
+    ['bad legal entity type', { legal_entity_type: 'Cooperative' }],
+    ['bad date', { formation_date: '04/11/2026' }],
+    ['non-http URL', { entity_formation_document_url: 'javascript:alert(1)' }],
+    ['empty body', {}],
+  ])('rejects %s with 400 before the guard or any upstream call', async (_label, body) => {
+    await expect(service.updateFormationRecord(req, 'project-1', body)).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects clearing the dissolution date of an already-Archived project before the PUT', async () => {
+    fetchWithETag.mockResolvedValue({ data: { ...stored, stage: 'Archived', entity_dissolution_date: '2026-10-31' }, etag: '9' });
+
+    await expect(service.updateFormationRecord(req, 'project-1', { entity_dissolution_date: '' })).rejects.toMatchObject({ statusCode: 400 });
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects Archived on the merged record when no dissolution date is stored, after the read and before the PUT', async () => {
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Archived' })).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(fetchWithETag).toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('archives without resending a dissolution date that is already stored', async () => {
+    fetchWithETag.mockResolvedValue({ data: { ...stored, entity_dissolution_date: '2026-09-30' }, etag: '5' });
+
+    await service.updateFormationRecord(req, 'project-1', { stage: 'Archived' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ stage: 'Archived', entity_dissolution_date: '2026-09-30' });
+  });
+
+  it('accepts Archived with a dissolution date', async () => {
+    await service.updateFormationRecord(req, 'project-1', { stage: 'Archived', entity_dissolution_date: '2026-10-31' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ stage: 'Archived', entity_dissolution_date: '2026-10-31' });
+  });
+
+  it('maps an upstream 409 on the write to the FORMATION_RECORD_CONFLICT code', async () => {
+    updateWithETag.mockRejectedValue(new MicroserviceError('conflict', 409, 'CONFLICT'));
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'FORMATION_RECORD_CONFLICT',
+      clientMessage: 'Someone else changed this project. Reload to see the latest, then try again.',
+    });
+  });
+
+  it('maps a missing project to 404', async () => {
+    fetchWithETag.mockRejectedValue(new MicroserviceError('missing', 404, 'NOT_FOUND'));
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({ statusCode: 404 });
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('passes unrelated upstream failures through unchanged', async () => {
+    const outage = new MicroserviceError('down', 503, 'SERVICE_UNAVAILABLE');
+    updateWithETag.mockRejectedValue(outage);
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toBe(outage);
   });
 });

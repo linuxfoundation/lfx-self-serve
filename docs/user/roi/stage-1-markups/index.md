@@ -3,8 +3,9 @@ title: 'Stage 1: markups'
 description: How the ROI model turns monthly participation histories into a markup for each organization-project pair — the participation model, the two scoring methods, and calibration to a target distribution.
 audience: [all]
 product_area: Dashboards
+display_order: 9
 tags: [roi, markup, logit, participation, calibration, gamma, technical]
-last_updated: 2026-10-30
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 
@@ -16,15 +17,19 @@ A monthly binary panel per organization-project pair, built as described in [Dat
 
 - `d(i,j,t) = 1` if the pair had any code or community activity in month `t`, else 0.
 - `d(i,j,t−1)` is the previous month's value. The first month's missing lag is set to 0.
-- A pair enters only if it has at least one active month after the project's start.
+- A pair enters only if it has at least 3 active months after the project's start.
 
-A pair receives a markup only if it has at least **3 months** of data and at least one active month.
+A pair that does not meet this entry rule is not estimated and has no markup or ROI. That includes pairs with no code or community activity, such as a membership-only pair.
+
+This entry rule works on a single pair and decides whether it gets a markup at all. It is separate from the organization-level display gate, which decides whether an organization's results are shown and uses spending and active months summed over its projects. Pairs below the gate still take part in stage 1, because a pair's markup is its rank among all estimated pairs. See [Which organizations are shown](../interpreting-results/#which-organizations-are-shown) and the [display gate settings](../model-settings/#display-gate).
 
 Only code and community activity define participation. Memberships, events, meetings, and courses do not enter the participation indicator.
 
+The two methods depend on this record only through counts: the months and active months of each pair, and the previous-month state. The model therefore aggregates the record to those counts, which gives the same fit as the full monthly record.
+
 ### Investment scale
 
-Participation is recorded as "any activity this month". A pair with dozens of engineers is active in almost every month, whatever value it places on the project, so raw persistence partly measures team size. The markup is meant to be a scale-free ratio (value divided by efficient cost). Ranking pairs by raw persistence would count size twice, once through spending and again through the markup.
+Participation is recorded as "any activity this month". A pair with dozens of engineers is active in almost every month, whatever value it places on the project, so raw persistence partly measures team size. The markup is meant to be a scale-free ratio (value divided by efficient cost). Ranking pairs by raw persistence would count size twice, once through spending and again through the markup. The evidence for this control is in [Control for scale in the markup](../methodology-decisions/#control-for-scale-in-the-markup).
 
 Both methods therefore rank pairs on participation **net of investment scale**. The scale measure is
 
@@ -97,7 +102,7 @@ q(i,j) = ( r(i,j) − 0.5 ) / N          (a quantile strictly between 0 and 1)
 μ(i,j) = F⁻¹( q(i,j) )
 ```
 
-where `F` is a **shifted gamma** distribution on `[1, ∞)`: a gamma distribution with shape `a` and scale `θ`, shifted right by 1. It is matched to a target mean `m` and standard deviation `s`. The shift contributes 1 to the mean and nothing to the variance, so
+where `r(i,j)` is the pair's **participation rank**, and `F` is a **shifted gamma** distribution on `[1, ∞)`: a gamma distribution with shape `a` and scale `θ`, shifted right by 1. It is matched to a target mean `m` and standard deviation `s`. The shift contributes 1 to the mean and nothing to the variance, so
 
 ```text
 mean = 1 + a·θ = m        variance = a·θ² = s²
@@ -112,7 +117,8 @@ The method requires `m > 1` and `s > 0`. The target mean and standard deviation 
 - **The level comes from calibration.** The target distribution is anchored to the LF Research [Open Source ROI Survey](https://www.linuxfoundation.org/research/contribution-roi). It is not estimated from the panel.
 - **Both methods share a distribution.** Because both map onto the same `F`, they differ only in _which pairs_ receive the high values.
 - **Raw markups are at least 1.** The support of `F` starts at 1. Inference can raise a pair's markup further, to its break-even level, so that the pair's value is never below its investment. See [Participation floor](../inference/#participation-floor).
-- **The logistic method is the default.** Its markups are the least related to team size and window length, it produces few ties, and it pools information across an organization's projects and a project's organizations, which steadies short or sparse histories. The direct method's rate saturates at 1 for always-active pairs, which a linear control cannot fully remove, so it keeps a heavier top tail. Treat it as a robustness check.
+- **The logistic method is the default.** See [Why the logistic method is the default](../methodology-decisions/#why-the-logistic-method-is-the-default) for the reasons, and for why the direct method is best read as a robustness check.
+- **The markup is a function of the participation rank.** Two pairs with the same rank have the same markup, and the lowest-ranked pair gets a markup of about 1. The [value driver decomposition](../value-driver-decomposition/) fits the log of the markup directly and reports each driver's contribution relative to the typical pair.
 - **Markups are relative.** A pair's markup depends on its rank among all valid pairs. It changes when other pairs enter or leave the panel, even if its own behavior is unchanged.
 
 ## Related reading
@@ -120,3 +126,5 @@ The method requires `m > 1` and `s > 0`. The target mean and standard deviation 
 - [The model](../model/)
 - [Stage 2: CES allocation](../stage-2-ces/)
 - [Model settings and defaults](../model-settings/)
+- [Methodology decisions](../methodology-decisions/) — why the model makes these choices
+- [ROI documentation](../)

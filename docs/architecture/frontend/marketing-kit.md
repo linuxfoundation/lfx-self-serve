@@ -66,6 +66,26 @@ Positioning asset is approved; otherwise an em dash. With no approvals the tiles
 Drafts and individual runs do not enter these counts. Open requests is unknown (em dash plus
 Coming soon), never zero. Live-family Core tags do not imply approval.
 
+### The brand kit's Sources tab
+
+The Sources tab of a stored brand kit shows the agent's report in the agent's own words, never
+rewritten by the view. A v2 report (`report.version: 2`, brand-kit ≥ 2.2.0) fills four groups
+from its findings: Failed sources (`findings.sources_failed`, with the machine `detail` as small
+grey text), Missing assets (`findings.missing_assets`, labelled by `BRAND_KIT_REPORT_ASSET_LABELS`,
+with a "Fix: …" line when the agent names one), Warnings (`findings.warnings`, the `source` as a
+link only when it is an http(s) address) and Colour conflicts (`report.color_conflicts`: each value
+as a palette-style swatch with its hex and where it was seen, then "kept <hex>"). The legacy
+`sources_failed` list shows only when `findings` is absent (a v1 report); the other groups then
+carry their empty lines (`BRAND_KIT_SOURCES_EMPTY_LINES`). Everything comes from one pure builder,
+`brandKitSourcesView` in `@lfx-one/shared/utils`; the rules (`report.rules`) are not rendered yet.
+
+Approving a revision snapshots what its report showed at that moment into the approval annotation
+(`accepted`: failed sources by `source`, missing assets by `asset`, warnings by `code|text`, gaps by
+their exact text, conflicts by `name`; see [revisions](../backend/mktg-document-revisions.md)). Under
+an approval that carries the snapshot, each listed item reads "Accepted when vN was approved" (a
+later run is a new revision, with its own approval). An approval made before the snapshot existed marks
+nothing and keeps the derived line under the gaps ("Accepted when vN was approved; still open.").
+
 At the Family header's shared 800px content-query threshold, the title stays left of the tiles;
 tiles use two columns at laptop width and four at 980px content width. Below 800px they sit
 under the title. These thresholds reserve headroom for the navigation and page gutters.

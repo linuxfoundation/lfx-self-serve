@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { DEFAULT_EARLY_JOIN_TIME, MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
+  MeetingHomeAttendance,
   MeetingHomeJoinState,
   MeetingHomeRow,
   MeetingHomeRowLink,
@@ -15,8 +16,9 @@ import {
   MeetingVisibilityInfo,
 } from '@lfx-one/shared/interfaces';
 import {
-  formatMeetingTimeRange,
+  formatMeetingWhen,
   getMeetingGroupNames,
+  getMeetingHomeAttendance,
   getMeetingHomeRowLink,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
@@ -31,6 +33,7 @@ import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
+import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
 /**
@@ -41,7 +44,16 @@ import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-pro
  */
 @Component({
   selector: 'lfx-next-meeting-card',
-  imports: [DatePipe, MeetingProjectLogoComponent, UiBadgeComponent, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent, UiTooltipDirective],
+  imports: [
+    DatePipe,
+    MeetingHomeAttendanceComponent,
+    MeetingProjectLogoComponent,
+    UiBadgeComponent,
+    UiButtonComponent,
+    UiEmptyStateComponent,
+    UiSkeletonComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './next-meeting-card.component.html',
   styleUrl: './next-meeting-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -73,6 +85,7 @@ export class NextMeetingCardComponent {
   protected readonly when: Signal<string> = this.initWhen();
   protected readonly recurrenceTooltip: Signal<string | null> = this.fromRow((row) => getMeetingRecurrenceTooltip(row.meeting, row.occurrence));
   protected readonly groups: Signal<string[]> = this.fromRow((row) => getMeetingGroupNames(row.meeting), []);
+  protected readonly attendance: Signal<MeetingHomeAttendance | null> = this.fromRow((row) => getMeetingHomeAttendance(row, false), null);
   protected readonly earlyJoinMinutes: Signal<number> = this.fromRow(
     (row) => row.meeting.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME,
     DEFAULT_EARLY_JOIN_TIME
@@ -114,10 +127,7 @@ export class NextMeetingCardComponent {
   }
 
   private initWhen(): Signal<string> {
-    return this.fromRow(
-      (row) => `${formatDate(row.startTime, 'EEE', 'en-US')}, ${formatMeetingTimeRange(row.startTime, row.durationMinutes)} · ${row.durationMinutes}m`,
-      ''
-    );
+    return this.fromRow((row) => formatMeetingWhen(row.startTime, row.durationMinutes), '');
   }
 
   /** A computed of the row, with `empty` when there is none. */

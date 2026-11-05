@@ -110,6 +110,8 @@ export class MeetingsRedesignComponent {
 
   protected readonly idPrefix = 'meetings-redesign';
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
+  /** Widths of the skeleton row's buttons: Yes / No / Maybe upcoming, Recording and AI Summary past. */
+  protected readonly skeletonButtons: Record<MeetingDashboardView, string[]> = { upcoming: ['58px', '76px', '54px'], past: ['134px', '108px'] };
   protected readonly personaLoaded = this.personaService.personaLoaded;
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
@@ -142,10 +144,11 @@ export class MeetingsRedesignComponent {
   protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
   /** The active tab has meetings, but none match the search and filters. */
   protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
-  /** Any applied filter wins over the search in the no-results copy. */
-  protected readonly noResultsDescription: Signal<string> = computed(() =>
-    countAppliedMeetingFilters(this.store.filters()) > 0 ? 'No meetings match your filters' : 'No meetings match your search'
-  );
+  /** No-results copy: search only, filters only, or both. */
+  protected readonly noResultsDescription: Signal<string> = computed(() => {
+    if (countAppliedMeetingFilters(this.store.filters()) === 0) return 'No meetings match your search';
+    return this.store.search().trim() ? 'No meetings match your filters' : 'Try adjusting your filter criteria';
+  });
   /** "All N meetings loaded" once every row of a list longer than one page is shown. */
   protected readonly allLoaded: Signal<boolean> = computed(
     () => !this.store.loading() && !this.store.hasMore() && this.store.filteredRows().length > MEETINGS_HOME_PAGE_SIZE

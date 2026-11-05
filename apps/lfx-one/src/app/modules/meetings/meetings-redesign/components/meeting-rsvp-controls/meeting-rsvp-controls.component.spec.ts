@@ -131,15 +131,15 @@ describe('MeetingRsvpControlsComponent', () => {
     it('saves straight away for all dates and confirms with a dark toast', async () => {
       const fixture = await render(buildRow(buildMeeting()));
 
-      expect(query(fixture, 'meetings-home-rsvp-accepted')?.textContent?.trim()).toBe('Yes');
-      expect(query(fixture, 'meetings-home-rsvp-declined')?.textContent?.trim()).toBe('No');
-      expect(query(fixture, 'meetings-home-rsvp-maybe')?.textContent?.trim()).toBe('Maybe');
+      const buttons = Array.from(query(fixture, 'meetings-home-rsvp')?.querySelectorAll('button') ?? []);
+      expect(buttons.map((item) => item.textContent?.trim())).toEqual(['Yes', 'Maybe', 'No']);
+      expect(buttons.every((item) => item.querySelector('i.fa-light'))).toBe(true);
       expect(button(fixture, 'meetings-home-rsvp-accepted').getAttribute('aria-label')).toBe('RSVP Yes to Synthetic sync');
       await press(fixture, 'meetings-home-rsvp-accepted');
 
       expect(openModal).not.toHaveBeenCalled();
       expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: 'synthetic-meeting' }), undefined, 'accepted', 'all');
-      expect(showToast).toHaveBeenCalledWith({ variant: 'dark', message: 'Response saved: Going', description: 'Synthetic sync — This meeting' });
+      expect(showToast).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting RSVP set to “Going”' });
     });
 
     it('shows the saving answer as loading and ignores other answers until the save settles', async () => {
@@ -214,7 +214,7 @@ describe('MeetingRsvpControlsComponent', () => {
 
       closed.next('this_and_following');
       expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: 'synthetic-meeting' }), OCCURRENCE_ID, 'declined', 'this_and_following');
-      expect(showToast).toHaveBeenCalledWith({ variant: 'dark', message: 'Response saved: Not going', description: 'Synthetic sync — Oct 1 and following' });
+      expect(showToast).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting RSVP set to “Not going” for this and following occurrences' });
     });
 
     it('saves nothing when the dialog is cancelled', async () => {

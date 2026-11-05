@@ -137,6 +137,47 @@ describe('MentorshipAdminService.getPrograms', () => {
   });
 });
 
+describe('MentorshipAdminService.getProjectPrograms', () => {
+  const PROJECT_UID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+  const projectProgramsPath = `/mentorship/v1/projects/${PROJECT_UID}/programs`;
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reads the project’s programs with the same filters as the Admin list and maps them for the card', async () => {
+    const spy = vi
+      .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
+      .mockResolvedValue({ data: [upstreamProgram('p-a', 'Alpha', { admin_status: 'hidden' })], meta: { total: 7 } } as never);
+
+    const result = await service.getProjectPrograms(buildReq(), PROJECT_UID, { search: 'grid', status: 'open', offset: 12, limit: 12 });
+
+    expect(spy.mock.calls).toEqual([
+      [expect.anything(), 'LFX_V2_SERVICE', projectProgramsPath, 'GET', { search: 'grid', status: 'open', limit: 12, offset: 12 }, undefined],
+    ]);
+    expect(result).toEqual({ data: [expect.objectContaining({ id: 'p-a', status: 'hidden' })], total: 7 });
+  });
+
+  it('asks upstream for the sub-projects’ programs too for the Foundation lens', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ data: [], meta: { total: 0 } } as never);
+
+    await service.getProjectPrograms(buildReq(), PROJECT_UID, { offset: 0, limit: 12, includeSubprojects: true });
+
+    expect(spy.mock.calls[0][4]).toEqual({ search: undefined, status: undefined, limit: 12, offset: 0, include_subprojects: true });
+  });
+
+  it('passes a gateway 403 on rather than showing an empty list', async () => {
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockRejectedValue(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+
+    await expect(service.getProjectPrograms(buildReq(), PROJECT_UID, { offset: 0, limit: 12 })).rejects.toMatchObject({ statusCode: 403 });
+  });
+});
+
 const PROGRAM_ID = '3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b';
 const APPLICATION_ID = '9a1c2d3e-4b5f-4a6b-8c7d-1e2f3a4b5c6d';
 const PROGRAM_PATH = `/mentorship/v1/programs/${PROGRAM_ID}`;
@@ -276,7 +317,7 @@ describe('MentorshipAdminService.getProgramPage', () => {
   });
 
   it.each(['management-summary', 'applications', 'member-management'])(
-    'passes a 403 on the manager-only %s read on, since any viewer may read the header',
+    'passes a 403 on the %s management read on, since any viewer may read the header',
     async (route) => {
       stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/${route}`]: new MicroserviceError('Forbidden', 403, 'FORBIDDEN') }));
 
@@ -284,7 +325,7 @@ describe('MentorshipAdminService.getProgramPage', () => {
     }
   );
 
-  it('keeps the page when a manager-only read fails with anything but a 403', async () => {
+  it('keeps the page when a management read fails with anything but a 403', async () => {
     stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/management-summary`]: new MicroserviceError('Bad gateway', 502, 'UPSTREAM') }));
 
     const page = await service.getProgramPage(buildReq(), PROGRAM_ID);

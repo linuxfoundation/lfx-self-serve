@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow } from '@lfx-one/shared/interfaces';
-import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
+import { formatMeetingWhen } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -112,7 +112,7 @@ describe('NextMeetingCardComponent', () => {
     expect(query(fixture, 'meetings-home-next-card-empty')).toBeNull();
   });
 
-  it('renders the date tile, project, title, time range and the type and recurring tags', async () => {
+  it('renders the date tile, project, title, date line and the type and recurring tags', async () => {
     const meeting = buildMeeting({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } });
     const start = new Date(meeting.start_time);
     const fixture = await render(buildRow(meeting, start, { title: 'Occurrence title' }));
@@ -120,8 +120,7 @@ describe('NextMeetingCardComponent', () => {
     expect(text(fixture, 'meetings-home-next-card-date')).toContain(String(start.getDate()));
     expect(text(fixture, 'meetings-home-next-card-project')).toMatch(/Kubernetes$/);
     expect(text(fixture, 'meetings-home-next-card-title')).toBe('Occurrence title');
-    const weekday = start.toLocaleString('en-US', { weekday: 'short' });
-    expect(text(fixture, 'meetings-home-next-card-when')).toBe(`${weekday}, ${formatMeetingTimeRange(start, 60)} · 60m`);
+    expect(text(fixture, 'meetings-home-next-card-when')).toBe(formatMeetingWhen(start, 60));
     expect(text(fixture, 'meetings-home-next-card-type')).toBe('Technical');
     expect(text(fixture, 'meetings-home-next-card-recurring')).toBe('Recurring');
     expect(query(fixture, 'meetings-home-next-card-recurring')?.querySelector('i')?.classList).toContain('fa-arrows-repeat');
@@ -149,6 +148,23 @@ describe('NextMeetingCardComponent', () => {
       'meetings-home-next-card-group',
       'meetings-home-next-card-recurring',
     ]);
+  });
+
+  it("shows the date's RSVP counts with a legend for an organized meeting, and nothing without counts", async () => {
+    const series = buildMeeting({ rsvp_summary: { invited: 9, yes: 9, maybe: 0, no: 0, no_response: 0 } });
+    const occurrence = {
+      occurrence_id: 'o-1',
+      title: 'Series title',
+      start_time: series.start_time,
+      duration: 60,
+      rsvp_summary: { invited: 10, yes: 4, maybe: 3, no: 1, no_response: 2 },
+    };
+    const organized = await render(buildRow(series, undefined, { occurrence, occurrenceId: 'o-1' }));
+    const other = await render(buildRow(buildMeeting()));
+
+    expect(text(organized, 'meetings-home-attendance-label')).toBe('4 of 10 attending · 40%');
+    expect(query(organized, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 4 Maybe 3 No 1');
+    expect(query(other, 'meetings-home-next-card-attendance')).toBeNull();
   });
 
   it('badges only Private and Restricted meetings on the tile', async () => {

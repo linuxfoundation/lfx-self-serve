@@ -4,13 +4,12 @@
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, TemplateRef, viewChild } from '@angular/core';
-import { MeetingDashboardView, MeetingHomeRow, MeetingHomeRowProject, MeetingHomeRowType } from '@lfx-one/shared/interfaces';
+import { MeetingDashboardView, MeetingHomeRow, MeetingHomeRowProject } from '@lfx-one/shared/interfaces';
 import {
-  formatMeetingDateTime,
+  formatMeetingWhenFull,
   getMeetingHomeRowProject,
-  getMeetingHomeRowType,
-  getMeetingRecurrenceTooltip,
-  getMeetingSelfRemovalMessage,
+  getMeetingSelfRemovalNotes,
+  getMeetingSelfRemovalQuestion,
   getPastMeetingResourceId,
 } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
@@ -71,14 +70,12 @@ export class MeetingHomeActionsComponent {
   protected readonly canRemove: Signal<boolean> = this.initCanRemove();
   /** A resend goes to the viewer's own registrant row, so one must exist (legacy `canResendInvite`). */
   protected readonly canResend: Signal<boolean> = computed(() => this.canRemove() && this.hasOwnRegistration());
-  protected readonly removalMessage: Signal<string> = computed(() =>
-    getMeetingSelfRemovalMessage(this.row().title, { viaCommittee: this.row().meeting.invited_via_committee, organizer: this.row().meeting.organizer })
+  protected readonly removalQuestion: Signal<string> = computed(() => getMeetingSelfRemovalQuestion(this.row().title));
+  protected readonly removalNotes: Signal<string[]> = computed(() =>
+    getMeetingSelfRemovalNotes({ viaCommittee: this.row().meeting.invited_via_committee, organizer: this.row().meeting.organizer })
   );
-  /** "Thu, Oct 1 · 6:30 AM PDT" for the dialog's meeting card. */
-  protected readonly when: Signal<string> = computed(() => formatMeetingDateTime(this.row().startTime));
-  protected readonly recurring: Signal<boolean> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence) !== null);
+  protected readonly when: Signal<string> = computed(() => formatMeetingWhenFull(this.row()));
   protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => getMeetingHomeRowProject(this.row().meeting));
-  protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
 
   private readonly invited: Signal<boolean> = computed(
     () => !!this.row().meeting.invited && !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
@@ -109,7 +106,7 @@ export class MeetingHomeActionsComponent {
       this.showError('Copy Failed', 'Failed to copy link. Please try again.');
       return;
     }
-    this.toast.show({ variant: 'dark', message: 'Meeting Link Copied', description: 'The meeting link has been copied to your clipboard' });
+    this.toast.show({ variant: 'dark', message: 'Meeting link copied to clipboard' });
   }
 
   protected editMeeting(): void {
@@ -125,7 +122,7 @@ export class MeetingHomeActionsComponent {
       .resendOwn$(this.row().meeting.id, this.row().occurrenceId)
       .pipe(take(1))
       .subscribe({
-        next: () => this.toast.show({ variant: 'dark', message: 'Invitation Sent', description: 'We sent the meeting invitation to your email.' }),
+        next: () => this.toast.show({ variant: 'dark', message: 'Meeting invitation sent' }),
         error: (error: unknown) => this.showError('Error', this.inviteResend.describeOwnResendFailure(error)),
       });
   }
@@ -161,7 +158,7 @@ export class MeetingHomeActionsComponent {
             this.showError('Removal incomplete', 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.');
             return;
           }
-          this.toast.show({ variant: 'dark', message: 'Removed', description: 'You have been removed from this meeting.' });
+          this.toast.show({ variant: 'dark', message: 'Removed from meeting' });
         },
         error: (error: unknown) => this.showError('Error', this.selfRemoval.describeFailure(error)),
       });

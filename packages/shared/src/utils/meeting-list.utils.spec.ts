@@ -16,6 +16,9 @@ import {
   filterMeetingsHome,
   formatMeetingDateTime,
   formatMeetingTimeRange,
+  formatMeetingWhen,
+  formatMeetingWhenFull,
+  getMeetingWhenParts,
   getMeetingDayBucket,
   getMeetingGroupNames,
   getMeetingHomeRowLink,
@@ -23,8 +26,9 @@ import {
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingProjectUrl,
+  getMeetingRecurrenceLabel,
   getMeetingRecurrenceTooltip,
-  getMeetingRsvpScopeLabel,
+  getMeetingRsvpToastMessage,
   getMeetingStartsInLabel,
   getMeetingVisibilityBadges,
   groupMeetingsByDayBucket,
@@ -473,20 +477,20 @@ describe('buildMeetingFilterChips', () => {
       rows
     );
     expect(chips).toEqual([
-      { key: 'foundation', label: 'Foundation: Foundation One' },
-      { key: 'project', label: 'Project: Project One' },
-      { key: 'meetingType', label: 'Meeting type: Technical' },
-      { key: 'rsvp', label: 'RSVP: Not going' },
+      { key: 'foundation', prefix: 'Foundation:', label: 'Foundation One' },
+      { key: 'project', prefix: 'Project:', label: 'Project One' },
+      { key: 'meetingType', prefix: 'Meeting type:', label: 'Technical' },
+      { key: 'rsvp', prefix: 'RSVP:', label: 'Not going' },
       { key: 'organizedByMe', label: 'Organized by me' },
       { key: 'hideDeclined', label: 'Hiding declined series' },
     ]);
   });
 
   it('falls back to the foundation or project UID and uses the RSVP option labels', () => {
-    expect(buildMeetingFilterChips(filters({ foundation: 'f-9' }), rows)).toEqual([{ key: 'foundation', label: 'Foundation: f-9' }]);
-    expect(buildMeetingFilterChips(filters({ project: 'p-9' }), rows)).toEqual([{ key: 'project', label: 'Project: p-9' }]);
-    expect(buildMeetingFilterChips(filters({ rsvp: 'pending' }), rows)[0].label).toBe('RSVP: Needs response');
-    expect(buildMeetingFilterChips(filters({ rsvp: 'accepted' }), rows)[0].label).toBe('RSVP: Going');
+    expect(buildMeetingFilterChips(filters({ foundation: 'f-9' }), rows)).toEqual([{ key: 'foundation', prefix: 'Foundation:', label: 'f-9' }]);
+    expect(buildMeetingFilterChips(filters({ project: 'p-9' }), rows)).toEqual([{ key: 'project', prefix: 'Project:', label: 'p-9' }]);
+    expect(buildMeetingFilterChips(filters({ rsvp: 'pending' }), rows)[0].label).toBe('Needs response');
+    expect(buildMeetingFilterChips(filters({ rsvp: 'accepted' }), rows)[0].label).toBe('Going');
   });
 });
 
@@ -502,6 +506,22 @@ describe('getMeetingGroupNames', () => {
 
     expect(getMeetingGroupNames({ committees })).toEqual(['TOC', 'Security WG']);
     expect(getMeetingGroupNames({ committees: [] })).toEqual([]);
+  });
+});
+
+describe('getMeetingRecurrenceLabel', () => {
+  const base = { start_time: '2026-10-01T13:30:00Z', timezone: 'America/Los_Angeles' };
+
+  it('names the cadence without the "Repeats" prefix', () => {
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: WEEKLY })).toBe('Weekly on Thursday');
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 2, weekly_days: '2' } })).toBe(
+      'Every 2 weeks on Monday'
+    );
+  });
+
+  it('returns null for one-time meetings', () => {
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: null })).toBeNull();
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: { ...WEEKLY, end_times: 1 } })).toBeNull();
   });
 });
 
@@ -541,6 +561,29 @@ describe('formatMeetingDateTime', () => {
     expect(formatMeetingDateTime('2026-10-01T13:30:00Z', 60, 'America/Los_Angeles')).toBe('Thu, Oct 1 · 6:30 – 7:30 AM PDT');
     expect(formatMeetingDateTime('2026-10-01T13:30:00Z', undefined, 'America/Los_Angeles')).toBe('Thu, Oct 1 · 6:30 AM PDT');
     expect(formatMeetingDateTime('not-a-date', 60)).toBe('');
+  });
+});
+
+describe('formatMeetingWhen', () => {
+  it('shows the day, the start time with its zone and the minutes', () => {
+    expect(formatMeetingWhen('2026-11-05T17:00:00Z', 60, 'America/Los_Angeles')).toBe('Thu, Nov 5 · 9:00 AM PST · 60 min');
+    expect(formatMeetingWhen('2026-10-01T13:30:00Z', 90, 'UTC')).toBe('Thu, Oct 1 · 1:30 PM UTC · 90 min');
+    expect(formatMeetingWhen('not-a-date', 60)).toBe('');
+  });
+});
+
+describe('getMeetingWhenParts', () => {
+  it('returns the day, the start time with its zone and the minutes, and nothing for an invalid start', () => {
+    expect(getMeetingWhenParts('2026-11-05T17:00:00Z', 60, 'America/Los_Angeles')).toEqual(['Thu, Nov 5', '9:00 AM PST', '60 min']);
+    expect(getMeetingWhenParts('not-a-date', 60)).toEqual([]);
+  });
+});
+
+describe('formatMeetingWhenFull', () => {
+  it('adds the cadence of a recurring date and nothing for a one-time meeting', () => {
+    const series = buildMeeting({ recurrence: WEEKLY });
+    expect(formatMeetingWhenFull(row({ meeting: series }))).toBe(`${formatMeetingWhen(local(10, 8).toISOString(), 60)} · Weekly on Thursday`);
+    expect(formatMeetingWhenFull(row({ durationMinutes: 30 }))).toBe(formatMeetingWhen(local(10, 8).toISOString(), 30));
   });
 });
 
@@ -728,21 +771,16 @@ describe('getMeetingHomeRowOrganizers', () => {
   });
 });
 
-describe('getMeetingRsvpScopeLabel', () => {
-  const seconds = String(NOW.getTime() / 1000);
-
-  it('names the date a single or following answer starts from', () => {
-    expect(getMeetingRsvpScopeLabel({ scope: 'single', occurrence_id: seconds })).toBe('Oct 1 only');
-    expect(getMeetingRsvpScopeLabel({ scope: 'this_and_following', occurrence_id: seconds })).toBe('Oct 1 and following');
+describe('getMeetingRsvpToastMessage', () => {
+  it('names the answer and, for a series, the dates it covers', () => {
+    expect(getMeetingRsvpToastMessage({ response_type: 'accepted', scope: 'single' }, true)).toBe('Meeting RSVP set to “Going” for this occurrence');
+    expect(getMeetingRsvpToastMessage({ response_type: 'maybe', scope: 'this_and_following' }, true)).toBe(
+      'Meeting RSVP set to “Maybe” for this and following occurrences'
+    );
+    expect(getMeetingRsvpToastMessage({ response_type: 'declined', scope: 'all' }, true)).toBe('Meeting RSVP set to “Not going” for all occurrences');
   });
 
-  it('reads the date from the composite id when the direct one is missing', () => {
-    expect(getMeetingRsvpScopeLabel({ scope: 'single', meeting_and_occurrence_id: `123-${seconds}` })).toBe('Oct 1 only');
-  });
-
-  it('says all dates for an all-dates answer and falls back without a date', () => {
-    expect(getMeetingRsvpScopeLabel({ scope: 'all', occurrence_id: seconds })).toBe('All dates');
-    expect(getMeetingRsvpScopeLabel({ scope: 'single' })).toBe('This date only');
-    expect(getMeetingRsvpScopeLabel({ scope: 'this_and_following' })).toBe('This date and following');
+  it('names no dates for a one-time meeting', () => {
+    expect(getMeetingRsvpToastMessage({ response_type: 'accepted', scope: 'all' }, false)).toBe('Meeting RSVP set to “Going”');
   });
 });

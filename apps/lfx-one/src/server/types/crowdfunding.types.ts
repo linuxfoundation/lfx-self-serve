@@ -60,6 +60,8 @@ export interface BackendInitiative {
   attribution?: BackendAttribution;
   /** Set only on the manage read (`/initiatives/{id}/manage`); omitted when false. */
   is_owner?: boolean;
+  /** Owner's display name; set only on the lens list and the manage read. */
+  creator?: string;
 }
 
 /** Snake_case attribution as sent and returned by the upstream crowdfunding service. */
@@ -81,6 +83,7 @@ export interface BackendOrgDonation {
   type: 'one_time' | 'recurring';
   initiative_id?: string;
   initiative_name?: string;
+  initiative_slug?: string;
   donor_name: string;
   donor_email: string;
   amount_cents: number;

@@ -14,6 +14,7 @@ const { surveySvc } = vi.hoisted(() => ({
     sendSurveyReminders: vi.fn(),
     getResyncPreview: vi.fn(),
     resyncRecipients: vi.fn(),
+    getSurveyTemplates: vi.fn(),
   },
 }));
 
@@ -227,5 +228,57 @@ describe('SurveyController follow-up actions (#4340)', () => {
       expect(surveySvc.getResyncPreview).toHaveBeenCalledWith(req, VALID_UID, undefined);
       expect(res.json).toHaveBeenCalledWith(preview);
     });
+  });
+});
+
+describe('SurveyController.getSurveyTemplates (#5124)', () => {
+  const COMMITTEE_UID = '33333333-3333-3333-3333-333333333333';
+  let controller: SurveyController;
+
+  const buildTemplatesReq = (query: Record<string, unknown>) => {
+    const { req, res, next } = buildReqRes('');
+    req.params = {};
+    req.path = '/surveys/templates';
+    req.query = query;
+    return { req, res, next };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new SurveyController();
+  });
+
+  it.each([[{}], [{ project_uid: '' }], [{ project_uid: 'not-a-uuid' }], [{ project_uid: [VALID_UID, VALID_UID] }]])(
+    'rejects query %j without calling the service',
+    async (query) => {
+      const { req, res, next } = buildTemplatesReq(query);
+
+      await controller.getSurveyTemplates(req, res, next);
+
+      expect(surveySvc.getSurveyTemplates).not.toHaveBeenCalled();
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(res.json).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects a non-UUID committee_uid', async () => {
+    const { req, res, next } = buildTemplatesReq({ project_uid: VALID_UID, committee_uid: 'abc' });
+
+    await controller.getSurveyTemplates(req, res, next);
+
+    expect(surveySvc.getSurveyTemplates).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('answers with the service result for valid params', async () => {
+    const templates = [{ id: '514744416', title: 'Board Satisfaction Survey' }];
+    surveySvc.getSurveyTemplates.mockResolvedValue(templates);
+    const { req, res, next } = buildTemplatesReq({ project_uid: VALID_UID, committee_uid: COMMITTEE_UID });
+
+    await controller.getSurveyTemplates(req, res, next);
+
+    expect(surveySvc.getSurveyTemplates).toHaveBeenCalledWith(req, VALID_UID, COMMITTEE_UID);
+    expect(res.json).toHaveBeenCalledWith(templates);
+    expect(next).not.toHaveBeenCalled();
   });
 });

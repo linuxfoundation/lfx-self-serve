@@ -148,7 +148,7 @@ export class OrgLensTrainingService {
       const unfiltered = await this.cached(
         qualification,
         accountId,
-        `training-stats:v5:${orgTrainingFiltersSignature({ range: query.range, foundation: null, project: null, course: null, level: null, format: null })}`,
+        `training-stats:v6:${orgTrainingFiltersSignature({ range: query.range, foundation: null, project: null, course: null, level: null, format: null })}`,
         () => this.fetchTrainingStats(accountId, { range: query.range, foundation: null, project: null, course: null, level: null, format: null }),
         isTrainingStats
       );
@@ -157,7 +157,7 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      `training-stats:v5:${orgTrainingFiltersSignature(query)}`,
+      `training-stats:v6:${orgTrainingFiltersSignature(query)}`,
       () => this.fetchTrainingStats(accountId, query),
       isTrainingStats
     );
@@ -349,8 +349,9 @@ export class OrgLensTrainingService {
       FROM f
     `;
 
-    // Learners the warehouse attributes to the org outside its people list (lfx-self-serve#4287): they carry no course
-    // data, so they count toward people only while no filter is set; a key that also has people-list rows is that person.
+    // Learners the warehouse attributes to the org outside its people list (lfx-self-serve#4287): counted only while no filter
+    // is set, like their list, and null (not counted) otherwise; a key that also has people-list rows is that person.
+    // They are never added to the people-list numbers: every other metric reads the people-list pairs `f`.
     const inRange = orgTrainingRangePredicate(query.range);
     const outsideSql = `
       SELECT COUNT(DISTINCT PERSON_KEY) AS PEOPLE
@@ -385,7 +386,7 @@ export class OrgLensTrainingService {
       WHERE ACCOUNT_ID = ?
     `;
 
-    // Learners outside the people list carry no course data to filter on, so any filter drops them from the people count.
+    // Any filter leaves learners outside the people list uncounted (null), as their list is hidden then.
     const includeOutside = !hasOrgTrainingFilter(query);
     const [pairsResult, outsideResult, asOfResult, rosterResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingPairStatsRow>(pairsSql, binds),
@@ -409,8 +410,8 @@ export class OrgLensTrainingService {
       // No row: the org has no LF Education training client, so there is no roster to count (not zero members).
       rosterMembers: roster ? roster.ROSTER_MEMBERS : null,
       rosterMembersAsOf: roster ? toIsoTimestamp(roster.AS_OF_TS) : null,
-      peopleWithTrainingActivity: (pairs?.PEOPLE ?? 0) + outside,
-      learnersOutsidePeopleList: outside,
+      peopleWithTrainingActivity: pairs?.PEOPLE ?? 0,
+      learnersOutsidePeopleList: includeOutside ? outside : null,
       coursesTaken,
       certifications,
       certifiedPeople: pairs?.CERTIFIED_PEOPLE ?? 0,
@@ -618,7 +619,7 @@ function emptyTrainingStats(range: OrgLensTimeRange, asOf: string | null, roster
     rosterMembers,
     rosterMembersAsOf,
     peopleWithTrainingActivity: 0,
-    learnersOutsidePeopleList: 0,
+    learnersOutsidePeopleList: null,
     coursesTaken: 0,
     certifications: 0,
     certifiedPeople: 0,
@@ -643,7 +644,7 @@ function isTrainingStats(value: unknown): boolean {
     isNullableNumber(v.rosterMembers) &&
     isNullableString(v.rosterMembersAsOf) &&
     isNumber(v.peopleWithTrainingActivity) &&
-    isNumber(v.learnersOutsidePeopleList) &&
+    isNullableNumber(v.learnersOutsidePeopleList) &&
     isNumber(v.coursesTaken) &&
     isNumber(v.certifications) &&
     isNumber(v.certifiedPeople) &&

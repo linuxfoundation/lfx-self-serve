@@ -93,6 +93,8 @@ export * from './org-people-key-contacts.constants';
 export * from './org-people-board-members.constants';
 export * from './org-people-committee-members.constants';
 export * from './org-events.constants';
+export * from './org-events-filters.constants';
+export * from './org-events-ui.constants';
 export * from './individual-enrollment-catalog';
 export * from './newsletter.constants';
 export * from './newsletter-member-benefit.constants';

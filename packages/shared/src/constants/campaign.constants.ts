@@ -24,6 +24,8 @@ import type {
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
+  CampaignSurveyEmailCountOption,
+  CampaignSurveyTypeOption,
   CampaignGoalOption,
   CampaignOptimizeControlLever,
   CampaignOptimizeLever,
@@ -179,6 +181,7 @@ export function campaignPlatformMonitorable(platform: CampaignPlatform): boolean
 export const CAMPAIGN_DELIVERY_TYPES: readonly CampaignDeliveryTypeOption[] = [
   { id: 'paid-marketing', label: 'Paid Marketing', breadcrumbLabel: 'Paid Marketing' },
   { id: 'email', label: 'Email', breadcrumbLabel: 'Email' },
+  { id: 'survey', label: 'Survey & Report', breadcrumbLabel: 'Survey & Report' },
 ] as const;
 
 export const CAMPAIGN_PROGRAM_TYPES: readonly CampaignProgramTypeOption[] = [
@@ -2030,6 +2033,47 @@ export const GOOGLE_DEVICE_BID_MODE_LABELS = {
 export const GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS = 20;
 
 /**
+ * The Google channels that take responsive search ads, their display paths, campaign-level negative
+ * keywords and the Search partners opt-in: Search alone. campaign-service refuses `adGroups`,
+ * `path1`/`path2`, `negativeKeywords` and `searchPartners` on every other channel
+ * (`preflightCampaignKind`) rather than dropping them.
+ */
+export const GOOGLE_CHANNELS_WITH_SEARCH_ADS = ['search'] as const;
+
+/** Google's limit of enabled responsive search ads in one ad group (campaign-service's `maxAdsPerAdGroup`). */
+export const GOOGLE_ADS_MAX_SEARCH_ADS_PER_AD_GROUP = 3;
+
+/**
+ * Most headlines and descriptions one responsive search ad takes (`ad_copy.go`'s `maxHeadlines` and
+ * `maxDescriptions`). Upstream drops the rows past these with a note; the shared judge
+ * (`googleAdditionalSearchAdsRefusal`) deliberately refuses them instead, stricter than upstream, so
+ * no line the operator wrote is silently left out. The Implement tab stops offering Add at the cap.
+ */
+export const GOOGLE_ADS_MAX_SEARCH_HEADLINES = 15;
+export const GOOGLE_ADS_MAX_SEARCH_DESCRIPTIONS = 4;
+
+/**
+ * Most display width each responsive search ad display path takes (`ad_copy.go`'s
+ * `maxSearchAdPathWeight`), counted as Google counts it: CJK and full-width characters count double
+ * (see `googleAdsTextWeight`).
+ */
+export const GOOGLE_ADS_MAX_SEARCH_AD_PATH_WIDTH = 15;
+
+/**
+ * The characters a display path may not hold besides whitespace and control characters
+ * (`pmax_creative.go`'s `displayPathPunctuation`): each would break the visible URL Google renders.
+ */
+export const GOOGLE_ADS_SEARCH_AD_PATH_REFUSED_CHARACTERS = '/?#&=';
+
+/**
+ * The theme label of the one ad group a Search campaign with several responsive search ads is sent
+ * as. campaign-service requires a name on every `adGroups` entry and APPENDS it to the composed ad
+ * group name ("LFX | Ad Group | <project> | <event> | <suffix> | Main"); a campaign with one ad is
+ * sent without `adGroups` and keeps the name it has always had.
+ */
+export const GOOGLE_SEARCH_AD_GROUP_NAME = 'Main';
+
+/**
  * The age ranges accepted on a campaign-level exclusion, mapped to Google's `AgeRangeType` enum
  * (`campaign_criteria.go`'s `ageRangeTypes`).
  *
@@ -3781,6 +3825,128 @@ export const DEFAULT_CAMPAIGN_EMAIL_TYPE_ID = 'main-registration-push';
  */
 export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Registration Push', 'Discount Offer', 'Final Countdown', 'Post-Event'] as const;
 
+/**
+ * Every stage a SURVEY campaign can occupy — a separate vocabulary from `CAMPAIGN_EMAIL_STAGES`,
+ * not an extension of it.
+ *
+ * An email stage names WHICH SEND in an event's series it is; a survey stage names WHICH ASSET is
+ * being promoted. Upstream enforces the split in both directions (`briefIdentityPairProblem` and
+ * the column's own pair CHECK), so `(email, 'Survey Promo')` and `(survey, 'Final Countdown')` are
+ * both refused — pooling the two lists here would offer the operator a pair the server rejects.
+ */
+export const CAMPAIGN_SURVEY_STAGES = ['Survey Promo', 'Survey Reminder', 'Survey Closing', 'Report Promo'] as const;
+
+/**
+ * What the operator picks on the survey surface: which SEND of which asset this is.
+ *
+ * The counterpart of `CAMPAIGN_EMAIL_TYPES`, and deliberately the same shape, so the stage picker
+ * renders from either list without a second code path. `keywords` rank clone templates the same
+ * way they do for email.
+ *
+ * A survey's promotion is a SERIES — an opening send, a reminder while it is still in field, and a
+ * closing push — so three of the four entries promote the same instrument at different points.
+ * Each is its own brief with its own audience and its own draft, exactly as the six event stages
+ * are. Report promotion has no series: a published report does not close, so there is no reminder
+ * or closing send to write.
+ */
+export const CAMPAIGN_SURVEY_TYPES: readonly CampaignSurveyTypeOption[] = [
+  {
+    id: 'survey-promo',
+    label: 'Survey Promotion',
+    stage: 'Survey Promo',
+    keywords: ['survey', 'participate', 'research', 'questionnaire'],
+  },
+  {
+    id: 'survey-reminder',
+    label: 'Survey Reminder',
+    stage: 'Survey Reminder',
+    keywords: ['survey', 'reminder', 'still open', 'research', 'participate'],
+  },
+  {
+    id: 'survey-closing',
+    label: 'Survey Closing',
+    stage: 'Survey Closing',
+    keywords: ['survey', 'closing', 'last chance', 'deadline', 'final'],
+  },
+  {
+    id: 'report-promo',
+    label: 'Report Promotion',
+    stage: 'Report Promo',
+    keywords: ['report', 'findings', 'research', 'insights', 'study'],
+  },
+] as const;
+
+/** The survey type a fresh selection starts on. */
+export const DEFAULT_CAMPAIGN_SURVEY_TYPE_ID = 'survey-promo';
+
+/**
+ * Every stage a SEND surface can carry, email and survey together. For the places that only
+ * CARRY a stage (restoring a stored brief); a picker offers its own surface's list instead.
+ */
+export const CAMPAIGN_SEND_STAGES = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES] as const;
+
+/**
+ * Last URL path segments that name a survey tool's PAGE rather than the survey (Google Forms ends
+ * every form in `viewform`). A survey brief is keyed on its slug, so these fall back to the asset's
+ * own name instead of making every form in a project one brief.
+ */
+export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Set([
+  'viewform',
+  'formresponse',
+  'responsepage',
+  'edit',
+  'index',
+  'form',
+  'survey',
+  's',
+  'r',
+]);
+
+/**
+ * The longest survey source document campaign-service accepts, in characters, counted as
+ * `campaignSurveySourceTextLength` counts them. Longer is a 400 at brief save and at copy
+ * generation upstream: the copy would otherwise be written from a cut document, silently losing a
+ * finding, date or incentive.
+ */
+export const CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS = 3000;
+
+/**
+ * A raw-length ceiling checked BEFORE the source is normalised and counted, so an oversized body
+ * is refused without copying it. Generous on purpose: collapsing whitespace can shrink a pasted
+ * document, so the raw text may run well past the counted limit and still be within it.
+ */
+export const CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS = CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS * 8;
+
+/** The longest send-workflow name campaign-service accepts. */
+export const CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS = 200;
+
+/** The most briefs (and dates) one send workflow can carry upstream. */
+export const CAMPAIGN_SEND_WORKFLOW_MAX_SENDS = 10;
+
+/**
+ * sessionStorage key prefix for how many times a survey series was started over, per project and
+ * survey slug. A restarted series writes NEW briefs (`<slug>-r2`, `-r3`...) so campaign-service
+ * creates new drafts; remembering the count across a reload keeps the page from writing the
+ * ORIGINAL briefs again, whose drafts campaign-service would hand back unchanged.
+ */
+export const CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX = 'lfx-campaigns-survey-series-restart:';
+
+/** A send-workflow date as campaign-service takes it: a calendar date, YYYY-MM-DD. */
+export const CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * How many emails a survey can be promoted by: one, sent on its own, or the full three-send
+ * series (promo, reminder, closing).
+ *
+ * There is no two-send option. A series is sent by copying ONE configured HubSpot workflow, and
+ * campaign-service requires that workflow's send-step count to equal the number of briefs -- so a
+ * second series length would need a second source workflow, which the deployment does not have.
+ */
+export const CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS: readonly CampaignSurveyEmailCountOption[] = [
+  { count: 1, label: 'One email', description: 'A single send, scheduled on its own', stages: ['Survey Promo'] },
+  { count: 3, label: 'Three emails', description: 'Opening, reminder, then closing', stages: ['Survey Promo', 'Survey Reminder', 'Survey Closing'] },
+] as const;
+
 // ---------------------------------------------------------------------------
 // Audience Builder
 // ---------------------------------------------------------------------------
@@ -4246,8 +4412,11 @@ export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
  * Far above any paste an operator produces, so the invariant the bound above states — a resource
  * ceiling never refuses what upstream accepts — holds here too, while a pathological body is still
  * stopped before `createConfigEnvelope` walks it. Only the one field named above is measured against
- * it: every other nested name upstream decodes as a plain `string`, so an array under one of those
- * is a body upstream refuses outright and has no over-refusal to relax.
+ * it. The other nested LISTS are `additionalSearchAds[].headlines` and `.descriptions` (#4991), each a
+ * `[]string` upstream: they are bounded at {@link MAX_GOOGLE_CREATIVE_LIST_ENTRIES}, far above the
+ * 15 headlines and 4 descriptions one ad takes, so that bound refuses nothing upstream accepts. Every
+ * other nested name upstream decodes as a plain `string`, so an array under one of those is a body
+ * upstream refuses outright and has no over-refusal to relax.
  */
 export const MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES = 1000;
 
@@ -4351,6 +4520,15 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'callExtensions', label: 'call extensions' },
   { field: 'promotions', label: 'promotions' },
   { field: 'prices', label: 'price extensions' },
+  // The Search ad group's further ads, every ad's display paths, the create-time negatives and the
+  // Search partners opt-in (#4991): the legacy creator builds one ad from `headlines`/`descriptions`
+  // on Google Search alone, and nothing else.
+  { field: 'path1', label: 'display path 1' },
+  { field: 'path2', label: 'display path 2' },
+  { field: 'additionalSearchAds', label: 'additional search ads' },
+  { field: 'negativeKeywords', label: 'negative keywords' },
+  // `false` asks for nothing (Google Search only), like an empty list: see `unservedGoogleCriteriaField`.
+  { field: 'searchPartners', label: 'Search partners' },
   // The bidding plan and the per-channel creative (#3568), judged by what the cutover's own
   // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
   // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
@@ -5042,6 +5220,47 @@ export const GOOGLE_ADS_MAX_CONVERSION_ACTIONS = 100;
  * upstream refuses a foreign one by name before any mutate.
  */
 export const GOOGLE_ADS_CONVERSION_ACTION_PATTERN = /^(?:\d+|customers\/\d+\/conversionActions\/\d+)$/;
+
+/**
+ * The bare numeric conversion action id — the short form of {@link
+ * GOOGLE_ADS_CONVERSION_ACTION_PATTERN}.
+ */
+export const GOOGLE_ADS_CONVERSION_ACTION_ID_PATTERN = /^\d+$/;
+
+/**
+ * The full `customers/<id>/conversionActions/<id>` resource name ONLY — the long form of
+ * {@link GOOGLE_ADS_CONVERSION_ACTION_PATTERN}, which also accepts a bare id. Group 1 is the trailing
+ * conversion action id, so a reader can check it names the same action as the row's own `id`.
+ */
+export const GOOGLE_ADS_CONVERSION_ACTION_RESOURCE_PATTERN = /^customers\/\d+\/conversionActions\/(\d+)$/;
+
+/**
+ * Why the Implement tab's conversion-action picker offers no list. Each ends by pointing at the
+ * free-text box, which works exactly as it did before the picker:
+ * - `forbidden`: the BFF said this caller may not read the list
+ *   (`CampaignListResult.googleConversionActionsEnabled` is false), so no request is made. The list
+ *   names every foundation's actions on the shared account, so only a root principal is answered.
+ * - `unavailable`: the read was made and answered 403 or 404. The BFF had already said the caller may
+ *   read it, so a 403 is campaign-service's gateway, which denies the route until the deployment sets
+ *   `openfga.rootProjectUid`; a 404 is the BFF route off, or campaign-service's NotFound for the project.
+ * - `failed`: anything else — campaign-service's 400, 500 or 503 (including an account holding more
+ *   than 500 enabled actions, which does not clear on retry), or no answer at all.
+ */
+export const GOOGLE_CONVERSION_ACTION_PICKER_REASONS = {
+  forbidden: "Your account can't list this Google Ads account's conversion actions. Enter their ids below instead.",
+  unavailable: "The conversion action list isn't available here yet. Enter their ids below instead.",
+  failed: "The conversion action list couldn't be read for this project's Google Ads account. Enter their ids below instead.",
+} as const;
+
+/** What the picker says while its list is being read. */
+export const GOOGLE_CONVERSION_ACTION_PICKER_LOADING = "Loading this account's conversion actions…";
+
+/**
+ * What the picker says when the account has no enabled conversion action. A blank box sends no
+ * `conversionActions`, so the campaign uses the account's own conversion goals.
+ */
+export const GOOGLE_CONVERSION_ACTION_PICKER_EMPTY =
+  "This Google Ads account has no enabled conversion actions. Enter ids below or leave the box blank to use the account's own goals.";
 
 /**
  * The numeric bounds campaign-service applies to the three money/ratio fields, in whole units of

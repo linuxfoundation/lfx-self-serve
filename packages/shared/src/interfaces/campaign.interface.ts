@@ -7,6 +7,7 @@ import type {
   CAMPAIGN_BIDDING_STRATEGIES,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
   CREATIVE_ASSET_MIME_TYPES,
@@ -89,8 +90,16 @@ export type CampaignGoal = 'conversions' | 'brand-awareness' | 'traffic' | 'lead
 
 export type CampaignProgramType = 'events' | 'education';
 
-/** How a campaign reaches its audience — the second selector after the program type. */
-export type CampaignDeliveryType = 'paid-marketing' | 'email';
+/**
+ * How a campaign reaches its audience — the second selector after the program type.
+ *
+ * `survey` is a SURFACE, not a kind of email: its brief is authored from a pasted source document
+ * and a promoted URL rather than a scraped event page, and its stages name which ASSET is promoted
+ * rather than which send in a series it is. Upstream keys a brief on `(project, slug, delivery,
+ * stage)`, so modelling it as an email stage would put a survey brief in the same identity slot as
+ * that event's sends and let one displace the other.
+ */
+export type CampaignDeliveryType = 'paid-marketing' | 'email' | 'survey';
 
 export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
 
@@ -521,6 +530,15 @@ export interface CampaignBriefRequest {
    * two different things. This field is what distinguishes them.
    */
   deliveryType?: CampaignDeliveryType;
+  /**
+   * The SURVEY surface's source document: the survey instrument or report text the copy is written
+   * from. Required when `deliveryType` is `survey` and ignored otherwise.
+   *
+   * It replaces the scrape rather than supplementing it. A survey's facts live in the document the
+   * operator pasted, not on the page the call-to-action opens -- that page is often a bare form --
+   * so the survey path skips fetching and extraction entirely and takes this as the whole truth.
+   */
+  sourceText?: string;
   programType?: CampaignProgramType;
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
@@ -560,7 +578,125 @@ export interface CampaignEventSponsor {
   logoUrl: string;
 }
 
+/**
+ * One send of a survey series, as the page holds it between generating and building.
+ *
+ * Carries the brief id because each send is its own brief upstream, and the copy because the
+ * operator reviews all of them together before anything reaches HubSpot.
+ */
+export interface CampaignSequenceSend {
+  stage: CampaignSurveyStage;
+  /** The send's operator-facing name, e.g. "Survey Reminder". */
+  label: string;
+  briefId: string;
+  copy: EmailBriefCopy;
+  /** The HubSpot draft this send was staged as: its link, and its id for pasting into search. */
+  draftUrl?: string;
+  draftId?: string;
+}
+
+/** One written send as the series panel renders it: the send, its staged body, button and state. */
+export interface CampaignSequenceSendRow {
+  send: CampaignSequenceSend;
+  bodyHtml: string;
+  button: { text: string; url: string } | null;
+  staged: boolean;
+}
+
+/**
+ * What a send workflow is built from: the series' briefs, in SEND ORDER, and the workflow whose
+ * schedule and enrollment it copies.
+ *
+ * Brief ids rather than HubSpot email ids, because which draft a brief produced is
+ * campaign-service's own record -- a client that looked that up could pair a brief with another
+ * campaign's email, and a workflow is exactly where that goes unnoticed: every step looks filled in.
+ */
+export interface CampaignSendWorkflowRequest {
+  /**
+   * The workflow to copy. Its HubSpot editor URL, or its bare numeric id. Only ever READ.
+   *
+   * OPTIONAL: omitted, campaign-service uses the deployment's configured survey-sequence
+   * workflow, which is the ordinary case -- an operator should not have to find a URL in HubSpot
+   * to do the usual thing.
+   */
+  sourceWorkflowUrl?: string;
+  /** Name for the new workflow. */
+  name: string;
+  /** The briefs this workflow sends, in send order. At least two -- one email needs no workflow. */
+  briefIds: string[];
+  /**
+   * Calendar dates (YYYY-MM-DD), one per wait-until-date step of the source workflow, in flow
+   * order, each after today and after the one before it. Required by campaign-service whenever the
+   * source has dated steps -- its own dates belong to another campaign. Each step's time of day is
+   * always the source's.
+   */
+  sendDates?: string[];
+}
+
+/** The created workflow, which is always disabled until a human enables it in HubSpot. */
+export interface CampaignSendWorkflowResult {
+  flowId: string;
+  name: string;
+  /** Where the operator reviews and enables it. */
+  editUrl: string;
+  sourceFlowId: string;
+  sourceFlowName?: string;
+  /** Always false on create. Reported rather than assumed, so a portal that ignored it is visible. */
+  isEnabled: boolean;
+  /** How many of the source's send steps were pointed at this campaign's drafts. */
+  sendEmailSteps: number;
+  /** How many wait-until-date steps had their date replaced. */
+  datedSteps: number;
+  /**
+   * The HubSpot lists the new workflow enrolls: the series' shared audience (its master list, or
+   * every list it was attached from). The source workflow's own enrollment is always replaced.
+   */
+  enrollmentListIds: string[];
+  /** The new workflow's whole suppression set: the source workflow's own lists plus the audience's. */
+  suppressionListIds: string[];
+}
+
+/**
+ * campaign-service's `send-workflow-result`, as it arrives on the wire (snake_case). The BFF maps
+ * it to `CampaignSendWorkflowResult`; nothing outside the BFF reads this shape.
+ */
+export interface CampaignServiceSendWorkflowResult {
+  flow_id?: string;
+  name?: string;
+  edit_url?: string;
+  source_flow_id?: string;
+  source_flow_name?: string;
+  is_enabled?: boolean;
+  send_email_steps?: number;
+  dated_steps?: number;
+  enrollment_list_ids?: string[];
+  suppression_list_ids?: string[];
+}
+
+/** One choice in the survey surface's "How many emails?" picker. */
+export interface CampaignSurveyEmailCountOption {
+  count: number;
+  label: string;
+  description: string;
+  /** The stages this count's sends occupy, in send order. */
+  stages: readonly CampaignSurveyStage[];
+}
+
+/** Where a survey series' generate, stage or workflow build stands. */
+export type CampaignSurveySequenceGenerateState = 'idle' | 'generating' | 'done' | 'error';
+export type CampaignSurveySequenceStagingState = 'idle' | 'staging' | 'done' | 'error';
+export type CampaignSurveySendWorkflowState = 'idle' | 'building' | 'done' | 'error';
+
 export interface CampaignEventDetails {
+  /**
+   * The SURVEY surface's primary input: the survey instrument or report text the copy is written
+   * from, pasted by the operator rather than scraped. Empty on every event brief.
+   *
+   * It rides in this blob rather than in a column of its own because upstream stores
+   * `event_details` as an opaque JSON document, so carrying it costs no migration -- the
+   * generator reads it back as `sourceText` and renders it into the prompt as "Source document".
+   */
+  sourceText: string;
   name: string;
   dates: string;
   city: string;
@@ -607,14 +743,12 @@ export interface CampaignBriefOutput {
   structuredCopy: Record<string, unknown> | null;
   keywords: CampaignKeyword[];
   /**
-   * Negative keywords the brief generated from the event page, for the Optimize tab's
-   * negative-keyword editor to open pre-filled with once the campaign is live.
+   * Negative keywords the brief generated from the event page, as suggestions for two editors: the
+   * Implement tab's create-time negatives on a Search campaign (#4991), and the Optimize tab's
+   * negative-keyword editor once the campaign is live.
    *
-   * A SUGGESTION, and a weaker claim than {@link googleCallouts}' "seed": callouts are dispatched
-   * with the campaign at CREATE time, while negatives have no create-time path at all — upstream
-   * takes them only through `add-negative-keywords`, a mutation on a campaign that already exists.
-   * So this list is never sent by anything; it fills the editor's text, the operator edits it
-   * there, and nothing leaves until they press the button.
+   * A SUGGESTION: each editor opens with this text. On a Search create it is sent as shown unless the
+   * operator edits or clears it; on Optimize nothing leaves until they press the button.
    *
    * Text only, no match type. The match type is one choice for the whole request and belongs to the
    * platform the operator is sending to — Google offers three, Microsoft two, Reddit none — so the
@@ -629,8 +763,9 @@ export interface CampaignBriefOutput {
    * Already bounded by the generator to {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries of at
    * most {@link MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters — Google's cap, the narrowest
    * of the four platforms that take negatives, since the brief cannot know which campaign these
-   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`, so the editor
-   * never opens holding a line it would refuse the operator for typing.
+   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`. A stored brief
+   * is still runtime-arbitrary, so the Implement tab filters its seed through the same rules again
+   * (`googleSuggestedNegativeKeywordsText`) and never opens holding a line it would refuse.
    */
   negativeKeywords?: string[];
   hsUtm: string | null;
@@ -674,7 +809,7 @@ export interface CampaignBriefOutput {
    * campaign be the series it actually is -- a CFP Launch and a Final Countdown for the same
    * event, both live at once.
    */
-  emailStage?: CampaignEmailStage;
+  emailStage?: CampaignSendStage;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
@@ -1389,6 +1524,23 @@ export interface CampaignImplementationDraft {
    * Absent and empty agree: the campaign excludes nowhere.
    */
   googleExcludedGeoTargets?: string[];
+  /**
+   * The first Search ad's display paths and the second and third ads, as the operator left them.
+   * Held and restored on the same rule as {@link googleAdSchedules}, so they are kept, not sent,
+   * while a channel other than Search is selected.
+   */
+  googleSearchPath1?: string;
+  googleSearchPath2?: string;
+  googleAdditionalSearchAds?: CampaignSearchAd[];
+  /** The Search partners toggle as the operator left it, held on the same rule as the ads above. */
+  googleSearchPartners?: boolean;
+  /**
+   * The create-time negative keywords as TYPED — the editor's raw text, one keyword per line — and
+   * the one match type they are all sent with. Raw so a reopened draft shows the line a refusal
+   * names; restored over the brief's suggestions.
+   */
+  googleNegativeKeywordsText?: string;
+  googleNegativeKeywordMatchType?: CampaignNegativeKeywordMatchType;
   /**
    * Google's callout extensions, as the operator typed them — already trimmed, because a callout
    * only becomes a chip once it has passed the add guards.
@@ -2297,6 +2449,46 @@ export interface GoogleAdsGeoTargetSearchState {
   truncated: boolean;
   failed: boolean;
   pending: boolean;
+}
+
+/**
+ * One enabled conversion action on the Google Ads account a create uses, as the Implement tab's
+ * picker offers it (campaign-service `list-google-ads-conversion-actions`, camel-cased). `id` is the
+ * short form `conversionActions` accepts and the one the picker writes; `name` and `category` are
+ * labels only.
+ */
+export interface GoogleAdsConversionActionOption {
+  id: string;
+  resourceName: string;
+  name: string;
+  category: string;
+  /** Counts toward the account's Conversions column and so drives bidding by default. */
+  primaryForGoal: boolean;
+}
+
+/**
+ * One action as the picker lists it: the action, and the label it is shown with, built once when
+ * the list is read.
+ */
+export interface GoogleConversionActionPickerOption extends GoogleAdsConversionActionOption {
+  label: string;
+}
+
+/** The conversion-action read: the account it came from and its enabled actions, sorted by name. */
+export interface GoogleAdsConversionActionsResult {
+  accountId: string;
+  actions: GoogleAdsConversionActionOption[];
+}
+
+/**
+ * Where the Implement tab's conversion-action picker stands. `unavailable` is a list that could not
+ * load — the caller is not root, the route is off or denied on this deployment, or Google failed —
+ * and `reason` says which in one sentence; the free-text box is the way in then, as it always was.
+ */
+export interface GoogleConversionActionPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  actions: GoogleConversionActionPickerOption[];
+  reason: string | null;
 }
 
 /** The optional narrowing a geo target search may carry beside its query text. */
@@ -3221,6 +3413,18 @@ export interface GoogleAdScheduleRowView {
  */
 export type GoogleDeviceBidMode = 'default' | 'adjust' | 'exclude';
 
+/**
+ * One responsive search ad on a Google Search campaign (#4991): its copy and its optional display
+ * paths. Blank lines are dropped before sending; an ad that sets neither path inherits the
+ * campaign-level pair upstream.
+ */
+export interface CampaignSearchAd {
+  headlines: string[];
+  descriptions: string[];
+  path1?: string;
+  path2?: string;
+}
+
 /** One demographic exclusion checkbox on the Implementation tab: the value it writes, its label and whether it is ticked. */
 export interface GoogleExclusionOptionView {
   value: string;
@@ -3440,6 +3644,35 @@ export interface CampaignCreateRequest {
    * member: excluding it is a real choice a campaign makes.
    */
   excludedGenders?: GoogleAdsGender[];
+  /**
+   * The first responsive search ad's display paths — the segments Google shows after the final
+   * URL's domain, as in `example.com/kubecon/na`. Search only ({@link GOOGLE_CHANNELS_WITH_SEARCH_ADS});
+   * each at most {@link GOOGLE_ADS_MAX_SEARCH_AD_PATH_WIDTH} wide, `path2` only with `path1`. Sent
+   * as the campaign-level pair, which every ad that sets neither path inherits upstream.
+   */
+  path1?: string;
+  path2?: string;
+  /**
+   * The Search ad group's second and third responsive search ads (#4991). The first ad stays
+   * {@link headlines}, {@link descriptions}, {@link path1} and {@link path2}; with any entry here the
+   * BFF sends all of them as ONE named ad group (`adGroups`), so up to
+   * {@link GOOGLE_ADS_MAX_SEARCH_ADS_PER_AD_GROUP} ads in total. Absent or empty sends the single ad
+   * exactly as before.
+   */
+  additionalSearchAds?: CampaignSearchAd[];
+  /**
+   * Whether the Search campaign also serves on Google's Search partner network, beside Google Search
+   * (campaign-service's `searchPartners`, 1.0.24). Search only; sent only when `true`, so absent and
+   * `false` both mean Google Search only, as every create before this field.
+   */
+  searchPartners?: boolean;
+  /**
+   * Campaign-level negative keywords created with the Search campaign (#4991): queries it must
+   * never pay for. Search only, at most {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST}, each text on the
+   * rules `parseNegativeKeywordInput` applies with Google's 80-character cap. The BFF sends the match
+   * type upper-cased, as it sends {@link keywords}.
+   */
+  negativeKeywords?: CampaignNegativeKeywordInput[];
   /**
    * The Google campaign's callout extensions — short claims appended to the text ad, carrying no
    * link of their own.
@@ -4261,6 +4494,24 @@ export interface CampaignServiceAccessibleAccount {
 /** `GET /projects/{id}/connection-google-ads/accounts` (`list-google-ads-accounts`). */
 export interface CampaignServiceAccessibleAccounts {
   accounts: CampaignServiceAccessibleAccount[];
+}
+
+/** One entry of campaign-service's `google-ads-conversion-actions` result, as it is on the wire. */
+export interface CampaignServiceGoogleAdsConversionAction {
+  id: string;
+  resource_name: string;
+  name: string;
+  status: string;
+  type: string;
+  category: string;
+  primary_for_goal: boolean;
+}
+
+/** campaign-service `GET /projects/{project_id}/google-ads/conversion-actions` (root principals only). */
+export interface CampaignServiceGoogleAdsConversionActions {
+  account_id: string;
+  conversion_actions: CampaignServiceGoogleAdsConversionAction[];
+  conversion_action_count: number;
 }
 
 /**
@@ -5874,6 +6125,16 @@ export interface CampaignListResult {
    */
   googleAudienceSegmentsEnabled: boolean;
   /**
+   * Whether THIS caller may read the Implement tab's conversion-action picker list (#4991), through
+   * `GET /api/campaigns/google/conversion-actions`. Per caller: true only when the campaign-service
+   * create path serves the create AND the caller is a ROOT writer or ROOT campaign manager — the two
+   * checks that route makes — because the shared LF Google Ads account lists every foundation's
+   * actions. Its own field rather than {@link googleAudienceSegmentsEnabled}, whose root-only meaning
+   * lasts only until a user list can be mapped to a project. Optional, so a BFF that predates it reads
+   * as unanswered (`null` on the client) and the tab keeps its free-text box without asking.
+   */
+  googleConversionActionsEnabled?: boolean;
+  /**
    * Whether the Implement tab may SEARCH Google's geo target table for postal-code targets, through
    * `GET /api/campaigns/google/geo-targets`, instead of asking for a typed constant id.
    *
@@ -6774,6 +7035,20 @@ export interface BriefMetrics {
 export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
 
 /**
+ * A stage on the SURVEY surface. Derived from `CAMPAIGN_SURVEY_STAGES` for the same reason
+ * `CampaignEmailStage` is derived from its list: the runtime value that goes on the wire and the
+ * type that describes it cannot then drift apart.
+ */
+export type CampaignSurveyStage = (typeof CAMPAIGN_SURVEY_STAGES)[number];
+
+/**
+ * A stage on any send surface. The wire field is one column upstream, so the places that merely
+ * carry a stage — the brief payload, the copy request — take this union, while the places that
+ * OFFER a choice take the surface's own list.
+ */
+export type CampaignSendStage = CampaignEmailStage | CampaignSurveyStage;
+
+/**
  * Requests a differently-styled draft of the same stage's copy from `generate-email-copy` --
  * currently just `'urgency-fomo'`, an urgency/FOMO-forward structure instead of the stage's normal
  * copy. Free text upstream, same lenient-fallback shape as `CampaignEmailStage`: an unrecognised
@@ -6811,6 +7086,18 @@ export interface CampaignEmailTypeOption {
   id: string;
   label: string;
   stage: CampaignEmailStage;
+  keywords: readonly string[];
+}
+
+/**
+ * What the operator picks on the survey surface. Structurally the same as
+ * `CampaignEmailTypeOption` but carrying a survey stage, so the two cannot be assigned to each
+ * other by accident -- the stage is what upstream keys the brief on.
+ */
+export interface CampaignSurveyTypeOption {
+  id: string;
+  label: string;
+  stage: CampaignSurveyStage;
   keywords: readonly string[];
 }
 

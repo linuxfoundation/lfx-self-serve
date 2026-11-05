@@ -213,6 +213,50 @@ describe('UiAvatarComponent', () => {
     expect(badge?.querySelector('i')?.classList.contains('fa-github')).toBe(true);
   });
 
+  it('pins a 14px status circle to the top right, tinted by tone, and keeps the provider badge', async () => {
+    fixture.componentRef.setInput('badgeIcon', 'fa-brands fa-github');
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-check', tone: 'accent', label: 'RSVP: Yes' });
+    await fixture.whenStable();
+
+    const status = host.querySelector<HTMLElement>('[data-testid="ui-avatar-status"]');
+    expect(status?.className).toContain('-top-[3px]');
+    expect(status?.className).toContain('-right-[3px]');
+    expect(status?.className).toContain('h-[14px]');
+    expect(status?.className).toContain('bg-ui-accent-500');
+    expect(status?.className).toContain('ring-ui-background-100');
+    expect(status?.querySelector('i')?.classList.contains('fa-check')).toBe(true);
+    expect(host.querySelector('[data-testid="ui-avatar-badge"]')).not.toBeNull();
+
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-ellipsis', tone: 'neutral', label: 'RSVP: No response' });
+    await fixture.whenStable();
+    expect(host.querySelector('[data-testid="ui-avatar-status"]')?.className).toContain('bg-ui-neutral-500');
+
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-question', tone: 'warning', label: 'RSVP: Maybe' });
+    await fixture.whenStable();
+    expect(host.querySelector('[data-testid="ui-avatar-status"]')?.className).toContain('text-ui-neutral-900');
+  });
+
+  it('adds the status label to the accessible name and keeps the name as the title', async () => {
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-check', tone: 'accent', label: 'RSVP: Yes' });
+    await fixture.whenStable();
+
+    expect(host.getAttribute('aria-label')).toBe('Maria Santos, RSVP: Yes');
+    expect(host.getAttribute('title')).toBe('Maria Santos');
+    // An empty title on the circle stops the name tooltip from doubling up with the status tooltip.
+    expect(host.querySelector('[data-testid="ui-avatar-status"]')?.getAttribute('title')).toBe('');
+  });
+
+  it('still announces the status of a decorative avatar', async () => {
+    fixture.componentRef.setInput('decorative', true);
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-xmark', tone: 'neutral', label: 'Absent' });
+    await fixture.whenStable();
+
+    expect(host.getAttribute('aria-hidden')).toBeNull();
+    expect(host.getAttribute('role')).toBe('img');
+    expect(host.getAttribute('aria-label')).toBe('Absent');
+    expect(host.getAttribute('title')).toBeNull();
+  });
+
   it('renders a hidden shimmer shell as a placeholder', async () => {
     fixture.componentRef.setInput('placeholder', true);
     await fixture.whenStable();
