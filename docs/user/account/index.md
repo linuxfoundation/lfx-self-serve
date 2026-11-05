@@ -29,14 +29,14 @@ All authenticated users have an account. Every user can view and manage their ow
 
 Account areas live under the **Profile & Account** hub. Go to **app.lfx.dev**, select [**Profile & Account**](/profile) from the left navigation sidebar, and choose a tab:
 
-| Tab                         | Route                            | Description                                                      | Documentation                                     |
-| --------------------------- | -------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------- |
-| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                       | [Work history & Affiliations](./work-history/)    |
-| Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work      | [Identities](./identities/)                       |
-| Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan         | [Individual Enrollment](./individual-enrollment/) |
-| CLAs                        | `/profile/clas`                  | Your signed ICLAs and your coverage under a Corporate CLA (CCLA) | [CLAs](./my-clas/)                                |
-| Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                           | [Transactions](./transactions/)                   |
-| Settings                    | `/profile/settings`              | Email addresses, password, developer API token, and LFX Insights API tokens               | [Settings](./settings/)                           |
+| Tab                         | Route                            | Description                                                                 | Documentation                                     |
+| --------------------------- | -------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
+| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                                  | [Work history & Affiliations](./work-history/)    |
+| Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work                 | [Identities](./identities/)                       |
+| Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan                    | [Individual Enrollment](./individual-enrollment/) |
+| CLAs                        | `/profile/clas`                  | Your signed ICLAs and your coverage under a Corporate CLA (CCLA)            | [CLAs](./my-clas/)                                |
+| Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                                      | [Transactions](./transactions/)                   |
+| Settings                    | `/profile/settings`              | Email addresses, password, developer API token, and LFX Insights API tokens | [Settings](./settings/)                           |
 
 `/profile` opens the **Work history & Affiliations** tab by default.
 

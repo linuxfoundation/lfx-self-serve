@@ -10,7 +10,7 @@ intercom_collection: Account
 
 ## What is the difference between Account and Profile?
 
-**Profile** is your personal identity — your name, photo, About Me, primary email, and location, edited in the Edit Profile drawer. **Account** covers everything else tied to your Linux Foundation account: work history and affiliations, connected identities, individual enrollment, CLAs, transactions, and settings (email, password, and developer API token). Both live under the **Profile & Account** hub.
+**Profile** is your personal identity — your name, photo, About Me, primary email, and location, edited in the Edit Profile drawer. **Account** covers everything else tied to your Linux Foundation account: work history and affiliations, connected identities, individual enrollment, CLAs, transactions, and settings (email, password, developer API token, and LFX Insights API tokens). Both live under the **Profile & Account** hub.
 
 ## How do I change my email address?
 
