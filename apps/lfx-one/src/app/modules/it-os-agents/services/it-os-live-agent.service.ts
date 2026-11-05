@@ -79,7 +79,12 @@ export class ItOsLiveAgentService {
         next: (response) => {
           if (!response) return;
           this.messages.set(response.messages);
-          if (response.turnComplete && this.agentReplies(response.messages) > agentRepliesBefore) this.settle();
+          if (response.sessionTooLong) {
+            this.settle();
+            this.error.set('This conversation is too long for the agent to follow. Start a new conversation to keep going.');
+          } else if (response.turnComplete && this.agentReplies(response.messages) > agentRepliesBefore) {
+            this.settle();
+          }
         },
         error: (error: unknown) => this.fail(error),
         complete: () => {

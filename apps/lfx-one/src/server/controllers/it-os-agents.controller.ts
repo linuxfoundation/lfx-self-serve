@@ -16,7 +16,7 @@ import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveSub } from '../utils/auth-helper';
-import { itOsTurnComplete } from '../utils/it-os-turn.util';
+import { itOsEventsTruncated, itOsTurnComplete } from '../utils/it-os-turn.util';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
 
 /** The first message carries the project slug on its own line, ahead of what the user typed. */
@@ -118,11 +118,15 @@ export class ItOsAgentsController {
       await this.writableProjectSlug(req, projectUid, context);
 
       const startTime = logger.startOperation(req, 'it_os_agents_history', { agent_id: agentId });
-      const [history, events] = await Promise.all([guild.getHistory(req, validSessionId), guild.getRawEventPayloads(req, validSessionId)]);
+      // Events first, then history: anything the completion check saw has already happened, so the
+      // history read that follows includes the agent's final message.
+      const events = await guild.getRawEventPayloads(req, validSessionId);
+      const history = await guild.getHistory(req, validSessionId);
       const messages = history.map((m) => (m.sender === 'user' ? { ...m, text: m.text.replace(PROJECT_LINE_RE, '') } : m));
       const turnComplete = itOsTurnComplete(events);
-      logger.success(req, 'it_os_agents_history', startTime, { message_count: messages.length, turn_complete: turnComplete });
-      const response: ItOsGuildHistoryResponse = { messages, turnComplete };
+      const sessionTooLong = itOsEventsTruncated(events);
+      logger.success(req, 'it_os_agents_history', startTime, { message_count: messages.length, turn_complete: turnComplete, session_too_long: sessionTooLong });
+      const response: ItOsGuildHistoryResponse = { messages, turnComplete, sessionTooLong };
       res.json(response);
     } catch (error) {
       next(error);

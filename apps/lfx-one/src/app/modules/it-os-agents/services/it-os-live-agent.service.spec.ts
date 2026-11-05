@@ -20,7 +20,7 @@ describe('ItOsLiveAgentService', () => {
   /** Moves to the next poll and answers it. */
   const answerHistory = (messages: MktgChatMessage[], turnComplete: boolean): void => {
     vi.advanceTimersByTime(IT_OS_LIVE_POLL_MS);
-    http.expectOne('/api/it-os-agents/history').flush({ messages, turnComplete });
+    http.expectOne('/api/it-os-agents/history').flush({ messages, turnComplete, sessionTooLong: false });
   };
   const start = (): void => {
     service.send('domains', PROJECT, 'hi');
@@ -72,7 +72,7 @@ describe('ItOsLiveAgentService', () => {
     http.expectNone('/api/it-os-agents/history');
 
     expect(slow.cancelled).toBe(false);
-    slow.flush({ messages: [user('e1', 'hi'), agent('e2', 'hello')], turnComplete: true });
+    slow.flush({ messages: [user('e1', 'hi'), agent('e2', 'hello')], turnComplete: true, sessionTooLong: false });
     expect(service.waiting()).toBe(false);
   });
 
@@ -101,6 +101,15 @@ describe('ItOsLiveAgentService', () => {
     answerHistory([user('e1', 'hi'), agent('e2', 'hello'), user('e3', 'Yes, go ahead.'), agent('e4', 'Done.')], true);
 
     expect(service.waiting()).toBe(false);
+  });
+
+  it('stops and asks for a new conversation when the session is too long to follow', () => {
+    start();
+    vi.advanceTimersByTime(IT_OS_LIVE_POLL_MS);
+    http.expectOne('/api/it-os-agents/history').flush({ messages: [user('e1', 'hi')], turnComplete: false, sessionTooLong: true });
+
+    expect(service.waiting()).toBe(false);
+    expect(service.error()).toContain('Start a new conversation');
   });
 
   it('explains a refused request and stops waiting', () => {

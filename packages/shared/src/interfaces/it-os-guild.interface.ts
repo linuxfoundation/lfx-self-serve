@@ -39,6 +39,8 @@ export interface ItOsGuildHistoryResponse {
   messages: MktgChatMessage[];
   /** True once the agent has finished its latest turn (its runtime has closed), not just paused between messages. */
   turnComplete: boolean;
+  /** True when the session has too many events to follow its latest turn; the user should start a new conversation. */
+  sessionTooLong: boolean;
 }
 
 /** GET /api/it-os-agents/status response: which IT OS agents can be reached live here. Empty outside dev. */

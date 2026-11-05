@@ -174,7 +174,10 @@ describe('ItOsAgentsController', () => {
         { id: 'e2', sender: 'agent', text: 'hurrdurr.org', timestamp: '17:00' },
       ],
       turnComplete: true,
+      sessionTooLong: false,
     });
+    // The completion check reads events before history, so history includes whatever the check saw.
+    expect(guildMocks.getRawEventPayloads.mock.invocationCallOrder[0]).toBeLessThan(guildMocks.getHistory.mock.invocationCallOrder[0]);
 
     const denied = call('history', { agentId: 'domains', project: PROJECT, sessionId: 'session-1', ownerToken: 'nope' });
     await denied.run();

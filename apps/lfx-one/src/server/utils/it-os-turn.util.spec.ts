@@ -8,7 +8,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   MKTG_SESSION_TURN_STARTED: 'mktg_session_turn_started',
 }));
 
-import { itOsTurnComplete } from './it-os-turn.util';
+import { itOsEventsTruncated, itOsTurnComplete } from './it-os-turn.util';
 
 const events = (...types: string[]): string[] => types.map((type) => JSON.stringify({ type }));
 const TURN = 'mktg_session_turn_started';
@@ -45,5 +45,10 @@ describe('itOsTurnComplete', () => {
   it('is not complete before the agent starts, or when the event page was truncated', () => {
     expect(itOsTurnComplete(events(TURN))).toBe(false);
     expect(itOsTurnComplete([...events(TURN, 'runtime_start', 'runtime_done'), JSON.stringify({ type: 'mktg_session_events_truncated' })])).toBe(false);
+  });
+
+  it('flags a truncated event page as too long to follow', () => {
+    expect(itOsEventsTruncated([...events(TURN, 'runtime_start', 'runtime_done'), JSON.stringify({ type: 'mktg_session_events_truncated' })])).toBe(true);
+    expect(itOsEventsTruncated(events(TURN, 'runtime_start', 'runtime_done'))).toBe(false);
   });
 });
