@@ -71,7 +71,7 @@ export class AppComponent {
   );
   /**
    * Latches once the host has been in the tree, and never goes back.
-   * @description Closing is not the end of the host's job: `onSubmit()` raises the sticky create toast
+   * @description Closing is not the end of the host's job: `onSubmit()` raises the create toast
    * and calls `composer.close()` in the same tick, and the host keeps the handle that retires that toast
    * when the composer next opens. On the flag alone those two legs both read false at that point, so the
    * outlet would be destroyed and a later remount would start without the handle, leaving the old toast

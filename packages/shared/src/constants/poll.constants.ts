@@ -7,6 +7,9 @@ import type { CreatePollQuestion, PollQuestion } from '../interfaces/poll.interf
 
 import { PHONE_MEDIA_QUERY } from './viewport.constants';
 
+/** Coalesce a tab's adjacent visible/focus notifications without delaying its initial read. */
+export const VISIBILITY_POLL_WAKE_DEBOUNCE_MS = 50;
+
 /**
  * Configurable labels for votes displayed throughout the UI
  * @description This constant allows the user-facing labels to be changed

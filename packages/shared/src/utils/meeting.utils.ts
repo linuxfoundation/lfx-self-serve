@@ -1497,7 +1497,7 @@ export function normalizeUsername(username: string | null | undefined): string {
 
 /**
  * Whether a resolved organizer IS the current viewer — the single comparison behind both the
- * chip's "you" variant and the "Organized by me" list filter, so the two can never disagree.
+ * chip's "you" variant and the My Meetings dashboard's "Organized by me" filter, so the two can never disagree.
  * An absent/empty viewer never matches (a logged-out or unresolved viewer must not match every
  * meeting).
  */

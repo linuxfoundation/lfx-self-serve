@@ -131,9 +131,11 @@ export class SnowflakeService {
     // Generate query hash for deduplication
     const queryHash = this.lockManager.hashQuery(sqlText, binds, options);
 
-    const sqlOp = sqlText.trim().split(/\s+/)[0]?.toUpperCase() || 'QUERY';
+    // The statement without its leading comments: a commented query would otherwise be named `--` in traces.
+    const statement = this.stripLeadingComments(sqlText);
+    const sqlOp = statement.split(/\s+/)[0]?.toUpperCase() || 'QUERY';
     // Strip string literals from SQL for span attributes to avoid PII leaks
-    const sanitizedSql = sqlText.replace(/'[^']*'/g, '?').substring(0, 100);
+    const sanitizedSql = statement.replace(/'[^']*'/g, '?').substring(0, 100);
 
     // Lock first to deduplicate, then open span only for the executing query
     return this.lockManager.executeLocked(queryHash, async () => {
@@ -152,7 +154,7 @@ export class SnowflakeService {
         async (span) => {
           logger.debug(undefined, 'snowflake_query', 'Executing query', {
             query_hash: queryHash,
-            sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
+            sql_preview: statement.substring(0, 100).replace(/\s+/g, ' ').trim(),
             bind_count: binds?.length || 0,
             circuit_state: this.circuitState,
           });
@@ -695,13 +697,24 @@ export class SnowflakeService {
       }
     }
 
-    // Ensure query starts with SELECT or WITH (for CTEs)
-    if (!/^\s*SELECT\b/i.test(normalizedSql) && !/^\s*WITH\b/i.test(normalizedSql)) {
+    // Ensure query starts with SELECT or WITH (for CTEs). Leading comments are skipped so a query can be documented
+    // above its SELECT; the write-operation scan above already covers the whole text, comments included.
+    const statementStart = this.stripLeadingComments(normalizedSql);
+    if (!/^SELECT\b/i.test(statementStart) && !/^WITH\b/i.test(statementStart)) {
       logger.warning(undefined, 'snowflake_validation', 'Blocked non-SELECT query (not starting with SELECT or WITH)', {
         sql_preview: normalizedSql.substring(0, 100),
       });
       throw new Error('Only SELECT queries are allowed');
     }
+  }
+
+  /**
+   * Drop the whitespace, `--` line comments and slash-star block comments that precede a statement. An unterminated
+   * block comment is left in place, so the caller's SELECT/WITH check still rejects it.
+   * @private
+   */
+  private stripLeadingComments(sql: string): string {
+    return sql.replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, '');
   }
 
   /**

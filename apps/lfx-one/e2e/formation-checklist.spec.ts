@@ -190,7 +190,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true, can_set_status: true }),
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true, can_set_status: true, can_edit_record: true }),
       })
     );
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -290,7 +290,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true, can_set_status: true }),
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true, can_set_status: true, can_edit_record: true }),
       })
     );
     await page.route('**/api/formations/*/items/*', async (route) => {

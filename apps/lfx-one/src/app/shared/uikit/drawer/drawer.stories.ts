@@ -73,14 +73,14 @@ const meta: Meta<UiDrawerComponent> = {
 export default meta;
 type Story = StoryObj<UiDrawerComponent>;
 
-/** A 600px sheet on the right: title, subtitle, close button, a body that scrolls and an optional footer. Escape, the scrim and the close button dismiss it; focus returns to the button. At 640px and narrower it fills the window. */
+/** A 560px sheet floating 8px inside the right edge: title, subtitle, close button, a body that scrolls and an optional footer with right-aligned actions. Escape, the scrim and the close button dismiss it; focus returns to the button. */
 export const Default: Story = {};
 
-/** The meeting details layout: a header row with a project tile before the title and actions beside the close button, and a two-column body that stacks when the drawer is narrow. The body is long, so it scrolls under the header. */
+/** The meeting details layout in a wide drawer (75vw, at least 560px): a header row with a project tile before the title and actions beside the close button, and a two-column body that stacks when the drawer is narrow. The body is long, so it scrolls under the header. */
 export const MeetingDetails: Story = {
   render: () => ({
     template: `
-      <lfx-ui-button size="large" variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ width: 960 }">Open meeting</lfx-ui-button>
+      <lfx-ui-button size="large" variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ size: 'wide' }">Open meeting</lfx-ui-button>
       <ng-template #drawer>
         <lfx-ui-drawer heading="Technical Steering Committee" subtitle="The Linux Foundation">
           <lfx-ui-avatar drawerLeading shape="rounded" [size]="40" name="Technical Steering Committee" [decorative]="true" />
@@ -139,12 +139,12 @@ export const CanCloseGuard: Story = {
       template: `
         <lfx-ui-button size="large" variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ canClose: guard }" (click)="state.dirty.set(false); state.blocked.set(false)">Edit agenda</lfx-ui-button>
         <ng-template #drawer let-ref="dialogRef">
-          <lfx-ui-drawer heading="Edit Agenda" subtitle="Weekly Sync">
+          <lfx-ui-drawer heading="Edit Agenda" subtitle="Weekly Sync" splitFooter>
             @if (state.blocked()) {
               <lfx-ui-note variant="warning" label="You have unsaved changes">Save or discard them to close.</lfx-ui-note>
             }
             <textarea
-              class="edge min-h-[160px] w-full rounded-ui-sm bg-ui-background-100 p-[12px] copy-14 focus-visible:shadow-focus focus-visible:outline-none"
+              class="edge-control min-h-[160px] w-full rounded-ui-sm bg-ui-background-100 p-[12px] copy-14 focus-visible:shadow-focus focus-visible:outline-none"
               aria-label="Agenda"
               (input)="state.dirty.set(true)"></textarea>
             <ng-container drawerFooter>
@@ -157,13 +157,13 @@ export const CanCloseGuard: Story = {
   },
 };
 
-/** `side: 'left'` anchors it to the left edge and moves the radius to its right edge. Width is in px; here 420. */
+/** `side: 'left'` anchors it to the left edge, and `width` sets a custom width in px; here 420. `splitFooter` puts the reset action on the left. */
 export const LeftSide: Story = {
   render: () => ({
     template: `
       <lfx-ui-button size="large" variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ side: 'left', width: 420 }">Open from the left</lfx-ui-button>
       <ng-template #drawer let-ref="dialogRef">
-        <lfx-ui-drawer heading="Filters" subtitle="Narrow the meeting list">
+        <lfx-ui-drawer heading="Filters" subtitle="Narrow the meeting list" splitFooter>
           <p>Filter controls go here.</p>
           ${FILLER}
           <ng-container drawerFooter>
@@ -211,12 +211,12 @@ export const OverlaysInside: Story = {
 export const Layout: Story = {
   render: () => ({
     template: `
-      <div class="flex h-[420px] justify-end overflow-hidden bg-ui-overlay">
-        <lfx-ui-drawer heading="Project Settings" subtitle="Cloud Native Computing Foundation" class="!w-[420px]">
-          <p>Body content goes here.</p>
+      <div class="flex h-[420px] justify-end overflow-hidden bg-ui-overlay p-[8px]">
+        <lfx-ui-drawer heading="Approve 2027 Meeting Calendar" subtitle="Technical Advisory Council · Closes in 5 days">
+          <p class="text-ui-neutral-700">Proposed dates for the 2027 TAC meetings, alternating between two time slots to cover all regions.</p>
           <ng-container drawerFooter>
             <lfx-ui-button size="large" variant="secondary">Cancel</lfx-ui-button>
-            <lfx-ui-button size="large" variant="primary">Save</lfx-ui-button>
+            <lfx-ui-button size="large" variant="primary">Submit Vote</lfx-ui-button>
           </ng-container>
         </lfx-ui-drawer>
       </div>`,

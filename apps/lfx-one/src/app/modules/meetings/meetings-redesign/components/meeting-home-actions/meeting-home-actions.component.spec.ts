@@ -339,12 +339,25 @@ describe('MeetingHomeActionsComponent', () => {
       expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
     });
 
-    it('warns when some registrations could not be removed', async () => {
+    it('sends one removal for a double click on Remove Me', async () => {
+      remove$.mockReturnValue(new Subject<MeetingRegistrationRemovalResult>());
+      await render(row(INVITEE));
+      await choose('meetings-home-row-actions-remove');
+      const confirm = find('meetings-home-row-actions-remove-confirm')?.querySelector('button');
+      confirm?.click();
+      confirm?.click();
+      await settle();
+
+      expect(remove$).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a sticky error when some registrations could not be removed', async () => {
       remove$.mockReturnValue(of({ removed_registrant_ids: ['synthetic-reg'], remaining_registrant_ids: ['synthetic-other-reg'] }));
       await render(row(INVITEE));
       await confirmRemoval();
 
-      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'warning', position: 'bottom-center', message: 'Removal incomplete' }));
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', position: 'bottom-center', message: 'Removal incomplete' }));
+      expect(toastShow.mock.lastCall?.[0]).not.toHaveProperty('duration');
       expect(refreshUserMeetings).toHaveBeenCalledWith();
     });
 

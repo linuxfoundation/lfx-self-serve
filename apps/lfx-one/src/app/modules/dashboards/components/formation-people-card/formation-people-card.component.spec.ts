@@ -65,6 +65,7 @@ describe('FormationPeopleCardComponent', () => {
       ],
       can_write: false,
       can_set_status: false,
+      can_edit_record: false,
       ...overrides,
     };
   }

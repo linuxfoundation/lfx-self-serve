@@ -179,7 +179,7 @@ for overlay stacking updates. Cleanup disconnects the observer and cancels pendi
 frames. Destruction removes the banner at its current location rather than reattaching
 a destroyed node.
 
-For a full-height CDK `UiDrawerService` sheet, the banner is a direct child of
+For a CDK `UiDrawerService` sheet, the banner is a direct child of
 `lfx-ui-drawer` within the CDK trap, not a sibling following the sheet. Its nonshrinking
 footer consumes height from the flexible scrolling body, keeping the actions inside
 the viewport without replacing drafts. The **Components/ChunkLoadRecovery/In CDK drawer → Visible Recovery**
