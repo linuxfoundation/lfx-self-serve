@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { COMBINED_SURVEY_STATUS, SURVEY_EMAIL_BUTTON_HTML, SURVEY_RESPONSE_FUNNEL_RANK } from '../constants/survey.constants';
+import {
+  COMBINED_SURVEY_STATUS,
+  SURVEY_EMAIL_BUTTON_HTML,
+  SURVEY_EMAIL_DRAFTS,
+  SURVEY_MAINTAINER_TEMPLATE_KEYWORD,
+  SURVEY_RESPONSE_FUNNEL_RANK,
+} from '../constants/survey.constants';
 import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
 import type {
   CombinedSurveyStatus,
@@ -10,6 +16,7 @@ import type {
   Survey,
   SurveyDisplayStatusInput,
   SurveyEmailBodies,
+  SurveyEmailDraft,
   SurveyEmailRenderContext,
   SurveyEmailStages,
   SurveyEngagementRates,
@@ -414,4 +421,25 @@ export function buildSurveyEmailBodies(body: string): SurveyEmailBodies {
     html: toSurveyTemplateVariables(`<!DOCTYPE html><html><body>${withButton(SURVEY_EMAIL_BUTTON_HTML)}</body></html>`),
     text: toSurveyTemplateVariables(withButton('{{SurveyLink}}')),
   };
+}
+
+/**
+ * Pick the default email draft for a survey template.
+ * @description ITX templates carry no category, so a title naming maintainers gets the maintainer draft
+ * and every other title gets the general one (PCC's rule).
+ * @param templateTitle - The chosen template's title
+ * @returns The audience-matched draft
+ */
+export function getSurveyEmailDraft(templateTitle: string | null | undefined): SurveyEmailDraft {
+  return templateTitle?.toLowerCase().includes(SURVEY_MAINTAINER_TEMPLATE_KEYWORD) ? SURVEY_EMAIL_DRAFTS.maintainer : SURVEY_EMAIL_DRAFTS.general;
+}
+
+/**
+ * Whether an email field still holds one of the default drafts, meaning the user hasn't edited it.
+ * @param field - The draft field to compare
+ * @param value - The field's current value
+ * @returns True when the value equals that field of any default draft
+ */
+export function isDefaultSurveyEmailField(field: keyof SurveyEmailDraft, value: unknown): boolean {
+  return typeof value === 'string' && Object.values(SURVEY_EMAIL_DRAFTS).some((draft) => draft[field] === value);
 }
