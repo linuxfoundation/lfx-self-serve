@@ -141,7 +141,7 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   logoFiles: {
     title: 'Logo files',
     hint: 'the horizontal lockup, the stacked lockup and the symbol',
-    footnote: `SVG, PNG or ZIP, up to ${BRAND_KIT_MAX_LOGO_FILES} files — read here and sent with the form. A file too big to send, or one on the site, goes as a link (SVG only); the agent fetches it. With no file, the agent asks for them. The kit never draws or reconstructs a mark.`,
+    footnote: `SVG, PNG or ZIP, up to ${BRAND_KIT_MAX_LOGO_FILES} files — read here and sent with the form. Keep a ZIP small: SVG files only, under 150 KB; the full logo package linked on a brand page is usually too large to send. With no file, the agent asks for them. The kit never draws or reconstructs a mark.`,
     maxFiles: BRAND_KIT_MAX_LOGO_FILES,
     maxFileChars: BRAND_KIT_MAX_LOGO_FILE_CHARS,
     maxPayloadChars: BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
