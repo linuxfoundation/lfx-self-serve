@@ -27,7 +27,7 @@ The page heading is **People —** followed by the organization's name. The line
 | **Trainees**        | Employees who enrolled in courses or earned certifications                                                          |
 | **Org Lens Access** | Who can open the organization, covered in [Manage Org Lens Access](../manage-org-lens-access/)                      |
 
-Select a person's name on any tab to open their details.
+Select a person's name on any tab to open their details. On **Event Attendees**, only people with a roster profile have a selectable name; for anyone else, select the row to see their events.
 
 ## How do I open People?
 
