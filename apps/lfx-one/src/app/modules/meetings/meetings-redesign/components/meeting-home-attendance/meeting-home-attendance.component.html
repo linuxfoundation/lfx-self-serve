@@ -49,8 +49,6 @@
   }
 
   @if (attendance().poor) {
-    <span role="note" class="flex items-center gap-[6px] text-[12px] leading-[16px] text-amber-700" data-testid="meetings-home-attendance-poor">
-      <i class="fa-light fa-triangle-exclamation text-[12px]" aria-hidden="true"></i>This meeting was poorly attended
-    </span>
+    <lfx-ui-note variant="warning" plain size="tiny" data-testid="meetings-home-attendance-poor">This meeting was poorly attended</lfx-ui-note>
   }
 </div>

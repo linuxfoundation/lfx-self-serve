@@ -61,6 +61,8 @@ export interface MeetingDayGroup {
 /** An applied-filter chip; removing it resets `key` to its default. */
 export interface MeetingFilterChip {
   key: keyof MeetingsHomeFilters;
+  /** Filter name with its colon, e.g. "Project:"; absent on chips that are only a name. */
+  prefix?: string;
   label: string;
 }
 
@@ -130,7 +132,10 @@ export interface MeetingRsvpChoice {
   action: string;
   /** Status label once answered, e.g. "Going". */
   label: string;
+  /** Status badge and menu icon. */
   icon: string;
+  /** Yes / Maybe / No button icon. */
+  buttonIcon: string;
   tone: UiBadgeTone;
 }
 
@@ -144,7 +149,6 @@ export interface MeetingRsvpScopeDialogData {
 export interface MeetingRsvpScopeOption {
   value: RsvpScope;
   label: string;
-  description: string;
 }
 
 /** What the meetings home AI summary dialog opens with. */

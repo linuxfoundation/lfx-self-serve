@@ -104,7 +104,7 @@
         <!-- -6px pulls the chips toward the tabs bar, per the design -->
         <lfx-ui-chip-group class="-mt-[6px]" ariaLabel="Applied filters" [fallbackFocus]="filtersControl() ?? null" data-testid="meetings-home-filters-chips">
           @for (chip of store.filterChips(); track chip.key) {
-            <lfx-ui-chip [label]="chip.label" (dismissed)="store.clearFilter(chip.key)" data-testid="meetings-home-filters-chip" />
+            <lfx-ui-chip [prefix]="chip.prefix ?? ''" [label]="chip.label" (dismissed)="store.clearFilter(chip.key)" data-testid="meetings-home-filters-chip" />
           }
         </lfx-ui-chip-group>
       }

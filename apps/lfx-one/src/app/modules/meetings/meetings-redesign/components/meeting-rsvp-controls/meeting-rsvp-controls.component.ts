@@ -28,7 +28,7 @@ import {
   RsvpScope,
   UiButtonSize,
 } from '@lfx-one/shared/interfaces';
-import { getMeetingRsvpScopeLabel, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
+import { getMeetingRsvpToastMessage, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
@@ -43,7 +43,7 @@ import { take } from 'rxjs';
 import { MeetingRsvpScopeModalComponent } from '../meeting-rsvp-scope-modal/meeting-rsvp-scope-modal.component';
 
 /**
- * The viewer's RSVP on one upcoming date: Yes / No / Maybe until answered, then a status badge whose menu changes it.
+ * The viewer's RSVP on one upcoming date: Yes / Maybe / No until answered, then a status badge whose menu changes it.
  * @description A recurring meeting asks which dates the answer covers first. Renders nothing when the viewer can't respond.
  */
 @Component({
@@ -66,7 +66,7 @@ export class MeetingRsvpControlsComponent {
   private readonly statusTrigger = viewChild<ElementRef<HTMLButtonElement>>('statusTrigger');
 
   public readonly row = input.required<MeetingHomeRow>();
-  /** Size of the Yes / No / Maybe buttons: 28px in the list and the Pending RSVPs popover. */
+  /** Size of the Yes / Maybe / No buttons: 28px in the list and the Pending RSVPs popover. */
   public readonly size = input<UiButtonSize>('small');
 
   /** The answer being saved; the BFF holds the request until the new answer is indexed (up to 5s). */
@@ -127,9 +127,7 @@ export class MeetingRsvpControlsComponent {
       .pipe(take(1))
       .subscribe({
         next: (rsvp: MeetingRsvp) => {
-          const label = this.choices.find((choice) => choice.response === rsvp.response_type)?.label ?? '';
-          const scopeLabel = row.meeting.recurrence ? getMeetingRsvpScopeLabel(rsvp) : 'This meeting';
-          this.toast.show({ variant: 'dark', message: `Response saved: ${label}`, description: `${row.title} — ${scopeLabel}` });
+          this.toast.show({ variant: 'dark', message: getMeetingRsvpToastMessage(rsvp, !!row.meeting.recurrence) });
           this.keepFocusOnRsvp();
         },
         error: (error: MeetingRsvpSubmitError) => {
