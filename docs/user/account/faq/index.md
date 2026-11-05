@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Account
 ---
 
@@ -74,7 +74,7 @@ Go to [**Profile & Account**](/profile) and open the **CLAs** tab (`/profile/cla
 
 ## What is the difference between an ICLA and a CCLA?
 
-An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab when EasyCLA has the file. A **CCLA** (Corporate CLA) is your employer's agreement; you're covered under it once approved via the company's **Approved List**. The CLAs tab lists your CCLA coverage with the company name and no individual PDF. See [CLAs](../my-clas/).
+An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab when EasyCLA has the file and the agreement has not been invalidated. A **CCLA** (Corporate CLA) is your employer's agreement; you're covered under it once approved via the company's **Approved List**. The CLAs tab lists your CCLA coverage with the company name and no individual PDF, and keeps listing it with a status that says so if that coverage later ends. See [CLAs](../my-clas/).
 
 ## Why don't my signed CLAs show up on the CLAs tab?
 
@@ -82,15 +82,27 @@ The CLAs tab matches agreements to your LF username, verified emails, and linked
 
 ## Can I sign a CLA from the CLAs tab?
 
-No. The CLAs tab lists the agreements EasyCLA already has on file for you. You sign a new CLA in EasyCLA — see the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla).
+You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which linked GitHub account to sign under. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
+
+## Why does a search result say "Already signed as" when I search for a CLA to sign?
+
+In the **Sign a CLA** dialog, a result you already hold a CLA for is tagged **Already signed as** followed by the account it was signed under. The result stays selectable: holding a CLA under one identity does not stop you signing under another, and holding one contract type — an ICLA (Individual CLA) or coverage under a CCLA (Corporate CLA) — does not stop you signing the other type with the same identity when the group offers both. The identity step greys out an account only when that identity already holds every contract type the group offers — and only when that account is one of the GitHub accounts linked to your profile, or the CLA was signed under your LF identity through Gerrit. Results are matched per CLA group, not per project, so a project with more than one CLA group only tags the group you signed. An **Invalidated** CLA greys out nothing — that agreement no longer covers you, so you can sign again with the same identity. See [Why does a search result say "Already signed as"?](../my-clas/#why-does-a-search-result-say-already-signed-as).
+
+## What do the CLA status labels mean?
+
+**Valid** means the agreement covers your contributions. **Needs attention** means you're no longer covered under your employer's CCLA, usually because you have dropped off its **Approved List**. **Invalidated** means the agreement is no longer in force — someone removed you from an Approved List, a maintainer invalidated your ICLA, or the CLA group was deleted. **Revoked** is reserved for a sanctions-screening outcome against your employer and cannot be changed from Self Serve. **Invalidated** and **Revoked** also show a date under the label when EasyCLA recorded one; if there is no date, the label stands alone. See [What do the status labels mean?](../my-clas/#what-do-the-status-labels-mean).
+
+## Which account was my CLA signed under?
+
+When EasyCLA recorded the account used to sign, the **Signed** column adds a second line under the date, such as _Signed as \<username\> (GitHub)_. It is informational: it records the account used at signing time, which is what to check when a project still asks you to sign something you believe you have already signed. It is historical — the account it names does not have to be an identity currently linked to your profile. The line is omitted when EasyCLA has no signing identity on record for that agreement. See [Which identity was a CLA signed under?](../my-clas/#which-identity-was-a-cla-signed-under).
 
 ## Can I download my signed CLA PDF?
 
-You can download a signed **ICLA** (Individual CLA) when EasyCLA has the file — select **Download PDF** in that row's **Document** column. If EasyCLA does not have the file, the column shows _PDF unavailable_. There is no PDF for coverage under a **CCLA** (Corporate CLA), because that coverage sits under your employer's agreement rather than an agreement of your own; the column shows _Covered by Corporate CLA (CCLA)_. See [Can I download my signed CLA PDF?](../my-clas/#can-i-download-my-signed-cla-pdf).
+You can download a signed **ICLA** (Individual CLA) when EasyCLA has the file — open the **⋮** menu on that row and choose **Download PDF**. If EasyCLA does not have the file, the row offers no download. An **Invalidated** ICLA carries no **⋮** menu at all, so there is nothing to download from it even when the signed file still exists. There is no PDF for coverage under a **CCLA** (Corporate CLA), because that coverage sits under your employer's agreement rather than an agreement of your own; where such a row has a **⋮** menu, **Download PDF** appears greyed out and annotated _Covered by Corporate CLA (CCLA)_, and a **Revoked** row has no menu at all. See [Can I download my signed CLA PDF?](../my-clas/#can-i-download-my-signed-cla-pdf).
 
-## How do I get my employer's CLA manager to approve or remove my CCLA coverage?
+## How do I ask my employer's CLA manager to approve or remove my CCLA coverage?
 
-Contact your employer's CLA manager directly. The CLAs tab doesn't send requests, and only a CLA manager can change the company's **Approved List**, in the Corporate CLA Console. See [What Self Serve does not do](../my-clas/#what-self-serve-does-not-do).
+Open the **⋮** menu on the CCLA-covered row and choose **Request approval** (when you are no longer on the Approved List) or **Request Removal**. Select which CLA managers to notify, optionally add a message, and select **Send**. The request only notifies them — a manager makes the actual change in the Corporate CLA Console. See [How do I ask my CLA manager to approve or remove my CCLA coverage?](../my-clas/#how-do-i-ask-my-cla-manager-to-approve-or-remove-my-ccla-coverage).
 
 ## What purchases appear in my transaction history?
 
