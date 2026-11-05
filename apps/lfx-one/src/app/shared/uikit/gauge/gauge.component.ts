@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { UiGaugeGeometry } from '@lfx-one/shared/interfaces';
 
 /** Circular percentage for health scores, coverage or completion, read at a glance in cards and tables. */
 @Component({
@@ -46,7 +47,7 @@ export class UiGaugeComponent {
   /** Spins a partial arc while the value loads. Drops the progressbar value attributes. */
   public readonly indeterminate = input<boolean, unknown>(false, { transform: booleanAttribute });
 
-  protected readonly geometry: Signal<{ radius: number; stroke: number; circumference: number; linecap: 'round' | 'butt' }> = this.initGeometry();
+  protected readonly geometry: Signal<UiGaugeGeometry> = this.initGeometry();
   /** Share of the ring drawn while `indeterminate`. */
   protected readonly indeterminateFraction = 0.28;
   protected readonly px: Signal<number> = this.initPx();
@@ -70,7 +71,7 @@ export class UiGaugeComponent {
   }
 
   /** Ring geometry in the 100-unit viewBox: the ring sits inside it, and the arc length is the circumference times the fraction. */
-  private initGeometry(): Signal<{ radius: number; stroke: number; circumference: number; linecap: 'round' | 'butt' }> {
+  private initGeometry(): Signal<UiGaugeGeometry> {
     return computed(() => {
       const thin = this.weight() === 'thin';
       const radius = thin ? 45 : 42;

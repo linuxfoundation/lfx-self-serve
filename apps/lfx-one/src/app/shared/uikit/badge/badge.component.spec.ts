@@ -101,20 +101,19 @@ describe('UiBadgeComponent', () => {
     expect(host.className).not.toContain('bg-ui-danger');
   });
 
-  it("draws the line form as a 1px ring in the tone's solid colour, with 700 text for contrast, on a transparent fill", async () => {
+  it("draws the line form in the tone's solid colour, as text and a 1px ring on a transparent fill", async () => {
     fixture.componentRef.setInput('variant', 'line');
     fixture.componentRef.setInput('tone', 'success');
     await fixture.whenStable();
 
     expect(host.className).toContain('bg-transparent');
-    expect(host.className).toContain('text-ui-success-700');
-    expect(host.className).toContain('shadow-[inset_0_0_0_1px_var(--ui-success-600)]');
+    expect(host.className).toContain('text-ui-success-600');
+    expect(host.className).toContain('shadow-[inset_0_0_0_1px_currentColor]');
 
-    fixture.componentRef.setInput('tone', 'warning');
+    fixture.componentRef.setInput('tone', 'neutral');
     await fixture.whenStable();
 
-    expect(host.className).toContain('text-ui-warning-700');
-    expect(host.className).toContain('shadow-[inset_0_0_0_1px_var(--ui-warning-500)]');
+    expect(host.className).toContain('text-ui-neutral-600');
   });
 
   it('shows a dot only when asked', async () => {

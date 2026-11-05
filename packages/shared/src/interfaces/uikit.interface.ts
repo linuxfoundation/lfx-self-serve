@@ -42,11 +42,19 @@ export type UiTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | '
 /** Colour role of a uikit badge and its status dot. `neutral` is the default. */
 export type UiBadgeTone = UiTone;
 
-/** Look of a uikit badge: the role's `subtle` fill, its `solid` fill, the neutral `outline` ring, or the `line` form, a ring in the role's solid colour on a transparent fill. */
+/** Look of a uikit badge: the role's `subtle` fill, its `solid` fill, the neutral `outline` ring, or the `line` form: the role's solid colour as text and a ring on a transparent fill. */
 export type UiBadgeVariant = 'subtle' | 'solid' | 'outline' | 'line';
 
 /** Height of a uikit badge and chip: `sm` is 20px with 11px text, `md` is 24px with 12px text. */
 export type UiBadgeSize = 'sm' | 'md';
+
+/** A uikit gauge ring's geometry in its 100-unit viewBox: radius, stroke width, circumference and arc ends. */
+export interface UiGaugeGeometry {
+  radius: number;
+  stroke: number;
+  circumference: number;
+  linecap: 'round' | 'butt';
+}
 
 /** Look of a uikit chip: the badge's `subtle` role fill, or the neutral `outline` ring. */
 export type UiChipVariant = 'subtle' | 'outline';

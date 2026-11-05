@@ -315,6 +315,7 @@ describe('UiSplitButtonComponent', () => {
 
   describe('as a labelled pair', () => {
     let pair: ComponentFixture<TestHostComponent>;
+    let warn: ReturnType<typeof vi.spyOn>;
     const half = (): HTMLButtonElement => pair.nativeElement.querySelector('[data-testid="ui-split-button-secondary"]') as HTMLButtonElement;
 
     beforeEach(async () => {
@@ -327,16 +328,15 @@ describe('UiSplitButtonComponent', () => {
             secondaryIcon="fa-light fa-table-list" (triggered)="log('trend')" (secondaryTriggered)="log('snapshot')" />`,
         },
       });
+      // Spied before creation, so the dev-mode warning effect's first run is the one under test; the outer afterEach restores it.
+      warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       pair = TestBed.createComponent(TestHostComponent);
       await pair.whenStable();
     });
 
     afterEach(() => pair.destroy());
 
-    it('shows the label and icon on the right half, named by its text rather than a tooltip, and without warnings', async () => {
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-      await pair.whenStable();
-
+    it('shows the label and icon on the right half, named by its text rather than a tooltip, and without warnings', () => {
       expect(half().textContent?.trim()).toBe('Snapshot');
       expect(half().querySelector('i')?.className).toContain('fa-table-list');
       expect(half().hasAttribute('aria-label')).toBe(false);
