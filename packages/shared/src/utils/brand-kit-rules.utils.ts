@@ -26,6 +26,7 @@ import type {
 } from '../interfaces/brand-kit.interface';
 import type { MktgAssetReport } from '../interfaces/mktg-asset.interface';
 import { brandKitFoundIn } from './brand-kit-book.utils';
+import { brandKitWebsiteHost } from './brand-kit.utils';
 
 /** The rule paths of the report are the envelope's: `chapters.<id>` followed by a member or an index. */
 const RULE_PATH_PREFIX = 'chapters.';
@@ -120,16 +121,22 @@ export function brandKitLfReferenceRuleLines(rules: BrandKitReportRule[] | null 
     .map((chapter) => ({ id: chapter.id, text: `${chapter.title}: ${chapter.lfReference} of ${chapter.total} ${ruleWord(chapter.total)}` }));
 }
 
+/** An http(s) address inside a source description: the dialog shows its host, never the full address. */
+const URL_REGEX = /https?:\/\/\S+/gi;
+
 /**
  * Where a conflicting value was seen, in words: `brand_page: https://…` reads
  * as the palette's own provenance label with its site (`From the brand page —
- * example.org`); anything else as the agent wrote it.
+ * example.org`); any other address, with or without a kind the dialog does
+ * not know, reads as its host; a description with no address as the agent
+ * wrote it.
  */
 export function brandKitConflictSourceLabel(source: string): string {
   const text = source.trim();
   const match = CONFLICT_SOURCE_REGEX.exec(text);
   const kind = match ? BRAND_KIT_FOUND_IN_KINDS.find((known) => known === match[1]) : undefined;
-  return match && kind ? brandKitFoundIn({ kind, source: match[2] }) : text;
+  if (match && kind) return brandKitFoundIn({ kind, source: match[2] });
+  return text.replace(URL_REGEX, (url) => brandKitWebsiteHost(url) || url);
 }
 
 /** The report's colour conflicts as the approve dialog shows them, every value with its source in words and the kept one marked. */

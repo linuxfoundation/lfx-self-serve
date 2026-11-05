@@ -89,7 +89,9 @@ describe('brandKitConflictSourceLabel', () => {
     ['logo: wordmark.svg', 'From the logo artwork — wordmark.svg'],
     ['page: https://synthetic-foundation.example/', 'The page ground'],
     ['the reviewer’s note', 'the reviewer’s note'],
-    ['pdf: https://synthetic-foundation.example/brand.pdf', 'pdf: https://synthetic-foundation.example/brand.pdf'],
+    // A kind the dialog does not know, or no kind at all: the address reads as its host, the rest as written.
+    ['pdf: https://www.synthetic-foundation.example/brand.pdf', 'pdf: synthetic-foundation.example'],
+    ['https://synthetic-foundation.example/_next/static/chunks/synthetic-chunk.css', 'synthetic-foundation.example'],
   ])('reads %s as "%s"', (source, label) => {
     expect(brandKitConflictSourceLabel(source)).toBe(label);
   });
