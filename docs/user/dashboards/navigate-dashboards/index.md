@@ -47,7 +47,7 @@ The **Organization** lens (also called the Org lens) shows your company's member
 
 When you are in the **Foundation** or **Projects** lens, you can switch between different projects or foundations using the context picker in the top navigation. Select a different foundation or project to update the entire page to that scope.
 
-The picker can show a role label, such as **Contributor**, **Maintainer**, **Board Member**, or **Executive Director**, next to a project or foundation. The label reflects your detected involvement with it. It does not control what you can see or do there; access is set on the project's **Permissions** page. See [Permissions](../../permissions/).
+The picker can show a role label, such as **Contributor**, **Maintainer**, **Board Member**, or **Executive Director**, next to a project or foundation. The label reflects your detected involvement and can change which dashboard and cards you see, but it doesn't grant access. What you can create, edit, or manage on a project is set on the project's **Permissions** page. See [Permissions](../../permissions/).
 
 ## Drawers and detail panels
 

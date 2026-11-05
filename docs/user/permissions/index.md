@@ -8,7 +8,7 @@ last_updated: 2026-11-05
 intercom_collection: Permissions
 ---
 
-The **Permissions** page lists the people who have been granted access to a project or foundation, and the role each one holds. It is the only place where access to a project is granted in LFX Self Serve.
+The **Permissions** page lists the people who have been granted access to a project or foundation, and the role each one holds. It is where project-wide access is granted in LFX Self Serve. Group managers can also manage their own group's members and meetings; see [Manage groups](../committees/manage-committees/).
 
 ## Role labels are not permissions
 
@@ -17,7 +17,7 @@ You may see a **Maintainer** or **Contributor** label next to a project in LFX S
 - A **Contributor** label does not stop you from viewing a project.
 - A **Maintainer** label does not let you manage a project.
 
-What you can do on a project is set only by your role on the project's **Permissions** page. To get more access, see [How to get access to a project](#how-to-get-access-to-a-project).
+Project-wide access is set by your role on the project's **Permissions** page. To get more access, see [How to get access to a project](#how-to-get-access-to-a-project).
 
 ## Open the Permissions page
 
@@ -25,7 +25,7 @@ What you can do on a project is set only by your role on the project's **Permiss
 2. Switch to the **Projects** or **Foundation** lens and select the project or foundation.
 3. In the left navigation, under **Governance**, select **Permissions** (`/project/settings` for a project, `/foundation/settings` for a foundation).
 
-The page shows each person's **Name**, **Username**, **Email**, and **Role**. You can filter the list by role.
+The list shows each person with access and their **Role**, and can be filtered by role.
 
 If you don't have **Manage** access, the page is read-only and shows: _You have view-only access to this project's settings. Contact a project manager to make changes._
 
