@@ -24,7 +24,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
     '[style.font-size.px]': 'fontSize()',
     '[attr.role]': 'accessibleName() ? "img" : null',
     '[attr.aria-label]': 'accessibleName() || null',
-    '[attr.title]': 'status() ? null : title() || null',
+    '[attr.title]': 'title() || null',
     '[attr.aria-hidden]': 'accessibleName() || !(decorative() || placeholder()) ? null : "true"',
     'data-testid': 'ui-avatar',
   },
@@ -121,17 +121,18 @@ export class UiAvatarComponent {
 
   private initStatusClasses(): Signal<string> {
     return computed(() => {
+      // Fills and glyph colours keep the glyph at 3:1 or more; white on amber is about 2:1.
       const fills = {
-        neutral: 'bg-ui-neutral-400',
-        accent: 'bg-ui-accent-500',
-        feature: 'bg-ui-feature-500',
-        success: 'bg-ui-success-500',
-        warning: 'bg-ui-warning-500',
-        danger: 'bg-ui-danger-500',
+        neutral: 'bg-ui-neutral-500 text-ui-white',
+        accent: 'bg-ui-accent-500 text-ui-white',
+        feature: 'bg-ui-feature-500 text-ui-white',
+        success: 'bg-ui-success-600 text-ui-white',
+        warning: 'bg-ui-warning-500 text-ui-neutral-900',
+        danger: 'bg-ui-danger-500 text-ui-white',
       };
       // Exact px, not rem: the app root font is 14px.
       const base =
-        'absolute -right-[3px] -top-[3px] grid h-[14px] w-[14px] place-items-center rounded-full text-[8px] leading-none text-ui-white ring-2 ring-ui-background-100';
+        'absolute -right-[3px] -top-[3px] grid h-[14px] w-[14px] place-items-center rounded-full text-[8px] leading-none ring-2 ring-ui-background-100';
       return `${base} ${fills[this.status()?.tone ?? 'neutral']}`;
     });
   }

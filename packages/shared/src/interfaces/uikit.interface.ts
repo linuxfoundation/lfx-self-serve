@@ -66,9 +66,9 @@ export interface UiAvatarItem {
 
 /** A status pinned to the top right of a uikit avatar, such as an RSVP answer or attendance. */
 export interface UiAvatarStatus {
-  /** Font Awesome class string for the white glyph, such as `fa-solid fa-check`. */
+  /** Font Awesome class string for the glyph, such as `fa-solid fa-check`. */
   icon: string;
-  /** Colour role of the circle: `neutral` is neutral-400, any other role its 500 step. */
+  /** Colour role of the circle. The glyph is white, or neutral-900 on `warning` for contrast. */
   tone: UiTone;
   /** What the status means, such as `RSVP: Yes`. It is the tooltip and is added to the avatar's accessible name. */
   label: string;

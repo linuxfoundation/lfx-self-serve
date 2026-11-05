@@ -229,15 +229,21 @@ describe('UiAvatarComponent', () => {
 
     fixture.componentRef.setInput('status', { icon: 'fa-solid fa-ellipsis', tone: 'neutral', label: 'RSVP: No response' });
     await fixture.whenStable();
-    expect(host.querySelector('[data-testid="ui-avatar-status"]')?.className).toContain('bg-ui-neutral-400');
+    expect(host.querySelector('[data-testid="ui-avatar-status"]')?.className).toContain('bg-ui-neutral-500');
+
+    fixture.componentRef.setInput('status', { icon: 'fa-solid fa-question', tone: 'warning', label: 'RSVP: Maybe' });
+    await fixture.whenStable();
+    expect(host.querySelector('[data-testid="ui-avatar-status"]')?.className).toContain('text-ui-neutral-900');
   });
 
-  it('adds the status label to the accessible name and drops the native title for the status tooltip', async () => {
+  it('adds the status label to the accessible name and keeps the name as the title', async () => {
     fixture.componentRef.setInput('status', { icon: 'fa-solid fa-check', tone: 'accent', label: 'RSVP: Yes' });
     await fixture.whenStable();
 
     expect(host.getAttribute('aria-label')).toBe('Maria Santos, RSVP: Yes');
-    expect(host.getAttribute('title')).toBeNull();
+    expect(host.getAttribute('title')).toBe('Maria Santos');
+    // An empty title on the circle stops the name tooltip from doubling up with the status tooltip.
+    expect(host.querySelector('[data-testid="ui-avatar-status"]')?.getAttribute('title')).toBe('');
   });
 
   it('still announces the status of a decorative avatar', async () => {
