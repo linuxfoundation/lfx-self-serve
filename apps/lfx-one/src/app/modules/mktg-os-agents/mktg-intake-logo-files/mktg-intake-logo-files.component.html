@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <section class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-3.5" data-testid="mktg-intake-logo-files">
-  <div class="flex flex-wrap items-baseline justify-between gap-3">
+  <div class="flex flex-col gap-1">
     <h2 class="text-base font-semibold text-gray-900">
       {{ config().title }}
       <span class="ml-1 text-sm font-normal text-gray-500">optional — the agent asks for them otherwise</span>
@@ -61,7 +61,6 @@
         dataTest="mktg-intake-logo-files-link-input"
         describedBy="mktg-intake-logo-files-link-hint"
         (keydown.enter)="$event.preventDefault(); onAddLink()" />
-      <span id="mktg-intake-logo-files-link-hint" class="text-xs text-gray-500">{{ driveSharingHint }}</span>
     </div>
     <lfx-button
       label="Add link"
@@ -71,6 +70,7 @@
       data-testid="mktg-intake-logo-files-add-link"
       (onClick)="onAddLink()" />
   </div>
+  <span id="mktg-intake-logo-files-link-hint" class="-mt-2 text-xs text-gray-500">{{ driveSharingHint }}</span>
 
   @if (pending() > 0) {
     <span class="text-xs text-gray-500" role="status" data-testid="mktg-intake-logo-files-pending">Reading {{ pending() }} file(s)…</span>
@@ -82,5 +82,5 @@
     </span>
   }
 
-  <p class="max-w-prose text-xs text-gray-500">{{ config().footnote }}</p>
+  <p class="text-xs text-gray-500">{{ config().footnote }}</p>
 </section>

@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, HostAttributeToken, inject, input, output, Signal } from '@angular/core';
 import { UiBadgeSize, UiBadgeTone, UiBadgeVariant } from '@lfx-one/shared/interfaces';
 
 /**
  * Small pill that labels a status, category or plan, such as "Beta", "Secure" or "Gold". Project the text as content.
  * Add `title` on the element for icon-only or ambiguous badges. Never rely on colour alone: the text carries the meaning.
+ * Set `interactive` for a badge that acts on click, such as a group link; listen to `(activated)`.
  */
 @Component({
   selector: 'lfx-ui-badge',
@@ -14,6 +15,11 @@ import { UiBadgeSize, UiBadgeTone, UiBadgeVariant } from '@lfx-one/shared/interf
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class]': 'classes()',
+    '[attr.role]': 'interactive() ? "button" : staticRole',
+    '[attr.tabindex]': 'interactive() ? 0 : staticTabindex',
+    '(click)': 'activate()',
+    '(keydown.enter)': 'onKey($event)',
+    '(keydown.space)': 'onKey($event)',
     'data-testid': 'ui-badge',
   },
 })
@@ -26,9 +32,29 @@ export class UiBadgeComponent {
   public readonly size = input<UiBadgeSize>('md');
   /** Shows a 6px status dot before the text in the given role colour, for plain status badges such as "Active". */
   public readonly dot = input<UiBadgeTone | null>(null);
+  /** Makes the badge a keyboard-reachable button: hover fill, accent focus ring, and `(activated)` on click, Enter or Space. */
+  public readonly interactive = input<boolean, unknown>(false, { transform: booleanAttribute });
+
+  /** Fires on click, Enter or Space while `interactive` is set. */
+  public readonly activated = output<void>();
+
+  // Keeps a caller's static role and tabindex (e.g. a tooltip badge) on a plain badge.
+  protected readonly staticRole = inject(new HostAttributeToken('role'), { optional: true });
+  protected readonly staticTabindex = inject(new HostAttributeToken('tabindex'), { optional: true });
 
   protected readonly classes: Signal<string> = this.initClasses();
   protected readonly dotClasses: Signal<string> = this.initDotClasses();
+
+  protected activate(): void {
+    if (this.interactive()) this.activated.emit();
+  }
+
+  protected onKey(event: Event): void {
+    if (!this.interactive()) return;
+    event.preventDefault();
+    if ((event as KeyboardEvent).repeat) return;
+    this.activated.emit();
+  }
 
   private initClasses(): Signal<string> {
     return computed(() => {
@@ -58,8 +84,13 @@ export class UiBadgeComponent {
       };
       const tone = this.tone();
       const looks = { solid: solid[tone], subtle: subtle[tone], outline: 'bg-ui-background-100 text-ui-neutral-900 edge' };
-      const look = looks[this.variant()];
-      return `${base} ${sizes[this.size()]} ${look}`;
+      const variant = this.variant();
+      const look = looks[variant];
+      if (!this.interactive()) return `${base} ${sizes[this.size()]} ${look}`;
+      const hover = variant === 'solid' ? 'hover:brightness-95' : 'hover:bg-ui-neutral-100';
+      // Outline, not shadow-focus: the outline variant already uses box-shadow for its edge.
+      const interactive = `cursor-pointer transition-[background-color,filter] duration-ui-base ease-ui-standard motion-reduce:transition-none ${hover} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-focus`;
+      return `${base} ${sizes[this.size()]} ${look} ${interactive}`;
     });
   }
 

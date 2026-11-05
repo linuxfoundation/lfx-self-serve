@@ -4,7 +4,7 @@ description: Manage your personal identity in LFX Self Serve — name, photo, Ab
 audience: [all]
 product_area: Profile
 tags: [profile, edit, about-me, photo, public-profile, visibility]
-last_updated: 2026-08-11
+last_updated: 2026-11-05
 intercom_collection: Profile
 ---
 
@@ -38,25 +38,9 @@ Separate from your private details, you can publish a **public profile** — a p
 - [Your public profile](./public-profile/) — what visitors can see
 - [Public profile settings](./public-profile-settings/) — make it public and control its sections
 
-## Your company's activity
+## Your organization's profile
 
-The **Profile** page in Org Lens (route: `/org/profile`) shows your organization's profile within the Linux Foundation — separate from your personal account. This is your company's public-facing identity across Linux Foundation projects and programs.
-
-### What you can see
-
-- Your organization's name and logo
-- Website link and Crunchbase profile (if provided)
-- Organization description, industry/sector, and number of employees
-- Primary and billing addresses
-- Last updated date
-
-### Navigation
-
-Switch to the **Org** lens using the lens selector at the top of LFX Self Serve, then select **Profile** from the left navigation sidebar (route: `/org/profile`).
-
-### Who can access this
-
-Viewing your organization's profile in Org Lens requires **admin access** to your organization in LFX. If you are not yet an admin, another admin at your organization can invite you to accept an admin role. Once you accept, you will be able to view and, depending on your role, edit your organization's profile information.
+Your organization's logo, description, website and addresses are on a separate page in the Organization lens. See [Organization Profile](../organization/org-profile/).
 
 ## Related sections
 

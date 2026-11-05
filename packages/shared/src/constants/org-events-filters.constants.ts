@@ -17,13 +17,18 @@ import type {
 
 /** "Counted by" options, default first. */
 export const ORG_EVENTS_ATTRIBUTION_OPTIONS: readonly OrgEventsAttributionOption[] = [
+  { label: 'Company email or employee', value: 'verified' },
   { label: 'All relations', value: 'all' },
   { label: 'Company email', value: 'company_email' },
   { label: 'Account on registration', value: 'account' },
 ] as const;
 
-/** Default "Counted by" — the URL drops `?attribution=` when it is active. The Overview is pinned to it. */
-export const DEFAULT_ORG_EVENTS_ATTRIBUTION: OrgEventsAttribution = 'all';
+/**
+ * Default "Counted by" — the URL drops `?attribution=` when it is active. The Overview is pinned to it. People credited
+ * only through the company they named on their registration are a weak relationship and are not counted by default
+ * (lfx-self-serve#5158); All relations adds them on demand.
+ */
+export const DEFAULT_ORG_EVENTS_ATTRIBUTION: OrgEventsAttribution = 'verified';
 
 /** URL query parameter of the "Counted by" filter. */
 export const ORG_EVENTS_ATTRIBUTION_QUERY_PARAM = 'attribution';
@@ -33,17 +38,19 @@ export const ORG_EVENTS_ATTRIBUTION_LABEL = 'Counted by';
 
 /** Tooltip on the "Counted by" filter, per option. */
 export const ORG_EVENTS_ATTRIBUTION_TOOLTIP: Readonly<Record<OrgEventsAttribution, string>> = {
-  all: 'Everyone related to the company: company-email registrations, registrations credited to the account, and current employees. People are counted, not listed, unless they used a company address or are current employees.',
+  verified:
+    'People who registered or spoke with a company email address the organization has on record, or current employees on the roster. People who only named the organization on their registration are left out; choose All relations to include them.',
+  all: 'Everyone related to the company: company-email registrations, current employees, and people who only named the organization on their registration (self-declared).',
   company_email: 'People who registered with one of the company’s own email addresses.',
-  account:
-    'Registrations credited to the company’s account, whatever address was used. People are counted, not listed, unless they also used a company address or are current employees.',
+  account: 'Registrations credited to the company’s account, whatever address was used.',
 };
 
 /** Phrase a caption or tooltip adds for the attribution it counts. */
 export const ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE: Readonly<Record<OrgEventsAttribution, string>> = {
+  verified: 'Company email or current employee.',
   company_email: 'Registered with a company email.',
   account: 'Registrations credited to the company account.',
-  all: 'Everyone related to the company.',
+  all: 'Everyone related to the company, including people who only named it on their registration.',
 };
 
 /**
@@ -121,6 +128,7 @@ export const ORG_EVENTS_NEUTRAL_SPEAKER_LABEL = 'Speaker';
 
 /** The one mapping from an attribution to its warehouse column suffix; every Events read derives its column identifiers from it, never from user input. */
 export const ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX: Readonly<Record<OrgEventsAttribution, OrgEventsAttributionColumnSuffix>> = {
+  verified: 'VERIFIED',
   company_email: 'COMPANY_EMAIL',
   account: 'ACCOUNT',
   all: 'ALL',

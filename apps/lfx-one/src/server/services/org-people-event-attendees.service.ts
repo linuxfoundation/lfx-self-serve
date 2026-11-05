@@ -44,9 +44,10 @@ import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
 /**
- * Event Attendees tab data access — one bundled GET: the listed person × event rows of ORG_EVENT_PARTICIPATION for the picked
- * range, attribution and participation (ended events only; the server applies the window, the browser does not), the
- * summary row dbt computed for the same pick, and the foundation and event dropdown options of that same row set.
+ * Event Attendees tab data access — one bundled GET: the person × event rows of ORG_EVENT_PARTICIPATION for the picked range,
+ * attribution and participation (everyone the selection credits to the organization, by name and title; ended events only; the
+ * server applies the window, the browser does not), the summary row dbt computed for the same pick, and the foundation and
+ * event dropdown options of that same row set.
  */
 export class OrgPeopleEventAttendeesService {
   private readonly snowflakeService: SnowflakeService;
@@ -66,12 +67,12 @@ export class OrgPeopleEventAttendeesService {
     const { range, participation } = filters;
     const servedAttribution = await readOrgEventsServedAttribution(accountId, filters.attribution);
 
-    // Only the filters that select rows are in the key. `v3`: the stored value is the compact projection of
-    // ORG_EVENT_PARTICIPATION rows (GH-1906 layout, new columns); a `v2` entry is a different shape and must miss.
+    // Only the filters that select rows are in the key. `v5` (lfx-self-serve#5158): the rows are everyone the selection
+    // credits and no longer carry HAS_COMPANY_EMAIL; a `v4` entry holds a different shape and must miss.
     const [{ detailRows, foundationRows, eventRows }, summary] = await Promise.all([
       withOrgCompactCache(
         accountId,
-        `people-event-attendees:v3:${range}:${servedAttribution}:${participation}`,
+        `people-event-attendees:v5:${range}:${servedAttribution}:${participation}`,
         VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
         () => this.fetchEventAttendeesRaw(accountId, range, servedAttribution, participation),
         { encode: encodeEventAttendeesRaw, decode: decodeEventAttendeesRaw, accept: isCompactEventAttendeesRaw }
@@ -119,16 +120,17 @@ export class OrgPeopleEventAttendeesService {
     participation: OrgEventsFilters['participation']
   ): Promise<OrgEventAttendeesSummary> {
     const sql = `
-      SELECT ATTENDEES_COUNT, LISTED_ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT
+      SELECT ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_SUMMARY
       WHERE ACCOUNT_ID = ?
         AND TIME_RANGE = ?
         AND ATTRIBUTION = ?
         AND PARTICIPATION = ?
     `;
+    // `v2` (lfx-self-serve#5158): the stored rows no longer carry LISTED_ATTENDEES_COUNT; a `v1` entry is the old column set.
     const rows = await withOrgCache(
       accountId,
-      `people-event-attendees-summary:v1:${range}:${attribution}:${participation}`,
+      `people-event-attendees-summary:v2:${range}:${attribution}:${participation}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => (await this.snowflakeService.execute<OrgEventParticipationSummaryRow>(sql, [accountId, range, attribution, participation])).rows,
       isObjectRowArray
@@ -136,7 +138,6 @@ export class OrgPeopleEventAttendeesService {
     const row = rows[0];
     return {
       attendeesCount: row?.ATTENDEES_COUNT ?? 0,
-      listedAttendeesCount: row?.LISTED_ATTENDEES_COUNT ?? 0,
       speakersCount: row?.SPEAKERS_COUNT ?? 0,
       eventsCount: row?.EVENTS_COUNT ?? 0,
       foundationsCount: row?.FOUNDATIONS_COUNT ?? 0,
@@ -149,12 +150,11 @@ export class OrgPeopleEventAttendeesService {
     attribution: OrgEventsAttribution,
     participation: OrgEventsFilters['participation']
   ): Promise<EventAttendeesRaw> {
-    // One row set, three projections: the rows, and the dropdown options narrowed to what the rows hold. Listed people only
-    // (the unlisted are counted in the summary, never named), ended events only, inside the range window.
+    // One row set, three projections: the rows, and the dropdown options narrowed to what the rows hold. Everyone the
+    // attribution and participation credit (lfx-self-serve#5158), ended events only, inside the range window.
     const where = `
       WHERE ACCOUNT_ID = ?
         AND ${orgEventsAttendeePredicate(attribution, participation)}
-        AND IS_LISTABLE = TRUE
         AND EVENT_DATE < CURRENT_DATE()
         ${orgEventsRangeWindow('EVENT_DATE', range)}
     `;

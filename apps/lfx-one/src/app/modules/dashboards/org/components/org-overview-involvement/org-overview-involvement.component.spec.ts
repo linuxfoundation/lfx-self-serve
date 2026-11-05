@@ -48,7 +48,7 @@ const TRAINING_STATS: OrgTrainingStats = {
 async function buildMetrics(
   maintainers: object = { accountId: ACCOUNT_ID, maintainerRoles: 20, monthlyData: [12, 15], monthlyLabels: ['Jan 2030', 'Feb 2030'] },
   trainingStats: Observable<OrgTrainingStats> = of(TRAINING_STATS),
-  servedAttribution: OrgEventsAttribution = 'all'
+  servedAttribution: OrgEventsAttribution = 'verified'
 ): Promise<DashboardMetricCard[]> {
   const selectedAccount = signal<Account>({ accountId: ACCOUNT_ID, accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
   const analytics = {
@@ -269,18 +269,18 @@ describe('OrgOverviewInvolvementComponent events', () => {
     expect(attendees?.subtitle).toBe(ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE);
     expect(attendees?.subtitle).toBe('Employees who registered or attended foundation events');
     expect(attendees?.tooltipText).toContain(ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.all);
-    expect(attendees?.tooltipText).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.all);
+    expect(attendees?.tooltipText).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.verified);
     expect(attendees?.tooltipText).toContain(ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE);
     expect(attendees?.tooltipText).not.toContain(ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE);
     expect(attendees?.chartCaption).toContain('Distinct people per month');
     expect(speakers?.value).toBe('40');
     expect(speakers?.subtitle).toBe('Employee speakers accepted at foundation events');
     expect(speakers?.tooltipText).toContain(ORG_EVENTS_SPEAKERS_CAPTION_PHRASE);
-    expect(speakers?.tooltipText).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.all);
+    expect(speakers?.tooltipText).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.verified);
     expect(speakers?.tooltipText).toContain(ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE);
   });
 
-  it('adds the fallback note only when the served attribution is not the all-relations default', async () => {
+  it('adds the fallback note only when the served attribution is not the company-email-or-employee default', async () => {
     const metrics = await buildMetrics(undefined, undefined, 'account');
     const attendees = metrics.find((metric) => metric.title === 'Event Attendees');
 
@@ -323,7 +323,7 @@ describe('OrgOverviewInvolvementComponent organization scope', () => {
                 accountName: '',
                 totalAttended: 0,
                 totalSpeakers: 0,
-                servedAttribution: 'all',
+                servedAttribution: 'verified',
                 attendeesMonthlyData: [],
                 speakersMonthlyData: [],
                 monthlyLabels: [],

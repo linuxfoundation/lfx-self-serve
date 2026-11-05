@@ -285,12 +285,15 @@ export const VALKEY_CACHE = {
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
     // event) grain is irreducible — the tab's stat cards and filters recompute client-side over
-    // every detail row — so the remaining excess is real data, not repetition. `v3` (lfx-self-serve#4598) reads listed
-    // person × event rows of ORG_EVENT_PARTICIPATION per range, attribution and participation (the unlisted are counted,
-    // never sent). Each row repeats the person's name, title and person key, and drops the roster identity columns of
-    // `v2`, so its size is NOT measured: the 2 MiB cap is carried over from `v2` as a starting point and must be measured
-    // on dev data (largest org, `all` range) before release.
-    'org-lens-sf:v1:people-event-attendees:v3': 2 * 1_048_576,
+    // every detail row — so the remaining excess is real data, not repetition. `v3` (lfx-self-serve#4598) read listed
+    // person × event rows of ORG_EVENT_PARTICIPATION per range, attribution and participation. `v4` (lfx-self-serve#5158)
+    // reads everyone the selection credits, not only the listable, so it is larger than `v3`. Measured 2026-11-04 on dev
+    // data (largest org, 730-day range, all attribution): about 11k rows, roughly 1.1 MB compact, under the 2 MiB cap
+    // carried over from `v2`. All-time, all attribution: the largest real org is about 10.7k rows (~0.9 MB by the same SQL
+    // estimate); only the 'Individual - No Account' bucket (~81k rows) exceeds the cap, and an over-cap value skips the
+    // cache and reads directly. `v5` drops the per-row HAS_COMPANY_EMAIL flag and adds the `verified` attribution (a
+    // subset of `all`), so no value is larger than `v4`; the cap carries over.
+    'org-lens-sf:v1:people-event-attendees:v5': 2 * 1_048_576,
     // `v4` (lfx-self-serve#4159) is read per range over enrollments of any age (lf-dbt#3118 lifted the 12-month cap).
     // Measured 2026-10-27 on the dev build with the same SQL size estimate and × 1.06 calibration as `people-all:v4`:
     // largest value 6,782,106 bytes (largest org measured, All time; the next two 5.39 MB and 3.20 MB). Only All time on those three

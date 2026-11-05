@@ -44,6 +44,7 @@ export function coerceCampaignEventDetails(value: unknown): CampaignEventDetails
   const url = (key: string): string => httpUrlOrEmpty(text(key));
 
   return {
+    sourceText: text('sourceText'),
     name: text('name'),
     dates: text('dates'),
     city: text('city'),

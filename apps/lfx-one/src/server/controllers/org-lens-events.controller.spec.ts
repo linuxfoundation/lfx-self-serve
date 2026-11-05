@@ -77,7 +77,7 @@ describe('OrgLensEventsController filters', () => {
     await controller.getOrgEvents(buildReq({}), buildRes(), vi.fn());
 
     expect(getOrgEvents.mock.calls[0][2]).toMatchObject({
-      attribution: 'all',
+      attribution: 'verified',
       participation: 'all',
       eventScope: 'activity',
       foundation: '',

@@ -1,9 +1,9 @@
 ---
 title: Events and Event Attendees
-description: How the Organization lens Events page and People → Event Attendees count people at events, what each filter (Range, Foundation, Count, Show, Counted by) does, and why some people are counted but not listed.
+description: How the Organization lens Events page and People → Event Attendees count and list people at events, what each filter (Range, Foundation, Count, Show, Counted by) does, and what is shown about each person.
 audience: [all]
 product_area: Organization
-tags: [organization, org, org-lens, events, event-attendees, registered, attended, counted-by, filters, all-employees]
+tags: [organization, org, org-lens, events, event-attendees, registered, attended, counted-by, company-email, filters, all-employees]
 last_updated: 2026-11-04
 intercom_collection: Organization
 ---
@@ -23,17 +23,18 @@ These steps apply to anyone with access to at least one organization in the Orga
 
 **Counted by** decides whom an event number is credited to. It is under **More filters**, and the link shows **More filters (1)** while a non-default option is picked.
 
-| Option                      | What it counts                                                                                                       |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **All relations** (default) | Everyone related to the organization by either of the two below, and its current employees. This is the widest view. |
-| **Company email**           | People who registered with one of the organization's own email addresses.                                            |
-| **Account on registration** | Registrations credited to the organization's account, whatever address was used.                                     |
+| Option                                  | What it counts                                                                                                                                                                                                                      |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Company email or employee** (default) | People who registered or spoke with an email address the organization has on record as its own, and its current employees on the roster. People who only named the organization on their registration (self-declared) are left out. |
+| **All relations**                       | Everyone above, plus people who only named the organization on their registration (self-declared), including registrations credited to the organization's account. This is the widest view.                                         |
+| **Company email**                       | People who registered with one of the organization's own email addresses.                                                                                                                                                           |
+| **Account on registration**             | Registrations credited to the organization's account, whatever address was used.                                                                                                                                                    |
 
-If you pick **Company email** and the organization has no company-email data, it is not available: the numbers use **Account on registration** instead and the page says so. **All relations** needs no company-email data.
+If you pick **Company email** and the organization has no company-email data, it is not available: the numbers use **Account on registration** instead and the page says so. **Company email or employee** and **All relations** need no company-email data.
 
-### People who are counted but not listed
+### Who is listed
 
-With **Count** set to **All**, the attendees drawer shows each person as **Registered or attended**. An attendee is named in an attendee list, row or drawer only when they registered with a company email address or are a current employee of the organization. Everyone else is counted in the totals but never named, and the page shows how many: **N counted, not listed**, or **N more counted, not listed** in an event's attendees drawer. A registrant with no usable name appears as **Registered attendee**. An event's speakers drawer works differently: it names the organization's accepted and submitted speakers for that event, whether or not they registered. Email addresses are never shown anywhere.
+Everyone credited to the organization by the current **Counted by** is listed by name in People → Event Attendees and in an event's attendees drawer, so you can review who is counted. By default that is only people who registered or spoke with a company email address on record and current employees on the roster. **All relations** adds, by name, the people who only named the organization on their registration (self-declared). Job titles are shown only for the organization's current employees on the roster, as on People → Trainees; everyone else is shown by name only. A person whose name or title on record is an email address appears without it: as **Registered attendee** when there is no usable name, and with no title. Email addresses are never shown in these lists. With **Count** set to **All**, the attendees drawer shows each person as **Registered or attended**. An event's speakers drawer lists the organization's accepted and submitted speakers for that event, whether or not they registered.
 
 ## Events page
 
@@ -53,17 +54,17 @@ The filters are kept in the page address (`?range=`, `?foundation=`, `?participa
 
 ## People → Event Attendees
 
-Open **People** and then **Event Attendees**. The filters are **Range**, **Foundation**, **Event**, **Count** and, under **More filters**, **Counted by**; they mean the same as above and **Range**, **Count** and **Counted by** are also kept in the page address. Range, Count and Counted by are applied to the numbers themselves; **Foundation**, **Event** and the search narrow the people listed.
+Open **People** and then **Event Attendees**. The filters are **Range**, **Foundation**, **Event**, **Count** and, under **More filters**, **Counted by**; they mean the same as above. **Range**, **Count** and **Counted by** are kept in the page address and applied to the numbers themselves; **Foundation**, **Event** and the search narrow the people listed.
 
 - The tiles describe the current **Range**, **Count** and **Counted by**:
-  - **Attendees**, **Speakers**, **Events** and **Foundations** are the organization's totals for the selection, including people who are counted but not listed, with the **N counted, not listed** note under Attendees. When you narrow the list with search, **Foundation** or **Event**, all four count the people listed instead (for Speakers, the listed people shown with a speaker role; for Events and Foundations, the events and foundations those people took part in) and the note is hidden, so the four tiles always agree with each other.
-- A person with a roster profile opens the person drawer when you select their name. A listed person without one is shown by name only.
+  - **Attendees**, **Speakers**, **Events** and **Foundations** are the organization's totals for the selection. When you narrow the list with search, **Foundation** or **Event**, all four count the people listed instead (for Speakers, the listed people shown with a speaker role; for Events and Foundations, the events and foundations those people took part in), so the four tiles always agree with each other.
+- A person with a roster profile opens the person drawer when you select their name. A person without one is shown by name only.
 - Select a row to see the events that person registered for or attended in the selected range.
 
 ## Org Overview
 
-The Overview cards always use the defaults: **All relations**, **All** (registered or attended) and the last 2 years. They have no filters. Their headline counts each person once, so it is not the sum of the monthly points in the chart. To see other selections, open the Events page or People → Event Attendees.
+The Overview cards always use the defaults: **Company email or employee**, **All** (registered or attended) and the last 2 years. They have no filters. Their headline counts each person once, so it is not the sum of the monthly points in the chart. To see other selections, including **All relations**, open the Events page or People → Event Attendees.
 
 ## People → All Employees
 
-The **Event Attendees** tile on **People** → **All Employees** is the same number as **Attendees** on People → Event Attendees at its defaults (**All relations**, **All**) for the same organization and **Range**: the people who registered or attended a foundation event in that range. It does not change with the project scope, because events are Linux Foundation events; the exception is **Non-LF projects**, which have no events, where the tile counts the listed employees who took part in an event. It does not change with the **Employment** view or the **Team members** filter either. If the figure cannot be read, the tile shows a dash (—) instead of counting something else.
+The **Event Attendees** tile on **People** → **All Employees** is the same number as **Attendees** on People → Event Attendees at its defaults (**Company email or employee**, **All**) for the same organization and **Range**: the people who registered or attended a foundation event in that range. It does not change with the project scope, because events are Linux Foundation events; the exception is **Non-LF projects**, which have no events, where the tile counts the listed employees who took part in an event. It does not change with the **Employment** view or the **Team members** filter either. If the figure cannot be read, the tile shows a dash (—) instead of counting something else.

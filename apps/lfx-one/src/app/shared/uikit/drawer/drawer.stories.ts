@@ -14,6 +14,7 @@ import { UiNoteComponent } from '../note/note.component';
 import { UiOptionComponent } from '../select/option.component';
 import { UiSelectComponent } from '../select/select.component';
 import { UiDrawerComponent } from './drawer.component';
+import { UiDrawerContext } from './drawer.context';
 import { UiDrawerService } from './drawer.service';
 
 /** Story helper (the template gets `dialogRef` in its context for the buttons to close with): opens the template it is bound to through `UiDrawerService` when the host is clicked. */
@@ -29,6 +30,12 @@ class StoryOpensDrawerDirective {
   }
 }
 
+/** Story helper: a close button for bare content, which has no header. It closes through `UiDrawerContext`, so `canClose` still runs. */
+@Directive({ selector: '[lfxStoryClosesDrawer]', host: { '(click)': 'context.requestClose()' } })
+class StoryClosesDrawerDirective {
+  protected readonly context = inject(UiDrawerContext);
+}
+
 // Paragraphs to make a body taller than the window, so it scrolls under the header.
 const FILLER = `
   @for (n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; track n) {
@@ -42,6 +49,7 @@ const meta: Meta<UiDrawerComponent> = {
     moduleMetadata({
       imports: [
         StoryOpensDrawerDirective,
+        StoryClosesDrawerDirective,
         UiDrawerComponent,
         UiButtonComponent,
         UiAvatarComponent,
@@ -118,6 +126,27 @@ export const MeetingDetails: Story = {
                 <lfx-ui-button size="large" variant="secondary" [fullWidth]="true">Can't attend</lfx-ui-button>
               </div>
             </div>
+          </div>
+        </lfx-ui-drawer>
+      </ng-template>`,
+  }),
+};
+
+/** `bare` drops the header and footer: the title is for screen readers only, and the content fills an unpadded body that is the only scroller, so it pins its own header. Its close button calls `UiDrawerContext.requestClose`. */
+export const Bare: Story = {
+  render: () => ({
+    template: `
+      <lfx-ui-button size="large" variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ width: 720 }">Open bare drawer</lfx-ui-button>
+      <ng-template #drawer>
+        <lfx-ui-drawer heading="TSC Weekly Sync" bare>
+          <div class="sticky top-0 z-[1] flex items-center gap-[8px] bg-ui-background-100 px-[24px] py-[12px] shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-100)]">
+            <span class="label-14 min-w-0 flex-1 truncate text-ui-neutral-900">TSC Weekly Sync</span>
+            <lfx-ui-button variant="secondary" icon="fa-light fa-link">Copy Link</lfx-ui-button>
+            <lfx-ui-button variant="tertiary" [iconOnly]="true" icon="fa-light fa-xmark" ariaLabel="Close" lfxStoryClosesDrawer />
+          </div>
+          <div class="flex flex-col gap-[16px] px-[24px] pb-[24px]">
+            <h3 class="heading-32 text-ui-neutral-900">TSC Weekly Sync</h3>
+            ${FILLER}
           </div>
         </lfx-ui-drawer>
       </ng-template>`,

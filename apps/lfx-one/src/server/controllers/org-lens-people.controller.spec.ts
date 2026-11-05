@@ -187,15 +187,15 @@ describe('OrgLensPeopleController All Employees Event Attendees tile (lfx-self-s
     vi.clearAllMocks();
     getAllEmployees.mockResolvedValue(roster);
     getLive.mockResolvedValue(roster);
-    readEventAttendeesSummary.mockResolvedValue({ attendeesCount: 486, listedAttendeesCount: 400, speakersCount: 9, eventsCount: 12, foundationsCount: 3 });
+    readEventAttendeesSummary.mockResolvedValue({ attendeesCount: 486, speakersCount: 9, eventsCount: 12, foundationsCount: 3 });
   });
 
-  it('reads the summary row of the range at the Event Attendees defaults (all relations, registered or attended) and serves its Attendees count', async () => {
+  it('reads the summary row of the range at the Event Attendees defaults (company email or employee, registered or attended) and serves its Attendees count', async () => {
     const stored = await respond({ range: '90d' });
     const live = await respond({ live: 'true', range: '730d' });
 
-    expect(readEventAttendeesSummary).toHaveBeenNthCalledWith(1, ORG_UID, '90d', 'all', 'all');
-    expect(readEventAttendeesSummary).toHaveBeenNthCalledWith(2, ORG_UID, '730d', 'all', 'all');
+    expect(readEventAttendeesSummary).toHaveBeenNthCalledWith(1, ORG_UID, '90d', 'verified', 'all');
+    expect(readEventAttendeesSummary).toHaveBeenNthCalledWith(2, ORG_UID, '730d', 'verified', 'all');
     expect(stored).toMatchObject({ eventAttendeesTotal: 486, stats: { eventAttendees: 486, activeInOss: 3 } });
     expect(live.eventAttendeesTotal).toBe(486);
   });

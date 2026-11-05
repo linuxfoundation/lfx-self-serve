@@ -100,7 +100,7 @@ export interface GetOrgEventsOptions {
   readonly range: OrgLensTimeRange;
 }
 
-/** A single org employee in the per-event attendees drawer. */
+/** A single person in the per-event attendees drawer: everyone the picked option credits to the organization, by name (title only for roster employees). */
 export interface OrgEventAttendee {
   readonly contactId: string;
   readonly name: string;
@@ -117,10 +117,8 @@ export interface OrgEventAttendeeVm extends OrgEventAttendee {
 export interface OrgEventAttendeesDrawerResponse {
   readonly eventId: string;
   readonly eventName: string;
-  /** Listed people in `data`. */
+  /** People in `data`: everyone the picked option counts for the event, narrowed by any name search. */
   readonly total: number;
-  /** People the option counts but the drawer may not name (option count minus listed rows); render "N counted, not listed". */
-  readonly notListedCount: number;
   readonly servedAttribution: OrgEventsAttribution;
   readonly data: readonly OrgEventAttendee[];
 }
