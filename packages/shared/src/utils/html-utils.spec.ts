@@ -11,6 +11,7 @@ import {
   hasVisibleHtmlText,
   hasVisibleText,
   htmlClipboardToText,
+  plainTextToHtml,
   stripHtml,
   stripResourceLoadingHtml,
 } from './html-utils';
@@ -145,6 +146,31 @@ describe('escapeHtml', () => {
 
   it('leaves plain text untouched', () => {
     expect(escapeHtml('see https://example.com?a=1~b')).toBe('see https://example.com?a=1~b');
+  });
+});
+
+describe('plainTextToHtml', () => {
+  it('turns blank lines into paragraphs and single newlines into <br>', () => {
+    expect(plainTextToHtml('One\ntwo\n\nThree')).toBe('<p>One<br>two</p><p>Three</p>');
+  });
+
+  it('normalizes CRLF / CR and drops empty paragraphs from runs of blank lines', () => {
+    expect(plainTextToHtml('One\r\n\r\n\r\n  \r\nTwo\rthree')).toBe('<p>One</p><p>Two<br>three</p>');
+  });
+
+  it('escapes HTML-significant characters in plain text', () => {
+    expect(plainTextToHtml('a < b && c > d')).toBe('<p>a &lt; b &amp;&amp; c &gt; d</p>');
+  });
+
+  it('returns a value that already contains markup unchanged', () => {
+    const html = '<p>Already <strong>HTML</strong></p>';
+    expect(plainTextToHtml(html)).toBe(html);
+  });
+
+  it('returns empty string for null / undefined / empty', () => {
+    expect(plainTextToHtml(null)).toBe('');
+    expect(plainTextToHtml(undefined)).toBe('');
+    expect(plainTextToHtml('')).toBe('');
   });
 });
 
