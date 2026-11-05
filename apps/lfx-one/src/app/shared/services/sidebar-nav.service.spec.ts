@@ -539,6 +539,17 @@ describe('SidebarNavService', () => {
     expect(findByLink(items, '/org/all/easycla')).toBeUndefined();
   });
 
+  // Crowdfunding Donations is single-organization too: its endpoint takes one `orgUid` (#4415, Copilot).
+  it('drops Crowdfunding Donations in roll-up mode even with the flag on', () => {
+    activeLens.set('org');
+    cfOrgDonationsEnabled.set(true);
+    selectedOrgUid.set('all');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('Crowdfunding Donations');
+  });
+
   it('keeps Organization Profile for a concrete organization', () => {
     activeLens.set('org');
     selectedOrgUid.set('0014100000MgaAAAAA');

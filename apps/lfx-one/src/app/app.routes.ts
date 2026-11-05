@@ -115,6 +115,8 @@ function orgLensPageRoutes(): Routes {
       // Crowdfunding donations matched to the organization (#415), dark-launched behind `cf-org-donations`.
       path: 'donations',
       canMatch: [cfOrgDonationsGuard],
+      // `/api/crowdfunding/org-donations` takes one organization, so the roll-up redirects (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       data: {
         lens: 'org',
         title: 'Donations',

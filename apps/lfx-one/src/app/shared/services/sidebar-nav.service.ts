@@ -267,7 +267,9 @@ export class SidebarNavService {
     const initiativesItems = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') ? [this.orgInitiativesNavItem()] : [];
     // Donations (#415) is dark-launched behind `cf-org-donations` and shown to every org viewer, like the other org
     // pages: CF lists them to auditors, which the lens route already requires. The page shows a 403 state otherwise.
-    const donationsItems = this.isCfOrgDonationsEnabled() ? [this.orgDonationsNavItem()] : [];
+    // Crowdfunding Donations is single-organization too: `/api/crowdfunding/org-donations` takes an
+    // `orgUid` its SFID validator refuses the sentinel for, so `/org/all/donations` only errors (#4415, Copilot).
+    const donationsItems = this.isCfOrgDonationsEnabled() && !this.accountContext.isRollUp() ? [this.orgDonationsNavItem()] : [];
     const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, ...donationsItems]);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
     return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;

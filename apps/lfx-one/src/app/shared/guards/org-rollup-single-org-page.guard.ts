@@ -13,9 +13,10 @@ const CLA_PAGE = 'easycla';
  * Keeps a page that is single-organization *by definition* off the All Organizations roll-up,
  * sending it to the roll-up's own overview instead (#4125).
  *
- * Two pages qualify. Organization Profile edits one `b2b_org` record, and EasyCLA is about a
- * corporate CLA, which belongs to one company — neither has anything for a combined view to render,
- * and neither ever will.
+ * Three pages qualify. Organization Profile edits one `b2b_org` record, EasyCLA is about a
+ * corporate CLA, which belongs to one company, and Crowdfunding Donations reads
+ * `/api/crowdfunding/org-donations`, which takes one `orgUid` — none has anything for a combined
+ * view to render, and none ever will.
  *
  * Dropping their sidebar items is not enough on its own. `navigateToSelectedOrg` canonicalizes a
  * legacy `/org/profile` by inserting the selected segment, so in roll-up mode the app itself

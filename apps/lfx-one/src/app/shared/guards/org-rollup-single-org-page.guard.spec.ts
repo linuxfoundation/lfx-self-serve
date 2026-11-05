@@ -31,7 +31,7 @@ describe('orgRollUpSingleOrgPageGuard', () => {
    * parent on the addressed mount only. `pathFromRoot` is what the guard walks to tell the two
    * mounts apart, so the fixture has to carry it.
    */
-  const snapshot = (opts: { page: 'profile' | 'easycla'; addressed?: boolean; queryParams?: Record<string, string> }) => {
+  const snapshot = (opts: { page: 'profile' | 'easycla' | 'donations'; addressed?: boolean; queryParams?: Record<string, string> }) => {
     const page = { routeConfig: { path: opts.page }, queryParamMap: convertToParamMap(opts.queryParams ?? {}) };
     const pathFromRoot = opts.addressed ? [{ routeConfig: { path: `:${ORG_SEGMENT_PARAM}` } }, page] : [page];
     return { ...page, pathFromRoot } as never;
@@ -55,6 +55,8 @@ describe('orgRollUpSingleOrgPageGuard', () => {
     ['legacy Profile', { page: 'profile' as const }],
     ['addressed EasyCLA', { page: 'easycla' as const, addressed: true }],
     ['legacy EasyCLA with no return', { page: 'easycla' as const }],
+    ['addressed Donations', { page: 'donations' as const, addressed: true }],
+    ['legacy Donations, parameter or not', { page: 'donations' as const, queryParams: { org: '0014100000AaaAAAAA' } }],
   ])('redirects %s to the roll-up overview', (_label, opts) => {
     isRollUp.set(true);
     redirectsToRollUpOverview(run(opts));
