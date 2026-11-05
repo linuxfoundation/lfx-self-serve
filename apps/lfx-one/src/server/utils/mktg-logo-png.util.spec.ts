@@ -151,6 +151,45 @@ describe('rasterizeLogoSvg', () => {
       expect(most).toBe(3);
       expect(outcomes.map((outcome) => outcome.status)).toEqual(['rejected', 'fulfilled', 'fulfilled', 'fulfilled']);
     });
+
+    it('hands the slot straight to the first waiter, so a caller arriving as a task settles queues behind it', async () => {
+      const limited = limitConcurrent(1);
+      let running = 0;
+      let most = 0;
+      const order: string[] = [];
+      const releases: (() => void)[] = [];
+      // Each task's own promise, once it runs, is held here: a `.then` on it runs in the microtask right after the limiter frees the slot.
+      const bodies: Promise<void>[] = [];
+      const task = (id: string) =>
+        limited(() => {
+          const body = new Promise<void>((resolve) => {
+            running += 1;
+            most = Math.max(most, running);
+            order.push(id);
+            releases.push(() => {
+              running -= 1;
+              resolve();
+            });
+          });
+          bodies.push(body);
+          return body;
+        });
+      const a = task('A');
+      const b = task('B');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(order).toEqual(['A']);
+      // C arrives in the microtask after A's body settles, when the slot is between A and B.
+      const c = bodies[0].then(() => task('C'));
+      releases[0]();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(order).toEqual(['A', 'B']);
+      releases[1]();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(order).toEqual(['A', 'B', 'C']);
+      releases[2]();
+      await Promise.all([a, b, c]);
+      expect(most).toBe(1);
+    });
   });
 
   describe('the render child', () => {

@@ -170,21 +170,30 @@ function childFailureDetail(exit: ExecFileException, stderr: string): string {
 /**
  * Runs tasks at most `limit` at a time, in the order they arrive: a plain
  * promise queue, so the server-wide count of render children stays bounded
- * without a dependency. The task's own timing starts when it runs, not when
- * it is queued: a queued render waits for a slot in addition to its bound.
+ * without a dependency. A settling task hands its slot straight to the
+ * first waiter (the slot never counts as free in between, so a caller that
+ * arrives in that moment queues behind the waiter); only with no waiter is
+ * the slot freed. The task's own timing starts when it runs, not when it is
+ * queued: a queued render waits for a slot in addition to its bound.
  */
 export function limitConcurrent(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
   let running = 0;
   const waiting: (() => void)[] = [];
   const release = (): void => {
-    running -= 1;
-    waiting.shift()?.();
+    const next = waiting.shift();
+    if (next) {
+      next();
+    } else {
+      running -= 1;
+    }
   };
   return async <T>(task: () => Promise<T>): Promise<T> => {
     if (running >= limit) {
+      // The waiter inherits the settling task's slot; it is counted already.
       await new Promise<void>((resolve) => waiting.push(resolve));
+    } else {
+      running += 1;
     }
-    running += 1;
     try {
       return await task();
     } finally {
