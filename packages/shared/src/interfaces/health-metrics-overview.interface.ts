@@ -3,7 +3,9 @@
 
 import type { Signal } from '@angular/core';
 
+import type { HealthMetricsEventsForecast, HealthMetricsEventsForecastCurve } from './health-metrics-events.interface';
 import type { HealthMetricsL2Range } from './health-metrics-l2.interface';
+import type { UiBadgeTone, UiBadgeVariant } from './uikit.interface';
 
 /** Every Overview card read is foundation-wide and carries all four periods, so a period change never re-reads. */
 export interface HealthMetricsOverviewQuery {
@@ -598,10 +600,6 @@ export interface HealthMetricsOverviewTrendYTickView extends HealthMetricsOvervi
 export interface HealthMetricsOverviewTrendView {
   /** Current, Same point last year, and Predicted (or Final for a past event). */
   kpis: HealthMetricsOverviewTrendKpiView[];
-  goalLabel: string;
-  /** "Days left", or "Event held" for a past event. */
-  daysTitle: string;
-  daysLabel: string;
   yTicks: HealthMetricsOverviewTrendYTickView[];
   xTicks: HealthMetricsOverviewTrendTickView[];
   currentPath: string;
@@ -622,10 +620,67 @@ export interface HealthMetricsOverviewCardRead<T> {
   status: Signal<HealthMetricsOverviewCardStatus>;
 }
 
-/** What the events card hands the registration trend dialog; a past event shows its history, with no forecast. */
-export interface HealthMetricsOverviewTrendDialogData {
+/** The event dialog's tabs. */
+export type HealthMetricsOverviewEventDialogTab = 'trend' | 'snapshot';
+
+/** What the events card hands the event dialog: the event, whether it is past (no forecast), and the tab to open on. */
+export interface HealthMetricsOverviewEventDialogData {
   event: HealthMetricsOverviewEvent;
   isPast: boolean;
+  tab: HealthMetricsOverviewEventDialogTab;
+}
+
+/** The event dialog's trend read: an upcoming event's forecast headline and curve, or a past event's history alone. */
+export interface HealthMetricsOverviewEventTrendReads {
+  forecast: HealthMetricsEventsForecast | null;
+  curve: HealthMetricsEventsForecastCurve;
+}
+
+/** One badge in the event dialog's header. */
+export interface HealthMetricsOverviewEventDialogBadgeView {
+  label: string;
+  icon: string;
+  variant: UiBadgeVariant;
+  tone: UiBadgeTone;
+}
+
+/** The event dialog's header badges: the registration goal, and the days left (`null` until an upcoming event's are read). */
+export interface HealthMetricsOverviewEventDialogBadgesView {
+  goal: HealthMetricsOverviewEventDialogBadgeView;
+  days: HealthMetricsOverviewEventDialogBadgeView | null;
+}
+
+/** A Snapshot row's change badge, e.g. `+139 (74%)`, or `No change`. */
+export interface HealthMetricsOverviewSnapshotChangeView {
+  label: string;
+  tone: UiBadgeTone;
+  /** A solid circle arrow; `null` for no change. */
+  icon: string | null;
+}
+
+/** One Snapshot row: the level at the window's start and at its end, and the change between. */
+export interface HealthMetricsOverviewSnapshotRowView {
+  key: string;
+  label: string;
+  tip: string | null;
+  startLabel: string;
+  endLabel: string;
+  change: HealthMetricsOverviewSnapshotChangeView;
+  /** The Totals row, set off by a dark divider above it. */
+  totals: boolean;
+}
+
+/** One Snapshot table, with the dates its two columns stand for. */
+export interface HealthMetricsOverviewSnapshotSectionView {
+  key: 'registration' | 'sponsorship';
+  title: string;
+  /** e.g. `Oct 25, 2026`. */
+  startHeader: string;
+  /** e.g. `Nov 4, 2026 (today)`. */
+  endHeader: string;
+  rows: HealthMetricsOverviewSnapshotRowView[];
+  /** Shown below the rows when no package has sold. */
+  emptyCopy: string | null;
 }
 
 /** How a KPI strip lays out at its measured width: one row, one stacked column, or a 2 × 2 grid for four items. */

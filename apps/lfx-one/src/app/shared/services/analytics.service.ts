@@ -100,6 +100,8 @@ import {
   HealthMetricsEventsGeographyQuery,
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurveQuery,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotQuery,
   HealthMetricsEventsForecastQuery,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastQuery,
@@ -1193,6 +1195,19 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEventsForecastCurve>('/api/analytics/events-registration-history', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-registration-history failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** One event's registration weeks and sponsorship packages, for the event dialog's Snapshot tab. */
+  public getEventsSnapshot(query: HealthMetricsEventsSnapshotQuery): Observable<HealthMetricsEventsSnapshot> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug, eventId: query.eventId };
+
+    // Errors propagate so the tab says it failed instead of showing every change as none.
+    return this.http.get<HealthMetricsEventsSnapshot>('/api/analytics/events-snapshot', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-snapshot failed', { query, error });
         return throwError(() => error);
       })
     );

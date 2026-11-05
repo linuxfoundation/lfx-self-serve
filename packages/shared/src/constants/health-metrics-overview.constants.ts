@@ -420,3 +420,17 @@ export const HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE = 0.67;
 
 /** The narrowest a KPI strip item may get before the strip stacks (the design's 170px). */
 export const HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX = 170;
+
+/** The event dialog's tabs, in the design's order. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_TABS = [
+  { value: 'trend', label: 'Registration trend', icon: 'fa-light fa-chart-line' },
+  { value: 'snapshot', label: 'Snapshot', icon: 'fa-light fa-table-list' },
+] as const;
+
+/** The Snapshot tab's row tips and empty copy, from the design. */
+export const HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY = {
+  registrationRevenueTip:
+    'Ticket revenue from paid registrations, net of discounts and refunds. Free and comped registrations count toward registrations but not revenue.',
+  sponsorshipRevenueTip: 'Signed sponsorship contracts for this event, in USD.',
+  noPackages: 'No sponsorship packages sold yet.',
+} as const;

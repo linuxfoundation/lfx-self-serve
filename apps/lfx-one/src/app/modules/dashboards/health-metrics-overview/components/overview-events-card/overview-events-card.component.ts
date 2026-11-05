@@ -21,11 +21,16 @@ import { forkJoin } from 'rxjs';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { injectOverviewCardRead } from '../../overview-card-read';
 import { OverviewCardComponent } from '../overview-card/overview-card.component';
-import { OverviewEventTrendDialogComponent } from '../overview-event-trend-dialog/overview-event-trend-dialog.component';
+import { OverviewEventDialogComponent } from '../overview-event-dialog/overview-event-dialog.component';
 import { OverviewExploreLinkComponent } from '../overview-explore-link/overview-explore-link.component';
 import { OverviewInfoTipComponent } from '../overview-info-tip/overview-info-tip.component';
 
-import type { HealthMetricsOverviewEventRowView, HealthMetricsOverviewEventsView, HealthMetricsOverviewTrendDialogData } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsOverviewEventDialogData,
+  HealthMetricsOverviewEventDialogTab,
+  HealthMetricsOverviewEventRowView,
+  HealthMetricsOverviewEventsView,
+} from '@lfx-one/shared/interfaces';
 
 /** The period's events and sponsorship, and its event list: upcoming for YTD, the year's past events otherwise. */
 @Component({
@@ -68,16 +73,19 @@ export class OverviewEventsCardComponent {
   });
   protected readonly hiddenCount = computed(() => (this.view()?.rows.length ?? 0) - this.visibleRows().length);
 
-  /** The design's registration trend dialog: no PrimeNG header, as the body draws its own. */
-  protected openTrend(row: HealthMetricsOverviewEventRowView): void {
+  /** The design's event dialog on the given tab: no PrimeNG header, as the body draws its own; anchored to the top so switching tabs never moves it. */
+  protected openEvent(row: HealthMetricsOverviewEventRowView, tab: HealthMetricsOverviewEventDialogTab): void {
     const events = this.read.data()?.events;
     const event = (row.isPast ? events?.past : events?.upcoming)?.find((candidate) => candidate.eventId === row.eventId);
     if (!event) return;
 
-    const data: HealthMetricsOverviewTrendDialogData = { event, isPast: row.isPast };
-    const ref = this.dialogService.open(OverviewEventTrendDialogComponent, {
+    const data: HealthMetricsOverviewEventDialogData = { event, isPast: row.isPast, tab };
+    const ref = this.dialogService.open(OverviewEventDialogComponent, {
       showHeader: false,
       width: 'min(1040px, calc(100vw - 32px))',
+      position: 'top',
+      // The design's inset from the top, and a height that leaves the same below.
+      style: { marginTop: 'min(48px, 6vh)', maxHeight: 'calc(100vh - 2 * min(48px, 6vh))' },
       contentStyle: { padding: '22px' },
       modal: true,
       draggable: false,
@@ -88,6 +96,6 @@ export class OverviewEventsCardComponent {
       focusOnShow: false,
       data,
     }) as DynamicDialogRef;
-    nameDynamicDialog(this.dialogService, ref, OverviewEventTrendDialogComponent.headingId);
+    nameDynamicDialog(this.dialogService, ref, OverviewEventDialogComponent.headingId);
   }
 }
