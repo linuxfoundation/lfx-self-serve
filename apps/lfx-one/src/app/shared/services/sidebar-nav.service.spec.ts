@@ -184,7 +184,10 @@ describe('SidebarNavService', () => {
         // shape, so the builder is stubbed to the legacy form; `orgSegment` names an organization for
         // the cases that assert the org-scoped form.
         { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/org/${orgSegment()}/${page}` : `/org/${page}`) } },
-        { provide: AccountContextService, useValue: { selectedAccount: () => ({ accountId: '', accountName: 'Acme', uid: selectedOrgUid() }) } },
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: () => ({ accountId: '', accountName: 'Acme', uid: selectedOrgUid() }), isRollUp: () => selectedOrgUid() === 'all' },
+        },
         { provide: OrgRoleGrantsService, useValue: { writerSet: orgWriterSet, claManagerOrgSet } },
       ],
     });
@@ -502,6 +505,32 @@ describe('SidebarNavService', () => {
     expect(labels(items)).not.toContain('EasyCLA');
     expect(findByLink(items, '/org/easycla')).toBeUndefined();
     expect(labels(sectionItems(items, 'Organization Engagement'))).not.toContain('EasyCLA');
+  });
+
+  /**
+   * Copilot on PR #4415. `orgLensPath` prefixes every item with the selected segment, so in
+   * roll-up mode Profile linked to `/org/all/profile`, where the page asks for
+   * `/api/orgs/uid/all`, the SFID validator refuses the sentinel and the caller lands on an error
+   * page. Profile is single-org by definition (#4125), so it is dropped rather than re-pointed.
+   */
+  it('drops Organization Profile in roll-up mode, and keeps every other Org Lens item', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('all');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('Organization Profile');
+    expect(findByLink(items, '/org/all/profile')).toBeUndefined();
+    expect(labels(items)).toContain('Dashboard');
+    expect(labels(items)).toContain('Memberships');
+    expect(labels(sectionItems(items, 'Organization Engagement'))).toContain('People');
+  });
+
+  it('keeps Organization Profile for a concrete organization', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000MgaAAAAA');
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Organization Profile');
   });
 
   it('places EasyCLA as a top-level item directly before Organization Profile, under the org-admin divider', () => {

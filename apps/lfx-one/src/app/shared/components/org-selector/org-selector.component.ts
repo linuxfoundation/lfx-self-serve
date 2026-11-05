@@ -534,6 +534,10 @@ export class OrgSelectorComponent {
     // breaking caret/text nav in inputs like the LF-team search field.
     if (!this.isEventInsidePanel(event)) return;
 
+    // The caller is driving now, so the deferred initial-focus retry must not fire later and yank
+    // focus back off whatever they navigated to while the list was still loading.
+    this.pendingInitialFocus = false;
+
     // Escape always closes the panel — including from the LF-team search input.
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -647,7 +651,15 @@ export class OrgSelectorComponent {
       if (options.length === 0) return;
       const selectedIdx = options.findIndex((el) => el.getAttribute('aria-selected') === 'true');
       this.moveFocusTo(options, selectedIdx >= 0 ? selectedIdx : 0);
-      this.pendingInitialFocus = false;
+      // The pinned roll-up row renders before `/api/nav/org-items` answers, so "the listbox is
+      // empty" no longer means "the caller's organizations have not arrived". Clearing the retry
+      // here would land initial focus on the roll-up for good and leave the selected organization
+      // unfocused when its row finally renders — the exact deferral this flag exists for. Focus it
+      // provisionally and keep the retry armed until the selected row is here, or the list has
+      // settled and there is nothing further to wait for (#4415, Copilot).
+      if (selectedIdx >= 0 || this.orgNavigationService.loaded()) {
+        this.pendingInitialFocus = false;
+      }
     });
   }
 

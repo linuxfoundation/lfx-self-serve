@@ -1017,12 +1017,22 @@ export class SidebarNavService {
         ],
       },
       // Org admin — divider only (no section label); Profile sits under it, with EasyCLA above it when M3 is on.
-      {
-        label: 'Organization Profile',
-        icon: 'fa-light fa-memo',
-        routerLink: org('profile'),
-        dividerBefore: true,
-      },
+      //
+      // Profile is dropped in roll-up mode. It is single-org by definition (#4125) and will never
+      // gain a combined rendering, and `orgLensPath` prefixes every item with the selected segment
+      // — so the link read `/org/all/profile`, where the page asks for `/api/orgs/uid/all`, the
+      // SFID validator refuses the sentinel and the caller lands on an error page (#4415, Copilot).
+      // `withEasyclaNavItem` already handles Profile being absent.
+      ...(this.accountContext.isRollUp()
+        ? []
+        : [
+            {
+              label: 'Organization Profile',
+              icon: 'fa-light fa-memo',
+              routerLink: org('profile'),
+              dividerBefore: true,
+            },
+          ]),
     ];
   });
 
