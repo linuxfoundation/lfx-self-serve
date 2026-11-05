@@ -113,6 +113,10 @@ export interface OrgDonation {
   recurring: boolean;
   initiativeId?: string;
   initiativeName?: string;
+  /** Slug of the initiative's public crowdfunding page (`/initiatives/{slug}`). */
+  initiativeSlug?: string;
+  /** Display name of the initiative's owner. */
+  initiativeCreator?: string;
   donorName: string;
   donorEmail: string;
   amountCents: number;

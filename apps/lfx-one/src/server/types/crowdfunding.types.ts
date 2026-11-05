@@ -81,6 +81,9 @@ export interface BackendOrgDonation {
   type: 'one_time' | 'recurring';
   initiative_id?: string;
   initiative_name?: string;
+  initiative_slug?: string;
+  /** Initiative owner's display name. */
+  initiative_creator?: string;
   donor_name: string;
   donor_email: string;
   amount_cents: number;

@@ -10,6 +10,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { environment } from '@environments/environment';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_ORG_DONATIONS } from '@lfx-one/shared/constants';
 import { InitiativesLoadError, OrgDonationsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -28,6 +29,9 @@ export class OrgDonationsComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly accountContext = inject(AccountContextService);
+
+  // Public crowdfunding site; an initiative's page is `${crowdfundingUrl}/initiatives/{slug}`.
+  protected readonly crowdfundingUrl = environment.urls.crowdfunding.replace(/\/+$/, '');
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   protected readonly isLoading = signal(true);

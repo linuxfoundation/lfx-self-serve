@@ -194,6 +194,8 @@ export function mapOrgDonation(d: BackendOrgDonation): OrgDonation {
     recurring: d.type === 'recurring',
     initiativeId: d.initiative_id || undefined,
     initiativeName: d.initiative_name || undefined,
+    initiativeSlug: d.initiative_slug || undefined,
+    initiativeCreator: d.initiative_creator || undefined,
     donorName: d.donor_name,
     donorEmail: d.donor_email,
     amountCents: d.amount_cents,
