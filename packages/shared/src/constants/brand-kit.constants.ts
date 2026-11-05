@@ -496,3 +496,24 @@ export const BRAND_KIT_PROJECT_UID_REGEX = MKTG_ARTIFACT_PARTITION_REGEX;
 
 /** Lowercase hex SHA-256 pattern — alias of the shared {@link MKTG_ARTIFACT_SHA256_REGEX}. */
 export const BRAND_KIT_SHA256_REGEX = MKTG_ARTIFACT_SHA256_REGEX;
+
+// ---------------------------------------------------------------------------
+// The approve dialog and the overview's basis pills (report v2, brand-kit ≥
+// 2.2.0): every word they print, so a copy change is a one-file fix. The
+// Sources tab keeps its own names for the words the two surfaces share.
+// ---------------------------------------------------------------------------
+
+/** The approve dialog's header when the report has a source that could not be read or an open gap (what "Approve anyway" accepts). */
+export const BRAND_KIT_APPROVE_HEADER_GAPS = 'Approve with open gaps?';
+/** The approve dialog's header when the report has only what the reviewer should see first: colour conflicts or LF-reference rules. */
+export const BRAND_KIT_APPROVE_HEADER = 'Approve this version?';
+/** The approve dialog's section of colour conflicts. */
+export const BRAND_KIT_APPROVE_CONFLICTS_TITLE = 'Colour conflicts';
+/** Before the hex the kit keeps: `kept #FF702D`. */
+export const BRAND_KIT_APPROVE_CONFLICT_KEPT_PREFIX = 'kept ';
+/** The approve dialog's section of rules the LF reference supplied; each line is `{Chapter}: {n} of {m} rules` (brandKitLfReferenceRuleLines). */
+export const BRAND_KIT_APPROVE_RULES_TITLE = 'Rules from the LF reference, not the project';
+/** A chapter whose rules all come from the project's own sources. */
+export const BRAND_KIT_CHAPTER_BASIS_PROJECT = 'From the project';
+/** A chapter whose rules all come from the LF reference kit; mixed chapters read `LF reference default for {n} of {m} rules` (brandKitChapterBasisLabel). */
+export const BRAND_KIT_CHAPTER_BASIS_LF = 'LF reference default';

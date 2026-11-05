@@ -11,6 +11,7 @@
 
 import {
   BRAND_KIT_ANSWER_KEYS,
+  BRAND_KIT_CHAPTERS,
   BRAND_KIT_CONTRAST_GRADES,
   BRAND_KIT_FOUND_IN_KINDS,
   BRAND_KIT_LOGO_FILE_KINDS,
@@ -60,6 +61,9 @@ export type BrandKitLogoSlot = (typeof BRAND_KIT_LOGO_SLOTS)[number];
 
 /** One tab of the kit's web view. */
 export type BrandKitWebViewTabId = (typeof BRAND_KIT_WEB_VIEW_TABS)[number]['id'];
+
+/** One of the six chapters. */
+export type BrandKitChapterId = (typeof BRAND_KIT_CHAPTERS)[number]['id'];
 
 // ---------------------------------------------------------------------------
 // The kit tokens and the six chapters
@@ -269,6 +273,58 @@ export interface BrandKitReportRule {
   path: string;
   basis: BrandKitReportRuleBasis;
   uses?: string[];
+}
+
+/** How many of a chapter's rendered rules come from the project's own sources and how many from the LF reference kit (report v2). */
+export interface BrandKitChapterRuleBasis {
+  id: BrandKitChapterId;
+  /** The chapter's title as the kit names it (`Logo`). */
+  title: string;
+  total: number;
+  project: number;
+  lfReference: number;
+}
+
+/** One value of a colour conflict as the approve dialog shows it: the hex, where it was found in words, and whether the kit kept it. */
+export interface BrandKitColorConflictValueView {
+  hex: string;
+  source: string;
+  kept: boolean;
+}
+
+/** One colour conflict as the approve dialog shows it. */
+export interface BrandKitColorConflictView {
+  name: string;
+  values: BrandKitColorConflictValueView[];
+  /** The hex the kit keeps. */
+  chosen: string;
+}
+
+/** One line of the approve dialog's LF-reference rules: a chapter and how many of its rules the reference supplied. */
+export interface BrandKitLfReferenceRuleLine {
+  id: BrandKitChapterId;
+  /** `Logo: 20 of 21 rules`. */
+  text: string;
+}
+
+/** A failed source as the approve dialog lists it: the source, the agent's plain reason and, when it gives one, the machine detail. */
+export interface BrandKitApproveFailedItem {
+  title: string;
+  text: string;
+  detail: string | null;
+}
+
+/** A missing asset as the approve dialog lists it: the asset's label, the agent's plain reason and, when it names one, the fix. */
+export interface BrandKitApproveMissingItem {
+  title: string;
+  text: string;
+  fix: string | null;
+}
+
+/** What a v2 report's approve dialog lists first, in the Sources tab's words; both empty for a v1 report. */
+export interface BrandKitApproveFindings {
+  failed: BrandKitApproveFailedItem[];
+  missing: BrandKitApproveMissingItem[];
 }
 
 /** The three findings groups of a v2 report, written by the agent in plain language; the UI never rewrites a reason. */

@@ -29,6 +29,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MktgDocumentDetailResponse,
+  BrandKitReport,
   MktgDocumentsResponse,
   MktgDocumentRunProgress,
   MktgRunFailureReason,
@@ -55,6 +56,7 @@ import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-
 import { mktgCommentFixture, provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
 import { mktgSentenceCaseLabel } from '@lfx-one/shared/utils/mktg-navigation.utils';
+import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -66,6 +68,7 @@ import { filter, firstValueFrom, NEVER, of, Subject, take, throwError, TimeoutEr
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
+import { MktgApproveGapsFooterComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-footer.component';
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
@@ -3534,7 +3537,7 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).toHaveBeenCalledExactlyOnceWith(
       MktgApproveGapsDialogComponent,
-      expect.objectContaining({ header: 'Approve with open gaps?', data: report, modal: true })
+      expect.objectContaining({ header: 'Approve with open gaps?', data: report, modal: true, templates: { footer: MktgApproveGapsFooterComponent } })
     );
     expect(store.approveRevision).not.toHaveBeenCalled();
     if (confirmed === 'navigate') {
@@ -3545,6 +3548,61 @@ describe('MktgDocumentViewComponent', () => {
     else closed.next(confirmed !== false);
     expect(ref.close).toHaveBeenCalledTimes(confirmed === 'destroy' ? 1 : 0);
     expect(store.approveRevision).toHaveBeenCalledTimes(confirmed === true ? 1 : 0);
+  });
+
+  it.each<[string, Partial<BrandKitReport>]>([
+    ['colour conflicts', { color_conflicts: brandKitReportV2RulesFixture().color_conflicts }],
+    ['LF-reference rules', { rules: [{ path: 'chapters.voice', basis: 'lf-reference' }] }],
+  ])('asks before approving a Brand Kit whose clean report carries %s, under a review header', async (_what, fields) => {
+    const kit = brandKitTestRevision();
+    // Empty findings: nothing failed and nothing missing, so the header is the review one.
+    kit.report = { ...kit.report, version: 2, findings: { sources_failed: [], missing_assets: [], warnings: [] }, ...fields };
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type: BRAND_KIT, sidecar: kitSidecar(kit) }));
+    store.approveRevision.mockReturnValue(NEVER);
+    const closed = new Subject<boolean>();
+    dialog.open.mockReturnValue({ onClose: closed, onDestroy: NEVER, close: vi.fn() });
+    await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
+    expect(query('mktg-document-view-live-state')?.textContent).toBe('Ready.');
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    expect(dialog.open).toHaveBeenCalledExactlyOnceWith(
+      MktgApproveGapsDialogComponent,
+      expect.objectContaining({ header: 'Approve this version?', data: expect.objectContaining(fields), modal: true })
+    );
+    expect(store.approveRevision).not.toHaveBeenCalled();
+    closed.next(true);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id);
+  });
+
+  it('asks under the open-gaps header when only the v2 findings carry a failed source and the legacy fields are empty', async () => {
+    const kit = brandKitTestRevision();
+    kit.report = { ...brandKitReportV2RulesFixture(), sources_failed: [], gaps: [] };
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type: BRAND_KIT, sidecar: kitSidecar(kit) }));
+    dialog.open.mockReturnValue({ onClose: NEVER, onDestroy: NEVER, close: vi.fn() });
+    await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    expect(dialog.open).toHaveBeenCalledExactlyOnceWith(MktgApproveGapsDialogComponent, expect.objectContaining({ header: 'Approve with open gaps?' }));
+    expect(store.approveRevision).not.toHaveBeenCalled();
+  });
+
+  it('keeps the open-gaps header when a Brand Kit report has a failed source beside its conflicts', async () => {
+    const kit = brandKitTestRevision();
+    kit.report = brandKitReportV2RulesFixture();
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type: BRAND_KIT, sidecar: kitSidecar(kit) }));
+    dialog.open.mockReturnValue({ onClose: NEVER, onDestroy: NEVER, close: vi.fn() });
+    await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    expect(dialog.open).toHaveBeenCalledExactlyOnceWith(MktgApproveGapsDialogComponent, expect.objectContaining({ header: 'Approve with open gaps?' }));
+  });
+
+  it('approves a Brand Kit directly when its v2 report has no failed source, gap, conflict or LF-reference rule', async () => {
+    const kit = brandKitTestRevision();
+    kit.report = { ...kit.report, version: 2, color_conflicts: [], rules: [{ path: 'chapters.voice', basis: 'project' }] };
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type: BRAND_KIT, sidecar: kitSidecar(kit) }));
+    store.approveRevision.mockReturnValue(NEVER);
+    await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    expect(dialog.open).not.toHaveBeenCalled();
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id);
   });
 
   it('allows another approval attempt after the gaps dialog is dismissed', async () => {

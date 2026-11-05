@@ -29,6 +29,8 @@ import {
   AEO_GEO_CATEGORIES,
   AEO_GEO_INTAKE,
   AEO_GEO_TIMEOUT_MESSAGE,
+  BRAND_KIT_APPROVE_HEADER,
+  BRAND_KIT_APPROVE_HEADER_GAPS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   LINKEDIN_POST_INTAKE,
@@ -82,6 +84,8 @@ import {
   mktgAssetHeaderMetadata,
   mktgKitAssetLabel,
   mktgKitRootPath,
+  mktgReportHasOpenGaps,
+  mktgReportNeedsApprovalReview,
   mktgRunRouteFor,
   mktgRunModeFor,
   parseMktgLegacyRevisionId,
@@ -131,6 +135,7 @@ import {
 } from 'rxjs';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
+import { MktgApproveGapsFooterComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-footer.component';
 import { MktgClosedRunMessageComponent } from '../components/mktg-closed-run-message/mktg-closed-run-message.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
@@ -1329,14 +1334,18 @@ export class MktgDocumentViewComponent {
     if (!isPlatformBrowser(this.platformId) || this.confirmingApproval() || !this.mayApprove() || this.writePending()) return;
     if (!view || !project || view.project !== project || this.loading()) return;
     const report = this.viewedReport();
-    if (!report || (!report.sources_failed.length && !report.gaps.length)) return this.onApprove();
+    // A clean report approves directly; one with a source that could not be read, an open gap, a colour conflict or an LF-reference rule is shown first.
+    if (!report || !mktgReportNeedsApprovalReview(report)) return this.onApprove();
     const selection = this.revisionParam();
     const epoch = this.restoreEpoch;
     const subject = this.userService.user()?.sub;
     const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
-      header: 'Approve with open gaps?',
+      header: mktgReportHasOpenGaps(report) ? BRAND_KIT_APPROVE_HEADER_GAPS : BRAND_KIT_APPROVE_HEADER,
       data: report,
       modal: true,
+      // The dialog focuses its own content on show, so a long list opens at its top rather than at the footer button.
+      focusOnShow: false,
+      templates: { footer: MktgApproveGapsFooterComponent },
       width: '32rem',
       style: { maxWidth: '90vw' },
       draggable: false,

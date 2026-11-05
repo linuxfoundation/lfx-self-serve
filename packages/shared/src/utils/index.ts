@@ -171,3 +171,4 @@ export * from './social-share.utils';
 export * from './org-trainee-pairs.utils';
 export * from './org-training-view-state.utils';
 export * from './org-lens-roi-value-drivers.utils';
+export * from './brand-kit-rules.utils';
