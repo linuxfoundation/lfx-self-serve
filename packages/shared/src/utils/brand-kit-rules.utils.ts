@@ -13,6 +13,7 @@ import {
   BRAND_KIT_CHAPTER_BASIS_PROJECT,
   BRAND_KIT_CHAPTERS,
   BRAND_KIT_FOUND_IN_KINDS,
+  BRAND_KIT_LOGO_PACKAGE_TITLE,
   BRAND_KIT_REPORT_ASSET_LABELS,
 } from '../constants/brand-kit.constants';
 import type {
@@ -33,6 +34,8 @@ const RULE_PATH_PREFIX = 'chapters.';
 
 /** `kind: source` — how the agent writes where a conflicting value was seen. */
 const CONFLICT_SOURCE_REGEX = /^([a-z_]+):\s*(.*)$/s;
+/** A web address whose path, before any query or fragment, names a ZIP file. */
+const ZIP_URL_REGEX = /^https?:\/\/[^?#]*\.zip(?:[?#]|$)/i;
 
 /**
  * A report that carries a v2 field: a Brand Kit's. The fields are optional on
@@ -52,7 +55,7 @@ export function brandKitApproveFindings(report: MktgAssetReport | null | undefin
   const findings = report && isBrandKitReport(report) ? report.findings : undefined;
   if (!findings) return { failed: [], missing: [] };
   return {
-    failed: findings.sources_failed.map((failed) => ({ title: failed.source, text: failed.reason, detail: failed.detail ?? null })),
+    failed: findings.sources_failed.map((failed) => ({ title: brandKitFailedSourceTitle(failed.source), text: failed.reason, detail: failed.detail ?? null })),
     missing: findings.missing_assets.map((missing) => ({
       title: BRAND_KIT_REPORT_ASSET_LABELS[missing.asset],
       text: missing.reason,
@@ -137,6 +140,19 @@ export function brandKitConflictSourceLabel(source: string): string {
   const kind = match ? BRAND_KIT_FOUND_IN_KINDS.find((known) => known === match[1]) : undefined;
   if (match && kind) return brandKitFoundIn({ kind, source: match[2] });
   return text.replace(URL_REGEX, (url) => brandKitWebsiteHost(url) || url);
+}
+
+// Same body as #5157's brand-kit-sources.utils.ts; the second lander imports the other's.
+/**
+ * A failed source's title: a logo package the agent could not read from a link (a web address ending in `.zip`)
+ * reads as `Logo package (ZIP) — host`; every other source keeps its own text, a page by its address, a v1 name as
+ * the agent gave it.
+ */
+export function brandKitFailedSourceTitle(source: string): string {
+  const text = source.trim();
+  if (!ZIP_URL_REGEX.test(text)) return text;
+  const host = brandKitWebsiteHost(text);
+  return host ? `${BRAND_KIT_LOGO_PACKAGE_TITLE} — ${host}` : BRAND_KIT_LOGO_PACKAGE_TITLE;
 }
 
 /** The report's colour conflicts as the approve dialog shows them, every value with its source in words and the kept one marked. */

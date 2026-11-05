@@ -17,6 +17,7 @@ import {
   brandKitChapterRuleBases,
   brandKitColorConflictViews,
   brandKitConflictSourceLabel,
+  brandKitFailedSourceTitle,
   brandKitLfReferenceRuleLines,
   brandKitReportColorConflicts,
   brandKitReportRules,
@@ -138,6 +139,19 @@ describe('brandKitColorConflictViews', () => {
   });
 });
 
+describe('brandKitFailedSourceTitle', () => {
+  it.each([
+    [
+      'https://cdn.synthetic-foundation.example/files/synthetic/production/synthetic-logo-package.zip?dl=',
+      'Logo package (ZIP) — cdn.synthetic-foundation.example',
+    ],
+    ['https://synthetic-foundation.example/brand-guidelines', 'https://synthetic-foundation.example/brand-guidelines'],
+    ['the reviewer’s note', 'the reviewer’s note'],
+  ])('titles %s as "%s"', (source, title) => {
+    expect(brandKitFailedSourceTitle(source)).toBe(title);
+  });
+});
+
 describe('brandKitApproveFindings', () => {
   it('lists the fixture’s failed sources with their plain reason and detail, and its missing assets by label with their fix', () => {
     const findings = brandKitApproveFindings(brandKitReportV2RulesFixture());
@@ -148,7 +162,7 @@ describe('brandKitApproveFindings', () => {
         detail: 'HTTP 404',
       },
       {
-        title: 'https://cdn.synthetic-foundation.example/files/synthetic/production/synthetic-logo-package.zip?dl=',
+        title: 'Logo package (ZIP) — cdn.synthetic-foundation.example',
         text: 'The logo package on synthetic-foundation.example/brand is a ZIP file, which the agent can’t download from a link. Upload the stacked, reversed, symbol and primary files as SVG in the form, or a ZIP of the SVG files under 150 KB; a larger ZIP may not send.',
         detail: 'linked ZIP, not readable from a link',
       },

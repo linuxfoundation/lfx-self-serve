@@ -38,6 +38,7 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
       'This page does not exist on the site (the server answered 404).'
     );
     await expect(firstFailed.getByTestId('mktg-document-view-approve-failed-item-detail')).toHaveText('HTTP 404');
+    await expect(dialog.getByTestId('mktg-document-view-approve-failed-item-title').nth(1)).toHaveText('Logo package (ZIP) — cdn.synthetic-foundation.example');
     await expect(dialog.getByTestId('mktg-document-view-approve-failed-item-detail').nth(1)).toHaveText('linked ZIP, not readable from a link');
     const missing = dialog.getByTestId('mktg-document-view-approve-missing');
     await expect(missing.getByRole('heading')).toHaveText('Missing assets');
@@ -45,9 +46,9 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     const firstMissing = dialog.getByTestId('mktg-document-view-approve-missing-item').first();
     await expect(firstMissing.getByTestId('mktg-document-view-approve-missing-item-reason')).toContainText('was not read in this run');
     await expect(firstMissing.getByTestId('mktg-document-view-approve-missing-item-fix')).toContainText('Fix: Upload the primary file as SVG in the form');
-    // Today's one-line form is gone for a v2 report; the gaps still follow.
+    // Today's one-line form is gone for a v2 report; the gaps bullets are not repeated on a v2 report, Missing assets stands for them.
     await expect(dialog).not.toContainText('brand-guidelines — HTTP 404');
-    await expect(dialog).toContainText('No logo files');
+    await expect(dialog).not.toContainText('No logo files');
 
     const conflicts = dialog.getByTestId('mktg-document-view-approve-conflicts');
     await expect(conflicts.getByRole('heading')).toHaveText('Colour conflicts');

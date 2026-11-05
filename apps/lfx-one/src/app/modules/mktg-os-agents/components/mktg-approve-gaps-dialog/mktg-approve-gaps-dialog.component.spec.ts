@@ -70,7 +70,7 @@ describe('Approval with open gaps dialog', () => {
     expect(queryAll(root, 'mktg-document-view-approve-failed-item').map(lines)).toEqual([
       ['https://synthetic-foundation.example/brand-guidelines', 'This page does not exist on the site (the server answered 404).', 'HTTP 404'],
       [
-        'https://cdn.synthetic-foundation.example/files/synthetic/production/synthetic-logo-package.zip?dl=',
+        'Logo package (ZIP) — cdn.synthetic-foundation.example',
         'The logo package on synthetic-foundation.example/brand is a ZIP file, which the agent can’t download from a link. Upload the stacked, reversed, symbol and primary files as SVG in the form, or a ZIP of the SVG files under 150 KB; a larger ZIP may not send.',
         'linked ZIP, not readable from a link',
       ],
@@ -84,8 +84,8 @@ describe('Approval with open gaps dialog', () => {
       'The site’s header links a logo image (synthetic-logo-838x203.svg) that was not read in this run, so the kit shows placeholder marks.',
       'Fix: Upload the primary file as SVG in the form, or a ZIP of the SVG files under 150 KB; the full package linked on synthetic-foundation.example/brand is likely too large to send.',
     ]);
-    // The gaps still follow, as before.
-    expect(root.textContent).toContain('No logo files');
+    // The gaps bullets are not repeated on a v2 report; Missing assets stands for them.
+    expect(root.textContent).not.toContain('No logo files');
 
     const conflicts = query(root, 'mktg-document-view-approve-conflicts');
     expect(conflicts?.querySelector('h3')?.textContent).toBe('Colour conflicts');

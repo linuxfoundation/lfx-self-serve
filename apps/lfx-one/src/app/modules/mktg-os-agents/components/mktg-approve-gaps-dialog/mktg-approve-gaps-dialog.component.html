@@ -4,7 +4,7 @@
 <div #root class="flex flex-col gap-4 outline-none" tabindex="-1" data-testid="mktg-document-view-approve-confirm">
   @if (report; as data) {
     @if (hasFindings) {
-      <!-- A v2 report: what the agent could not read and did not find, in the Sources tab's words and shape; the open gaps follow as before. -->
+      <!-- A v2 report: what the agent could not read and did not find, in the Sources tab's words and shape; the gaps bullets of a v1 report are not repeated here. -->
       @if (findings.failed.length) {
         <section class="flex flex-col gap-2" data-testid="mktg-document-view-approve-failed">
           <h3 class="text-sm font-semibold text-gray-900">{{ groupTitles.failed }}</h3>
@@ -36,13 +36,6 @@
             }
           </ul>
         </section>
-      }
-      @if (data.gaps.length) {
-        <ul class="flex list-disc flex-col gap-2 pl-5 text-sm text-gray-700">
-          @for (gap of data.gaps; track $index) {
-            <li>{{ gap }}</li>
-          }
-        </ul>
       }
     } @else if (data.sources_failed.length || data.gaps.length) {
       <ul class="flex list-disc flex-col gap-2 pl-5 text-sm text-gray-700">
