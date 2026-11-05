@@ -202,6 +202,15 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
 
   describe('started from (#5187)', () => {
     const AAIF_UID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    /** Funded, active, membership-style: what `computeIsFoundation` accepts. */
+    const AAIF = {
+      uid: AAIF_UID,
+      name: 'Agentic AI Foundation',
+      stage: 'Active',
+      funding: 'Funded',
+      funding_model: ['Membership'],
+      legal_entity_type: 'Corporation',
+    };
     const startedFrom = (fixture: ComponentFixture<ProjectApplicationsPanelComponent>, uid: string): string | null =>
       (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="project-applications-started-from-${uid}"]`)?.textContent?.trim() ?? null;
 
@@ -212,7 +221,7 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
     };
 
     it('shows "Started from: {foundation}" on a staff row once the name resolves, reading each foundation once', async () => {
-      getProject.mockReturnValue(of({ uid: AAIF_UID, name: 'Agentic AI Foundation' }));
+      getProject.mockReturnValue(of(AAIF));
       const { fixture } = await mount('staff', [
         buildApplication({ uid: 'a', target_parent_uid: AAIF_UID }),
         buildApplication({ uid: 'b', target_parent_uid: AAIF_UID }),
@@ -234,8 +243,16 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
       expect(startedFrom(fixture, 'a')).toBeNull();
     });
 
+    it('shows nothing when the named project is not a foundation, so a submitter-chosen uid is not presented as where it started', async () => {
+      getProject.mockReturnValue(of({ ...AAIF, funding: 'Unfunded', funding_model: [] }));
+      const { fixture } = await mount('staff', [buildApplication({ uid: 'a', target_parent_uid: AAIF_UID })]);
+      await settle(fixture);
+
+      expect(startedFrom(fixture, 'a')).toBeNull();
+    });
+
     it('does not show or look anything up in the submitter list', async () => {
-      getProject.mockReturnValue(of({ uid: AAIF_UID, name: 'Agentic AI Foundation' }));
+      getProject.mockReturnValue(of(AAIF));
       const { fixture } = await mount('submitter', [buildApplication({ uid: 'a', target_parent_uid: AAIF_UID })]);
       await settle(fixture);
 

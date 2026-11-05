@@ -14,7 +14,7 @@ import type {
   ProjectApplicationViewMode,
 } from '@lfx-one/shared/interfaces';
 import { PROJECT_APPLICATION_API_BASE_PATH } from '@lfx-one/shared/constants';
-import { isUuid, upsertProjectApplication } from '@lfx-one/shared/utils';
+import { computeIsFoundation, isUuid, upsertProjectApplication } from '@lfx-one/shared/utils';
 import { ProjectService } from '@services/project.service';
 import { catchError, map, Observable, of, take, throwError } from 'rxjs';
 
@@ -69,11 +69,18 @@ export class ProjectApplicationService {
 
   /**
    * The project a proposal started from (#5187), for the formation team's "Started from" line and the accept
-   * form's parent prefill. One cached read per uid (`ProjectService.getProject`); resolves to `null` — never an
-   * error — for no hint, a value that is not a UUID, or a project the reader cannot load, so the caller just shows nothing.
+   * form's parent prefill, and for the propose page's "Proposing under" line. One cached read per uid
+   * (`ProjectService.getProject`); resolves to `null` — never an error — for no hint, a value that is not a UUID, a
+   * project the reader cannot load, or a project that is not a foundation. The BFF only checks the hint is a UUID,
+   * so every consumer applies the same foundation rule the form applied when it sent it.
    */
   public getStartedFrom(targetParentUid: string | null | undefined): Observable<Project | null> {
-    return targetParentUid && isUuid(targetParentUid) ? this.projectService.getProject(targetParentUid, false) : of(null);
+    if (!targetParentUid || !isUuid(targetParentUid)) {
+      return of(null);
+    }
+    return this.projectService
+      .getProject(targetParentUid, false)
+      .pipe(map((project) => (project?.uid === targetParentUid && computeIsFoundation(project) ? project : null)));
   }
 
   /** `targetParentUid` is the foundation the applicant started from (#5187); omitted from the body when absent. */

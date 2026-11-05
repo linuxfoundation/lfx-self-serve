@@ -7,7 +7,6 @@ import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angul
 import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
 import type { Project, ProjectApplication, ProjectApplicationAnswers } from '@lfx-one/shared/interfaces';
 import { ProjectApplicationService } from '@services/project-application.service';
-import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { Observable, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -39,9 +38,9 @@ const CREATED = { uid: 'new-uid', state: 'submitted', revision: 1, application: 
 describe('ProposeProjectComponent (#3037)', () => {
   const setup = async (create: ReturnType<typeof vi.fn>, options: { parent?: string; project?: Observable<Project | null> } = {}) => {
     TestBed.resetTestingModule();
-    const service = { create, recordWrite: vi.fn() };
+    const getStartedFrom = vi.fn(() => options.project ?? of(null));
+    const service = { create, recordWrite: vi.fn(), getStartedFrom };
     const messages = { add: vi.fn() };
-    const getProject = vi.fn(() => options.project ?? of(null));
     const queryParams = options.parent === undefined ? {} : { parent: options.parent };
     await TestBed.configureTestingModule({
       imports: [ProposeProjectComponent],
@@ -49,7 +48,6 @@ describe('ProposeProjectComponent (#3037)', () => {
         provideRouter([]),
         { provide: ProjectApplicationService, useValue: service },
         { provide: MessageService, useValue: messages },
-        { provide: ProjectService, useValue: { getProject } },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
       ],
     }).compileComponents();
@@ -57,7 +55,7 @@ describe('ProposeProjectComponent (#3037)', () => {
     const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     const fixture = TestBed.createComponent(ProposeProjectComponent);
     fixture.detectChanges();
-    return { component: fixture.componentInstance as unknown as PageAccess, fixture, service, messages, navigate, getProject };
+    return { component: fixture.componentInstance as unknown as PageAccess, fixture, service, messages, navigate, getStartedFrom };
   };
 
   const parentLine = (fixture: ComponentFixture<ProposeProjectComponent>): string | null =>
@@ -95,10 +93,10 @@ describe('ProposeProjectComponent (#3037)', () => {
     const created = () => vi.fn(() => of({ application: CREATED, etag: null }));
 
     it('shows "Proposing under" for a valid foundation, and the submit body carries its uid', async () => {
-      const { component, fixture, service, getProject } = await setup(created(), { parent: FOUNDATION_UID, project: of(FOUNDATION) });
+      const { component, fixture, service, getStartedFrom } = await setup(created(), { parent: FOUNDATION_UID, project: of(FOUNDATION) });
       fixture.detectChanges();
 
-      expect(getProject).toHaveBeenCalledWith(FOUNDATION_UID, false);
+      expect(getStartedFrom).toHaveBeenCalledWith(FOUNDATION_UID);
       expect(parentLine(fixture)).toBe('Proposing under Example Foundation');
 
       component.onSubmit({ project_name: 'Example' });
@@ -118,13 +116,9 @@ describe('ProposeProjectComponent (#3037)', () => {
       expect(service.create).toHaveBeenCalledWith({ project_name: 'Example' }, null);
     });
 
-    it.each([
-      ['a value that is not a UUID', 'agentic-ai-foundation', of(FOUNDATION)],
-      ['a project that cannot be read (404/403)', FOUNDATION_UID, of(null)],
-      ['a project that is not a foundation', FOUNDATION_UID, of({ ...FOUNDATION, funding: ProjectFunding.Unfunded, funding_model: [] } as unknown as Project)],
-      ['a different project than the one asked for', FOUNDATION_UID, of({ ...FOUNDATION, uid: '11111111-2222-4333-8444-555555555555' } as Project)],
-    ])('drops %s silently, with no message and no uid in the body', async (_label, parent, project) => {
-      const { component, fixture, service, messages } = await setup(created(), { parent, project });
+    it('drops a parent that does not resolve to a foundation silently, with no message and no uid in the body', async () => {
+      // `getStartedFrom` resolves null for a bad UUID, an unreadable (404/403) project and a non-foundation alike.
+      const { component, fixture, service, messages } = await setup(created(), { parent: FOUNDATION_UID, project: of(null) });
       fixture.detectChanges();
 
       expect(parentLine(fixture)).toBeNull();
@@ -134,8 +128,8 @@ describe('ProposeProjectComponent (#3037)', () => {
     });
 
     it('does not look anything up without a parent', async () => {
-      const { getProject } = await setup(created());
-      expect(getProject).not.toHaveBeenCalled();
+      const { getStartedFrom } = await setup(created());
+      expect(getStartedFrom).not.toHaveBeenCalled();
     });
   });
 });

@@ -87,27 +87,47 @@ describe('ProjectApplicationService (#3037)', () => {
     without.flush({ application: buildApplication(), etag: null });
   });
 
-  it('resolves the starting foundation through the cached project read, and to null without a usable uid (#5187)', () => {
+  describe('getStartedFrom (#5187)', () => {
     const uid = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
-    const names: (string | undefined)[] = [];
-    service.getStartedFrom(uid).subscribe((project) => names.push(project?.name));
-    service.getStartedFrom(uid).subscribe((project) => names.push(project?.name));
-    http.expectOne(`/api/projects/${uid}`).flush({ uid, name: 'Example Foundation' });
-    expect(names).toEqual(['Example Foundation', 'Example Foundation']);
+    const foundation = { uid, name: 'Example Foundation', stage: 'Active', funding: 'Funded', funding_model: ['Membership'], legal_entity_type: 'Corporation' };
 
-    const missing: unknown[] = [];
-    service.getStartedFrom(null).subscribe((project) => missing.push(project));
-    service.getStartedFrom('agentic-ai-foundation').subscribe((project) => missing.push(project));
-    http.expectNone('/api/projects/agentic-ai-foundation');
-    expect(missing).toEqual([null, null]);
-  });
+    const resolve = (value: string | null | undefined, response?: { body: object; status?: number }): unknown => {
+      let result: unknown = 'pending';
+      service.getStartedFrom(value).subscribe((project) => (result = project));
+      if (response) {
+        http.expectOne(`/api/projects/${value}`).flush(response.body, { status: response.status ?? 200, statusText: 'x' });
+      }
+      return result;
+    };
 
-  it('resolves the starting foundation to null when the project cannot be read', () => {
-    const uid = '11111111-2222-4333-8444-555555555555';
-    let result: unknown = 'pending';
-    service.getStartedFrom(uid).subscribe((project) => (result = project));
-    http.expectOne(`/api/projects/${uid}`).flush({ error: 'forbidden' }, { status: 403, statusText: 'Forbidden' });
-    expect(result).toBeNull();
+    it('resolves a foundation through the cached project read, once per uid', () => {
+      const names: (string | undefined)[] = [];
+      service.getStartedFrom(uid).subscribe((project) => names.push(project?.name));
+      service.getStartedFrom(uid).subscribe((project) => names.push(project?.name));
+      http.expectOne(`/api/projects/${uid}`).flush(foundation);
+      expect(names).toEqual(['Example Foundation', 'Example Foundation']);
+    });
+
+    it('resolves to null, with no request, without a usable uid', () => {
+      expect(resolve(null)).toBeNull();
+      expect(resolve(undefined)).toBeNull();
+      expect(resolve('agentic-ai-foundation')).toBeNull();
+      http.expectNone('/api/projects/agentic-ai-foundation');
+    });
+
+    it('resolves to null for a project that cannot be read', () => {
+      expect(resolve('11111111-2222-4333-8444-555555555555', { body: { error: 'forbidden' }, status: 403 })).toBeNull();
+    });
+
+    it('resolves to null for a project that is not a foundation, so a submitter-chosen uid is never shown or prefilled', () => {
+      const other = '22222222-3333-4444-8555-666666666666';
+      expect(resolve(other, { body: { ...foundation, uid: other, funding: 'Unfunded', funding_model: [] } })).toBeNull();
+    });
+
+    it('resolves to null when the read returns a different project than the one asked for', () => {
+      const other = '33333333-4444-4555-8666-777777777777';
+      expect(resolve(other, { body: foundation })).toBeNull();
+    });
   });
 
   it('sends the held revision as If-Match on every mutation', () => {

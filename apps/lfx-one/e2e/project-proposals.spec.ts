@@ -299,7 +299,7 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
     expect(state.requests.find((request) => request.method === 'POST')?.body).toMatchObject({ target_parent_uid: TLF_UID });
   });
 
-  test('"Change" drops the foundation, and an unreadable parent is ignored without a message (#5187)', async ({ page }) => {
+  test('"Change" drops the foundation, and a malformed parent is ignored without a message (#5187)', async ({ page }) => {
     await gotoLfFormations(page, false);
     await page.goto(`/formations/propose?parent=${TLF_UID}`, { waitUntil: 'domcontentloaded' });
     await waitForHydration(page);

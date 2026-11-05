@@ -11,9 +11,7 @@ import {
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
 import type { Project, ProjectApplicationAnswers } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, isUuid } from '@lfx-one/shared/utils';
 import { ProjectApplicationService } from '@services/project-application.service';
-import { ProjectService } from '@services/project.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { finalize } from 'rxjs';
@@ -42,7 +40,6 @@ export class ProposeProjectComponent {
   private readonly messageService = inject(MessageService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
-  private readonly projectService = inject(ProjectService);
   private readonly destroyRef = inject(DestroyRef);
 
   // === Template constants ===
@@ -98,21 +95,17 @@ export class ProposeProjectComponent {
 
   // === Private Helpers ===
   /**
-   * Keeps `parent` only when it is a UUID that `GET /api/projects/:uid` returns as a foundation. `getProject`
-   * resolves a project the caller cannot view (or that does not exist) to `null`, which is dropped exactly like a
-   * non-foundation — the hint is never worth an error.
+   * Keeps `parent` only when it resolves to a foundation the caller can view (`getStartedFrom`: a UUID that
+   * `GET /api/projects/:uid` returns as a foundation). A project the caller cannot view, one that does not exist and a
+   * non-foundation all resolve to `null` and are dropped alike — the hint is never worth an error.
    */
   private resolveParent(uid: string | null): void {
-    if (!uid || !isUuid(uid)) {
+    if (!uid) {
       return;
     }
-    this.projectService
-      .getProject(uid, false)
+    this.projectApplicationService
+      .getStartedFrom(uid)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((project) => {
-        if (project?.uid === uid && computeIsFoundation(project)) {
-          this.parentFoundation.set(project);
-        }
-      });
+      .subscribe((project) => this.parentFoundation.set(project));
   }
 }
