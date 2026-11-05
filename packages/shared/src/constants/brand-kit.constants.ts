@@ -316,6 +316,9 @@ export const BRAND_KIT_REPORT_CONFLICT_VALUES = { min: 2, max: 4 } as const;
 /** The Sources tab's groups, in reading order. */
 export const BRAND_KIT_SOURCES_GROUPS = ['failed', 'missing', 'warnings', 'conflicts'] as const;
 /** What each group is called on the tab. */
+/** The Failed sources title of a logo package the agent could not read from a link, before its host. */
+export const BRAND_KIT_LOGO_PACKAGE_TITLE = 'Logo package (ZIP)';
+
 export const BRAND_KIT_SOURCES_GROUP_TITLES = {
   failed: 'Failed sources',
   missing: 'Missing assets',

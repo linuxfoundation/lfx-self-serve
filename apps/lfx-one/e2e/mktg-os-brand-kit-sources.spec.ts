@@ -9,7 +9,8 @@ import { openBrandKitSources } from './helpers/mktg-os-brand-kit-sources.helper'
 const ACCEPTED_MARKER = 'Accepted when v1 was approved';
 // One literal per group, exactly as the agent's fixture writes it: the view never rewrites a reason.
 const FAILED_REASON = 'This page does not exist on the site (the server answered 404).';
-const STACKED_FIX = 'Fix: Upload the logo package (the ZIP linked on aaif.io/brand) or the stacked file in the form.';
+const STACKED_FIX =
+  'Fix: Upload the stacked file as SVG in the form, or a ZIP of the SVG files under 150 KB; the full package linked on aaif.io/brand is likely too large to send.';
 const CONFLICT_WARNING = "Coral is #FF702D on the brand page but the site's stylesheet also uses #FF7D2D; the kit keeps #FF702D.";
 const KEPT_CORAL = 'kept #FF702D';
 const FAILED_DETAIL = 'HTTP 404';

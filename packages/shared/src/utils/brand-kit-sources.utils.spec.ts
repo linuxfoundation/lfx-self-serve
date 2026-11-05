@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
 import { brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
 import { brandKitIsLight, brandKitLabelInk } from './brand-kit-book.utils';
-import { brandKitSourceHref, brandKitSourcesView } from './brand-kit-sources.utils';
+import { brandKitConflictSourceLabel, brandKitFailedSourceTitle, brandKitSourceHref, brandKitSourcesView } from './brand-kit-sources.utils';
 import { mktgAcceptedSnapshotOf } from './mktg-asset.utils';
 
 describe('brandKitSourcesView', () => {
@@ -22,10 +22,13 @@ describe('brandKitSourcesView', () => {
       text: 'This page does not exist on the site (the server answered 404).',
       detail: 'HTTP 404',
       fix: null,
-      source: null,
+      source: report.findings?.sources_failed[0].source,
       href: null,
       accepted: false,
     });
+    // The logo package the agent could not read from a link is named in words; its address stays on the item.
+    expect(view.failed[1].title).toBe('Logo package (ZIP) — cdn.sanity.io');
+    expect(view.failed[1].source).toBe(report.findings?.sources_failed[1].source);
     expect(view.missing.map((item) => item.title)).toEqual(['Primary logo', 'Stacked logo', 'Symbol', 'Reversed logo']);
     const stacked = report.findings?.missing_assets[1];
     expect(view.missing[1]).toEqual({
@@ -56,12 +59,20 @@ describe('brandKitSourcesView', () => {
       (report.color_conflicts ?? []).map((conflict) => ({
         key: conflict.name,
         name: conflict.name,
-        values: conflict.values.map((value) => ({ ...value, hexDigits: value.hex.slice(1), light: expect.any(Boolean), ink: expect.any(String) })),
+        values: conflict.values.map((value) => ({
+          ...value,
+          hexDigits: value.hex.slice(1),
+          sourceLabel: brandKitConflictSourceLabel(value.source),
+          light: expect.any(Boolean),
+          ink: expect.any(String),
+        })),
         chosen: conflict.chosen,
         accepted: false,
       }))
     );
     expect(view.conflicts[0]).toMatchObject({ name: 'Coral', chosen: '#FF702D' });
+    // Each value's source in the palette's own words, the site by its host, never the full address.
+    expect(view.conflicts[0].values.map((value) => value.sourceLabel)).toEqual(['From the brand page — aaif.io', 'From the site’s CSS — aaif.io']);
     // Each value is drawn as the Colour chapter draws a swatch: the kit's dark when it is legible on the ground, else white or black.
     expect(view.conflicts[0].values.map((value) => value.ink)).toEqual(report.color_conflicts?.[0].values.map((value) => brandKitLabelInk(value.hex, DARK)));
     expect(view.conflicts[0].values.map((value) => value.light)).toEqual(report.color_conflicts?.[0].values.map((value) => brandKitIsLight(value.hex)));
@@ -137,5 +148,21 @@ describe('brandKitSourcesView', () => {
       ['javascript:alert(1)', null],
       [null, null],
     ]);
+  });
+
+  it('names where a conflicting value was seen as the palette does, or by the host, or as written', () => {
+    expect(brandKitConflictSourceLabel('brand_page: https://aaif.io/brand')).toBe('From the brand page — aaif.io');
+    expect(brandKitConflictSourceLabel('site_css: https://aaif.io/_next/static/chunks/3tg274q-9atqx.css')).toBe('From the site’s CSS — aaif.io');
+    expect(brandKitConflictSourceLabel('logo: https://cdn.synthetic.example/logo.svg')).toBe('From the logo artwork — logo.svg');
+    expect(brandKitConflictSourceLabel('stylesheet: https://www.synthetic.example/a.css')).toBe('stylesheet: synthetic.example');
+    expect(brandKitConflictSourceLabel('the printed guidelines, page 4')).toBe('the printed guidelines, page 4');
+  });
+
+  it('titles a failed logo package by its kind and host, and leaves every other failed source as written', () => {
+    expect(brandKitFailedSourceTitle('https://cdn.sanity.io/files/x/production/abc.zip?dl=')).toBe('Logo package (ZIP) — cdn.sanity.io');
+    expect(brandKitFailedSourceTitle('https://www.synthetic.example/brand/Logos.ZIP#top')).toBe('Logo package (ZIP) — synthetic.example');
+    expect(brandKitFailedSourceTitle('https://aaif.io/brand-guidelines')).toBe('https://aaif.io/brand-guidelines');
+    expect(brandKitFailedSourceTitle('https://synthetic.example/zip-archive-notes')).toBe('https://synthetic.example/zip-archive-notes');
+    expect(brandKitFailedSourceTitle('logo.zip')).toBe('logo.zip');
   });
 });

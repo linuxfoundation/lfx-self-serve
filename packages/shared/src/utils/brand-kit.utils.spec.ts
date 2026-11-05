@@ -796,7 +796,7 @@ describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
     void document_markdown;
     const revision = readBrandKitRevision(sidecar);
     expect(revision?.report).toEqual(envelope.report);
-    expect(revision?.agentVersion).toBe('2.2.0');
+    expect(revision?.agentVersion).toBe('2.2.2');
     const report = envelope.report;
     expect(report.version).toBe(2);
     expect(report.findings?.sources_failed.map((entry) => entry.kind)).toEqual(['brand_page', 'logo_package']);

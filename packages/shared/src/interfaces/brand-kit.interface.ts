@@ -288,7 +288,7 @@ export interface BrandKitSourcesItem {
   detail: string | null;
   /** A second line, "Fix: …", when the agent names one. */
   fix: string | null;
-  /** Where a warning was seen, shown as text. */
+  /** Where a warning was seen, shown as text; for a failed source, its full address when the title is a name for it. */
   source: string | null;
   /** The source as a link, only when it is an http(s) address; anything else stays text. */
   href: string | null;
@@ -300,7 +300,10 @@ export interface BrandKitSourcesConflictValue {
   hex: string;
   /** The hex without its `#`, for the swatch's testid as the Colour chapter writes it. */
   hexDigits: string;
+  /** Where the value was seen, as the agent wrote it. */
   source: string;
+  /** The same in words, as the palette names its provenance (`From the brand page — example.org`). */
+  sourceLabel: string;
   /** A light colour needs a border to stand off the white card. */
   light: boolean;
   ink: string;

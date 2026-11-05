@@ -764,7 +764,7 @@
             <ul class="flex flex-col gap-1.5 text-sm" data-testid="brand-kit-web-view-sources-failed">
               @for (failed of sources.failed; track $index) {
                 <li class="flex flex-col" data-testid="brand-kit-web-view-failed-item">
-                  <span class="text-gray-800">{{ failed.title }}</span>
+                  <span class="text-gray-800" [attr.title]="failed.source !== failed.title ? failed.source : null">{{ failed.title }}</span>
                   <span class="text-xs text-amber-700" data-testid="brand-kit-web-view-failed-reason">{{ failed.text }}</span>
                   @if (failed.detail) {
                     <span [class]="caption" data-testid="brand-kit-web-view-failed-detail">{{ failed.detail }}</span>
@@ -847,7 +847,7 @@
                           [attr.data-testid]="'brand-kit-web-view-swatch-' + value.hexDigits">
                           <span [style.color]="value.ink">{{ value.hex }}</span>
                         </div>
-                        <span class="min-w-0 self-center break-all px-3 py-2 text-xs text-gray-500">{{ value.source }}</span>
+                        <span class="min-w-0 self-center break-all px-3 py-2 text-xs text-gray-500" [title]="value.source">{{ value.sourceLabel }}</span>
                       </li>
                     }
                   </ul>
