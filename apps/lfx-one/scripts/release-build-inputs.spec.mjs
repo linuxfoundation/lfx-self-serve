@@ -40,6 +40,9 @@ describe('release build inputs (#4736)', () => {
     expect(serverSpecs.length).toBeGreaterThan(0);
     expect(appSpecs.every((file) => file.startsWith(resolve(appRoot, 'src/app')))).toBe(true);
     expect(serverSpecs.every((file) => file.startsWith(resolve(appRoot, 'src/server')))).toBe(true);
+    // Every spec under src/ must land in one of the two spec projects, or it is neither type-checked nor linted.
+    const allSpecs = typescriptInputs('tsconfig.json').filter((file) => file.endsWith('.spec.ts'));
+    expect(new Set([...appSpecs, ...serverSpecs])).toEqual(new Set(allSpecs));
     const { scripts } = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'));
     expect(scripts['check-types']).toContain('tsc --noEmit -p tsconfig.spec.json');
     expect(scripts['check-types']).toContain('tsc --noEmit -p tsconfig.server-spec.json');

@@ -240,7 +240,7 @@ the app, and leaving them in the build program pushed `ng build`, `ng serve` and
 Node's default heap. Keep specs out of it. A new spec location needs to be covered by one of the
 two spec configs and by the matching `parserOptions.project` override in `eslint.config.js`.
 `yarn lint` / `lint:check` go through `scripts/run-eslint.mjs`, which lints each of the three
-projects in its own process. One process holding all three programs needs about 7 GB of heap.
+projects in its own process. One process holding all three programs outgrows Node's default heap.
 `scripts/release-build-inputs.spec.mjs` guards this.
 
 The shared package's specs (`packages/shared/src/**/*.spec.ts`) get the same treatment through a

@@ -43,7 +43,10 @@ let worst = 0;
 for (const run of runs) {
   const owned = files.filter((file) => ownerOf(file) === run);
   console.log(`\n> eslint (${run.name})`);
-  const { status, signal } = spawnSync('yarn', ['eslint', ...run.args, ...flags, ...owned], { cwd: appRoot, stdio: 'inherit', shell: false });
+  const { status, signal, error } = spawnSync('yarn', ['eslint', ...run.args, ...flags, ...owned], { cwd: appRoot, stdio: 'inherit', shell: false });
+  if (error) {
+    console.error(`\neslint (${run.name}) failed to start: ${error.message}`);
+  }
   if (signal) {
     console.error(`\neslint (${run.name}) was killed by ${signal}`);
   }

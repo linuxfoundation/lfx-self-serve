@@ -72,9 +72,8 @@ jobs:
         run: yarn format:check
 
       - name: Run linting
-        # Type-aware ESLint exceeds Node's default (~4 GB) heap on the full workspace.
-        env:
-          NODE_OPTIONS: --max-old-space-size=8192
+        # No heap override on purpose: lint:check runs one ESLint process per TypeScript project
+        # (scripts/run-eslint.mjs), and each must fit Node's default heap, as in the pre-commit hook.
         run: yarn lint:check
 
       - name: Type checking
@@ -122,7 +121,8 @@ jobs:
           restore-keys: ${{ steps.angular-cache-key.outputs.prefix }}
 
       - name: Build project
-        # The Angular compiler worker inherits this heap; the default (~4 GB) is no longer enough.
+        # Headroom for cold-cache CI builds. With specs out of tsconfig.app.json the build fits Node's
+        # default heap locally; the Angular compiler worker inherits this limit.
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: yarn build
