@@ -153,7 +153,7 @@ export class MktgSlidesExportService {
       });
     }
 
-    const { assets, kit } = await this.exportAssets(req, input, found.revision);
+    const { assets, kit } = await this.exportAssets(req, input, found.revision, found.summary.number);
 
     let deckId: string | undefined;
     if (input.mode === 'update') {
@@ -279,7 +279,7 @@ export class MktgSlidesExportService {
           break;
         case 'brand-kit': {
           kit = readBrandKitRevision(bundle.sidecar);
-          if (kit) content = this.kitExportContent(kit);
+          if (kit) content = this.kitExportContent(kit, member.revisionNumber);
           break;
         }
         case 'boilerplates':
@@ -437,7 +437,8 @@ export class MktgSlidesExportService {
   private async exportAssets(
     req: Request,
     input: MktgSlidesExportStartInput,
-    revision: MktgStoredRevision
+    revision: MktgStoredRevision,
+    revisionNumber: number
   ): Promise<{ assets: MktgSlidesExportForm['assets']; kit: BrandKitRevision | null }> {
     const nothing = (what: string): ConflictError =>
       new ConflictError(`This revision holds no ${what} to export.`, 'NOTHING_TO_EXPORT', {
@@ -455,7 +456,7 @@ export class MktgSlidesExportService {
       // lays out the whole book (slides-export >= 1.1.0); its tokens alone only
       // make the short deck. A framework export below sends the tokens: they
       // brand that deck without adding the kit's pages to it.
-      return { assets: { kit: this.kitExportContent(kit) }, kit };
+      return { assets: { kit: this.kitExportContent(kit, revisionNumber) }, kit };
     }
 
     const framework = revision.record.bundle.format === 'json' ? readFoundationMessageContent(revision.record.bundle.markdown) : null;
@@ -477,10 +478,21 @@ export class MktgSlidesExportService {
     return { assets: kit ? { framework, kit: kit.kit } : { framework }, kit };
   }
 
-  /** The full book and branding payload, identical for document and family exports. */
-  private kitExportContent(kit: BrandKitRevision): Pick<BrandKitRevision, 'kit' | 'chapters' | 'projectName' | 'version' | 'generatedAt' | 'websiteUrl'> {
-    const { projectName, version, generatedAt, websiteUrl, chapters } = kit;
-    return { kit: kit.kit, chapters, projectName, version, generatedAt, websiteUrl };
+  /**
+   * The full book and branding payload, identical for document and family
+   * exports. Its `version` is the approved revision's number, the one the
+   * page and the PDF print put on the cover (`buildBrandKitBookView`), not
+   * the envelope's own `kit.version`: a kit re-run as a fresh draft carries
+   * version 1 again, and a deck printing "V1.0" beside a page that says
+   * "V2.0" is wrong. The envelope's version is the fallback only when no
+   * revision number is given, as the book view falls back.
+   */
+  private kitExportContent(
+    kit: BrandKitRevision,
+    revisionNumber?: number | null
+  ): Pick<BrandKitRevision, 'kit' | 'chapters' | 'projectName' | 'version' | 'generatedAt' | 'websiteUrl'> {
+    const { projectName, generatedAt, websiteUrl, chapters } = kit;
+    return { kit: kit.kit, chapters, projectName, version: revisionNumber ?? kit.version, generatedAt, websiteUrl };
   }
 
   /**

@@ -399,6 +399,18 @@ describe('MktgSlidesExportService', () => {
       expect(assets.faq).toEqual([{ q: 'What is this project?', a: 'A synthetic project.' }]);
     });
 
+    it('sends the kit member’s approved revision number as the kit’s version on a family export, as the document export does', async () => {
+      await seedFramework(documentStore);
+      await seedKit(documentStore);
+      await seedKit(documentStore);
+
+      const started = await service.startFamilyExport(req, familyInput);
+
+      expect(started.snapshot.members.find((member) => member.agentKey === 'brand-kit')).toMatchObject({ revisionNumber: 2 });
+      const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
+      expect(assets['kit']['version']).toBe(2);
+    });
+
     it('sends the kit’s logo and every variant on a family export too, through the same path as a document export', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       await seedFramework(documentStore);
@@ -652,6 +664,17 @@ describe('MktgSlidesExportService', () => {
       expect(assets['kit']['kit']).toMatchObject({ dark: '#4D4E4E', accent: '#F37625', font: 'Montserrat' });
       expect(Object.keys(assets['kit']['chapters'] as object)).toEqual(expect.arrayContaining(['logo', 'color', 'type', 'visual', 'usage', 'voice']));
       expect(assets['kit']).toMatchObject({ projectName: expect.any(String), version: expect.any(Number) });
+    });
+
+    it('sends the approved revision number as the kit’s version, not the envelope’s draft version, so the deck’s cover says what the page says', async () => {
+      await seedKit(documentStore);
+      await seedKit(documentStore);
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      expect(started.revision.number).toBe(2);
+      const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
+      expect(assets['kit']['version']).toBe(2);
     });
 
     it("exports a framework in the LF look when the project's kit cannot be read, instead of failing", async () => {
