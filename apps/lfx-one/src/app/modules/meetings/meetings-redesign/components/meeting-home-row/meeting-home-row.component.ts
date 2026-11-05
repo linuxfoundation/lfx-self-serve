@@ -1,10 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
 import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
-import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
   Meeting,
@@ -40,6 +38,7 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
 import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
+import { MeetingDateTileComponent } from '../meeting-date-tile/meeting-date-tile.component';
 import { MeetingHomeActionsComponent } from '../meeting-home-actions/meeting-home-actions.component';
 import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingHomeArtifactsComponent } from '../meeting-home-artifacts/meeting-home-artifacts.component';
@@ -53,7 +52,7 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
 @Component({
   selector: 'lfx-meeting-home-row',
   imports: [
-    DatePipe,
+    MeetingDateTileComponent,
     MeetingHomeActionsComponent,
     MeetingHomeArtifactsComponent,
     MeetingHomeAttendanceComponent,
@@ -104,7 +103,6 @@ export class MeetingHomeRowComponent {
   /** Upcoming dates inside their join window get a Join button, as the Next meeting card does. */
   protected readonly joinable: Signal<boolean> = this.joinService.joinable(this.upcomingRow, this.store.now);
   protected readonly joinUrl: Signal<string | null> = this.joinService.joinUrl(this.upcomingRow, this.joinable);
-  protected readonly visibilityBg = MEETING_VISIBILITY_BG_CLASSES;
 
   public constructor() {
     afterNextRender(() => {

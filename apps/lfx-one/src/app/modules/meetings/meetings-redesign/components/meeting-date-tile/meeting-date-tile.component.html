@@ -1,0 +1,27 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<span
+  class="flex flex-none items-center justify-center font-semibold uppercase leading-none tracking-[.08em]"
+  [class]="monthClasses()"
+  [attr.data-testid]="testIdPrefix() + '-date-month'"
+  >{{ date() | date: 'MMM' }}</span
+>
+<span class="flex flex-auto items-center justify-center leading-none text-gray-900" [class]="dayClasses()" [attr.data-testid]="testIdPrefix() + '-date-day'">{{
+  date() | date: 'd'
+}}</span>
+<span class="absolute -right-[11px] -top-[11px] flex">
+  @for (badge of badges(); track badge.kind) {
+    <span
+      role="img"
+      tabindex="0"
+      class="box-content inline-flex h-[17px] w-[17px] cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+      [class]="visibilityBg[badge.kind]"
+      [attr.aria-label]="badge.title"
+      [lfxUiTooltip]="badge.description ?? ''"
+      [lfxUiTooltipTitle]="badge.title"
+      [attr.data-testid]="testIdPrefix() + '-visibility-' + badge.kind">
+      <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
+    </span>
+  }
+</span>

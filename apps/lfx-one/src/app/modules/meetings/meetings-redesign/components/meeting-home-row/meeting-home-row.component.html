@@ -8,40 +8,13 @@
   (click)="open()"
   data-testid="meetings-home-row">
   <!-- Date tile: azure band upcoming, grey band past -->
-  <div
-    class="relative col-start-1 row-start-1 flex h-[42px] w-[40px] flex-none flex-col rounded-[8px] border border-gray-200 bg-white @[861px]:h-[48px] @[861px]:w-[46px] @[861px]:rounded-[10px]"
-    data-testid="meetings-home-row-date">
-    <span
-      class="flex h-[13px] flex-none items-center justify-center text-[8px] font-semibold uppercase leading-none tracking-[.08em] @[861px]:h-[14px] @[861px]:text-[8.5px]"
-      [class]="
-        past()
-          ? 'rounded-t-[7px] bg-gray-200 text-gray-900 @[861px]:rounded-t-[9px]'
-          : '-mx-px -mt-px rounded-t-[8px] bg-blue-500 text-white @[861px]:rounded-t-[10px]'
-      "
-      data-testid="meetings-home-row-date-month"
-      >{{ row().startTime | date: 'MMM' }}</span
-    >
-    <span
-      class="flex flex-auto items-center justify-center text-[16px] leading-none text-gray-900 @[861px]:text-[19px]"
-      data-testid="meetings-home-row-date-day"
-      >{{ row().startTime | date: 'd' }}</span
-    >
-    <span class="absolute -right-[11px] -top-[11px] flex">
-      @for (badge of visibilityBadges(); track badge.kind) {
-        <span
-          role="img"
-          tabindex="0"
-          class="box-content inline-flex h-[17px] w-[17px] cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-          [class]="visibilityBg[badge.kind]"
-          [attr.aria-label]="badge.title"
-          [lfxUiTooltip]="badge.description ?? ''"
-          [lfxUiTooltipTitle]="badge.title"
-          [attr.data-testid]="'meetings-home-row-visibility-' + badge.kind">
-          <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
-        </span>
-      }
-    </span>
-  </div>
+  <lfx-meeting-date-tile
+    class="col-start-1 row-start-1"
+    testIdPrefix="meetings-home-row"
+    [date]="row().startTime"
+    [past]="past()"
+    [badges]="visibilityBadges()"
+    [responsive]="true" />
 
   <div
     class="@container/body col-start-2 row-start-1 ml-[14px] flex min-w-0 flex-col gap-[3px] @[861px]:ml-0 @[861px]:flex-1"
