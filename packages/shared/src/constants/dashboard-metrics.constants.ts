@@ -404,6 +404,15 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartData: EMPTY_CHART_DATA,
   },
   {
+    // Same number and label as the Training page's "People with training activity" tile at its default range: people on the people list. Stat-only: no chart.
+    title: ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity.label,
+    icon: 'fa-light fa-user-graduate',
+    chartType: 'line',
+    hideChart: true,
+    category: 'education',
+    testId: 'org-overview-involvement-card-people-with-training-activity',
+  },
+  {
     // Same number and label as the Training page's "Certified people" tile at its default range (lfx-self-serve#4290). Stat-only: no chart.
     title: ORG_TRAINING_STAT_DEFINITIONS.certifiedPeople.label,
     icon: 'fa-light fa-graduation-cap',
