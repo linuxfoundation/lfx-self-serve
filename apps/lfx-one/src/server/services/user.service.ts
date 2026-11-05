@@ -75,6 +75,7 @@ import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { attachMeetingRsvpSummaries, attachPastMeetingAttendanceSummaries } from '../helpers/meeting-attendance.helper';
 import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { fetchCurrentUserSurveyResponses } from '../helpers/survey-response.helper';
@@ -482,9 +483,15 @@ export class UserService {
    *   meeting payload to the frontend, since the `invited: true` decoration in this mode is
    *   derived from the FGA tuple's existence (`filter_grants=direct`) and is NOT an
    *   authorization check — it is a data shape marker, not an access decision.
+   *   `includeAttendance` adds `rsvp_summary` to each listed date of the meetings the viewer organizes.
    * @returns Array of Meeting objects the user has some direct FGA grant on
    */
-  public async getUserMeetings(req: Request, projectUid?: string, foundationUid?: string, options?: { basic?: boolean }): Promise<Meeting[]> {
+  public async getUserMeetings(
+    req: Request,
+    projectUid?: string,
+    foundationUid?: string,
+    options?: { basic?: boolean; includeAttendance?: boolean }
+  ): Promise<Meeting[]> {
     // .catch — a foundation lookup failure degrades to an empty scope (caught by the empty-set
     // guard below), preventing a NATS/upstream blip from 500'ing the Me lens.
     const foundationProjectUids = foundationUid
@@ -645,7 +652,8 @@ export class UserService {
     // Remove confirmation, so a failed lookup just shows the generic text.
     const invited = enriched.map((m) => ({ ...m, invited: true, invited_via_committee: committeeMeetingIds.has(m.id) }));
 
-    return this.accessCheckService.addAccessToResources(req, invited, 'v1_meeting', 'organizer');
+    const withAccess = await this.accessCheckService.addAccessToResources(req, invited, 'v1_meeting', 'organizer');
+    return options?.includeAttendance ? attachMeetingRsvpSummaries(req, withAccess) : withAccess;
   }
 
   /**
@@ -659,7 +667,8 @@ export class UserService {
    * @param email - User's email address for participant lookup (attendance enrichment)
    * @param projectUid - Optional project UID to filter meetings by
    * @param foundationUid - Optional foundation UID to filter meetings by (OR across child projects)
-   * @param options - `includeArtifacts` adds `has_recording` / `has_ai_summary` (batched recording and summary index lookups)
+   * @param options - `includeArtifacts` adds `has_recording` / `recording_share_url` / `has_ai_summary` (batched recording and
+   *   summary index lookups); `includeAttendance` adds `attendance_summary` to the meetings the viewer organizes
    * @returns Array of PastMeeting objects the user has some direct FGA grant on
    */
   public async getUserPastMeetings(
@@ -667,7 +676,7 @@ export class UserService {
     email: string,
     projectUid?: string,
     foundationUid?: string,
-    options?: { includeArtifacts?: boolean }
+    options?: { includeArtifacts?: boolean; includeAttendance?: boolean }
   ): Promise<PastMeeting[]> {
     logger.debug(req, 'get_user_past_meetings', 'Fetching user past meetings via filter_grants=direct', {
       has_project_filter: !!projectUid,
@@ -771,10 +780,10 @@ export class UserService {
 
     // No ids means the artifact lookups issue no requests.
     const pastMeetingIds = options?.includeArtifacts ? pastOnly.map((meeting) => meeting.id) : [];
-    const [enriched, recordingFlags, primarySummaries] = await Promise.all([
+    const [enriched, recordingUrls, primarySummaries] = await Promise.all([
       this.meetingService.getMeetingProjectName(req, pastOnly),
-      this.fetchPastMeetingArtifacts<PastMeetingRecording, boolean>(req, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
-        Boolean(getLargestSessionShareUrl(recording ?? null))
+      this.fetchPastMeetingArtifacts<PastMeetingRecording, string | null>(req, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
+        getLargestSessionShareUrl(recording ?? null)
       ),
       // selectPrimaryPastMeetingSummary reads only `data` from each item.
       this.fetchPastMeetingArtifacts<PastMeetingSummary, PastMeetingSummary | null>(req, 'v1_past_meeting_summary', pastMeetingIds, (summaries) =>
@@ -786,10 +795,14 @@ export class UserService {
     // v1_meeting index so the organizer chip resolves on Me-lens past cards.
     const withCreatedBy = await enrichMeetingsWithCreatedBy(req, enriched, (m) => m.meeting_id);
 
-    const withAccess = await this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
+    const accessed = await this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
+    const withAccess = options?.includeAttendance ? await attachPastMeetingAttendanceSummaries(req, accessed) : accessed;
     if (!options?.includeArtifacts) return withAccess;
     for (const meeting of withAccess) {
-      meeting.has_recording = recordingFlags.get(meeting.id);
+      const recordingUrl = recordingUrls.get(meeting.id);
+      meeting.has_recording = recordingUrl === undefined ? undefined : recordingUrl !== null;
+      // Sent with the feed so the home page copies it within the click (Safari drops clipboard access after an await).
+      if (recordingUrl) meeting.recording_share_url = recordingUrl;
       meeting.has_ai_summary = primarySummaries.has(meeting.id) ? getPastMeetingSummaryContent(meeting, primarySummaries.get(meeting.id)) !== null : undefined;
     }
     return withAccess;

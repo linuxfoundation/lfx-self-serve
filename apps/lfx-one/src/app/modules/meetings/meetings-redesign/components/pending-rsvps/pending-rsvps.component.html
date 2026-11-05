@@ -28,7 +28,7 @@
         <div class="flex min-w-0 flex-[1_1_220px] flex-col gap-[4px]">
           @if (item.project; as project) {
             <span class="flex min-w-0 items-center gap-[6px] text-[12px] text-gray-600" data-testid="meetings-home-pending-rsvps-row-project">
-              <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+              <lfx-meeting-project-logo [src]="project.logo" />
               <span class="min-w-0 break-words">{{ project.name }}</span>
             </span>
           }
@@ -76,7 +76,7 @@
                 [lfxUiTooltip]="tooltip"
                 lfxUiTooltipTitle="Recurring"
                 data-testid="meetings-home-pending-rsvps-row-recurring">
-                <i class="fa-light fa-arrows-rotate text-[11px]" aria-hidden="true"></i>Recurring
+                <i class="fa-light fa-arrows-repeat text-[11px]" aria-hidden="true"></i>Recurring
               </span>
             }
           </span>

@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiMenuItemComponent } from '../menu/menu-item.component';
 import { UiMenuComponent } from '../menu/menu.component';
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 import { UiSplitButtonComponent } from './split-button.component';
 
 const HOST_TEMPLATE = `
@@ -35,6 +36,11 @@ class TestHostComponent {
     this.events.update((e) => [...e, name]);
   }
 }
+
+const ACTION_TEMPLATE = `
+  <lfx-ui-split-button label="Recording" icon="fa-light fa-play" secondaryIcon="fa-light fa-link" secondaryTooltip="Copy recording link"
+    [variant]="variant()" [disabled]="disabled()" (triggered)="log('play')" (secondaryTriggered)="log('copy')" />
+`;
 
 describe('UiSplitButtonComponent', () => {
   let fixture: ComponentFixture<TestHostComponent>;
@@ -137,11 +143,18 @@ describe('UiSplitButtonComponent', () => {
     fixture.componentInstance.variant.set('secondary');
     await fixture.whenStable();
 
+    expect(chevron().className).toContain('h-ui-xsmall');
+    expect(chevron().className).toContain('rounded-r-[11px]');
+    expect(chevron().className).toContain('text-[13px]');
+    expect(chevron().className).toContain('-ml-px');
+    expect(chevron().className).toContain('border-ui-neutral-alpha-300');
+
+    fixture.componentInstance.size.set('tiny');
+    await fixture.whenStable();
+
     expect(chevron().className).toContain('h-ui-tiny');
     expect(chevron().className).toContain('rounded-r-[10px]');
     expect(chevron().className).toContain('text-[12px]');
-    expect(chevron().className).toContain('-ml-px');
-    expect(chevron().className).toContain('border-ui-neutral-alpha-200');
   });
 
   it('draws the divider on the primary variant only', async () => {
@@ -162,7 +175,10 @@ describe('UiSplitButtonComponent', () => {
 
     expect(main().disabled).toBe(true);
     expect(chevron().disabled).toBe(true);
-    expect(chevron().className).toContain('bg-ui-neutral-50');
+    expect(chevron().className).toContain('opacity-45');
+    expect(chevron().className).toContain('bg-ui-accent-500');
+    expect(chevron().className).not.toMatch(/(^|\s)(hover|active):bg-/);
+    expect(chevron().querySelector('[data-testid="ui-split-button-divider"]')).not.toBeNull();
     expect(chevron().className).toContain('cursor-not-allowed');
     expect(chevron().className).not.toContain('cursor-pointer');
 
@@ -224,5 +240,76 @@ describe('UiSplitButtonComponent', () => {
 
     expect(trigger.menuPosition?.[0].offsetX).toBeCloseTo(-86.25, 2);
     measured.destroy();
+  });
+
+  describe('with an action half', () => {
+    let action: ComponentFixture<TestHostComponent>;
+    const half = (): HTMLButtonElement => action.nativeElement.querySelector('[data-testid="ui-split-button-secondary"]') as HTMLButtonElement;
+
+    beforeEach(async () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ imports: [TestHostComponent] });
+      TestBed.overrideComponent(TestHostComponent, { set: { imports: [UiSplitButtonComponent], template: ACTION_TEMPLATE } });
+      action = TestBed.createComponent(TestHostComponent);
+      action.componentInstance.variant.set('recording');
+      await action.whenStable();
+    });
+
+    afterEach(() => action.destroy());
+
+    it('renders a named icon button with no menu trigger', () => {
+      expect(half().tagName).toBe('BUTTON');
+      expect(half().getAttribute('type')).toBe('button');
+      expect(half().getAttribute('aria-label')).toBe('Copy recording link');
+      expect(half().hasAttribute('aria-haspopup')).toBe(false);
+      expect(half().querySelector('i')?.className).toContain('fa-link');
+      expect(action.nativeElement.querySelector('[data-testid="ui-split-button-chevron"]')).toBeNull();
+      expect(action.debugElement.query(By.css('[data-testid="ui-split-button-secondary"]')).injector.get(UiTooltipDirective).text()).toBe(
+        'Copy recording link'
+      );
+    });
+
+    it('emits secondaryTriggered from the action half and triggered from the main half', async () => {
+      half().click();
+      (action.nativeElement.querySelector('[data-testid="ui-split-button-main"] button') as HTMLButtonElement).click();
+      await action.whenStable();
+
+      expect(action.componentInstance.events()).toEqual(['copy', 'play']);
+    });
+
+    it('fills both halves green and draws the divider as a 30% white inset shadow', () => {
+      expect(half().className).toContain('bg-ui-success-600');
+      expect(half().className).toContain('shadow-[inset_1px_0_0_color-mix(in_srgb,var(--ui-white)_30%,transparent)]');
+      expect(half().className).not.toContain('-ml-px');
+      expect(action.nativeElement.querySelector('[data-testid="ui-split-button-main"] button').className).toContain('bg-ui-success-600');
+    });
+
+    it('disables the action half and never emits from it', async () => {
+      action.componentInstance.disabled.set(true);
+      await action.whenStable();
+      half().click();
+      await action.whenStable();
+
+      expect(half().disabled).toBe(true);
+      expect(half().className).toContain('opacity-45');
+      expect(half().className).toContain('bg-ui-success-600');
+      expect(action.componentInstance.events()).toEqual([]);
+    });
+
+    it('warns and renders no empty aria-label when the action half has no tooltip or icon', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ imports: [TestHostComponent] });
+      TestBed.overrideComponent(TestHostComponent, {
+        set: { imports: [UiSplitButtonComponent], template: '<lfx-ui-split-button label="Recording" />' },
+      });
+      const unnamed = TestBed.createComponent(TestHostComponent);
+      await unnamed.whenStable();
+
+      expect(unnamed.nativeElement.querySelector('[data-testid="ui-split-button-secondary"]').hasAttribute('aria-label')).toBe(false);
+      expect(warn).toHaveBeenCalledWith('lfx-ui-split-button: without a menu, the action half needs a secondaryTooltip.');
+      expect(warn).toHaveBeenCalledWith('lfx-ui-split-button: without a menu, the action half needs a secondaryIcon.');
+      unnamed.destroy();
+    });
   });
 });

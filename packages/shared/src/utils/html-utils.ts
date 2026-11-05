@@ -234,6 +234,45 @@ export function escapeHtml(text: string | null | undefined): string {
 }
 
 /**
+ * Turns a plain-text body into paragraph HTML, leaving a value that already holds markup as is.
+ *
+ * Rich-text fields can still carry values written before they were rich: plain text whose line
+ * breaks a browser would collapse once rendered as HTML. Blank lines become `<p>` boundaries and
+ * single newlines become `<br>`, after escaping, so the text renders (and loads into the editor)
+ * the way it was written. Mirrors the public crowdfunding site's `renderDescription`. The output is
+ * NOT sanitized: pass it to a sink that sanitizes, such as Angular's `[innerHTML]`.
+ * Pure string ops — SSR-safe.
+ *
+ * @param value - Plain text or an HTML fragment
+ * @returns The value unchanged when it contains a tag, otherwise escaped paragraph HTML
+ *
+ * @example
+ * ```typescript
+ * plainTextToHtml('One\ntwo\n\nThree')
+ * // Returns: "<p>One<br>two</p><p>Three</p>"
+ *
+ * plainTextToHtml('<p>Already <strong>HTML</strong></p>')
+ * // Returns: "<p>Already <strong>HTML</strong></p>"
+ * ```
+ */
+export function plainTextToHtml(value: string | null | undefined): string {
+  if (!value) return '';
+  // `[^<>]*` keeps the tag test linear on inputs like `<a<a<a...`.
+  if (/<[a-z][^<>]*>/i.test(value)) return value;
+  return (
+    value
+      .replace(/\r\n?/g, '\n')
+      // Trimmed first so leading / trailing newlines do not become stray <br>s.
+      .trim()
+      // A run of blank lines (whitespace only) ends a paragraph, consumed whole.
+      .split(/\n(?:[^\S\n]*\n)+/)
+      .filter((paragraph) => paragraph.trim())
+      .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
+      .join('')
+  );
+}
+
+/**
  * Strips HTML-like tag sequences until the string is stable. The inner
  * `[^<>]*` class is load-bearing: it disallows nested `<` inside a tag body,
  * which prevents the engine from trying every `<` position on adversarial

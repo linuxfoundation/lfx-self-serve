@@ -11,6 +11,12 @@ const router = Router();
 
 const voteController = new VoteController();
 
+// Summary responses contain voter identities, including partial/failed send details (#4830).
+router.use(['/:uid/summary-recipients', '/:uid/summary'], (_req, res, next) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  next();
+});
+
 // GET /votes - get all votes
 router.get('/', (req, res, next) => voteController.getVotes(req, res, next));
 
@@ -42,6 +48,9 @@ router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(re
 
 // GET /votes/:uid/reminder-recipients - eligible voters who have not voted yet (vote#writer only)
 router.get('/:uid/reminder-recipients', (req, res, next) => voteController.getVoteReminderRecipients(req, res, next));
+
+// GET /votes/:uid/summary-recipients - summary recipient preview (vote#writer only, ended votes)
+router.get('/:uid/summary-recipients', (req, res, next) => voteController.getVoteSummaryPreview(req, res, next));
 
 // GET /votes/:uid/voters - invited voters with their current ballot, or participation only on pseudo-anonymous votes (vote#writer only)
 router.get('/:uid/voters', (req, res, next) => voteController.getVoteVoters(req, res, next));

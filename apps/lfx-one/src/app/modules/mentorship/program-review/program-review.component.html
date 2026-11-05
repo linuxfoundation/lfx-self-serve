@@ -2,55 +2,275 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-program-review">
-  <div class="mx-auto flex max-w-2xl flex-col gap-6 py-8">
+  <div class="flex flex-col gap-6 py-8">
     @if (state() === 'loading') {
       <lfx-route-loading data-testid="mentorship-program-review-loading" />
-    } @else if (confirming(); as confirm) {
-      <lfx-card data-testid="mentorship-program-review-confirm">
-        <div class="flex flex-col gap-6">
-          <div class="flex flex-col gap-2">
-            <h1 class="text-xl font-semibold text-gray-900" data-testid="mentorship-program-review-title">
-              {{ decisionLabels[confirm.decision] }} this program?
-            </h1>
-            <p class="text-base font-medium text-gray-700" data-testid="mentorship-program-review-program-name">{{ confirm.program.name }}</p>
-            <p class="text-sm text-gray-500">Please confirm this action. This cannot be undone.</p>
-          </div>
-          <div class="flex flex-wrap justify-end gap-3">
-            <lfx-button
-              label="Cancel"
-              severity="secondary"
-              [outlined]="true"
-              [disabled]="submitting()"
-              routerLink="/mentorship/admin"
-              data-testid="mentorship-program-review-cancel" />
-            <lfx-button
-              [label]="decisionLabels[confirm.decision]"
-              [severity]="confirmSeverity()"
-              [loading]="submitting()"
-              (onClick)="onConfirm()"
-              data-testid="mentorship-program-review-confirm-button" />
-          </div>
+    } @else if (state() === 'ready' && program(); as program) {
+      <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div class="flex min-w-0 flex-1 flex-col gap-6">
+          <!-- Summary -->
+          <section
+            class="flex flex-col gap-6 rounded-xl border border-gray-200 bg-white p-6 sm:flex-row sm:items-start md:p-8"
+            aria-label="Program summary"
+            data-testid="mentorship-program-review-summary">
+            @if (program.logoUrl) {
+              <img
+                [src]="program.logoUrl"
+                [alt]="program.name + ' logo'"
+                class="h-20 w-20 shrink-0 rounded-2xl border border-gray-200 bg-white object-contain p-1"
+                data-testid="mentorship-program-review-logo" />
+            } @else {
+              <div
+                class="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 font-display text-4xl font-semibold text-emerald-700"
+                aria-hidden="true"
+                data-testid="mentorship-program-review-logo-initial">
+                {{ initial() }}
+              </div>
+            }
+            <div class="flex min-w-0 flex-1 flex-col gap-2">
+              <span
+                class="inline-flex items-center gap-1.5 self-start rounded-md px-2.5 py-1 text-xs font-semibold"
+                [class]="statusBadgeClass()"
+                data-testid="mentorship-program-review-status">
+                <span class="h-1.5 w-1.5 rounded-full" [class]="statusDotClass()" aria-hidden="true"></span>
+                {{ statusLabel() }}
+              </span>
+              <h1 class="font-display text-3xl font-medium text-gray-900 break-words" data-testid="mentorship-program-review-title">{{ program.name }}</h1>
+              @if (program.projectName) {
+                <div class="flex items-center gap-2 text-sm text-gray-600" data-testid="mentorship-program-review-project">
+                  <i class="fa-light fa-folder" aria-hidden="true"></i>
+                  <span class="font-semibold text-gray-900">{{ program.projectName }}</span>
+                </div>
+              }
+            </div>
+          </section>
+
+          <!-- Details: a rejected or hidden program comes without them, so the section is left out rather than shown empty. -->
+          @if (program.hasDetails) {
+            <section class="flex flex-col gap-8 rounded-xl border border-gray-200 bg-white p-6 md:p-8" data-testid="mentorship-program-review-details">
+              <div class="flex flex-col gap-3">
+                <h2 class="text-lg font-semibold text-gray-900">Program description</h2>
+                @if (descriptionHtml()) {
+                  <!-- Rich-editor HTML, sanitized in the component before binding. -->
+                  <div
+                    class="prose prose-sm max-w-none text-base leading-relaxed text-gray-700"
+                    [innerHTML]="descriptionHtml()"
+                    data-testid="mentorship-program-review-description"></div>
+                } @else {
+                  <p class="text-sm italic text-gray-500" data-testid="mentorship-program-review-description-empty">No description provided.</p>
+                }
+              </div>
+
+              <hr class="border-gray-200" />
+
+              <div class="flex flex-col gap-3">
+                <div class="flex items-baseline gap-2">
+                  <h2 class="text-lg font-semibold text-gray-900">Program skills</h2>
+                  <span class="text-sm text-gray-500" data-testid="mentorship-program-review-skills-count">
+                    {{ program.skills.length }} {{ program.skills.length === 1 ? 'skill' : 'skills' }}
+                  </span>
+                </div>
+                @if (program.skills.length > 0) {
+                  <ul class="flex flex-wrap gap-2" data-testid="mentorship-program-review-skills">
+                    @for (skill of program.skills; track $index) {
+                      <li class="rounded-md border border-gray-200 bg-gray-100 px-2.5 py-1 text-sm text-gray-700">{{ skill }}</li>
+                    }
+                  </ul>
+                } @else {
+                  <p class="text-sm italic text-gray-500" data-testid="mentorship-program-review-skills-empty">No skills listed.</p>
+                }
+              </div>
+
+              <hr class="border-gray-200" />
+
+              <div class="flex flex-col gap-4">
+                <h2 class="text-lg font-semibold text-gray-900">Links and compliance</h2>
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div class="flex min-w-0 flex-col gap-2.5 rounded-lg border border-gray-200 p-4" data-testid="mentorship-program-review-repo">
+                    <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <i class="fa-light fa-code-branch" aria-hidden="true"></i>
+                      GitHub repository
+                    </h3>
+                    @if (program.repoUrl) {
+                      <a
+                        [href]="program.repoUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-start gap-1.5 text-sm font-medium text-blue-600 underline break-all hover:text-blue-700"
+                        data-testid="mentorship-program-review-repo-link">
+                        {{ repoLabel() }}
+                        <i class="fa-light fa-arrow-up-right-from-square mt-0.5 shrink-0 text-xs" aria-hidden="true"></i>
+                        <span class="sr-only">(opens in a new tab)</span>
+                      </a>
+                    } @else {
+                      <span class="text-sm text-gray-500">Not provided</span>
+                    }
+                  </div>
+
+                  <div class="flex min-w-0 flex-col gap-2.5 rounded-lg border border-gray-200 p-4" data-testid="mentorship-program-review-coc">
+                    <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <i class="fa-light fa-file-lines" aria-hidden="true"></i>
+                      Code of Conduct
+                    </h3>
+                    @if (program.codeOfConductUrl) {
+                      <a
+                        [href]="program.codeOfConductUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 underline hover:text-blue-700"
+                        data-testid="mentorship-program-review-coc-link">
+                        View Code of Conduct
+                        <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+                        <span class="sr-only">(opens in a new tab)</span>
+                      </a>
+                    } @else {
+                      <span class="text-sm text-gray-500">Not provided</span>
+                    }
+                  </div>
+
+                  <div class="flex min-w-0 flex-col gap-2.5 rounded-lg border border-gray-200 p-4" data-testid="mentorship-program-review-cii">
+                    <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <i class="fa-light fa-shield-check" aria-hidden="true"></i>
+                      OpenSSF Best Practices (CII)
+                    </h3>
+                    @if (program.ciiProjectId) {
+                      <a [href]="ciiProjectUrl()" target="_blank" rel="noopener noreferrer" class="self-start" data-testid="mentorship-program-review-cii-link">
+                        <img [src]="ciiBadgeImageUrl()" [alt]="'OpenSSF Best Practices badge for project ' + program.ciiProjectId" class="h-5" />
+                        <span class="sr-only">(opens in a new tab)</span>
+                      </a>
+                      <span class="text-sm text-gray-500">Project ID {{ program.ciiProjectId }}</span>
+                    } @else {
+                      <span class="text-sm text-gray-500">Not provided</span>
+                    }
+                  </div>
+                </div>
+              </div>
+            </section>
+          }
         </div>
-      </lfx-card>
+
+        <!-- Review request -->
+        <aside
+          class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-6 lg:w-80 lg:shrink-0"
+          aria-labelledby="mentorship-program-review-request-heading"
+          data-testid="mentorship-program-review-request">
+          <h2 id="mentorship-program-review-request-heading" class="text-xs font-semibold uppercase tracking-wider text-gray-600">Review request</h2>
+
+          @if (notice() === 'conflict') {
+            <p
+              class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+              role="status"
+              data-testid="mentorship-program-review-conflict">
+              Another reviewer decided this program before you.
+            </p>
+          }
+
+          @if (notice() === 'stale') {
+            <div class="flex flex-col gap-3" data-testid="mentorship-program-review-stale">
+              <p class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+                Another reviewer decided this program, but its latest status couldn't be loaded.
+              </p>
+              <lfx-button
+                label="Refresh status"
+                icon="fa-light fa-arrows-rotate"
+                severity="secondary"
+                [outlined]="true"
+                [fluid]="true"
+                [loading]="refreshing()"
+                (onClick)="onRefreshStatus()"
+                data-testid="mentorship-program-review-refresh" />
+            </div>
+          } @else if (program.status === 'pending') {
+            @if (step() === 'rejecting') {
+              <div class="flex flex-col gap-3" data-testid="mentorship-program-review-reject-step">
+                <h3
+                  #rejectHeading
+                  tabindex="-1"
+                  class="text-sm font-semibold text-gray-900 focus:outline-none"
+                  data-testid="mentorship-program-review-reject-heading">
+                  Reject this program?
+                </h3>
+                <p class="text-sm leading-relaxed text-gray-600">Rejected programs are not listed and cannot open terms or accept mentee applications.</p>
+                <div class="flex flex-col gap-2.5">
+                  <lfx-button
+                    label="Reject program"
+                    severity="danger"
+                    [fluid]="true"
+                    [loading]="submitting() === 'reject'"
+                    [disabled]="submitting() !== null"
+                    (onClick)="onDecide('reject')"
+                    data-testid="mentorship-program-review-reject-confirm" />
+                  <lfx-button
+                    label="Cancel"
+                    severity="secondary"
+                    [outlined]="true"
+                    [fluid]="true"
+                    [disabled]="submitting() !== null"
+                    (onClick)="onCancelReject()"
+                    data-testid="mentorship-program-review-reject-cancel" />
+                </div>
+              </div>
+            } @else {
+              <div class="flex flex-col gap-4" data-testid="mentorship-program-review-choice">
+                <p class="text-sm leading-relaxed text-gray-600">
+                  Check the program details, links and CII status before deciding. Approved programs can open terms and accept mentee applications.
+                </p>
+                <div class="flex flex-col gap-2.5">
+                  <lfx-button
+                    label="Approve program"
+                    icon="fa-light fa-check"
+                    severity="success"
+                    [fluid]="true"
+                    [loading]="submitting() === 'approve'"
+                    [disabled]="submitting() !== null"
+                    (onClick)="onDecide('approve')"
+                    data-testid="mentorship-program-review-approve" />
+                  <lfx-button
+                    #rejectButton
+                    label="Reject"
+                    icon="fa-light fa-xmark"
+                    severity="danger"
+                    [outlined]="true"
+                    [fluid]="true"
+                    [disabled]="submitting() !== null"
+                    (onClick)="onStartReject()"
+                    data-testid="mentorship-program-review-reject" />
+                </div>
+              </div>
+            }
+            @if (notice() === 'failed') {
+              <p class="text-sm text-red-700" role="alert" data-testid="mentorship-program-review-failed">The decision was not recorded. Please try again.</p>
+            }
+          } @else if (program.status === 'published') {
+            <div class="flex flex-col gap-3" role="status" data-testid="mentorship-program-review-approved">
+              <div class="flex items-center gap-2.5">
+                <span class="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-800" aria-hidden="true">
+                  <i class="fa-solid fa-check"></i>
+                </span>
+                <span class="text-base font-semibold text-emerald-800">Program approved</span>
+              </div>
+              <p class="text-sm leading-relaxed text-gray-600">{{ program.name }} is published and can open terms.</p>
+            </div>
+          } @else if (program.status === 'rejected') {
+            <div class="flex flex-col gap-3" role="status" data-testid="mentorship-program-review-rejected">
+              <div class="flex items-center gap-2.5">
+                <span class="flex h-9 w-9 items-center justify-center rounded-full bg-red-100 text-red-800" aria-hidden="true">
+                  <i class="fa-solid fa-xmark"></i>
+                </span>
+                <span class="text-base font-semibold text-red-800">Program rejected</span>
+              </div>
+              <p class="text-sm leading-relaxed text-gray-600">{{ program.name }} is not listed and cannot accept mentee applications.</p>
+            </div>
+          } @else {
+            <p class="text-sm leading-relaxed text-gray-600" role="status" data-testid="mentorship-program-review-not-pending">
+              This program is no longer awaiting review. Current status: {{ statusLabel() }}.
+            </p>
+          }
+        </aside>
+      </div>
     } @else {
       <div role="status" aria-live="polite" [attr.data-testid]="'mentorship-program-review-' + state()">
         @switch (state()) {
-          @case ('success') {
-            <lfx-empty-state
-              icon="fa-light fa-circle-check"
-              [title]="'Program ' + doneLabel()"
-              [subtitle]="(program()?.name ?? 'The program') + ' has been ' + doneLabel() + '.'"
-              ctaLabel="Back to Mentorship"
-              [ctaRoute]="backRoute" />
-          }
-          @case ('already-decided') {
-            <lfx-empty-state
-              icon="fa-light fa-circle-info"
-              title="This program has already been reviewed"
-              [subtitle]="alreadyDecidedMessage()"
-              ctaLabel="Back to Mentorship"
-              [ctaRoute]="backRoute" />
-          }
           @case ('forbidden') {
             <lfx-empty-state
               icon="fa-light fa-lock"
@@ -71,27 +291,17 @@
             <lfx-empty-state
               icon="fa-light fa-link-slash"
               title="This review link is not valid"
-              subtitle="Open the approve or reject link from the review email again."
+              subtitle="Open the link from the review email again."
               ctaLabel="Back to Mentorship"
               [ctaRoute]="backRoute" />
           }
           @default {
-            @if (program()) {
-              <!-- A failed Confirm: the program is known, so go back to the confirm card. -->
-              <lfx-empty-state
-                icon="fa-light fa-triangle-exclamation"
-                title="Something went wrong"
-                subtitle="The decision was not recorded. Please try again."
-                ctaLabel="Try again"
-                (ctaClick)="onRetry()" />
-            } @else {
-              <lfx-empty-state
-                icon="fa-light fa-triangle-exclamation"
-                title="Something went wrong"
-                subtitle="We couldn't load this program. Please refresh the page to try again."
-                ctaLabel="Back to Mentorship"
-                [ctaRoute]="backRoute" />
-            }
+            <lfx-empty-state
+              icon="fa-light fa-triangle-exclamation"
+              title="Something went wrong"
+              subtitle="We couldn't load this program. Please refresh the page to try again."
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="backRoute" />
           }
         }
       </div>

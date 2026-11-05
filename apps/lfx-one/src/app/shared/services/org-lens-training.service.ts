@@ -5,81 +5,73 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_TRAINING_FILTER_KEYS, ORG_TRAINING_VIEW_QUERY_PARAMS } from '@lfx-one/shared/constants';
 import type {
-  GetOrgCertificationsParams,
-  GetOrgTrainingsParams,
-  OrgCertEmployeesResponse,
-  OrgCertEmployeeStatus,
-  OrgCertificationsResponse,
-  OrgTrainingEmployeesResponse,
-  OrgTrainingEmployeeStatus,
-  OrgTrainingsResponse,
+  OrgLensTimeRange,
+  OrgTrainingFilterOptions,
+  OrgTrainingGroupEmployeesParams,
+  OrgTrainingGroupEmployeesResponse,
+  OrgTrainingGroupsParams,
+  OrgTrainingGroupsResponse,
   OrgTrainingStats,
+  OrgTrainingStatsQuery,
 } from '@lfx-one/shared/interfaces';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { Observable } from 'rxjs';
 
+/** HTTP client of the shared Training / Trainees view: one stats call, one filter-options call and the group-by table. */
 @Injectable({
   providedIn: 'root',
 })
 export class OrgLensTrainingService {
   private readonly http = inject(HttpClient);
 
-  public getTrainingStats(orgUid: string): Observable<OrgTrainingStats> {
-    return this.http.get<OrgTrainingStats>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/training/stats`);
+  public getTrainingStats(orgUid: string, query: OrgTrainingStatsQuery): Observable<OrgTrainingStats> {
+    return this.http.get<OrgTrainingStats>(`${this.baseUrl(orgUid)}/stats`, { params: this.queryParams(query) });
   }
 
-  public getOrgCertifications(orgUid: string, params: GetOrgCertificationsParams = {}): Observable<OrgCertificationsResponse> {
-    return this.http.get<OrgCertificationsResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/training/certifications`, {
-      params: this.buildListParams(params),
+  public getFilterOptions(orgUid: string, range: OrgLensTimeRange): Observable<OrgTrainingFilterOptions> {
+    return this.http.get<OrgTrainingFilterOptions>(`${this.baseUrl(orgUid)}/filter-options`, {
+      params: strictHttpParams().set(ORG_LENS_TIME_RANGE_QUERY_PARAM, range),
     });
   }
 
-  public getOrgTrainings(orgUid: string, params: GetOrgTrainingsParams = {}): Observable<OrgTrainingsResponse> {
-    return this.http.get<OrgTrainingsResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/training/trainings`, {
-      params: this.buildListParams(params),
-    });
-  }
-
-  public getCertificationEmployees(
-    orgUid: string,
-    courseId: string,
-    status: OrgCertEmployeeStatus,
-    searchQuery?: string
-  ): Observable<OrgCertEmployeesResponse> {
-    let httpParams = new HttpParams().set('status', status);
-    if (searchQuery) httpParams = httpParams.set('searchQuery', searchQuery);
-
-    return this.http.get<OrgCertEmployeesResponse>(
-      `/api/orgs/${encodeURIComponent(orgUid)}/lens/training/certifications/${encodeURIComponent(courseId)}/employees`,
-      { params: httpParams }
-    );
-  }
-
-  public getTrainingEmployees(
-    orgUid: string,
-    courseId: string,
-    status: OrgTrainingEmployeeStatus,
-    searchQuery?: string
-  ): Observable<OrgTrainingEmployeesResponse> {
-    let httpParams = new HttpParams().set('status', status);
-    if (searchQuery) httpParams = httpParams.set('searchQuery', searchQuery);
-
-    return this.http.get<OrgTrainingEmployeesResponse>(
-      `/api/orgs/${encodeURIComponent(orgUid)}/lens/training/trainings/${encodeURIComponent(courseId)}/employees`,
-      { params: httpParams }
-    );
-  }
-
-  private buildListParams(params: GetOrgCertificationsParams | GetOrgTrainingsParams): HttpParams {
-    let httpParams = new HttpParams();
-
-    if (params.searchQuery) httpParams = httpParams.set('searchQuery', params.searchQuery);
-    if (params.level) httpParams = httpParams.set('level', params.level);
-    if (params.pageSize) httpParams = httpParams.set('pageSize', String(params.pageSize));
-    if (params.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
+  public getGroups(orgUid: string, query: OrgTrainingStatsQuery, params: OrgTrainingGroupsParams): Observable<OrgTrainingGroupsResponse> {
+    let httpParams = this.queryParams(query).set('groupBy', params.groupBy).set('tab', params.tab);
+    if (params.searchQuery) httpParams = httpParams.set('search', params.searchQuery);
     if (params.sortField) httpParams = httpParams.set('sortField', params.sortField);
     if (params.sortOrder) httpParams = httpParams.set('sortOrder', params.sortOrder);
+    if (params.pageSize) httpParams = httpParams.set('pageSize', String(params.pageSize));
+    if (params.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
 
+    return this.http.get<OrgTrainingGroupsResponse>(`${this.baseUrl(orgUid)}/groups`, { params: httpParams });
+  }
+
+  public getGroupEmployees(
+    orgUid: string,
+    query: OrgTrainingStatsQuery,
+    params: OrgTrainingGroupEmployeesParams
+  ): Observable<OrgTrainingGroupEmployeesResponse> {
+    const httpParams = this.queryParams(query)
+      .set('groupBy', params.groupBy)
+      .set('groupValue', params.groupValue)
+      .set('tab', params.tab)
+      .set('status', params.status);
+
+    return this.http.get<OrgTrainingGroupEmployeesResponse>(`${this.baseUrl(orgUid)}/groups/employees`, { params: httpParams });
+  }
+
+  private baseUrl(orgUid: string): string {
+    return `/api/orgs/${encodeURIComponent(orgUid)}/lens/training`;
+  }
+
+  /** Range plus every filter that is set; an unset filter is left off the URL. */
+  private queryParams(query: OrgTrainingStatsQuery): HttpParams {
+    let httpParams = strictHttpParams().set(ORG_LENS_TIME_RANGE_QUERY_PARAM, query.range);
+    for (const key of ORG_TRAINING_FILTER_KEYS) {
+      const value = query[key];
+      if (value !== null) httpParams = httpParams.set(ORG_TRAINING_VIEW_QUERY_PARAMS[key], value);
+    }
     return httpParams;
   }
 }

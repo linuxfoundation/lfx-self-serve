@@ -124,6 +124,76 @@ describe('MentorshipAdminController', () => {
     });
   });
 
+  describe('getProjectPrograms', () => {
+    const PROJECT_UID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
+    it('passes the project and the parsed filters and paging to the service', async () => {
+      const page = { data: [], total: 0 };
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms').mockResolvedValue(page);
+
+      await controller.getProjectPrograms(buildReq({ search: ' grid ', status: 'hidden', offset: '12' }, { projectUid: ` ${PROJECT_UID} ` }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROJECT_UID, { search: 'grid', status: 'hidden', offset: 12, limit: 12, includeSubprojects: false });
+      expect(res.json).toHaveBeenCalledWith(page);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('asks for the sub-projects’ programs too when includeSubprojects is true (the Foundation lens)', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms').mockResolvedValue({ data: [], total: 0 });
+
+      await controller.getProjectPrograms(buildReq({ includeSubprojects: 'true' }, { projectUid: PROJECT_UID }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROJECT_UID, expect.objectContaining({ includeSubprojects: true }));
+    });
+
+    it('rejects an includeSubprojects that is not true or false with a 400', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms');
+
+      await controller.getProjectPrograms(buildReq({ includeSubprojects: 'yes' }, { projectUid: PROJECT_UID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it.each([['not-a-uuid'], ['']])('rejects the project %j with a 400', async (projectUid) => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms');
+
+      await controller.getProjectPrograms(buildReq({}, { projectUid }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown status with a 400', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms');
+
+      await controller.getProjectPrograms(buildReq({ status: 'bogus' }, { projectUid: PROJECT_UID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('passes a service failure, such as the gateway’s 403, to next', async () => {
+      const error = Object.assign(new Error('Forbidden'), { statusCode: 403 });
+      vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms').mockRejectedValue(error);
+
+      await controller.getProjectPrograms(buildReq({}, { projectUid: PROJECT_UID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('passes an AuthenticationError to next when no user is signed in', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProjectPrograms');
+
+      await controller.getProjectPrograms(buildReq({}, { projectUid: PROJECT_UID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+      expect(read).not.toHaveBeenCalled();
+    });
+  });
+
   const PROGRAM_ID = '3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b';
   const TERM_ID = '9a1c2d3e-4b5f-4a6b-8c7d-1e2f3a4b5c6d';
   const statusCodes = () => vi.mocked(next).mock.calls.map(([error]) => (error as { statusCode?: number }).statusCode);

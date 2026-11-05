@@ -7,11 +7,12 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { MEETINGS_HOME_RSVP_CHOICES } from '@lfx-one/shared/constants';
 import { MeetingHomeRowProject, MeetingHomeRowType, MeetingRsvpScopeDialogData, MeetingRsvpScopeOption, RsvpScope } from '@lfx-one/shared/interfaces';
 import { formatMeetingDateTime, getMeetingHomeRowProject, getMeetingHomeRowType } from '@lfx-one/shared/utils';
-import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
 import { UiRadioGroupComponent } from '@shared/uikit/radio/radio-group.component';
 import { UiRadioComponent } from '@shared/uikit/radio/radio.component';
+
+import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
 /**
  * Asks which dates of a recurring meeting an RSVP applies to; closes with the chosen scope, or nothing on Cancel.
@@ -19,7 +20,7 @@ import { UiRadioComponent } from '@shared/uikit/radio/radio.component';
  */
 @Component({
   selector: 'lfx-meeting-rsvp-scope-modal',
-  imports: [UiAvatarComponent, UiButtonComponent, UiModalComponent, UiRadioGroupComponent, UiRadioComponent],
+  imports: [MeetingProjectLogoComponent, UiButtonComponent, UiModalComponent, UiRadioGroupComponent, UiRadioComponent],
   templateUrl: './meeting-rsvp-scope-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

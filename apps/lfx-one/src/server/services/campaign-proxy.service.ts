@@ -2931,8 +2931,8 @@ CRITICAL RULES:
 }
 
 /**
- * Shape a model's negative-keyword response into the bounded list the Optimize tab's editor opens
- * pre-filled with.
+ * Shape a model's negative-keyword response into the bounded list the Implement tab's Search
+ * negatives (#4991) and the Optimize tab's editor open pre-filled with.
  *
  * Accepts the wrapped object form (`{ "negativeKeywords": [...] }`, and the snake_case spelling
  * the prompt's own key could be echoed as) alongside the bare array the prompt asks for, as

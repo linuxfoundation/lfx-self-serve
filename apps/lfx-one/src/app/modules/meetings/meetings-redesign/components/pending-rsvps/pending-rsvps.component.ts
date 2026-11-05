@@ -27,12 +27,12 @@ import {
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
 } from '@lfx-one/shared/utils';
-import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { pairwise } from 'rxjs';
 
+import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
 
 /**
@@ -42,7 +42,7 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
  */
 @Component({
   selector: 'lfx-pending-rsvps',
-  imports: [MeetingRsvpControlsComponent, UiAvatarComponent, UiBadgeComponent, UiButtonComponent, UiTooltipDirective],
+  imports: [MeetingProjectLogoComponent, MeetingRsvpControlsComponent, UiBadgeComponent, UiButtonComponent, UiTooltipDirective],
   templateUrl: './pending-rsvps.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'contents' },

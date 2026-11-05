@@ -16,6 +16,7 @@ import {
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   CF_ORG_DONATIONS_FLAG,
   MARKETING_OPS_FGA_ENABLED_FLAG,
+  MENTORSHIP_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -40,6 +41,7 @@ describe('SidebarNavService', () => {
   const mktgOsEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const cfOrgDonationsEnabled = signal(false);
+  const mentorshipEnabled = signal(false);
   const lfStaff = signal(false);
   const impersonating = signal(false);
   const orgSegment = signal<string | null>(null);
@@ -87,6 +89,7 @@ describe('SidebarNavService', () => {
     mktgOsEnabled.set(false);
     orgEasyclaEnabled.set(false);
     cfOrgDonationsEnabled.set(false);
+    mentorshipEnabled.set(false);
     lfStaff.set(false);
     impersonating.set(false);
     orgSegment.set(null);
@@ -123,6 +126,7 @@ describe('SidebarNavService', () => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
               if (key === CF_ORG_DONATIONS_FLAG) return cfOrgDonationsEnabled;
+              if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
               if (key === GATEWAZE_EMBED_ENABLED_FLAG) return gatewazeEmbedEnabled;
@@ -283,6 +287,39 @@ describe('SidebarNavService', () => {
       // On the project lens Participating organizations sits between Documents and Initiatives.
       const anchor = lens === 'project' ? 'Participating organizations' : 'Documents';
       expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf(anchor) + 1);
+    }
+  });
+
+  it('shows Mentorship Programs right after Crowdfunding Initiatives on the project and foundation lenses only for writers', () => {
+    const service = TestBed.inject(SidebarNavService);
+    mentorshipEnabled.set(true);
+
+    for (const lens of ['project', 'foundation'] as const) {
+      activeLens.set(lens);
+
+      canWrite.set(false);
+      expect(findByLink(service.sidebarItems(), `/${lens}/mentorship`)).toBeUndefined();
+
+      canWrite.set(true);
+      const items = service.sidebarItems();
+      const itemLabels = labels(items);
+      expect(findByLink(items, `/${lens}/mentorship`)).toEqual(
+        expect.objectContaining({ label: 'Mentorship Programs', testId: `sidebar-${lens}-mentorship-programs` })
+      );
+      expect(itemLabels.indexOf('Mentorship Programs')).toBe(itemLabels.indexOf('Crowdfunding Initiatives') + 1);
+    }
+  });
+
+  it('hides Mentorship Programs on both lenses, writers included, while mentorship-enabled is off', () => {
+    const service = TestBed.inject(SidebarNavService);
+    canWrite.set(true);
+
+    for (const lens of ['project', 'foundation'] as const) {
+      activeLens.set(lens);
+      const items = service.sidebarItems();
+      expect(findByLink(items, `/${lens}/mentorship`)).toBeUndefined();
+      // Crowdfunding Initiatives keeps its place under its own canWrite gate.
+      expect(findByLink(items, `/${lens}/initiatives`)).toBeDefined();
     }
   });
 
@@ -590,8 +627,19 @@ describe('SidebarNavService', () => {
 
     expect(findByLink(items, '/org/acme-inc/overview')?.carryQueryParams).toBeUndefined();
     expect(findByLink(items, '/org/acme-inc/projects')?.carryQueryParams).toEqual(['orgScope', 'teamMembers']);
-    expect(findByLink(engagement, '/org/acme-inc/people')?.carryQueryParams).toEqual(['range', 'orgScope', 'teamMembers']);
+    expect(findByLink(engagement, '/org/acme-inc/people')?.carryQueryParams).toEqual(['range', 'attribution', 'participation', 'orgScope', 'teamMembers']);
     expect(findByLink(engagement, '/org/acme-inc/contributions')?.carryQueryParams).toEqual(['range', 'orgScope', 'teamMembers']);
+  });
+
+  // lfx-self-serve#4598: Counted by and Count carry between People and Events only; each page opts in on both ends.
+  it('carries the range, Counted by and Count between People and Events, and not to Code Contributions', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+
+    const engagement = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Organization Engagement');
+
+    expect(findByLink(engagement, '/org/acme-inc/events')?.carryQueryParams).toEqual(['range', 'attribution', 'participation']);
+    expect(findByLink(engagement, '/org/acme-inc/contributions')?.carryQueryParams).not.toContain('participation');
   });
 
   it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected organization', () => {

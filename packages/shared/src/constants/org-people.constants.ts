@@ -23,6 +23,7 @@ import type {
   PeopleTabConfig,
   PeopleTabId,
 } from '../interfaces';
+import { DEFAULT_ORG_EVENTS_ATTRIBUTION } from './org-events-filters.constants';
 import { ORG_LENS_DEFAULT_TIME_RANGE } from './org-lens-time-range.constants';
 
 /** Org People page tabs in visible order (`all` is the default). */
@@ -199,14 +200,22 @@ export const ORG_SCOPE_CAPTION_PHRASE: Readonly<Record<OrgScopeFilter, string>> 
 /** Initial visible-row cap on the Trainees table before "Show All" is clicked. */
 export const ORG_TRAINEES_INITIAL_LIMIT = 30;
 
+/**
+ * Prefix of the per-response key the BFF gives a Trainees learner not on the people list (`outside:1`, `outside:2`, …)
+ * in place of their warehouse key (lfx-self-serve#4287). The `:` fails `PERSON_KEY_PATTERN`, so the person endpoints
+ * reject it with a 400.
+ */
+export const ORG_TRAINEE_OUTSIDE_KEY_PREFIX = 'outside:';
+
 /** Zero-valued Trainees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   accountId: '',
   timeRange: ORG_LENS_DEFAULT_TIME_RANGE,
   trainees: [],
   details: [],
-  foundationOptions: [],
-  courseOptions: [],
+  outsideLearners: [],
+  formerOnPeopleList: { people: 0, pairs: 0 },
+  asOf: null,
 };
 
 // Event Attendees tab (LFXV2-1875) — same bundle-then-client-filter pattern as Trainees.
@@ -217,8 +226,9 @@ export const ORG_EVENT_ATTENDEES_INITIAL_LIMIT = 30;
 /** Zero-valued Event Attendees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   accountId: '',
-  attendees: [],
   details: [],
+  summary: { attendeesCount: 0, listedAttendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 },
+  servedAttribution: DEFAULT_ORG_EVENTS_ATTRIBUTION,
   foundationOptions: [],
   eventOptions: [],
 };

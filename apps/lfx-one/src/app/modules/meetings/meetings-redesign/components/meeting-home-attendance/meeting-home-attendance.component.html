@@ -1,0 +1,56 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<div class="flex flex-col gap-[6px]" data-testid="meetings-home-attendance">
+  <span class="whitespace-nowrap text-[12px] leading-[16px] tabular-nums text-gray-900" data-testid="meetings-home-attendance-label">{{
+    attendance().label
+  }}</span>
+
+  <ng-template #bar>
+    <span class="flex h-[5px] overflow-hidden rounded-full bg-gray-200">
+      @for (segment of attendance().segments; track segment.kind) {
+        <span class="h-full flex-none" [class]="segmentBg[segment.kind]" [style.width.%]="segment.percent"></span>
+      }
+    </span>
+  </ng-template>
+
+  @if (variant() === 'row' && tooltipItems().length) {
+    <!-- The 4px padding widens the hover target of the 5px bar. -->
+    <span
+      role="img"
+      tabindex="0"
+      class="-my-[4px] block cursor-default py-[4px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+      [attr.aria-label]="attendance().ariaLabel"
+      [lfxUiTooltip]="attendance().ariaLabel"
+      [lfxUiTooltipItems]="tooltipItems()"
+      lfxUiTooltipSide="bottom"
+      data-testid="meetings-home-attendance-bar">
+      <ng-container [ngTemplateOutlet]="bar" />
+    </span>
+  } @else {
+    <span role="img" class="block" [attr.aria-label]="attendance().ariaLabel" data-testid="meetings-home-attendance-bar">
+      <ng-container [ngTemplateOutlet]="bar" />
+    </span>
+  }
+
+  @if (variant() === 'card' && attendance().answers.length) {
+    <!-- The bar's label already speaks these counts. -->
+    <span
+      class="flex flex-wrap items-center gap-x-[14px] gap-y-[4px] text-[12px] leading-[16px] tabular-nums text-gray-500"
+      aria-hidden="true"
+      data-testid="meetings-home-attendance-legend">
+      @for (answer of attendance().answers; track answer.kind) {
+        <span class="inline-flex items-center gap-[5px] whitespace-nowrap">
+          <span class="h-[6px] w-[6px] rounded-full" [class]="segmentBg[answer.kind]"></span>{{ answer.label }} {{ answer.count }}
+        </span>
+      }
+    </span>
+  }
+
+  @if (attendance().poor) {
+    <span role="note" class="flex items-center gap-[6px] text-[12px] leading-[16px] text-amber-700" data-testid="meetings-home-attendance-poor">
+      <i class="fa-light fa-triangle-exclamation text-[12px]" aria-hidden="true"></i>This meeting was poorly attended
+    </span>
+  }
+</div>

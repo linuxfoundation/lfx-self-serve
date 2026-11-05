@@ -205,6 +205,7 @@
                   <lfx-card data-testid="vote-detail-voters">
                     <lfx-vote-voters
                       [vote]="voteData"
+                      [refreshTick]="votersRefreshTick()"
                       [commentPrompts]="commentPrompts()"
                       [initialChoice]="votersChoice()"
                       [initialBallotUid]="votersBallot()" />

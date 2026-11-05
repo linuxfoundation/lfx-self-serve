@@ -193,6 +193,11 @@ export class FormationChecklistSectionComponent {
     this.initDeepLink();
   }
 
+  /** Re-reads the checklist in place (no skeleton) — the hosts call this after a formation-record save (#5134) so the card and checklist reflect the new stage. */
+  public reload(): void {
+    this.refresh$.next();
+  }
+
   protected onRetry(): void {
     this.loading.set(true);
     this.refresh$.next();

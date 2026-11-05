@@ -163,7 +163,7 @@ export function groupMeetingsByDayBucket(
  * Applies search and filters to a tab's rows (AND).
  * @description Search is a case-insensitive substring over the title and committee names. Hide declined
  * drops a series when every one of its rows in `rows` is declined, so pass the tab's unfiltered rows. It never hides a
- * meeting the viewer organizes ({@link isMeetingOrganizedByViewer}) and is ignored while the RSVP filter is "Not going".
+ * meeting the viewer organizes ({@link isMeetingHomeOrganizer}) and is ignored while the RSVP filter is "Not going".
  */
 export function filterMeetingsHome(
   rows: readonly MeetingHomeRow[],
@@ -180,9 +180,19 @@ export function filterMeetingsHome(
     if (!matchesEntityFilters(meeting, filters)) return false;
     if (filters.meetingType && meeting.meeting_type !== filters.meetingType) return false;
     if (!matchesRsvpFilter(row, filters.rsvp)) return false;
-    if (filters.organizedByMe && !isMeetingOrganizedByViewer(meeting, viewerUsername)) return false;
-    return !declinedSeries?.has(meeting.id) || isMeetingOrganizedByViewer(meeting, viewerUsername);
+    if (filters.organizedByMe && !isMeetingHomeOrganizer(meeting, viewerUsername)) return false;
+    return !declinedSeries?.has(meeting.id) || isMeetingHomeOrganizer(meeting, viewerUsername);
   });
+}
+
+/**
+ * Whether the viewer organizes the meeting on the home: owner/creator, the `organizer` flag, or listed in `organizers`.
+ * @description Wider than the row's Edit/Delete gate (the flag alone), so it must not gate actions.
+ */
+export function isMeetingHomeOrganizer(meeting: Meeting, viewerUsername: string | null): boolean {
+  if (meeting.organizer === true || isMeetingOrganizedByViewer(meeting, viewerUsername)) return true;
+  const viewer = normalizeUsername(viewerUsername);
+  return !!viewer && (meeting.organizers ?? []).some((entry) => normalizeUsername(entry) === viewer);
 }
 
 /** Number of applied filters, for the Filters button badge. Search does not count. */
@@ -219,11 +229,11 @@ export function buildMeetingFilterChips(filters: MeetingsHomeFilters, rows: read
 }
 
 /**
- * Recurring tooltip copy, e.g. "Repeats weekly on Thursday" or "Repeats every 2 weeks on Wednesday".
+ * Recurrence label, e.g. "Weekly on Thursday" or "Every 2 weeks on Wednesday".
  * @description A weekly rule without days falls back to the start's weekday in the meeting's time zone.
  * Returns null for one-time meetings and rules with no describable cadence.
  */
-export function getMeetingRecurrenceTooltip(
+export function getMeetingRecurrenceLabel(
   meeting: Pick<Meeting, 'recurrence' | 'start_time' | 'timezone'>,
   occurrence?: MeetingOccurrence | null
 ): string | null {
@@ -235,9 +245,16 @@ export function getMeetingRecurrenceTooltip(
     pattern.weeklyDaysArray = [getWeekdayIndex(occurrence?.start_time ?? meeting.start_time, meeting.timezone)];
   }
 
-  const { description } = buildRecurrenceSummary(pattern);
-  if (!description) return null;
-  return `Repeats ${description.charAt(0).toLowerCase()}${description.slice(1)}`;
+  return buildRecurrenceSummary(pattern).description || null;
+}
+
+/** Recurring tooltip copy, e.g. "Repeats weekly on Thursday" or "Repeats every 2 weeks on Wednesday"; null like the label. */
+export function getMeetingRecurrenceTooltip(
+  meeting: Pick<Meeting, 'recurrence' | 'start_time' | 'timezone'>,
+  occurrence?: MeetingOccurrence | null
+): string | null {
+  const label = getMeetingRecurrenceLabel(meeting, occurrence);
+  return label ? `Repeats ${label.charAt(0).toLowerCase()}${label.slice(1)}` : null;
 }
 
 /**
@@ -335,7 +352,6 @@ export function getMeetingHomeRowProject(
   if (!name) return null;
   return {
     name,
-    initial: Array.from(name)[0].toUpperCase(),
     logo: meeting.project_logo_url ?? '',
     url: getMeetingProjectUrl(meeting),
     label: `${meeting.is_foundation ? 'Jump to foundation' : 'Jump to project'}: ${name}`,
@@ -348,6 +364,12 @@ export function getMeetingHomeRowType(meeting: Pick<Meeting, 'meeting_type'>): M
   if (!type || type === MeetingType.NONE) return null;
   const config = MEETING_TYPE_CONFIGS[type.toLowerCase()];
   return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
+}
+
+/** Names of the groups a meeting belongs to, in order, without blanks or repeats. */
+export function getMeetingGroupNames(meeting: Pick<Meeting, 'committees'>): string[] {
+  const names = (meeting.committees ?? []).map((committee) => committee.name?.trim() ?? '').filter(Boolean);
+  return [...new Set(names)];
 }
 
 /** "Organized by" avatars: owner or creator first ("You" for the viewer), then the other `organizers` by username. */
