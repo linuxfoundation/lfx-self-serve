@@ -7,7 +7,7 @@ import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
-import { formatMeetingDateTime } from '@lfx-one/shared/utils';
+import { formatMeetingWhen } from '@lfx-one/shared/utils';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
@@ -135,16 +135,20 @@ describe('MeetingHomeRowComponent', () => {
       expect(text(fixture, 'meetings-home-row-date-day')).toBe(String(START.getDate()));
       expect(text(fixture, 'meetings-home-row-project-name')).toBe('Kubernetes');
       expect(text(fixture, 'meetings-home-row-title')).toBe('Series title');
-      expect(texts(fixture, 'meetings-home-row-when')).toEqual([formatMeetingDateTime(START), '1h']);
-      expect(texts(fixture, 'meetings-home-row-when')[0]).toMatch(/^\w{3}, \w{3} \d{1,2} · \d{1,2}:\d{2} [AP]M \S+$/);
+      expect(texts(fixture, 'meetings-home-row-when').join(' · ')).toBe(formatMeetingWhen(START, 60));
+      expect(texts(fixture, 'meetings-home-row-when')).toEqual([
+        expect.stringMatching(/^\w{3}, \w{3} \d{1,2}$/),
+        expect.stringMatching(/^\d{1,2}:\d{2} [AP]M \S+$/),
+        '60 min',
+      ]);
       expect(text(fixture, 'meetings-home-row-type').replace('·', '').trim()).toBe('Technical');
       expect(query(fixture, 'meetings-home-row-recurring')).toBeNull();
       expect(query(fixture, 'meetings-home-row-attended')).toBeNull();
     });
 
     it.each<[number, string]>([
-      [30, '30m'],
-      [90, '1h 30m'],
+      [30, '30 min'],
+      [90, '90 min'],
     ])("shows the occurrence's own title and a %i minute duration as %s", async (minutes, label) => {
       const fixture = await render(buildRow(buildMeeting(), { title: 'Occurrence title', durationMinutes: minutes }));
 

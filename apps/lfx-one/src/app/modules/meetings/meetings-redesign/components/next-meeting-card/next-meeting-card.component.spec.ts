@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow } from '@lfx-one/shared/interfaces';
-import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
+import { formatMeetingWhen } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -112,7 +112,7 @@ describe('NextMeetingCardComponent', () => {
     expect(query(fixture, 'meetings-home-next-card-empty')).toBeNull();
   });
 
-  it('renders the date tile, project, title, time range and the type and recurring tags', async () => {
+  it('renders the date tile, project, title, date line and the type and recurring tags', async () => {
     const meeting = buildMeeting({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } });
     const start = new Date(meeting.start_time);
     const fixture = await render(buildRow(meeting, start, { title: 'Occurrence title' }));
@@ -120,8 +120,7 @@ describe('NextMeetingCardComponent', () => {
     expect(text(fixture, 'meetings-home-next-card-date')).toContain(String(start.getDate()));
     expect(text(fixture, 'meetings-home-next-card-project')).toMatch(/Kubernetes$/);
     expect(text(fixture, 'meetings-home-next-card-title')).toBe('Occurrence title');
-    const weekday = start.toLocaleString('en-US', { weekday: 'short' });
-    expect(text(fixture, 'meetings-home-next-card-when')).toBe(`${weekday}, ${formatMeetingTimeRange(start, 60)} · 60m`);
+    expect(text(fixture, 'meetings-home-next-card-when')).toBe(formatMeetingWhen(start, 60));
     expect(text(fixture, 'meetings-home-next-card-type')).toBe('Technical');
     expect(text(fixture, 'meetings-home-next-card-recurring')).toBe('Recurring');
     expect(query(fixture, 'meetings-home-next-card-recurring')?.querySelector('i')?.classList).toContain('fa-arrows-repeat');

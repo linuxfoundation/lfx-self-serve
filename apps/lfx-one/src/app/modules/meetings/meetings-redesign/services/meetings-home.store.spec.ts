@@ -651,7 +651,7 @@ describe('MeetingsHomeStore', () => {
       store.setFilters({ ...store.filters(), project: 'p-1', organizedByMe: true });
 
       expect(store.filterChips()).toEqual([
-        { key: 'project', label: 'Project: Project One' },
+        { key: 'project', prefix: 'Project:', label: 'Project One' },
         { key: 'organizedByMe', label: 'Organized by me' },
       ]);
 
@@ -669,7 +669,7 @@ describe('MeetingsHomeStore', () => {
       ]);
       store.setFilters({ ...store.filters(), foundation: 'f-1', project: 'p-1' });
 
-      expect(store.filterChips().map((chip) => chip.label)).toEqual(['Foundation: Foundation One', 'Project: Project One']);
+      expect(store.filterChips().map((chip) => chip.label)).toEqual(['Foundation One', 'Project One']);
 
       store.clearFilter('foundation');
 

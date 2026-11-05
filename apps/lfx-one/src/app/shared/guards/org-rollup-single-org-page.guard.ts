@@ -3,9 +3,11 @@
 
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
-import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
+import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_ROLLUP_SEGMENT, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 
 import { AccountContextService } from '../services/account-context.service';
+
+const CLA_PAGE = 'easycla';
 
 /**
  * Keeps a page that is single-organization *by definition* off the All Organizations roll-up,
@@ -41,8 +43,29 @@ export const orgRollUpSingleOrgPageGuard: CanActivateFn = (route: ActivatedRoute
   // for a trip opened in another tab. Adoption re-points the selection off the roll-up anyway, so
   // nothing combined renders. `navigateToSelectedOrg` carves the same return out of its default
   // insert, for the same reason (#4415, Copilot).
-  if (route.queryParamMap.has(ORG_EASYCLA_RETURN_ORG_PARAM)) {
+  //
+  // All three conditions matter. Only the EasyCLA page adopts the parameter, so on Profile it is
+  // just an unread query string and `?org=` would have waved `/org/all/profile` straight through
+  // to the error this guard exists to prevent. Only the LEGACY mount can carry such a return — an
+  // addressed `/org/{segment}/easycla` already names its organization — so `/org/all/easycla?org=`
+  // is a hand-made address, not a return, and is refused. And an empty value adopts nothing
+  // (#4415, Copilot again).
+  if (isLegacyEasyclaReturn(route)) {
     return true;
   }
   return inject(Router).createUrlTree(['/org', ORG_ROLLUP_SEGMENT, 'overview']);
 };
+
+/**
+ * A corporate-signing return on the leftover mount: the EasyCLA page, reached at `/org/easycla/…`
+ * with no `:orgSegment` above it, carrying a non-empty organization to adopt.
+ */
+function isLegacyEasyclaReturn(route: ActivatedRouteSnapshot): boolean {
+  if (!route.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM)?.trim()) {
+    return false;
+  }
+  if (!route.pathFromRoot.some((node) => node.routeConfig?.path === CLA_PAGE)) {
+    return false;
+  }
+  return !route.pathFromRoot.some((node) => node.routeConfig?.path === `:${ORG_SEGMENT_PARAM}`);
+}

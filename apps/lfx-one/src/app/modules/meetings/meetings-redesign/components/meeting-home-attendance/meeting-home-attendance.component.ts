@@ -5,6 +5,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 import { MEETING_HOME_ATTENDANCE_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingHomeAttendance, UiTooltipItem } from '@lfx-one/shared/interfaces';
+import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 /**
@@ -14,7 +15,7 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
  */
 @Component({
   selector: 'lfx-meeting-home-attendance',
-  imports: [NgTemplateOutlet, UiTooltipDirective],
+  imports: [NgTemplateOutlet, UiNoteComponent, UiTooltipDirective],
   templateUrl: './meeting-home-attendance.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },

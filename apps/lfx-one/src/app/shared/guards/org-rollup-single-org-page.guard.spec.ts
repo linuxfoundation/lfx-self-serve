@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { convertToParamMap, Router, UrlTree } from '@angular/router';
+import { ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AccountContextService } from '../services/account-context.service';
@@ -25,22 +26,38 @@ describe('orgRollUpSingleOrgPageGuard', () => {
     });
   });
 
-  const run = (queryParams: Record<string, string> = {}): boolean | UrlTree =>
-    TestBed.runInInjectionContext(
-      () => orgRollUpSingleOrgPageGuard({ queryParamMap: convertToParamMap(queryParams) } as never, {} as never) as boolean | UrlTree
-    );
+  /**
+   * A route snapshot shaped like the real tree: the page node, and above it the `:orgSegment`
+   * parent on the addressed mount only. `pathFromRoot` is what the guard walks to tell the two
+   * mounts apart, so the fixture has to carry it.
+   */
+  const snapshot = (opts: { page: 'profile' | 'easycla'; addressed?: boolean; queryParams?: Record<string, string> }) => {
+    const page = { routeConfig: { path: opts.page }, queryParamMap: convertToParamMap(opts.queryParams ?? {}) };
+    const pathFromRoot = opts.addressed ? [{ routeConfig: { path: `:${ORG_SEGMENT_PARAM}` } }, page] : [page];
+    return { ...page, pathFromRoot } as never;
+  };
 
-  it('redirects the roll-up to its own overview', () => {
-    isRollUp.set(true);
+  const run = (opts: Parameters<typeof snapshot>[0]): boolean | UrlTree =>
+    TestBed.runInInjectionContext(() => orgRollUpSingleOrgPageGuard(snapshot(opts), {} as never) as boolean | UrlTree);
 
-    const result = run();
-
+  const redirectsToRollUpOverview = (result: boolean | UrlTree): void => {
     expect(result).toBeInstanceOf(UrlTree);
     expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/org/all/overview');
-  });
+  };
 
   it('lets a concrete organization through', () => {
-    expect(run()).toBe(true);
+    expect(run({ page: 'profile' })).toBe(true);
+    expect(run({ page: 'easycla', addressed: true })).toBe(true);
+  });
+
+  it.each([
+    ['addressed Profile', { page: 'profile' as const, addressed: true }],
+    ['legacy Profile', { page: 'profile' as const }],
+    ['addressed EasyCLA', { page: 'easycla' as const, addressed: true }],
+    ['legacy EasyCLA with no return', { page: 'easycla' as const }],
+  ])('redirects %s to the roll-up overview', (_label, opts) => {
+    isRollUp.set(true);
+    redirectsToRollUpOverview(run(opts));
   });
 
   /**
@@ -50,15 +67,23 @@ describe('orgRollUpSingleOrgPageGuard', () => {
    * tab mid-signing) would redirect the return away and lose the agreement destination and the
    * signing confirmation.
    */
-  it('lets a corporate-signing return through, roll-up cookie or not', () => {
+  it('lets a legacy corporate-signing return through, roll-up cookie or not', () => {
     isRollUp.set(true);
 
-    expect(run({ org: '0014100000AaaAAAAA', signed: '1' })).toBe(true);
+    expect(run({ page: 'easycla', queryParams: { org: '0014100000AaaAAAAA', signed: '1' } })).toBe(true);
   });
 
-  it('still redirects an EasyCLA address that carries no signing return', () => {
+  /**
+   * Copilot again, on the first fix: keying on `?org=` alone was too wide. Only EasyCLA adopts the
+   * parameter, only the legacy mount can carry such a return, and an empty value adopts nothing —
+   * so each of these is a hand-made address aimed at the sentinel, not a signing return.
+   */
+  it.each([
+    ['Profile, which never adopts the parameter', { page: 'profile' as const, queryParams: { org: '0014100000AaaAAAAA' } }],
+    ['an addressed EasyCLA, which already names its organization', { page: 'easycla' as const, addressed: true, queryParams: { org: '0014100000AaaAAAAA' } }],
+    ['a return whose organization is empty', { page: 'easycla' as const, queryParams: { org: '   ', signed: '1' } }],
+  ])('still redirects %s', (_label, opts) => {
     isRollUp.set(true);
-
-    expect(run({ signed: '1' })).toBeInstanceOf(UrlTree);
+    redirectsToRollUpOverview(run(opts));
   });
 });

@@ -100,7 +100,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
       asOf: '2026-10-30T09:48:21.094Z',
       rosterMembers: 40,
       rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
-      peopleWithTrainingActivity: 13,
+      peopleWithTrainingActivity: 10,
       learnersOutsidePeopleList: 3,
       coursesTaken: 20,
       certifications: 5,
@@ -173,15 +173,31 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
 
     const unfiltered = await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
     expect(unfiltered.learnersOutsidePeopleList).toBe(3);
-    expect(unfiltered.peopleWithTrainingActivity).toBe(13);
+    // People are the people-list pairs only: the outside learners are never added.
+    expect(unfiltered.peopleWithTrainingActivity).toBe(PAIR_ROW.PEOPLE);
+    expect(unfiltered.peopleWithTrainingActivity).not.toBe(PAIR_ROW.PEOPLE + 3);
     expect(outsideCalls()).toBe(1);
 
     execute.mockClear();
     mockStatsRows({ pairs: [PAIR_ROW], outside: [{ PEOPLE: 3 }] });
     const filtered = await service.getTrainingStats(ACCOUNT, { ...QUERY, level: 'Beginner' }, 'org-grant');
-    expect(filtered.learnersOutsidePeopleList).toBe(0);
-    expect(filtered.peopleWithTrainingActivity).toBe(10);
+    expect(filtered.learnersOutsidePeopleList).toBeNull();
+    expect(filtered.peopleWithTrainingActivity).toBe(PAIR_ROW.PEOPLE);
     expect(outsideCalls()).toBe(0);
+  });
+
+  it('reads every strip metric from the people-list pairs and the outside rows only for the outside tile', async () => {
+    mockStatsRows({ pairs: [PAIR_ROW], outside: [{ PEOPLE: 3 }] });
+
+    await service.getTrainingStats(ACCOUNT, QUERY, 'org-grant');
+
+    const [pairsSql] = pairsCall();
+    expect(pairsSql).toContain('AND IS_ON_PEOPLE_LIST');
+    expect(pairsSql).not.toContain('NOT IS_ON_PEOPLE_LIST');
+    expect(pairsSql).toMatch(/FROM f\s*$/);
+    const outsideStatements = execute.mock.calls.map(([statement]) => statement as string).filter((statement) => statement.includes('NOT IS_ON_PEOPLE_LIST'));
+    expect(outsideStatements).toHaveLength(1);
+    expect(outsideStatements[0]).toMatch(/SELECT COUNT\(DISTINCT PERSON_KEY\) AS PEOPLE\s+FROM ANALYTICS/);
   });
 
   it('reads the outside learners without people-list rows of the same key, in the same range', async () => {
@@ -225,7 +241,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
     }
   });
 
-  it('caches per range and filter set under v5, and rejects a stored entry of the old shape', async () => {
+  it('caches per range and filter set under v6, and rejects a stored entry of the old shape', async () => {
     mockStatsRows({});
     const keyOf = async (query: OrgTrainingStatsQuery): Promise<string> => {
       withOrgCache.mockClear();
@@ -242,9 +258,9 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
       await keyOf({ ...QUERY, format: 'A' }),
     ]);
 
-    expect(base).toBe(`training-stats:v5:${orgTrainingFiltersSignature(QUERY)}`);
+    expect(base).toBe(`training-stats:v6:${orgTrainingFiltersSignature(QUERY)}`);
     expect(keys.size).toBe(5);
-    expect(base).toMatch(/^training-stats:v5:[A-Za-z0-9_-]+$/);
+    expect(base).toMatch(/^training-stats:v6:[A-Za-z0-9_-]+$/);
   });
 
   describe('cache guard', () => {

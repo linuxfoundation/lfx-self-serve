@@ -265,12 +265,34 @@ const ROWS: TrainingRow[] = [
   // Never counted.
   row({ person: 'p1', ...CKA, courseOrCertId: 'other-account-row', status: 'Certified', activityTs: '2026-04-02 00:00:00', account: OTHER_ACCOUNT }),
   row({ person: 'p4', courseOrCertId: 'off-list', courseId: 'intro', status: 'Certified', activityTs: '2026-04-03 00:00:00', onPeopleList: false }),
+  // Learners off the people list: p4 (above) and p5 are outside learners; p1 is also on the list (one person); p6 is undated, p7 is another organization's.
+  row({ person: 'p5', courseOrCertId: 'off-list-enrolled', courseId: 'intro', status: 'Enrolled', activityTs: '2026-04-05 00:00:00', onPeopleList: false }),
+  row({ person: 'p1', courseOrCertId: 'off-list-same-key', courseId: 'intro', status: 'Enrolled', activityTs: '2026-04-06 00:00:00', onPeopleList: false }),
+  row({ person: 'p6', courseOrCertId: 'off-list-undated', courseId: 'intro', status: 'Enrolled', activityTs: null, onPeopleList: false }),
+  row({
+    person: 'p7',
+    courseOrCertId: 'off-list-other-account',
+    courseId: 'intro',
+    status: 'Enrolled',
+    activityTs: '2026-04-07 00:00:00',
+    onPeopleList: false,
+    account: OTHER_ACCOUNT,
+  }),
   row({ person: 'p1', courseOrCertId: 'unknown-status', courseId: 'ghost-one', status: 'Dropped', activityTs: '2026-04-04 00:00:00' }),
   row({ person: 'p1', courseOrCertId: 'undated', courseId: 'ghost-two', status: 'Enrolled', activityTs: null }),
 ];
 
 /** The rows the organization's people list counts: this account, on the list, a known status, a date. */
 const COUNTED = ROWS.filter((r) => r.account === ACCOUNT && r.onPeopleList && (r.status === 'Enrolled' || r.status === 'Certified') && r.activityTs !== null);
+
+/** Written from the rule's description alone: people with a dated, known-status row off the people list who have no people-list row in the same counted set. */
+function handOutsidePeople(): number {
+  const onList = new Set(COUNTED.map((r) => r.person));
+  const outside = ROWS.filter(
+    (r) => r.account === ACCOUNT && !r.onPeopleList && (r.status === 'Enrolled' || r.status === 'Certified') && r.activityTs !== null && !onList.has(r.person)
+  );
+  return new Set(outside.map((r) => r.person)).size;
+}
 
 /** A warehouse row as the Trainees detail read hands it to the client (the mirror's input). */
 function toDetail(r: TrainingRow): OrgTraineeDetailRow {
@@ -450,7 +472,9 @@ describe('pairs SQL run against SQLite over mixed-attribute rows', () => {
   });
 
   it('keeps the rows no number may count out of the fixture counts', () => {
-    expect(ROWS.length - COUNTED.length).toBe(4);
+    expect(ROWS.length - COUNTED.length).toBe(8);
+    // Outside learners: p4 and p5 only (p1 is on the list, p6 is undated, p7 belongs to another organization).
+    expect(handOutsidePeople()).toBe(2);
     expect(handPairs()).toHaveLength(8);
   });
 
@@ -516,14 +540,14 @@ describe('pairs SQL run against SQLite over mixed-attribute rows', () => {
 
       const stats = await service.getTrainingStats(ACCOUNT, q, 'auditor-entitlement');
 
-      // The learners off the people list count toward people only while no filter is set (one learner in the fixture).
-      const outside = Object.values(filters).some((value) => value !== undefined) ? 0 : 1;
+      // The learners off the people list are their own number, only while no filter is set; they never enter the people count.
+      const outside = Object.values(filters).some((value) => value !== undefined) ? null : handOutsidePeople();
       const fromSql: Expected = {
         coursesTaken: stats.coursesTaken,
         certifications: stats.certifications,
         trainingsCompleted: stats.trainingsCompleted,
         coursesInProgress: stats.coursesInProgress,
-        people: stats.peopleWithTrainingActivity - stats.learnersOutsidePeopleList,
+        people: stats.peopleWithTrainingActivity,
         certifiedPeople: stats.certifiedPeople,
         peopleInTraining: stats.peopleInTraining,
       };
@@ -537,6 +561,20 @@ describe('pairs SQL run against SQLite over mixed-attribute rows', () => {
       expect(execute.mock.calls.some(([sql]) => (sql as string).includes('rows_in_range AS') && (sql as string).includes('COUNT_IF'))).toBe(true);
     }
   );
+
+  it('counts people on the people list only, and the learners outside it as their own number (0 with any filter)', async () => {
+    const unfiltered = await service.getTrainingStats(ACCOUNT, query({}), 'auditor-entitlement');
+    expect(unfiltered.peopleWithTrainingActivity).toBe(new Set(COUNTED.map((r) => r.person)).size);
+    expect(unfiltered.peopleWithTrainingActivity).toBe(handCount(query({})).people);
+    expect(unfiltered.learnersOutsidePeopleList).toBe(handOutsidePeople());
+    expect(unfiltered.learnersOutsidePeopleList).toBe(2);
+
+    for (const filters of [{ level: 'Beginner' }, { foundation: 'f-a' }, { project: 'proj-a' }, { course: 'Intro to K8s' }, { format: 'E-Learning' }]) {
+      const filtered = await service.getTrainingStats(ACCOUNT, query(filters), 'auditor-entitlement');
+      expect(filtered.learnersOutsidePeopleList, JSON.stringify(filters)).toBeNull();
+      expect(filtered.peopleWithTrainingActivity, JSON.stringify(filters)).toBe(handCount(query(filters)).people);
+    }
+  });
 
   it('resolves each pair attribute across all its in-range rows, as the hand-written rule does (MAX, MAX_BY by id, latest non-null format)', async () => {
     const { cte, binds } = buildOrgTrainingPairsCte(ACCOUNT, query({}));
