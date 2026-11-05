@@ -82,7 +82,7 @@ The CLAs tab matches agreements to your LF username, verified emails, and linked
 
 ## Can I sign a CLA from the CLAs tab?
 
-You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which linked GitHub account to sign under. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
+You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which identity to sign under — a linked GitHub account, your LF identity for Gerrit, or either, depending on where the CLA group's repositories live. Signing for a GitLab-only CLA group isn't supported from Self Serve. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
 
 ## Why does a search result say "Already signed as" when I search for a CLA to sign?
 

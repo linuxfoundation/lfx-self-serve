@@ -72,6 +72,7 @@ The **Status** column on the CLAs tab tells you whether an agreement still cover
 | **Needs attention** | You were approved once, but the agreement no longer covers you — most often because you have dropped off your employer's **Approved List**.                                      | CCLA coverage only  |
 | **Invalidated**     | The agreement is no longer in force. A CLA manager removed you from your employer's **Approved List**, a project maintainer invalidated your ICLA, or the CLA group was deleted. | ICLA, CCLA coverage |
 | **Revoked**         | Your employer was flagged by sanctions screening. This is set by EasyCLA, cannot be changed from Self Serve, and leaves no actions on the row.                                   | CCLA coverage only  |
+| **—**               | EasyCLA couldn't report a status for this coverage. The row still offers **Request Removal**.                                                                                    | CCLA coverage only  |
 
 Some statuses add a second line under the label.
 
@@ -117,12 +118,21 @@ You will not see a **⋮** on:
 
 You start signing from the CLAs tab and finish in the EasyCLA Contributor Console:
 
-1. Select **Sign CLA** at the top right of the CLAs tab.
+1. Select **Sign CLA** at the top right of the CLAs tab. The button is unavailable until your CLAs have loaded; if the list fails to load, select **Retry** first.
 2. In the **Sign a CLA** dialog, type at least three characters. You can search by project name, CLA group name, a linked GitHub, GitLab, or Gerrit organization, or by pasting a repository link.
 3. Each result shows why it matched — project name, CLA group name, linked organization, or repository link — so you can tell near-identical names apart.
 4. Select the right result and choose **Continue to sign**.
-5. Choose which of your linked GitHub accounts to sign under, then select **Continue to sign** again. Nothing is selected for you, and the step appears even when you have only one account linked — its job is to tell you which identity the agreement will be recorded against. If you have no GitHub account linked, the step says so and offers a link to [Identities](/profile/identities); you cannot continue past it until you link one.
-6. Self Serve hands you off to the EasyCLA Contributor Console, which presents and records the agreement. When you finish there, you are returned to the CLAs tab.
+5. Choose the identity to sign under. What the step offers depends on where the CLA group's repositories live:
+   - **GitHub repositories** — **Select a GitHub account** lists your linked GitHub accounts. If you have none linked, the step says _No GitHub accounts are connected to your profile yet. Link one from Identities, then come back to sign._ and offers **Go to Identities**; you can't continue until you link one.
+   - **Gerrit repositories** — **Select a Gerrit account** offers your LF identity.
+   - **Both** — **Select a GitHub or Gerrit account** lists your GitHub accounts and your LF identity, each labeled **(GitHub)** or **(Gerrit)**.
+
+   Nothing is selected for you, and the step appears even when there is only one choice — its job is to tell you which identity the agreement will be recorded against. Select **Continue to sign** again.
+
+6. If you chose a Gerrit identity and the CLA group offers both agreement types, **What type of contributor are you?** asks you to pick **Individual Contributor** (content you own) or **Corporate Contributor** (content owned by your employer). A type you already hold under that identity is unavailable — _You already have this agreement for this CLA group signed with this identity._
+7. Self Serve hands you off to the EasyCLA Contributor Console, which presents and records the agreement. When you finish there, you are returned to the CLAs tab.
+
+If the CLA group's repositories are only on GitLab, a **GitLab CLA signing** dialog says _Signing CLA using GitLab is not supported from Self Serve_ instead, and you sign in EasyCLA directly.
 
 If the search returns more matches than it can display, narrow the term — the dialog tells you when results were truncated.
 
@@ -138,13 +148,13 @@ Results are matched per **CLA group**, not per project. A project with more than
 
 How each status on an existing CLA affects the identity step, once that agreement matches an identity offered in the step. A matching agreement only greys the identity when no enabled contract type remains unsigned for it:
 
-| Status on your existing CLA               | Counts as held? | What to do instead                                                                                                                                      |
-| ----------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Valid**                                 | Yes             | If a type remains unsigned (for example CCLA coverage after an ICLA), continue with this identity. Otherwise nothing — that identity is already covered |
-| **Needs attention** (CCLA coverage)       | Yes             | Signing again does not restore coverage. Use **Request approval** on the CLAs row to ask your employer's CLA managers to approve you again              |
-| **Revoked** (CCLA coverage)               | Yes             | This is a sanctions-screening outcome and cannot be changed from Self Serve                                                                             |
-| **—** (no status recorded, CCLA coverage) | Yes             | The status could not be read, so this agreement still counts as held rather than offer you a signature that may do nothing                              |
-| **Invalidated**                           | No              | That agreement no longer covers you, so you can sign again with the same identity                                                                       |
+| Status on your existing CLA               | Counts as held? | What to do instead                                                                                                                                                                                                 |
+| ----------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Valid**                                 | Yes             | If a type remains unsigned (for example CCLA coverage after an ICLA), continue with this identity. Otherwise nothing — that identity is already covered                                                            |
+| **Needs attention** (CCLA coverage)       | Yes             | Signing again does not restore coverage. Use **Request approval** (offered when you are off the Approved List) or **Contact CLA Manager** on the CLAs row to ask your employer's CLA managers to approve you again |
+| **Revoked** (CCLA coverage)               | Yes             | This is a sanctions-screening outcome and cannot be changed from Self Serve                                                                                                                                        |
+| **—** (no status recorded, CCLA coverage) | Yes             | The status could not be read, so this agreement still counts as held rather than offer you a signature that may do nothing                                                                                         |
+| **Invalidated**                           | No              | That agreement no longer covers you, so you can sign again with the same identity                                                                                                                                  |
 
 ## How do I ask my CLA manager to approve or remove my CCLA coverage?
 
@@ -187,8 +197,6 @@ The CLAs tab only finds agreements that match an identity linked to your LFX acc
 3. Return to **CLAs** — newly linked Email/GitHub identities are included on the next load.
 
 If an agreement is still missing after that, see [EasyCLA troubleshooting](https://docs.linuxfoundation.org/lfx/easycla/v2-current/getting-started/easycla-troubleshooting).
-
-The info banner on the CLAs tab also points to the Identities flow (_Link your Email or GitHub accounts →_). Linking Email or GitHub is what recovers missing CLA matches today.
 
 ## Can I download my signed CLA PDF?
 
