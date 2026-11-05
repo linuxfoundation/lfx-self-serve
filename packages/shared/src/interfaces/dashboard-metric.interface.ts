@@ -443,6 +443,8 @@ export interface FilterPillOption {
   ariaLabel?: string;
   /** Optional accent for the default `pill` variant; omitted pills keep the blue selected style */
   color?: FilterPillColor;
+  /** Optional count shown as a small badge beside the label; omitted (or 0) renders none */
+  count?: number;
 }
 
 /** Accent colors a filter pill can take */

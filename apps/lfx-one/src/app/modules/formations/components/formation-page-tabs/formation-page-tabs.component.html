@@ -10,12 +10,18 @@
       [id]="idPrefix() + '-tab-' + option.id"
       class="inline-flex items-center gap-2 px-4 py-3 text-sm border-b-2 -mb-px font-medium transition-colors"
       [class]="active() === option.id ? 'border-blue-500 text-slate-900' : 'border-transparent text-gray-500 hover:text-slate-700'"
+      [attr.aria-label]="option.ariaLabel || null"
       [attr.aria-selected]="active() === option.id"
       [attr.aria-controls]="idPrefix() + '-panel-' + option.id"
       [attr.tabindex]="active() === option.id ? 0 : -1"
       (click)="select(option.id)"
       [attr.data-testid]="idPrefix() + '-' + option.id">
       {{ option.label }}
+      @if (option.count; as count) {
+        <span aria-hidden="true" [attr.data-testid]="idPrefix() + '-' + option.id + '-count'">
+          <lfx-badge [value]="count" severity="secondary" />
+        </span>
+      }
     </button>
   }
 </div>

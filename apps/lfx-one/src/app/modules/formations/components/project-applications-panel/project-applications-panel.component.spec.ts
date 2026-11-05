@@ -4,7 +4,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import type { ProjectApplication, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
 import { ProjectApplicationService } from '@services/project-application.service';
 import { ProjectService } from '@services/project.service';
@@ -259,5 +260,69 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
       expect(startedFrom(fixture, 'a')).toBeNull();
       expect(getProject).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('ProjectApplicationsPanelComponent — deep link (#5229)', () => {
+  const KNOWN = '3f2b8c1e-7a4d-4e1b-9c2a-5d6e7f8a9b0c';
+  const OTHER = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+  let navigate: MockInstance<Router['navigate']>;
+
+  const mount = async (mode: ProjectApplicationViewMode, param: string | null, fetched: ProjectApplication[]) => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ProjectApplicationsPanelComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(param ? { tab: 'proposals', application: param } : {})) } },
+        { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])), getProject: vi.fn(() => of(null)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        DialogService,
+      ],
+    }).compileComponents();
+    navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    vi.spyOn(TestBed.inject(ProjectApplicationService), 'getApplications').mockReturnValue(of(fetched));
+    const fixture = TestBed.createComponent(ProjectApplicationsPanelComponent);
+    fixture.componentRef.setInput('mode', mode);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.componentInstance as unknown as { selectedUid: () => string | null; drawerVisible: () => boolean };
+  };
+
+  it('opens the drawer for a known uid once, and strips the param', async () => {
+    const panel = await mount('staff', KNOWN, [buildApplication({ uid: OTHER }), buildApplication({ uid: KNOWN })]);
+    expect(panel.selectedUid()).toBe(KNOWN);
+    expect(panel.drawerVisible()).toBe(true);
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate.mock.calls[0][1]).toMatchObject({ queryParams: { application: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  });
+
+  it('matches the uid case-insensitively', async () => {
+    const panel = await mount('staff', KNOWN.toUpperCase(), [buildApplication({ uid: KNOWN })]);
+    expect(panel.selectedUid()).toBe(KNOWN);
+  });
+
+  it('ignores a uid that is not in the queue', async () => {
+    const panel = await mount('staff', OTHER, [buildApplication({ uid: KNOWN })]);
+    expect(panel.selectedUid()).toBeNull();
+    expect(panel.drawerVisible()).toBe(false);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('ignores a malformed uid', async () => {
+    const panel = await mount('staff', 'not-a-uuid', [buildApplication({ uid: 'not-a-uuid' })]);
+    expect(panel.selectedUid()).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('ignores the param in submitter mode', async () => {
+    const panel = await mount('submitter', KNOWN, [buildApplication({ uid: KNOWN })]);
+    expect(panel.selectedUid()).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

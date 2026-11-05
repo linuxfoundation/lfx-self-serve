@@ -106,4 +106,30 @@ describe('FormationPageTabsComponent (#3037)', () => {
     tabs[2].click();
     expect(emitted).toEqual(['proposals']);
   });
+
+  describe('count (#5229)', () => {
+    const setOptions = (options: FilterPillOption[]): void => {
+      fixture.componentRef.setInput('options', options);
+      fixture.detectChanges();
+    };
+    const count = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="tabs-${id}-count"]`);
+
+    it('renders no count and no aria-label override when none is given', () => {
+      expect(fixture.nativeElement.querySelectorAll('[data-testid$="-count"]')).toHaveLength(0);
+      expect(fixture.nativeElement.querySelector('[role="tab"]').hasAttribute('aria-label')).toBe(false);
+    });
+
+    it('renders the count as a badge, with the accessible name from ariaLabel', () => {
+      setOptions([...OPTIONS.slice(0, 2), { id: 'proposals', label: 'Proposals', count: 3, ariaLabel: 'Proposals, 3 awaiting review' }]);
+      expect(count('proposals')?.textContent?.trim()).toBe('3');
+      expect(count('formations')).toBeNull();
+      const tab: HTMLElement = fixture.nativeElement.querySelector('#tabs-tab-proposals');
+      expect(tab.getAttribute('aria-label')).toBe('Proposals, 3 awaiting review');
+    });
+
+    it('renders nothing for a zero count', () => {
+      setOptions([...OPTIONS.slice(0, 2), { id: 'proposals', label: 'Proposals', count: 0 }]);
+      expect(count('proposals')).toBeNull();
+    });
+  });
 });

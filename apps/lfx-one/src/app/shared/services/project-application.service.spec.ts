@@ -3,11 +3,14 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import type { ProjectApplication } from '@lfx-one/shared/interfaces';
+import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectApplicationService } from './project-application.service';
+import { UserService } from './user.service';
 
 const UID = '3f2b8c1e-7a4d-4e1b-9c2a-5d6e7f8a9b0c';
 
@@ -32,7 +35,7 @@ describe('ProjectApplicationService (#3037)', () => {
   let http: HttpTestingController;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), { provide: MessageService, useValue: { add: vi.fn() } }] });
     service = TestBed.inject(ProjectApplicationService);
     http = TestBed.inject(HttpTestingController);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -201,5 +204,106 @@ describe('ProjectApplicationService (#3037)', () => {
     service.recordWrite('submitter', buildApplication());
     service.forget('submitter', UID);
     expect(service.overlay('submitter')()).toEqual([]);
+  });
+
+  describe('shared staff read and pending count (#5229)', () => {
+    const queue = [buildApplication({ uid: 'a' }), buildApplication({ uid: 'b' }), buildApplication({ uid: 'c', state: 'accepted' })];
+    const flushQueue = (list = queue): void => http.expectOne('/api/project-applications/queue').flush(list);
+
+    it('has no count before a read, and counts only awaiting-decision states over the read', () => {
+      expect(service.pendingStaffCount()).toBeNull();
+      service.refreshStaff();
+      expect(service.pendingStaffCount()).toBeNull();
+      flushQueue();
+      expect(service.pendingStaffCount()).toBe(2);
+    });
+
+    it('drops the count on an overlay accept, deny or withdraw, without a refetch', () => {
+      service.refreshStaff();
+      flushQueue();
+      service.recordWrite('staff', buildApplication({ uid: 'a', state: 'accepted', revision: 8 }));
+      expect(service.pendingStaffCount()).toBe(1);
+      service.recordWrite('staff', buildApplication({ uid: 'b', state: 'withdrawn', revision: 8 }));
+      expect(service.pendingStaffCount()).toBe(0);
+      http.expectNone('/api/project-applications/queue');
+    });
+
+    it('drops the count on a deletion', () => {
+      service.refreshStaff();
+      flushQueue();
+      service.recordDeleted('staff', 'a');
+      expect(service.pendingStaffCount()).toBe(1);
+    });
+
+    it('joins a read already in flight, so two callers make one request', () => {
+      service.refreshStaff();
+      service.refreshStaff();
+      flushQueue();
+      http.expectNone('/api/project-applications/queue');
+      service.refreshStaff();
+      flushQueue();
+    });
+
+    it('cancels the in-flight read when asked to supersede it', () => {
+      service.refreshStaff();
+      const stale = http.expectOne('/api/project-applications/queue');
+      service.refreshStaff({ supersede: true });
+      expect(stale.cancelled).toBe(true);
+      flushQueue([buildApplication({ uid: 'x' })]);
+      expect(service.pendingStaffCount()).toBe(1);
+    });
+
+    it('never caches an error: no count, the last good list is kept, and the next refresh tries again', () => {
+      service.refreshStaff();
+      flushQueue();
+      service.refreshStaff();
+      http.expectOne('/api/project-applications/queue').flush('boom', { status: 500, statusText: 'Server Error' });
+      expect(service.staffError()).toBe(true);
+      expect(service.pendingStaffCount()).toBeNull();
+      expect(service.staffApplications()).toHaveLength(3);
+
+      service.refreshStaff();
+      flushQueue();
+      expect(service.staffError()).toBe(false);
+      expect(service.pendingStaffCount()).toBe(2);
+    });
+
+    it('shows no count, not zero, when the very first read fails', () => {
+      service.refreshStaff();
+      http.expectOne('/api/project-applications/queue').flush('boom', { status: 500, statusText: 'Server Error' });
+      expect(service.pendingStaffCount()).toBeNull();
+      expect(service.staffApplications()).toBeNull();
+    });
+
+    it('prunes the overlay against each fresh read', () => {
+      service.recordWrite('staff', buildApplication({ uid: 'a', state: 'denied', revision: 8 }));
+      service.refreshStaff();
+      flushQueue([buildApplication({ uid: 'a', state: 'denied', revision: 8 }), buildApplication({ uid: 'b' })]);
+      expect(service.overlay('staff')()).toEqual([]);
+    });
+
+    it('leaves the submitter read uncached: every call is its own request', () => {
+      service.getApplications('submitter').subscribe();
+      service.getApplications('submitter').subscribe();
+      expect(http.match('/api/project-applications/mine')).toHaveLength(2);
+    });
+
+    it('clears the list, overlays and deletions when the signed-in identity changes', () => {
+      service.refreshStaff();
+      flushQueue();
+      service.recordWrite('staff', buildApplication({ uid: 'a', state: 'denied', revision: 8 }));
+      service.recordDeleted('submitter', 'z');
+
+      const user = TestBed.inject(UserService);
+      TestBed.tick(); // let the identity watcher take its initial value before the identity changes
+      (user.user as ReturnType<typeof signal>).set({ sub: 'auth0|someone-else' });
+      TestBed.tick();
+
+      expect(service.staffApplications()).toBeNull();
+      expect(service.pendingStaffCount()).toBeNull();
+      expect(service.overlay('staff')()).toEqual([]);
+      expect([...service.deletedUids('submitter')()]).toEqual([]);
+      http.match('/api/profile'); // UserService's own post-render avatar read, unrelated to this test
+    });
   });
 });

@@ -11,6 +11,8 @@ import {
   PROJECT_APPLICATION_FIELD_LABELS,
   PROJECT_APPLICATION_LONG_TEXT_KEYS,
   PROJECT_APPLICATION_MAILTO_FORBIDDEN_CHARS_REGEX,
+  PROJECT_APPLICATION_PENDING_COUNT_COPY,
+  PROJECT_APPLICATION_TABS,
   PROJECT_APPLICATION_SECTIONS,
   PROJECT_APPLICATION_SPEC_CATEGORY,
   PROJECT_APPLICATION_STATE_META,
@@ -19,6 +21,7 @@ import {
   PROJECT_APPLICATION_URL_KEYS,
   PROJECT_APPLICATION_URL_KEYS_REQUIRING_HOST,
 } from '../constants/project-application.constants';
+import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   ProjectApplication,
   ProjectApplicationAnswerKind,
@@ -92,6 +95,26 @@ export function toProjectApplicationRow(application: ProjectApplication): Projec
 /** Only a `submitted` application can still be revised, withdrawn, accepted or denied. */
 export function isProjectApplicationOpen(application: Pick<ProjectApplication, 'state'>): boolean {
   return application.state === 'submitted';
+}
+
+/** How many applications still await a decision. */
+export function countOpenProjectApplications(applications: readonly Pick<ProjectApplication, 'state'>[]): number {
+  return applications.filter(isProjectApplicationOpen).length;
+}
+
+/**
+ * Puts the pending count on the Project proposals tab (#5229). A count below 1, or an unknown one (`null`: not
+ * read yet, or the read failed), leaves the options untouched so no number is ever guessed.
+ */
+export function withProposalsPendingCount(options: readonly FilterPillOption[], count: number | null): FilterPillOption[] {
+  if (count === null || count < 1) {
+    return [...options];
+  }
+  return options.map((option) =>
+    option.id === PROJECT_APPLICATION_TABS.proposals
+      ? { ...option, count, ariaLabel: `${option.label}, ${count} ${PROJECT_APPLICATION_PENDING_COUNT_COPY.ariaSuffix}` }
+      : option
+  );
 }
 
 /** `formation_list` → `Formation list`. */

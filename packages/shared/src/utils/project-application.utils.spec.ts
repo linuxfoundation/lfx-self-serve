@@ -7,6 +7,7 @@ import type { ProjectApplication, UpstreamProjectApplicationDoc } from '../inter
 import {
   buildCreateProjectRequest,
   buildProjectApplicationAnswerSections,
+  countOpenProjectApplications,
   formatProjectApplicationAnswer,
   getProjectApplicationStateMeta,
   getProjectApplicationStatusCallout,
@@ -19,6 +20,7 @@ import {
   toProjectApplicationUrlLink,
   upsertProjectApplication,
   validateProjectApplicationAnswers,
+  withProposalsPendingCount,
 } from './project-application.utils';
 
 function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectApplication {
@@ -341,5 +343,39 @@ describe('projectSlugFromName (#1995)', () => {
     [null, ''],
   ])('%j -> %j', (name, slug) => {
     expect(projectSlugFromName(name)).toBe(slug);
+  });
+});
+
+describe('countOpenProjectApplications (#5229)', () => {
+  it('counts only applications awaiting a decision', () => {
+    const list = [
+      buildApplication({ uid: 'a' }),
+      buildApplication({ uid: 'b', state: 'denied' }),
+      buildApplication({ uid: 'c', state: 'accepted' }),
+      buildApplication({ uid: 'd', state: 'withdrawn' }),
+      buildApplication({ uid: 'e', state: 'something-new' }),
+      buildApplication({ uid: 'f' }),
+    ];
+    expect(countOpenProjectApplications(list)).toBe(2);
+    expect(countOpenProjectApplications([])).toBe(0);
+  });
+});
+
+describe('withProposalsPendingCount (#5229)', () => {
+  const options = [
+    { id: 'formations', label: 'Formations' },
+    { id: 'proposals', label: 'Project proposals' },
+  ];
+
+  it('adds the count and an accessible name to the proposals tab only', () => {
+    expect(withProposalsPendingCount(options, 3)).toEqual([
+      { id: 'formations', label: 'Formations' },
+      { id: 'proposals', label: 'Project proposals', count: 3, ariaLabel: 'Project proposals, 3 awaiting review' },
+    ]);
+  });
+
+  it('leaves the options untouched for zero, or an unknown count', () => {
+    expect(withProposalsPendingCount(options, 0)).toEqual(options);
+    expect(withProposalsPendingCount(options, null)).toEqual(options);
   });
 });

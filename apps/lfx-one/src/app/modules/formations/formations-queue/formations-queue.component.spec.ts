@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
@@ -11,8 +13,8 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { ProjectContextService } from '@services/project-context.service';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
-import type { FormationsQueueResponse, ProjectContext } from '@lfx-one/shared/interfaces';
-import { Observable, of, Subject } from 'rxjs';
+import type { FormationsQueueResponse, ProjectApplication, ProjectContext } from '@lfx-one/shared/interfaces';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationsQueueComponent } from './formations-queue.component';
@@ -176,13 +178,32 @@ describe('FormationsQueueComponent — health tiles (#2782)', () => {
   });
 });
 
+function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectApplication {
+  return {
+    uid: 'a',
+    state: 'submitted',
+    revision: 1,
+    submitter_username: 'jdoe',
+    submitter_name: 'Jane Doe',
+    submitter_email: 'jane@example.org',
+    target_parent_uid: null,
+    application: { project_name: 'Alpha' },
+    created_at: '2026-09-01T00:00:00Z',
+    updated_at: '2026-09-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
 describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
   let getFormationsQueue: ReturnType<typeof vi.fn>;
+  let getApplications: ReturnType<typeof vi.spyOn>;
+  let applicationService: ProjectApplicationService;
 
   const render = async (options: {
     slug: string | null;
     isFormationTeam: boolean | Observable<boolean>;
     tab?: string;
+    queue?: ProjectApplication[] | Observable<ProjectApplication[]>;
   }): Promise<ComponentFixture<FormationsQueueComponent>> => {
     TestBed.resetTestingModule();
     getFormationsQueue = vi.fn(() => of(createEmptyFormationsQueueResponse()));
@@ -199,16 +220,8 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
             ),
           },
         },
-        {
-          provide: ProjectApplicationService,
-          useValue: {
-            getAccess: () => (typeof options.isFormationTeam === 'boolean' ? of(options.isFormationTeam) : options.isFormationTeam),
-            getApplications: () => of([]),
-            overlay: () => signal([]),
-            deletedUids: () => signal(new Set<string>()),
-            reconcile: vi.fn(),
-          },
-        },
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(options.tab ? { tab: options.tab } : {})) } },
         { provide: ProjectService, useValue: { searchProjects: () => of([]) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
@@ -216,6 +229,13 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
         DialogService,
       ],
     }).compileComponents();
+
+    applicationService = TestBed.inject(ProjectApplicationService);
+    vi.spyOn(applicationService, 'getAccess').mockReturnValue(
+      typeof options.isFormationTeam === 'boolean' ? of(options.isFormationTeam) : options.isFormationTeam
+    );
+    const queue = options.queue ?? [];
+    getApplications = vi.spyOn(applicationService, 'getApplications').mockReturnValue(Array.isArray(queue) ? of(queue) : queue);
 
     const fixture = TestBed.createComponent(FormationsQueueComponent);
     fixture.detectChanges();
@@ -265,6 +285,74 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
     const fixture = await render({ slug: 'tlf', isFormationTeam: false, tab: 'proposals' });
     expect(query(fixture, 'formations-queue-page-tabs')).toBeNull();
     expect(query(fixture, 'formations-queue-proposals')).toBeNull();
+  });
+
+  describe('pending count (#5229)', () => {
+    const queue = [
+      buildApplication({ uid: 'a' }),
+      buildApplication({ uid: 'b' }),
+      buildApplication({ uid: 'c' }),
+      buildApplication({ uid: 'd', state: 'denied' }),
+      buildApplication({ uid: 'e', state: 'withdrawn' }),
+    ];
+    const tab = (fixture: ComponentFixture<FormationsQueueComponent>): HTMLElement => query(fixture, 'formations-queue-page-tabs-proposals') as HTMLElement;
+    const count = (fixture: ComponentFixture<FormationsQueueComponent>): string | null =>
+      query(fixture, 'formations-queue-page-tabs-proposals-count')?.textContent?.trim() ?? null;
+
+    it('shows only the submitted proposals as the count, with an accessible name that includes it', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, queue });
+      expect(count(fixture)).toBe('3');
+      expect(tab(fixture).textContent).toContain('Project proposals');
+      expect(tab(fixture).getAttribute('aria-label')).toBe('Project proposals, 3 awaiting review');
+    });
+
+    it('shows no number for zero pending proposals', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, queue: [buildApplication({ state: 'denied' })] });
+      expect(count(fixture)).toBeNull();
+      expect(tab(fixture).getAttribute('aria-label')).toBeNull();
+    });
+
+    it('shows no number while the read is pending', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, queue: new Subject<ProjectApplication[]>() });
+      expect(count(fixture)).toBeNull();
+    });
+
+    it('shows no number, never (0), when the read fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, queue: throwError(() => new Error('boom')) });
+      expect(count(fixture)).toBeNull();
+      expect(tab(fixture).textContent).not.toContain('0');
+    });
+
+    it('drops the count as soon as an accept, deny or withdraw lands, without a refetch', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, queue });
+      const reads = getApplications.mock.calls.length;
+      applicationService.recordWrite('staff', buildApplication({ uid: 'a', state: 'denied', revision: 2 }));
+      fixture.detectChanges();
+      expect(count(fixture)).toBe('2');
+      expect(getApplications.mock.calls.length).toBe(reads);
+    });
+
+    it('makes no queue request for a non-team member or a non-LF foundation', async () => {
+      await render({ slug: 'tlf', isFormationTeam: false, queue });
+      expect(getApplications).not.toHaveBeenCalled();
+      await render({ slug: 'cncf', isFormationTeam: true, queue });
+      expect(getApplications).not.toHaveBeenCalled();
+    });
+
+    it('makes exactly one queue request with the panel open and the count shown', async () => {
+      // An in-flight read, as over HTTP: the page's refresh and the panel's must join it rather than add a second.
+      const inFlight = new Subject<ProjectApplication[]>();
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, tab: 'proposals', queue: inFlight });
+      expect(query(fixture, 'formations-queue-proposals')).not.toBeNull();
+      expect(getApplications).toHaveBeenCalledTimes(1);
+
+      inFlight.next(queue);
+      inFlight.complete();
+      fixture.detectChanges();
+      expect(count(fixture)).toBe('3');
+      expect(getApplications).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('hides the tab on any other foundation', async () => {

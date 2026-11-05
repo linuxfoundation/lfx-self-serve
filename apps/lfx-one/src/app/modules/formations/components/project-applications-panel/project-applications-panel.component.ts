@@ -2,18 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, OnInit, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, OnInit, Signal, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PROJECT_APPLICATION_FROM_FOUNDATION_COPY, PROJECT_APPLICATION_STATE_FILTER_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  PROJECT_APPLICATION_DEEP_LINK_QUERY_PARAM,
+  PROJECT_APPLICATION_FROM_FOUNDATION_COPY,
+  PROJECT_APPLICATION_STATE_FILTER_OPTIONS,
+} from '@lfx-one/shared/constants';
 import type { FilterPillOption, ProjectApplication, ProjectApplicationRow, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
-import { reconcileProjectApplications, toProjectApplicationRow } from '@lfx-one/shared/utils';
+import { isUuid, reconcileProjectApplications, toProjectApplicationRow } from '@lfx-one/shared/utils';
 import { ProjectApplicationService } from '@services/project-application.service';
 import type { TablePageEvent } from 'primeng/table';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, forkJoin, map, of, Subject, switchMap } from 'rxjs';
@@ -49,6 +54,8 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   // === Services ===
   private readonly projectApplicationService = inject(ProjectApplicationService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   // === Inputs ===
   public readonly mode = input<ProjectApplicationViewMode>('submitter');
@@ -64,8 +71,8 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   });
 
   // === Writable Signals ===
-  protected readonly loading = signal(true);
-  protected readonly hasError = signal(false);
+  private readonly submitterLoading = signal(true);
+  private readonly submitterError = signal(false);
   protected readonly searchTerm = signal('');
   protected readonly stateFilter = signal<string>('all');
   protected readonly first = signal(0);
@@ -74,8 +81,17 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   protected readonly drawerVisible = signal(false);
   private readonly fetched = signal<ProjectApplication[]>([]);
   private readonly load$ = new Subject<void>();
+  private panelRequestedStaffRead = false;
+  private deepLinkHandled = false;
 
   // === Computed Signals ===
+  /** Staff reads live in the root service (shared with the Formations tab's count); submitter reads stay local. */
+  protected readonly loading: Signal<boolean> = computed(() =>
+    this.mode() === 'staff' ? this.projectApplicationService.staffLoading() : this.submitterLoading()
+  );
+  protected readonly hasError: Signal<boolean> = computed(() =>
+    this.mode() === 'staff' ? this.projectApplicationService.staffError() : this.submitterError()
+  );
   protected readonly applications: Signal<ProjectApplicationRow[]> = this.initApplications();
   protected readonly filteredApplications: Signal<ProjectApplicationRow[]> = this.initFilteredApplications();
   /** Names of the foundations proposals started from (#5187), by uid — staff only. A uid that does not resolve is simply absent. */
@@ -100,12 +116,12 @@ export class ProjectApplicationsPanelComponent implements OnInit {
     this.load$
       .pipe(
         switchMap(() => {
-          this.loading.set(true);
-          this.hasError.set(false);
-          return this.projectApplicationService.getApplications(this.mode()).pipe(
+          this.submitterLoading.set(true);
+          this.submitterError.set(false);
+          return this.projectApplicationService.getApplications('submitter').pipe(
             catchError(() => {
-              this.hasError.set(true);
-              this.loading.set(false);
+              this.submitterError.set(true);
+              this.submitterLoading.set(false);
               return EMPTY;
             })
           );
@@ -113,15 +129,17 @@ export class ProjectApplicationsPanelComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((applications) => {
-        this.projectApplicationService.reconcile(this.mode(), applications);
+        this.projectApplicationService.reconcile('submitter', applications);
         this.fetched.set(applications);
-        this.loading.set(false);
+        this.submitterLoading.set(false);
       });
+
+    this.initDeepLink();
   }
 
   // === Lifecycle ===
   public ngOnInit(): void {
-    this.load$.next();
+    this.load();
   }
 
   // === Protected Methods ===
@@ -167,11 +185,53 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   /** A 412: drop the local copy of the application the stale write targeted so the fresh read wins, then reload. */
   protected onStale(uid: string): void {
     this.projectApplicationService.forget(this.mode(), uid);
-    this.load$.next();
+    this.load(true);
   }
 
   protected retry(): void {
-    this.load$.next();
+    this.load(true);
+  }
+
+  // === Private Methods ===
+  private load(supersede = false): void {
+    if (this.isStaff()) {
+      this.panelRequestedStaffRead = true;
+      this.projectApplicationService.refreshStaff({ supersede });
+    } else {
+      this.load$.next();
+    }
+  }
+
+  /**
+   * `?application=<uid>` (#5229), staff only: once this panel's own read has landed, open that proposal's drawer a
+   * single time and drop the param so closing, reloading or sharing the URL doesn't reopen it. A uid that is
+   * malformed, unknown or not in the caller's queue is ignored silently.
+   */
+  private initDeepLink(): void {
+    const requested = toSignal(this.route.queryParamMap.pipe(map((params) => params.get(PROJECT_APPLICATION_DEEP_LINK_QUERY_PARAM))), { initialValue: null });
+    effect(() => {
+      const uid = requested();
+      if (this.deepLinkHandled || !uid || !this.isStaff() || !this.panelRequestedStaffRead || this.loading() || this.hasError()) {
+        return;
+      }
+      if (this.projectApplicationService.staffFetchedApplications() === null) {
+        return;
+      }
+      this.deepLinkHandled = true;
+      const application = isUuid(uid) ? this.applications().find((row) => row.uid.toLowerCase() === uid.toLowerCase()) : undefined;
+      if (!application) {
+        return;
+      }
+      untracked(() => {
+        this.open(application);
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { [PROJECT_APPLICATION_DEEP_LINK_QUERY_PARAM]: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+      });
+    });
   }
 
   // === Private Initializers ===
@@ -199,11 +259,10 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   private initApplications(): Signal<ProjectApplicationRow[]> {
     return computed(() => {
       const mode = this.mode();
-      const merged = reconcileProjectApplications(
-        this.fetched(),
-        this.projectApplicationService.overlay(mode)(),
-        this.projectApplicationService.deletedUids(mode)()
-      );
+      const merged =
+        mode === 'staff'
+          ? (this.projectApplicationService.staffApplications() ?? [])
+          : reconcileProjectApplications(this.fetched(), this.projectApplicationService.overlay(mode)(), this.projectApplicationService.deletedUids(mode)());
       return merged.map(toProjectApplicationRow);
     });
   }
