@@ -507,7 +507,7 @@ describe('SidebarNavService', () => {
     expect(labels(sectionItems(items, 'Company Engagement'))).not.toContain('EasyCLA');
   });
 
-  it('places EasyCLA as a top-level item directly before Organization Profile, under the org-admin divider', () => {
+  it('places EasyCLA as a top-level item directly before Company Profile, under the org-admin divider', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
 
@@ -553,7 +553,7 @@ describe('SidebarNavService', () => {
     expect(aliased).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: '/company/acme-inc/easycla', activeAliases: ['/company/easycla'] })]);
   });
 
-  it('keeps EasyCLA directly above Organization Profile and closes the menu with the LF Staff Only section', () => {
+  it('keeps EasyCLA directly above Company Profile and closes the menu with the LF Staff Only section', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
     lfStaff.set(true);
@@ -639,7 +639,7 @@ describe('SidebarNavService', () => {
     activeLens.set('org');
     orgSegment.set('acme-inc');
 
-    const engagement = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Organization Engagement');
+    const engagement = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement');
 
     expect(findByLink(engagement, '/company/acme-inc/events')?.carryQueryParams).toEqual(['range', 'attribution', 'participation']);
     expect(findByLink(engagement, '/company/acme-inc/contributions')?.carryQueryParams).not.toContain('participation');
