@@ -48,14 +48,14 @@ The **All Employees** tab shows the organization's people in one table, one row 
 
 Five cards at the top count **Employees Active in Open Source**, **In Governance**, **Code Contributors**, **Event Attendees** and **Trainees**. The table has these columns:
 
-| Column                 | What it shows                                                                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Employee**           | The person's name and job title. **Former** marks someone who no longer works at the organization                                    |
-| **Board & Committee**  | How many board and committee seats they hold, such as **2 seats**                                                                    |
-| **Code contributions** | Their code count under the chosen code count. The heading changes to **Commits** when you count commits. Hover it for what it counts |
-| **Events**             | How many events they attended                                                                                                        |
-| **Training**           | How many courses they took                                                                                                           |
-| **Org Lens Access**    | **Admin**, **Viewer**, or **Invited** when they can open the organization in the Organization lens                                   |
+| Column                 | What it shows                                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Employee**           | The person's name and job title. **Former** marks someone who no longer works at the organization                                                          |
+| **Board & Committee**  | How many board and committee seats they hold, such as **2 seats**                                                                                          |
+| **Code contributions** | Their code count under the chosen code count. The heading changes to **Commits** when you count commits. Hover it for what it counts                       |
+| **Events**             | How many events they attended                                                                                                                              |
+| **Training**           | How many courses they took                                                                                                                                 |
+| **Org Lens Access**    | **Admin** or **Viewer** when they can open the organization in the Organization lens, or **Invited** when they have been invited and have not accepted yet |
 
 A dash (**—**) means none. Select a row with a chevron to expand it. Rows without one, such as a person listed only for a seat or Org Lens access, have no detail to show. The expanded row lists the person's **Governance — Board Seats**, **Meetings — Committee Seats**, **Code Contributions**, **Events**, and **Training & Certifications**. When a person has nothing recorded there, it says **No LF activity detail recorded for this employee.**
 
