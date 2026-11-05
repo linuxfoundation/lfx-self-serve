@@ -12,6 +12,7 @@ import { BrandKitRevision } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
+import { brandKitReportV2Fixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2.fixture';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { NEVER, of } from 'rxjs';
 import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField } from '@lfx-one/shared/utils';
@@ -474,6 +475,33 @@ describe('BrandKitWebViewComponent', () => {
 
       expect(query('brand-kit-web-view-gaps')?.querySelectorAll('li')).toHaveLength(1);
       expect(query('brand-kit-web-view-gaps-accepted')?.textContent?.trim()).toBe('Accepted when v3 was approved; still open.');
+    });
+
+    it('renders a v2 report exactly as a v1 one until the Sources tab learns its groups: the same lists, nothing from the new fields', async () => {
+      const kit = brandKitTestRevision();
+      const v2 = brandKitReportV2Fixture();
+      kit.report = v2;
+      fixture.componentRef.setInput('kit', kit);
+      await fixture.whenStable();
+      expect(tab('sources').textContent?.trim()).toBe('Sources and gaps (2)');
+      await open('sources');
+
+      expect(query('brand-kit-web-view-sources-read')?.querySelectorAll('li')).toHaveLength(v2.sources_read.length);
+      expect(query('brand-kit-web-view-sources-failed')?.querySelectorAll('li')).toHaveLength(1);
+      expect(query('brand-kit-web-view-sources-failed')?.textContent).toContain('HTTP 404');
+      expect(query('brand-kit-web-view-gaps')?.querySelectorAll('li')).toHaveLength(1);
+      const panel = query('brand-kit-web-view-panel-sources')?.textContent ?? '';
+      // Nothing from the v2 fields reaches the page yet: no plain reason, no missing asset, no warning, no conflict, no rule.
+      for (const text of [
+        v2.findings?.sources_failed[0].reason,
+        v2.findings?.missing_assets[0].reason,
+        v2.findings?.warnings[0].text,
+        v2.color_conflicts?.[0].values[0].source,
+        v2.rules?.find((rule) => rule.basis === 'lf-reference')?.basis,
+      ]) {
+        expect(text).toBeTruthy();
+        expect(panel).not.toContain(text ?? 'fixture');
+      }
     });
 
     it('says so where the run left nothing to report, and leaves the Sources and gaps tab uncounted', async () => {

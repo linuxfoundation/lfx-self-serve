@@ -25,6 +25,7 @@ import {
 } from '../constants/brand-kit.constants';
 import { BrandKitChapters, BrandKitEnvelope, BrandKitRedraftFormPayload, BrandKitTokens } from '../interfaces/brand-kit.interface';
 import { brandKitBuiltFrom } from './brand-kit-book.utils';
+import { brandKitReportV2Envelope, brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
 import {
   brandKitBookPages,
   brandKitFontStack,
@@ -40,6 +41,7 @@ import {
   buildBrandKitFormPayload,
   extractBrandKitQuestions,
   extractBrandKitRefusal,
+  findBrandKitReportErrors,
   findMissingBrandKitHeadings,
   parseBrandKitFramework,
   readBrandKitQuestions,
@@ -773,6 +775,185 @@ describe('validateBrandKitEnvelope', () => {
   it('rejects a non-object payload', () => {
     expect(validateBrandKitEnvelope('not an envelope').valid).toBe(false);
     expect(validateBrandKitEnvelope(null).valid).toBe(false);
+  });
+});
+
+describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
+  const v2 = () => brandKitReportV2Fixture();
+
+  it('accepts a v1 report as it always did, and a full v2 report', () => {
+    expect(findBrandKitReportErrors(buildEnvelope().report)).toEqual([]);
+    expect(findBrandKitReportErrors(v2())).toEqual([]);
+    expect(validateBrandKitEnvelope(buildEnvelope({ report: v2() })).valid).toBe(true);
+  });
+
+  it('accepts the agent lane’s own v2 envelope whole, as an upload and as a stored sidecar, with the counts it was written with', () => {
+    const envelope = brandKitReportV2Envelope();
+    // The agent writes `check` and `revision` beside the contract's keys; an unknown top-level key never fails the envelope.
+    expect(Object.keys(envelope)).toEqual(expect.arrayContaining(['check', 'revision']));
+    expect(validateBrandKitEnvelope(envelope)).toEqual({ valid: true, errors: [] });
+    const { document_markdown, ...sidecar } = envelope;
+    void document_markdown;
+    const revision = readBrandKitRevision(sidecar);
+    expect(revision?.report).toEqual(envelope.report);
+    expect(revision?.agentVersion).toBe('2.2.0');
+    const report = envelope.report;
+    expect(report.version).toBe(2);
+    expect(report.findings?.sources_failed.map((entry) => entry.kind)).toEqual(['brand_page', 'logo_package']);
+    expect(report.findings?.sources_failed[0]).toMatchObject({ detail: 'HTTP 404' });
+    expect(report.findings?.missing_assets.map((entry) => entry.asset)).toEqual(['logo_primary', 'logo_stacked', 'logo_symbol', 'logo_reversed']);
+    expect(report.findings?.missing_assets.every((entry) => !!entry.fix)).toBe(true);
+    expect(report.findings?.warnings.map((entry) => entry.code)).toEqual([
+      'color_conflict',
+      'live_type_wordmark',
+      'palette_from_page_text',
+      'brand_page_guessed',
+    ]);
+    expect(report.color_conflicts?.map((entry) => [entry.name, entry.chosen])).toEqual([['Coral', '#FF702D']]);
+    expect(report.color_conflicts?.flatMap((entry) => entry.values.map((value) => value.hex))).toEqual(['#FF702D', '#FF7D2D']);
+    expect(report.rules).toHaveLength(47);
+    // Every hex in the envelope is uppercase; no identifier but the synthetic one.
+    expect(
+      JSON.stringify(envelope)
+        .match(/#[0-9a-f]{6}\b/g)
+        ?.filter((hex) => hex !== hex.toUpperCase()) ?? []
+    ).toEqual([]);
+    expect(JSON.stringify(envelope)).toContain('a0900000000SYNTHAAA');
+    expect(report.rules?.every((rule) => rule.path.startsWith('chapters.'))).toBe(true);
+    expect(JSON.stringify(envelope)).not.toMatch(/@/); // no email address
+  });
+
+  it('accepts any one v2 field on its own, since every one is optional', () => {
+    const full = v2();
+    for (const key of ['version', 'findings', 'color_conflicts', 'rules'] as const) {
+      expect(findBrandKitReportErrors({ ...buildEnvelope().report, [key]: full[key] })).toEqual([]);
+    }
+  });
+
+  it('rejects a version other than 2', () => {
+    expect(findBrandKitReportErrors({ ...v2(), version: 3 }).join(' ')).toContain('report.version');
+    expect(findBrandKitReportErrors({ ...v2(), version: '2' }).join(' ')).toContain('report.version');
+  });
+
+  it.each([
+    ['not an object', 'not findings'],
+    ['an extra key', { ...v2().findings, extra: [] }],
+    ['a group missing', { sources_failed: [], missing_assets: [] }],
+  ])('rejects findings that is %s', (_case, findings) => {
+    expect(findBrandKitReportErrors({ ...v2(), findings }).join(' ')).toContain('report.findings');
+  });
+
+  it('rejects a failed source with an unknown kind, an empty reason, an extra key, or a reason past 300 characters', () => {
+    const good = v2().findings?.sources_failed[0];
+    if (!good) throw new Error('fixture');
+    for (const bad of [
+      { ...good, kind: 'guess' },
+      { ...good, reason: '' },
+      { ...good, extra: true },
+      { ...good, reason: 'x'.repeat(301) },
+      { ...good, detail: '' },
+      { ...good, detail: 42 },
+    ]) {
+      const report = v2();
+      expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, sources_failed: [bad] } }).join(' ')).toContain(
+        'report.findings.sources_failed'
+      );
+    }
+  });
+
+  it('leaves the machine detail uncapped: it is the agent’s own reason, not a sentence for the reviewer', () => {
+    const report = v2();
+    const good = report.findings?.sources_failed[0];
+    if (!good) throw new Error('fixture');
+    const detail = `HTTP 404 ${'x'.repeat(400)}`;
+    expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, sources_failed: [{ ...good, detail }] } })).toEqual([]);
+  });
+
+  it('wants every reason, text and fix trimmed and not a bare URL; a URL inside a sentence is fine', () => {
+    const report = v2();
+    const failed = report.findings?.sources_failed[0];
+    const missing = report.findings?.missing_assets[0];
+    const warning = report.findings?.warnings[0];
+    if (!failed || !missing || !warning) throw new Error('fixture');
+    const errors = (findings: object) => findBrandKitReportErrors({ ...report, findings: { ...report.findings, ...findings } }).join(' ');
+    expect(errors({ sources_failed: [{ ...failed, reason: ' Leading space.' }] })).toContain('report.findings.sources_failed');
+    expect(errors({ sources_failed: [{ ...failed, reason: 'Trailing space. ' }] })).toContain('report.findings.sources_failed');
+    expect(errors({ sources_failed: [{ ...failed, reason: 'https://synthetic.example/brand' }] })).toContain('report.findings.sources_failed');
+    expect(errors({ missing_assets: [{ ...missing, fix: 'HTTP://SYNTHETIC.EXAMPLE/logo.svg' }] })).toContain('report.findings.missing_assets');
+    expect(errors({ warnings: [{ ...warning, text: 'http://synthetic.example/ ' }] })).toContain('report.findings.warnings');
+    expect(errors({ warnings: [{ ...warning, text: 'See https://synthetic.example/brand for the printed values.' }] })).toBe('');
+    expect(errors({ missing_assets: [{ ...missing, fix: 'Upload it at https://synthetic.example/form.' }] })).toBe('');
+  });
+
+  it('rejects a missing asset outside the closed list, or one without a reason', () => {
+    const good = v2().findings?.missing_assets[0];
+    if (!good) throw new Error('fixture');
+    for (const bad of [{ ...good, asset: 'favicon' }, { asset: 'logo_stacked' }, { ...good, fix: 42 }]) {
+      const report = v2();
+      expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, missing_assets: [bad] } }).join(' ')).toContain(
+        'report.findings.missing_assets'
+      );
+    }
+  });
+
+  it('rejects a warning with an unknown code, no text, or a non-string source', () => {
+    const good = v2().findings?.warnings[0];
+    if (!good) throw new Error('fixture');
+    for (const bad of [{ ...good, code: 'hunch' }, { code: 'font_unverified' }, { ...good, source: ['x'] }]) {
+      const report = v2();
+      expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, warnings: [bad] } }).join(' ')).toContain('report.findings.warnings');
+    }
+  });
+
+  it('rejects a colour conflict with a lowercase hex, a value without its source, a missing chosen, or an empty name', () => {
+    const good = v2().color_conflicts?.[0];
+    if (!good) throw new Error('fixture');
+    const value = (hex: string) => ({ hex, source: 'synthetic' });
+    for (const bad of [
+      { ...good, chosen: '#ff702d' },
+      { ...good, values: [value('#FF702D'), { hex: '#FF7D2D' }] },
+      { name: good.name, values: good.values },
+      { ...good, values: [value('#FF702D'), value('coral')] },
+      { ...good, name: '' },
+    ]) {
+      expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [bad] }).join(' ')).toContain('report.color_conflicts');
+    }
+  });
+
+  it('wants a colour conflict to list two to four values: one is no conflict, five is too many', () => {
+    const good = v2().color_conflicts?.[0];
+    if (!good) throw new Error('fixture');
+    const values = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({ hex: `#FF70${(20 + index).toString(16).toUpperCase().padStart(2, '0')}`, source: `synthetic ${index}` }));
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(1) }] }).join(' ')).toContain('report.color_conflicts');
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(5) }] }).join(' ')).toContain('report.color_conflicts');
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(2) }] })).toEqual([]);
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, values: values(4) }] })).toEqual([]);
+    // A conflict's name is text with no cap, unlike the sentences.
+    expect(findBrandKitReportErrors({ ...v2(), color_conflicts: [{ ...good, name: 'x'.repeat(400) }] })).toEqual([]);
+  });
+
+  it('rejects a rule with a basis outside project | lf-reference, no path, or uses that is not a list of strings', () => {
+    for (const bad of [{ path: 'chapters.voice', basis: 'guess' }, { basis: 'project' }, { path: 'chapters.voice', basis: 'project', uses: 'found_in' }]) {
+      expect(findBrandKitReportErrors({ ...v2(), rules: [bad] }).join(' ')).toContain('report.rules');
+    }
+  });
+
+  it('rejects a findings group or a conflict list past 50 entries, and a rules list past 200', () => {
+    const rules = (count: number) => Array.from({ length: count }, (_, index) => ({ path: `chapters.rule[${index}]`, basis: 'project' as const }));
+    expect(findBrandKitReportErrors({ ...v2(), rules: rules(200) })).toEqual([]);
+    expect(findBrandKitReportErrors({ ...v2(), rules: rules(201) }).join(' ')).toContain('report.rules');
+    const report = v2();
+    const warnings = Array.from({ length: 51 }, () => ({ code: 'font_unverified' as const, text: 'The font could not be verified.' }));
+    expect(findBrandKitReportErrors({ ...report, findings: { ...report.findings, warnings } }).join(' ')).toContain('report.findings.warnings');
+    const conflict = report.color_conflicts?.[0];
+    if (!conflict) throw new Error('fixture');
+    expect(findBrandKitReportErrors({ ...report, color_conflicts: Array.from({ length: 51 }, () => conflict) }).join(' ')).toContain('report.color_conflicts');
+  });
+
+  it('names every bad field at once, so one malformed report explains itself', () => {
+    const errors = findBrandKitReportErrors({ ...v2(), version: 1, rules: 'none', color_conflicts: {} });
+    expect(errors).toHaveLength(3);
   });
 });
 

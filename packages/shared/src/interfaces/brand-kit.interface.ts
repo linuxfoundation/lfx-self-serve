@@ -16,6 +16,11 @@ import {
   BRAND_KIT_LOGO_FILE_KINDS,
   BRAND_KIT_LOGO_SLOTS,
   BRAND_KIT_MODES,
+  BRAND_KIT_REPORT_ASSETS,
+  BRAND_KIT_REPORT_RULE_BASES,
+  BRAND_KIT_REPORT_SOURCE_KINDS,
+  BRAND_KIT_REPORT_V2,
+  BRAND_KIT_REPORT_WARNING_CODES,
   BRAND_KIT_TYPE_STEPS,
   BRAND_KIT_WEB_VIEW_TABS,
 } from '../constants/brand-kit.constants';
@@ -221,8 +226,68 @@ export interface BrandKitChapters {
   voice: BrandKitVoiceChapter;
 }
 
-/** The skill's report: shown to the reviewer, never stored as content. */
-export type BrandKitReport = MktgAssetReport;
+/** What a failed source was. */
+export type BrandKitReportSourceKind = (typeof BRAND_KIT_REPORT_SOURCE_KINDS)[number];
+/** An asset the agent may report missing. */
+export type BrandKitReportAsset = (typeof BRAND_KIT_REPORT_ASSETS)[number];
+/** A warning the agent may raise. */
+export type BrandKitReportWarningCode = (typeof BRAND_KIT_REPORT_WARNING_CODES)[number];
+/** Where a rendered rule comes from. */
+export type BrandKitReportRuleBasis = (typeof BRAND_KIT_REPORT_RULE_BASES)[number];
+
+/** A source the agent could not read, in plain language; `detail` keeps the machine reason. */
+export interface BrandKitReportFailedSource {
+  source: string;
+  kind: BrandKitReportSourceKind;
+  reason: string;
+  detail?: string;
+}
+
+/** An asset the agent looked for and did not find, with the plain reason and, when it knows one, the fix. */
+export interface BrandKitReportMissingAsset {
+  asset: BrandKitReportAsset;
+  reason: string;
+  fix?: string;
+}
+
+/** Something the agent noticed about what it read; `source` names where. */
+export interface BrandKitReportWarning {
+  code: BrandKitReportWarningCode;
+  text: string;
+  source?: string;
+}
+
+/** One palette colour seen with different values in different sources; `chosen` is the hex the kit keeps. */
+export interface BrandKitReportColorConflict {
+  name: string;
+  values: { hex: string; source: string }[];
+  chosen: string;
+}
+
+/** The basis of one rule string the chapters render, by its path in the envelope. */
+export interface BrandKitReportRule {
+  path: string;
+  basis: BrandKitReportRuleBasis;
+  uses?: string[];
+}
+
+/** The three findings groups of a v2 report, written by the agent in plain language; the UI never rewrites a reason. */
+export interface BrandKitReportFindings {
+  sources_failed: BrandKitReportFailedSource[];
+  missing_assets: BrandKitReportMissingAsset[];
+  warnings: BrandKitReportWarning[];
+}
+
+/**
+ * The skill's report: shown to the reviewer, never stored as content. The v1 fields are always there; the v2 fields
+ * (brand-kit ≥ 2.2.0) are optional, and a v1 report renders as it always did.
+ */
+export interface BrandKitReport extends MktgAssetReport {
+  version?: typeof BRAND_KIT_REPORT_V2;
+  findings?: BrandKitReportFindings;
+  color_conflicts?: BrandKitReportColorConflict[];
+  rules?: BrandKitReportRule[];
+}
 
 /** One logo file of the inputs record. */
 export interface BrandKitInputLogoFile {

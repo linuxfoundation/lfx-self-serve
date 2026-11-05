@@ -266,6 +266,53 @@ export const BRAND_KIT_FOUND_IN_LABELS: Record<(typeof BRAND_KIT_FOUND_IN_KINDS)
 /** The four logo slots the kit assigns the real files to. */
 export const BRAND_KIT_LOGO_SLOTS = ['primary', 'stacked', 'symbol', 'reversed'] as const;
 
+// ---------------------------------------------------------------------------
+// Report v2 (brand-kit ≥ 2.2.0): the findings groups, the colour conflicts and the rules' basis, all optional in the envelope
+// ---------------------------------------------------------------------------
+
+/** The report version that carries the findings; absent means the v1 report. */
+export const BRAND_KIT_REPORT_V2 = 2;
+/** What a failed source was: a provenance kind, or one of the other inputs the agent reads. */
+export const BRAND_KIT_REPORT_SOURCE_KINDS = [...BRAND_KIT_FOUND_IN_KINDS, 'logo_file', 'logo_package', 'lfx_record', 'framework'] as const;
+/** The assets the agent looks for and may report missing. */
+export const BRAND_KIT_REPORT_ASSETS = [
+  'logo_primary',
+  'logo_stacked',
+  'logo_symbol',
+  'logo_reversed',
+  'brand_page',
+  'font_weights',
+  'palette_accent',
+  'framework',
+] as const;
+/** The warnings the agent can raise about what it read. */
+export const BRAND_KIT_REPORT_WARNING_CODES = [
+  'color_conflict',
+  'font_unverified',
+  'live_type_wordmark',
+  'palette_from_page_text',
+  'site_colour_not_in_logo',
+  'brand_page_guessed',
+] as const;
+/** Where a rule the chapters render comes from: the project's own sources, or the LF reference kit. */
+export const BRAND_KIT_REPORT_RULE_BASES = ['project', 'lf-reference'] as const;
+/**
+ * What the validator checks of a v2 report, each field only when present: `findings` carries its three groups
+ * (sources_failed, missing_assets, warnings) with closed `kind`, `asset` and `code` enums; every reason, text and fix
+ * is a trimmed sentence of 1–300 characters and not a bare URL (URLs travel in `source`); `detail` and a conflict's
+ * `name` are non-empty text with no cap; every hex is uppercase `#RRGGBB`; the findings groups, the colour conflicts
+ * and a rule's `uses` hold at most 50 entries, the rules at most 200; a conflict lists 2–4 values.
+ */
+export const BRAND_KIT_REPORT_TEXT_MAX_CHARS = 300;
+/** A sentence that is nothing but an address, in any case: it belongs in `source`, not in a reason, text or fix. */
+export const BRAND_KIT_REPORT_BARE_URL_REGEX = /^https?:\/\/\S+$/i;
+/** No findings group, conflict list or `uses` list grows past this. */
+export const BRAND_KIT_REPORT_LIST_MAX = 50;
+/** The rules list is longer than the others: one entry per rendered rule across the six chapters. */
+export const BRAND_KIT_REPORT_RULES_MAX = 200;
+/** A colour conflict lists the values seen: at least two (or it is no conflict), at most four. */
+export const BRAND_KIT_REPORT_CONFLICT_VALUES = { min: 2, max: 4 } as const;
+
 /** The exact lengths the chapters' fixed lists have (the agent's envelope schema). */
 export const BRAND_KIT_CHAPTER_COUNTS = {
   colorways: 4,
