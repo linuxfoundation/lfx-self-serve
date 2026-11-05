@@ -84,6 +84,7 @@ import {
   mktgAssetHeaderMetadata,
   mktgKitAssetLabel,
   mktgKitRootPath,
+  mktgReportHasOpenGaps,
   mktgReportNeedsApprovalReview,
   mktgRunRouteFor,
   mktgRunModeFor,
@@ -1338,7 +1339,7 @@ export class MktgDocumentViewComponent {
     const epoch = this.restoreEpoch;
     const subject = this.userService.user()?.sub;
     const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
-      header: report.sources_failed.length || report.gaps.length ? BRAND_KIT_APPROVE_HEADER_GAPS : BRAND_KIT_APPROVE_HEADER,
+      header: mktgReportHasOpenGaps(report) ? BRAND_KIT_APPROVE_HEADER_GAPS : BRAND_KIT_APPROVE_HEADER,
       data: report,
       modal: true,
       width: '32rem',

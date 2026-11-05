@@ -11,10 +11,10 @@
           <ul class="flex flex-col gap-1.5 text-sm">
             @for (failed of findings.failed; track $index) {
               <li class="flex flex-col" data-testid="mktg-document-view-approve-failed-item">
-                <span class="text-gray-800 [overflow-wrap:anywhere]">{{ failed.title }}</span>
-                <span class="text-xs text-amber-700">{{ failed.text }}</span>
+                <span class="text-gray-800 [overflow-wrap:anywhere]" data-testid="mktg-document-view-approve-failed-item-title">{{ failed.title }}</span>
+                <span class="text-xs text-amber-700" data-testid="mktg-document-view-approve-failed-item-reason">{{ failed.text }}</span>
                 @if (failed.detail) {
-                  <span class="text-xs text-gray-500">{{ failed.detail }}</span>
+                  <span class="text-xs text-gray-500" data-testid="mktg-document-view-approve-failed-item-detail">{{ failed.detail }}</span>
                 }
               </li>
             }
@@ -27,10 +27,10 @@
           <ul class="flex flex-col gap-1.5 text-sm">
             @for (missing of findings.missing; track $index) {
               <li class="flex flex-col" data-testid="mktg-document-view-approve-missing-item">
-                <span class="text-gray-800">{{ missing.title }}</span>
-                <span class="text-xs text-amber-700">{{ missing.text }}</span>
+                <span class="text-gray-800" data-testid="mktg-document-view-approve-missing-item-title">{{ missing.title }}</span>
+                <span class="text-xs text-amber-700" data-testid="mktg-document-view-approve-missing-item-reason">{{ missing.text }}</span>
                 @if (missing.fix) {
-                  <span class="text-xs text-gray-700">{{ fixPrefix }}{{ missing.fix }}</span>
+                  <span class="text-xs text-gray-700" data-testid="mktg-document-view-approve-missing-item-fix">{{ fixPrefix }}{{ missing.fix }}</span>
                 }
               </li>
             }

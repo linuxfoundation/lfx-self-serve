@@ -149,16 +149,28 @@ export function brandKitColorConflictViews(report: MktgAssetReport | null | unde
 }
 
 /**
- * Whether approving this report deserves a look first: a source that could
- * not be read, an open gap, a colour conflict the kit resolved, or a rule the
- * LF reference supplied. False for a clean report, which approves directly.
+ * Whether the report has something open that approving accepts: what the
+ * approve dialog lists first. For a report with the v2 findings, a source
+ * that could not be read or an asset not found (the findings, which the
+ * legacy fields need not mirror) or an open gap; for any other report, a
+ * failed source or an open gap. The dialog's header and the decision to
+ * show it both read this, so they count what the list shows.
+ */
+export function mktgReportHasOpenGaps(report: MktgAssetReport | null | undefined): boolean {
+  if (!report) return false;
+  if (report.gaps.length > 0) return true;
+  const findings = isBrandKitReport(report) ? report.findings : undefined;
+  return findings ? findings.sources_failed.length > 0 || findings.missing_assets.length > 0 : report.sources_failed.length > 0;
+}
+
+/**
+ * Whether approving this report deserves a look first: something open (above),
+ * a colour conflict the kit resolved, or a rule the LF reference supplied.
+ * False for a clean report, which approves directly.
  */
 export function mktgReportNeedsApprovalReview(report: MktgAssetReport | null | undefined): boolean {
   if (!report) return false;
   return (
-    report.sources_failed.length > 0 ||
-    report.gaps.length > 0 ||
-    brandKitReportColorConflicts(report).length > 0 ||
-    brandKitLfReferenceRuleLines(brandKitReportRules(report)).length > 0
+    mktgReportHasOpenGaps(report) || brandKitReportColorConflicts(report).length > 0 || brandKitLfReferenceRuleLines(brandKitReportRules(report)).length > 0
   );
 }

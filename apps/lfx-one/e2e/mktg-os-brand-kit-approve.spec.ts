@@ -33,21 +33,18 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     const failed = dialog.getByTestId('mktg-document-view-approve-failed');
     await expect(failed.getByRole('heading')).toHaveText('Failed sources');
     const firstFailed = dialog.getByTestId('mktg-document-view-approve-failed-item').first();
-    await expect(firstFailed.locator('span')).toHaveText([
-      'https://synthetic-foundation.example/brand-guidelines',
-      'This page does not exist on the site (the server answered 404).',
-      'HTTP 404',
-    ]);
-    await expect(dialog.getByTestId('mktg-document-view-approve-failed-item').nth(1)).toContainText('linked ZIP, not readable from a link');
+    await expect(firstFailed.getByTestId('mktg-document-view-approve-failed-item-title')).toHaveText('https://synthetic-foundation.example/brand-guidelines');
+    await expect(firstFailed.getByTestId('mktg-document-view-approve-failed-item-reason')).toHaveText(
+      'This page does not exist on the site (the server answered 404).'
+    );
+    await expect(firstFailed.getByTestId('mktg-document-view-approve-failed-item-detail')).toHaveText('HTTP 404');
+    await expect(dialog.getByTestId('mktg-document-view-approve-failed-item-detail').nth(1)).toHaveText('linked ZIP, not readable from a link');
     const missing = dialog.getByTestId('mktg-document-view-approve-missing');
     await expect(missing.getByRole('heading')).toHaveText('Missing assets');
-    await expect(dialog.getByTestId('mktg-document-view-approve-missing-item').locator('span:first-child')).toHaveText([
-      'Primary logo',
-      'Stacked logo',
-      'Symbol',
-      'Reversed logo',
-    ]);
-    await expect(dialog.getByTestId('mktg-document-view-approve-missing-item').first()).toContainText('Fix: Upload the logo package');
+    await expect(dialog.getByTestId('mktg-document-view-approve-missing-item-title')).toHaveText(['Primary logo', 'Stacked logo', 'Symbol', 'Reversed logo']);
+    const firstMissing = dialog.getByTestId('mktg-document-view-approve-missing-item').first();
+    await expect(firstMissing.getByTestId('mktg-document-view-approve-missing-item-reason')).toContainText('was not read in this run');
+    await expect(firstMissing.getByTestId('mktg-document-view-approve-missing-item-fix')).toContainText('Fix: Upload the logo package');
     // Today's one-line form is gone for a v2 report; the gaps still follow.
     await expect(dialog).not.toContainText('brand-guidelines — HTTP 404');
     await expect(dialog).toContainText('No logo files');
@@ -93,7 +90,7 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
   test('asks under "Approve this version?" when a clean report has only conflicts and LF-reference rules, and Approve anyway writes once', async ({
     page,
   }, info) => {
-    const report = { ...brandKitReportV2RulesFixture(), sources_failed: [], gaps: [] };
+    const report = { ...brandKitReportV2RulesFixture(), sources_failed: [], gaps: [], findings: { sources_failed: [], missing_assets: [], warnings: [] } };
     await openAssetDocument(page, 'brand-kit', 200, true, false, brandKitDraftRevisionResponse(report));
     await expect(page.getByTestId('mktg-document-view-readiness')).toHaveText('Ready.');
     const writes: string[] = [];
@@ -103,7 +100,9 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
     const dialog = page.getByRole('dialog', { name: 'Approve this version?' });
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
-    // Nothing failed and nothing is open: no list before the two sections.
+    // Nothing failed, nothing missing and nothing open: neither findings group nor a gaps list before the two sections.
+    await expect(dialog.getByTestId('mktg-document-view-approve-failed')).toHaveCount(0);
+    await expect(dialog.getByTestId('mktg-document-view-approve-missing')).toHaveCount(0);
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm').locator(':scope > ul')).toHaveCount(0);
     await expect(dialog.getByTestId('mktg-document-view-approve-conflict')).toHaveCount(1);
     await expect(dialog.getByTestId('mktg-document-view-approve-rule')).toHaveCount(6);

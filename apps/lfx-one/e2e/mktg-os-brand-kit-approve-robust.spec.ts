@@ -76,7 +76,7 @@ test.describe('at a laptop width', () => {
     await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
     const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('mktg-document-view-approve-confirm') });
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
-    // Today's list is there (one failed source); the two new sections are not.
+    // Today's list is there (one failed source); none of the v2 sections are.
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm').locator(':scope > ul > li')).toHaveCount(1);
     await expect(dialog.getByTestId('mktg-document-view-approve-failed')).toHaveCount(0);
     await expect(dialog.getByTestId('mktg-document-view-approve-missing')).toHaveCount(0);

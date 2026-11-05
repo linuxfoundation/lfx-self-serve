@@ -20,6 +20,7 @@ import {
   brandKitLfReferenceRuleLines,
   brandKitReportColorConflicts,
   brandKitReportRules,
+  mktgReportHasOpenGaps,
   mktgReportNeedsApprovalReview,
 } from './brand-kit-rules.utils';
 
@@ -181,6 +182,28 @@ describe('brandKitApproveFindings', () => {
   });
 });
 
+describe('mktgReportHasOpenGaps', () => {
+  const EMPTY_FINDINGS = { sources_failed: [], missing_assets: [], warnings: [] };
+  const cases: [string, BrandKitReport | null, boolean][] = [
+    ['no report', null, false],
+    ['a clean v1 report', V1_REPORT, false],
+    ['a v1 failed source', { ...V1_REPORT, sources_failed: [{ name: 'Docs', reason: '404' }] }, true],
+    ['a v1 open gap', { ...V1_REPORT, gaps: ['Missing evidence'] }, true],
+    // The findings are what the dialog lists; the legacy fields need not mirror them.
+    ['findings with a failed source and nothing in the legacy fields', { ...V1_REPORT, findings: brandKitReportV2RulesFixture().findings }, true],
+    [
+      'findings with only a missing asset',
+      { ...V1_REPORT, findings: { ...EMPTY_FINDINGS, missing_assets: [{ asset: 'logo_symbol', reason: 'No symbol was uploaded.' }] } },
+      true,
+    ],
+    ['empty findings and a gap', { ...V1_REPORT, findings: EMPTY_FINDINGS, gaps: ['Missing evidence'] }, true],
+    ['empty findings, no gap, a conflict', { ...V1_REPORT, findings: EMPTY_FINDINGS, color_conflicts: brandKitReportV2RulesFixture().color_conflicts }, false],
+  ];
+  it.each(cases)('with %s: %s', (_case, report, expected) => {
+    expect(mktgReportHasOpenGaps(report)).toBe(expected);
+  });
+});
+
 describe('mktgReportNeedsApprovalReview', () => {
   const cases: [string, BrandKitReport | null, boolean][] = [
     ['no report', null, false],
@@ -190,6 +213,7 @@ describe('mktgReportNeedsApprovalReview', () => {
     ['a colour conflict only', { ...V1_REPORT, color_conflicts: brandKitReportV2RulesFixture().color_conflicts, rules: [] }, true],
     ['an LF-reference rule only', { ...V1_REPORT, color_conflicts: [], rules: [{ path: 'chapters.voice', basis: 'lf-reference' }] }, true],
     ['project rules only', { ...V1_REPORT, color_conflicts: [], rules: [{ path: 'chapters.voice', basis: 'project' }] }, false],
+    ['findings only, legacy fields empty', { ...V1_REPORT, findings: brandKitReportV2RulesFixture().findings }, true],
   ];
   it.each(cases)('with %s: %s', (_case, report, expected) => {
     expect(mktgReportNeedsApprovalReview(report)).toBe(expected);

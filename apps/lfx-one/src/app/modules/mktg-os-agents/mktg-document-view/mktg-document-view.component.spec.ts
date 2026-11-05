@@ -3554,7 +3554,8 @@ describe('MktgDocumentViewComponent', () => {
     ['LF-reference rules', { rules: [{ path: 'chapters.voice', basis: 'lf-reference' }] }],
   ])('asks before approving a Brand Kit whose clean report carries %s, under a review header', async (_what, fields) => {
     const kit = brandKitTestRevision();
-    kit.report = { ...kit.report, version: 2, ...fields };
+    // Empty findings: nothing failed and nothing missing, so the header is the review one.
+    kit.report = { ...kit.report, version: 2, findings: { sources_failed: [], missing_assets: [], warnings: [] }, ...fields };
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type: BRAND_KIT, sidecar: kitSidecar(kit) }));
     store.approveRevision.mockReturnValue(NEVER);
     const closed = new Subject<boolean>();
@@ -3569,6 +3570,17 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.approveRevision).not.toHaveBeenCalled();
     closed.next(true);
     expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id);
+  });
+
+  it('asks under the open-gaps header when only the v2 findings carry a failed source and the legacy fields are empty', async () => {
+    const kit = brandKitTestRevision();
+    kit.report = { ...brandKitReportV2RulesFixture(), sources_failed: [], gaps: [] };
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type: BRAND_KIT, sidecar: kitSidecar(kit) }));
+    dialog.open.mockReturnValue({ onClose: NEVER, onDestroy: NEVER, close: vi.fn() });
+    await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    expect(dialog.open).toHaveBeenCalledExactlyOnceWith(MktgApproveGapsDialogComponent, expect.objectContaining({ header: 'Approve with open gaps?' }));
+    expect(store.approveRevision).not.toHaveBeenCalled();
   });
 
   it('keeps the open-gaps header when a Brand Kit report has a failed source beside its conflicts', async () => {
