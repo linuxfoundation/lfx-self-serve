@@ -155,6 +155,18 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-ads-withheld-live">
   {{ googleSearchAdsWithheldMessage() }}
 </div>
+<!--
+  The conversion-action picker's loading line, reason or empty note, announced. Top-level so it exists
+  before its text changes: a region mounted with the section would carry the text it is created with,
+  which is not reliably announced. Empty while the section is hidden; the visible notes carry no role.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-action-picker-live">
+  {{ googleConversionActionPickerAnnouncement() }}
+</div>
+<!-- The first ad's display-width errors, announced on the same terms; empty off Search. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
+  {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
+</div>
 <!-- Conversion actions held by a channel that takes none, announced on the same terms. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-actions-withheld-live">
   {{ googleConversionActionsWithheldMessage() }}
@@ -2258,13 +2270,6 @@
 
           @if (googleTakesConversionActions()) {
             <div class="flex flex-col gap-2">
-              <!--
-                The picker's loading line, reason or empty note, announced. Mounted with the section and only
-                its text changes, so the change is announced; the visible notes below carry no role.
-              -->
-              <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-action-picker-live">
-                {{ googleConversionActionPickerAnnouncement() }}
-              </div>
               @switch (googleConversionActionPicker().status) {
                 @case ('loaded') {
                   <lfx-ui-multi-select
@@ -2330,13 +2335,6 @@
            required validator blocked the create until it was filled in. See
            `initSearchCopyApplies`. -->
       @if (searchCopyApplies()) {
-        <!--
-          The first ad's width errors, announced. Always mounted with the copy sections and only its text
-          changes: a live region inserted with its text already present is not reliably announced.
-        -->
-        <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
-          {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
-        </div>
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-headlines-section">
           <div class="mb-3 flex items-center justify-between">
             <h3 class="text-sm font-semibold text-gray-900">Headlines</h3>

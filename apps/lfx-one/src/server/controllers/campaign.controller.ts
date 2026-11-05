@@ -109,7 +109,7 @@ import {
   GOOGLE_ADS_GEO_SEARCH_COUNTRY_PATTERN,
   GOOGLE_ADS_GEO_SUGGESTION_ID_PATTERN,
   GOOGLE_ADS_CONVERSION_ACTION_ID_PATTERN,
-  GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_CONVERSION_ACTION_RESOURCE_PATTERN,
   GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_LANGUAGE_ID_PATTERN,
@@ -3553,17 +3553,17 @@ export class CampaignController {
       }
       const result: GoogleAdsConversionActionsResult = {
         accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
-        // A row whose id is not the bare numeric id `conversionActions` accepts, or whose resource
-        // name is
-        // neither absent nor the full form, cannot be sent, so it is dropped rather than offered; a
-        // repeated id is offered once, since the picker keys its rows by id. Upstream names the fields
-        // this way; this is the belt.
+        // A row whose id is not the bare numeric id `conversionActions` accepts, or whose resource name
+        // is neither empty nor the full `customers/<id>/conversionActions/<id>` form naming that same id,
+        // cannot be trusted to send, so it is dropped rather than offered; a repeated id is offered once,
+        // since the picker keys its rows by id. Upstream names the fields this way; this is the belt.
         actions: payload.conversion_actions
           .filter(
             (a, i, all) =>
               typeof a?.id === 'string' &&
               GOOGLE_ADS_CONVERSION_ACTION_ID_PATTERN.test(a.id) &&
-              (a.resource_name === '' || (typeof a.resource_name === 'string' && GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test(a.resource_name))) &&
+              (a.resource_name === '' ||
+                (typeof a.resource_name === 'string' && GOOGLE_ADS_CONVERSION_ACTION_RESOURCE_PATTERN.exec(a.resource_name)?.[1] === a.id)) &&
               all.findIndex((other) => other?.id === a.id) === i
           )
           .map((a) => ({

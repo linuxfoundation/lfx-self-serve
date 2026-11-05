@@ -3722,7 +3722,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
   /**
    * The conversion-action picker's list (#4991), read only while the section is shown and only for a
-   * caller the BFF would answer (`googleAudienceSegmentsEnabled`). A caller it would refuse, the route
+   * caller the BFF would answer (`googleConversionActionsEnabled`). A caller it would refuse, the route
    * off or denied on this deployment, or Google failing leaves the picker `unavailable` with a reason,
    * and the free-text box is the way in, exactly as before.
    */

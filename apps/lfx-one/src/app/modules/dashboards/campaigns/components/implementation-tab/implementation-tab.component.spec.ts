@@ -8770,13 +8770,22 @@ describe('ImplementationTabComponent google conversion action picker', () => {
     await fixture.whenStable();
   }
 
-  it('reads nothing while the conversion section is not shown', async () => {
+  it('reads nothing while the conversion section is not shown, its live region already mounted and empty', async () => {
     await setup(() => of(ACTIONS));
-    seedChannel(fixture, { includePerformanceMax: true });
-    fixture.componentRef.setInput('googleConversionActionsEnabled', true);
+    const c = seedChannel(fixture, { includePerformanceMax: true });
+    fixture.componentRef.setInput('googleConversionActionsEnabled', false);
     fixture.detectChanges();
 
     expect(read).not.toHaveBeenCalled();
+    // Mounted before the section, so the refusal it gains when the section opens is announced.
+    expect(query('implementation-google-conversion-action-picker-live')?.textContent?.trim()).toBe('');
+    // The first ad's width region is mounted off Search too, empty.
+    expect(query('implementation-first-ad-copy-live')?.textContent?.trim()).toBe('');
+
+    c['campaignForm'].patchValue({ includePerformanceMax: false, includeSearch: true, googleBiddingStrategy: 'maximize-conversions' });
+    fixture.detectChanges();
+    expect(read).not.toHaveBeenCalled();
+    expect(query('implementation-google-conversion-action-picker-live')?.textContent).toContain("Your account can't list");
   });
 
   it('shows the refusal with no request for a caller the BFF would refuse, and waits while that is unanswered', async () => {

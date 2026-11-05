@@ -119,7 +119,7 @@ describe('CampaignController.getGoogleAdsConversionActions', () => {
     });
   });
 
-  it('drops a row whose id or resource name cannot be sent, and offers a repeated id once', async () => {
+  it('drops a row whose id or resource name cannot be sent, or whose resource name names another id, and offers a repeated id once', async () => {
     const row = ACTIONS.conversion_actions[0];
     svcList.mockResolvedValueOnce({
       ...ACTIONS,
@@ -129,6 +129,8 @@ describe('CampaignController.getGoogleAdsConversionActions', () => {
         { ...row, id: 'abc' },
         { ...row, id: '3333333333', resource_name: 'customers/1234567890/userLists/3333333333' },
         { ...row, id: '4444444444', resource_name: '' },
+        { ...row, id: '5555555555', resource_name: '5555555555' },
+        { ...row, id: '6666666666', resource_name: 'customers/1234567890/conversionActions/7777777777' },
       ],
     });
     const res = buildRes();

@@ -5103,6 +5103,13 @@ export const GOOGLE_ADS_CONVERSION_ACTION_PATTERN = /^(?:\d+|customers\/\d+\/con
 export const GOOGLE_ADS_CONVERSION_ACTION_ID_PATTERN = /^\d+$/;
 
 /**
+ * The full `customers/<id>/conversionActions/<id>` resource name ONLY — the long form of
+ * {@link GOOGLE_ADS_CONVERSION_ACTION_PATTERN}, which also accepts a bare id. Group 1 is the trailing
+ * conversion action id, so a reader can check it names the same action as the row's own `id`.
+ */
+export const GOOGLE_ADS_CONVERSION_ACTION_RESOURCE_PATTERN = /^customers\/\d+\/conversionActions\/(\d+)$/;
+
+/**
  * Why the Implement tab's conversion-action picker offers no list. Each ends by pointing at the
  * free-text box, which works exactly as it did before the picker:
  * - `forbidden`: the BFF said this caller may not read the list
