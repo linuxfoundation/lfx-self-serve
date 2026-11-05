@@ -58,6 +58,8 @@ function statReading(key: OrgTrainingStatKey, stats: OrgTrainingStats): { value:
       return { value: stats.rosterMembers, asOf: stats.rosterMembersAsOf };
     case 'peopleWithTrainingActivity':
       return { value: stats.peopleWithTrainingActivity, asOf: stats.asOf };
+    case 'learnersOutsidePeopleList':
+      return { value: stats.learnersOutsidePeopleList, asOf: stats.asOf };
     case 'coursesTaken':
       return { value: stats.coursesTaken, asOf: stats.asOf };
     case 'certifications':

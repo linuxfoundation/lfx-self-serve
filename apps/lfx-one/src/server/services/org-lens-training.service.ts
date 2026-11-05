@@ -148,7 +148,7 @@ export class OrgLensTrainingService {
       const unfiltered = await this.cached(
         qualification,
         accountId,
-        `training-stats:v5:${orgTrainingFiltersSignature({ range: query.range, foundation: null, project: null, course: null, level: null, format: null })}`,
+        `training-stats:v6:${orgTrainingFiltersSignature({ range: query.range, foundation: null, project: null, course: null, level: null, format: null })}`,
         () => this.fetchTrainingStats(accountId, { range: query.range, foundation: null, project: null, course: null, level: null, format: null }),
         isTrainingStats
       );
@@ -157,7 +157,7 @@ export class OrgLensTrainingService {
     return this.cached(
       qualification,
       accountId,
-      `training-stats:v5:${orgTrainingFiltersSignature(query)}`,
+      `training-stats:v6:${orgTrainingFiltersSignature(query)}`,
       () => this.fetchTrainingStats(accountId, query),
       isTrainingStats
     );
@@ -350,7 +350,8 @@ export class OrgLensTrainingService {
     `;
 
     // Learners the warehouse attributes to the org outside its people list (lfx-self-serve#4287): they carry no course
-    // data, so they count toward people only while no filter is set; a key that also has people-list rows is that person.
+    // data, so they are counted only while no filter is set (their own tile); a key that also has people-list rows is that person.
+    // They are never added to the people-list numbers: every other metric reads the people-list pairs `f`.
     const inRange = orgTrainingRangePredicate(query.range);
     const outsideSql = `
       SELECT COUNT(DISTINCT PERSON_KEY) AS PEOPLE
@@ -385,7 +386,7 @@ export class OrgLensTrainingService {
       WHERE ACCOUNT_ID = ?
     `;
 
-    // Learners outside the people list carry no course data to filter on, so any filter drops them from the people count.
+    // Learners outside the people list carry no course data to filter on, so any filter zeroes their own count.
     const includeOutside = !hasOrgTrainingFilter(query);
     const [pairsResult, outsideResult, asOfResult, rosterResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingPairStatsRow>(pairsSql, binds),
@@ -409,7 +410,7 @@ export class OrgLensTrainingService {
       // No row: the org has no LF Education training client, so there is no roster to count (not zero members).
       rosterMembers: roster ? roster.ROSTER_MEMBERS : null,
       rosterMembersAsOf: roster ? toIsoTimestamp(roster.AS_OF_TS) : null,
-      peopleWithTrainingActivity: (pairs?.PEOPLE ?? 0) + outside,
+      peopleWithTrainingActivity: pairs?.PEOPLE ?? 0,
       learnersOutsidePeopleList: outside,
       coursesTaken,
       certifications,

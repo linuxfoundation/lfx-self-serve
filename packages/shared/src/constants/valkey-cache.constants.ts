@@ -313,8 +313,8 @@ export const VALKEY_CACHE = {
     // the dev build (ANALYTICS_DEV ORG_PEOPLE_TRAINING, All time, no filters, the five largest organizations; the largest has
     // the most person-course pairs: 33,867) as the JSON of the stored value (`JSON.stringify` size from SQL `TO_JSON` rows,
     // each + 1 comma byte), same filtered-pair rules as the BFF; every filter combination is a subset of these.
-    // `training-stats:v5`: one object of 13 scalar fields, 366 bytes at most (a fixed shape; no per-org growth).
-    'org-lens-sf:v1:training-stats:v5': 1_048_576,
+    // `training-stats:v6`: one object of 13 scalar fields, 366 bytes at most (a fixed shape; no per-org growth).
+    'org-lens-sf:v1:training-stats:v6': 1_048_576,
     // `training-filter-options:v1`: five {label, value} lists, per range; All time is the largest: 42.6 KB for the largest
     // course dictionary (319 course names 37.4 KB, 57 projects 3.2 KB, 23 foundations 1.5 KB, 3 levels, 5 formats).
     'org-lens-sf:v1:training-filter-options:v1': 1_048_576,

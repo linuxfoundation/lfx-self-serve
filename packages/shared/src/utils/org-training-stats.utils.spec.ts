@@ -3,7 +3,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { ORG_TRAINING_IN_PROGRESS_RULE, ORG_TRAINING_NO_ROSTER_NOTE, ORG_TRAINING_STAT_DEFINITIONS } from '../constants/org-training-stats.constants';
+import {
+  ORG_TRAINING_IN_PROGRESS_RULE,
+  ORG_TRAINING_NO_ROSTER_NOTE,
+  ORG_TRAINING_STAT_DEFINITIONS,
+  ORG_TRAINING_STAT_TILES,
+} from '../constants/org-training-stats.constants';
 import type { OrgTrainingStats } from '../interfaces/org-training-view.interface';
 import {
   buildOrgTrainingStatTiles,
@@ -96,6 +101,34 @@ describe('buildOrgTrainingStatTiles', () => {
     expect(tiles['peopleInTraining'].caption).toContain(ORG_TRAINING_IN_PROGRESS_RULE);
   });
 
+  it('places the learners-outside tile right after people with training activity, with its own value and caption', () => {
+    const tiles = buildOrgTrainingStatTiles(stats, '730d');
+    expect(tiles.map((tile) => tile.key)).toEqual([
+      'rosterMembers',
+      'peopleWithTrainingActivity',
+      'learnersOutsidePeopleList',
+      'coursesTaken',
+      'certifications',
+      'certifiedPeople',
+      'trainingsCompleted',
+      'completionRate',
+      'coursesInProgress',
+      'peopleInTraining',
+    ]);
+    expect(tiles).toHaveLength(ORG_TRAINING_STAT_TILES.length);
+
+    const people = tiles.find((tile) => tile.key === 'peopleWithTrainingActivity')!;
+    const outside = tiles.find((tile) => tile.key === 'learnersOutsidePeopleList')!;
+    expect(people.display).toBe('40');
+    expect(outside.display).toBe('3');
+    expect(outside.label).toBe('Learners not on the people list');
+    expect(outside.testId).toBe('org-training-stat-learners-outside-people-list');
+    expect(outside.caption).toBe('People · Past 2 years · as of Nov 2, 2026');
+    expect(outside.tooltip).toContain('not on its people list');
+    expect(people.tooltip).toContain('people list');
+    expect(people.tooltip).not.toContain('Includes learners');
+  });
+
   it('shows em dashes and no as-of sentence before the stats load', () => {
     const tiles = buildOrgTrainingStatTiles(null, '730d');
     expect(tiles.every((tile) => tile.value === null && tile.display === '—')).toBe(true);
@@ -136,6 +169,7 @@ describe('buildOrgTrainingStatTiles with a legacy-shaped payload (rolling deploy
     expect(tiles['peopleWithTrainingActivity'].display).toBe('40');
     for (const key of [
       'rosterMembers',
+      'learnersOutsidePeopleList',
       'coursesTaken',
       'certifications',
       'certifiedPeople',

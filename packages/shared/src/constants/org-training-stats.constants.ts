@@ -28,7 +28,13 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
     label: 'People with training activity',
     unit: 'people',
     definition:
-      'Distinct people with at least one training or certification enrollment, or a certificate, dated in the selected range and matching the filters. Includes learners linked to this organization who are not on its people list while no foundation, project, course, level or format is selected. Not a subset of the roster members.',
+      "Distinct people on this organization's people list with at least one training or certification enrollment, or a certificate, dated in the selected range and matching the filters. Learners not on the people list are not counted here. Not a subset of the roster members.",
+  },
+  learnersOutsidePeopleList: {
+    label: 'Learners not on the people list',
+    unit: 'people',
+    definition:
+      'Distinct people with a training or certification enrollment or certificate dated in the selected range who are linked to this organization but not on its people list. Shown as 0 and not counted while a foundation, project, course, level or format is selected, because they carry no course data. Not part of the people-list numbers.',
   },
   coursesTaken: {
     label: 'Courses taken',
@@ -77,6 +83,12 @@ export const ORG_TRAINING_STAT_TILES: readonly OrgTrainingStatTileLayout[] = [
     icon: 'fa-light fa-user-graduate',
     iconClass: 'bg-sky-100 text-sky-600',
     testId: 'org-training-stat-people-with-training-activity',
+  },
+  {
+    key: 'learnersOutsidePeopleList',
+    icon: 'fa-light fa-user-slash',
+    iconClass: 'bg-orange-100 text-orange-600',
+    testId: 'org-training-stat-learners-outside-people-list',
   },
   { key: 'coursesTaken', icon: 'fa-light fa-book', iconClass: 'bg-indigo-100 text-indigo-600', testId: 'org-training-stat-courses-taken' },
   { key: 'certifications', icon: 'fa-light fa-award', iconClass: 'bg-amber-100 text-amber-600', testId: 'org-training-stat-certifications' },
