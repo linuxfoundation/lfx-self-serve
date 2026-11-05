@@ -534,9 +534,11 @@ export class MktgSlidesExportService {
     // The symbol is drawn first, on its own: the reversed symbol is recoloured
     // from its PNG, as the reversed and one-colour lockups are from the
     // primary's. Then the four variants are drawn and uploaded at once, each
-    // settling alone, and the URLs are assembled in the intake's order. The
-    // draws overlap in libuv's pool; the parse, the PNG encode and the ink scan
-    // run on the event loop. A variant that fails, or throws, drops out alone.
+    // settling alone, and the URLs are assembled in the intake's order. Each
+    // draw is a child process of its own (at most five renders per export
+    // after the primary, at most three alive at once, the rasterizer's bound);
+    // only the request's JSON and the PNG's base64 decode stay on the event
+    // loop. A variant that fails, or throws, drops out alone.
     const sources = logoVariantSources(logo.files, logo.symbol_viewbox);
     const pngs: MktgLogoDrawnPngs = { primary: drawn.png };
     if (sources.symbol) {

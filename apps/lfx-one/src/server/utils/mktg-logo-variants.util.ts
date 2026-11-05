@@ -49,7 +49,8 @@ export function logoPngSize(png: Uint8Array): MktgLogoPngSize | null {
  * could only disagree with the rasterizer's, and every such disagreement
  * moved the filter region off the canvas. The one markup edit the server
  * still makes is the shared `brandKitSvgWithViewBox` crop for the symbol,
- * which only replaces the root viewBox; the rasterizer draws it in a child
+ * which sets the root viewBox and drops the root width and height, nothing
+ * else of the markup; the rasterizer draws it in a child
  * process, so a crop the rasterizer aborts on is dropped, not fatal. Null
  * when the bytes are not a PNG with a size.
  */

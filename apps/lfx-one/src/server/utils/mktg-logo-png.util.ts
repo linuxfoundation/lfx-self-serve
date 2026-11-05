@@ -3,12 +3,13 @@
 
 import {
   MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES,
+  MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_CHILDREN,
   MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_OUTPUT_BYTES,
   MKTG_SLIDES_EXPORT_LOGO_RENDER_TIMEOUT_MS,
   MKTG_SLIDES_EXPORT_LOGO_SIDE_PX,
 } from '@lfx-one/shared/constants';
 import { MktgLogoPngOptions, MktgLogoPngResult, MktgLogoRenderReply, MktgLogoRenderRequest } from '@lfx-one/shared/interfaces';
-import { execFile } from 'node:child_process';
+import { execFile, ExecFileException } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -152,15 +153,8 @@ export function isRasterizableLogoSvg(svg: string): boolean {
   return true;
 }
 
-/** How a child that did not answer ended, for the log. */
-interface MktgLogoChildExit {
-  killed?: boolean;
-  signal?: NodeJS.Signals | null;
-  code?: number | string | null;
-}
-
 /** The end of a child that did not answer, for the log: how it exited and the tail of its stderr. */
-function childFailureDetail(exit: MktgLogoChildExit, stderr: string): string {
+function childFailureDetail(exit: ExecFileException, stderr: string): string {
   let how: string;
   if (exit.killed && exit.signal === 'SIGKILL') {
     how = 'was killed at the time bound';
@@ -174,12 +168,77 @@ function childFailureDetail(exit: MktgLogoChildExit, stderr: string): string {
 }
 
 /**
+ * Runs tasks at most `limit` at a time, in the order they arrive: a plain
+ * promise queue, so the server-wide count of render children stays bounded
+ * without a dependency. The task's own timing starts when it runs, not when
+ * it is queued: a queued render waits for a slot in addition to its bound.
+ */
+export function limitConcurrent(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
+  let running = 0;
+  const waiting: (() => void)[] = [];
+  const release = (): void => {
+    running -= 1;
+    waiting.shift()?.();
+  };
+  return async <T>(task: () => Promise<T>): Promise<T> => {
+    if (running >= limit) {
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    }
+    running += 1;
+    try {
+      return await task();
+    } finally {
+      release();
+    }
+  };
+}
+
+/** The child slots: at most MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_CHILDREN renders alive at once, server-wide. */
+const withRenderSlot = limitConcurrent(MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_CHILDREN);
+
+/** Whether a value is the shape the child writes: an object with a PNG as a string, or a reason and a detail as strings. */
+function isChildReply(value: unknown): value is MktgLogoRenderReply {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  if ('png' in value) {
+    return typeof value.png === 'string';
+  }
+  return 'reason' in value && typeof value.reason === 'string' && 'detail' in value && typeof value.detail === 'string';
+}
+
+/**
+ * The child's one line of stdout as its reply: an object that carries a PNG
+ * or a reason. Anything else (no JSON, `null`, a string, an empty object, a
+ * PNG that is not a string) is `render-failed`: the server reads nothing it
+ * does not recognise.
+ */
+export function readChildReply(stdout: string): MktgLogoRenderReply {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    parsed = undefined;
+  }
+  if (isChildReply(parsed)) {
+    return parsed;
+  }
+  return { reason: 'render-failed', detail: `child answered unreadably: ${stdout.trim().slice(0, STDERR_TAIL_CHARS)}` };
+}
+
+/**
  * One render in a child of its own: the request on stdin, one JSON line back
  * on stdout, bounded in time and in output. Resolves to the child's reply,
  * or to a `render-failed` reply when the child died, overran the bound or
- * answered unreadably. Never rejects.
+ * answered unreadably. Never rejects. The bound starts when the child does,
+ * once it has a slot.
  */
 function renderInChild(request: MktgLogoRenderRequest): Promise<MktgLogoRenderReply> {
+  return withRenderSlot(() => startRenderChild(request));
+}
+
+/** The child itself; see `renderInChild`. */
+function startRenderChild(request: MktgLogoRenderRequest): Promise<MktgLogoRenderReply> {
   return new Promise((resolve) => {
     const child = execFile(
       process.execPath,
@@ -195,11 +254,7 @@ function renderInChild(request: MktgLogoRenderRequest): Promise<MktgLogoRenderRe
           resolve({ reason: 'render-failed', detail: childFailureDetail(error, stderr) });
           return;
         }
-        try {
-          resolve(JSON.parse(stdout) as MktgLogoRenderReply);
-        } catch {
-          resolve({ reason: 'render-failed', detail: `child answered unreadably: ${stdout.trim().slice(0, STDERR_TAIL_CHARS)}` });
-        }
+        resolve(readChildReply(stdout));
       }
     );
     // A child that dies before reading its stdin closes the pipe; that error ends in the exit above.
@@ -256,11 +311,8 @@ export async function rasterizeLogoSvg(svg: string, options: MktgLogoPngOptions 
     sidePx: MKTG_SLIDES_EXPORT_LOGO_SIDE_PX,
     maxBytes: MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES,
   });
-  if ('png' in reply && typeof reply.png === 'string') {
+  if ('png' in reply) {
     return { png: Buffer.from(reply.png, 'base64'), reason: null };
   }
-  if ('reason' in reply && typeof reply.reason === 'string' && typeof reply.detail === 'string') {
-    return { png: null, reason: reply.reason, detail: reply.detail };
-  }
-  return { png: null, reason: 'render-failed', detail: 'child answered with neither a PNG nor a reason' };
+  return { png: null, reason: reply.reason, detail: reply.detail };
 }

@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@lfx-one/shared/utils', async () => await vi.importActual('@lfx-one/shared/utils/brand-kit.utils'));
 
 import { MKTG_SLIDES_EXPORT_LOGO_RENDER_TIMEOUT_MS } from '@lfx-one/shared/constants';
-import { isRasterizableLogoSvg, rasterizeLogoSvg } from './mktg-logo-png.util';
+import { isRasterizableLogoSvg, limitConcurrent, rasterizeLogoSvg, readChildReply } from './mktg-logo-png.util';
 import { logoVariantSources } from './mktg-logo-variants.util';
 
 const SVG_NS = 'xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"';
@@ -108,6 +108,49 @@ describe('rasterizeLogoSvg', () => {
     vi.doUnmock('@lfx-one/shared/constants');
     expect(drawn).toMatchObject({ png: null, reason: 'too-big' });
     expect((drawn as { detail: string }).detail).toMatch(/^\d+ bytes$/);
+  });
+
+  describe('readChildReply', () => {
+    it('takes the two shapes the child writes and nothing else', () => {
+      expect(readChildReply('{"png":"AAAA"}\n')).toEqual({ png: 'AAAA' });
+      expect(readChildReply('{"reason":"blank","detail":"1x1 with no painted pixel"}')).toEqual({ reason: 'blank', detail: '1x1 with no painted pixel' });
+      for (const stdout of ['', 'null', '"x"', '42', '{}', '{"png":7}', '{"reason":"blank"}', '[1]', 'not json']) {
+        expect(readChildReply(stdout), stdout).toEqual({ reason: 'render-failed', detail: `child answered unreadably: ${stdout}` });
+      }
+    });
+  });
+
+  describe('limitConcurrent', () => {
+    it('runs at most the limit at once, in arrival order, and frees a slot when a task settles either way', async () => {
+      const limited = limitConcurrent(3);
+      let running = 0;
+      let most = 0;
+      const order: number[] = [];
+      const releases: (() => void)[] = [];
+      const task = (id: number, fail = false) =>
+        limited(async () => {
+          running += 1;
+          most = Math.max(most, running);
+          order.push(id);
+          await new Promise<void>((resolve) => releases.push(resolve));
+          running -= 1;
+          if (fail) {
+            throw new Error(`task ${id}`);
+          }
+          return id;
+        });
+      const settled = Promise.allSettled([task(1, true), task(2), task(3), task(4)]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(order).toEqual([1, 2, 3]);
+      expect(releases).toHaveLength(3);
+      releases[0]();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(order).toEqual([1, 2, 3, 4]);
+      releases.splice(0).forEach((release) => release());
+      const outcomes = await settled;
+      expect(most).toBe(3);
+      expect(outcomes.map((outcome) => outcome.status)).toEqual(['rejected', 'fulfilled', 'fulfilled', 'fulfilled']);
+    });
   });
 
   describe('the render child', () => {

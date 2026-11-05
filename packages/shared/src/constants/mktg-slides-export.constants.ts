@@ -110,6 +110,13 @@ export const MKTG_SLIDES_EXPORT_LOGO_SIDE_PX = 1200;
 export const MKTG_SLIDES_EXPORT_LOGO_RENDER_TIMEOUT_MS = 10_000;
 /** The most a logo render's child may write back, in bytes: the largest PNG published, as base64, with room for its JSON line. */
 export const MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_OUTPUT_BYTES = 4 * 1_048_576;
+/**
+ * How many render children may be alive at once, server-wide: one export's
+ * own most (after the primary and the symbol, its other three variants draw
+ * at once), so a single export is never slowed, and exports that overlap
+ * queue their renders instead of each starting a child.
+ */
+export const MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_CHILDREN = 3;
 
 /**
  * The logo variants sent beside the primary, in the order the intake's head
