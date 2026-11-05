@@ -17,7 +17,6 @@ import {
   getMeetingHomeRowType,
   isSameOccurrenceId,
 } from '@lfx-one/shared/utils';
-import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
 import { UiRadioGroupComponent } from '@shared/uikit/radio/radio-group.component';
@@ -25,13 +24,15 @@ import { UiRadioComponent } from '@shared/uikit/radio/radio.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 
+import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
+
 /**
  * Asks whether an edit of a recurring meeting applies to one date, and which, or to the whole series; closes with the choice, or nothing on Cancel.
  * @description Opens on the date it was given; the picker lists every date that has not ended, as on the legacy edit scope dialog.
  */
 @Component({
   selector: 'lfx-meeting-edit-scope-modal',
-  imports: [UiAvatarComponent, UiButtonComponent, UiModalComponent, UiOptionComponent, UiRadioGroupComponent, UiRadioComponent, UiSelectComponent],
+  imports: [MeetingProjectLogoComponent, UiButtonComponent, UiModalComponent, UiOptionComponent, UiRadioGroupComponent, UiRadioComponent, UiSelectComponent],
   templateUrl: './meeting-edit-scope-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

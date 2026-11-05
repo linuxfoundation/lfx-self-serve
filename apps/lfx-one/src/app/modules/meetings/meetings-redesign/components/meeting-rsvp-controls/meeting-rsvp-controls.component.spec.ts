@@ -193,10 +193,10 @@ describe('MeetingRsvpControlsComponent', () => {
       await press(fixture, 'meetings-home-rsvp-declined');
 
       expect(showToast).toHaveBeenCalledWith({
-        variant: 'dark',
+        variant: 'error',
+        position: 'bottom-center',
         message: 'RSVP Failed',
         description: 'Only invited users are allowed to RSVP to this meeting.',
-        duration: 5000,
       });
       expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(false);
     });
@@ -236,7 +236,8 @@ describe('MeetingRsvpControlsComponent', () => {
 
       expect(submit).not.toHaveBeenCalled();
       expect(showToast).toHaveBeenCalledWith({
-        variant: 'dark',
+        variant: 'warning',
+        position: 'bottom-center',
         message: 'RSVP Not Saved',
         description: 'Another response to this meeting is still saving. Try again.',
         duration: 5000,
@@ -254,21 +255,20 @@ describe('MeetingRsvpControlsComponent', () => {
   });
 
   describe('answered', () => {
-    it('shows the answer as a badge with the dates it covers', async () => {
+    it('shows the answer as a badge without the dates it covers', async () => {
       const rsvp = buildRsvp({ response_type: 'maybe', scope: 'single', occurrence_id: OCCURRENCE_ID });
       const fixture = await render(buildRow(buildMeeting(RECURRING), { myRsvp: rsvp }));
 
       expect(query(fixture, 'meetings-home-rsvp-accepted')).toBeNull();
       expect(query(fixture, 'meetings-home-rsvp-status')?.textContent?.trim()).toBe('Maybe');
       expect(query(fixture, 'meetings-home-rsvp-status')?.getAttribute('aria-label')).toBe('Your RSVP: Maybe. Change');
-      expect(query(fixture, 'meetings-home-rsvp-scope')?.textContent?.trim()).toBe('Oct 1 only');
+      expect(query(fixture, 'meetings-home-rsvp-scope')).toBeNull();
     });
 
-    it('has no dates note for a one-time meeting', async () => {
+    it('shows the answer for a one-time meeting', async () => {
       const fixture = await render(buildRow(buildMeeting(), { myRsvp: buildRsvp() }));
 
       expect(query(fixture, 'meetings-home-rsvp-status')?.textContent?.trim()).toBe('Going');
-      expect(query(fixture, 'meetings-home-rsvp-scope')).toBeNull();
     });
 
     it('lets a recurring answer be picked again to change the dates it covers', async () => {

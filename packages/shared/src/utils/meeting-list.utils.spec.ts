@@ -17,11 +17,13 @@ import {
   formatMeetingDateTime,
   formatMeetingTimeRange,
   getMeetingDayBucket,
+  getMeetingGroupNames,
   getMeetingHomeRowLink,
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingProjectUrl,
+  getMeetingRecurrenceLabel,
   getMeetingRecurrenceTooltip,
   getMeetingRsvpScopeLabel,
   getMeetingStartsInLabel,
@@ -416,6 +418,18 @@ describe('filterMeetingsHome', () => {
     expect(filterMeetingsHome(rows, filters({ organizedByMe: true }), '', null)).toEqual([]);
   });
 
+  it('counts co-organizers as organizers for Organized by me and Hide declined', () => {
+    const declined = rsvp({ response_type: 'declined' });
+    const grace = { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' };
+    const coRows = [
+      row({ key: 'flag-1', meeting: buildMeeting({ id: 'flag', created_by: grace, organizer: true }), myRsvp: declined }),
+      row({ key: 'listed-1', meeting: buildMeeting({ id: 'listed', created_by: grace, organizers: ['auth0|ALovelace'] }), myRsvp: declined }),
+      row({ key: 'other-1', meeting: buildMeeting({ id: 'other', created_by: grace, organizers: ['ghopper'] }), myRsvp: declined }),
+    ];
+    expect(keys(filterMeetingsHome(coRows, filters({ hideDeclined: true }), '', 'alovelace'))).toEqual(['flag-1', 'listed-1']);
+    expect(keys(filterMeetingsHome(coRows, filters({ organizedByMe: true }), '', 'alovelace'))).toEqual(['flag-1', 'listed-1']);
+  });
+
   it('hides a series only when every listed date is declined', () => {
     expect(keys(filterMeetingsHome(rows, filters({ hideDeclined: true }), '', null))).toEqual(['board-1', 'board-2', 'board-3', 'quiet-1']);
   });
@@ -424,8 +438,7 @@ describe('filterMeetingsHome', () => {
     const declined = rsvp({ response_type: 'declined' });
     const extra = [
       row({ key: 'own-1', meeting: buildMeeting({ id: 'own', created_by: ada }), myRsvp: declined }),
-      // An FGA manage grant alone is not organizing
-      row({ key: 'grant-1', meeting: buildMeeting({ id: 'grant', organizer: true }), myRsvp: declined }),
+      row({ key: 'other-1', meeting: buildMeeting({ id: 'other' }), myRsvp: declined }),
       row({ key: 'off-1', meeting: buildMeeting({ id: 'off', is_invite_responses_enabled: false }), myRsvp: declined }),
     ];
     expect(keys(filterMeetingsHome(extra, filters({ hideDeclined: true }), '', 'alovelace'))).toEqual(['own-1', 'off-1']);
@@ -475,6 +488,37 @@ describe('buildMeetingFilterChips', () => {
     expect(buildMeetingFilterChips(filters({ project: 'p-9' }), rows)).toEqual([{ key: 'project', label: 'Project: p-9' }]);
     expect(buildMeetingFilterChips(filters({ rsvp: 'pending' }), rows)[0].label).toBe('RSVP: Needs response');
     expect(buildMeetingFilterChips(filters({ rsvp: 'accepted' }), rows)[0].label).toBe('RSVP: Going');
+  });
+});
+
+describe('getMeetingGroupNames', () => {
+  it('lists the group names in order, without blanks or repeats', () => {
+    const committees = [
+      { uid: 'c-1', name: 'TOC' },
+      { uid: 'c-2' },
+      { uid: 'c-3', name: '  ' },
+      { uid: 'c-4', name: 'Security WG' },
+      { uid: 'c-5', name: 'TOC' },
+    ];
+
+    expect(getMeetingGroupNames({ committees })).toEqual(['TOC', 'Security WG']);
+    expect(getMeetingGroupNames({ committees: [] })).toEqual([]);
+  });
+});
+
+describe('getMeetingRecurrenceLabel', () => {
+  const base = { start_time: '2026-10-01T13:30:00Z', timezone: 'America/Los_Angeles' };
+
+  it('names the cadence without the "Repeats" prefix', () => {
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: WEEKLY })).toBe('Weekly on Thursday');
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 2, weekly_days: '2' } })).toBe(
+      'Every 2 weeks on Monday'
+    );
+  });
+
+  it('returns null for one-time meetings', () => {
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: null })).toBeNull();
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: { ...WEEKLY, end_times: 1 } })).toBeNull();
   });
 });
 
@@ -642,10 +686,9 @@ describe('getMeetingProjectUrl', () => {
 });
 
 describe('getMeetingHomeRowProject', () => {
-  it('names the project with its initial, logo, link and accessible label', () => {
+  it('names the project with its logo, link and accessible label', () => {
     expect(getMeetingHomeRowProject({ project_name: ' cncf ', project_logo_url: 'logo.svg', project_slug: 'cncf', is_foundation: true })).toEqual({
       name: 'cncf',
-      initial: 'C',
       logo: 'logo.svg',
       url: '/foundation/overview?project=cncf',
       label: 'Jump to foundation: cncf',

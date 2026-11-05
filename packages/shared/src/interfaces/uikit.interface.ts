@@ -48,7 +48,7 @@ export type UiBadgeSize = 'sm' | 'md';
 /** Look of a uikit chip: the badge's `subtle` role fill, or the neutral `outline` ring. */
 export type UiChipVariant = 'subtle' | 'outline';
 
-/** Colour role that tints a uikit avatar. `neutral` is the quiet default. */
+/** Colour role that tints a uikit avatar. `neutral` is the default: an accent-200 fill with accent-800 text. */
 export type UiAvatarTone = UiTone;
 
 /** A person, organization or bot shown in a uikit avatar group. */
@@ -128,6 +128,14 @@ export interface UiCalendarWeek {
 /** Which side of its host a uikit tooltip prefers. */
 export type UiTooltipSide = 'top' | 'right' | 'bottom' | 'left';
 
+/** One "label value" pair in a uikit tooltip that lists counts, with an optional colour dot. */
+export interface UiTooltipItem {
+  label: string;
+  value: string;
+  /** Background class of the dot before the label, such as `bg-blue-500`; no dot when absent. */
+  dotClass?: string;
+}
+
 /** Size of a uikit toggle: `default` 28x16, `medium` 36x20 or `large` 44x24. */
 export type UiToggleSize = 'default' | 'medium' | 'large';
 
@@ -137,7 +145,7 @@ export type UiToggleTone = 'accent' | 'warning' | 'danger';
 /** Size of the uikit loading dots: 4, 5 or 7px dots. */
 export type UiLoadingDotsSize = 'sm' | 'md' | 'lg';
 
-/** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `small`, `default` or `large` button. */
+/** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `tiny`, `default` or `large` button. */
 export type UiInputSize = UiControlSize;
 
 /** Native `type` of a uikit text input. There is no `number`: it would hand forms a string. Use `text` with the input's `inputmode` instead. */
@@ -212,8 +220,8 @@ export type UiCollapseSize = UiDensitySize;
 /** Visual style of a uikit button. `primary` is the accent fill; `secondary` and `tertiary` are neutral; `danger` is for destructive actions; `recording` is the green recording action. */
 export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'tertiary' | 'tertiary-accent' | 'danger' | 'danger-tertiary' | 'recording';
 
-/** Size of a uikit button: `small` 24px, `default` 32px or `large` 40px tall. */
-export type UiButtonSize = 'small' | 'default' | 'large';
+/** Size of a uikit button: `tiny` 24px, `small` 28px, `default` 32px or `large` 40px tall. */
+export type UiButtonSize = 'tiny' | 'small' | 'default' | 'large';
 
 /** Size of a uikit switch (segmented control): `tiny` 24px, `small` 32px or `medium` 40px tall. */
 export type UiSwitchSize = UiControlSize;
@@ -227,7 +235,7 @@ export type UiChoiceboxColumns = 1 | 2 | 3;
 /** Heading level (`aria-level`) of a uikit component's title, such as the collapse triggers and the empty state title. */
 export type UiHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
-/** Colour and urgency of a uikit toast. `error` announces assertively and stays until dismissed; `dark` is a short confirmation with a check. */
+/** Colour and urgency of a uikit toast. `error` announces assertively and stays until closed; `dark` is a short confirmation with a check. */
 export type UiToastVariant = 'default' | 'success' | 'warning' | 'error' | 'dark';
 
 /** Where `UiToastService` stacks a toast: the bottom-right corner or the bottom centre of the window. */
@@ -255,10 +263,8 @@ export interface UiToastConfig {
   position?: UiToastPosition;
   /** Up to two action buttons; any more are ignored. */
   actions?: UiToastAction[];
-  /** Milliseconds before the toast dismisses itself, `0` for never. Defaults to 5000, 3000 for `dark`, 8000 with actions, and never for `error`. */
+  /** Milliseconds before the toast dismisses itself. Defaults to 5000, 3000 for `dark`, 8000 with actions, and never for `error`. */
   duration?: number;
-  /** Shows the dismiss button. Defaults to `true`. */
-  dismissible?: boolean;
 }
 
 /** A toast in the stack, as `UiToastService` holds it. */
@@ -305,8 +311,8 @@ export interface UiSelectValueContext {
   $implicit: UiOption;
 }
 
-/** Visual style of a uikit split button. Only the accent `primary` and the neutral `secondary` exist: a split button is never destructive. */
-export type UiSplitButtonVariant = 'primary' | 'secondary';
+/** Visual style of a uikit split button: the accent `primary`, the neutral `secondary` or the green `recording`. A split button is never destructive. */
+export type UiSplitButtonVariant = 'primary' | 'secondary' | 'recording';
 
 /** One command in a uikit command menu: a place to go or an action to run. */
 export interface UiCommandItem {

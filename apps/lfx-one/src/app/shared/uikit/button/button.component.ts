@@ -26,7 +26,7 @@ import { UiSpinnerComponent } from '../spinner/spinner.component';
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
- * Button with eight variants and three sizes (small 24px, default 32px, large 40px). Renders a native `<button>`, or a router link when `link` is set.
+ * Button with eight variants and four sizes (tiny 24px, small 28px, default 32px, large 40px). Renders a native `<button>`, or a router link when `link` is set.
  * Supports a leading and a trailing Font Awesome icon, an icon-only circle, a loading state and full width.
  *
  * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
@@ -58,7 +58,7 @@ export class UiButtonComponent {
 
   /** Visual style. `primary` is the one main action of a view; `secondary` suits every other action; `danger` confirms a destructive one; `recording` is the green start/stop-recording action. */
   public readonly variant = input<UiButtonVariant>('primary');
-  /** `small` is 24px tall, `default` 32px and `large` 40px. Pair `large` with a 40px input, `default` with a 32px one and `small` with a 24px one. */
+  /** `tiny` is 24px tall, `small` 28px, `default` 32px and `large` 40px. Pair `large` with a 40px input, `default` with a 32px one and `tiny` with a 24px one. */
   public readonly size = input<UiButtonSize>('default');
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-plus`. Use the Light weight unless another weight shows a state. Replaced by a spinner while `loading`. */
   public readonly icon = input<string>('');
@@ -72,7 +72,7 @@ export class UiButtonComponent {
   public readonly ariaExpanded = input<boolean | null>(null);
   /** Writes `aria-controls` on the inner element: the id of the content this button shows or hides. Not used with `menu` or `popover`. */
   public readonly ariaControls = input<string>('');
-  /** Disables the button (or the link, when `link` is set). */
+  /** Disables the button (or the link, when `link` is set). It keeps the variant's colours at 45% opacity. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Swaps the leading icon for a spinner, keeps the label and sets `aria-busy`. The button ignores clicks until it is cleared. */
   public readonly loading = input<boolean, unknown>(false, { transform: booleanAttribute });
@@ -108,7 +108,7 @@ export class UiButtonComponent {
 
   /* eslint-enable @angular-eslint/no-input-rename */
 
-  /** Icon and spinner size in px: 12 on a small button, 14 on a default one and 18 on a large one. */
+  /** Icon and spinner size in px: 12 on a tiny button, 13 on a small one, 14 on a default one and 18 on a large one. */
   protected readonly iconSize: Signal<number> = this.initIconSize();
   protected readonly classes: Signal<string> = this.initClasses();
   /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
@@ -153,7 +153,7 @@ export class UiButtonComponent {
   }
 
   private initIconSize(): Signal<number> {
-    return computed(() => ({ small: 12, default: 14, large: 18 })[this.size()]);
+    return computed(() => ({ tiny: 12, small: 13, default: 14, large: 18 })[this.size()]);
   }
 
   private initLinkTabIndex(): Signal<number | null> {
@@ -172,7 +172,7 @@ export class UiButtonComponent {
       const variants = {
         primary:
           'border-transparent bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
-        secondary: 'border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
+        secondary: 'border-ui-neutral-alpha-300 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
         'secondary-accent':
           'border-ui-accent-300 bg-ui-background-100 text-ui-accent-500 hover:border-ui-accent-500 hover:bg-ui-accent-100 active:border-ui-accent-500 active:bg-ui-accent-200',
         tertiary: 'border-transparent bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
@@ -184,12 +184,17 @@ export class UiButtonComponent {
         recording:
           'border-transparent bg-ui-success-600 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-success-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-success-600)_76%,var(--ui-slate-900))]',
       };
-      // Disabled looks the same for every variant; the tertiary family stays transparent and borderless.
-      const flat = ['tertiary', 'tertiary-accent', 'danger-tertiary'].includes(this.variant());
-      const disabled = flat ? 'border-transparent bg-transparent text-ui-neutral-500' : 'border-ui-neutral-alpha-200 bg-ui-neutral-50 text-ui-neutral-500';
-      // Exact px: the 10px and 14px radii, the 4/6/8px gaps, the 8/10/16px padding and the 12/14/18px icons are library steps with no ui-* utility at the 14px root.
+      // Disabled keeps the variant's colours at 45% opacity and drops its hover and pressed steps.
+      const variant = this.disabled()
+        ? `${variants[this.variant()]
+            .split(' ')
+            .filter((c) => !/^(hover|active):/.test(c))
+            .join(' ')} opacity-45`
+        : variants[this.variant()];
+      // Exact px: the 10/11/14px radii, the 4/6/8px gaps, the 8/10/16px padding, the 13px label and the 12/13/14/18px icons have no ui-* utility at the 14px root.
       const sizes = {
-        small: { box: 'h-ui-tiny gap-[4px] button-12 [&>i]:text-[12px]', radius: 'rounded-[10px]', pad: 'px-[8px]' },
+        tiny: { box: 'h-ui-tiny gap-[4px] button-12 [&>i]:text-[12px]', radius: 'rounded-[10px]', pad: 'px-[8px]' },
+        small: { box: 'h-ui-xsmall gap-[4px] button-14 text-[13px]/[18px] [&>i]:text-[13px]', radius: 'rounded-[11px]', pad: 'px-[8px]' },
         default: { box: 'h-ui-small gap-[6px] button-14 [&>i]:text-[14px]', radius: 'rounded-ui-sm', pad: 'px-[10px]' },
         large: { box: 'h-ui-medium gap-[8px] button-14 [&>i]:text-[18px]', radius: 'rounded-[14px]', pad: 'px-[16px]' },
       };
@@ -207,17 +212,16 @@ export class UiButtonComponent {
         'danger-tertiary': '!text-ui-danger-700',
         recording: '!text-ui-white',
       };
-      const linkInk = this.disabled() ? '!text-ui-neutral-500' : linkInks[this.variant()];
       // Disabled: only the inner element takes the pointer, for the cursor; a click on the native disabled button is never dispatched.
       let pointer = this.loading() ? 'pointer-events-none' : 'cursor-pointer';
       if (this.disabled()) pointer = 'pointer-events-auto cursor-not-allowed [&_*]:pointer-events-none';
       return [
         base,
-        this.disabled() ? disabled : variants[this.variant()],
+        variant,
         size.box,
         shape,
         this.fullWidth() ? 'w-full' : '',
-        this.link() !== null ? `!no-underline ${linkInk}` : '',
+        this.link() !== null ? `!no-underline ${linkInks[this.variant()]}` : '',
         pointer,
       ]
         .filter(Boolean)

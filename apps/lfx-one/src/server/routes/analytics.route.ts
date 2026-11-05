@@ -162,10 +162,6 @@ router.get('/org-involvement-maintainers-monthly', requireOrgAnalyticsAccess, (r
 router.get('/org-involvement-event-attendance-monthly', requireOrgAnalyticsAccess, (req, res, next) =>
   analyticsController.orgEventAttendanceMonthly(req, res, next)
 );
-router.get('/org-involvement-certified-employees-monthly', requireOrgAnalyticsAccess, (req, res, next) =>
-  analyticsController.orgCertifiedEmployeesMonthly(req, res, next)
-);
-router.get('/org-involvement-training-enrollments', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.orgTrainingEnrollments(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): returns web activity summary metrics. Shared with LF Staff
 // Marketing Overview dashboard. See note above on `requireMarketingAuditorOrLfStaff`.

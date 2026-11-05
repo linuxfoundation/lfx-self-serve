@@ -71,6 +71,25 @@ export const MENTORSHIP_PROGRAM_PAGE_SIZE = 12;
 /** Most programs one `GET /api/mentorship/admin/programs` page may return; the BFF rejects a larger `limit`. */
 export const MENTORSHIP_PROGRAMS_MAX_LIMIT = 50;
 
+/** The Me lens Admin program list; a program's page is `/{programId}` under it and the enroll wizard is `/enroll`. */
+export const MENTORSHIP_ADMIN_PATH = '/mentorship/admin';
+
+/** The Project lens Mentorship Programs list (lfx-mentorship#398), laid out like {@link MENTORSHIP_ADMIN_PATH}. */
+export const MENTORSHIP_PROJECT_PROGRAMS_PATH = '/project/mentorship';
+
+/** The Foundation lens Mentorship Programs list: the foundation's programs and its sub-projects', laid out like the Project lens's. */
+export const MENTORSHIP_FOUNDATION_PROGRAMS_PATH = '/foundation/mentorship';
+
+export const MENTORSHIP_ADMIN_PROGRAMS_EMPTY_MESSAGE = 'Enroll a program to get started.';
+export const MENTORSHIP_PROJECT_PROGRAMS_TITLE = 'Mentorship Programs';
+export const MENTORSHIP_PROJECT_PROGRAMS_EMPTY_MESSAGE = 'This project has no mentorship programs yet.';
+export const MENTORSHIP_FOUNDATION_PROGRAMS_EMPTY_MESSAGE = 'This foundation and its projects have no mentorship programs yet.';
+export const MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_TITLE = 'No access to this project’s programs';
+export const MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_MESSAGE = 'You need Manage access on this project to see its mentorship programs.';
+export const MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_TITLE = 'No access to this foundation’s programs';
+export const MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_MESSAGE =
+  'You need Manage access on this foundation to see the mentorship programs of it and its projects.';
+
 /** The two mentee tabs of an admin program page; `type` on `GET /api/mentorship/admin/programs/:programId/mentees`. */
 export const MENTORSHIP_ADMIN_MENTEE_TABS = ['current', 'past'] as const;
 
@@ -690,34 +709,39 @@ export const MENTORSHIP_TERM_REOPEN_CONFIRM = 'Are you sure you want to re-open 
  */
 export const MENTORSHIP_UPSTREAM_PROGRAM_STATUSES = ['pending', 'published', 'rejected', 'hidden'] as const;
 
-/** Program-review page copy for a program's current upstream status. */
+/** Program-review page status badge copy for a program's current upstream status. */
 export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS: Record<MentorshipUpstreamProgramStatus, string> = {
-  pending: 'Awaiting review',
+  pending: 'Pending review',
   published: 'Approved',
   rejected: 'Rejected',
   hidden: 'Hidden',
 };
 
+/** Tailwind classes for the program-review page status badge. */
+export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_BADGE_CLASSES: Record<MentorshipUpstreamProgramStatus, string> = {
+  pending: 'bg-amber-100 text-amber-800',
+  published: 'bg-emerald-100 text-emerald-800',
+  rejected: 'bg-red-100 text-red-800',
+  hidden: 'bg-gray-100 text-gray-700',
+};
+
+/** Tailwind classes for the dot inside the program-review page status badge. */
+export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_DOT_CLASSES: Record<MentorshipUpstreamProgramStatus, string> = {
+  pending: 'bg-amber-600',
+  published: 'bg-emerald-600',
+  rejected: 'bg-red-600',
+  hidden: 'bg-gray-500',
+};
+
 /**
  * Accepted `?decision=` values on the approve/reject email link:
- * `/mentorship/program-review/<program id>?decision=approve|reject`.
+ * `/mentorship/program-review/<program id>?decision=approve|reject`. The parameter is optional:
+ * `reject` opens the page on the reject step, and `approve` or none opens it on the choice.
  */
 export const MENTORSHIP_PROGRAM_REVIEW_DECISIONS = ['approve', 'reject'] as const;
 
 /** The upstream status each review decision moves a `pending` program to. */
 export const MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS: Record<MentorshipProgramReviewDecision, MentorshipProgramDecisionStatus> = {
   approve: 'published',
-  reject: 'rejected',
-};
-
-/** Verb shown on the program-review confirm card and its button. */
-export const MENTORSHIP_PROGRAM_REVIEW_DECISION_LABELS: Record<MentorshipProgramReviewDecision, string> = {
-  approve: 'Approve',
-  reject: 'Reject',
-};
-
-/** Past-tense verb shown once a review decision has been recorded. */
-export const MENTORSHIP_PROGRAM_REVIEW_DECISION_DONE_LABELS: Record<MentorshipProgramReviewDecision, string> = {
-  approve: 'approved',
   reject: 'rejected',
 };

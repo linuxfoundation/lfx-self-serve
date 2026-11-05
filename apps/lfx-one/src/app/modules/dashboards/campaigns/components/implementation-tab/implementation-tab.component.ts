@@ -29,6 +29,7 @@ import {
   CAMPAIGN_BUDGET_DEFAULTS,
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
+  CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES,
   CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_MIME_TYPES,
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
@@ -80,6 +81,7 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
   GOOGLE_ADS_DECIMAL_NUMBER_PATTERN,
+  GOOGLE_ADS_DEVICE_LABELS,
   GOOGLE_ADS_GEO_SEARCH_BOUNDS,
   GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS,
   GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT,
@@ -120,6 +122,7 @@ import {
   GOOGLE_BIDDING_ROAS_STRATEGIES,
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
+  GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES,
   GOOGLE_BIDDING_STRATEGY_LABELS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
@@ -127,10 +130,14 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
+  GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -159,6 +166,7 @@ import {
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOAL_LABELS,
   REDDIT_VIDEO_GOALS,
+  googleAdsEchoed,
   googleAdsToLower,
   googleAdsTrimSpace,
   isCanonicalGoogleAdsResourceId,
@@ -198,6 +206,7 @@ import type {
   CampaignExistingRow,
   CampaignIndexDoc,
   CampaignKeyword,
+  CampaignNegativeKeywordMatchType,
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignGoogleImageAssetBlock,
@@ -211,6 +220,8 @@ import type {
   CampaignMicrosoftImageAssetBlock,
   CampaignProximityTarget,
   CampaignProximityTargetDraft,
+  CampaignAdSchedule,
+  CampaignDeviceBidModifier,
   CampaignRedditImageAssetBlock,
   CampaignCallExtension,
   CampaignCallExtensionDraft,
@@ -219,6 +230,7 @@ import type {
   CampaignPriceOfferingDraft,
   CampaignPromotion,
   CampaignPromotionDraft,
+  CampaignSearchAd,
   CampaignSitelink,
   CampaignStructuredSnippet,
   CampaignStructuredSnippetDraft,
@@ -227,6 +239,8 @@ import type {
   CreativeAssetUploadResult,
   CreativeAssetUploadStatus,
   CreativeSlotAssignment,
+  GoogleAdsAgeRange,
+  GoogleAdsGender,
   GoogleAdsGeoTargetOption,
   GoogleAdsGeoTargetSearchState,
   GoogleAdsGeoTargetSuggestion,
@@ -270,15 +284,34 @@ import {
   dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
   describeCampaignDispatchFailure,
+  googleAdditionalSearchAdsRefusal,
+  googleAdScheduleRefusal,
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
+  googleChannelOffersManualCpc,
+  googleCreateNegativeKeywords,
+  googleCreateNegativeKeywordsRefusal,
   googleCreativeImageDrift,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
+  googleDeviceAdjustmentNotSentSentence,
+  googleDeviceBidModifierRefusal,
+  googleExcludedAgeRangesRefusal,
+  googleExcludedGendersRefusal,
+  googleExcludedGeoListRefusal,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
+  googleScheduleAdjustmentIgnoredSentence,
+  googleScheduleAdjustmentStrategiesOn,
+  googleSearchAdCopyWidthRefusal,
+  googleSearchAdPathsRefusal,
+  googleStrategyTakesScheduleAdjustments,
+  googleSuggestedNegativeKeywordsText,
+  googleUpperCodeList,
   isHttpUrl,
   isReversedCampaignFlight,
+  joinAsSentenceList,
+  parseNegativeKeywordInput,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -287,6 +320,9 @@ import {
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
+import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
+import { CampaignGoogleSearchAdsPanelComponent } from '../campaign-google-search-ads-panel/campaign-google-search-ads-panel.component';
+import { CampaignGoogleTargetingPanelComponent } from '../campaign-google-targeting-panel/campaign-google-targeting-panel.component';
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
@@ -339,6 +375,9 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     LowerCasePipe,
     SlicePipe,
     CampaignBiddingControlComponent,
+    CampaignGoogleExclusionsPanelComponent,
+    CampaignGoogleSearchAdsPanelComponent,
+    CampaignGoogleTargetingPanelComponent,
     CreativeLibraryUploadComponent,
     CreativeSlotGridComponent,
     GoogleCreativeImageLibraryComponent,
@@ -1635,6 +1674,34 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleLanguages = signal<string[]>([]);
   protected readonly googleMaxLanguages = GOOGLE_ADS_MAX_LANGUAGES;
+  /**
+   * The Google campaign's ad-schedule windows and device bid adjustments, edited in
+   * `lfx-campaign-google-targeting-panel`. Empty is Google's own default — serve all day, every day,
+   * at one bid on every device — so leaving either alone changes nothing about the campaign.
+   */
+  protected readonly googleAdSchedules = signal<CampaignAdSchedule[]>([]);
+  protected readonly googleDeviceBidModifiers = signal<CampaignDeviceBidModifier[]>([]);
+  /**
+   * The Google campaign's demographic exclusions and excluded locations, edited in
+   * `lfx-campaign-google-exclusions-panel`. Empty is Google's own default — serve to every age and
+   * gender, and exclude nowhere — so leaving them alone changes nothing about the campaign.
+   */
+  protected readonly googleExcludedAgeRanges = signal<GoogleAdsAgeRange[]>([]);
+  protected readonly googleExcludedGenders = signal<GoogleAdsGender[]>([]);
+  protected readonly googleExcludedGeoTargets = signal<string[]>([]);
+  /**
+   * The Search campaign's first-ad display paths, its second and third ads, and its create-time
+   * negative keywords (the editor's raw text and the one match type they all take), edited in
+   * `lfx-campaign-google-search-ads-panel` (#4991). Empty sends the one ad and no negatives, exactly
+   * as before. The negatives are seeded from the brief's suggestions in `populateFromBrief`.
+   */
+  protected readonly googleSearchPath1 = signal('');
+  protected readonly googleSearchPath2 = signal('');
+  protected readonly googleAdditionalSearchAds = signal<CampaignSearchAd[]>([]);
+  protected readonly googleNegativeKeywordsText = signal('');
+  protected readonly googleNegativeKeywordMatchType = signal<CampaignNegativeKeywordMatchType>(
+    CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'].defaultMatchType
+  );
   /**
    * The languages Google Ads can target on this path, offered as a closed list.
    *
@@ -3252,6 +3319,16 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.googleFlightError() !== null) return false;
     // Search with no keyword, which creates a campaign that can never serve (#4848).
     if (googleSelected && this.googleSearchKeywordsError() !== null) return false;
+    // An ad schedule or device adjustment the BFF would refuse; the message is under the panel.
+    if (googleSelected && (this.googleAdSchedulesError() !== null || this.googleDeviceBidModifiersError() !== null)) return false;
+    // A demographic exclusion or excluded location the BFF would refuse; the message is under the exclusions panel.
+    if (googleSelected && (this.googleDemographicExclusionsError() !== null || this.googleExcludedGeoTargetsError() !== null)) return false;
+    // A display path, further ad or negative keyword the BFF would refuse; the message is under the Search ads panel.
+    if (
+      googleSelected &&
+      (this.googleSearchPathsError() !== null || this.googleAdditionalSearchAdsError() !== null || this.googleNegativeKeywordsError() !== null)
+    )
+      return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -3521,6 +3598,64 @@ export class ImplementationTabComponent implements OnInit {
     const count = this.googleLanguages().length;
     return `${channelLabel} campaigns do not take campaign languages, so the ${count} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.`;
   });
+  /**
+   * Whether the targeting panel offers ad schedules / device adjustments, and so whether the request
+   * carries them: `googleBiddingChannel` (a Google channel on the campaign-service road) fenced by the
+   * shared channel list the BFF refuses on. The template and `googleTargetingPayload` both read these.
+   */
+  protected readonly googleAdSchedulesAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_AD_SCHEDULES));
+  protected readonly googleDeviceBidModifiersAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS));
+  /**
+   * The shared refusal the BFF would answer the create with, or `null`; `canSubmit` blocks on it.
+   * Judged under the EFFECTIVE strategy, as for devices, so a window adjusted under a strategy Google
+   * ignores schedule adjustments under blocks Create here rather than failing the create.
+   */
+  protected readonly googleAdSchedulesError: Signal<string | null> = this.initGoogleAdSchedulesError();
+  /** Why the schedule windows offer no bid adjustment, or `null` while the effective strategy takes one. */
+  protected readonly googleScheduleAdjustBlockedReason: Signal<string | null> = this.initGoogleScheduleAdjustBlockedReason();
+  /**
+   * The held-adjustment sentence for ad schedules, or `''`: window adjustments that a strategy switch
+   * now refuses. Kept for a switch back, Create waits on the shared refusal, and one string feeds the
+   * visible notice and the always-mounted live region, as for devices.
+   */
+  protected readonly googleScheduleAdjustmentsHeldMessage: Signal<string> = this.initGoogleScheduleAdjustmentsHeldMessage();
+  protected readonly googleDeviceBidModifiersError: Signal<string | null> = this.initGoogleDeviceBidModifiersError();
+  /** Why the device control offers no Adjust bid, or `null` while the effective strategy is Manual CPC. */
+  protected readonly googleDeviceAdjustBlockedReason: Signal<string | null> = this.initGoogleDeviceAdjustBlockedReason();
+  /**
+   * The held-adjustment sentence, or `''`: device adjustments set under Manual CPC that a strategy
+   * switch now refuses. They are kept for a switch back and Create waits on the shared refusal; one
+   * string feeds the visible notice and the always-mounted live region, as for languages.
+   */
+  protected readonly googleDeviceAdjustmentsHeldMessage: Signal<string> = this.initGoogleDeviceAdjustmentsHeldMessage();
+  /**
+   * Whether the exclusions panel offers demographic exclusions / excluded locations, and so whether the
+   * request carries them. Demographics are fenced by the shared channel list the BFF refuses on.
+   * Excluded locations have NO channel fence — `validateGeoPlan` applies none, so they reach Demand
+   * Gen too — and are gated only on the campaign-service road (`googleBiddingChannel`), the road the
+   * BFF judges them on.
+   */
+  protected readonly googleDemographicExclusionsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS));
+  protected readonly googleExcludedGeoTargetsAvailable = computed(() => this.googleBiddingChannel() !== null);
+  /** The shared age-range refusal, else the gender one — the BFF's order — or `null`; `canSubmit` blocks on it. */
+  protected readonly googleDemographicExclusionsError: Signal<string | null> = this.initGoogleDemographicExclusionsError();
+  /**
+   * The shared excluded-location refusal, judged against the targeted list the request will ACTUALLY
+   * send (`googleEffectiveGeoTargets`, event-country fallback included), which is the list the BFF
+   * compares for the clash. `canSubmit` blocks on it.
+   */
+  protected readonly googleExcludedGeoTargetsError: Signal<string | null> = this.initGoogleExcludedGeoTargetsError();
+  /**
+   * Whether the Search ads panel shows, and so whether the request carries its paths, further ads and
+   * negatives: Search on the campaign-service road, the one channel upstream takes them on.
+   */
+  protected readonly googleSearchAdsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_SEARCH_ADS));
+  /** The shared refusals the BFF would answer the create with, or `null`; `canSubmit` blocks on each. */
+  protected readonly googleSearchPathsError: Signal<string | null> = this.initGoogleSearchPathsError();
+  protected readonly googleAdditionalSearchAdsError: Signal<string | null> = this.initGoogleAdditionalSearchAdsError();
+  protected readonly googleNegativeKeywordsError: Signal<string | null> = this.initGoogleNegativeKeywordsError();
+  /** The held-targeting sentence, or `''`; one string feeds the visible notice and the live region, as for languages. */
+  protected readonly googleTargetingWithheldMessage: Signal<string> = this.initGoogleTargetingWithheldMessage();
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
   protected readonly googleProximityChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleProximityChannel();
   protected readonly googleProximityWithheldOn: Signal<string | null> = this.initGoogleProximityWithheldOn();
@@ -4716,6 +4851,56 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  protected onGoogleAdSchedulesChange(schedules: CampaignAdSchedule[]): void {
+    this.googleAdSchedules.set(schedules);
+    this.emitDraft();
+  }
+
+  protected onGoogleDeviceBidModifiersChange(devices: CampaignDeviceBidModifier[]): void {
+    this.googleDeviceBidModifiers.set(devices);
+    this.emitDraft();
+  }
+
+  protected onGoogleExcludedAgeRangesChange(ageRanges: GoogleAdsAgeRange[]): void {
+    this.googleExcludedAgeRanges.set(ageRanges);
+    this.emitDraft();
+  }
+
+  protected onGoogleExcludedGendersChange(genders: GoogleAdsGender[]): void {
+    this.googleExcludedGenders.set(genders);
+    this.emitDraft();
+  }
+
+  protected onGoogleExcludedGeoTargetsChange(excluded: string[]): void {
+    this.googleExcludedGeoTargets.set(excluded);
+    this.emitDraft();
+  }
+
+  protected onGoogleSearchPath1Change(path: string): void {
+    this.googleSearchPath1.set(path);
+    this.emitDraft();
+  }
+
+  protected onGoogleSearchPath2Change(path: string): void {
+    this.googleSearchPath2.set(path);
+    this.emitDraft();
+  }
+
+  protected onGoogleAdditionalSearchAdsChange(ads: CampaignSearchAd[]): void {
+    this.googleAdditionalSearchAds.set(ads);
+    this.emitDraft();
+  }
+
+  protected onGoogleNegativeKeywordsTextChange(text: string): void {
+    this.googleNegativeKeywordsText.set(text);
+    this.emitDraft();
+  }
+
+  protected onGoogleNegativeKeywordMatchTypeChange(matchType: CampaignNegativeKeywordMatchType): void {
+    this.googleNegativeKeywordMatchType.set(matchType);
+    this.emitDraft();
+  }
+
   /**
    * Add one audience segment, reporting whether it was actually added.
    *
@@ -5204,6 +5389,11 @@ export class ImplementationTabComponent implements OnInit {
       // The language narrowing, Google-gated for the same reason, and already withheld unless the
       // dispatched channel is one upstream accepts campaign languages on.
       ...(platforms.includes('google-ads') ? this.googleLanguagesPayload() : {}),
+      // Ad schedules and device adjustments, on the same Google gate, already withheld per channel.
+      ...(platforms.includes('google-ads') ? this.googleTargetingPayload() : {}),
+      // The first ad's display paths, the further ads and the negatives, on the same gate, and
+      // already withheld unless the dispatched channel is Search.
+      ...(platforms.includes('google-ads') ? this.googleSearchAdsPayload() : {}),
       // The audience segments, Google-gated for the same reason, and already withheld unless the
       // dispatched channel is Search, the one channel upstream attaches audience criteria on.
       ...(platforms.includes('google-ads') ? this.googleAudienceSegmentsPayload() : {}),
@@ -6665,6 +6855,32 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleLanguages !== undefined) {
       this.googleLanguages.set([...draft.googleLanguages]);
     }
+    // Entries copied too, and held rather than sent on a channel that takes none, as languages are.
+    if (draft.googleAdSchedules !== undefined) {
+      this.googleAdSchedules.set(draft.googleAdSchedules.map((s) => ({ ...s })));
+    }
+    if (draft.googleDeviceBidModifiers !== undefined) {
+      this.googleDeviceBidModifiers.set(draft.googleDeviceBidModifiers.map((d) => ({ ...d })));
+    }
+    // Copied, and held rather than sent on a channel that takes none, on the same rule.
+    if (draft.googleExcludedAgeRanges !== undefined) {
+      this.googleExcludedAgeRanges.set([...draft.googleExcludedAgeRanges]);
+    }
+    if (draft.googleExcludedGenders !== undefined) {
+      this.googleExcludedGenders.set([...draft.googleExcludedGenders]);
+    }
+    if (draft.googleExcludedGeoTargets !== undefined) {
+      this.googleExcludedGeoTargets.set([...draft.googleExcludedGeoTargets]);
+    }
+    // Copied on the same rule, and held rather than sent while a channel other than Search is
+    // selected. The negatives' text restores over the brief's suggestions `populateFromBrief` seeded.
+    if (draft.googleSearchPath1 !== undefined) this.googleSearchPath1.set(draft.googleSearchPath1);
+    if (draft.googleSearchPath2 !== undefined) this.googleSearchPath2.set(draft.googleSearchPath2);
+    if (draft.googleAdditionalSearchAds !== undefined) {
+      this.googleAdditionalSearchAds.set(draft.googleAdditionalSearchAds.map((ad) => this.copySearchAd(ad)));
+    }
+    if (draft.googleNegativeKeywordsText !== undefined) this.googleNegativeKeywordsText.set(draft.googleNegativeKeywordsText);
+    if (draft.googleNegativeKeywordMatchType !== undefined) this.googleNegativeKeywordMatchType.set(draft.googleNegativeKeywordMatchType);
     // Copied on the same rule, and restored whatever the channel selection is: the section and
     // `googleAudienceSegmentsPayload` both gate on `googleAudienceSegmentsAvailable`, so a list
     // restored under a non-Search channel is held, not sent.
@@ -7013,6 +7229,16 @@ export class ImplementationTabComponent implements OnInit {
       // Entries copied too, matching the restore.
       googleProximityTargets: this.googleProximityTargets().map((t) => ({ ...t })),
       googleLanguages: [...this.googleLanguages()],
+      googleAdSchedules: this.googleAdSchedules().map((s) => ({ ...s })),
+      googleDeviceBidModifiers: this.googleDeviceBidModifiers().map((d) => ({ ...d })),
+      googleExcludedAgeRanges: [...this.googleExcludedAgeRanges()],
+      googleExcludedGenders: [...this.googleExcludedGenders()],
+      googleExcludedGeoTargets: [...this.googleExcludedGeoTargets()],
+      googleSearchPath1: this.googleSearchPath1(),
+      googleSearchPath2: this.googleSearchPath2(),
+      googleAdditionalSearchAds: this.googleAdditionalSearchAds().map((ad) => this.copySearchAd(ad)),
+      googleNegativeKeywordsText: this.googleNegativeKeywordsText(),
+      googleNegativeKeywordMatchType: this.googleNegativeKeywordMatchType(),
       googleAudienceSegments: [...this.googleAudienceSegments()],
       googleCallouts: [...this.googleCallouts()],
       // Entries copied too, for the reason the restore above gives in the other direction.
@@ -7338,6 +7564,10 @@ export class ImplementationTabComponent implements OnInit {
 
     // A stored brief can lack the list; every reader maps or filters it (#4848).
     this.briefKeywords.set(Array.isArray(brief.keywords) ? brief.keywords : []);
+    // The brief's suggested negatives seed the create-time editor (#4991), one per line, filtered to
+    // what the shared judge accepts and capped at its count, as the Microsoft seed below is filtered:
+    // an untouched create must not open held on a suggestion. A draft's own text restores over this.
+    this.googleNegativeKeywordsText.set(googleSuggestedNegativeKeywordsText(brief.negativeKeywords));
 
     // Microsoft's seed (LFXV2-3312). The brief's own keywords feed it DIRECTLY, with no
     // translation: `CampaignKeyword.matchType` is already the PascalCase vocabulary
@@ -7459,6 +7689,16 @@ export class ImplementationTabComponent implements OnInit {
     this.googlePostalGeoLabels.set({});
     this.googleProximityTargets.set([]);
     this.googleLanguages.set([]);
+    this.googleAdSchedules.set([]);
+    this.googleDeviceBidModifiers.set([]);
+    this.googleExcludedAgeRanges.set([]);
+    this.googleExcludedGenders.set([]);
+    this.googleExcludedGeoTargets.set([]);
+    this.googleSearchPath1.set('');
+    this.googleSearchPath2.set('');
+    this.googleAdditionalSearchAds.set([]);
+    this.googleNegativeKeywordsText.set('');
+    this.googleNegativeKeywordMatchType.set(CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'].defaultMatchType);
     this.googleAudienceSegments.set([]);
     this.googleCallouts.set([]);
     this.googleSitelinks.set([]);
@@ -8401,6 +8641,190 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The shared device refusal the BFF would answer the create with, judged under the EFFECTIVE
+   * strategy — the one `googleBiddingPayload` sends, or the channel default it leaves upstream to
+   * pick — so an adjustment the strategy refuses blocks Create here rather than failing the create.
+   */
+  private initGoogleDeviceBidModifiersError(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null) return null;
+      return googleDeviceBidModifierRefusal(this.googleDeviceBidModifiers(), strategy, channel);
+    });
+  }
+
+  /**
+   * The per-entry checks (range, repeat, overlap, per-day cap) run whenever the section is shown;
+   * only the strategy pass needs a resolved channel and strategy. With either unresolved the judge
+   * runs under Manual CPC, a strategy that takes schedule adjustments and so skips that pass, and
+   * Search, which decides only the strategy pass's wording.
+   */
+  private initGoogleAdSchedulesError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleAdSchedulesAvailable()) return null;
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!channel || strategy === null) return googleAdScheduleRefusal(this.googleAdSchedules(), 'manual-cpc', 'search');
+      return googleAdScheduleRefusal(this.googleAdSchedules(), strategy, channel);
+    });
+  }
+
+  private initGoogleDemographicExclusionsError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleDemographicExclusionsAvailable()) return null;
+      const channel = this.googleBiddingChannel();
+      return googleExcludedAgeRangesRefusal(this.googleExcludedAgeRanges(), channel) ?? googleExcludedGendersRefusal(this.googleExcludedGenders(), channel);
+    });
+  }
+
+  private initGoogleSearchPathsError(): Signal<string | null> {
+    return computed(() => (this.googleSearchAdsAvailable() ? googleSearchAdPathsRefusal(this.googleSearchPath1(), this.googleSearchPath2()) : null));
+  }
+
+  /**
+   * The first ad's copy judged for display width first — campaign-service refuses an over-wide line
+   * on every Search ad, the campaign-level copy included, with one ad or three — then the further ads.
+   * Read through `campaignFormRevision` because the copy controls are not signals.
+   */
+  private initGoogleAdditionalSearchAdsError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleSearchAdsAvailable()) return null;
+      void this.campaignFormRevision();
+      const { headlines, descriptions } = this.campaignForm.getRawValue();
+      return googleSearchAdCopyWidthRefusal(headlines, descriptions, 'ad 1') ?? googleAdditionalSearchAdsRefusal(this.googleAdditionalSearchAds());
+    });
+  }
+
+  /**
+   * The editor's own line problems first — numbered as the operator sees them — then the shared
+   * refusal on what the request would carry, which adds the count cap.
+   */
+  private initGoogleNegativeKeywordsError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleSearchAdsAvailable()) return null;
+      const text = this.googleNegativeKeywordsText();
+      const { problems } = parseNegativeKeywordInput(text, CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'].maxTextLength);
+      if (problems.length > 0) return `Negative keyword line ${problems[0].line} ("${googleAdsEchoed(problems[0].text)}"): ${problems[0].reason}`;
+      return googleCreateNegativeKeywordsRefusal(googleCreateNegativeKeywords(text, this.googleNegativeKeywordMatchType()));
+    });
+  }
+
+  private initGoogleExcludedGeoTargetsError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleExcludedGeoTargetsAvailable()) return null;
+      return googleExcludedGeoListRefusal(googleUpperCodeList(this.googleExcludedGeoTargets()), googleUpperCodeList(this.googleEffectiveGeoTargets()));
+    });
+  }
+
+  /**
+   * Why the schedule windows offer no Bid adjustment box: Google Ads applies an ad-schedule bid
+   * adjustment only under Manual CPC and Maximize Clicks and ignores it under Smart Bidding, so the
+   * shared judge refuses one there. The windows themselves still apply. The way back names only the
+   * strategies the channel offers (`googleScheduleAdjustmentStrategiesOn`) — Search both, Display
+   * Maximize Clicks, Performance Max and Video neither. `null` while the schedule section is not shown.
+   */
+  private initGoogleScheduleAdjustBlockedReason(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null || googleStrategyTakesScheduleAdjustments(strategy)) return null;
+      const lead = `${googleScheduleAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The windows still decide when the campaign serves.`;
+      const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
+      const takes = GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES.map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]).join(' or ');
+      return offered.length > 0
+        ? `${lead} Choose ${offered.join(' or ')} as the bidding strategy to adjust bids by time.`
+        : `${lead} ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns cannot bid ${takes} here.`;
+    });
+  }
+
+  private initGoogleScheduleAdjustmentsHeldMessage(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null || googleStrategyTakesScheduleAdjustments(strategy)) return '';
+      const adjusted = this.googleAdSchedules().filter((s) => s.bidModifier !== undefined).length;
+      if (adjusted === 0) return '';
+      const one = adjusted === 1;
+      const pronoun = one ? 'it' : 'them';
+      const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
+      const way = offered.length > 0 ? `clear ${pronoun}, or choose ${offered.join(' or ')}` : `clear ${pronoun}`;
+      return `${googleScheduleAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The bid ${one ? 'adjustment' : 'adjustments'} on ${adjusted} ad schedule ${one ? 'window is' : 'windows are'} kept for a switch back, and Create Campaign waits until you ${way}.`;
+    });
+  }
+
+  /**
+   * Why the device control offers only Default bid and Exclude: campaign-service refuses a non-zero
+   * device modifier under any strategy but Manual CPC (`validateBiddingPlan`). Under Maximize
+   * Conversions, Maximize Conversion Value and Target ROAS Google would not apply one anyway; under
+   * Maximize Clicks and Target CPA it would, so the shared
+   * `googleDeviceAdjustmentNotSentSentence` gives whichever reason is true. The way back differs by channel — Search can switch to Manual CPC,
+   * Display and Video offer no Manual CPC here — so the sentence says which. `null` while the device
+   * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}.
+   */
+  private initGoogleDeviceAdjustBlockedReason(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null || strategy === 'manual-cpc') return null;
+      const manual = GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc'];
+      const lead = `${googleDeviceAdjustmentNotSentSentence(strategy)} You can keep the default bid or exclude a device.`;
+      return googleChannelOffersManualCpc(channel)
+        ? `${lead} Choose ${manual} as the bidding strategy to adjust bids by device.`
+        : `${lead} ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns cannot bid ${manual} here.`;
+    });
+  }
+
+  private initGoogleDeviceAdjustmentsHeldMessage(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const strategy = this.googleBiddingStrategy();
+      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null || strategy === 'manual-cpc') return '';
+      const adjusted = this.googleDeviceBidModifiers().filter((d) => d.bidModifier !== 0);
+      if (adjusted.length === 0) return '';
+      const one = adjusted.length === 1;
+      const names = joinAsSentenceList(adjusted.map((d) => GOOGLE_ADS_DEVICE_LABELS[d.device]));
+      const way = googleChannelOffersManualCpc(channel)
+        ? `Default bid or Exclude, or choose ${GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc']} again`
+        : 'Default bid or Exclude';
+      return `${googleDeviceAdjustmentNotSentSentence(strategy)} The ${one ? 'adjustment' : 'adjustments'} on ${names} ${one ? 'is' : 'are'} kept for a switch back, and Create Campaign waits until you set ${one ? 'it' : 'them'} to ${way}.`;
+    });
+  }
+
+  /**
+   * What the dispatched channel holds back from the targeting and exclusions panels, said out loud —
+   * whichever list its shared channel fence leaves out. The lists are kept for a switch back, not
+   * sent, so the campaign serves all day, at one bid or to every age and gender; the notice says so
+   * rather than letting the section simply vanish. Excluded locations are never held this way: no
+   * channel fences them. `''` off the campaign-service road and when nothing is held.
+   */
+  private initGoogleTargetingWithheldMessage(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel) return '';
+      const kinds: string[] = [];
+      const held: string[] = [];
+      const schedules = this.googleAdSchedulesAvailable() ? 0 : this.googleAdSchedules().length;
+      const devices = this.googleDeviceBidModifiersAvailable() ? 0 : this.googleDeviceBidModifiers().length;
+      const demographics = this.googleDemographicExclusionsAvailable() ? 0 : this.googleExcludedAgeRanges().length + this.googleExcludedGenders().length;
+      if (schedules > 0) {
+        kinds.push('ad schedules');
+        held.push(`${schedules} ad schedule ${schedules === 1 ? 'window' : 'windows'}`);
+      }
+      if (devices > 0) {
+        kinds.push('device bid adjustments');
+        held.push(`${devices} device ${devices === 1 ? 'setting' : 'settings'}`);
+      }
+      if (demographics > 0) {
+        kinds.push('demographic exclusions');
+        held.push(`${demographics} demographic ${demographics === 1 ? 'exclusion' : 'exclusions'}`);
+      }
+      if (held.length === 0) return '';
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take ${kinds.join(' or ')}, so the ${held.join(' and ')} you set will not be sent. Switch the channel back to keep them.`;
+    });
+  }
+
+  /**
    * Whether postal-code targets are offered and sent — on the campaign-service road with a Google
    * channel selected, which is exactly when `googleBiddingChannel` is non-null.
    *
@@ -9262,6 +9686,55 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.googleLanguagesChannel()) return {};
     const languages = this.googleLanguages();
     return languages.length > 0 ? { languages: [...languages] } : {};
+  }
+
+  /**
+   * Ad schedules, device adjustments, demographic exclusions and excluded locations as the request
+   * carries them: each gated by the SAME computed its panel section renders on, omitted when empty
+   * (Google's default), entries copied.
+   */
+  private googleTargetingPayload(): Partial<CampaignCreateRequest> {
+    const payload: Partial<CampaignCreateRequest> = {};
+    const schedules = this.googleAdSchedules();
+    if (this.googleAdSchedulesAvailable() && schedules.length > 0) payload.adSchedules = schedules.map((s) => ({ ...s }));
+    const devices = this.googleDeviceBidModifiers();
+    if (this.googleDeviceBidModifiersAvailable() && devices.length > 0) payload.deviceBidModifiers = devices.map((d) => ({ ...d }));
+    if (this.googleDemographicExclusionsAvailable()) {
+      const ageRanges = this.googleExcludedAgeRanges();
+      const genders = this.googleExcludedGenders();
+      if (ageRanges.length > 0) payload.excludedAgeRanges = [...ageRanges];
+      if (genders.length > 0) payload.excludedGenders = [...genders];
+    }
+    const excluded = this.googleExcludedGeoTargets();
+    if (this.googleExcludedGeoTargetsAvailable() && excluded.length > 0) payload.excludedGeoTargets = [...excluded];
+    return payload;
+  }
+
+  /**
+   * The first ad's display paths, the further ads and the negatives as the request carries them, each
+   * gated by `googleSearchAdsAvailable` — the computed the panel renders on — and omitted when empty.
+   * Paths and ad lines are sent as typed; the BFF trims them and drops blank lines.
+   */
+  private googleSearchAdsPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleSearchAdsAvailable()) return {};
+    const payload: Partial<CampaignCreateRequest> = {};
+    if (this.googleSearchPath1().trim() !== '') payload.path1 = this.googleSearchPath1();
+    if (this.googleSearchPath2().trim() !== '') payload.path2 = this.googleSearchPath2();
+    const ads = this.googleAdditionalSearchAds();
+    if (ads.length > 0) payload.additionalSearchAds = ads.map((ad) => this.copySearchAd(ad));
+    const negatives = googleCreateNegativeKeywords(this.googleNegativeKeywordsText(), this.googleNegativeKeywordMatchType());
+    if (negatives.length > 0) payload.negativeKeywords = negatives;
+    return payload;
+  }
+
+  private copySearchAd(ad: CampaignSearchAd): CampaignSearchAd {
+    return { headlines: [...ad.headlines], descriptions: [...ad.descriptions], path1: ad.path1 ?? '', path2: ad.path2 ?? '' };
+  }
+
+  /** Whether the dispatched Google channel (`googleBiddingChannel`, null off the campaign-service road) is in `channels`. */
+  private googleChannelIn(channels: readonly GoogleCampaignChannel[]): boolean {
+    const channel = this.googleBiddingChannel();
+    return channel !== null && channels.includes(channel);
   }
 
   /**
