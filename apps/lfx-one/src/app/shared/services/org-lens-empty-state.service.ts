@@ -140,7 +140,10 @@ export class OrgLensEmptyStateService {
       }
       // Rule 3 — a lower bound with nothing held at all is the same outage. `holdsAnything` is the
       // caller's own evidence of holding something, weighed exactly as `classifyLookup` weighs it.
-      const lowerBound = !this.roleGrants.loaded() || outcome === 'partial' || this.claOnlyAccess.lookupFailed();
+      // The families answer is part of the same bound: admission rides out its pending, partial or
+      // failed window (`grantsUnsettled`), so held-ness must too.
+      const lowerBound =
+        !this.roleGrants.loaded() || outcome === 'partial' || this.claOnlyAccess.lookupFailed() || this.accountContext.rollUpFamiliesUnsettled();
       if (lowerBound && !this.accountContext.hasOrgSelectorAccess()) {
         return false;
       }

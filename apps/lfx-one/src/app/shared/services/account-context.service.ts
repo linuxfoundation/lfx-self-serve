@@ -117,10 +117,18 @@ export class AccountContextService {
 
   /** True once the families answer landed as a lower bound or unknown — the switcher shows its incomplete-list notice, whose Retry re-runs the grants and so the families. */
   public readonly rollUpFamiliesIncomplete: Signal<boolean> = this.rollUpFamiliesService.incomplete;
+  /** True while the families cannot settle roll-up eligibility — the window admission rides out, so held-ness must ride it out too. */
+  public readonly rollUpFamiliesUnsettled: Signal<boolean> = this.rollUpFamiliesService.unsettled;
+  public readonly rollUpFamiliesLoading: Signal<boolean> = this.rollUpFamiliesService.loading;
 
-  /** The families a roll-up is offered for: those where the caller holds at least `ROLLUP_MIN_ORGANIZATIONS` organizations (#4132). */
+  /**
+   * The families a roll-up is offered for: those where the caller holds at least
+   * `ROLLUP_MIN_ORGANIZATIONS` organizations (#4132), from a complete answer only. A partial answer
+   * can name a provisional top account, and a pick made on it would demote once Retry finds the real
+   * one. A selection made before the outage stays admitted: `grantsUnsettled` holds it meanwhile.
+   */
   public readonly eligibleRollUpFamilies: Signal<OrgRollUpFamily[]> = computed(() =>
-    this.rollUpFamilies().filter((family) => family.orgUids.length >= ROLLUP_MIN_ORGANIZATIONS)
+    this.rollUpFamiliesService.complete() ? this.rollUpFamilies().filter((family) => family.orgUids.length >= ROLLUP_MIN_ORGANIZATIONS) : []
   );
 
   /** The family behind the selected roll-up, or null when no roll-up is selected or its family is not known (yet). */

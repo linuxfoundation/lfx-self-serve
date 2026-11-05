@@ -35,6 +35,8 @@ export class OrgRollUpFamiliesService {
   private readonly orgsByUidInternal: WritableSignal<Map<string, OrgRollUpSetOrg>> = signal<Map<string, OrgRollUpSetOrg>>(new Map());
   private readonly lookupOutcomeInternal: WritableSignal<OrgLensLookupOutcome> = signal<OrgLensLookupOutcome>('ok');
   private readonly loadingInternal: WritableSignal<boolean> = signal<boolean>(false);
+  /** The grants load (`OrgRoleGrantsService.loadedAtMs`) the current answer was fetched for. */
+  private readonly answeredForInternal: WritableSignal<number | null> = signal<number | null>(null);
 
   public readonly source: Signal<OrgRollUpFamiliesSource> = this.sourceInternal.asReadonly();
   /** The server's families, in its order (alphabetical by family name). Empty unless `source` is `'server'`. */
@@ -48,8 +50,17 @@ export class OrgRollUpFamiliesService {
   /** True when the server's families are usable as the grouping: it answered, and the walk did not fail outright. */
   public readonly hasServerFamilies: Signal<boolean> = computed(() => this.sourceInternal() === 'server' && this.lookupOutcomeInternal() !== 'failed');
 
-  /** True while roll-up eligibility cannot be judged from the families: no answer yet, or an answer that is a lower bound or unknown. */
-  public readonly unsettled: Signal<boolean> = computed(() => this.sourceInternal() === 'pending' || this.lookupOutcomeInternal() !== 'ok');
+  /**
+   * True while roll-up eligibility cannot be judged from the families: no answer yet, an answer that
+   * is a lower bound or unknown, or an answer to an earlier grants load — a refetch is owed, and the
+   * previous families must not admit or demote against the grants that replaced them.
+   */
+  public readonly unsettled: Signal<boolean> = computed(
+    () => this.sourceInternal() === 'pending' || this.lookupOutcomeInternal() !== 'ok' || this.answeredForInternal() !== this.roleGrants.loadedAtMs()
+  );
+
+  /** True when the answer is complete (`ok`), so its families may be offered as new picks. A partial answer can name a provisional top account the next answer replaces. */
+  public readonly complete: Signal<boolean> = computed(() => this.sourceInternal() === 'server' && this.lookupOutcomeInternal() === 'ok');
 
   /** True once an answer has landed that is a lower bound or unknown — the switcher's incomplete-list notice and its Retry cover it. */
   public readonly incomplete: Signal<boolean> = computed(() => this.sourceInternal() === 'server' && this.lookupOutcomeInternal() !== 'ok');
@@ -58,16 +69,19 @@ export class OrgRollUpFamiliesService {
     toObservable(this.roleGrants.loadedAtMs)
       .pipe(
         filter((loadedAt): loadedAt is number => loadedAt !== null),
-        switchMap(() => this.fetch()),
+        switchMap((loadedAt) => this.fetch(loadedAt)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe();
   }
 
-  private fetch(): Observable<void> {
+  private fetch(loadedAt: number): Observable<void> {
     this.loadingInternal.set(true);
     return this.http.get<OrgRollUpSetResponse>(ORG_ROLL_UP_SET_PATH).pipe(
-      tap((response) => this.applyResponse(response)),
+      tap((response) => {
+        this.applyResponse(response);
+        this.answeredForInternal.set(loadedAt);
+      }),
       map(() => undefined),
       catchError(() => {
         // Unknown, not empty: keep nothing that could read as a family having shrunk.
@@ -75,6 +89,7 @@ export class OrgRollUpFamiliesService {
         this.familiesInternal.set([]);
         this.orgsByUidInternal.set(new Map());
         this.lookupOutcomeInternal.set('failed');
+        this.answeredForInternal.set(loadedAt);
         this.loadingInternal.set(false);
         return of(undefined);
       })

@@ -89,6 +89,31 @@ describe('OrgRollUpFamiliesService', () => {
     expect(service.families()[1].orgUids).toEqual([UID_C]);
   });
 
+  // Between a grants reload and the families that answer it, the previous families describe the
+  // grants that were replaced: nothing may admit or demote on them.
+  it('is unsettled from a grants reload until the families answer it', () => {
+    grantsLoad(1);
+    http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response());
+    expect(service.unsettled()).toBe(false);
+
+    loadedAtMs.set(2);
+    expect(service.unsettled()).toBe(true);
+    TestBed.tick();
+    http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response());
+
+    expect(service.unsettled()).toBe(false);
+  });
+
+  it('offers new picks only from a complete answer', () => {
+    grantsLoad(1);
+    http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response({ degraded: true, lookupOutcome: 'partial' }));
+    expect(service.complete()).toBe(false);
+
+    grantsLoad(2);
+    http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response());
+    expect(service.complete()).toBe(true);
+  });
+
   it('re-fetches when the grants reload', () => {
     grantsLoad(1);
     http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response());

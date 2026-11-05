@@ -36,6 +36,7 @@ describe('OrgSelectorComponent.selectItem', () => {
   let isOnNotFound: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<OrgSelectorComponent>;
   let retrying: WritableSignal<boolean>;
+  let familiesLoading: WritableSignal<boolean>;
   let retry: ReturnType<typeof vi.fn>;
   let resetAndReload: ReturnType<typeof vi.fn>;
   let refreshList: ReturnType<typeof vi.fn>;
@@ -50,6 +51,7 @@ describe('OrgSelectorComponent.selectItem', () => {
     navigateToSelectedOrg = vi.fn();
     isOnNotFound = vi.fn(() => false);
     retrying = signal(false);
+    familiesLoading = signal(false);
     retry = vi.fn();
     resetAndReload = vi.fn();
     refreshList = vi.fn();
@@ -75,6 +77,7 @@ describe('OrgSelectorComponent.selectItem', () => {
             // Roll-up entry off by default: these suites cover the single-organization labelling
             // and the static-card rules, which #4132 must leave exactly as they were.
             canSelectRollUp: signal(false),
+            rollUpFamiliesLoading: familiesLoading,
             rollUpFamiliesIncomplete: signal(false),
             eligibleRollUpFamilies: signal([]),
             selectedRollUpRootUid: signal(null),
@@ -210,6 +213,22 @@ describe('OrgSelectorComponent.selectItem', () => {
     retryList();
     expect(retry).toHaveBeenCalledTimes(2);
   });
+
+  // Retry's grants reload triggers a families refetch; a click during it would reload the grants
+  // again and cancel that refetch, so the control stays busy until the families answer.
+  it('stays busy while the families refetch Retry triggered is in flight', () => {
+    const retryList = (): void => (fixture.componentInstance as unknown as { retryList(): void }).retryList();
+    const label = (): string => (fixture.componentInstance as unknown as { listRetryLabel(): string }).listRetryLabel();
+
+    familiesLoading.set(true);
+    expect(label()).toBe('Retrying…');
+    retryList();
+    expect(retry).not.toHaveBeenCalled();
+
+    familiesLoading.set(false);
+    retryList();
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
 });
 
 /** The navbar variant's single-organization static card and its plain-language role description. */
@@ -252,6 +271,7 @@ describe('OrgSelectorComponent navbar card', () => {
             // The roll-up entry is off here: these suites pin the single-organization labelling and
             // the static-card rules, which #4132 must leave exactly as they were.
             canSelectRollUp: signal(false),
+            rollUpFamiliesLoading: signal(false),
             rollUpFamiliesIncomplete: signal(false),
             eligibleRollUpFamilies: signal([]),
             selectedRollUpRootUid: signal(null),
@@ -397,6 +417,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
               return uid && !isOrgRollUpSegment(uid) ? uid : null;
             },
             canSelectRollUp: signal(opts.families.length > 0),
+            rollUpFamiliesLoading: signal(false),
             rollUpFamiliesIncomplete: signal(opts.familiesIncomplete ?? false),
             eligibleRollUpFamilies: signal(opts.families),
             selectedRollUpRootUid: signal(selectedRootUid),

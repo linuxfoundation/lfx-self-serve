@@ -154,7 +154,8 @@ export class OrgSelectorComponent {
     () => this.emptyState.listIncomplete() || this.accountContextService.rollUpFamiliesIncomplete()
   );
   protected readonly listIncompleteNotice = ORG_LENS_LIST_INCOMPLETE_NOTICE;
-  protected readonly listRetrying: Signal<boolean> = this.emptyState.retrying;
+  /** Busy through the families refetch Retry triggers too: a second click would reload the grants and cancel it. */
+  protected readonly listRetrying: Signal<boolean> = computed(() => this.emptyState.retrying() || this.accountContextService.rollUpFamiliesLoading());
   protected readonly listRetryLabel: Signal<string> = computed(() =>
     this.listRetrying() ? ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL : ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL
   );

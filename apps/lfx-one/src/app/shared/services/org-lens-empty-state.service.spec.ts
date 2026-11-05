@@ -37,6 +37,8 @@ interface Harness {
   selectedAccount: WritableSignal<Account>;
   hasOrgSelectorAccess: WritableSignal<boolean>;
   canSelectRollUp: WritableSignal<boolean>;
+  /** `AccountContextService.rollUpFamiliesUnsettled` — the families answer is pending, partial, failed or stale. */
+  rollUpFamiliesUnsettled: WritableSignal<boolean>;
   /** Organizations `OrgClaOnlyAccessService.isClaOnly` answers true for. */
   claOnlyUids: WritableSignal<Set<string>>;
   /** `OrgClaOnlyAccessService.lookupFailed` — the flag-gated CLA-manager scopes outage. */
@@ -76,6 +78,7 @@ function setup(): Harness {
   const selectedAccount = signal<Account>(account(''));
   const hasOrgSelectorAccess = signal(false);
   const canSelectRollUp = signal(true);
+  const rollUpFamiliesUnsettled = signal(false);
   const claOnlyUids = signal(new Set<string>());
   const claLookupFailed = signal(false);
   const affiliatedToMember = signal(false);
@@ -127,6 +130,7 @@ function setup(): Harness {
           selectedAccount,
           hasOrgSelectorAccess,
           canSelectRollUpFor: (rootUid: string | null) => rootUid === ROLLUP_ROOT && canSelectRollUp(),
+          rollUpFamiliesUnsettled,
           getStoredUid: () => 'cookie-uid',
           // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
           orgListPinUid: () => {
@@ -157,6 +161,7 @@ function setup(): Harness {
     selectedAccount,
     hasOrgSelectorAccess,
     canSelectRollUp,
+    rollUpFamiliesUnsettled,
     claOnlyUids,
     claLookupFailed,
     affiliatedToMember,
@@ -241,6 +246,24 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.selectedHeld()).toBe(true);
     expect(h.service.pageState()).toBeNull();
     expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  // The grants answered `ok`, but the families have not settled — always briefly, right after the
+  // grants load, and for as long as the families request keeps failing. Admission rides that out, so
+  // held-ness must: no not-held page, and no contractor probe on the roll-up key.
+  it('keeps the roll-up held while the families are unsettled', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(false);
+    h.rollUpFamiliesUnsettled.set(true);
+    h.isContractor.set(true);
+
+    expect(h.service.selectedHeld()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+    expect(h.readCheck).not.toHaveBeenCalled();
+
+    h.rollUpFamiliesUnsettled.set(false);
+    expect(h.service.selectedHeld()).toBe(false);
   });
 
   /**

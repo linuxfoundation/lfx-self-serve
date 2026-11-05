@@ -203,7 +203,8 @@ export class OrgRoleGrantsService {
         const byName = aName.localeCompare(bName);
         if (byName !== 0) return byName;
       }
-      return aUid < bUid ? -1 : aUid > bUid ? 1 : 0;
+      if (aUid === bUid) return 0;
+      return aUid < bUid ? -1 : 1;
     };
 
     const sorted = [...families.values()].sort((a, b) => byNameThenUid(a.rootName, a.rootUid, b.rootName, b.rootUid));
