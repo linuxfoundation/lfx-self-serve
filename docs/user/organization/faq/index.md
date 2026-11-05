@@ -1,6 +1,6 @@
 ---
 title: Organization FAQ
-description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
 tags:
@@ -28,6 +28,14 @@ The Projects page lists the open source projects in the selected organization's 
 ## How do I add a project to the Projects page?
 
 Add it to a workspace with **Add Project**. You must be able to edit the organization, for example as an Admin. In the **Organization** lens, open **Projects**, pick the workspace in the workspace menu, select **Add Project**, search in **Search and select projects**, select one or more projects, then select **Add project(s)**. Workspaces are shared, so everyone who can open the organization sees the change. If you can only view the organization, **Add Project** is unavailable and says **You have view-only access to this organization**. See [How do I add a project to a workspace?](../projects/#how-do-i-add-a-project-to-a-workspace).
+
+## What do the People and Code Contributions pages show?
+
+The People page lists the selected organization's employees and how each one takes part in the Linux Foundation, and the Code Contributions page shows their code contributions to open source projects. People has the tabs **All Employees**, **Board**, **Committee**, **Key Contacts**, **Contributors**, **Event Attendees**, **Trainees** and **Org Lens Access**. Code Contributions counts the organization's **Projects with Activity**, **Repositories** and code contributions, and lists them on a **Repositories** tab and a **Commits** tab. Both pages are under **Organization Engagement** in the Organization lens sidebar. A CLA Manager or initial CLA Manager designee with no other role on the organization sees **EasyCLA** instead. See [What is the People page?](../people/#what-is-the-people-page) and [What is the Code Contributions page?](../code-contributions/#what-is-the-code-contributions-page).
+
+## Does the time range carry between People and Code Contributions?
+
+Yes. The time range you pick on People or Code Contributions carries to the other page when you open it from the sidebar, and so do **Organization scope** and **Team members**. Project type, the code count, the foundation, and the employee and employment choices do not carry. On People, the time range applies to **All Employees**, **Contributors**, **Event Attendees** and **Trainees**, and switching tabs keeps it. **Clear filters** on Code Contributions, **All Employees** or **Contributors** puts the time range back to **Past 2 years**, the default. See [Does the time range carry from People to Code Contributions?](../people/#does-the-time-range-carry-from-people-to-code-contributions).
 
 ## Why can't I edit this corporate CLA?
 

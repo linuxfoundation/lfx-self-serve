@@ -2030,6 +2030,46 @@ export const GOOGLE_DEVICE_BID_MODE_LABELS = {
 export const GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS = 20;
 
 /**
+ * The Google channels that take responsive search ads, their display paths and campaign-level
+ * negative keywords: Search alone. campaign-service refuses `adGroups`, `path1`/`path2` and
+ * `negativeKeywords` on every other channel (`preflightCampaignKind`) rather than dropping them.
+ */
+export const GOOGLE_CHANNELS_WITH_SEARCH_ADS = ['search'] as const;
+
+/** Google's limit of enabled responsive search ads in one ad group (campaign-service's `maxAdsPerAdGroup`). */
+export const GOOGLE_ADS_MAX_SEARCH_ADS_PER_AD_GROUP = 3;
+
+/**
+ * Most headlines and descriptions one responsive search ad takes (`ad_copy.go`'s `maxHeadlines` and
+ * `maxDescriptions`). Upstream drops the rows past these with a note; the shared judge
+ * (`googleAdditionalSearchAdsRefusal`) deliberately refuses them instead, stricter than upstream, so
+ * no line the operator wrote is silently left out. The Implement tab stops offering Add at the cap.
+ */
+export const GOOGLE_ADS_MAX_SEARCH_HEADLINES = 15;
+export const GOOGLE_ADS_MAX_SEARCH_DESCRIPTIONS = 4;
+
+/**
+ * Most display width each responsive search ad display path takes (`ad_copy.go`'s
+ * `maxSearchAdPathWeight`), counted as Google counts it: CJK and full-width characters count double
+ * (see `googleAdsTextWeight`).
+ */
+export const GOOGLE_ADS_MAX_SEARCH_AD_PATH_WIDTH = 15;
+
+/**
+ * The characters a display path may not hold besides whitespace and control characters
+ * (`pmax_creative.go`'s `displayPathPunctuation`): each would break the visible URL Google renders.
+ */
+export const GOOGLE_ADS_SEARCH_AD_PATH_REFUSED_CHARACTERS = '/?#&=';
+
+/**
+ * The theme label of the one ad group a Search campaign with several responsive search ads is sent
+ * as. campaign-service requires a name on every `adGroups` entry and APPENDS it to the composed ad
+ * group name ("LFX | Ad Group | <project> | <event> | <suffix> | Main"); a campaign with one ad is
+ * sent without `adGroups` and keeps the name it has always had.
+ */
+export const GOOGLE_SEARCH_AD_GROUP_NAME = 'Main';
+
+/**
  * The age ranges accepted on a campaign-level exclusion, mapped to Google's `AgeRangeType` enum
  * (`campaign_criteria.go`'s `ageRangeTypes`).
  *
@@ -4246,8 +4286,11 @@ export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
  * Far above any paste an operator produces, so the invariant the bound above states — a resource
  * ceiling never refuses what upstream accepts — holds here too, while a pathological body is still
  * stopped before `createConfigEnvelope` walks it. Only the one field named above is measured against
- * it: every other nested name upstream decodes as a plain `string`, so an array under one of those
- * is a body upstream refuses outright and has no over-refusal to relax.
+ * it. The other nested LISTS are `additionalSearchAds[].headlines` and `.descriptions` (#4991), each a
+ * `[]string` upstream: they are bounded at {@link MAX_GOOGLE_CREATIVE_LIST_ENTRIES}, far above the
+ * 15 headlines and 4 descriptions one ad takes, so that bound refuses nothing upstream accepts. Every
+ * other nested name upstream decodes as a plain `string`, so an array under one of those is a body
+ * upstream refuses outright and has no over-refusal to relax.
  */
 export const MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES = 1000;
 
@@ -4351,6 +4394,12 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'callExtensions', label: 'call extensions' },
   { field: 'promotions', label: 'promotions' },
   { field: 'prices', label: 'price extensions' },
+  // The Search ad group's further ads, every ad's display paths and the create-time negatives
+  // (#4991): the legacy creator builds one ad from `headlines`/`descriptions` and nothing else.
+  { field: 'path1', label: 'display path 1' },
+  { field: 'path2', label: 'display path 2' },
+  { field: 'additionalSearchAds', label: 'additional search ads' },
+  { field: 'negativeKeywords', label: 'negative keywords' },
   // The bidding plan and the per-channel creative (#3568), judged by what the cutover's own
   // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
   // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
