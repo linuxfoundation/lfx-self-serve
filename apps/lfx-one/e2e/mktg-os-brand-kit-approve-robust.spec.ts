@@ -40,7 +40,7 @@ for (const width of [1440, 1024, 390]) {
     expect(box.x, diagnostic).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width, diagnostic).toBeLessThanOrEqual(width);
     expect(await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)), diagnostic).toBeLessThanOrEqual(width);
-    // The sticky footer spans the content's padding; nothing may pass the content's edge.
+    // Nothing in the body may pass the dialog content's edge.
     const overflow = await dialog.getByTestId('mktg-document-view-approve-confirm').evaluate((element) => {
       const content = element.closest('.p-dialog-content') ?? element;
       const contentRight = content.getBoundingClientRect().right;
@@ -87,24 +87,36 @@ for (const width of [1440, 390]) {
     expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null)).toBe(true);
     await page.screenshot({ path: info.outputPath(`approve-dialog-opened-${width}.png`), fullPage: true });
 
-    // The buttons are in view at the same time, pinned to the bottom of the scroll area, and stay put when the body scrolls.
+    // The buttons are in view at the same time, in the dialog's own footer outside the scroll area, flush with the dialog's box.
     const content = dialog.getByTestId('mktg-document-view-approve-confirm').locator('xpath=ancestor::*[contains(@class, "p-dialog-content")][1]');
+    const footer = dialog.getByTestId('mktg-document-view-approve-footer').locator('xpath=ancestor::*[contains(@class, "p-dialog-footer")][1]');
     const anyway = dialog.getByTestId('mktg-document-view-approve-anyway');
     await expect(anyway).toBeVisible();
+    const dialogBox = await dialog.boundingBox();
     const contentBox = await content.boundingBox();
+    const footerBox = await footer.boundingBox();
     const before = await anyway.boundingBox();
-    if (!contentBox || !before) throw new Error('The dialog content and its Approve button must be rendered');
-    expect(before.y + before.height, `viewport ${width}px: the button must sit inside the content's box`).toBeLessThanOrEqual(
-      contentBox.y + contentBox.height + 1
-    );
-    expect(before.y, `viewport ${width}px`).toBeGreaterThanOrEqual(contentBox.y - 1);
+    if (!dialogBox || !contentBox || !footerBox || !before) throw new Error('The dialog, its content, its footer and its Approve button must be rendered');
+    const geometry = `viewport ${width}px, dialog ${JSON.stringify(dialogBox)}, content ${JSON.stringify(contentBox)}, footer ${JSON.stringify(footerBox)}`;
+    expect(footerBox.y, `${geometry}: the footer sits below the scroll area`).toBeGreaterThanOrEqual(contentBox.y + contentBox.height - 1);
+    expect(
+      Math.abs(footerBox.y + footerBox.height - (dialogBox.y + dialogBox.height)),
+      `${geometry}: the footer is flush with the dialog's bottom`
+    ).toBeLessThanOrEqual(1);
+    expect(Math.abs(footerBox.x - dialogBox.x), `${geometry}: the footer is flush with the dialog's left`).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(footerBox.x + footerBox.width - (dialogBox.x + dialogBox.width)),
+      `${geometry}: the footer is flush with the dialog's right`
+    ).toBeLessThanOrEqual(1);
+    expect(before.y, `${geometry}: the button is inside the footer`).toBeGreaterThanOrEqual(footerBox.y - 1);
+    expect(before.y + before.height, `${geometry}: the button is inside the footer`).toBeLessThanOrEqual(footerBox.y + footerBox.height + 1);
     await content.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
     await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     const after = await anyway.boundingBox();
     if (!after) throw new Error('The Approve button must stay rendered');
-    expect(Math.abs(after.y - before.y), `viewport ${width}px: the footer must be sticky`).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.y - before.y), `viewport ${width}px: the footer must stay put while the body scrolls`).toBeLessThanOrEqual(1);
     await page.screenshot({ path: info.outputPath(`approve-dialog-footer-${width}.png`), fullPage: true });
   });
 }

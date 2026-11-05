@@ -89,10 +89,4 @@
       </section>
     }
   }
-  <!-- Pinned to the bottom of the dialog's scroll area, as the vote footer is to its page: only the body scrolls.
-       The negative margins equal .p-dialog-content's padding (the theme's 1.25rem), so the footer spans edge to edge. -->
-  <div class="sticky bottom-0 -mx-5 -mb-5 flex justify-end gap-2 border-t border-gray-200 bg-white px-5 py-3" data-testid="mktg-document-view-approve-footer">
-    <lfx-button label="Cancel" severity="secondary" [outlined]="true" data-testid="mktg-document-view-approve-cancel" (onClick)="close(false)" />
-    <lfx-button label="Approve anyway" severity="primary" data-testid="mktg-document-view-approve-anyway" (onClick)="close(true)" />
-  </div>
 </div>

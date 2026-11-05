@@ -68,6 +68,7 @@ import { filter, firstValueFrom, NEVER, of, Subject, take, throwError, TimeoutEr
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
+import { MktgApproveGapsFooterComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-footer.component';
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
@@ -3536,7 +3537,7 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     expect(dialog.open).toHaveBeenCalledExactlyOnceWith(
       MktgApproveGapsDialogComponent,
-      expect.objectContaining({ header: 'Approve with open gaps?', data: report, modal: true })
+      expect.objectContaining({ header: 'Approve with open gaps?', data: report, modal: true, templates: { footer: MktgApproveGapsFooterComponent } })
     );
     expect(store.approveRevision).not.toHaveBeenCalled();
     if (confirmed === 'navigate') {

@@ -4,20 +4,15 @@
 import { TestBed } from '@angular/core/testing';
 import type { BrandKitReport, MktgAssetReport } from '@lfx-one/shared/interfaces';
 import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
-import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { describe, expect, it, vi } from 'vitest';
+import { DynamicDialogConfig } from 'primeng/dynamicdialog';
+import { describe, expect, it } from 'vitest';
 import { MktgApproveGapsDialogComponent } from './mktg-approve-gaps-dialog.component';
 
 describe('Approval with open gaps dialog', () => {
-  const close = vi.fn();
   const render = async (report: MktgAssetReport): Promise<HTMLElement> => {
-    close.mockReset();
     TestBed.configureTestingModule({
       imports: [MktgApproveGapsDialogComponent],
-      providers: [
-        { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: report } },
-      ],
+      providers: [{ provide: DynamicDialogConfig, useValue: { data: report } }],
     });
     const fixture = TestBed.createComponent(MktgApproveGapsDialogComponent);
     await fixture.whenStable();
@@ -26,10 +21,7 @@ describe('Approval with open gaps dialog', () => {
   const query = (root: HTMLElement, testId: string): HTMLElement | null => root.querySelector(`[data-testid="${testId}"]`);
   const queryAll = (root: HTMLElement, testId: string): HTMLElement[] => Array.from(root.querySelectorAll(`[data-testid="${testId}"]`));
 
-  it.each([
-    ['cancel', false],
-    ['anyway', true],
-  ] as const)('lists the report as text and returns %s', async (action, result) => {
+  it('lists a v1 report as text', async () => {
     const report: MktgAssetReport = { sources_read: [], sources_failed: [{ name: 'Docs', reason: '404' }], gaps: ['<b>Missing</b>'], notes: '' };
     const root = await render(report);
     expect(root.textContent).toContain('Docs — 404');
@@ -40,9 +32,6 @@ describe('Approval with open gaps dialog', () => {
     expect(query(root, 'mktg-document-view-approve-missing')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-conflicts')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-rules')).toBeNull();
-    expect(close).not.toHaveBeenCalled();
-    root.querySelector<HTMLButtonElement>(`[data-testid="mktg-document-view-approve-${action}"] button`)?.click();
-    expect(close).toHaveBeenCalledExactlyOnceWith(result);
   });
 
   it('shows a v2 report’s failed sources and missing assets like the Sources tab, its colour conflicts with the one kept, and the chapters the LF reference supplied rules to', async () => {
@@ -148,6 +137,5 @@ describe('Approval with open gaps dialog', () => {
     expect(query(root, 'mktg-document-view-approve-missing')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-conflicts')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-rules')).toBeNull();
-    expect(query(root, 'mktg-document-view-approve-anyway')).not.toBeNull();
   });
 });

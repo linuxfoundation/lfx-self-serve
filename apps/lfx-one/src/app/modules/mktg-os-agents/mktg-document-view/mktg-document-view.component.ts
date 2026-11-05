@@ -135,6 +135,7 @@ import {
 } from 'rxjs';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
+import { MktgApproveGapsFooterComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-footer.component';
 import { MktgClosedRunMessageComponent } from '../components/mktg-closed-run-message/mktg-closed-run-message.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
@@ -1344,6 +1345,7 @@ export class MktgDocumentViewComponent {
       modal: true,
       // The dialog focuses its own content on show, so a long list opens at its top rather than at the footer button.
       focusOnShow: false,
+      templates: { footer: MktgApproveGapsFooterComponent },
       width: '32rem',
       style: { maxWidth: '90vw' },
       draggable: false,
