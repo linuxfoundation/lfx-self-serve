@@ -1195,6 +1195,18 @@ describe('AccountContextService — family roll-up', () => {
       expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_B });
     });
 
+    // A link to family A lands in A while the caller still holds an organization there, not in
+    // whichever unrelated company they were viewing before.
+    it('prefers an organization in the addressed family over an unrelated current selection', () => {
+      const UID_X = '0014100000MgxXXXXX';
+      const seedX: Account = { accountId: UID_X, accountName: 'Xray', membershipTier: '', uid: UID_X };
+      service.initializeUserOrganizations([seedX]);
+      service.setAccount(seedX);
+      grants.inheritedWriterSet.set(new Set([UID_B]));
+
+      expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_B);
+    });
+
     // A CLA-only organization is not part of a roll-up but is a real address (M3: the EasyCLA tab),
     // so the caller stays on it rather than being bounced to the not-found dead end.
     it('keeps a CLA-only organization the caller is already addressing', () => {

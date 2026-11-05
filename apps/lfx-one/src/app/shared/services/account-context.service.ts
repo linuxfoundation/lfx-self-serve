@@ -480,7 +480,14 @@ export class AccountContextService {
     // Only reached from `orgPathParamGuard` once the grants have settled — `admitWhilePending`
     // admits every unsettled visit — so the held set is authoritative here, not a lower bound.
     const concrete = !isOrgRollUpSegment(current.uid) && orgUrlSegment(current) && this.canAddressOrganization(current.uid) ? current : null;
-    const next = concrete ?? this.rollUpFallbackOrganization(rootUid);
+    // The addressed family first: a link to family A lands in A while the caller still holds an
+    // organization there, whatever company they happened to be viewing before.
+    const familyUids = this.rollUpFamilies().find((family) => family.rootUid === rootUid)?.orgUids ?? [];
+    let next: Account | null = concrete && familyUids.includes(concrete.uid ?? '') ? concrete : null;
+    if (!next && familyUids.length > 0) {
+      next = this.rollUpFallbackOrganization(rootUid);
+    }
+    next ??= concrete ?? this.rollUpFallbackOrganization(rootUid);
     if (!next || !orgUrlSegment(next)) {
       return null;
     }
