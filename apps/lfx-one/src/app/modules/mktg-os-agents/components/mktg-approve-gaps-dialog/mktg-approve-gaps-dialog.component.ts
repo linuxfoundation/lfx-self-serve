@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
+import { afterNextRender, Component, ElementRef, inject, viewChild } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   BRAND_KIT_APPROVE_CONFLICT_KEPT_PREFIX,
@@ -44,6 +44,13 @@ export class MktgApproveGapsDialogComponent {
   protected readonly rulesTitle = BRAND_KIT_APPROVE_RULES_TITLE;
   protected readonly groupTitles = BRAND_KIT_SOURCES_GROUP_TITLES;
   protected readonly fixPrefix = BRAND_KIT_MISSING_FIX_PREFIX;
+  private readonly root = viewChild.required<ElementRef<HTMLDivElement>>('root');
+
+  public constructor() {
+    // The dialog opens read from its top: focus the content itself, not the first button at its foot,
+    // which the browser would scroll a long list down to (the dialog's own focusOnShow is off).
+    afterNextRender(() => this.root().nativeElement.focus({ preventScroll: true }));
+  }
 
   protected close(approve: boolean): void {
     this.ref.close(approve);

@@ -53,6 +53,29 @@ for (const width of [1440, 1024, 390]) {
   });
 }
 
+for (const width of [1440, 390]) {
+  test(`the approve dialog opens read from its top, with focus inside it (${width}px)`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await openAssetDocument(page, 'brand-kit', 200, true, false, brandKitDraftRevisionResponse(brandKitReportV2RulesFixture()));
+    await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
+    const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('mktg-document-view-approve-confirm') });
+    await expect(dialog.getByTestId('mktg-document-view-approve-anyway')).toBeVisible();
+    // Settled after the fade-in: the first section's top is not above the scrolling content's top, and focus is in the dialog.
+    await expect
+      .poll(
+        () =>
+          dialog.getByTestId('mktg-document-view-approve-failed').evaluate((section) => {
+            const content = section.closest('.p-dialog-content') ?? section.parentElement;
+            return section.getBoundingClientRect().top - (content?.getBoundingClientRect().top ?? 0);
+          }),
+        { message: `viewport ${width}px: the first section must be in view on open` }
+      )
+      .toBeGreaterThanOrEqual(-1);
+    expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`approve-dialog-opened-${width}.png`), fullPage: true });
+  });
+}
+
 test.describe('at a laptop width', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });
 

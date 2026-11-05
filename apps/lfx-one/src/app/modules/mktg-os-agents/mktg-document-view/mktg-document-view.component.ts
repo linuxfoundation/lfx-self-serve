@@ -1342,6 +1342,8 @@ export class MktgDocumentViewComponent {
       header: mktgReportHasOpenGaps(report) ? BRAND_KIT_APPROVE_HEADER_GAPS : BRAND_KIT_APPROVE_HEADER,
       data: report,
       modal: true,
+      // The dialog focuses its own content on show, so a long list opens at its top rather than at the footer button.
+      focusOnShow: false,
       width: '32rem',
       style: { maxWidth: '90vw' },
       draggable: false,

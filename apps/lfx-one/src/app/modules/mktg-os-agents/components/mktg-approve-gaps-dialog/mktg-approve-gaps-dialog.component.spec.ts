@@ -60,6 +60,8 @@ describe('Approval with open gaps dialog', () => {
       },
     ];
     const root = await render(report);
+    // The dialog opens read from its top: the content itself holds focus, not the footer button.
+    expect(document.activeElement).toBe(query(root, 'mktg-document-view-approve-confirm'));
     // A v2 report: the top list is the Sources tab's two groups (source, plain reason, small detail; asset label, reason, fix), then the gaps.
     expect(root.textContent).not.toContain('brand-guidelines — HTTP 404');
     const failed = query(root, 'mktg-document-view-approve-failed');
