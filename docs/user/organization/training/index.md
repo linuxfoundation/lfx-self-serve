@@ -52,7 +52,7 @@ The nine cards count the organization's learners and their courses for the selec
 | **Courses in progress**             | Courses enrolled in the time range with no certificate in the time range                                                                                                                                                                                |
 | **People in training**              | People with at least one course in progress                                                                                                                                                                                                             |
 
-Except for **Training-program roster members** and **People with training activity**, the cards count people on the organization's people list only. **Courses in progress** and **People in training** are not a snapshot of today: they are judged by the time range alone, so an enrollment from before the range, or one since abandoned, does not count as in progress.
+Except for **Training-program roster members** and **People with training activity**, the cards count people on the organization's people list only. **Courses in progress** and **People in training** are not a snapshot of today: they are judged by the time range alone. An enrollment in the range with no certificate in the range counts as in progress, even if it has since been abandoned. An enrollment from before the range does not.
 
 If the cards cannot load, they are replaced by **Couldn't load training stats** and a **Retry** button. The table is not affected.
 

@@ -73,19 +73,19 @@ Each card shows its total number of attendances and a bar for each value with it
 
 ## What does How attendance impacts project influence show?
 
-**How attendance impacts project influence** lists the projects where the organization has a published Ecosystem Influence Score, and how much of that score comes from its employees' meeting attendance. Ecosystem influence is the organization's influence on a project's non-code collaboration, such as documentation, committees, meetings and events.
+**How attendance impacts project influence** lists the projects where the organization has a published Ecosystem Influence Score, and how much of the influence shown for each one comes from its employees' meeting attendance. The page shows the score's activity measures only, not its membership-tier part, so every share on this table is a share of the measures shown, not of the whole score. Ecosystem influence is the organization's influence on a project's non-code collaboration, such as documentation, committees, meetings and events.
 
-| Column                        | What it shows                                                                                                                                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Project**                   | The project's name                                                                                                                                                                                |
-| **Rank among companies**      | The organization's rank, such as **#2 of 15**, among the companies that contributed code or attended meetings on the project in the time range. Point at or select it for what the rank compares  |
-| **Ecosystem Influence**       | The organization's influence level on the project: **Leading**, **Contributing**, **Participating** or **Silent**                                                                                 |
-| **Attendance's contribution** | The share of the organization's influence score on the project that comes from meeting attendance, such as **12% of score**. The bar is scaled for legibility; the percentage is the actual share |
-| **Δ vs. prior period**        | How the organization's score changed from the prior period, such as **+5.2%**, **No change**, **New**, or **No comparable prior period** when there is no earlier score                           |
+| Column                        | What it shows                                                                                                                                                                                                           |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Project**                   | The project's name                                                                                                                                                                                                      |
+| **Rank among companies**      | The organization's rank, such as **#2 of 15**, among the companies that contributed code or attended meetings on the project in the time range. Point at or select it for what the rank compares                        |
+| **Ecosystem Influence**       | The organization's influence level on the project: **Leading**, **Contributing**, **Participating** or **Silent**                                                                                                       |
+| **Attendance's contribution** | The share of the measures shown that comes from meeting attendance, such as **12% of score**. It leaves out the membership-tier part of the score. The bar is scaled for legibility; the percentage is the actual share |
+| **Δ vs. prior period**        | How the organization's score changed from the prior period, such as **+5.2%**, **No change**, **New**, or **No comparable prior period** when there is no earlier score                                                 |
 
 Select **Projects** at the end of a row to open that project's page in the Organization lens.
 
-Select a row to expand it. The expanded row breaks the score down into the measures behind it, with the share of each, and highlights meeting attendance. **Board Members (all time)** and **Committee Members (all time)** count standing seats over all time, so they change little with the time range. A sentence under the breakdown gives the same share of the score in influence points.
+Select a row to expand it. The expanded row breaks the score down into the measures behind it, with the share of each, and highlights meeting attendance. **Board Members (all time)** and **Committee Members (all time)** count standing seats over all time, so they change little with the time range. A sentence under the breakdown gives the same share as a number of influence points, out of the points shown for the project in the period.
 
 Because a project appears only once it has a published Ecosystem Influence Score, this list can be shorter than the projects in **By project**. The page says so under the table.
 
