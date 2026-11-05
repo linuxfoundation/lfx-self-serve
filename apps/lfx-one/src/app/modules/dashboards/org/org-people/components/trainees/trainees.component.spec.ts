@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { EMPTY_ORG_TRAINEES_RESPONSE } from '@lfx-one/shared/constants';
 import type {
@@ -171,6 +172,7 @@ describe('TraineesComponent', () => {
       imports: [TraineesComponent],
       providers: [
         provideRouter([]),
+        provideNoopAnimations(),
         { provide: AccountContextService, useValue: { selectedAccount: account } },
         { provide: TraineesService, useValue: { getTrainees } },
         { provide: OrgLensTrainingService, useValue: { getTrainingStats, getFilterOptions: vi.fn(() => of(FILTER_OPTIONS)) } },
@@ -616,15 +618,28 @@ describe('TraineesComponent', () => {
     const nextTable = (): Promise<void> => click('[data-testid="org-people-trainees-paginator"] .p-paginator-next');
     const nextOutside = (): Promise<void> => click('[data-testid="org-people-trainees-outside-paginator"] .p-paginator-next');
     const outsideCount = (): number => outsideList()?.querySelectorAll('li').length ?? 0;
-    // The rows-per-page dropdown is overlay-driven; its change handler is what the paginator emits.
-    const pickPageSize = async (rows: number): Promise<void> => {
-      (fixture.componentInstance as unknown as { onPageChange(event: { first: number; rows: number }): void }).onPageChange({ first: 0, rows });
+    // The rows-per-page choice goes through the paginator's real PrimeNG dropdown: open it, then click the option in the overlay.
+    const choosePageSize = async (paginatorTestId: string, rows: number): Promise<void> => {
+      // PrimeNG's overlay reads matchMedia, which the test DOM lacks.
+      window.matchMedia ??= ((query: string) =>
+        ({
+          matches: false,
+          media: query,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+          addListener: () => undefined,
+          removeListener: () => undefined,
+        }) as unknown as MediaQueryList) as typeof window.matchMedia;
+      const select = el().querySelector<HTMLElement>(`[data-testid="${paginatorTestId}"] p-select`)!;
+      select.click();
+      await settle();
+      const option = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find((node) => node.textContent?.trim() === String(rows));
+      expect(option, `the ${rows} option`).toBeDefined();
+      option!.click();
       await settle();
     };
-    const pickOutsidePageSize = async (rows: number): Promise<void> => {
-      (fixture.componentInstance as unknown as { onOutsidePageChange(event: { first: number; rows: number }): void }).onOutsidePageChange({ first: 0, rows });
-      await settle();
-    };
+    const pickPageSize = (rows: number): Promise<void> => choosePageSize('org-people-trainees-paginator', rows);
+    const pickOutsidePageSize = (rows: number): Promise<void> => choosePageSize('org-people-trainees-outside-paginator', rows);
 
     it('shows the first ten rows and the filtered total, with no Show All', async () => {
       respondWith(25);
