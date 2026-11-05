@@ -65,7 +65,7 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      available_actions: [],
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
