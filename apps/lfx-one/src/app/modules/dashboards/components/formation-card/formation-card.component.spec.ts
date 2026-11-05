@@ -490,7 +490,8 @@ describe('FormationCardComponent', () => {
       it('toasts when the card is destroyed and the drawer closed before the write settled', async () => {
         const config = await openEditDrawer();
 
-        config.data.save({ legal_entity_name: 'Changed' }).subscribe().unsubscribe();
+        // A live subscriber stays attached, so only the closure flag recorded after teardown can route this to the toast.
+        config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: () => undefined });
         fixture.destroy();
         drawerClosed.next(undefined);
         putRequest.error(failure);
