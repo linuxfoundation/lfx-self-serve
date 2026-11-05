@@ -4,7 +4,7 @@ description: How to read the People page for the selected organization — its A
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, people, employees, contributors, maintainers, board, committee, key-contacts, events, training, time-range, team-members]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Organization
 ---
 
@@ -198,4 +198,5 @@ A tab that finds nobody says so in its table, and a tab that fails to load names
 - [Memberships](../memberships/) — the foundation memberships behind the board, committee and key contact seats, and the steps for editing a single key contact
 - [Events and Event Attendees](../org-events/) — the **Event Attendees** filters, defaults and what each option counts
 - [Manage Org Lens Access](../manage-org-lens-access/) — the **Org Lens Access** tab
+- [Training & Certification](../training/) — the organization's courses and certifications by course, with the same cards and filters as **Trainees**
 - [Organization FAQ](../faq/) — short answers about the Organization lens
