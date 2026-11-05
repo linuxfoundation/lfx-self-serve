@@ -124,6 +124,10 @@ router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonito
 // campaign-service account discovery for the project's Google Ads connection, behind
 // LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only, as the Google Ads monitor is.
 router.get('/google/accounts', (req, res, next) => campaignController.getGoogleAdsAccounts(req, res, next));
+// The enabled conversion actions on the Google Ads account a create uses, for the Implement tab's
+// picker (#4991). Root-only, as above: the account is shared, so the list names every foundation's
+// actions. 404 while the campaign-service Google create road is off.
+router.get('/google/conversion-actions', (req, res, next) => campaignController.getGoogleAdsConversionActions(req, res, next));
 // Which X ad account an X create will use, and the accounts the credential reaches (LFXV2-3319),
 // behind LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE — 404 while it is off. Root-only, as above.
 router.get('/twitter/accounts', (req, res, next) => campaignController.getTwitterAdsAccounts(req, res, next));

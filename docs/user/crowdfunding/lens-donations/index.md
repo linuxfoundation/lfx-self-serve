@@ -24,7 +24,7 @@ Anyone who can view the selected organization in the **Organization** lens.
 
 The page header reads **Donations**, with the description "Donations on LFX Crowdfunding made on behalf of" followed by the organization name. Each row shows:
 
-- **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation
+- **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation. Select the name to open the initiative on the public crowdfunding site in a new tab
 - **Date** — when the donation was made
 - **Donor** and **Email** — the person who donated
 - **Amount** — in USD; a recurring donation shows its amount per charge

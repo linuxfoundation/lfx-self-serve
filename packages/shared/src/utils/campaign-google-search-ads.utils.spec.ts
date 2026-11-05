@@ -145,6 +145,18 @@ describe('googleSearchAdCopyWidthRefusal', () => {
     expect(googleSearchAdCopyWidthRefusal(['h'.repeat(31)], ['d'.repeat(91)], 'ad 1')).toContain('headline');
   });
 
+  it('walks each list as callerCopy does: stops once the cap is KEPT, width before repeats, blanks skipped', () => {
+    const wide = '日'.repeat(16);
+    const fifteen = Array.from({ length: 15 }, (_, i) => `H${i}`);
+    expect(googleSearchAdCopyWidthRefusal([...fifteen.slice(0, 14), wide], [], 'ad 1')).toContain('A headline on ad 1');
+    expect(googleSearchAdCopyWidthRefusal([...fifteen, wide], [], 'ad 1')).toBeNull();
+    expect(googleSearchAdCopyWidthRefusal([...Array.from({ length: 20 }, () => 'Same'), wide], [], 'ad 1')).toContain('A headline on ad 1');
+    expect(googleSearchAdCopyWidthRefusal([...Array.from({ length: 20 }, () => ' '), wide], [], 'ad 1')).toContain('A headline on ad 1');
+    expect(googleSearchAdCopyWidthRefusal([wide, wide], [], 'ad 1')).toContain('A headline on ad 1');
+    expect(googleSearchAdCopyWidthRefusal([], ['a', 'b', 'c', 'd', 'ｄ'.repeat(46)], 'ad 1')).toBeNull();
+    expect(googleSearchAdCopyWidthRefusal([], ['a', 'b', 'c', 'ｄ'.repeat(46)], 'ad 1')).toContain('A description on ad 1');
+  });
+
   it('judges each line trimmed, as Go trims it', () => {
     expect(googleSearchAdCopyWidthRefusal([` ${'h'.repeat(30)} `], [], 'ad 1')).toBeNull();
   });

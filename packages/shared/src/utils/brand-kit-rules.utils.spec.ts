@@ -16,8 +16,6 @@ import {
   brandKitChapterBasisLabel,
   brandKitChapterRuleBases,
   brandKitColorConflictViews,
-  brandKitConflictSourceLabel,
-  brandKitFailedSourceTitle,
   brandKitLfReferenceRuleLines,
   brandKitReportColorConflicts,
   brandKitReportRules,
@@ -84,21 +82,6 @@ describe('brandKitLfReferenceRuleLines', () => {
   });
 });
 
-describe('brandKitConflictSourceLabel', () => {
-  it.each([
-    ['brand_page: https://synthetic-foundation.example/brand', 'From the brand page — synthetic-foundation.example'],
-    ['site_css: https://synthetic-foundation.example/_next/static/chunks/synthetic-chunk.css', 'From the site’s CSS — synthetic-foundation.example'],
-    ['logo: wordmark.svg', 'From the logo artwork — wordmark.svg'],
-    ['page: https://synthetic-foundation.example/', 'The page ground'],
-    ['the reviewer’s note', 'the reviewer’s note'],
-    // A kind the dialog does not know, or no kind at all: the address reads as its host, the rest as written.
-    ['pdf: https://www.synthetic-foundation.example/brand.pdf', 'pdf: synthetic-foundation.example'],
-    ['https://synthetic-foundation.example/_next/static/chunks/synthetic-chunk.css', 'synthetic-foundation.example'],
-  ])('reads %s as "%s"', (source, label) => {
-    expect(brandKitConflictSourceLabel(source)).toBe(label);
-  });
-});
-
 describe('brandKitColorConflictViews', () => {
   it('marks the kept value of every conflict and names each source in words', () => {
     const report = brandKitReportV2RulesFixture();
@@ -136,19 +119,6 @@ describe('brandKitColorConflictViews', () => {
     expect(brandKitReportColorConflicts(null)).toEqual([]);
     const withoutConflicts: BrandKitReport = { ...V1_REPORT, color_conflicts: undefined };
     expect(brandKitColorConflictViews(withoutConflicts)).toEqual([]);
-  });
-});
-
-describe('brandKitFailedSourceTitle', () => {
-  it.each([
-    [
-      'https://cdn.synthetic-foundation.example/files/synthetic/production/synthetic-logo-package.zip?dl=',
-      'Logo package (ZIP) — cdn.synthetic-foundation.example',
-    ],
-    ['https://synthetic-foundation.example/brand-guidelines', 'https://synthetic-foundation.example/brand-guidelines'],
-    ['the reviewer’s note', 'the reviewer’s note'],
-  ])('titles %s as "%s"', (source, title) => {
-    expect(brandKitFailedSourceTitle(source)).toBe(title);
   });
 });
 

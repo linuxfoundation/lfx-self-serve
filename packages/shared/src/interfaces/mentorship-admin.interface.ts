@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES,
   MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
@@ -216,6 +217,28 @@ export type MentorshipAdminDecisionStatus = (typeof MENTORSHIP_ADMIN_DECISION_ST
 export interface MentorshipAdminApplicationStatusUpdate {
   status: MentorshipAdminDecisionStatus;
   attendanceType?: MentorshipAttendanceType;
+}
+
+/** A Current Mentees decision, by its success toast: `ungraduated` is an undone graduation, `reopened` a re-open. */
+export type MentorshipAdminDecisionOutcome = keyof typeof MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES;
+
+/**
+ * Copy for one reason the mentorship service gives when it refuses a write. `match` is a fragment of the service's
+ * error text ("eligibility criteria not met: <reason>"), compared ignoring case, which is not written for a reader;
+ * `message` is what the toast says instead.
+ */
+export interface MentorshipUpstreamReasonMessage {
+  match: string;
+  message: string;
+}
+
+/**
+ * How a decision's 422 toast reads: `lead` goes in front of the matched reason's copy, and `fallback` stands alone
+ * when upstream names no reason this app knows.
+ */
+export interface MentorshipAdminDecisionRefusal {
+  lead: string;
+  fallback: string;
 }
 
 /** A reviewer note an admin saved, announced so whichever Current Mentees tab is on screen writes it into its row. */

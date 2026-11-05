@@ -23,13 +23,16 @@ import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset
 import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  BRAND_KIT_CONFLICT_KEPT_WORD,
+  BRAND_KIT_MISSING_FIX_PREFIX,
   BRAND_KIT_MODE_LABELS,
   BRAND_KIT_PRINT_BODY_CLASS,
   BRAND_KIT_PRINT_ONLY_CLASS,
+  BRAND_KIT_SOURCES_EMPTY_LINES,
+  BRAND_KIT_SOURCES_GROUP_TITLES,
   BRAND_KIT_WEB_VIEW_TABS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
-  MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitBookView,
@@ -46,6 +49,7 @@ import {
   brandKitChapterRuleBases,
   brandKitChapterSummaries,
   brandKitReportRules,
+  brandKitSourcesView,
   buildBrandKitBookView,
   describeMktgAcceptedGaps,
   mktgAssetHeaderFallback,
@@ -146,9 +150,16 @@ export class BrandKitWebViewComponent {
     () => this.headerMetadata() ?? mktgAssetHeaderFallback('brand-kit', this.versionNumber(), this.kit().generatedAt, this.approval())
   );
   protected readonly approvalRequiredNote = MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
-  protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
-  /** Under an approved revision's gaps: accepted at that approval, still open. */
-  protected readonly acceptedGapsNote = computed(() => describeMktgAcceptedGaps(this.kit().report, this.approval(), this.versionNumber()));
+  protected readonly sourcesTitles = BRAND_KIT_SOURCES_GROUP_TITLES;
+  protected readonly sourcesEmpty = BRAND_KIT_SOURCES_EMPTY_LINES;
+  protected readonly keptWord = BRAND_KIT_CONFLICT_KEPT_WORD;
+  protected readonly fixPrefix = BRAND_KIT_MISSING_FIX_PREFIX;
+  /** The Sources tab's groups, in the agent's words, each item marked when this approval's snapshot accepted it. */
+  protected readonly sourcesView = computed(() => brandKitSourcesView(this.kit().report, this.approval(), this.versionNumber(), this.kit().kit.dark));
+  /** Under an approved revision's gaps when the approval predates the snapshot: accepted at that approval, still open. */
+  protected readonly acceptedGapsNote = computed(() =>
+    this.sourcesView().legacyApproval ? describeMktgAcceptedGaps(this.kit().report, this.approval(), this.versionNumber()) : null
+  );
   protected readonly printView = computed(() => {
     const kit = this.approvedKit();
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
@@ -159,8 +170,8 @@ export class BrandKitWebViewComponent {
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
   protected readonly modeLabel = computed(() => (this.kit().mode === 'draft' ? '' : BRAND_KIT_MODE_LABELS[this.kit().mode]));
-  /** What the reviewer should look at: the gaps and the sources that could not be read. */
-  protected readonly gapCount = computed(() => this.kit().report.gaps.length + this.kit().report.sources_failed.length);
+  /** What the reviewer should look at: the gaps and the sources that failed (the findings' list when the report has one). */
+  protected readonly gapCount = computed(() => this.sourcesView().gaps.length + this.sourcesView().failed.length);
   /** The report's notes as lines. */
   protected readonly reportNotes = computed(() =>
     this.kit()

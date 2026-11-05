@@ -12,8 +12,6 @@ import {
   BRAND_KIT_CHAPTER_BASIS_LF,
   BRAND_KIT_CHAPTER_BASIS_PROJECT,
   BRAND_KIT_CHAPTERS,
-  BRAND_KIT_FOUND_IN_KINDS,
-  BRAND_KIT_LOGO_PACKAGE_TITLE,
   BRAND_KIT_REPORT_ASSET_LABELS,
 } from '../constants/brand-kit.constants';
 import type {
@@ -26,16 +24,12 @@ import type {
   BrandKitReportRule,
 } from '../interfaces/brand-kit.interface';
 import type { MktgAssetReport } from '../interfaces/mktg-asset.interface';
-import { brandKitFoundIn } from './brand-kit-book.utils';
-import { brandKitWebsiteHost } from './brand-kit.utils';
+import { brandKitConflictSourceLabel, brandKitFailedSourceTitle } from './brand-kit-sources.utils';
 
 /** The rule paths of the report are the envelope's: `chapters.<id>` followed by a member or an index. */
 const RULE_PATH_PREFIX = 'chapters.';
 
 /** `kind: source` — how the agent writes where a conflicting value was seen. */
-const CONFLICT_SOURCE_REGEX = /^([a-z_]+):\s*(.*)$/s;
-/** A web address whose path, before any query or fragment, names a ZIP file. */
-const ZIP_URL_REGEX = /^https?:\/\/[^?#]*\.zip(?:[?#]|$)/i;
 
 /**
  * A report that carries a v2 field: a Brand Kit's. The fields are optional on
@@ -122,37 +116,6 @@ export function brandKitLfReferenceRuleLines(rules: BrandKitReportRule[] | null 
   return brandKitChapterRuleBases(rules)
     .filter((chapter) => chapter.lfReference > 0)
     .map((chapter) => ({ id: chapter.id, text: `${chapter.title}: ${chapter.lfReference} of ${chapter.total} ${ruleWord(chapter.total)}` }));
-}
-
-/** An http(s) address inside a source description: the dialog shows its host, never the full address. */
-const URL_REGEX = /https?:\/\/\S+/gi;
-
-/**
- * Where a conflicting value was seen, in words: `brand_page: https://…` reads
- * as the palette's own provenance label with its site (`From the brand page —
- * example.org`); any other address, with or without a kind the dialog does
- * not know, reads as its host; a description with no address as the agent
- * wrote it.
- */
-export function brandKitConflictSourceLabel(source: string): string {
-  const text = source.trim();
-  const match = CONFLICT_SOURCE_REGEX.exec(text);
-  const kind = match ? BRAND_KIT_FOUND_IN_KINDS.find((known) => known === match[1]) : undefined;
-  if (match && kind) return brandKitFoundIn({ kind, source: match[2] });
-  return text.replace(URL_REGEX, (url) => brandKitWebsiteHost(url) || url);
-}
-
-// Same body as #5157's brand-kit-sources.utils.ts; the second lander imports the other's.
-/**
- * A failed source's title: a logo package the agent could not read from a link (a web address ending in `.zip`)
- * reads as `Logo package (ZIP) — host`; every other source keeps its own text, a page by its address, a v1 name as
- * the agent gave it.
- */
-export function brandKitFailedSourceTitle(source: string): string {
-  const text = source.trim();
-  if (!ZIP_URL_REGEX.test(text)) return text;
-  const host = brandKitWebsiteHost(text);
-  return host ? `${BRAND_KIT_LOGO_PACKAGE_TITLE} — ${host}` : BRAND_KIT_LOGO_PACKAGE_TITLE;
 }
 
 /** The report's colour conflicts as the approve dialog shows them, every value with its source in words and the kept one marked. */
