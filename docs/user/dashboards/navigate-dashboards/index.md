@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, organization, company, employer]
-last_updated: 2026-11-02
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
@@ -46,6 +46,8 @@ The **Organization** lens (also called the Org lens) shows your company's member
 ## Switch project context
 
 When you are in the **Foundation** or **Projects** lens, you can switch between different projects or foundations using the context picker in the top navigation. Select a different foundation or project to update the entire page to that scope.
+
+The picker can show a role label, such as **Contributor**, **Maintainer**, **Board Member**, or **Executive Director**, next to a project or foundation. The label reflects your detected involvement with it. It does not control what you can see or do there; access is set on the project's **Permissions** page. See [Permissions](../../permissions/).
 
 ## Drawers and detail panels
 
