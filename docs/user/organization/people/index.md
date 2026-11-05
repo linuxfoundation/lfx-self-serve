@@ -74,7 +74,9 @@ The **Key Contact** column shows the key contact roles a person holds on the org
 
 Sorting by **Key Contact** orders people by how many roles they hold, most first.
 
-Someone can appear on the **Key Contacts** tab and still have a dash here. The column counts only roles that are currently in force, so a role is left out when the membership it belongs to is no longer active, such as a lapsed or cancelled one; when the contact record itself is not active, such as a pending one; or when the role cannot be matched to any of the organization's memberships. The person is still listed in the table either way.
+Only roles that are currently in force count, and the **Key Contacts** tab counts them the same way. A role is left out of both when the membership it belongs to is no longer active, such as a lapsed or cancelled one; when the contact record itself is not active, such as a pending one; or when the role cannot be matched to any of the organization's memberships. So a role missing here is missing from the **Key Contacts** tab too.
+
+Someone whose roles are all left out still appears in **All Employees**, with a dash in this column, whenever they are listed for something else — a board or committee seat, recorded activity in the time range, or Org Lens access. Being listed in the table and holding a role that counts are separate things.
 
 ## What does the Contributors tab show?
 
