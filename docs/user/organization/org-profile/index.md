@@ -12,7 +12,7 @@ These steps apply to anyone who can open an organization in the Organization len
 
 ## What is the Organization Profile page?
 
-The Organization Profile page shows the selected organization's public-facing details: its logo, name, description, website, number of employees, industry, sector and addresses. Anyone who can open the organization in the Organization lens can see it. Its address is `/org/<organization>/profile`.
+The Organization Profile page shows the selected organization's details: its logo, name, description, website, number of employees, industry, sector and addresses. Anyone who can open the organization in the Organization lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Its address is `/org/<organization>/profile`.
 
 The top card shows:
 
