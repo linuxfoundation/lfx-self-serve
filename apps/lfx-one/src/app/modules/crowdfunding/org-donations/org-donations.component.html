@@ -57,7 +57,7 @@
                           @if (item.initiativeSlug) {
                             <a
                               class="font-medium text-gray-900 hover:text-blue-600 hover:underline"
-                              [href]="crowdfundingUrl + '/initiatives/' + item.initiativeSlug"
+                              [href]="initiativeUrl(item.initiativeSlug)"
                               target="_blank"
                               rel="noopener noreferrer"
                               [attr.data-testid]="'org-donation-initiative-link-' + item.id"

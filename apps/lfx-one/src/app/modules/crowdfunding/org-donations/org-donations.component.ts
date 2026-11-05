@@ -30,8 +30,8 @@ export class OrgDonationsComponent {
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly accountContext = inject(AccountContextService);
 
-  // Public crowdfunding site; an initiative's page is `${crowdfundingUrl}/initiatives/{slug}`.
-  protected readonly crowdfundingUrl = environment.urls.crowdfunding.replace(/\/+$/, '');
+  // Public crowdfunding site, without the trailing slash.
+  private readonly crowdfundingUrl = environment.urls.crowdfunding.replace(/\/+$/, '');
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   protected readonly isLoading = signal(true);
@@ -59,6 +59,10 @@ export class OrgDonationsComponent {
     if (this.loadingMore() || !this.hasMore()) return;
     this.loadingMore.set(true);
     this.page.update((curr) => ({ ...curr, offset: curr.offset + DEFAULT_CROWDFUNDING_PAGE_SIZE }));
+  }
+
+  protected initiativeUrl(slug: string): string {
+    return `${this.crowdfundingUrl}/initiatives/${encodeURIComponent(slug)}`;
   }
 
   protected onRetry(): void {
