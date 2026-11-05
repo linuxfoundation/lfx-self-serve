@@ -7,7 +7,7 @@
 // pill. Every read and write is stubbed with synthetic data.
 
 import { expect, test } from '@playwright/test';
-import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
+import { brandKitCleanReportV2Fixture, brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { brandKitDraftRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
@@ -90,7 +90,7 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
   test('asks under "Approve this version?" when a clean report has only conflicts and LF-reference rules, and Approve anyway writes once', async ({
     page,
   }, info) => {
-    const report = { ...brandKitReportV2RulesFixture(), sources_failed: [], gaps: [], findings: { sources_failed: [], missing_assets: [], warnings: [] } };
+    const report = brandKitCleanReportV2Fixture();
     await openAssetDocument(page, 'brand-kit', 200, true, false, brandKitDraftRevisionResponse(report));
     await expect(page.getByTestId('mktg-document-view-readiness')).toHaveText('Ready.');
     const writes: string[] = [];
@@ -116,17 +116,17 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
   });
 
   test('approves a Brand Kit directly when its report has no failed source, gap, conflict or LF-reference rule', async ({ page }, info) => {
-    const report = {
-      ...brandKitReportV2RulesFixture(),
-      sources_failed: [],
-      gaps: [],
-      color_conflicts: [],
-      rules: [{ path: 'chapters.voice', basis: 'project' as const }],
-    };
+    const report = { ...brandKitCleanReportV2Fixture(), color_conflicts: [], rules: [{ path: 'chapters.voice', basis: 'project' as const }] };
     await openAssetDocument(page, 'brand-kit', 200, true, false, brandKitDraftRevisionResponse(report));
+    const writes: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/approve?')) writes.push(request.url());
+    });
     await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // The approval is written and shown without a dialog: the write first, then the state, then no dialog ever opened.
+    await expect.poll(() => writes.length).toBe(1);
     await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('approved-directly.png'), fullPage: true });
   });
 

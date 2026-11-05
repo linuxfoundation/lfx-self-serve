@@ -147,3 +147,13 @@ export function brandKitReportV2RulesFixture(): BrandKitReport {
     rules: RULES.map(([path, basis, uses]) => (uses ? { path, basis, uses } : { path, basis })),
   };
 }
+
+/**
+ * The same report with nothing for the approve dialog's top list: no failed
+ * source, no missing asset, no open gap, in the legacy fields and the v2
+ * findings alike. Its colour conflict and rules stay; a case that wants a
+ * report that approves directly clears those too.
+ */
+export function brandKitCleanReportV2Fixture(): BrandKitReport {
+  return { ...brandKitReportV2RulesFixture(), sources_failed: [], gaps: [], findings: { sources_failed: [], missing_assets: [], warnings: [] } };
+}
