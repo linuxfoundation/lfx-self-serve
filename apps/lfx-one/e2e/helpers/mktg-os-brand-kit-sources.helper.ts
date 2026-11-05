@@ -59,13 +59,19 @@ export async function openBrandKitSources(
     approvedCurrent: approval ? { revisionId: revision.id, number: revision.number } : null,
   };
   await openAssetDocument(page, 'brand-kit', 200, true, false, response);
-  // Registered after the generic stub so it wins: an approval made now carries what the report shows now.
+  // Registered after the generic stub so it wins: an approval made now carries what the report shows now. The stub is
+  // stateful: it updates the one response object the GET stubs close over, so a background refresh after the approve
+  // reads the approved state too and the markers stay.
   await page.route('**/api/mktg-agents/documents/brand-kit/living/revisions/*/approve?*', (route) => {
     const made = { approvedAt: '2026-11-04T10:00:00Z', approvedBy: { name: 'Project writer' }, accepted };
     const approved = { ...revision, approval: made };
-    return route.fulfill({
-      json: { ...response, approval: made, revision: approved, revisions: [approved], approvedCurrent: { revisionId: approved.id, number: approved.number } },
+    Object.assign(response, {
+      approval: made,
+      revision: approved,
+      revisions: [approved],
+      approvedCurrent: { revisionId: approved.id, number: approved.number },
     });
+    return route.fulfill({ json: response });
   });
   await page.getByTestId('brand-kit-web-view-tab-sources').click();
   await expect(page.getByTestId('brand-kit-web-view-panel-sources')).toBeVisible({ timeout: TAB_TIMEOUT });
