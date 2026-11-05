@@ -61,7 +61,7 @@ A new registration can take up to an hour to appear in your list. To find events
 - **No upcoming registrations** — _Events you register for will appear here._ Select **Browse all upcoming events** to switch to **All Events**.
 - **No upcoming events** — _Events you're registered for and available to attend will appear here._
 - **No past events** — _Events you've attended will appear here._
-- **No results found** — _Try adjusting your filter criteria._ Select **Reset filters** to clear them.
+- **No results found** — _Try adjusting your filter criteria_. Select **Reset filters** to clear them.
 
 Your events are on the Me lens Events page. If you're in another lens, switch to **Me** and select **Events**.
 

@@ -54,7 +54,7 @@ Some letters are prepared by hand. If yours is one of them, **Download Letter** 
 
 ## Start from a link
 
-A link to `/events?tab=visa-letters&event=<event id>` opens the Visa Letters tab and starts a request for that event. If you aren't eligible to request a letter for that event, the dialog says **Event not found** — _We couldn't find that event among your eligible registered events — please choose it below._
+A link to `/events?tab=visa-letters&event=<event id>` opens the Visa Letters tab and starts a request for that event. If you aren't eligible to request a letter for that event, the dialog stays on **Choose an Event** and a notification says **Event not found** — _We couldn't find that event among your eligible registered events — please choose it below._
 
 ## Can't start a request?
 

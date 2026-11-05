@@ -78,7 +78,7 @@ After you submit, your request appears on the **Travel Funding** tab with its cu
 
 ## Start from a link
 
-A link to `/events?tab=travel-funding&event=<event id>` opens the Travel Funding tab and starts an application for that event. If the event isn't accepting travel fund applications, the dialog says **Event not found** and asks you to choose an event from the list instead.
+A link to `/events?tab=travel-funding&event=<event id>` opens the Travel Funding tab and starts an application for that event. If the event isn't accepting travel fund applications, the dialog stays on **Choose an Event** and a notification says **Event not found**, asking you to choose an event from the list instead.
 
 ## Can't start an application?
 

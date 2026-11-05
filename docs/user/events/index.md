@@ -18,9 +18,9 @@ Select **Events** from the left navigation sidebar in the Me lens (`/events`). T
 
 Three stat cards sit above the list:
 
-- **Registered Events** — how many events you are registered for, with a **Next:** line naming your next one
-- **Attended Events** — how many events you attended
-- **Upcoming Events** — how many events are on the **Upcoming** tab
+- **Registered Events** — how many upcoming events you are registered for, with a **Next:** line naming your next one
+- **Attended Events** — how many past events you registered for (the **Past** tab count)
+- **Upcoming Events** — how many upcoming events are in the **All Events** view: your registrations plus events from your affiliated projects
 
 Below them, the **Upcoming**, **Past**, [**Visa Letters**](./visa-letters/), and [**Travel Funding**](./travel-funding/) tabs. The **Upcoming** tab includes events from your affiliated projects that you are not registered for yet, each with a **Register** button that opens the event's registration page. See [Browse Events](./browse-events/).
 
@@ -43,7 +43,7 @@ Every signed-in user has a personal Events page.
 
 ## Your company's events
 
-In the Organization lens, **Events** (`/org/events`) shows your company's event footprint across LF events — upcoming and past events, how many of your people are registered and speaking, and which events your company sponsors. See [Events and Event Attendees](../organization/org-events/) in the Organization docs.
+In the Organization lens, **Events** (`/org/<organization>/events`) shows your company's event footprint across LF events — upcoming and past events, how many of your people are registered and speaking, and which events your company sponsors. See [Events and Event Attendees](../organization/org-events/) in the Organization docs.
 
 ## Your foundation's events
 
