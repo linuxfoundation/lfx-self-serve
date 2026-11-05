@@ -868,6 +868,54 @@ describe('MktgSlidesExportService', () => {
       );
     });
 
+    it('drops the symbol and the reversed symbol, with one warning, when the rasterizer aborts on the crop, and still sends the lockups', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // A lockup whose own user-space filter region lies far outside the symbol crop: the rasterizer's native code aborts on the crop.
+      await seedKit(documentStore, {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><defs><filter id="s" filterUnits="userSpaceOnUse" x="140" y="20" width="60" height="60"><feDropShadow dx="1" dy="1" stdDeviation="1"/></filter></defs><rect x="10" y="10" width="30" height="30" fill="#1f6feb"/><rect x="150" y="30" width="40" height="40" fill="#d62" filter="url(#s)"/></svg>',
+        symbolViewBox: '0 0 50 50',
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO REVERSED URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO ONE-COLOR URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(started.logoNote).toBeNull();
+      expect(store.publicImages.size).toBe(3);
+      expect(loggerMocks.warning).toHaveBeenCalledTimes(1);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ variant: 'symbol', derived: true, reason: 'render-failed', detail: expect.stringMatching(/^child exited/) })
+      );
+    });
+
+    it('says the logo was not drawn, and sends no variant, when the rasterizer aborts on the primary itself', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // A logo whose own user-space filter region lies entirely off its canvas: the rasterizer aborts on the plain render.
+      await seedKit(documentStore, {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><defs><filter id="o" filterUnits="userSpaceOnUse" x="100" y="100" width="20" height="10"><feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0"/></filter></defs><g filter="url(#o)"><path d="M1 1h8v8H1z" fill="#1f6feb"/></g></svg>',
+        symbolViewBox: SYMBOL_VIEWBOX,
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      expect(started.logoNote).toBe('not-drawn');
+      expect(store.publicImages.size).toBe(0);
+      expect(Object.values(sentLogoLines())).toEqual(['none', 'none', 'none', 'none', 'none']);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ reason: 'render-failed', detail: expect.stringMatching(/^child exited/) })
+      );
+    });
+
     it('publishes no variant when the primary itself could not be published', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });

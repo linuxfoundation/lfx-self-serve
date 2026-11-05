@@ -101,6 +101,15 @@ export const MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE = 'image/png';
 export const MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES = 1_048_576;
 /** Longest side the server draws the logo at, in pixels. */
 export const MKTG_SLIDES_EXPORT_LOGO_SIDE_PX = 1200;
+/**
+ * The bound on one logo render in its child process, in milliseconds: a
+ * render that has not answered by then is killed and the image is dropped.
+ * A logo at the drawing size renders in tens of milliseconds; the bound is
+ * for an input that never finishes.
+ */
+export const MKTG_SLIDES_EXPORT_LOGO_RENDER_TIMEOUT_MS = 10_000;
+/** The most a logo render's child may write back, in bytes: the largest PNG published, as base64, with room for its JSON line. */
+export const MKTG_SLIDES_EXPORT_LOGO_RENDER_MAX_OUTPUT_BYTES = 4 * 1_048_576;
 
 /**
  * The logo variants sent beside the primary, in the order the intake's head

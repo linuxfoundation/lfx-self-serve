@@ -124,56 +124,69 @@ describe('recolourLogoPngSvg', () => {
     expect(readPng(drawn.png as Uint8Array).at(300, 300)).toEqual(WHITE);
   });
 
-  it('never reads the logo’s own markup, so every root shape the rasterizer draws recolours whole, and one it draws empty is blank', async () => {
+  it('never reads the logo’s own markup: each root shape the rasterizer draws recolours whole, one it draws empty is blank, one it refuses has no variant', async () => {
     const mark = (root: string, body = '<path d="M501 501h80v80h-80z" fill="#1f6feb"/>'): string => `<svg ${root}>${body}</svg>`;
     const ns = `xmlns="http://www.w3.org/2000/svg"`;
-    const shapes: string[] = [
-      mark(`${ns} viewBox='500 500 200 100'`),
-      mark(`${ns} viewbox="500 500 200 100" width="200" height="100"`, '<path d="M1 1h80v80H1z" fill="#1f6feb"/>'),
-      mark(`${ns} viewBox="&#53;00 500 200 100"`),
-      mark(`${ns} aria-label='x viewBox="0 0 20 10"' viewBox="500 500 200 100"`),
-      mark(`${ns} viewBox="500-500 200 100"`),
-      mark(`${ns} viewBox="500\u00a0500\u3000200\u2003100" width="200" height="100"`, '<path d="M1 1h80v80H1z" fill="#1f6feb"/>'),
-      mark(`${ns} viewBox="500,,500,200,100" width="200" height="100"`, '<path d="M1 1h80v80H1z" fill="#1f6feb"/>'),
-      mark(`${ns} xmlns:s="http://www.w3.org/2000/svg" s:viewBox="500 500 200 100"`),
-      mark(`${ns} viewBox="0 0 200 100" transform="translate(1000 1000)"`, '<path d="M1 1h80v80H1z" fill="#1f6feb"/>'),
-      mark(`${ns} viewBox="0 0 200 100" transform="scale(0.5)"`, '<path d="M1 1h80v80H1z" fill="#1f6feb"/>'),
-      mark(`${ns} data-x="a/>" data-y="b>c" viewBox="500 500 200 100"`),
-      `<!-- <svg viewBox="0 0 1 1"> -->${mark(`${ns} viewBox="500 500 200 100"`)}<!-- </svg> -->`,
-      `<svg ${ns} viewBox="500 500 200 100"><path d="M501 501h80v80h-80z" fill="#1f6feb"/></svg >`,
-      `<s:svg xmlns:s="http://www.w3.org/2000/svg" viewBox="500 500 200 100"><svg ${ns} viewBox="500 500 200 100"><path d="M501 501h80v80h-80z" fill="#1f6feb"/></svg></s:svg>`,
-      mark(`${ns} viewBox="500 500 200 100" ${Array.from({ length: 100_000 }, () => `data-a="x"`).join(' ')}`),
+    const nearOrigin = '<path d="M1 1h80v80H1z" fill="#1f6feb"/>';
+    // Each shape with the outcome the rasterizer gives it today, pinned: a change in either direction is a change to look at.
+    const shapes: { name: string; svg: string; outcome: 'drawn' | 'blank' | 'refused' }[] = [
+      { name: 'single-quoted viewBox', svg: mark(`${ns} viewBox='500 500 200 100'`), outcome: 'drawn' },
+      { name: 'lowercase viewbox decoy with a size', svg: mark(`${ns} viewbox="500 500 200 100" width="200" height="100"`, nearOrigin), outcome: 'drawn' },
+      { name: 'character reference in the viewBox', svg: mark(`${ns} viewBox="&#53;00 500 200 100"`), outcome: 'drawn' },
+      { name: 'decoy viewBox inside another value', svg: mark(`${ns} aria-label='x viewBox="0 0 20 10"' viewBox="500 500 200 100"`), outcome: 'drawn' },
+      {
+        name: 'numbers run together (read as 500 -500 200 100, so the mark is off the canvas)',
+        svg: mark(`${ns} viewBox="500-500 200 100"`),
+        outcome: 'blank',
+      },
+      {
+        name: 'Unicode whitespace in the viewBox',
+        svg: mark(`${ns} viewBox="500\u00a0500\u3000200\u2003100" width="200" height="100"`, nearOrigin),
+        outcome: 'drawn',
+      },
+      { name: 'comma runs in the viewBox', svg: mark(`${ns} viewBox="500,,500,200,100" width="200" height="100"`, nearOrigin), outcome: 'drawn' },
+      { name: 'prefixed s:viewBox', svg: mark(`${ns} xmlns:s="http://www.w3.org/2000/svg" s:viewBox="500 500 200 100"`), outcome: 'drawn' },
+      { name: 'root transform translate(1000 1000)', svg: mark(`${ns} viewBox="0 0 200 100" transform="translate(1000 1000)"`, nearOrigin), outcome: 'blank' },
+      { name: 'root transform scale(0.5)', svg: mark(`${ns} viewBox="0 0 200 100" transform="scale(0.5)"`, nearOrigin), outcome: 'drawn' },
+      { name: '/> and > inside values', svg: mark(`${ns} data-x="a/>" data-y="b>c" viewBox="500 500 200 100"`), outcome: 'drawn' },
+      {
+        name: 'comment decoys around the root',
+        svg: `<!-- <svg viewBox="0 0 1 1"> -->${mark(`${ns} viewBox="500 500 200 100"`)}<!-- </svg> -->`,
+        outcome: 'drawn',
+      },
+      { name: 'closing tag with a space', svg: `<svg ${ns} viewBox="500 500 200 100"><path d="M501 501h80v80h-80z" fill="#1f6feb"/></svg >`, outcome: 'drawn' },
+      {
+        name: 'prefixed root with a nested plain svg (the nested viewport sits at 0 0, off the outer crop box)',
+        svg: `<s:svg xmlns:s="http://www.w3.org/2000/svg" viewBox="500 500 200 100"><svg ${ns} viewBox="500 500 200 100"><path d="M501 501h80v80h-80z" fill="#1f6feb"/></svg></s:svg>`,
+        outcome: 'blank',
+      },
+      {
+        name: '100k repeated attributes',
+        svg: mark(`${ns} viewBox="500 500 200 100" ${Array.from({ length: 100_000 }, () => `data-a="x"`).join(' ')}`),
+        outcome: 'refused',
+      },
     ];
-    let drawnWhole = 0;
-    let blank = 0;
-    const started = performance.now();
-    for (const svg of shapes) {
+    for (const { name, svg, outcome } of shapes) {
       // The primary is drawn as today; a shape the rasterizer refuses has no variants at all.
       const primary = await rasterizeLogoSvg(svg);
-      if (primary.png === null) {
-        expect(primary.reason, svg.slice(0, 80)).toBe('unreadable');
+      if (outcome === 'refused') {
+        expect(primary, name).toMatchObject({ png: null, reason: 'unreadable' });
         continue;
       }
-      const plain = readPng(primary.png);
-      const white = await rasterizeLogoSvg(recolourLogoPngSvg(primary.png, 'white') as string, { requireInk: true });
-      if (plain.painted() === 0) {
-        expect(white, svg.slice(0, 80)).toMatchObject({ png: null, reason: 'blank' });
-        blank += 1;
+      expect(primary.reason, name).toBeNull();
+      const plain = readPng(primary.png as Uint8Array);
+      const white = await rasterizeLogoSvg(recolourLogoPngSvg(primary.png as Uint8Array, 'white') as string, { requireInk: true });
+      if (outcome === 'blank') {
+        expect(plain.painted(), name).toBe(0);
+        expect(white, name).toMatchObject({ png: null, reason: 'blank' });
         continue;
       }
-      expect(white.reason, svg.slice(0, 80)).toBeNull();
+      expect(white.reason, name).toBeNull();
       const recoloured = readPng(white.png as Uint8Array);
-      expect(recoloured.painted(), svg.slice(0, 80)).toBe(plain.painted());
-      expect(recoloured.painted(), svg.slice(0, 80)).toBeGreaterThan(0);
-      drawnWhole += 1;
+      expect(recoloured.painted(), name).toBe(plain.painted());
+      expect(recoloured.painted(), name).toBeGreaterThan(0);
     }
-    // Most shapes draw; the translated root draws off its canvas and is blank; the rest never reach a variant.
-    expect(drawnWhole).toBeGreaterThanOrEqual(8);
-    expect(blank).toBeGreaterThanOrEqual(1);
-    expect(drawnWhole + blank).toBeLessThanOrEqual(shapes.length);
-    // Nothing here parses the root: the shapes cost the rasterizer's draws and no more.
-    expect(performance.now() - started).toBeLessThan(5_000);
-  });
+  }, 60_000);
 
   it('settles a root with a hundred thousand repeated attributes in bounded time: nothing of the server’s reads the root', async () => {
     const svg = `<svg ${SVG_NS} viewBox="0 0 20 10" ${Array.from({ length: 100_000 }, () => `data-a="x"`).join(' ')}>${LOCKUP_BODY}</svg>`;

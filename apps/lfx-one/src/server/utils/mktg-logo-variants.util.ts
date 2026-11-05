@@ -44,10 +44,13 @@ export function logoPngSize(png: Uint8Array): MktgLogoPngSize | null {
  * canvas, the filter region and the picture are one and the same rectangle.
  *
  * Nothing of the logo's own markup is read or rewritten here: the input is
- * the rasterizer's output. That is the point. The logo's SVG is parsed by
- * one parser only, the rasterizer's; a second reading of its root (its
- * viewBox, its size, its attributes) could only disagree with the first,
- * and every such disagreement moved the filter region off the canvas. Null
+ * the rasterizer's output. That is the point. The server never reads the
+ * logo's root (its viewBox, its size, its attributes): a second reading
+ * could only disagree with the rasterizer's, and every such disagreement
+ * moved the filter region off the canvas. The one markup edit the server
+ * still makes is the shared `brandKitSvgWithViewBox` crop for the symbol,
+ * which only replaces the root viewBox; the rasterizer draws it in a child
+ * process, so a crop the rasterizer aborts on is dropped, not fatal. Null
  * when the bytes are not a PNG with a size.
  */
 export function recolourLogoPngSvg(png: Uint8Array, ink: MktgLogoRecolourInk): string | null {

@@ -277,14 +277,30 @@ export interface MktgSlidesExportStartInput {
  * which the fontless server would draw as nothing; `unreadable` — the SVG
  * does not parse, has no size, or does not draw; `too-big` — the PNG is over
  * the Slides API's limit; `blank` — nothing was painted, when the caller
- * asked for ink (`requireInk`; the variants do, the primary does not).
+ * asked for ink (`requireInk`; the variants do, the primary does not);
+ * `render-failed` — the render's child process died, overran its bound or
+ * answered unreadably (the rasterizer's native code aborts on some
+ * geometry, which no in-process catch can hold). The start's note treats
+ * `render-failed` as `unreadable`: the logo was not drawn.
  */
-export type MktgLogoPngFailure = 'external-reference' | 'live-text' | 'unreadable' | 'too-big' | 'blank';
+export type MktgLogoPngFailure = 'external-reference' | 'live-text' | 'unreadable' | 'too-big' | 'blank' | 'render-failed';
 
 /** How the server draws a logo PNG: `requireInk` refuses a drawing with no painted pixel (`blank`) instead of publishing a transparent image. */
 export interface MktgLogoPngOptions {
   requireInk?: boolean;
 }
+
+/** What the server sends its render child on stdin: the rasterizer's resolved path, the SVG, and the rules to draw it by (server-side). */
+export interface MktgLogoRenderRequest {
+  resvgPath: string;
+  svg: string;
+  requireInk: boolean;
+  sidePx: number;
+  maxBytes: number;
+}
+
+/** The render child's one JSON line back: the PNG as base64, or why there is none (server-side). */
+export type MktgLogoRenderReply = { png: string } | { reason: MktgLogoPngFailure; detail: string };
 
 /** The one colour a logo variant is recoloured to: white for the reversed variants, black for the one-colour lockup. */
 export type MktgLogoRecolourInk = 'white' | 'black';
@@ -323,8 +339,9 @@ export type MktgLogoDrawnPngs = Partial<Record<MktgSlidesExportLogoImage, Uint8A
  * `Uint8Array` so the contract stays Node-free; the rasterizer returns a
  * `Buffer`. `detail` explains a failure, for the log only: a fixed sentence
  * for a refused SVG (`external-reference`, `live-text`), the parsed size or
- * the rasterizer's own error (`unreadable`), or the PNG's byte count
- * (`too-big`).
+ * the rasterizer's own error (`unreadable`), the PNG's byte count
+ * (`too-big`), the drawing's size (`blank`), or how the child ended and the
+ * tail of what it wrote to stderr (`render-failed`).
  */
 export type MktgLogoPngResult = { png: Uint8Array; reason: null } | { png: null; reason: MktgLogoPngFailure; detail: string };
 
