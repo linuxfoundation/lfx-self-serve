@@ -223,9 +223,9 @@ export interface MentorshipAdminApplicationStatusUpdate {
 export type MentorshipAdminDecisionOutcome = keyof typeof MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES;
 
 /**
- * Copy for one reason the mentorship service gives when it refuses a write. `match` is a lowercase fragment of the
- * service's error text ("eligibility criteria not met: <reason>"), which is not written for a reader; `message` is
- * what the toast says instead.
+ * Copy for one reason the mentorship service gives when it refuses a write. `match` is a fragment of the service's
+ * error text ("eligibility criteria not met: <reason>"), compared ignoring case, which is not written for a reader;
+ * `message` is what the toast says instead.
  */
 export interface MentorshipUpstreamReasonMessage {
   match: string;

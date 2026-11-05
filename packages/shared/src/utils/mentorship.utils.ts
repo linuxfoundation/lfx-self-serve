@@ -962,7 +962,7 @@ export function mentorshipMenteeApplyBlockedState(
 export function mentorshipUpstreamReasonMessage(entries: readonly MentorshipUpstreamReasonMessage[], upstreamMessage?: string | null): string | undefined {
   const message = upstreamMessage?.toLowerCase() ?? '';
   if (!message) return undefined;
-  return entries.find((entry) => message.includes(entry.match))?.message;
+  return entries.find((entry) => message.includes(entry.match.toLowerCase()))?.message;
 }
 
 /**

@@ -181,7 +181,8 @@ export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is st
  * `ApplicationRepository.Update`: the term-open and `checkMenteeAvailable` checks on an accept, the term-open and
  * pending-limit checks on a re-open, and `checkApplicationProgramNotHidden` on any move to pending, accepted or
  * graduated). One 422 status covers all of them, so the toast names the one upstream gave. The first entry whose
- * `match` the text contains wins.
+ * `match` the text contains wins. "three" is upstream's `models.MaxPendingMenteeApplications`, also stated in
+ * `MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE` and the mentorship user docs: change them together.
  */
 export const MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS: readonly MentorshipUpstreamReasonMessage[] = [
   { match: 'already holds an accepted mentorship', message: "the mentee is already accepted in another mentorship that hasn't ended." },

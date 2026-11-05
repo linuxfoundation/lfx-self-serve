@@ -174,6 +174,13 @@ describe('mentorshipUpstreamReasonMessage', () => {
     expect(mentorshipUpstreamReasonMessage(entries, 'Eligibility criteria not met: The program is hidden')).toBe('the program is hidden.');
   });
 
+  it('matches an entry written in upstream casing', () => {
+    const cased = [{ match: 'belongs to another Mentorship user', message: 'in use.' }];
+    expect(mentorshipUpstreamReasonMessage(cased, 'eligibility criteria not met: the primary email of lfid "x" belongs to another Mentorship user')).toBe(
+      'in use.'
+    );
+  });
+
   it.each([undefined, null, '', 'eligibility criteria not met: some new rule'])('answers undefined for %j', (message) => {
     expect(mentorshipUpstreamReasonMessage(entries, message)).toBeUndefined();
   });
