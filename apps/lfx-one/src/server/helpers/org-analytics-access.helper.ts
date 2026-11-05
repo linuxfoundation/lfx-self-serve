@@ -29,7 +29,7 @@ const roleGrants = new OrgRoleGrantsService();
  */
 export async function assertOrgAnalyticsRead(req: Request, accountId: string, operation: string): Promise<void> {
   if (!ORG_ACCOUNT_ID_PATTERN.test(accountId)) {
-    throw ServiceValidationError.forField('accountId', 'Invalid organization account id format', { operation });
+    throw ServiceValidationError.forField('accountId', 'Invalid company account id format', { operation });
   }
 
   await assertOrgLensRead(req, accountId, operation);

@@ -144,7 +144,7 @@ export class ProjectParticipatingOrgsService {
     const result = await executeSnowflakeViewRead<ProjectParticipatingOrgsRow>(this.snowflakeService, req, sql, binds, {
       view: table,
       operation: 'export_project_participating_orgs',
-      clientMessage: 'Participating organizations are unavailable right now.',
+      clientMessage: 'Participating companies are unavailable right now.',
     });
 
     const rows = result.rows.filter((row) => !!row.PARTICIPANT_KEY);
@@ -180,7 +180,7 @@ export class ProjectParticipatingOrgsService {
     const result = await executeSnowflakeViewRead<ProjectParticipatingOrgsSummaryRow>(this.snowflakeService, req, sql, [slug, range], {
       view: summaryTable,
       operation: 'get_project_participating_orgs_summary',
-      clientMessage: 'Participating organizations are unavailable right now.',
+      clientMessage: 'Participating companies are unavailable right now.',
     });
 
     const row = result.rows[0];
@@ -242,7 +242,7 @@ export class ProjectParticipatingOrgsService {
     const result = await executeSnowflakeViewRead<ProjectParticipatingOrgsPageRow>(this.snowflakeService, req, sql, binds, {
       view: table,
       operation: 'get_project_participating_orgs',
-      clientMessage: 'Participating organizations are unavailable right now.',
+      clientMessage: 'Participating companies are unavailable right now.',
     });
 
     const first = result.rows[0];

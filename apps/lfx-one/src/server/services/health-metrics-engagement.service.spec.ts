@@ -755,7 +755,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
       .getOrgParticipation(req, { foundationSlug: 'acme', projectSlug: null })
       .catch((thrown: unknown) => thrown)) as MicroserviceError;
 
-    expect(error.toResponse()['error']).toBe('Organization participation is unavailable right now.');
+    expect(error.toResponse()['error']).toBe('Company participation is unavailable right now.');
   });
 
   it('rethrows any other Snowflake failure', async () => {

@@ -378,22 +378,22 @@ function checkLength(value: string, max: number, column: MemberImportColumn, lab
 function validateOrganization(name: string, website: string, rules: MemberImportGroupRules, add: (column: MemberImportColumn, message: string) => void): void {
   if (!name && !website) {
     if (rules.requiresOrganization) {
-      add('organization_name', 'Organization name is required for this group.');
-      add('organization_website', 'Organization website is required for this group.');
+      add('organization_name', 'Company name is required for this group.');
+      add('organization_website', 'Company website is required for this group.');
     }
     return;
   }
 
   if (!name) {
-    add('organization_name', 'Organization name is required when a website is given.');
+    add('organization_name', 'Company name is required when a website is given.');
   } else {
-    checkLength(name, 200, 'organization_name', 'Organization name', add);
+    checkLength(name, 200, 'organization_name', 'Company name', add);
   }
 
   if (!website) {
-    add('organization_website', 'Organization website is required when a name is given.');
+    add('organization_website', 'Company website is required when a name is given.');
   } else if (!isAbsoluteHttpUrl(website, ['https:'])) {
-    add('organization_website', 'Organization website must be a full https:// address.');
+    add('organization_website', 'Company website must be a full https:// address.');
   }
 }
 

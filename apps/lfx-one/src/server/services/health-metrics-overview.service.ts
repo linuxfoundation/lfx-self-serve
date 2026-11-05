@@ -117,7 +117,7 @@ export class HealthMetricsOverviewService {
     const result = await executeSnowflakeViewRead<WideRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
       view: PARTICIPATING_ORGS_VIEW,
       operation: 'get_overview_participating_orgs',
-      clientMessage: 'Participating organizations are unavailable right now.',
+      clientMessage: 'Participating companies are unavailable right now.',
     });
 
     const row = result.rows[0];
