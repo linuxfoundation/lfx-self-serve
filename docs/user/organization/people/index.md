@@ -198,4 +198,5 @@ A tab that finds nobody says so in its table, and a tab that fails to load names
 - [Memberships](../memberships/) — the foundation memberships behind the board, committee and key contact seats, and the steps for editing a single key contact
 - [Events and Event Attendees](../org-events/) — the **Event Attendees** filters, defaults and what each option counts
 - [Manage Org Lens Access](../manage-org-lens-access/) — the **Org Lens Access** tab
+- [Training & Certification](../training/) — the organization's courses and certifications by course, with the same cards and filters as **Trainees**
 - [Organization FAQ](../faq/) — short answers about the Organization lens
