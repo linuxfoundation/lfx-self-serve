@@ -37,6 +37,7 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
+import { MeetingDetailsAgendaComponent } from './agenda/meeting-details-agenda.component';
 import { MeetingDetailsHeaderComponent } from './header/meeting-details-header.component';
 import { MeetingDetailsContext } from './meeting-details.context';
 import { MeetingDetailsProjectLinkComponent } from './project-link/meeting-details-project-link.component';
@@ -51,6 +52,7 @@ import { MeetingDetailsToolsComponent } from './tools/meeting-details-tools.comp
 @Component({
   selector: 'lfx-meeting-details-drawer',
   imports: [
+    MeetingDetailsAgendaComponent,
     MeetingDetailsHeaderComponent,
     MeetingDetailsProjectLinkComponent,
     MeetingDetailsToolsComponent,

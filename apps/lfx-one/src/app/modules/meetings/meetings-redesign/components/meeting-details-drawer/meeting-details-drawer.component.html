@@ -160,7 +160,9 @@
           [attr.role]="context.canViewGuests() ? 'tabpanel' : null"
           [attr.id]="context.canViewGuests() ? 'meeting-details-panel-agenda' : null"
           [attr.aria-labelledby]="context.canViewGuests() ? 'meeting-details-tab-agenda' : null"
-          data-testid="meeting-details-agenda"></div>
+          data-testid="meeting-details-agenda">
+          <lfx-meeting-details-agenda />
+        </div>
         @if (context.canViewGuests()) {
           <!-- Guests slot: guests, or participants once the date has ended. Kept mounted while hidden, so it loads the hosts and count on open. -->
           <div
