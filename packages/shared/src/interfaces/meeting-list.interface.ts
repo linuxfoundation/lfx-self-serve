@@ -110,7 +110,7 @@ export interface MeetingHomeRowOrganizer {
   photo: string;
 }
 
-/** One date in the Pending RSVPs popover of the meetings home page, with what its row shows. */
+/** One date in the Pending RSVPs drawer of the meetings home page, with what its row shows. */
 export interface MeetingPendingRsvpItem {
   row: MeetingHomeRow;
   project: MeetingHomeRowProject | null;
