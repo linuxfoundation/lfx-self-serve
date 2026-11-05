@@ -3,20 +3,8 @@
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
-import {
-  MeetingEditScopeDialogData,
-  MeetingHomeRowProject,
-  MeetingHomeRowType,
-  MeetingOccurrenceOption,
-  RecurringMeetingEditScopeResult,
-} from '@lfx-one/shared/interfaces';
-import {
-  buildMeetingOccurrenceOptions,
-  formatMeetingDateTime,
-  getMeetingHomeRowProject,
-  getMeetingHomeRowType,
-  isSameOccurrenceId,
-} from '@lfx-one/shared/utils';
+import { MeetingEditScopeDialogData, MeetingHomeRowProject, MeetingOccurrenceOption, RecurringMeetingEditScopeResult } from '@lfx-one/shared/interfaces';
+import { buildMeetingOccurrenceOptions, formatMeetingWhenFull, getMeetingHomeRowProject, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
 import { UiRadioGroupComponent } from '@shared/uikit/radio/radio-group.component';
@@ -42,8 +30,7 @@ export class MeetingEditScopeModalComponent {
 
   protected readonly row = this.data.row;
   protected readonly project: MeetingHomeRowProject | null = getMeetingHomeRowProject(this.row.meeting);
-  protected readonly when = formatMeetingDateTime(this.row.startTime, this.row.durationMinutes);
-  protected readonly meetingType: MeetingHomeRowType | null = getMeetingHomeRowType(this.row.meeting);
+  protected readonly when = formatMeetingWhenFull(this.row);
   protected readonly occurrenceOptions: MeetingOccurrenceOption[] = buildMeetingOccurrenceOptions(this.data.meeting, this.data.occurrence.occurrence_id);
   // The options always list the opening date: it is active and passed as the date to keep.
   protected readonly occurrenceId = signal<string | null>(

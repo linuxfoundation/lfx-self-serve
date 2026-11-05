@@ -826,7 +826,7 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-home-no-results')).toBeNull();
     });
 
-    it('says the filters match nothing when no row matches them', async () => {
+    it('asks to adjust the filters when only filters match nothing', async () => {
       const fixture = render();
       await fixture.whenStable();
       await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1)]);
@@ -834,7 +834,7 @@ describe('MeetingsRedesignComponent', () => {
 
       expect(rowTitles(fixture)).toEqual([]);
       expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No results found');
-      expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No meetings match your filters');
+      expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('Try adjusting your filter criteria');
     });
 
     it('clears the filters and the search from the No results reset', async () => {

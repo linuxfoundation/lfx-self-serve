@@ -3,8 +3,9 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <lfx-ui-modal [heading]="occurrence ? 'Cancel Occurrence' : 'Delete meeting'" data-testid="meetings-home-delete-modal">
+  <!-- Full-width band between two rules: -24px meets the modal's side padding. -->
   <div
-    class="flex flex-col gap-[6px] rounded-[12px] border border-gray-200 bg-gray-50 p-[12px] text-[13px] leading-[18px]"
+    class="-mx-[24px] flex flex-col gap-[6px] border-y border-gray-200 px-[24px] py-[16px] text-[14px] leading-[20px]"
     data-testid="meetings-home-delete-details">
     <span class="font-semibold text-gray-900">{{ occurrence ? 'Occurrence Details' : 'Meeting Details' }}</span>
     <dl class="flex flex-col gap-[6px]">
@@ -47,7 +48,7 @@
       data-testid="meetings-home-delete-reason" />
   }
 
-  <lfx-ui-note variant="warning" size="small" icon="fa-solid fa-circle-exclamation" data-testid="meetings-home-delete-note">
+  <lfx-ui-note variant="error" plain size="small" icon="fa-solid fa-circle-exclamation" data-testid="meetings-home-delete-note">
     @if (occurrence) {
       <span class="mb-[4px] block font-medium">You are canceling this occurrence for all registrants of the meeting, not just yourself.</span>
       This will permanently cancel this specific occurrence. Guests will be notified of the cancellation. This action cannot be undone.

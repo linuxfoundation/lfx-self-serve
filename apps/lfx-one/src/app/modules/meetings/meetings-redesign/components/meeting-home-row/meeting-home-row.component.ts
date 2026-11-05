@@ -19,8 +19,6 @@ import {
   PastMeeting,
 } from '@lfx-one/shared/interfaces';
 import {
-  formatDuration,
-  formatMeetingDateTime,
   getMeetingGroupNames,
   getMeetingHomeAttendance,
   getMeetingHomeRowLink,
@@ -30,6 +28,7 @@ import {
   getMeetingRecurrenceLabel,
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
+  getMeetingWhenParts,
 } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
@@ -151,7 +150,7 @@ export class MeetingHomeRowComponent {
   private initWhen(): Signal<string[]> {
     return computed(() => {
       const { startTime, durationMinutes } = this.row();
-      return [formatMeetingDateTime(startTime), formatDuration(durationMinutes * 60)];
+      return getMeetingWhenParts(startTime, durationMinutes);
     });
   }
 }

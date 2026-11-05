@@ -20,7 +20,7 @@ import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import { MeetingHomeRow, MeetingPendingRsvpItem, UiFocusable } from '@lfx-one/shared/interfaces';
 import {
-  formatMeetingDateTime,
+  formatMeetingWhen,
   getMeetingHomeRowLink,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
@@ -107,7 +107,7 @@ export class PendingRsvpsComponent {
       link: getMeetingHomeRowLink(row, 'upcoming'),
       // Public is the default, so only Private and Restricted get a badge.
       visibilityBadges: getMeetingVisibilityBadges(row.meeting).filter((badge) => badge.kind !== MeetingVisibilityKind.PUBLIC),
-      when: formatMeetingDateTime(row.startTime),
+      when: formatMeetingWhen(row.startTime, row.durationMinutes),
       type: getMeetingHomeRowType(row.meeting),
       recurrenceTooltip: getMeetingRecurrenceTooltip(row.meeting, row.occurrence),
     };

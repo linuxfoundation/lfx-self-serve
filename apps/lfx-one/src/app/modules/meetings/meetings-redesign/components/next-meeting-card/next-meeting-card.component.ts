@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { DEFAULT_EARLY_JOIN_TIME, MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
@@ -16,7 +16,7 @@ import {
   MeetingVisibilityInfo,
 } from '@lfx-one/shared/interfaces';
 import {
-  formatMeetingTimeRange,
+  formatMeetingWhen,
   getMeetingGroupNames,
   getMeetingHomeAttendance,
   getMeetingHomeRowLink,
@@ -127,10 +127,7 @@ export class NextMeetingCardComponent {
   }
 
   private initWhen(): Signal<string> {
-    return this.fromRow(
-      (row) => `${formatDate(row.startTime, 'EEE', 'en-US')}, ${formatMeetingTimeRange(row.startTime, row.durationMinutes)} · ${row.durationMinutes}m`,
-      ''
-    );
+    return this.fromRow((row) => formatMeetingWhen(row.startTime, row.durationMinutes), '');
   }
 
   /** A computed of the row, with `empty` when there is none. */

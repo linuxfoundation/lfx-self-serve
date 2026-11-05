@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
+import { DatePipe, isPlatformBrowser } from '@angular/common';
 import {
   afterNextRender,
   ChangeDetectionStrategy,
@@ -30,6 +30,7 @@ import {
   PastMeetingSummary,
 } from '@lfx-one/shared/interfaces';
 import {
+  formatMeetingWhen,
   getMeetingGroupNames,
   getMeetingHomeAttendance,
   getMeetingHomeRowLink,
@@ -170,11 +171,10 @@ export class LastMeetingCardComponent {
     this.dialogs.copyRecordingLink(shareUrl);
   }
 
-  /** "Wed, 8:00 AM · 60m" in the viewer's zone, per the design. */
   private initWhen(): Signal<string> {
     return computed(() => {
       const row = this.row();
-      return row ? `${formatDate(row.startTime, 'EEE, h:mm a', 'en-US')} · ${row.durationMinutes}m` : '';
+      return row ? formatMeetingWhen(row.startTime, row.durationMinutes) : '';
     });
   }
 

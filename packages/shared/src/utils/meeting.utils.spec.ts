@@ -41,6 +41,8 @@ import {
   buildOccurrenceNavTimeline,
   formatMeetingOccurrenceLabel,
   getMeetingSelfRemovalMessage,
+  getMeetingSelfRemovalNotes,
+  getMeetingSelfRemovalQuestion,
   getMeetingSeriesUid,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerKeys,
@@ -2068,6 +2070,19 @@ describe('getMeetingSelfRemovalMessage', () => {
 
     expect(message).toContain('still be an organizer');
     expect(message).toContain("it won't invite you to this meeting again");
+  });
+});
+
+describe('getMeetingSelfRemovalQuestion and getMeetingSelfRemovalNotes', () => {
+  it('asks with curly quotes and lists only the notes that apply, organizer first', () => {
+    expect(getMeetingSelfRemovalQuestion('Weekly sync')).toBe(
+      'Remove yourself from “Weekly sync”? You will no longer be invited to any occurrence and will lose your RSVP.'
+    );
+    expect(getMeetingSelfRemovalNotes()).toEqual([]);
+    expect(getMeetingSelfRemovalNotes({ organizer: true, viaCommittee: true })).toEqual([
+      'You will still be an organizer of this meeting.',
+      "You stay in the committee, but it won't invite you to this meeting again.",
+    ]);
   });
 });
 
