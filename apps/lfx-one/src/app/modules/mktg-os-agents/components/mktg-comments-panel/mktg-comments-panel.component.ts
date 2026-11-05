@@ -142,7 +142,8 @@ export class MktgCommentsPanelComponent {
       if (this.runPending()) {
         const sending = this.sendingCount();
         if (sending !== null) return `Sending ${sending} comment${sending === 1 ? '' : 's'} to the agent…`;
-        if (!this.retrySend()) return 'Sending comments to the agent…';
+        // A restored accepted attempt is being observed, not retried: its intent is still saved, so retrySend alone would read as Retry.
+        if (!this.retrySend() || this.accepted()) return 'Sending comments to the agent…';
       }
       if (this.retrySend()) return 'Retry the same redraft';
       if (!this.comments.loaded() || this.comments.loading() || this.comments.loadError()) return 'Send comments to the agent';

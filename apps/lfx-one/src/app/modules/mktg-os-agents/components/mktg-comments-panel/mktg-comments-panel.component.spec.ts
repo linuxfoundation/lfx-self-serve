@@ -337,6 +337,41 @@ describe('MktgCommentsPanelComponent', () => {
     expect(runner.release).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['a restored accepted attempt', true, 'Sending comments to the agent…'],
+    ['a restored intent that was never accepted', false, 'Retry the same redraft'],
+  ])('labels %s on reload: resumed observation reads as sending, an unaccepted intent as retry', async (_case, accepted, label) => {
+    const stream = new Subject<MktgRedraftProgress>();
+    const runner = {
+      hasIntent: () => true,
+      hasAcceptedAttempt: () => accepted,
+      canRelease: () => !accepted,
+      resume: vi.fn(() => stream),
+      send: vi.fn(() => stream),
+      release: vi.fn(),
+    };
+    TestBed.configureTestingModule({
+      providers: [provideMktgCommentsStub({ loaded: signal(true), threads: signal([mktgCommentFixture({ status: 'sent' })]) })],
+    });
+    TestBed.overrideProvider(MktgDocumentRedraftClientService, { useValue: runner });
+    const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
+    fixture.componentRef.setInput('scope', mktgCommentScopeFixture());
+    fixture.componentRef.setInput('priorVersion', 1);
+    await fixture.whenStable();
+    if (accepted) {
+      expect(runner.resume).toHaveBeenCalledTimes(1);
+      stream.next({ type: 'storing' });
+      fixture.detectChanges();
+    } else {
+      expect(runner.resume).not.toHaveBeenCalled();
+    }
+    const send = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button');
+    expect(send?.textContent).toContain(label);
+    expect(send?.textContent).not.toContain('Send 0 open comments');
+    expect(send?.disabled).toBe(accepted);
+    expect(runner.send).not.toHaveBeenCalled();
+  });
+
   it('freezes the selected pinned chapter for landing even if comments change while the agent works', async () => {
     const rows = signal([mktgCommentFixture({ anchor: { kind: 'passage', key: 'chapters.voice.line' } })]);
     const stream = new Subject<MktgRedraftProgress>();
