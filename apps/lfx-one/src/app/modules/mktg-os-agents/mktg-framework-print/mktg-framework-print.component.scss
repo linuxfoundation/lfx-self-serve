@@ -96,3 +96,37 @@
     font-family: inherit;
   }
 }
+
+/* The FAQ's answers are the agent's restricted Markdown (a paragraph, or a
+   lead-in and a bulleted list) through the shared renderer, whose screen
+   utilities are rem: inside this sheet they give way to its typeface, size,
+   ink and pt spacing, and the list keeps a disc marker in the ink. Scoped to
+   the FAQ print, so the framework print does not move. */
+:host ::ng-deep .lfx-faq-print .prose {
+  max-width: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+
+  p {
+    margin: 0;
+    font-family: inherit;
+    line-height: inherit;
+  }
+
+  ul {
+    margin: 3pt 0 0;
+    padding-left: 14pt;
+    list-style: disc;
+  }
+
+  li {
+    margin: 1.5pt 0;
+    padding-left: 2pt;
+  }
+
+  li::marker {
+    color: var(--mfp-ink);
+  }
+}
