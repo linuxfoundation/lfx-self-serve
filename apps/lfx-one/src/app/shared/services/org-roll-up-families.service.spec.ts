@@ -29,9 +29,8 @@ const response = (overrides: Partial<OrgRollUpSetResponse> = {}): OrgRollUpSetRe
 });
 
 /**
- * lfx-self-serve#4126 — the client half of the roll-up set. It must re-fetch with the grants, keep
- * an outage from reading as a family that shrank, and report a missing endpoint so the switcher can
- * fall back to its own grouping.
+ * lfx-self-serve#4126 — the client half of the roll-up set. It must re-fetch with the grants, and
+ * keep any failure, a 404 included, from reading as a family that shrank.
  */
 describe('OrgRollUpFamiliesService', () => {
   let service: OrgRollUpFamiliesService;
@@ -68,6 +67,7 @@ describe('OrgRollUpFamiliesService', () => {
     expect(service.source()).toBe('server');
     expect(service.hasServerFamilies()).toBe(true);
     expect(service.unsettled()).toBe(false);
+    expect(service.incomplete()).toBe(false);
     expect(service.families()).toEqual([
       { rootUid: UID_A, name: 'Alpha', orgUids: [UID_A, UID_B] },
       { rootUid: UID_C, name: 'Charlie', orgUids: [UID_C] },
@@ -98,18 +98,13 @@ describe('OrgRollUpFamiliesService', () => {
     expect(service.families()).toEqual([]);
   });
 
-  it('asks the BFF to skip its cache on an explicit refresh', () => {
-    service.refresh(true);
-    http.expectOne((request) => request.url === ORG_ROLL_UP_SET_PATH && request.params.get('refresh') === '1').flush(response());
-    expect(service.source()).toBe('server');
-  });
-
   it('keeps a lower-bound answer unsettled', () => {
     grantsLoad(1);
     http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response({ degraded: true, lookupOutcome: 'partial' }));
 
     expect(service.hasServerFamilies()).toBe(true);
     expect(service.unsettled()).toBe(true);
+    expect(service.incomplete()).toBe(true);
   });
 
   it('derives the outcome from `degraded` when the server omits it', () => {
@@ -121,18 +116,21 @@ describe('OrgRollUpFamiliesService', () => {
     expect(service.lookupOutcome()).toBe('partial');
   });
 
-  // Until #4126 ships the BFF answers 404. That is a settled "no server grouping", not an outage.
-  it('reports a missing endpoint as unavailable and settled', () => {
+  // The app and the BFF ship together, so a 404 is a failure like any other — never a settled
+  // "no families" that would let a restored roll-up demote and overwrite its cookie.
+  it('reports a 404 as unknown and unsettled', () => {
     grantsLoad(1);
     http.expectOne(ORG_ROLL_UP_SET_PATH).flush('not found', { status: 404, statusText: 'Not Found' });
 
-    expect(service.source()).toBe('unavailable');
+    expect(service.source()).toBe('server');
+    expect(service.lookupOutcome()).toBe('failed');
     expect(service.hasServerFamilies()).toBe(false);
-    expect(service.unsettled()).toBe(false);
+    expect(service.unsettled()).toBe(true);
+    expect(service.incomplete()).toBe(true);
   });
 
   // An outage must never read as a family that shrank: unusable, and unsettled so nothing demotes.
-  it('reports any other failure as unknown rather than empty', () => {
+  it('reports any failure as unknown rather than empty', () => {
     grantsLoad(1);
     http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response());
     grantsLoad(2);

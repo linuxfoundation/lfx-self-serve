@@ -1,12 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { ORG_ROLE_GRANTS_REFRESH_PARAM, ORG_ROLL_UP_SET_PATH } from '@lfx-one/shared/constants';
+import { ORG_ROLL_UP_SET_PATH } from '@lfx-one/shared/constants';
 import { OrgLensLookupOutcome, OrgRollUpFamiliesSource, OrgRollUpFamily, OrgRollUpSetOrg, OrgRollUpSetResponse } from '@lfx-one/shared/interfaces';
-import { catchError, filter, map, merge, Observable, of, Subject, switchMap, tap } from 'rxjs';
+import { catchError, filter, map, Observable, of, switchMap, tap } from 'rxjs';
 
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
@@ -15,11 +15,12 @@ import { OrgRoleGrantsService } from './org-role-grants.service';
  * (lfx-self-serve#4126) — the data every family roll-up is built from.
  *
  * Re-fetched whenever the role grants (re)load, including the viewer's Retry, so the two answers
- * describe the same moment. A refetch keeps the previous families until the new answer lands.
+ * describe the same moment: the endpoint reads the access-aware cache the grants request just
+ * refreshed. A refetch keeps the previous families until the new answer lands.
  *
- * Until the BFF serves the endpoint the answer is a 404, reported as `source: 'unavailable'`;
- * `AccountContextService` then groups the grant sets itself. Browser-only in practice: the grants
- * load after hydration, so SSR never issues the request.
+ * There is no client-side fallback. The BFF and the app ship in one image, so the endpoint always
+ * exists; any failure, a 404 included, leaves the families unknown rather than guessed. Browser-only
+ * in practice: the grants load after hydration, so SSR never issues the request.
  */
 @Injectable({
   providedIn: 'root',
@@ -34,7 +35,6 @@ export class OrgRollUpFamiliesService {
   private readonly orgsByUidInternal: WritableSignal<Map<string, OrgRollUpSetOrg>> = signal<Map<string, OrgRollUpSetOrg>>(new Map());
   private readonly lookupOutcomeInternal: WritableSignal<OrgLensLookupOutcome> = signal<OrgLensLookupOutcome>('ok');
   private readonly loadingInternal: WritableSignal<boolean> = signal<boolean>(false);
-  private readonly refreshRequests = new Subject<boolean>();
 
   public readonly source: Signal<OrgRollUpFamiliesSource> = this.sourceInternal.asReadonly();
   /** The server's families, in its order (alphabetical by family name). Empty unless `source` is `'server'`. */
@@ -48,55 +48,33 @@ export class OrgRollUpFamiliesService {
   /** True when the server's families are usable as the grouping: it answered, and the walk did not fail outright. */
   public readonly hasServerFamilies: Signal<boolean> = computed(() => this.sourceInternal() === 'server' && this.lookupOutcomeInternal() !== 'failed');
 
-  /**
-   * True while roll-up eligibility cannot be judged from the families: no answer yet, or an answer
-   * that is a lower bound. A missing endpoint is settled — the client-side grouping is then the
-   * whole answer, and the grant sets' own outcome governs it.
-   */
-  public readonly unsettled: Signal<boolean> = computed(() => {
-    const source = this.sourceInternal();
-    return source === 'pending' || (source === 'server' && this.lookupOutcomeInternal() !== 'ok');
-  });
+  /** True while roll-up eligibility cannot be judged from the families: no answer yet, or an answer that is a lower bound or unknown. */
+  public readonly unsettled: Signal<boolean> = computed(() => this.sourceInternal() === 'pending' || this.lookupOutcomeInternal() !== 'ok');
+
+  /** True once an answer has landed that is a lower bound or unknown — the switcher's incomplete-list notice and its Retry cover it. */
+  public readonly incomplete: Signal<boolean> = computed(() => this.sourceInternal() === 'server' && this.lookupOutcomeInternal() !== 'ok');
 
   public constructor() {
-    merge(
-      toObservable(this.roleGrants.loadedAtMs).pipe(
-        filter((loadedAt): loadedAt is number => loadedAt !== null),
-        map(() => false)
-      ),
-      this.refreshRequests
-    )
+    toObservable(this.roleGrants.loadedAtMs)
       .pipe(
-        switchMap((bypassCache) => this.fetch(bypassCache)),
+        filter((loadedAt): loadedAt is number => loadedAt !== null),
+        switchMap(() => this.fetch()),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe();
   }
 
-  /** Re-fetch the families; `bypassCache` asks the BFF to recompute rather than answer from its cache, as the grants' Retry does. */
-  public refresh(bypassCache = false): void {
-    this.refreshRequests.next(bypassCache);
-  }
-
-  private fetch(bypassCache: boolean): Observable<void> {
+  private fetch(): Observable<void> {
     this.loadingInternal.set(true);
-    const params = bypassCache ? { [ORG_ROLE_GRANTS_REFRESH_PARAM]: '1' } : undefined;
-    return this.http.get<OrgRollUpSetResponse>(ORG_ROLL_UP_SET_PATH, { params }).pipe(
+    return this.http.get<OrgRollUpSetResponse>(ORG_ROLL_UP_SET_PATH).pipe(
       tap((response) => this.applyResponse(response)),
       map(() => undefined),
-      catchError((error: unknown) => {
-        if (error instanceof HttpErrorResponse && error.status === 404) {
-          this.sourceInternal.set('unavailable');
-          this.familiesInternal.set([]);
-          this.orgsByUidInternal.set(new Map());
-          this.lookupOutcomeInternal.set('ok');
-        } else {
-          // Unknown, not empty: keep nothing that could read as a family having shrunk.
-          this.sourceInternal.set('server');
-          this.familiesInternal.set([]);
-          this.orgsByUidInternal.set(new Map());
-          this.lookupOutcomeInternal.set('failed');
-        }
+      catchError(() => {
+        // Unknown, not empty: keep nothing that could read as a family having shrunk.
+        this.sourceInternal.set('server');
+        this.familiesInternal.set([]);
+        this.orgsByUidInternal.set(new Map());
+        this.lookupOutcomeInternal.set('failed');
         this.loadingInternal.set(false);
         return of(undefined);
       })

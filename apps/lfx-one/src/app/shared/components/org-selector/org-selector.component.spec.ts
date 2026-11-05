@@ -75,6 +75,7 @@ describe('OrgSelectorComponent.selectItem', () => {
             // Roll-up entry off by default: these suites cover the single-organization labelling
             // and the static-card rules, which #4132 must leave exactly as they were.
             canSelectRollUp: signal(false),
+            rollUpFamiliesIncomplete: signal(false),
             eligibleRollUpFamilies: signal([]),
             selectedRollUpRootUid: signal(null),
             selectedRollUpFamily: signal(null),
@@ -251,6 +252,7 @@ describe('OrgSelectorComponent navbar card', () => {
             // The roll-up entry is off here: these suites pin the single-organization labelling and
             // the static-card rules, which #4132 must leave exactly as they were.
             canSelectRollUp: signal(false),
+            rollUpFamiliesIncomplete: signal(false),
             eligibleRollUpFamilies: signal([]),
             selectedRollUpRootUid: signal(null),
             selectedRollUpFamily: signal(null),
@@ -346,6 +348,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
     rollUpRows(): { rootUid: string; name: string; subtitle: string; organizationCount: number; isSelected: boolean }[];
     isRollUpSelected(): boolean;
     isSingleOrg(): boolean;
+    listIncomplete(): boolean;
     rollUpTriggerSubtitle(): string;
     selectRollUp(rootUid: string): void;
   }
@@ -367,6 +370,8 @@ describe('OrgSelectorComponent family roll-ups', () => {
     onNotFound?: boolean;
     /** The current selection. Defaults to Acme; pass a roll-up account to make either row a real switch. */
     selected?: Account;
+    /** The families answer landed as a lower bound or unknown. */
+    familiesIncomplete?: boolean;
   }): Promise<RollUpView> => {
     selectRollUpSpy.mockReset().mockReturnValue(opts.accepted ?? true);
     navigateSpy.mockReset();
@@ -392,6 +397,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
               return uid && !isOrgRollUpSegment(uid) ? uid : null;
             },
             canSelectRollUp: signal(opts.families.length > 0),
+            rollUpFamiliesIncomplete: signal(opts.familiesIncomplete ?? false),
             eligibleRollUpFamilies: signal(opts.families),
             selectedRollUpRootUid: signal(selectedRootUid),
             selectedRollUpFamily: signal(opts.families.find((family) => family.rootUid === selectedRootUid) ?? null),
@@ -452,13 +458,18 @@ describe('OrgSelectorComponent family roll-ups', () => {
     expect(charlieRow).toEqual(expect.objectContaining({ name: 'All Charlie Organizations', organizationCount: 2 }));
   });
 
-  // The trigger used to read only the stored selection's name, which a cookie restore sets before
-  // the family's name is known.
-  it('names the trigger from the family once it is known, and from the fallback before', async () => {
-    expect((await create({ families: [acmeFamily], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null) })).displayName()).toBe(
-      'All Acme Organizations'
-    );
+  // The service renames the selection once the family lands, so the trigger reads the selection
+  // and agrees with every page heading.
+  it('names the trigger from the selection', async () => {
+    expect((await create({ families: [acmeFamily], selectedRootUid: UID_A, selected: acmeRollUp })).displayName()).toBe('All Acme Organizations');
     expect((await create({ families: [], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null) })).displayName()).toBe(ROLLUP_ACCOUNT_NAME);
+  });
+
+  // A failed families request hides every roll-up row; the notice says the list is incomplete and
+  // its Retry re-runs the grants, which re-fetches the families.
+  it('raises the incomplete-list notice when the families answer is incomplete', async () => {
+    expect((await create({ families: [] })).listIncomplete()).toBe(false);
+    expect((await create({ families: [], familiesIncomplete: true })).listIncomplete()).toBe(true);
   });
 
   it('marks only the selected family as selected', async () => {

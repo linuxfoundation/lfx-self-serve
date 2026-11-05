@@ -106,79 +106,17 @@ export class AccountContextService {
    * family the caller holds anything in, including one-organization families, which are not offered
    * as a roll-up (`eligibleRollUpFamilies`).
    *
-   * The server's families (`OrgRollUpFamiliesService`, lfx-self-serve#4126) whenever it has
-   * answered with a usable walk — it resolves each family to its top account, which the client
-   * cannot. Otherwise, while it is pending, failed or not served yet, the client-side grouping below.
+   * The server's families (`OrgRollUpFamiliesService`, lfx-self-serve#4126) — it resolves each
+   * organization to its family's top account, which the grant sets alone cannot. Empty while that
+   * answer is pending or failed: unknown, not empty, and `grantsUnsettled` holds every demotion
+   * until it lands.
    */
   public readonly rollUpFamilies: Signal<OrgRollUpFamily[]> = computed(() =>
-    this.rollUpFamiliesService.hasServerFamilies() ? this.rollUpFamiliesService.families() : this.clientRollUpFamilies()
+    this.rollUpFamiliesService.hasServerFamilies() ? this.rollUpFamiliesService.families() : []
   );
 
-  /**
-   * The client-side grouping `rollUpFamilies` falls back on. Sorted by family name so the selector
-   * does not reshuffle; a family whose name is not known yet sorts after the named ones, by uid,
-   * rather than leading with a raw SFID.
-   *
-   * Derived from the same sources `hasOrgSelectorAccess` consults: persona-seeded
-   * accounts plus direct and inherited grant sets, de-duplicated by uid. Deliberately **not** the
-   * selector's `items()`, which is paged and would group a first page rather than a holding. Each
-   * organization's family is found by following inherited-grant parents (and a seed's `parentUid`)
-   * to the top; an organization with no known parent is the top of its own family.
-   *
-   * A lower bound on grouping: the inherited grants only name the direct-granted parent one level
-   * up, so two organizations granted directly in the same family read as two families.
-   */
-  private readonly clientRollUpFamilies: Signal<OrgRollUpFamily[]> = computed(() => {
-    const parentByUid = new Map(this.orgRoleGrantsService.parentUidByUid());
-    const parentNameByUid = this.orgRoleGrantsService.parentNameByUid();
-    const nameByUid = new Map<string, string>();
-    const held = new Set<string>();
-    // The persona seeds, NOT `availableAccounts()`. That signal swaps each seed for its enriched
-    // Snowflake row, and `toAccount` does not carry `uid` — so reading it would drop every
-    // enriched organization and hide the roll-up row the moment enrichment succeeded.
-    for (const account of this.userOrganizations()) {
-      if (!account.uid) {
-        continue;
-      }
-      held.add(account.uid);
-      if (account.accountName) {
-        nameByUid.set(account.uid, account.accountName);
-      }
-      if (account.parentUid && !parentByUid.has(account.uid)) {
-        parentByUid.set(account.uid, account.parentUid);
-      }
-    }
-    for (const set of [
-      this.orgRoleGrantsService.writerSet(),
-      this.orgRoleGrantsService.auditorSet(),
-      this.orgRoleGrantsService.inheritedWriterSet(),
-      this.orgRoleGrantsService.inheritedAuditorSet(),
-    ]) {
-      for (const uid of set) {
-        held.add(uid);
-      }
-    }
-
-    const families = new Map<string, { name: string | null; orgUids: string[] }>();
-    for (const uid of held) {
-      const rootUid = this.familyRootOf(uid, parentByUid);
-      const family = families.get(rootUid) ?? { name: null, orgUids: [] };
-      family.orgUids.push(uid);
-      // The top account's own seed name, else the parent name an inherited row carries for it.
-      family.name ??= nameByUid.get(rootUid) ?? (parentByUid.get(uid) === rootUid ? (parentNameByUid.get(uid) ?? null) : null);
-      families.set(rootUid, family);
-    }
-
-    return Array.from(families, ([rootUid, family]) => ({ rootUid, name: family.name, orgUids: family.orgUids })).sort((a, b) => {
-      if (a.name !== null && b.name !== null) {
-        return a.name.localeCompare(b.name);
-      }
-      if (a.name !== b.name) {
-        return a.name === null ? 1 : -1;
-      }
-      return a.rootUid.localeCompare(b.rootUid);
-    });
-  });
+  /** True once the families answer landed as a lower bound or unknown — the switcher shows its incomplete-list notice, whose Retry re-runs the grants and so the families. */
+  public readonly rollUpFamiliesIncomplete: Signal<boolean> = this.rollUpFamiliesService.incomplete;
 
   /** The families a roll-up is offered for: those where the caller holds at least `ROLLUP_MIN_ORGANIZATIONS` organizations (#4132). */
   public readonly eligibleRollUpFamilies: Signal<OrgRollUpFamily[]> = computed(() =>
@@ -234,8 +172,8 @@ export class AccountContextService {
    * reason.
    *
    * The families answer is held to the same rule (`OrgRollUpFamiliesService.unsettled`): it lands
-   * after the grants, and judging a family's size before it does would demote on the client-side
-   * lower bound.
+   * after the grants, and judging a family's size before it does would demote a caller whose
+   * family is simply not known yet.
    */
   public readonly grantsUnsettled: Signal<boolean> = computed(
     () => !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok' || this.rollUpFamiliesService.unsettled()
@@ -315,6 +253,16 @@ export class AccountContextService {
     toObservable(this.rollUpShouldDemote)
       .pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.demoteFromRollUp());
+
+    // A restored or deep-linked roll-up is admitted before its family is known, under the generic
+    // name. Once the family lands, rename the selection itself — not just the switcher label — so
+    // every page heading reads the same name. The address pin and the cookie hold only the uid.
+    toObservable(this.selectedRollUpFamily)
+      .pipe(
+        filter((family): family is OrgRollUpFamily => family !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((family) => this.renameSelectedRollUp(family));
   }
 
   /** Seed persona-authorised orgs and trigger Snowflake enrichment; selection matches by stored accountId only — display attributes always come from seeds or live response. */
@@ -923,16 +871,14 @@ export class AccountContextService {
     this.pinSource.set('address');
   }
 
-  /** Follows parent links from `uid` to the top of its Salesforce family; cycle-safe, since the links come from two independent sources. */
-  private familyRootOf(uid: string, parentByUid: ReadonlyMap<string, string>): string {
-    const path = [uid];
-    let parent = parentByUid.get(uid);
-    while (parent && !path.includes(parent)) {
-      path.push(parent);
-      parent = parentByUid.get(parent);
+  /** Rewrites the selected roll-up's display name to its family's, when the selection is still that family's roll-up. */
+  private renameSelectedRollUp(family: OrgRollUpFamily): void {
+    const current = this.selectedAccount();
+    const named = orgRollUpAccount(family.rootUid, family.name);
+    if (current.uid !== named.uid || current.accountName === named.accountName) {
+      return;
     }
-    // A cycle has no top. Settle on its smallest uid so every member, entered from anywhere, lands in the same family.
-    return parent ? path.slice(path.indexOf(parent)).sort()[0] : path[path.length - 1];
+    this.selectedAccount.set({ ...current, accountName: named.accountName });
   }
 
   /** Spec 002: persist only the org account id (SFID, in `uid`) — display fields stay in memory and are always re-hydrated from persona seeds + Snowflake + the canonical fetch. */

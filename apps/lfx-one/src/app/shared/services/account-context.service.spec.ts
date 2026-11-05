@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
+import { computed, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router, UrlSerializer } from '@angular/router';
+import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgLensLookupOutcome, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
@@ -517,7 +518,8 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
  * round-trip, address as `/org/family-{root}/…`, and never reach an `:orgUid` endpoint.
  *
  * Alpha is the top of the family and Bravo inherits from it, so the two are one family keyed on
- * Alpha — the shape the conglomerate case has in production.
+ * Alpha — the shape the conglomerate case has in production. The families come from the server
+ * (lfx-self-serve#4126); the stand-in below groups what the caller holds the way it does.
  */
 describe('AccountContextService — family roll-up', () => {
   const UID_A = '0014100000MgaAAAAA';
@@ -545,17 +547,42 @@ describe('AccountContextService — family roll-up', () => {
     auditorSet: WritableSignal<Set<string>>;
     inheritedWriterSet: WritableSignal<Set<string>>;
     inheritedAuditorSet: WritableSignal<Set<string>>;
-    parentUidByUid: WritableSignal<Map<string, string>>;
-    parentNameByUid: WritableSignal<Map<string, string>>;
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
     loaded: WritableSignal<boolean>;
     lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   };
+  /** Each organization's Salesforce parent, as the server's family walk resolves it. */
+  let familyParents: WritableSignal<Map<string, string>>;
+  /** Family display names by top account id, as the server reports them. */
+  let familyNames: WritableSignal<Map<string, string>>;
+  /** Pins the server's answer outright, for tests about one specific answer. */
+  let serverAnswer: WritableSignal<OrgRollUpFamily[] | null>;
   let serverFamilies: {
     hasServerFamilies: WritableSignal<boolean>;
-    families: WritableSignal<OrgRollUpFamily[]>;
+    families: Signal<OrgRollUpFamily[]>;
     unsettled: WritableSignal<boolean>;
+    incomplete: Signal<boolean>;
+  };
+
+  /** Stands in for the roll-up set endpoint: groups what the caller holds (persona seeds and every grant set) under each organization's top parent. */
+  const groupLikeServer = (): OrgRollUpFamily[] => {
+    const seeds = (service as unknown as { userOrganizations: Signal<Account[]> }).userOrganizations();
+    const held = new Set<string>(seeds.flatMap((account) => (account.uid ? [account.uid] : [])));
+    for (const set of [grants.writerSet(), grants.auditorSet(), grants.inheritedWriterSet(), grants.inheritedAuditorSet()]) {
+      set.forEach((uid) => held.add(uid));
+    }
+    const families = new Map<string, string[]>();
+    for (const uid of held) {
+      let rootUid = uid;
+      for (let parent = familyParents().get(rootUid); parent; parent = familyParents().get(rootUid)) {
+        rootUid = parent;
+      }
+      families.set(rootUid, [...(families.get(rootUid) ?? []), uid]);
+    }
+    return Array.from(families, ([rootUid, orgUids]) => ({ rootUid, name: familyNames().get(rootUid) ?? null, orgUids })).sort((a, b) =>
+      a.rootUid.localeCompare(b.rootUid)
+    );
   };
 
   beforeEach(() => {
@@ -573,14 +600,20 @@ describe('AccountContextService — family roll-up', () => {
       auditorSet: signal(new Set<string>()),
       inheritedWriterSet: signal(new Set<string>()),
       inheritedAuditorSet: signal(new Set<string>()),
-      parentUidByUid: signal(new Map([[UID_B, UID_A]])),
-      parentNameByUid: signal(new Map([[UID_B, 'Alpha']])),
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
       loaded: signal(true),
       lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
     };
-    serverFamilies = { hasServerFamilies: signal(false), families: signal<OrgRollUpFamily[]>([]), unsettled: signal(false) };
+    familyParents = signal(new Map([[UID_B, UID_A]]));
+    familyNames = signal(new Map([[UID_A, 'Alpha']]));
+    serverAnswer = signal<OrgRollUpFamily[] | null>(null);
+    serverFamilies = {
+      hasServerFamilies: signal(true),
+      families: computed(() => serverAnswer() ?? groupLikeServer()),
+      unsettled: signal(false),
+      incomplete: signal(false),
+    };
     TestBed.configureTestingModule({
       providers: [
         {
@@ -636,19 +669,18 @@ describe('AccountContextService — family roll-up', () => {
   });
 
   /**
-   * lfx-self-serve#4126 — once the server answers, its families are the grouping: it resolves each
-   * organization to its family's top account, which the client-side grouping cannot.
+   * lfx-self-serve#4126 — the server's families are the only grouping: it resolves each organization
+   * to its family's top account, which the grant sets alone cannot.
    */
   describe('server-resolved families', () => {
     const UID_C = '0014100000MgcCCCCC';
 
-    it('uses the server families over the client-side grouping once they are usable', () => {
+    it("uses the server's families, which can group organizations no grant links", () => {
       grants.writerSet.set(new Set([UID_A, UID_C]));
-      // Client-side, A and C are unrelated: no grant names a parent for either.
+      familyParents.set(new Map());
       expect(service.canSelectRollUpFor(UID_C)).toBe(false);
 
-      serverFamilies.families.set([{ rootUid: UID_C, name: 'Charlie', orgUids: [UID_A, UID_C] }]);
-      serverFamilies.hasServerFamilies.set(true);
+      serverAnswer.set([{ rootUid: UID_C, name: 'Charlie', orgUids: [UID_A, UID_C] }]);
 
       expect(service.rollUpFamilies().map((family) => family.rootUid)).toEqual([UID_C]);
       expect(service.canSelectRollUpFor(UID_C)).toBe(true);
@@ -656,29 +688,47 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.selectedAccount().accountName).toBe('All Charlie Organizations');
     });
 
-    it('falls back to the client-side grouping while the server families are not usable', () => {
+    // No client-side guess: a guess offers family keys the server may not use, and a restored
+    // roll-up would demote and overwrite its cookie before the real answer lands.
+    it('offers no roll-up while the server families are not usable', () => {
       grants.inheritedWriterSet.set(new Set([UID_B]));
       service.initializeUserOrganizations([seedA]);
-      serverFamilies.families.set([]);
       serverFamilies.hasServerFamilies.set(false);
 
-      expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+      expect(service.rollUpFamilies()).toEqual([]);
+      expect(service.canSelectRollUpFor(ROOT)).toBe(false);
     });
 
-    // The families land after the grants. Judging a family's size in between would demote on the
-    // client-side lower bound and overwrite the roll-up cookie.
+    it('renames a restored roll-up once its family lands, keeping the selection', () => {
+      cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+      serverFamilies.hasServerFamilies.set(false);
+      serverFamilies.unsettled.set(true);
+      service.initializeUserOrganizations([seedA, seedB]);
+      TestBed.tick();
+      expect(service.selectedAccount().accountName).toBe(ROLLUP_ACCOUNT_NAME);
+
+      serverFamilies.hasServerFamilies.set(true);
+      serverFamilies.unsettled.set(false);
+      TestBed.tick();
+
+      expect(service.selectedAccount()).toEqual(expect.objectContaining({ uid: SEGMENT, accountName: 'All Alpha Organizations' }));
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
+    });
+
+    // The families land after the grants. Judging a family's size in between would demote a
+    // caller whose family is simply not known yet, and overwrite the roll-up cookie.
     it('holds a restored roll-up while the families are unsettled, and demotes once they settle smaller', () => {
       cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+      serverFamilies.hasServerFamilies.set(false);
       serverFamilies.unsettled.set(true);
       service.initializeUserOrganizations([seedA]);
       grants.inheritedWriterSet.set(new Set());
-      grants.parentUidByUid.set(new Map());
 
       expect(service.grantsUnsettled()).toBe(true);
       TestBed.tick();
       expect(service.isRollUp()).toBe(true);
 
-      serverFamilies.families.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A] }]);
+      serverAnswer.set([{ rootUid: ROOT, name: 'Alpha', orgUids: [UID_A] }]);
       serverFamilies.hasServerFamilies.set(true);
       serverFamilies.unsettled.set(false);
       TestBed.tick();
@@ -698,16 +748,16 @@ describe('AccountContextService — family roll-up', () => {
     const UID_E = '0014100000MgeEEEEE';
 
     beforeEach(() => {
-      grants.parentUidByUid.set(
+      familyParents.set(
         new Map([
           [UID_B, UID_A],
           [UID_D, UID_C],
         ])
       );
-      grants.parentNameByUid.set(
+      familyNames.set(
         new Map([
-          [UID_B, 'Alpha'],
-          [UID_D, 'Charlie'],
+          [UID_A, 'Alpha'],
+          [UID_C, 'Charlie'],
         ])
       );
     });
@@ -733,31 +783,6 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.selectedUrlSegment()).toBe(`family-${UID_C}`);
       expect(service.selectedAccount().accountName).toBe('All Charlie Organizations');
       expect(service.rollUpOrganizationCount()).toBe(2);
-    });
-
-    it('follows parents to the top of the family, more than one level up', () => {
-      grants.parentUidByUid.set(
-        new Map([
-          [UID_C, UID_B],
-          [UID_B, UID_A],
-        ])
-      );
-      grants.inheritedAuditorSet.set(new Set([UID_B, UID_C]));
-
-      expect(service.rollUpFamilies().map((family) => family.rootUid)).toEqual([UID_A]);
-      expect(familyOrgs(UID_A)?.sort()).toEqual([UID_B, UID_C].sort());
-    });
-
-    it('survives a parent cycle rather than looping', () => {
-      grants.parentUidByUid.set(
-        new Map([
-          [UID_A, UID_B],
-          [UID_B, UID_A],
-        ])
-      );
-      grants.writerSet.set(new Set([UID_A, UID_B]));
-
-      expect(service.rollUpFamilies()).toHaveLength(1);
     });
 
     it('demotes into the same family before an unrelated organization', () => {

@@ -125,12 +125,8 @@ export interface OrgRollUpSetResponse {
   lookupOutcome: OrgLensLookupOutcome;
 }
 
-/**
- * Where the caller's families currently come from: `pending` until the roll-up set answers,
- * `server` once it has, and `unavailable` when the BFF does not serve the endpoint yet — the
- * switcher then falls back to grouping the grant sets client-side.
- */
-export type OrgRollUpFamiliesSource = 'pending' | 'server' | 'unavailable';
+/** Where the caller's families stand: `pending` until the roll-up set first answers, `server` once it has (successfully or not). */
+export type OrgRollUpFamiliesSource = 'pending' | 'server';
 
 /** A family roll-up entry in the switcher, precomputed so the template reads prepared values rather than calling a method per change-detection pass. */
 export interface OrgRollUpSelectorRow {

@@ -109,13 +109,7 @@ export class OrgSelectorComponent {
   protected readonly selectedAccount: Signal<Account> = this.accountContextService.selectedAccount;
   protected readonly selectedAccountUid: Signal<string | null> = computed(() => this.selectedAccount().uid ?? null);
 
-  protected readonly displayName: Signal<string> = computed(() => {
-    // A roll-up restored from the cookie or a deep link is selected before its family's name is
-    // known; read it from the family so the trigger catches up once the grant sets land.
-    const family = this.accountContextService.selectedRollUpFamily();
-    if (family) return orgRollUpAccount(family.rootUid, family.name).accountName;
-    return this.selectedAccount().accountName || 'Select Organization';
-  });
+  protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Organization');
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedAccount().logoUrl ?? '');
 
   /**
@@ -153,8 +147,12 @@ export class OrgSelectorComponent {
   /**
    * Spec 053 FR-010 — the caller's list is a lower bound (roll-up expansion was incomplete) but the
    * selected organization did load, so the page renders and the switcher carries the notice instead.
+   * Also raised when the roll-up families answer is a lower bound or unknown (#4126): the one Retry
+   * re-runs the grants, which re-fetches the families.
    */
-  protected readonly listIncomplete: Signal<boolean> = this.emptyState.listIncomplete;
+  protected readonly listIncomplete: Signal<boolean> = computed(
+    () => this.emptyState.listIncomplete() || this.accountContextService.rollUpFamiliesIncomplete()
+  );
   protected readonly listIncompleteNotice = ORG_LENS_LIST_INCOMPLETE_NOTICE;
   protected readonly listRetrying: Signal<boolean> = this.emptyState.retrying;
   protected readonly listRetryLabel: Signal<string> = computed(() =>
