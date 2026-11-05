@@ -435,6 +435,7 @@ describe('FormationCardComponent', () => {
         putRequest.error(failure);
 
         expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Not saved' }));
+        expect(outcome).not.toHaveBeenCalled();
         expect(drawerClosed.observed).toBe(true);
       });
 

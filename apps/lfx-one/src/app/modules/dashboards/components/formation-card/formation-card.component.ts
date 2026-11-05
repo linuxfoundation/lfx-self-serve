@@ -192,7 +192,10 @@ export class FormationCardComponent {
       },
       error: (error: unknown) => {
         if (!outcome.observed || isDismissing()) {
+          // Toast only: a closing drawer must not also flash the inline error, so its stream completes without it.
           this.messageService.add({ severity: 'error', summary: 'Not saved', detail: FORMATION_RECORD_ERROR_MESSAGES.generic });
+          outcome.complete();
+          return;
         }
         outcome.error(error);
       },
