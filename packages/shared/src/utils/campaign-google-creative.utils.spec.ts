@@ -135,7 +135,7 @@ describe('googleCreativeFieldWidth', () => {
 
   /** Every catalogue field with a width is measured by one of the two regimes upstream uses for it. */
   it('treats every rune-counted catalogue control as a real catalogue field', () => {
-    const controls = new Set(
+    const controls = new Set<string>(
       Object.values(GOOGLE_CREATIVE_FIELD_SPECS).flatMap((specs) => (specs as readonly GoogleCreativeFieldSpec[]).map((spec) => spec.control))
     );
     for (const control of ['callToActionText', 'assetGroupName', 'path1', 'path2']) {
