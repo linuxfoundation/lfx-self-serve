@@ -82,7 +82,7 @@ export class UiSplitButtonComponent {
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Font Awesome class string for the right half when there is no `menu`, e.g. `fa-light fa-link`. */
   public readonly secondaryIcon = input<string>('');
-  /** Tooltip and accessible name of the right half when there is no `menu`, e.g. "Copy recording link". Optional once `secondaryLabel` names it. */
+  /** Tooltip and accessible name of the right half when there is no `menu`, e.g. "Copy recording link". Optional once `secondaryLabel` names it; set both only when the tooltip adds to the label. */
   public readonly secondaryTooltip = input<string>('');
   /** Visible text of the right half when there is no `menu`, e.g. "Snapshot". It turns the icon square into a labelled button, so the pair reads as two equal actions. */
   public readonly secondaryLabel = input<string>('');
@@ -131,13 +131,15 @@ export class UiSplitButtonComponent {
       const labelled = !this.menu() && !!this.secondaryLabel();
       const base =
         'relative inline-flex shrink-0 items-center justify-center rounded-l-none border leading-none transition-[background-color,border-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus:outline-none focus-visible:z-10 focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight] hover:z-10';
-      // Same heights, corner radii and glyph sizes as the matching lfx-ui-button size. Exact px: the 10/11/14px radii have no ui-* utility.
+      // Same heights and corner radii as the matching lfx-ui-button size. Exact px: the 10/11/14px radii have no ui-* utility.
       const sizes = {
-        tiny: 'h-ui-tiny rounded-r-[10px] text-[12px]',
-        small: 'h-ui-xsmall rounded-r-[11px] text-[13px]',
-        default: 'h-ui-small rounded-r-ui-sm text-[14px]',
-        large: 'h-ui-medium rounded-r-[14px] text-[18px]',
+        tiny: 'h-ui-tiny rounded-r-[10px]',
+        small: 'h-ui-xsmall rounded-r-[11px]',
+        default: 'h-ui-small rounded-r-ui-sm',
+        large: 'h-ui-medium rounded-r-[14px]',
       };
+      // An icon half sizes its glyph with the text size; a labelled half sizes only its icon, so its text keeps the button's type.
+      const glyphs = { tiny: 'text-[12px]', small: 'text-[13px]', default: 'text-[14px]', large: 'text-[18px]' };
       // A labelled half takes the button's own padding, gap and type for its size; an icon half stays a square.
       const labelledSizes = {
         tiny: 'gap-[4px] px-[8px] button-12 [&>i]:text-[12px]',
@@ -145,7 +147,7 @@ export class UiSplitButtonComponent {
         default: 'gap-[6px] px-[10px] button-14 [&>i]:text-[14px]',
         large: 'gap-[8px] px-[16px] button-14 [&>i]:text-[18px]',
       };
-      const shape = labelled ? labelledSizes[this.size()] : 'aspect-square p-0';
+      const shape = labelled ? labelledSizes[this.size()] : `aspect-square p-0 ${glyphs[this.size()]}`;
       // The borders of two neighbouring halves overlap by 1px; the filled variants have a transparent border and get a divider instead.
       // shortcut: hover/active mixes spelled out with var(), matching lfx-ui-button. revisit: when the library ships hover/active mix tokens.
       const variants = {

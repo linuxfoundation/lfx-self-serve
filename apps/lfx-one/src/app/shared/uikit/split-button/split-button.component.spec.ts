@@ -350,6 +350,24 @@ describe('UiSplitButtonComponent', () => {
       expect(half().className).toContain('h-ui-xsmall');
     });
 
+    it('keeps the label at the button type at large, sizing only the icon up', async () => {
+      pair.destroy();
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ imports: [TestHostComponent] });
+      TestBed.overrideComponent(TestHostComponent, {
+        set: {
+          imports: [UiSplitButtonComponent],
+          template: `<lfx-ui-split-button label="Trend" size="large" secondaryLabel="Snapshot" secondaryIcon="fa-light fa-table-list" />`,
+        },
+      });
+      pair = TestBed.createComponent(TestHostComponent);
+      await pair.whenStable();
+
+      expect(half().className).toContain('button-14');
+      expect(half().className).toContain('[&>i]:text-[18px]');
+      expect(half().className.split(' ')).not.toContain('text-[18px]');
+    });
+
     it('emits each half on its own', async () => {
       half().click();
       (pair.nativeElement.querySelector('[data-testid="ui-split-button-main"] button') as HTMLButtonElement).click();

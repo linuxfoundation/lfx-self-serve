@@ -26,7 +26,7 @@ import { UiBadgeSize, UiBadgeTone, UiBadgeVariant } from '@lfx-one/shared/interf
 export class UiBadgeComponent {
   /** Colour role. `neutral` is the default; `accent` comes first among the coloured roles. Ignored by the `outline` form; `line` draws in it. */
   public readonly tone = input<UiBadgeTone>('neutral');
-  /** `subtle` is the role's 100 fill with 700 text, the default for most UI. `solid` is the role's solid fill with white text (slate-900 on warning). `outline` is neutral metadata: a hairline ring on the page background. `line` is the role's solid colour as text and a 1px ring on a transparent fill, for a quiet coloured fact such as "Registration goal: 1,000". */
+  /** `subtle` is the role's 100 fill with 700 text, the default for most UI. `solid` is the role's solid fill with white text (slate-900 on warning). `outline` is neutral metadata: a hairline ring on the page background. `line` is a 1px ring in the role's solid colour with the role's 700 text, on a transparent fill, for a quiet coloured fact such as "Registration goal: 1,000". */
   public readonly variant = input<UiBadgeVariant>('subtle');
   /** `sm` is 20px tall with 11px text; `md` is 24px tall with 12px text. */
   public readonly size = input<UiBadgeSize>('md');
@@ -82,21 +82,22 @@ export class UiBadgeComponent {
         danger: 'bg-ui-danger-100 text-ui-danger-700',
         success: 'bg-ui-success-100 text-ui-success-700',
       };
-      // Line draws the text and its 1px ring in the solid fill's colour, on a transparent fill.
+      // Line draws a 1px ring in the solid fill's colour on a transparent fill. Its text is the subtle form's 700 ink, not the ring colour:
+      // 500/600 text at 11-12px falls under 4.5:1 on white for accent, warning and success.
       const line: Record<UiBadgeTone, string> = {
-        neutral: 'text-ui-neutral-600',
-        accent: 'text-ui-accent-500',
-        feature: 'text-ui-feature-600',
-        warning: 'text-ui-warning-500',
-        danger: 'text-ui-danger-600',
-        success: 'text-ui-success-600',
+        neutral: 'text-ui-neutral-700 shadow-[inset_0_0_0_1px_var(--ui-neutral-600)]',
+        accent: 'text-ui-accent-700 shadow-[inset_0_0_0_1px_var(--ui-accent-500)]',
+        feature: 'text-ui-feature-700 shadow-[inset_0_0_0_1px_var(--ui-feature-600)]',
+        warning: 'text-ui-warning-700 shadow-[inset_0_0_0_1px_var(--ui-warning-500)]',
+        danger: 'text-ui-danger-700 shadow-[inset_0_0_0_1px_var(--ui-danger-600)]',
+        success: 'text-ui-success-700 shadow-[inset_0_0_0_1px_var(--ui-success-600)]',
       };
       const tone = this.tone();
       const looks = {
         solid: solid[tone],
         subtle: subtle[tone],
         outline: 'bg-ui-background-100 text-ui-neutral-900 edge',
-        line: `bg-transparent ${line[tone]} shadow-[inset_0_0_0_1px_currentColor]`,
+        line: `bg-transparent ${line[tone]}`,
       };
       const variant = this.variant();
       const look = looks[variant];

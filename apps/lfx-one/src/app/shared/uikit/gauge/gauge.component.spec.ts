@@ -191,5 +191,13 @@ describe('UiGaugeComponent', () => {
     expect(host.hasAttribute('aria-valuenow')).toBe(false);
     expect(host.hasAttribute('aria-valuetext')).toBe(false);
     expect(host.getAttribute('aria-label')).toBe('Health score');
+    // Not a progressbar, which without a value reads as still loading.
+    expect(host.getAttribute('role')).toBe('img');
+  });
+
+  it('falls back to 64px for a px size that cannot draw a ring', async () => {
+    await set('size', 0);
+
+    expect(host.style.width).toBe('64px');
   });
 });

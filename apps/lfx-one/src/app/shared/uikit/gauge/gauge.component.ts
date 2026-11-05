@@ -14,7 +14,7 @@ import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, 
     '[style.width.px]': 'px()',
     '[style.height.px]': 'px()',
     '[style.--size]': 'sizeVar()',
-    role: 'progressbar',
+    '[attr.role]': 'empty() ? "img" : "progressbar"',
     '[attr.aria-label]': 'label()',
     '[attr.aria-valuenow]': 'hasValue() ? clampedValue() : null',
     '[attr.aria-valuemin]': 'hasValue() ? 0 : null',
@@ -36,7 +36,10 @@ export class UiGaugeComponent {
   public readonly level = input<'high' | 'mid' | 'low' | null>(null);
   /** `default` is a 10-unit ring with round ends. `thin` is an 8-unit ring with square ends, for dense rows of gauges. */
   public readonly weight = input<'default' | 'thin'>('default');
-  /** Shows an outlined ring with no arc and no value, for a measure that has nothing to measure against, such as an event with no goal. */
+  /**
+   * Shows an outlined ring with no arc and no value, for a measure that has nothing to measure against, such as an event with no goal.
+   * The ring's inside is painted in the page background, as the design draws it, so place it on the page background. It is an image named by `label`, not a progressbar.
+   */
   public readonly empty = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Shows the number, without a % sign, inside the ring. */
   public readonly showValue = input<boolean, unknown>(true, { transform: booleanAttribute });
@@ -59,7 +62,8 @@ export class UiGaugeComponent {
   private initPx(): Signal<number> {
     return computed(() => {
       const size = this.size();
-      if (typeof size === 'number') return size;
+      // A size that cannot draw a ring falls back to the default 64px.
+      if (typeof size === 'number') return Number.isFinite(size) && size > 0 ? size : 64;
       const sizes = { tiny: 20, small: 32, default: 64, large: 128 };
       return sizes[size];
     });
