@@ -182,6 +182,7 @@ const LEGACY_DOCS_PAGE_RENAMES: Readonly<Record<string, string>> = {
   'choose-an-organization': 'choose-a-company',
   'org-overview': 'company-overview',
   'manage-org-lens-access': 'manage-company-lens-access',
+  'org-events': 'company-events',
 };
 
 /**
