@@ -256,16 +256,22 @@ the directory returned per subject, shared by every consumer in the process
 (revisions, comments, runs, redrafts), so the revision GET and the poll cycle a
 client interleaves agree about an approver instead of flipping between a name and
 none. The map is stale-if-error (RFC 5861 §4): only a successful lookup writes it,
-and a lookup that throws (a timeout, a 503, an invalid body) serves the subject's
-last known name while that name is within `MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS`
-(one hour) of its last success, logging `served_stale: true`, never the name. It
-holds at most `MKTG_DOCUMENT_AUTHOR_CACHE_LIMIT` (500) subjects, the least recently
-resolved dropped first. A directory answer with no name — `success: false`, the
-directory's explicit miss, or an empty display name — is not an outage: it clears
-the entry and renders no name. A failure is never remembered. The cache is per
-process, so each BFF replica, an evicted subject or an expired entry can still
-answer with no name once until its own lookup succeeds; a shared cache, or the
-revision storing the approver's display name at approval time, is the follow-up.
+and a failed lookup — one that throws (a timeout, a 503, an invalid body) or one
+the directory answers with `success: false`, which lfx-v2-auth-service does for
+any upstream error (an M2M token failure, an Auth0 rate limit or 5xx), not only a
+miss — serves the subject's last known name while that name is within
+`MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS` (one hour) of its last success, logging
+`served_stale: true`, never the name. It holds at most
+`MKTG_DOCUMENT_AUTHOR_CACHE_LIMIT` (500) subjects, the least recently resolved
+dropped first, and sweeps expired entries whenever it writes. A successful answer
+with an empty display name clears the entry and renders no name; the one-hour
+window is the privacy bound for a user removed from the directory, whose name
+lingers at most that long. A failure is never remembered. The cache is per
+process, so each BFF replica, an evicted subject or an expired entry answers with
+no name until a lookup succeeds; a shared cache, or the revision storing the
+approver's display name at approval time, is the follow-up, as is a typed
+not-found code from lfx-v2-auth-service so a removed user clears at once (error
+strings are never matched).
 A stored author whose name is empty, or whose lookup failed with no name to serve,
 renders “name unavailable”; only an absent author record renders the historical
 no-name label. Failures warn once per ID and request and never fail a document
@@ -549,11 +555,11 @@ reads through `MktgDocumentAuthorService`, which also owns revision attribution.
 The comments service shares that helper instance with its revision reader, so
 both use one per-request name memo and the process-wide last-known-name map
 described under revision attribution (500 subjects, one hour since the last
-success, success-only writes), with bounded fan-out. A thrown lookup serves the
-author's last known name within that window, logging `served_stale: true`, and
-otherwise resolves to `{ name: null }` without failing the comments read; thrown
-errors retain structured `err` metadata, and an unsuccessful directory response
-(the explicit miss) clears any remembered name and warns without inventing an
+success, success-only writes), with bounded fan-out. A failed lookup — thrown, or
+answered `success: false` — serves the author's last known name within that
+window, logging `served_stale: true`, and otherwise resolves to `{ name: null }`
+without failing the comments read; thrown errors retain structured `err`
+metadata, and an unsuccessful directory response warns without inventing an
 error. Explicit public projection excludes subjects, request IDs
 and the private send ledger. Bodies
 and attribution are not logged. Direct asset editing and revision overwrite are

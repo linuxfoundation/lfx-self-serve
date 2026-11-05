@@ -12,8 +12,9 @@ vi.mock('./user.service', () => ({
 }));
 vi.mock('./logger.service', () => ({ logger: { warning: mocks.warning } }));
 import { MKTG_DOCUMENT_AUTHOR_CACHE_LIMIT, MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import { AuthenticationError, MicroserviceError } from '../errors';
-import { MktgDocumentAuthorService, type MktgLastKnownAuthorName } from './mktg-document-author.service';
+import { AuthenticationError, MicroserviceError, ResourceNotFoundError } from '../errors';
+import type { MktgLastKnownAuthorName } from '@lfx-one/shared/interfaces';
+import { MktgDocumentAuthorService } from './mktg-document-author.service';
 
 describe('shared document/comment attribution', () => {
   let authors: MktgDocumentAuthorService;
@@ -82,19 +83,21 @@ describe('shared document/comment attribution', () => {
     expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: null });
   });
 
-  it('serves the last successfully resolved name across requests when the directory is unavailable, saying so in the log', async () => {
-    expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: 'Project writer' });
-    const err = new MicroserviceError('Directory unavailable', 503, 'UNAVAILABLE');
-    mocks.user.mockRejectedValue(err);
-    const outage = {} as Request;
-    expect(await authors.resolveAuthor(outage, 'opaque-writer')).toEqual({ name: 'Project writer' });
-    expect(mocks.user).toHaveBeenCalledTimes(2);
-    expect(mocks.warning).toHaveBeenCalledExactlyOnceWith(outage, 'mktg_document_store_author', 'Author lookup failed — showing the last known name', {
-      err,
-      served_stale: true,
-    });
-    expect(JSON.stringify(mocks.warning.mock.calls)).not.toContain('Project writer');
-  });
+  it.each([new MicroserviceError('Directory unavailable', 503, 'UNAVAILABLE'), new ResourceNotFoundError('User'), new Error('NATS timeout')])(
+    'serves the last successfully resolved name across requests when the lookup throws %s, saying so in the log',
+    async (err) => {
+      expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: 'Project writer' });
+      mocks.user.mockRejectedValue(err);
+      const outage = {} as Request;
+      expect(await authors.resolveAuthor(outage, 'opaque-writer')).toEqual({ name: 'Project writer' });
+      expect(mocks.user).toHaveBeenCalledTimes(2);
+      expect(mocks.warning).toHaveBeenCalledExactlyOnceWith(outage, 'mktg_document_store_author', 'Author lookup failed — showing the last known name', {
+        err,
+        served_stale: true,
+      });
+      expect(JSON.stringify(mocks.warning.mock.calls)).not.toContain('Project writer');
+    }
+  );
 
   it('shows no name when no lookup for that subject ever succeeded, whatever another subject resolved to', async () => {
     expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: 'Project writer' });
@@ -115,16 +118,20 @@ describe('shared document/comment attribution', () => {
     expect(await authors.resolveAuthor({} as Request, 'opaque-writer')).toEqual({ name: null });
   });
 
-  it("treats the directory's explicit miss as no name, clearing the remembered one instead of serving it", async () => {
-    expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: 'Project writer' });
-    mocks.user.mockResolvedValue({ success: false, error: 'user not found' });
-    const miss = {} as Request;
-    expect(await authors.resolveAuthor(miss, 'opaque-writer')).toEqual({ name: null });
-    expect(lastKnown.has('opaque-writer')).toBe(false);
-    expect(mocks.warning).toHaveBeenCalledExactlyOnceWith(miss, 'mktg_document_store_author', 'Author lookup failed — showing no name');
-    mocks.user.mockRejectedValue(new Error('NATS timeout'));
-    expect(await authors.resolveAuthor({} as Request, 'opaque-writer')).toEqual({ name: null });
-  });
+  it.each(['failed to get M2M token', 'user not found'])(
+    "serves the last known name on the directory's success:false answer (%s), which it gives for any upstream error",
+    async (error) => {
+      expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: 'Project writer' });
+      mocks.user.mockResolvedValue({ success: false, error });
+      const failed = {} as Request;
+      expect(await authors.resolveAuthor(failed, 'opaque-writer')).toEqual({ name: 'Project writer' });
+      expect(lastKnown.has('opaque-writer')).toBe(true);
+      expect(mocks.warning).toHaveBeenCalledExactlyOnceWith(failed, 'mktg_document_store_author', 'Author lookup failed — showing the last known name', {
+        served_stale: true,
+      });
+      expect(JSON.stringify(mocks.warning.mock.calls)).not.toContain('Project writer');
+    }
+  );
 
   it('stops serving a remembered name once its window has passed, until a lookup succeeds again', async () => {
     vi.useFakeTimers();
@@ -140,6 +147,16 @@ describe('shared document/comment attribution', () => {
     mocks.user.mockRejectedValue(new Error('NATS timeout'));
     vi.advanceTimersByTime(MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS - 1);
     expect(await authors.resolveAuthor({} as Request, 'opaque-writer')).toEqual({ name: 'Project writer' });
+  });
+
+  it('sweeps expired names from memory when another subject resolves, so no name outlives its window', async () => {
+    vi.useFakeTimers();
+    expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: 'Project writer' });
+    vi.advanceTimersByTime(MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS / 2);
+    expect(await authors.resolveAuthor({} as Request, 'opaque-reviewer')).toEqual({ name: 'Project writer' });
+    vi.advanceTimersByTime(MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS / 2);
+    expect(await authors.resolveAuthor({} as Request, 'opaque-approver')).toEqual({ name: 'Project writer' });
+    expect([...lastKnown.keys()]).toEqual(['opaque-reviewer', 'opaque-approver']);
   });
 
   it('keeps the remembered names bounded, dropping the least recently refreshed subject first', async () => {

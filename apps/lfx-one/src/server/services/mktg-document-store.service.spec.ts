@@ -1419,19 +1419,27 @@ describe('MktgDocumentStoreService', () => {
       expect(JSON.stringify([...store.objects.values()])).not.toContain('The writer');
     });
 
-    it('handles an unsuccessful directory response as no name, clearing a known one, and warns once for the stored author', async () => {
-      const earlier = { ...req } as Request;
-      await service.recordGeneration(earlier, BRAND_KIT, PROJECT, envelope('# One'), 'one');
-      expect((await service.getDocument(earlier, PROJECT, BRAND_KIT, 'living'))?.revisions[0].author).toEqual({ name: 'The writer' });
-      directoryMocks.getUserInfo.mockClear();
+    it('handles an unsuccessful directory response with no earlier success as no name and warns once for the stored author', async () => {
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
       directoryMocks.getUserInfo.mockResolvedValue({ success: false, error: 'user not found' });
       const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
       expect(detail?.revisions[0].author).toEqual({ name: null });
       expect(detail?.current?.changedBy).toEqual({ name: null });
       expect(directoryMocks.getUserInfo).toHaveBeenCalledTimes(1);
       expect(loggerMocks.warning).toHaveBeenCalledExactlyOnceWith(req, 'mktg_document_store_author', 'Author lookup failed — showing no name');
-      directoryMocks.getUserInfo.mockRejectedValue(new Error('NATS timeout'));
-      expect((await service.getDocument({ ...req } as Request, PROJECT, BRAND_KIT, 'living'))?.revisions[0].author).toEqual({ name: null });
+    });
+
+    it('serves the last known name on an unsuccessful directory response after an earlier success, saying so in the log', async () => {
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
+      expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].author).toEqual({ name: 'The writer' });
+      directoryMocks.getUserInfo.mockResolvedValue({ success: false, error: 'failed to get M2M token' });
+      const limited = { ...req } as Request;
+      const detail = await service.getDocument(limited, PROJECT, BRAND_KIT, 'living');
+      expect(detail?.revisions[0].author).toEqual({ name: 'The writer' });
+      expect(detail?.current?.changedBy).toEqual({ name: 'The writer' });
+      expect(loggerMocks.warning).toHaveBeenCalledExactlyOnceWith(limited, 'mktg_document_store_author', 'Author lookup failed — showing the last known name', {
+        served_stale: true,
+      });
     });
 
     it('bounds distinct directory reads and discards the memo between requests', async () => {
