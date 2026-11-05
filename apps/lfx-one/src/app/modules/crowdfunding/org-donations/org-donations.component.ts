@@ -12,7 +12,7 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_ORG_DONATIONS } from '@lfx-one/shared/constants';
-import { InitiativesLoadError, OrgDonationsResponse } from '@lfx-one/shared/interfaces';
+import { InitiativesLoadError, OrgDonationRow, OrgDonationsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { of } from 'rxjs';
@@ -51,7 +51,12 @@ export class OrgDonationsComponent {
     computation: ({ orgUid }) => ({ orgUid, offset: 0 }),
   });
   private readonly donationsState: Signal<OrgDonationsResponse> = this.initDonations();
-  protected readonly donations = computed(() => this.donationsState().data);
+  protected readonly donations: Signal<OrgDonationRow[]> = computed(() =>
+    this.donationsState().data.map((d) => ({
+      ...d,
+      initiativeUrl: d.initiativeSlug ? `${this.crowdfundingUrl}/initiatives/${encodeURIComponent(d.initiativeSlug)}` : undefined,
+    }))
+  );
   protected readonly hasMore = computed(() => this.donationsState().data.length < this.donationsState().total);
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
@@ -59,10 +64,6 @@ export class OrgDonationsComponent {
     if (this.loadingMore() || !this.hasMore()) return;
     this.loadingMore.set(true);
     this.page.update((curr) => ({ ...curr, offset: curr.offset + DEFAULT_CROWDFUNDING_PAGE_SIZE }));
-  }
-
-  protected initiativeUrl(slug: string): string {
-    return `${this.crowdfundingUrl}/initiatives/${encodeURIComponent(slug)}`;
   }
 
   protected onRetry(): void {

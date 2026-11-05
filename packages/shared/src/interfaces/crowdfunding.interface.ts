@@ -126,6 +126,11 @@ export interface OrgDonation {
 
 export type OrgDonationsResponse = OffsetPaginatedResponse<OrgDonation>;
 
+/** An Org lens donations row with its initiative's public crowdfunding page URL, when CF sent a slug. */
+export interface OrgDonationRow extends OrgDonation {
+  initiativeUrl?: string;
+}
+
 export interface FundingGoal {
   id: string;
   name: string;
