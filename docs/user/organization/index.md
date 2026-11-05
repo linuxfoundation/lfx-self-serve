@@ -23,6 +23,8 @@ The Organization section covers pages in the Organization lens. These steps appl
 - Open **Groups** to see the working groups and committees where the organization's employees hold seats, and who holds them
 - Open **People** → **Org Lens Access** to see who can open the organization and, as an Admin, add, change or remove their access
 - Open **EasyCLA** to view and manage the corporate CLAs (Contributor License Agreements) that organization holds
+- Open **Crowdfunding Initiatives** to see the crowdfunding initiatives run on behalf of the organization, if you have a writer role on it
+- Open **Crowdfunding Donations** to see the crowdfunding donations made on behalf of the organization
 
 Your own signed agreements, as a contributor, are on the [CLAs](../account/my-clas/) tab under Profile & Account. They are a different page.
 
@@ -48,5 +50,7 @@ Go to **app.lfx.dev**, switch to the **Organization** lens, and select the organ
 - [Organization Meetings](./meetings/) — the organization's meeting attendance, where its people spend that time, and how it adds to project influence
 - [Groups](./groups/) — the groups where the organization's employees hold seats, who holds them, and the CSV export
 - [EasyCLA](./easycla/) — corporate CLAs for the selected organization
+- [Lens-scoped Initiatives](../crowdfunding/lens-initiatives/) — crowdfunding initiatives run on behalf of the organization
+- [Organization Donations](../crowdfunding/lens-donations/) — crowdfunding donations made on behalf of the organization
 - [Organization FAQ](./faq/) — short answers about switching organizations, Org Lens access, the Org Overview dashboard, the Memberships, Projects, People, Code Contributions, Events, Training & Certification, Meetings and Groups pages, who can edit a corporate CLA, who can see a company, and CLA Manager changes
 - [CLAs](../account/my-clas/) — your own Individual CLAs and your coverage under an employer's corporate CLA
