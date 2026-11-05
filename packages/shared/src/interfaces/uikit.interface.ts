@@ -21,8 +21,11 @@ export interface UiTabItem {
   disabledReason?: string;
 }
 
-/** Two-step density shared by the uikit tabs, collapse and note: `default`, or `small` for dense places. */
+/** Two-step density shared by the uikit tabs and collapse, and extended by `UiNoteSize`: `default`, or `small` for dense places. */
 export type UiDensitySize = 'default' | 'small';
+
+/** Size of a uikit note: the shared density, or `tiny` (24px, 12px text) inside rows, cards and data blocks. */
+export type UiNoteSize = UiDensitySize | 'tiny';
 
 /** Size of uikit tabs: `default` is 14px, `small` is 13px with tighter bottom padding (Meetings). The secondary variant ignores it. */
 export type UiTabsSize = UiDensitySize;

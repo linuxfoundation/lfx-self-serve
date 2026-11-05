@@ -30,7 +30,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-status-dot`     | `UiStatusDotComponent`     | Six run states as a 10px dot and a word; queued and building pulse; dot-only mode with `role="img"`                                                                                 |
 | `lfx-ui-skeleton`       | `UiSkeletonComponent`      | Shimmering line, pill or circle placeholder with any width and height; `aria-hidden`                                                                                                |
 | `lfx-ui-spinner`        | `UiSpinnerComponent`       | Twelve-bar spinner, 12 to 32px, neutral or current-colour tone; `role="status"` with a label                                                                                        |
-| `lfx-ui-note`           | `UiNoteComponent`          | Inline message, six variants, optional fill, small size, label and one action slot; `role="note"`, `alert` with `announce`                                                          |
+| `lfx-ui-note`           | `UiNoteComponent`          | Inline message, six variants, optional fill, small or tiny size, plain style, label and one action slot; `role="note"`, `alert` with `announce`                                     |
 | `lfx-ui-description`    | `UiDescriptionComponent`   | Title and value as a definition list; right-aligned for numbers, ellipsis for long values, optional help icon                                                                       |
 | `lfx-ui-error`          | `UiErrorComponent`         | Red error message with icon, optional medium-weight label and link; four sizes; `role="alert"` unless `announce` is off                                                             |
 | `lfx-ui-keyboard-input` | `UiKeyboardInputComponent` | Key or shortcut as one `<kbd>` per key, 24 or 20px; `[keys]`                                                                                                                        |
@@ -71,7 +71,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfxUiPopover`          | `UiPopoverDirective`       | Non-modal dialog panel in the Menu material from any content: `aria-haspopup`, `aria-expanded`, Escape and outside click close; open it from `lfx-ui-button [popover]`              |
 | `lfx-ui-drawer`         | `UiDrawerComponent`        | Side sheet via `UiDrawerService` on the modal: left or right, width in px, header actions and close button, scrolling body, footer; slides, `canClose` guard                        |
 | `UiDrawerService`       | `UiDrawerService`          | Opens content whose root is `lfx-ui-drawer` as a side sheet on the modal: focus trap, scroll lock, slide; `canClose` guards dismissal; returns a `DialogRef`                        |
-| `lfx-ui-chip`           | `UiChipComponent`          | Removable badge for an applied filter: accent subtle, 20px or 24px, × button named "Remove" and the label; `lfx-ui-chip-group` moves focus on removal                               |
+| `lfx-ui-chip`           | `UiChipComponent`          | Removable badge for an applied filter: accent subtle, 20px or 24px, regular-weight key prefix, × button named "Remove" and the label; `lfx-ui-chip-group` moves focus on removal    |
 
 ## Design tokens
 

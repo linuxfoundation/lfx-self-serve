@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
-import { UiDensitySize } from '@lfx-one/shared/interfaces';
+import { UiNoteSize } from '@lfx-one/shared/interfaces';
 
 /** Inline message tied to the content around it: information, success, a warning or an error. */
 @Component({
@@ -20,8 +20,10 @@ export class UiNoteComponent {
   public readonly variant = input<'info' | 'secondary' | 'success' | 'warning' | 'error' | 'violet'>('info');
   /** Adds the tinted background. Without it the note is an outline only. */
   public readonly fill = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** `small` is 32px tall with 13px text, for dense places. */
-  public readonly size = input<UiDensitySize>('default');
+  /** `small` is 32px tall with 13px text, for dense places; `tiny` is 24px tall with 12px text, inside rows, cards and data blocks. */
+  public readonly size = input<UiNoteSize>('default');
+  /** Drops the edge, fill and padding: only the coloured icon and text, for a status line inside another component. Works with any size. */
+  public readonly plain = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Medium-weight topic before the message, including its colon, such as `Beta:`. */
   public readonly label = input<string>('');
   /** Font Awesome icon classes that replace the variant's default icon, such as `fa-light fa-bell`. */
@@ -45,12 +47,15 @@ export class UiNoteComponent {
         violet: { ring: 'ring-ui-feature-200', text: 'text-ui-feature-700', fill: 'bg-ui-feature-50' },
       };
       const { ring, text, fill } = variants[this.variant()];
-      // Exact px, not rem; 14px root: min-height and padding are the library's 40/8/12 and 32/6/10.
+      // Exact px, not rem; 14px root: min-height and padding are the library's 40/8/12, 32/6/10 and 24/4/8.
       const sizes = {
-        default: 'min-h-[40px] gap-[12px] px-[12px] py-[8px] copy-14',
-        small: 'min-h-[32px] gap-[8px] px-[10px] py-[6px] copy-13',
+        default: { box: 'min-h-[40px] gap-[12px] px-[12px] py-[8px] rounded-ui-sm', type: 'copy-14' },
+        small: { box: 'min-h-[32px] gap-[8px] px-[10px] py-[6px] rounded-ui-sm', type: 'copy-13' },
+        tiny: { box: 'min-h-[24px] gap-[6px] px-[8px] py-[4px] rounded-[8px]', type: 'label-12' },
       };
-      return `flex items-center rounded-ui-sm ring-1 ring-inset ${ring} ${text} ${sizes[this.size()]} ${this.fill() ? fill : ''}`;
+      const { box, type } = sizes[this.size()];
+      if (this.plain()) return `flex items-center gap-[6px] ${text} ${type}`;
+      return `flex items-center ring-1 ring-inset ${ring} ${text} ${box} ${type} ${this.fill() ? fill : ''}`;
     });
   }
 
@@ -69,7 +74,16 @@ export class UiNoteComponent {
   }
 
   private initIconWrapperClasses(): Signal<string> {
-    // Exact px, not rem; 14px root: 16px (14px small) icon nudged 2px down to sit on the first text line.
-    return computed(() => `inline-flex self-start pt-[2px] ${this.size() === 'small' ? 'text-[14px]' : 'text-[16px]'}`);
+    // Exact px, not rem. Boxed default and small nudge the icon 2px down; tiny and plain centre it on line one.
+    return computed(() => {
+      const sizes = {
+        default: { icon: 'text-[16px]', line: 'h-[20px]' },
+        small: { icon: 'text-[14px]', line: 'h-[18px]' },
+        tiny: { icon: 'text-[12px]', line: 'h-[16px]' },
+      };
+      const { icon, line } = sizes[this.size()];
+      const centred = this.plain() || this.size() === 'tiny';
+      return `inline-flex self-start ${icon} ${centred ? `${line} items-center` : 'pt-[2px]'}`;
+    });
   }
 }
