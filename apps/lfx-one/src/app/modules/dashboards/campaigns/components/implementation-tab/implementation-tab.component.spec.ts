@@ -6313,10 +6313,33 @@ describe('ImplementationTabComponent demand gen video ad', () => {
     expect(c['campaignForm'].controls.demandGenCreative.enabled).toBe(false);
     expect(find('implementation-creative-demand-gen-youtubeVideoIds')).not.toBeNull();
     expect(find('implementation-creative-demand-gen-marketingImages')).toBeNull();
-    // The call to action is a closed list, so a select with "None" first.
-    const cta = find('implementation-creative-demand-gen-callToAction') as HTMLSelectElement | null;
-    expect(cta?.tagName).toBe('SELECT');
-    expect(cta?.options[0].value).toBe('');
+    // The call to action is a closed list, so an lfx-select with "None" first, bound to the video group.
+    const cta = fixture.debugElement.query(By.css('[data-testid="implementation-creative-demand-gen-callToAction"]'));
+    expect(cta?.name).toBe('lfx-select');
+    const select = cta.componentInstance as { options: () => { value: string; label: string }[]; control: () => string; form: () => unknown };
+    expect(select.options()[0]).toEqual({ value: '', label: 'None' });
+    expect(
+      select
+        .options()
+        .slice(1)
+        .map((o) => o.value)
+    ).toEqual(['SIGN_UP', 'LEARN_MORE', 'BOOK_NOW', 'VISIT_SITE', 'WATCH_NOW']);
+    expect(select.control()).toBe('callToAction');
+    expect(select.form()).toBe(c['campaignForm'].controls.demandGenVideoCreative);
+  });
+
+  it('offers the two ad formats as lfx-radio-buttons on the demandGenAdFormat control', () => {
+    seedChannel(fixture, { includeDemandGen: true });
+    fixture.detectChanges();
+    for (const [format, testId] of [
+      ['image', 'implementation-creative-demand-gen-format-image'],
+      ['video', 'implementation-creative-demand-gen-format-video'],
+    ] as const) {
+      const radio = fixture.debugElement.query(By.css(`[data-testid="${testId}"]`));
+      expect(radio?.name).toBe('lfx-radio-button');
+      const instance = radio.componentInstance as { control: () => string; value: () => string; name: () => string };
+      expect([instance.control(), instance.name(), instance.value()]).toEqual(['demandGenAdFormat', 'demandGenAdFormat', format]);
+    }
   });
 
   it('sends only the video ad, keeps the image ad typed, and says it is not sent', () => {
@@ -6343,6 +6366,7 @@ describe('ImplementationTabComponent demand gen video ad', () => {
     expect(c['demandGenFormatHeldMessage']()).toContain('image ad you entered is kept but not sent');
     expect(find('implementation-demand-gen-format-held')?.textContent).toContain('kept but not sent');
     expect(find('implementation-demand-gen-format-held-live')?.textContent).toContain('kept but not sent');
+    expect(find('implementation-creative-demand-gen-format')?.getAttribute('aria-describedby')).toBe('implementation-demand-gen-format-held');
   });
 
   it('holds Create on the shared judge the BFF refuses on, and releases it once the ad is valid', () => {

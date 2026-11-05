@@ -2490,29 +2490,28 @@
             typed into it, and the note below says it will not be sent.
           -->
           @if (section.channel === 'demand-gen') {
-            <fieldset class="mt-4 flex flex-col gap-2" data-testid="implementation-creative-demand-gen-format">
+            <fieldset
+              class="mt-4 flex flex-col gap-2"
+              [attr.aria-describedby]="demandGenFormatHeldMessage() ? 'implementation-demand-gen-format-held' : null"
+              data-testid="implementation-creative-demand-gen-format">
               <legend class="text-xs font-medium text-gray-700">Ad format</legend>
               <div class="flex flex-wrap gap-4">
-                <label class="flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="radio"
-                    formControlName="demandGenAdFormat"
-                    value="image"
-                    [attr.aria-describedby]="demandGenFormatHeldMessage() ? 'implementation-demand-gen-format-held' : null"
-                    class="border-gray-300 text-blue-600 focus:ring-blue-500"
-                    data-testid="implementation-creative-demand-gen-format-image" />
-                  Image ad
-                </label>
-                <label class="flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="radio"
-                    formControlName="demandGenAdFormat"
-                    value="video"
-                    [attr.aria-describedby]="demandGenFormatHeldMessage() ? 'implementation-demand-gen-format-held' : null"
-                    class="border-gray-300 text-blue-600 focus:ring-blue-500"
-                    data-testid="implementation-creative-demand-gen-format-video" />
-                  Video ad (YouTube)
-                </label>
+                <lfx-radio-button
+                  [form]="campaignForm"
+                  control="demandGenAdFormat"
+                  name="demandGenAdFormat"
+                  value="image"
+                  label="Image ad"
+                  inputId="implementation-demand-gen-format-image"
+                  data-testid="implementation-creative-demand-gen-format-image" />
+                <lfx-radio-button
+                  [form]="campaignForm"
+                  control="demandGenAdFormat"
+                  name="demandGenAdFormat"
+                  value="video"
+                  label="Video ad (YouTube)"
+                  inputId="implementation-demand-gen-format-video"
+                  data-testid="implementation-creative-demand-gen-format-video" />
               </div>
               @if (demandGenFormatHeldMessage()) {
                 <p id="implementation-demand-gen-format-held" class="text-xs text-gray-500" data-testid="implementation-demand-gen-format-held">
@@ -2537,17 +2536,14 @@
                     class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
                 } @else if (field.options) {
-                  <!-- A closed list upstream accepts, so a select rather than free text; empty sends none. -->
-                  <select
-                    [id]="section.channel + '-' + field.control"
-                    [formControlName]="field.control"
-                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control">
-                    <option value="">None</option>
-                    @for (option of field.options; track option.value) {
-                      <option [value]="option.value">{{ option.label }}</option>
-                    }
-                  </select>
+                  <!-- A closed list upstream accepts, so a select rather than free text; "None" sends none. -->
+                  <lfx-select
+                    [form]="creativeGroup(section.groupName)"
+                    [control]="field.control"
+                    [options]="creativeFieldSelectOptions(field)"
+                    [inputId]="section.channel + '-' + field.control"
+                    size="small"
+                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
                 } @else {
                   <input
                     type="text"

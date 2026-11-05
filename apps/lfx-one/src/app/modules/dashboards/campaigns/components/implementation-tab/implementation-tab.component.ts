@@ -20,6 +20,7 @@ import {
 import { ButtonComponent } from '@components/button/button.component';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
@@ -260,6 +261,7 @@ import type {
   GoogleConversionActionPickerState,
   GoogleCreativeChannel,
   GoogleCreativeEitherOrRule,
+  GoogleCreativeFieldOption,
   GoogleCreativeFieldSpec,
   GoogleCreativeGroup,
   GoogleDemandGenAdFormat,
@@ -385,6 +387,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     ButtonComponent,
     AutocompleteComponent,
     InputTextComponent,
+    RadioButtonComponent,
     SelectComponent,
     TextareaComponent,
     DecimalPipe,
@@ -997,6 +1000,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
   protected readonly googleCreativeNotice = GOOGLE_CREATIVE_REQUIRED_NOTICE;
   protected readonly performanceMaxPrefillNotice = GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE;
+  /** {@link creativeFieldSelectOptions}' cache, keyed by the catalogue's own options array. */
+  private readonly creativeSelectOptions = new Map<readonly GoogleCreativeFieldOption[], GoogleCreativeFieldOption[]>();
   protected readonly redditMaxBudget = REDDIT_MAX_BUDGET_USD;
   protected readonly redditObjectiveLabels = REDDIT_OBJECTIVE_LABELS;
   /**
@@ -5717,6 +5722,26 @@ export class ImplementationTabComponent implements OnInit {
     }
   }
 
+  /** A creative's nested form group by its name, the Demand Gen video ad's included (#5226). */
+  protected creativeGroup(groupName: string): FormGroup<Record<string, FormControl<string>>> {
+    return this.campaignForm.get(groupName) as FormGroup<Record<string, FormControl<string>>>;
+  }
+
+  /**
+   * A closed-list creative field's choices for `lfx-select`, with "None" first so an empty value
+   * sends nothing. Built once per catalogue list, so the select is handed the same array on every
+   * change detection rather than a fresh one.
+   */
+  protected creativeFieldSelectOptions(field: GoogleCreativeFieldSpec): GoogleCreativeFieldOption[] {
+    const choices = field.options ?? [];
+    let options = this.creativeSelectOptions.get(choices);
+    if (options === undefined) {
+      options = [{ value: '', label: 'None' }, ...choices];
+      this.creativeSelectOptions.set(choices, options);
+    }
+    return options;
+  }
+
   // === Private Methods ===
   /**
    * Replay edits carried over from a previous mount, over the values just seeded from the brief.
@@ -7300,11 +7325,12 @@ export class ImplementationTabComponent implements OnInit {
       linkedInGeoTargets: form.linkedInGeoTargets,
       linkedInTargetingProfile: form.linkedInTargetingProfile,
       eventSlug: form.eventSlug,
-      // The three creative groups, raw. Named here for the same reason every field above is: this
-      // emit is an object literal, so a nested group reaches the draft only when it is listed.
-      // Carried for ALL three channels regardless of which is ticked — the selection is itself a
-      // draft field, and a user who tries Display, types a headline, then switches to Performance
-      // Max must not lose the Display copy the moment they look away.
+      // Every creative group, raw: each channel's image creative and Demand Gen's video ad. Named here
+      // for the same reason every field above is: this emit is an object literal, so a nested group
+      // reaches the draft only when it is listed. Carried for every group regardless of which channel
+      // is ticked or which Demand Gen format is chosen — both selections are draft fields, and a user
+      // who tries Display, types a headline, then switches to Performance Max must not lose the
+      // Display copy the moment they look away.
       googleCreatives: this.googleCreativeSnapshot(),
       demandGenAdFormat: this.campaignForm.controls.demandGenAdFormat.value,
       // Copied per slot, so the parent holds a snapshot rather than this component's arrays.
@@ -10493,11 +10519,6 @@ export class ImplementationTabComponent implements OnInit {
     return payload;
   }
 
-  /** A creative's nested form group by its name, the Demand Gen video ad's included (#5226). */
-  private creativeGroup(groupName: string): FormGroup<Record<string, FormControl<string>>> {
-    return this.campaignForm.get(groupName) as FormGroup<Record<string, FormControl<string>>>;
-  }
-
   /**
    * The creative a channel collects now: its image creative, except on Demand Gen with the video
    * format chosen, where it is the video ad (#5226). The one place the format is read, so the section
@@ -10539,7 +10560,8 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * All three creative groups' raw text, for the draft.
+   * Every creative group's raw text, for the draft: each channel's image creative and Demand Gen's
+   * video ad (`GOOGLE_CREATIVE_GROUPS`).
    *
    * A fresh object per group rather than the group's own value, so the parent holds a snapshot and
    * not a live view of a form this component is about to destroy — the same rule the Meta and
@@ -10554,7 +10576,7 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Replay a draft's creative text into the three groups.
+   * Replay a draft's creative text into every creative group, Demand Gen's video ad included.
    *
    * Field-by-field rather than `patchValue` on the whole record, because the draft is persisted
    * JSON: it can name a group or a field that no longer exists (a field removed from the catalogue
