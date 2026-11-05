@@ -110,6 +110,8 @@ export class MeetingsRedesignComponent {
 
   protected readonly idPrefix = 'meetings-redesign';
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
+  /** Widths of the skeleton row's buttons: Yes / No / Maybe upcoming, Recording and AI Summary past. */
+  protected readonly skeletonButtons: Record<MeetingDashboardView, string[]> = { upcoming: ['58px', '76px', '54px'], past: ['134px', '108px'] };
   protected readonly personaLoaded = this.personaService.personaLoaded;
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
@@ -128,9 +130,9 @@ export class MeetingsRedesignComponent {
   /** Where the day headings stick: below the sticky header and tabs bar. */
   protected readonly dayHeadingTop: Signal<number> = computed(() => this.stickyTop() + this.headerHeight() + this.tabsBarHeight());
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
-  /** The Next meeting as a one-item list, so its menu is keyed by row. */
+  /** The Next meeting card's date as a one-item list, so its menu is keyed by row. */
   protected readonly nextRows: Signal<MeetingHomeRow[]> = computed(() => {
-    const row = this.store.nextRow();
+    const row = this.store.nextCardRow();
     return row ? [row] : [];
   });
   /** The Last meeting as a one-item list, so its menu is keyed by row. */

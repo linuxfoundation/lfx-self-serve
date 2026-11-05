@@ -9,12 +9,21 @@ import { MetricCardComponent } from '@components/metric-card/metric-card.compone
 import {
   BASE_BAR_CHART_OPTIONS,
   BASE_LINE_CHART_OPTIONS,
+  DEFAULT_ORG_EVENTS_ATTRIBUTION,
+  DEFAULT_ORG_EVENTS_PARTICIPATION,
   lfxColors,
   ORG_INVOLVEMENT_METRICS,
   ORG_MAINTAINER_ROLES_LABEL,
   ORG_DEFAULT_PROJECT_SCOPE_LABEL,
+  ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE,
+  ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE,
+  ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
+  ORG_EVENTS_SPEAKERS_CAPTION_PHRASE,
   ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
+  ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE,
+  ORG_OVERVIEW_EVENT_SPEAKERS_SUBTITLE,
+  ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE,
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
   ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
@@ -32,6 +41,7 @@ import type {
   OrgFoundationCoverageResponse,
   OrgInvolvementContributorsMonthlyResponse,
   OrgInvolvementEventAttendanceMonthlyResponse,
+  OrgEventsAttribution,
   OrgInvolvementMaintainersMonthlyResponse,
   OrgTrainingStats,
   OrgTrainingStatsQuery,
@@ -165,6 +175,7 @@ export class OrgOverviewInvolvementComponent {
         accountName: '',
         totalAttended: 0,
         totalSpeakers: 0,
+        servedAttribution: DEFAULT_ORG_EVENTS_ATTRIBUTION,
         attendeesMonthlyData: [],
         speakersMonthlyData: [],
         monthlyLabels: [],
@@ -309,7 +320,12 @@ export class OrgOverviewInvolvementComponent {
       ...metric,
       loading: this.eventsLoading(),
       value: data.totalAttended.toString(),
-      subtitle: 'Employees at foundation events',
+      subtitle: ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE,
+      chartCaption: OrgOverviewInvolvementComponent.eventsWindowCaption(data.monthlyLabels),
+      tooltipText: OrgOverviewInvolvementComponent.eventsTooltip(
+        ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[DEFAULT_ORG_EVENTS_PARTICIPATION],
+        data.servedAttribution
+      ),
       chartOptions: this.createLineChartOptions('Event attendees'),
       chartData:
         data.attendeesMonthlyData.length > 0
@@ -336,7 +352,9 @@ export class OrgOverviewInvolvementComponent {
       ...metric,
       loading: this.eventsLoading(),
       value: data.totalSpeakers.toString(),
-      subtitle: 'Employee speakers at events',
+      subtitle: ORG_OVERVIEW_EVENT_SPEAKERS_SUBTITLE,
+      chartCaption: OrgOverviewInvolvementComponent.eventsWindowCaption(data.monthlyLabels),
+      tooltipText: OrgOverviewInvolvementComponent.eventsTooltip(ORG_EVENTS_SPEAKERS_CAPTION_PHRASE, data.servedAttribution),
       chartOptions: this.createLineChartOptions('Event speakers'),
       chartData:
         data.speakersMonthlyData.length > 0
@@ -402,6 +420,20 @@ export class OrgOverviewInvolvementComponent {
       throw new Error(`ORG_INVOLVEMENT_METRICS is missing card titled '${title}'`);
     }
     return config;
+  }
+
+  /** Overview Events tooltip: what is counted, by whom, the distinct-people rule, and the fallback note when Counted by was not available. */
+  private static eventsTooltip(countPhrase: string, served: OrgEventsAttribution): string {
+    const fallback = served === DEFAULT_ORG_EVENTS_ATTRIBUTION ? '' : ` ${ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE}`;
+    return `${countPhrase} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[served]} ${ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE}${fallback}`;
+  }
+
+  /** Events chart caption: the points are distinct people per month. */
+  private static eventsWindowCaption(labels: string[]): string | undefined {
+    if (labels.length === 0) {
+      return undefined;
+    }
+    return `Distinct people per month, ${labels[0]} – ${labels[labels.length - 1]} to date`;
   }
 
   /**

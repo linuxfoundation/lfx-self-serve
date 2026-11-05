@@ -3,8 +3,9 @@ title: How the ROI model works
 description: A plain-language explanation of the LFX contribution ROI model, with no math required — revealed preference, the three steps, and what the model does and does not measure.
 audience: [all]
 product_area: Dashboards
+display_order: 1
 tags: [roi, intuition, revealed preference, markup, how it works]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
@@ -59,7 +60,7 @@ An advantage of this approach is that the model does not need to know _why_ a co
 - **Data sources and processed data.** LFX and Linux Foundation records (platform activity, memberships, events, courses), public project repositories, wage benchmarks and currency exchange rates (flat constants, not anyone's actual or reported compensation), and LF Research survey results are turned into processed datasets: contribution frequency (does a company contribute to a project each month?), contribution levels and expenditures (how much, in units and dollars), company and project characteristics, and the survey-based ROI calibration.
 - **Model.** Two stages. The first models the company's binary decision to contribute to a project. The second models how much it contributes and how it allocates effort across contribution types.
 - **Recovered parameters.** The first stage recovers a strategic importance factor, the markup. The second recovers the allocation and substitution parameters: how much weight each contribution type carries and how easily one substitutes for another. The markup also feeds the second stage.
-- **Inference.** The recovered parameters are combined with the processed data to compute ROI. The diagram also shows mechanism analysis and counterfactual analysis. These are part of the research methodology but are not available on the ROI page.
+- **Inference.** The recovered parameters are combined with the processed data to compute ROI. The diagram also shows mechanism analysis and counterfactual analysis. Of these, only part of mechanism analysis is available on the ROI page: the [Value drivers](../value-drivers/) chart shows which kinds of value make your return higher or lower than a typical pair. Counterfactual analysis is part of the research methodology but is not available.
 
 ## What the model is and is not
 
@@ -75,3 +76,4 @@ An advantage of this approach is that the model does not need to know _why_ a co
 - [ROI FAQ](../faq/)
 - [Data overview](../data-overview/)
 - [The model (technical)](../model/)
+- [ROI documentation](../)

@@ -4,11 +4,21 @@
 import { DatePipe, formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
+import { DEFAULT_EARLY_JOIN_TIME, MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
-import { MeetingHomeRow, MeetingHomeRowLink, MeetingHomeRowProject, MeetingHomeRowType, MeetingVisibilityInfo } from '@lfx-one/shared/interfaces';
+import {
+  MeetingHomeAttendance,
+  MeetingHomeJoinState,
+  MeetingHomeRow,
+  MeetingHomeRowLink,
+  MeetingHomeRowProject,
+  MeetingHomeRowType,
+  MeetingVisibilityInfo,
+} from '@lfx-one/shared/interfaces';
 import {
   formatMeetingTimeRange,
+  getMeetingGroupNames,
+  getMeetingHomeAttendance,
   getMeetingHomeRowLink,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
@@ -23,6 +33,7 @@ import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
+import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
 /**
@@ -33,8 +44,18 @@ import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-pro
  */
 @Component({
   selector: 'lfx-next-meeting-card',
-  imports: [DatePipe, MeetingProjectLogoComponent, UiBadgeComponent, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent, UiTooltipDirective],
+  imports: [
+    DatePipe,
+    MeetingHomeAttendanceComponent,
+    MeetingProjectLogoComponent,
+    UiBadgeComponent,
+    UiButtonComponent,
+    UiEmptyStateComponent,
+    UiSkeletonComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './next-meeting-card.component.html',
+  styleUrl: './next-meeting-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
 })
@@ -63,6 +84,13 @@ export class NextMeetingCardComponent {
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = this.fromRow((row) => getMeetingHomeRowType(row.meeting));
   protected readonly when: Signal<string> = this.initWhen();
   protected readonly recurrenceTooltip: Signal<string | null> = this.fromRow((row) => getMeetingRecurrenceTooltip(row.meeting, row.occurrence));
+  protected readonly groups: Signal<string[]> = this.fromRow((row) => getMeetingGroupNames(row.meeting), []);
+  protected readonly attendance: Signal<MeetingHomeAttendance | null> = this.fromRow((row) => getMeetingHomeAttendance(row, false), null);
+  protected readonly earlyJoinMinutes: Signal<number> = this.fromRow(
+    (row) => row.meeting.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME,
+    DEFAULT_EARLY_JOIN_TIME
+  );
+  protected readonly joinState: Signal<MeetingHomeJoinState | null> = this.initJoinState();
   protected readonly startsIn: Signal<string | null> = this.fromRow((row) => getMeetingStartsInLabel(row.startTime, this.now()));
   protected readonly visibilityBg = MEETING_VISIBILITY_BG_CLASSES;
 
@@ -85,6 +113,17 @@ export class NextMeetingCardComponent {
   protected join(): void {
     const meeting = this.row()?.meeting;
     if (meeting && this.joinable()) this.joinService.join(meeting, this.joinUrl());
+  }
+
+  /** Before the join window, inside it before the start, or under way; null once the date is over. */
+  private initJoinState(): Signal<MeetingHomeJoinState | null> {
+    return this.fromRow((row) => {
+      const nowMs = this.now().getTime();
+      const startMs = Date.parse(row.startTime);
+      if (nowMs < startMs - this.earlyJoinMinutes() * 60_000) return 'early';
+      if (nowMs < startMs) return 'soon';
+      return nowMs < startMs + row.durationMinutes * 60_000 ? 'live' : null;
+    });
   }
 
   private initWhen(): Signal<string> {

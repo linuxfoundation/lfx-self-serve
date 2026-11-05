@@ -17,11 +17,13 @@ import {
   formatMeetingDateTime,
   formatMeetingTimeRange,
   getMeetingDayBucket,
+  getMeetingGroupNames,
   getMeetingHomeRowLink,
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
   getMeetingProjectUrl,
+  getMeetingRecurrenceLabel,
   getMeetingRecurrenceTooltip,
   getMeetingRsvpScopeLabel,
   getMeetingStartsInLabel,
@@ -486,6 +488,37 @@ describe('buildMeetingFilterChips', () => {
     expect(buildMeetingFilterChips(filters({ project: 'p-9' }), rows)).toEqual([{ key: 'project', label: 'Project: p-9' }]);
     expect(buildMeetingFilterChips(filters({ rsvp: 'pending' }), rows)[0].label).toBe('RSVP: Needs response');
     expect(buildMeetingFilterChips(filters({ rsvp: 'accepted' }), rows)[0].label).toBe('RSVP: Going');
+  });
+});
+
+describe('getMeetingGroupNames', () => {
+  it('lists the group names in order, without blanks or repeats', () => {
+    const committees = [
+      { uid: 'c-1', name: 'TOC' },
+      { uid: 'c-2' },
+      { uid: 'c-3', name: '  ' },
+      { uid: 'c-4', name: 'Security WG' },
+      { uid: 'c-5', name: 'TOC' },
+    ];
+
+    expect(getMeetingGroupNames({ committees })).toEqual(['TOC', 'Security WG']);
+    expect(getMeetingGroupNames({ committees: [] })).toEqual([]);
+  });
+});
+
+describe('getMeetingRecurrenceLabel', () => {
+  const base = { start_time: '2026-10-01T13:30:00Z', timezone: 'America/Los_Angeles' };
+
+  it('names the cadence without the "Repeats" prefix', () => {
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: WEEKLY })).toBe('Weekly on Thursday');
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 2, weekly_days: '2' } })).toBe(
+      'Every 2 weeks on Monday'
+    );
+  });
+
+  it('returns null for one-time meetings', () => {
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: null })).toBeNull();
+    expect(getMeetingRecurrenceLabel({ ...base, recurrence: { ...WEEKLY, end_times: 1 } })).toBeNull();
   });
 });
 

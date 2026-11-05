@@ -125,35 +125,55 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     expect(container.querySelector('.cdk-overlay-backdrop')?.className).toContain('bg-ui-overlay');
   });
 
-  it('anchors to the right at 600px, full height, with the large radius on the inner edge only', async () => {
+  it('floats 8px inside the right edge at 560px with the medium radius and the library title style', async () => {
     await open();
 
-    expect(drawer()?.style.width).toBe('600px');
-    expect(drawer()?.className).toContain('rounded-l-ui-lg');
-    expect(drawer()?.className).not.toContain('rounded-r-ui-lg');
-    expect(drawer()?.className).toContain('shadow-modal');
+    expect(drawer()?.style.getPropertyValue('--drawer-w')).toBe('560px');
+    expect(drawer()?.className).toContain('w-[min(var(--drawer-w),calc(100vw-16px))]');
+    expect(drawer()?.className).toContain('rounded-ui-md');
     expect(drawer()?.className).toContain('is-right');
+    expect(drawer()?.className).not.toContain('min-w-[');
+    const pane = container.querySelector('.cdk-overlay-pane') as HTMLElement;
     expect((container.querySelector('.cdk-global-overlay-wrapper') as HTMLElement).style.justifyContent).toBe('flex-end');
-    expect((container.querySelector('.cdk-overlay-pane') as HTMLElement).style.height).toBe('100%');
+    expect(pane.style.marginTop).toBe('8px');
+    expect(pane.style.marginRight).toBe('8px');
+    expect(pane.style.height).toBe('calc(100% - 16px)');
+    expect(pane.style.maxWidth).toBe('calc(100vw - 16px)');
+    expect(testId('ui-drawer-title').className).toContain('text-[20px] leading-[28px]');
+    expect(testId('ui-drawer-subtitle').className).toContain('copy-13');
   });
 
-  it('anchors to the left with a given width', async () => {
+  it('floats 8px inside the left edge with a custom width', async () => {
     await open((host) => (host.config = { side: 'left', width: 480 }));
 
-    expect(drawer()?.style.width).toBe('480px');
-    expect(drawer()?.className).toContain('rounded-r-ui-lg');
-    expect(drawer()?.className).not.toContain('rounded-l-ui-lg');
+    expect(drawer()?.style.getPropertyValue('--drawer-w')).toBe('480px');
     expect(drawer()?.className).toContain('is-left');
     expect((container.querySelector('.cdk-global-overlay-wrapper') as HTMLElement).style.justifyContent).toBe('flex-start');
+    expect((container.querySelector('.cdk-overlay-pane') as HTMLElement).style.marginLeft).toBe('8px');
   });
 
-  it('fills the window at 640px and narrower, and never exceeds it', async () => {
+  it('is 75vw and at least 560px when wide', async () => {
+    await open((host) => (host.config = { size: 'wide', width: 480 }));
+
+    expect(drawer()?.style.getPropertyValue('--drawer-w')).toBe('75vw');
+    expect(drawer()?.className).toContain('min-w-[min(560px,calc(100vw-16px))]');
+  });
+
+  it('right-aligns the footer actions, and moves only the first one left when split', async () => {
     await open();
-    expect(drawer()?.className).toContain('max-[640px]:!w-screen');
-    expect(drawer()?.className).toContain('max-[640px]:rounded-none');
-    expect(drawer()?.className).toContain('max-w-[100vw]');
-    // The footer clears the home indicator on a phone-width sheet.
-    expect(testId('ui-drawer-footer').className).toContain('max-[640px]:pb-[calc(16px+env(safe-area-inset-bottom))]');
+    const footer = testId('ui-drawer-footer');
+    expect(footer.className).toContain('justify-end');
+    expect(footer.className).not.toContain('[&>:first-child]:mr-auto');
+    // The footer clears the home indicator on a phone-width window.
+    expect(footer.className).toContain('max-[640px]:pb-[calc(16px+env(safe-area-inset-bottom))]');
+
+    const bare = TestBed.createComponent(UiDrawerComponent);
+    bare.componentRef.setInput('heading', 'Split');
+    bare.componentRef.setInput('splitFooter', true);
+    await bare.whenStable();
+    const split = (bare.nativeElement as HTMLElement).querySelector('[data-testid="ui-drawer-footer"]') as HTMLElement;
+    expect(split.className).toContain('justify-end');
+    expect(split.className).toContain('[&>:first-child]:mr-auto');
   });
 
   it('is always a dialog, even when a modal config with another role is passed', async () => {
@@ -516,7 +536,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
 
     expect(el.querySelector('[data-testid="ui-drawer-footer"]')?.matches(':empty')).toBe(true);
     expect(el.querySelector('[data-testid="ui-drawer-leading"]')?.matches(':empty')).toBe(true);
-    expect(el.style.width).toBe('600px');
+    expect(el.style.getPropertyValue('--drawer-w')).toBe('560px');
     expect(el.getAttribute('role')).toBeNull();
     expect(() => (el.querySelector('[data-testid="ui-drawer-close"] button') as HTMLElement).click()).not.toThrow();
   });

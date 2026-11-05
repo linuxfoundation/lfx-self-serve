@@ -4,7 +4,7 @@ description: Frequently asked questions about joining, leaving, creating, and ma
 audience: [all]
 product_area: Mailing Lists
 tags: [mailing-lists, faq, join, leave, settings, subscribers, newsletters]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Mailing Lists
 ---
 

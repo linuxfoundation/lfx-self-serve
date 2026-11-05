@@ -4,7 +4,7 @@ description: Foundation-level health metrics — the health cards on the Foundat
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, foundation, health-metrics, company-dependency]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 

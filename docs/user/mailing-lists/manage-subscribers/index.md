@@ -4,7 +4,7 @@ description: How to add subscribers to a mailing list, set their delivery mode a
 audience: [maintainer, board-member, executive-director]
 product_area: Mailing Lists
 tags: [mailing-lists, subscribers, members, moderator, delivery mode, add, remove]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Mailing Lists
 ---
 

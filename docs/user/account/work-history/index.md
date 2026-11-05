@@ -4,7 +4,7 @@ description: Manage your work history and see how your project affiliations and 
 audience: [all]
 product_area: Account
 tags: [account, work-history, affiliations, project-involvement, attribution, maintainer]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Account
 ---
 

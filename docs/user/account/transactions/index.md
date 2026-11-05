@@ -4,7 +4,7 @@ description: View your billing and purchase history in LFX Self Serve.
 audience: [all]
 product_area: Account
 tags: [account, transactions, billing, purchases, history, receipts]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Account
 ---
 

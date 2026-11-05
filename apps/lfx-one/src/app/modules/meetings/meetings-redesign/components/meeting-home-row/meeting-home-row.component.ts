@@ -9,6 +9,7 @@ import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
   Meeting,
   MeetingDashboardView,
+  MeetingHomeAttendance,
   MeetingHomeRow,
   MeetingHomeRowLink,
   MeetingHomeRowOrganizer,
@@ -20,15 +21,19 @@ import {
 import {
   formatDuration,
   formatMeetingDateTime,
+  getMeetingGroupNames,
+  getMeetingHomeAttendance,
   getMeetingHomeRowLink,
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
+  getMeetingRecurrenceLabel,
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
 } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
@@ -36,12 +41,13 @@ import { MeetingsHomeJoinService } from '../../services/meetings-home-join.servi
 import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeActionsComponent } from '../meeting-home-actions/meeting-home-actions.component';
+import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingHomeArtifactsComponent } from '../meeting-home-artifacts/meeting-home-artifacts.component';
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
 
 /**
- * One row of the meetings home list: date tile with visibility badges, project eyebrow, title and meta line.
+ * One row of the meetings home list: date tile with visibility badges, project eyebrow, title and two meta lines.
  * @description Clicking the row opens the meeting; the project eyebrow opens the project instead.
  */
 @Component({
@@ -50,9 +56,11 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
     DatePipe,
     MeetingHomeActionsComponent,
     MeetingHomeArtifactsComponent,
+    MeetingHomeAttendanceComponent,
     MeetingProjectLogoComponent,
     MeetingRsvpControlsComponent,
     UiAvatarComponent,
+    UiBadgeComponent,
     UiButtonComponent,
     UiTooltipDirective,
   ],
@@ -84,8 +92,11 @@ export class MeetingHomeRowComponent {
   protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => getMeetingHomeRowProject(this.row().meeting));
   protected readonly when: Signal<string[]> = this.initWhen();
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
+  protected readonly groups: Signal<string[]> = computed(() => getMeetingGroupNames(this.row().meeting));
+  protected readonly recurrenceLabel: Signal<string | null> = computed(() => getMeetingRecurrenceLabel(this.row().meeting, this.row().occurrence));
   protected readonly recurrenceTooltip: Signal<string | null> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence));
   protected readonly attended: Signal<boolean> = this.initAttended();
+  protected readonly attendance: Signal<MeetingHomeAttendance | null> = computed(() => getMeetingHomeAttendance(this.row(), this.past()));
   protected readonly organizers: Signal<MeetingHomeRowOrganizer[]> = computed(() =>
     getMeetingHomeRowOrganizers(this.row().meeting, this.userService.viewerUsername())
   );

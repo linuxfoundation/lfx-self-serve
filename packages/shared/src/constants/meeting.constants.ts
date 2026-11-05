@@ -441,7 +441,7 @@ export const MEETING_COMPOSER_PREVIEW_FEATURES: MeetingComposerPreviewFeature[] 
  * Where the composer's post-create uikit toast renders.
  * @description Not the app-wide top-right `p-toast` slot, where the composer's own partial-save warning
  * is emitted immediately before this success message, so the success toast could cover the warning that
- * matters more. Bottom-right also suits a sticky, action-bearing toast, which is conventionally a snackbar slot.
+ * matters more. Bottom-right also suits an action-bearing toast, which is conventionally a snackbar slot.
  */
 export const MEETING_COMPOSER_TOAST_POSITION = 'bottom-right';
 
@@ -944,7 +944,7 @@ export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
 /** Max concurrent query-service batches when flagging recordings or AI summaries on the Me-lens past feed. */
 export const PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY = 5;
 
-/** `include` value that makes GET /api/user/past-meetings add `has_recording` / `has_ai_summary`. */
+/** `include` value that makes GET /api/user/past-meetings add `has_recording` / `recording_share_url` / `has_ai_summary`. */
 export const USER_PAST_MEETINGS_INCLUDE_ARTIFACTS = 'artifacts';
 
 /** `include` value that makes GET /api/user/meetings and /api/user/past-meetings add organizer attendance summaries. */

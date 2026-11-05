@@ -3,8 +3,9 @@ title: Financial expenditures
 description: How the ROI model counts direct spending — memberships, event attendance, event sponsorships, and training — and why some types are treated as fixed units.
 audience: [all]
 product_area: Dashboards
+display_order: 6
 tags: [roi, expenditures, memberships, events, sponsorships, training, fixed unit]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
@@ -50,5 +51,6 @@ Sponsorships and memberships are annual commitments rather than quantities that 
 
 ## Related reading
 
-- [Contribution labor](../contribution-labor/)
+- [Contribution labor and time costs](../contribution-labor/)
 - [Data overview](../data-overview/)
+- [ROI documentation](../)

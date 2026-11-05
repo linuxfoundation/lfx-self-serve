@@ -9,7 +9,7 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MENTORSHIP_PROGRAM_STATUS_LABELS, MENTORSHIP_PROGRAM_STATUSES } from '@lfx-one/shared/constants';
+import { MENTORSHIP_ADMIN_PROGRAMS_EMPTY_MESSAGE, MENTORSHIP_PROGRAM_STATUS_LABELS, MENTORSHIP_PROGRAM_STATUSES } from '@lfx-one/shared/constants';
 import { FilterOption, MentorshipProgram, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
 import { combineLatest } from 'rxjs';
 
@@ -40,6 +40,8 @@ export class ProgramsListComponent {
   public readonly loadError = input<boolean>(false);
   /** True while a first-page read (e.g. a Retry) is in flight; the Retry button shows a spinner. */
   public readonly retrying = input<boolean>(false);
+  /** The empty state's subtitle when no filter is set; the Projects and Foundation lenses name their project or foundation. */
+  public readonly emptyMessage = input<string>(MENTORSHIP_ADMIN_PROGRAMS_EMPTY_MESSAGE);
   public readonly searchChange = output<string>();
   public readonly statusChange = output<MentorshipProgramStatus | null>();
   public readonly programClick = output<string>();
@@ -66,9 +68,7 @@ export class ProgramsListComponent {
   // ─── Computed ──────────────────────────────────────────────────────────────
   protected readonly hasActiveFilter = computed(() => !!this.searchTerm().trim() || this.statusFilter() !== null);
   protected readonly emptyTitle = computed(() => (this.hasActiveFilter() ? 'No programs match your filters' : 'No programs yet'));
-  protected readonly emptySubtitle = computed(() =>
-    this.hasActiveFilter() ? 'Try clearing the search or picking a different status.' : 'Enroll a program to get started.'
-  );
+  protected readonly emptySubtitle = computed(() => (this.hasActiveFilter() ? 'Try clearing the search or picking a different status.' : this.emptyMessage()));
 
   public constructor() {
     // Sync the parent's `searchTerm` / `statusFilter` signals into the form

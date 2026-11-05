@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
@@ -44,8 +44,10 @@ import {
   MENTORSHIP_ENROLL_UPDATE_SUCCESS,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_PROGRAM_NAME_TAKEN_ERROR_CODE,
+  MENTORSHIP_PROJECT_PROGRAMS_TITLE,
 } from '@lfx-one/shared/constants';
 import {
+  Lens,
   MentorshipCiiLookupStatus,
   MentorshipEnrollEditBaseline,
   MentorshipEnrollFieldErrors,
@@ -64,7 +66,9 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   formFromMentorshipEnrollEdit,
+  getMentorshipAdminBasePath,
   getMentorshipEnrollLogoError,
+  getMentorshipLensQueryParams,
   getMentorshipEnrollStepErrors,
   isSameMentorshipTerm,
   isMentorshipTermsAccepted,
@@ -74,9 +78,10 @@ import {
   toMentorshipEnrollUpdateRequest,
 } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { concatMap, defer, EMPTY, expand, forkJoin, map, Observable, of, reduce, startWith, tap } from 'rxjs';
+import { concatMap, defer, distinctUntilChanged, EMPTY, expand, filter, forkJoin, map, Observable, of, reduce, startWith, tap } from 'rxjs';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
 import { EnrollPrerequisitesStepComponent } from './components/enroll-prerequisites-step/enroll-prerequisites-step.component';
@@ -113,6 +118,7 @@ export class EnrollProgramComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly mentorshipAdminService = inject(MentorshipAdminService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly form = new FormGroup({
@@ -153,12 +159,30 @@ export class EnrollProgramComponent {
    */
   private loadedProject: MentorshipLfProject | null = null;
 
+  /** The lens the wizard was opened from (lfx-mentorship#398): it goes back there and decides which projects the picker offers. */
+  private readonly lens = this.route.snapshot.data['lens'] as Lens | undefined;
+  private readonly basePath = getMentorshipAdminBasePath(this.lens);
+  /** The lens's project or foundation as the picker shows it, `null` until the lens resolves it. */
+  private readonly lensProject = computed<MentorshipLfProject | null>(() => {
+    const context = this.projectContextService.activeContext();
+    if (!context?.uid) return null;
+    return { id: context.uid, name: context.name, slug: context.slug, ...(context.logoUrl ? { logoUrl: context.logoUrl } : {}) };
+  });
+  /** The Project lens's project: the program can only be for it. `null` elsewhere. */
+  protected readonly lockedProject = computed(() => (this.lens === 'project' ? this.lensProject() : null));
+  /** The Foundation lens's foundation: the program can be for it or one of its direct sub-projects. `null` elsewhere. */
+  protected readonly parentProject = computed(() => (this.lens === 'foundation' ? this.lensProject() : null));
+  /**
+   * A lens wizard waits for the lens's project or foundation before it shows the form, so the picker never lists every
+   * project while the lens context is still resolving (a hard refresh, a deep link).
+   */
+  protected readonly lensContextPending = computed(() => (this.lens === 'project' || this.lens === 'foundation') && !this.lensProject());
   /** The program being edited, `''` when enrolling a new one. */
   protected readonly editProgramId = this.route.snapshot.queryParamMap.get('programId')?.trim() ?? '';
   protected readonly editing = this.editProgramId !== '';
   protected readonly title = this.editing ? MENTORSHIP_ENROLL_EDIT_TITLE : 'Enroll a Program';
   protected readonly intro = this.editing ? MENTORSHIP_ENROLL_EDIT_INTRO : 'The LFX team reviews every enrollment before it opens for applications.';
-  protected readonly backToLabel = this.editing ? 'Back to Program' : 'My Programs';
+  protected readonly backToLabel = this.editing ? 'Back to Program' : this.createBackLabel();
   protected readonly editLoad = signal<'loading' | 'ready' | 'failed'>(this.editing ? 'loading' : 'ready');
   protected readonly editLoadFailed = MENTORSHIP_ENROLL_EDIT_LOAD_FAILED;
   /** The edited program as it was loaded; validation keeps the dates it already had valid. */
@@ -236,6 +260,7 @@ export class EnrollProgramComponent {
     this.form.controls.name.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.nameTakenOnSave.set(false));
     this.destroyRef.onDestroy(() => this.revokeLogoPreview());
     if (this.editing) this.loadProgram();
+    else this.followLensProject();
   }
 
   /** Route guard hook: asks before the admin leaves with unsaved answers, or after a save that is missing its logo. */
@@ -321,7 +346,7 @@ export class EnrollProgramComponent {
 
   /** Navigates away and lets the route guard ask; Cancel and the back link share this. An edit goes back to its program. */
   protected onCancel(): void {
-    void this.router.navigate(this.editing ? ['/mentorship/admin', this.editProgramId] : ['/mentorship/admin']);
+    this.navigateInLens(this.editing ? [this.basePath, this.editProgramId] : [this.basePath]);
   }
 
   /** Reads the edited program again after a failed load. */
@@ -455,7 +480,7 @@ export class EnrollProgramComponent {
   private finishUpdate(): void {
     this.submitPhase.set('done');
     this.messageService.add({ severity: 'success', summary: 'Success', detail: MENTORSHIP_ENROLL_UPDATE_SUCCESS, life: 4000 });
-    void this.router.navigate(['/mentorship/admin', this.editProgramId]);
+    this.navigateInLens([this.basePath, this.editProgramId]);
   }
 
   /** Says which save failed. The answers unlock, so the admin can change them and select Update again. */
@@ -543,7 +568,7 @@ export class EnrollProgramComponent {
   private finishSubmit(): void {
     this.submitPhase.set('done');
     this.messageService.add({ severity: 'success', summary: 'Success', detail: MENTORSHIP_ENROLL_SUBMIT_SUCCESS, life: 4000 });
-    void this.router.navigate(['/mentorship/admin']);
+    this.navigateInLens([this.basePath]);
   }
 
   private failSubmit(error: unknown): void {
@@ -663,5 +688,56 @@ export class EnrollProgramComponent {
     if (url.startsWith('blob:')) {
       URL.revokeObjectURL(url);
     }
+  }
+
+  /** The create back link names the list it returns to: the Me lens's own programs, or a lens's Mentorship Programs. */
+  private createBackLabel(): string {
+    return this.lens === 'project' || this.lens === 'foundation' ? MENTORSHIP_PROJECT_PROGRAMS_TITLE : 'My Programs';
+  }
+
+  /**
+   * A new program follows the lens until it is sent. A project switch made here navigates away, but it sets the lens context
+   * first, so an admin who stays at the discard prompt keeps the wizard under the new context. In the Projects lens the
+   * program is for the lens's project: picked as soon as the lens resolves it, and again on each switch. In the Foundation
+   * lens a switch clears the pick, which may be a sub-project of the previous foundation.
+   *
+   * While a create is in flight or once the program exists, its project is fixed and the answers are locked, so a switch
+   * doesn't move it: a logo retry after a partial save still needs the project the program was created under. The stream
+   * pauses while pinned rather than skipping, so a create that fails unpins it and the latest lens project applies.
+   */
+  private followLensProject(): void {
+    const pinned = computed(() => this.submitting() || this.programSaved());
+    toObservable(computed(() => (pinned() ? null : this.lensProject())))
+      .pipe(
+        filter((project): project is MentorshipLfProject => project !== null),
+        distinctUntilChanged((previous, next) => previous.id === next.id),
+        map((project, index) => ({ project, index })),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ project, index }) => {
+        if (this.lens === 'project') this.pickProject(project);
+        else if (this.lens === 'foundation' && index > 0) this.pickProject(null);
+      });
+  }
+
+  /** Picks the project for the lens. The untouched-form snapshot takes it too, so it never reads as an unsaved answer. */
+  private pickProject(project: MentorshipLfProject | null): void {
+    const projectId = project?.id ?? '';
+    this.form.controls.projectId.setValue(projectId);
+    this.selectedProject.set(project);
+    this.initialValue = JSON.stringify({ ...(JSON.parse(this.initialValue) as Record<string, unknown>), projectId });
+  }
+
+  /**
+   * Navigates within the lens with its project in `?project=`, from the lens context: these routes carry params, so nothing
+   * backfills it, and the router's own copy can be stale after an in-place switch. The Me lens has none.
+   */
+  private navigateInLens(commands: string[]): void {
+    const queryParams = getMentorshipLensQueryParams(this.lens, this.lensProject()?.slug);
+    if (Object.keys(queryParams).length > 0) {
+      void this.router.navigate(commands, { queryParams });
+      return;
+    }
+    void this.router.navigate(commands);
   }
 }

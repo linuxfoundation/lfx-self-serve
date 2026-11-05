@@ -166,7 +166,8 @@ describe('MeetingsHomeStore', () => {
 
       expect(userService['getUserMeetings']).toHaveBeenCalledTimes(1);
       expect(userService['getUserPastMeetings']).toHaveBeenCalledTimes(1);
-      expect(userService['getUserPastMeetings']).toHaveBeenCalledWith({ includeArtifacts: true });
+      expect(userService['getUserMeetings']).toHaveBeenCalledWith({ includeAttendance: true });
+      expect(userService['getUserPastMeetings']).toHaveBeenCalledWith({ includeArtifactsAndAttendance: true });
       expect(store.upcomingLoading()).toBe(true);
       expect(store.pastLoading()).toBe(true);
 
@@ -551,6 +552,75 @@ describe('MeetingsHomeStore', () => {
       expect(store.nextRowJoinUrl()).toBeNull();
     });
 
+    it('pages the card through the dates that overlap the next one, keeping all of them listed and joining the one shown', () => {
+      const store = create();
+      const start = Date.now() + 5 * 60_000;
+      const at = (minutes: number): string => new Date(start + minutes * 60_000).toISOString();
+      upcoming$.next([
+        buildMeeting({ id: 'first', start_time: at(0) }),
+        buildMeeting({ id: 'overlap', start_time: at(59) }),
+        buildMeeting({ id: 'after', start_time: at(60) }),
+      ]);
+      TestBed.tick();
+
+      expect(store.concurrentNextRows().map((row) => row.meeting.id)).toEqual(['first', 'overlap']);
+      expect(store.nextCardIndex()).toBe(0);
+      expect(store.nextCardRow()?.meeting.id).toBe('first');
+      expect(store.nextRowJoinable()).toBe(true);
+
+      store.stepNextCard(-1);
+      expect(store.nextCardRow()?.meeting.id).toBe('first');
+
+      store.stepNextCard(1);
+      store.stepNextCard(1);
+      expect(store.nextCardIndex()).toBe(1);
+      expect(store.nextCardRow()?.meeting.id).toBe('overlap');
+      expect(store.nextRow()?.meeting.id).toBe('first');
+      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['first', 'overlap', 'after']);
+      expect(store.nextRowJoinable()).toBe(false);
+    });
+
+    it('keeps the picked date across a refetch, and falls back to the first one once it is gone', () => {
+      const store = create();
+      const start = inDays(1).getTime();
+      const at = (minutes: number): string => new Date(start + minutes * 60_000).toISOString();
+      const first = buildMeeting({ id: 'first', start_time: at(0) });
+      const second = buildMeeting({ id: 'second', start_time: at(0) });
+      upcoming$.next([first, second]);
+      store.stepNextCard(1);
+
+      upcoming$.next([first, second, buildMeeting({ id: 'third', start_time: at(30) })]);
+      expect(store.nextCardRow()?.meeting.id).toBe('second');
+      expect(store.concurrentNextRows()).toHaveLength(3);
+
+      upcoming$.next([first]);
+      expect(store.concurrentNextRows()).toHaveLength(1);
+      expect(store.nextCardRow()?.meeting.id).toBe('first');
+    });
+
+    it("starts a new viewer on the first concurrent date, not the previous viewer's pick", () => {
+      const store = create();
+      const start = inDays(1).toISOString();
+      const meetings = [buildMeeting({ id: 'first', start_time: start }), buildMeeting({ id: 'second', start_time: start })];
+      upcoming$.next(meetings);
+      store.stepNextCard(1);
+      expect(store.nextCardRow()?.meeting.id).toBe('second');
+
+      identity.set('viewer-b');
+      upcoming$.next(meetings);
+
+      expect(store.nextCardRow()?.meeting.id).toBe('first');
+    });
+
+    it('leaves an overlapping date that is already over out of the pager', () => {
+      const store = create();
+      const ago = (minutes: number): string => new Date(Date.now() - minutes * 60_000).toISOString();
+      upcoming$.next([buildMeeting({ id: 'over', start_time: ago(70) }), buildMeeting({ id: 'live', start_time: ago(30), duration: 90 })]);
+
+      expect(store.nextRow()?.meeting.id).toBe('live');
+      expect(store.concurrentNextRows().map((row) => row.meeting.id)).toEqual(['live']);
+    });
+
     it('is null without upcoming dates and keeps the Past list whole', () => {
       const store = create();
       upcoming$.next([]);
@@ -662,6 +732,18 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.lastMeetingLoading()).toBe(false);
       expect(store.pastLoading()).toBe(true);
+      expect(store.lastMeeting()?.key).toBe('m-past-b');
+    });
+
+    it("takes the attendance counts from the full past feed's record of the same meeting", () => {
+      const store = create();
+      const latest = buildPastMeeting('b', inDays(-1));
+      latestPast$.next([latest]);
+      expect(store.lastMeeting()?.meeting).not.toHaveProperty('attendance_summary');
+
+      past$.next([{ ...latest, attendance_summary: { invited: 8, attended: 3 } }]);
+
+      expect((store.lastMeeting()?.meeting as PastMeeting).attendance_summary).toEqual({ invited: 8, attended: 3 });
       expect(store.lastMeeting()?.key).toBe('m-past-b');
     });
 

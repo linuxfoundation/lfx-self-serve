@@ -3,8 +3,9 @@ title: ROI FAQ
 description: Frequently asked questions about the LFX contribution ROI model — how value is quantified, who it applies to, what it captures, and how often it updates.
 audience: [all]
 product_area: Dashboards
+display_order: 3
 tags: [roi, faq, revealed preference, cocomo, markup]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
@@ -34,9 +35,18 @@ Daily. When new contribution activity data is available, the value metrics are u
 
 ## Where do the hours per activity come from?
 
-From a table of domain-knowledge estimates with low, medium, and high scenarios, not from measurements of individual developers. See [Activity time costs](../activity-time-costs/).
+From a table of domain-knowledge estimates with low, medium, and high scenarios, not from measurements of individual developers. See [Hours per activity](../contribution-labor/#hours-per-activity).
+
+## What are value drivers, and where do I find them?
+
+Value drivers are the reasons a company may contribute to open source, such as shared R&D or talent acquisition. The **Value drivers** tab in the Projects panel of ROI Metrics shows which of them make your portfolio's return higher or lower than a typical company-project pair. See [Value drivers](../value-drivers/).
+
+## Why is the Value drivers tab empty, or my company missing?
+
+The tab needs at least 5 projects, and the company must pass the ROI display gate (enough total spending and active months). Companies with too little data are not shown, because their figures would mostly reflect how little data there is. See [Which companies are shown](../interpreting-results/#which-companies-are-shown).
 
 ## Related reading
 
 - [Interpreting results](../interpreting-results/)
 - [The model (technical)](../model/)
+- [ROI documentation](../)

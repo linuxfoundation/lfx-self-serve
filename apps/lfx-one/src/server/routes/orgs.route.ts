@@ -110,6 +110,7 @@ function buildOrgsRouter(): Router {
   // intentionally use `:accountId`. /events is an exact path and won't capture /events/summary or the per-event
   // /attendees and /speakers paths, so ordering isn't strictly required; they're grouped here for readability.
   router.get('/:accountId/lens/events/summary', (req, res, next) => orgLensEventsController.getOrgEventsSummary(req, res, next));
+  router.get('/:accountId/lens/events/foundations', (req, res, next) => orgLensEventsController.getOrgEventFoundations(req, res, next));
   router.get('/:accountId/lens/events/:eventId/attendees', (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
   router.get('/:accountId/lens/events/:eventId/speakers', (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
   router.get('/:accountId/lens/events', (req, res, next) => orgLensEventsController.getOrgEvents(req, res, next));
@@ -212,6 +213,7 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/roi/investment-breakdown', requireOrgLensRoiAudience, (req, res, next) =>
     orgLensRoiController.getInvestmentBreakdown(req, res, next)
   );
+  router.get('/:orgUid/lens/roi/value-drivers', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getValueDrivers(req, res, next));
   router.get('/:orgUid/lens/roi/projects', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getProjects(req, res, next));
   // Parameterized, so it stays below every literal above — `investment-breakdown` would otherwise
   // be captured as a project slug.

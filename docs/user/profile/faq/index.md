@@ -4,7 +4,7 @@ description: Frequently asked questions about your personal profile and public p
 audience: [all]
 product_area: Profile
 tags: [profile, faq, about-me, photo, public-profile, visibility]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Profile
 ---
 

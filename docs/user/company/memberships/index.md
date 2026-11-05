@@ -4,7 +4,7 @@ description: How to read the Memberships list for the selected company, open a f
 audience: [all]
 product_area: Company
 tags: [company, company-lens, memberships, membership, key-contacts, board, committee, agreements]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Company
 ---
 

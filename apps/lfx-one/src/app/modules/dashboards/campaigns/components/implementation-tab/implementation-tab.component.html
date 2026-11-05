@@ -151,6 +151,26 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-targeting-withheld-live">
   {{ googleTargetingWithheldMessage() }}
 </div>
+<!-- Search partners, display paths, further ads and negatives held off Search, announced likewise. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-ads-withheld-live">
+  {{ googleSearchAdsWithheldMessage() }}
+</div>
+<!--
+  The conversion-action picker's loading line, reason or empty note, announced. Top-level so it exists
+  before its text changes: a region mounted with the section would carry the text it is created with,
+  which is not reliably announced. Empty while the section is hidden; the visible notes carry no role.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-action-picker-live">
+  {{ googleConversionActionPickerAnnouncement() }}
+</div>
+<!-- The first ad's display-width errors, announced on the same terms; empty off Search. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
+  {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
+</div>
+<!-- Conversion actions held by a channel that takes none, announced on the same terms. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-actions-withheld-live">
+  {{ googleConversionActionsWithheldMessage() }}
+</div>
 <!-- Device adjustments held by a bidding strategy that takes none, announced on the same terms. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-device-adjustments-held-live">
   {{ googleDeviceAdjustmentsHeldMessage() }}
@@ -2250,6 +2270,33 @@
 
           @if (googleTakesConversionActions()) {
             <div class="flex flex-col gap-2">
+              @switch (googleConversionActionPicker().status) {
+                @case ('loaded') {
+                  <lfx-ui-multi-select
+                    label="Pick conversion actions"
+                    size="small"
+                    [values]="googlePickedConversionActions()"
+                    (valuesChange)="onGooglePickedConversionActionsChange($event)"
+                    data-testid="implementation-google-conversion-action-picker">
+                    @for (action of googleConversionActionPicker().actions; track action.id) {
+                      <lfx-ui-option [value]="action.id" [label]="action.label" />
+                    }
+                  </lfx-ui-multi-select>
+                  @if (googleConversionActionPicker().actions.length === 0) {
+                    <p class="text-xs text-gray-500" data-testid="implementation-google-conversion-action-picker-empty">{{ conversionActionPickerEmpty }}</p>
+                  }
+                }
+                @case ('loading') {
+                  <p class="text-xs text-gray-500" data-testid="implementation-google-conversion-action-picker-loading">
+                    {{ conversionActionPickerLoading }}
+                  </p>
+                }
+                @case ('unavailable') {
+                  <p class="text-xs text-gray-500" data-testid="implementation-google-conversion-action-picker-unavailable">
+                    {{ googleConversionActionPicker().reason }}
+                  </p>
+                }
+              }
               <label class="block text-xs font-medium text-gray-700" for="google-conversion-actions">Conversion Actions (one per line)</label>
               <textarea
                 id="google-conversion-actions"
@@ -2257,11 +2304,19 @@
                 formControlName="googleConversionActions"
                 class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 data-testid="implementation-google-conversion-actions"></textarea>
-              <span class="text-xs text-gray-400">
+              <span class="text-xs text-gray-500">
                 An id such as 987654321, or a full customers/&lt;id&gt;/conversionActions/&lt;id&gt; name. Leave blank to use the account's own conversion
                 goals.
+                @if (googleConversionActionPicker().status === 'loaded') {
+                  Picking from the list above fills this box; any other id stays, trimmed, and blank lines are dropped.
+                }
               </span>
             </div>
+          }
+          @if (googleConversionActionsWithheldMessage(); as warning) {
+            <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-conversion-actions-withheld">
+              <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+            </p>
           }
 
           @if (googleBiddingError()) {
@@ -2299,6 +2354,7 @@
                   type="text"
                   [formControlName]="i"
                   [maxlength]="charLimits.searchHeadline"
+                  [attr.aria-describedby]="googleFirstAdHeadlinesError() === null ? null : 'implementation-headlines-width-error'"
                   placeholder="Headline (max {{ charLimits.searchHeadline }} chars)"
                   class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   [attr.data-testid]="'implementation-headline-' + i" />
@@ -2311,6 +2367,9 @@
               </div>
             }
           </div>
+          @if (googleFirstAdHeadlinesError(); as message) {
+            <p id="implementation-headlines-width-error" class="mt-2 text-xs text-red-600" data-testid="implementation-headlines-width-error">{{ message }}</p>
+          }
         </div>
 
         <!-- Google Ads: Descriptions -->
@@ -2332,6 +2391,7 @@
                 <textarea
                   [formControlName]="i"
                   [maxlength]="charLimits.searchDescription"
+                  [attr.aria-describedby]="googleFirstAdDescriptionsError() === null ? null : 'implementation-descriptions-width-error'"
                   placeholder="Description (max {{ charLimits.searchDescription }} chars)"
                   rows="2"
                   class="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -2349,7 +2409,41 @@
               </div>
             }
           </div>
+          @if (googleFirstAdDescriptionsError(); as message) {
+            <p id="implementation-descriptions-width-error" class="mt-2 text-xs text-red-600" data-testid="implementation-descriptions-width-error">
+              {{ message }}
+            </p>
+          }
         </div>
+      }
+
+      <!--
+        Google Ads: the Search campaign's Search partners opt-in, display paths, its second and third
+        ads, and its create-time negative keywords (#4991). Search only, on the campaign-service road; errors are the shared
+        refusals the BFF answers the create with, and Create waits on them.
+      -->
+      @if (googleSearchAdsAvailable()) {
+        <lfx-campaign-google-search-ads-panel
+          [path1]="googleSearchPath1()"
+          (path1Change)="onGoogleSearchPath1Change($event)"
+          [path2]="googleSearchPath2()"
+          (path2Change)="onGoogleSearchPath2Change($event)"
+          [additionalAds]="googleAdditionalSearchAds()"
+          (additionalAdsChange)="onGoogleAdditionalSearchAdsChange($event)"
+          [searchPartners]="googleSearchPartners()"
+          (searchPartnersChange)="onGoogleSearchPartnersChange($event)"
+          [negativeKeywordsText]="googleNegativeKeywordsText()"
+          (negativeKeywordsTextChange)="onGoogleNegativeKeywordsTextChange($event)"
+          [negativeKeywordMatchType]="googleNegativeKeywordMatchType()"
+          (negativeKeywordMatchTypeChange)="onGoogleNegativeKeywordMatchTypeChange($event)"
+          [pathsError]="googleSearchPathsError()"
+          [adsError]="googleAdditionalSearchAdsError()"
+          [negativeKeywordsError]="googleNegativeKeywordsError()" />
+      }
+      @if (googleSearchAdsWithheldMessage(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-search-ads-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
       }
 
       <!--

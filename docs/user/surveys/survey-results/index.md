@@ -4,7 +4,7 @@ description: How to see participation, the Net Promoter Score, comments, and ind
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, results, nps, responses, comments, delivery status]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Surveys
 ---
 

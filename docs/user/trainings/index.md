@@ -4,7 +4,7 @@ description: View your Linux Foundation training enrollments and certifications 
 audience: [all]
 product_area: Trainings
 tags: [trainings, courses, enrollments, certifications, learning]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Trainings
 ---
 

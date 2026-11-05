@@ -72,6 +72,9 @@ jobs:
         run: yarn format:check
 
       - name: Run linting
+        # Type-aware ESLint exceeds Node's default (~4 GB) heap on the full workspace.
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
         run: yarn lint:check
 
       - name: Type checking

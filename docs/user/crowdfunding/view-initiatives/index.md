@@ -4,7 +4,7 @@ description: How to view and filter your crowdfunding initiatives by status in L
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, view, status, list]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Crowdfunding
 ---
 

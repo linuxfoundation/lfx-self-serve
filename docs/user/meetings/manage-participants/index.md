@@ -4,7 +4,7 @@ description: How to invite guests, add a group, resend invitations, remove peopl
 audience: [all]
 product_area: Meetings
 tags: [meetings, participants, guests, invite, registrants, groups, resend invite]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 

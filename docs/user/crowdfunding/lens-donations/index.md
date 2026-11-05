@@ -4,7 +4,7 @@ description: View the crowdfunding donations made on behalf of a company in the 
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, company, lens]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Crowdfunding
 ---
 
@@ -24,7 +24,7 @@ Anyone who can view the selected company in the **Company** lens.
 
 The page header reads **Donations**, with the description "Donations on LFX Crowdfunding made on behalf of" followed by the company name. Each row shows:
 
-- **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation
+- **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation. Select the name to open the initiative on the public crowdfunding site in a new tab
 - **Date** — when the donation was made
 - **Donor** and **Email** — the person who donated
 - **Amount** — in USD; a recurring donation shows its amount per charge
@@ -32,6 +32,10 @@ The page header reads **Donations**, with the description "Donations on LFX Crow
 The newest donations come first. Select **Load more** to see older ones.
 
 Only donations matched to the company by its domain appear. If a donor named the company with a different domain, or didn't name a company, the donation isn't listed.
+
+## Empty state
+
+**No donations yet** — no donations have been matched to the company by its domain.
 
 ## Error states
 

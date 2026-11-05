@@ -124,7 +124,48 @@ describe('NextMeetingCardComponent', () => {
     expect(text(fixture, 'meetings-home-next-card-when')).toBe(`${weekday}, ${formatMeetingTimeRange(start, 60)} · 60m`);
     expect(text(fixture, 'meetings-home-next-card-type')).toBe('Technical');
     expect(text(fixture, 'meetings-home-next-card-recurring')).toBe('Recurring');
-    expect(fixture.nativeElement.textContent).not.toContain('TOC');
+    expect(query(fixture, 'meetings-home-next-card-recurring')?.querySelector('i')?.classList).toContain('fa-arrows-repeat');
+  });
+
+  it('badges each of the meeting groups between the type and recurring tags', async () => {
+    const meeting = buildMeeting({
+      committees: [
+        { uid: 'c-1', name: 'TOC' },
+        { uid: 'c-2', name: 'Security WG' },
+      ],
+      recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
+    });
+    const fixture = await render(buildRow(meeting));
+    const tags = Array.from(fixture.nativeElement.querySelectorAll('lfx-ui-badge')).map((badge) => (badge as HTMLElement).dataset['testid']);
+    const groups = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-next-card-group"]')) as HTMLElement[];
+
+    expect(groups.map((group) => group.textContent?.trim())).toEqual(['TOC', 'Security WG']);
+    expect(groups[0].querySelector('i')?.classList).toContain('fa-users');
+    expect(groups[1].getAttribute('title')).toBe('Security WG');
+    expect(groups[1].querySelector('span')?.classList).toContain('truncate');
+    expect(tags).toEqual([
+      'meetings-home-next-card-type',
+      'meetings-home-next-card-group',
+      'meetings-home-next-card-group',
+      'meetings-home-next-card-recurring',
+    ]);
+  });
+
+  it("shows the date's RSVP counts with a legend for an organized meeting, and nothing without counts", async () => {
+    const series = buildMeeting({ rsvp_summary: { invited: 9, yes: 9, maybe: 0, no: 0, no_response: 0 } });
+    const occurrence = {
+      occurrence_id: 'o-1',
+      title: 'Series title',
+      start_time: series.start_time,
+      duration: 60,
+      rsvp_summary: { invited: 10, yes: 4, maybe: 3, no: 1, no_response: 2 },
+    };
+    const organized = await render(buildRow(series, undefined, { occurrence, occurrenceId: 'o-1' }));
+    const other = await render(buildRow(buildMeeting()));
+
+    expect(text(organized, 'meetings-home-attendance-label')).toBe('4 of 10 attending · 40%');
+    expect(query(organized, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 4 Maybe 3 No 1');
+    expect(query(other, 'meetings-home-next-card-attendance')).toBeNull();
   });
 
   it('badges only Private and Restricted meetings on the tile', async () => {
@@ -185,21 +226,45 @@ describe('NextMeetingCardComponent', () => {
     });
   });
 
-  describe('starts-in note', () => {
-    it.each<[number, string | null]>([
-      [30, 'Meeting starts in 30 min'],
-      [3 * 60 + 5, 'Meeting starts in 3 h'],
-      [2 * 24 * 60, null],
-    ])('%i minutes out → %s', async (minutes, label) => {
+  describe('join note', () => {
+    const notes = (fixture: ComponentFixture<NextMeetingCardComponent>): { window: string | null; startsIn: string | null; live: string | null } => ({
+      window: query(fixture, 'meetings-home-next-card-join-window')?.textContent?.trim() ?? null,
+      startsIn: query(fixture, 'meetings-home-next-card-starts-in')?.textContent?.trim() ?? null,
+      live: query(fixture, 'meetings-home-next-card-in-progress')?.textContent?.trim() ?? null,
+    });
+    const renderAt = (minutes: number, overrides: Partial<Meeting> = {}): Promise<ComponentFixture<NextMeetingCardComponent>> => {
       const start = inMinutes(minutes);
-      const fixture = await render(buildRow(buildMeeting({ start_time: start.toISOString() }), start));
+      return render(buildRow(buildMeeting({ start_time: start.toISOString(), ...overrides }), start));
+    };
 
-      expect(query(fixture, 'meetings-home-next-card-starts-in')?.textContent?.trim() ?? null).toBe(label);
+    it('before the join window, says how early the viewer may join', async () => {
+      expect(notes(await renderAt(3 * 60))).toEqual({
+        window: 'You may only join the meeting up to 10 minutes before the start time',
+        startsIn: null,
+        live: null,
+      });
+      expect(notes(await renderAt(45, { early_join_time_minutes: 30 })).window).toBe('You may only join the meeting up to 30 minutes before the start time');
     });
 
-    it('is a neutral 12px note with a clock icon', async () => {
-      const start = inMinutes(30);
-      const fixture = await render(buildRow(buildMeeting({ start_time: start.toISOString() }), start));
+    it('inside the join window, counts down to the start', async () => {
+      expect(notes(await renderAt(5))).toEqual({ window: null, startsIn: 'Meeting starts in 5 min', live: null });
+      expect(notes(await renderAt(25, { early_join_time_minutes: 30 })).startsIn).toBe('Meeting starts in 25 min');
+    });
+
+    it('while the meeting runs, says it is in progress next to a live dot', async () => {
+      const fixture = await renderAt(-10);
+
+      expect(notes(fixture)).toEqual({ window: null, startsIn: null, live: 'The meeting is in progress' });
+      expect(query(fixture, 'meetings-home-next-card-in-progress')?.classList).toContain('text-blue-600');
+      expect(query(fixture, 'meetings-home-next-card-in-progress')?.querySelector('.next-meeting-live-dot')?.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('shows no note once the date is over', async () => {
+      expect(notes(await renderAt(-90))).toEqual({ window: null, startsIn: null, live: null });
+    });
+
+    it('counts down in a neutral 12px note with a clock icon', async () => {
+      const fixture = await renderAt(5);
       const note = query(fixture, 'meetings-home-next-card-starts-in');
 
       expect(Array.from(note?.classList ?? [])).toEqual(expect.arrayContaining(['text-label-12', 'text-gray-500']));

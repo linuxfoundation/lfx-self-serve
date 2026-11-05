@@ -572,3 +572,48 @@ describe('SurveyService follow-up actions (#4340)', () => {
     expect(writes()).toEqual([]);
   });
 });
+
+describe('SurveyService.getSurveyTemplates (#5124)', () => {
+  const PROJECT_UID = '11111111-1111-1111-1111-111111111111';
+  const COMMITTEE_UID = '22222222-2222-2222-2222-222222222222';
+  const req = { path: '/api/surveys/templates', bearerToken: 'caller-token' } as Request;
+  let service: SurveyService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    proxyRequestMock.mockReset();
+    service = new SurveyService();
+  });
+
+  it('forwards project_uid only when no committee is given', async () => {
+    const templates = [{ id: '514744416', title: 'Board Satisfaction Survey', nickname: '', href: '' }];
+    proxyRequestMock.mockResolvedValueOnce(templates);
+
+    await expect(service.getSurveyTemplates(req, PROJECT_UID)).resolves.toEqual(templates);
+
+    expect(proxyRequestMock).toHaveBeenCalledExactlyOnceWith(req, 'LFX_V2_SERVICE', '/surveys/templates', 'GET', { project_uid: PROJECT_UID });
+  });
+
+  it('forwards both project_uid and committee_uid', async () => {
+    proxyRequestMock.mockResolvedValueOnce([]);
+
+    await service.getSurveyTemplates(req, PROJECT_UID, COMMITTEE_UID);
+
+    expect(proxyRequestMock).toHaveBeenCalledExactlyOnceWith(req, 'LFX_V2_SERVICE', '/surveys/templates', 'GET', {
+      project_uid: PROJECT_UID,
+      committee_uid: COMMITTEE_UID,
+    });
+  });
+
+  it('normalizes an upstream null body to an empty list', async () => {
+    proxyRequestMock.mockResolvedValueOnce(null);
+
+    await expect(service.getSurveyTemplates(req, PROJECT_UID)).resolves.toEqual([]);
+  });
+
+  it('propagates an upstream MicroserviceError', async () => {
+    proxyRequestMock.mockRejectedValueOnce(new MicroserviceError('forbidden', 403, 'FORBIDDEN', {}));
+
+    await expect(service.getSurveyTemplates(req, PROJECT_UID)).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
+  });
+});

@@ -152,12 +152,44 @@ describe('MeetingHomeRowComponent', () => {
       expect(texts(fixture, 'meetings-home-row-when').at(-1)).toBe(label);
     });
 
-    it('labels a recurring meeting with its repeat rule', async () => {
+    it('names the repeat rule, and shows a short label with a tooltip in a body of 380px or less', async () => {
       const meeting = buildMeeting({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 2, weekly_days: '4' } });
       const fixture = await render(buildRow(meeting));
+      const short = query(fixture, 'meetings-home-row-recurring-short');
 
-      expect(text(fixture, 'meetings-home-row-recurring')).toBe('Recurring');
-      expect(query(fixture, 'meetings-home-row-recurring')?.tabIndex).toBe(0);
+      expect(text(fixture, 'meetings-home-row-recurring-label')).toBe('Every 2 weeks on Wednesday');
+      expect(classes(fixture, 'meetings-home-row-recurring-label')).toEqual(expect.arrayContaining(['hidden', '@[381px]/body:inline-flex']));
+      expect(short?.textContent?.trim()).toBe('Recurring');
+      expect(short?.tabIndex).toBe(0);
+      expect(short?.getAttribute('aria-label')).toBe('Repeats every 2 weeks on Wednesday');
+      expect(classes(fixture, 'meetings-home-row-recurring-short')).toContain('@[381px]/body:hidden');
+      expect(classes(fixture, 'meetings-home-row-recurring')).not.toContain('whitespace-nowrap');
+      expect(fixture.debugElement.query(By.css('[data-testid="meetings-home-row-recurring-short"]')).injector.get(UiTooltipDirective).text()).toBe(
+        'Repeats every 2 weeks on Wednesday'
+      );
+      expect(
+        Array.from(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-row-recurring"] i')).map((icon) => (icon as HTMLElement).className)
+      ).toEqual(['fa-light fa-arrows-repeat text-[11px]', 'fa-light fa-arrows-repeat text-[11px]']);
+    });
+
+    it('puts the type, then each group as an outline badge, then the organizers on the second meta line', async () => {
+      const meeting = buildMeeting({
+        committees: [
+          { uid: 'c-1', name: 'TOC' },
+          { uid: 'c-2', name: 'Security WG' },
+        ],
+        created_by: { name: 'Jane Doe', username: 'jdoe', email: '' },
+      } as Partial<PastMeeting>);
+      const fixture = await render(buildRow(meeting));
+      const line = query(fixture, 'meetings-home-row-type')?.parentElement;
+      const items = Array.from(line?.children ?? []).map((item) => (item as HTMLElement).dataset['testid']);
+
+      expect(items).toEqual(['meetings-home-row-type', 'meetings-home-row-group', 'meetings-home-row-group', 'meetings-home-row-organizer']);
+      expect(texts(fixture, 'meetings-home-row-group')).toEqual(['TOC', 'Security WG']);
+      expect(query(fixture, 'meetings-home-row-group')?.querySelector('i')?.className).toBe('fa-light fa-users');
+      expect(Array.from(line?.classList ?? [])).toEqual(expect.arrayContaining(['flex', 'flex-wrap']));
+      expect(Array.from(line?.classList ?? [])).not.toContain('overflow-hidden');
+      expect(classes(fixture, 'meetings-home-row-organizer')).toEqual(expect.arrayContaining(['flex-none', 'flex-wrap', 'max-w-full']));
     });
 
     it.each<[Partial<Meeting>, string[]]>([
@@ -189,7 +221,7 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(buildMeeting()));
 
       expect(classes(fixture, 'meetings-home-row')).toEqual(
-        expect.arrayContaining(['grid', 'grid-cols-[auto_minmax(0,1fr)_auto_auto]', 'items-start', '@[861px]:flex', '@[861px]:flex-nowrap'])
+        expect.arrayContaining(['grid', 'grid-cols-[auto_minmax(0,1fr)_auto_auto]', 'items-start', 'py-[20px]', '@[861px]:flex', '@[861px]:flex-nowrap'])
       );
       expect(classes(fixture, 'meetings-home-row-actions')).toEqual(expect.arrayContaining(['contents', '@[861px]:flex']));
       expect(classes(fixture, 'meetings-home-row-menu')).toEqual(expect.arrayContaining(['col-start-4', 'row-start-1', '-my-[2px]']));
@@ -393,6 +425,32 @@ describe('MeetingHomeRowComponent', () => {
     });
   });
 
+  describe('organizer attendance', () => {
+    it("shows the date's RSVP counts with a tooltip on the bar, and widens the actions over 860px", async () => {
+      const fixture = await render(buildRow(buildMeeting({ rsvp_summary: { invited: 16, yes: 12, maybe: 2, no: 1, no_response: 1 } })));
+
+      expect(text(fixture, 'meetings-home-attendance-label')).toBe('12 of 16 attending · 75%');
+      expect(query(fixture, 'meetings-home-attendance-bar')?.getAttribute('aria-label')).toBe('Yes 12, Maybe 2, No 1, No response 1');
+      expect(query(fixture, 'meetings-home-attendance-legend')).toBeNull();
+      expect(classes(fixture, 'meetings-home-row-actions')).toContain('@[861px]:min-w-[330px]');
+      expect(classes(fixture, 'meetings-home-row')).toContain('@[601px]:grid-cols-[auto_minmax(0,1fr)_minmax(240px,auto)_auto]');
+    });
+
+    it('shows past attendance with the poorly-attended note', async () => {
+      const fixture = await render(buildRow(buildMeeting({ attendance_summary: { invited: 20, attended: 9 } })), 'past');
+
+      expect(text(fixture, 'meetings-home-attendance-label')).toBe('9 of 20 attended · 45%');
+      expect(text(fixture, 'meetings-home-attendance-poor')).toBe('This meeting was poorly attended');
+    });
+
+    it('shows nothing and keeps the plain layout without counts', async () => {
+      const fixture = await render(buildRow(buildMeeting()));
+
+      expect(query(fixture, 'meetings-home-row-attendance')).toBeNull();
+      expect(classes(fixture, 'meetings-home-row-actions')).not.toContain('@[861px]:min-w-[330px]');
+    });
+  });
+
   describe('past', () => {
     it('uses the grey band and marks a meeting I attended', async () => {
       const fixture = await render(buildRow(buildMeeting({ user_attended: true })), 'past');
@@ -408,7 +466,7 @@ describe('MeetingHomeRowComponent', () => {
     });
 
     it('shows Recording and AI Summary in place of the RSVP controls, and never on upcoming rows', async () => {
-      const meeting = buildMeeting({ has_recording: true, has_ai_summary: true });
+      const meeting = buildMeeting({ has_recording: true, recording_share_url: 'https://zoom.example/rec', has_ai_summary: true });
       const past = await render(buildRow(meeting), 'past');
       const upcoming = await render(buildRow(meeting));
 
@@ -416,7 +474,9 @@ describe('MeetingHomeRowComponent', () => {
       expect(query(past, 'meetings-home-row-summary')).toBeTruthy();
       expect(query(past, 'meetings-home-rsvp')).toBeNull();
       expect(query(upcoming, 'meetings-home-row-artifacts')).toBeNull();
-      expect(classes(past, 'meetings-home-row-artifacts-cell')).toEqual(expect.arrayContaining(['col-[2/-1]', 'row-start-2', 'hidden', 'has-[div]:flex']));
+      expect(classes(past, 'meetings-home-row-artifacts-cell')).toEqual(
+        expect.arrayContaining(['col-[2/-1]', 'row-start-2', '@[481px]:col-[3/4]', '@[481px]:row-start-1', 'hidden', 'has-[div]:flex'])
+      );
     });
 
     it('opens the meeting page in place for invitees', async () => {

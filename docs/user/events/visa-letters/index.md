@@ -4,7 +4,7 @@ description: Request a visa support letter to help international attendees obtai
 audience: [all]
 product_area: Events
 tags: [events, visa-letters, visa, travel, attendance]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Events
 ---
 

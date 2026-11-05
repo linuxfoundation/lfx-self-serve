@@ -201,8 +201,8 @@ export class UserController {
    * Returns past meetings the user has direct FGA access to (host, invitee, attendee, organizer), optionally filtered by project
    * @query projectUid - Optional project UID to filter meetings
    * @query foundation_uid - Optional foundation UID to filter meetings (OR across child projects)
-   * @query include - Optional, comma-separated; `artifacts` adds `has_recording` / `has_ai_summary`, `attendance` adds
-   *   `attendance_summary` to the meetings the viewer organizes, other values are ignored
+   * @query include - Optional, comma-separated; `artifacts` adds `has_recording` / `recording_share_url` / `has_ai_summary`,
+   *   `attendance` adds `attendance_summary` to the meetings the viewer organizes, other values are ignored
    */
   public async getUserPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = getStringQueryParam(req, 'projectUid');

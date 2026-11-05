@@ -15,6 +15,7 @@ import {
   MeetingRsvp,
   MeetingsHomeFilters,
   PastMeeting,
+  PastMeetingAttendanceSummary,
   PastMeetingSummary,
   UiToastRef,
 } from '@lfx-one/shared/interfaces';
@@ -70,6 +71,8 @@ export class MeetingsHomeStore {
   // Kept for the page's lifetime, so a refetch that still lists a deleted meeting or cancelled date does not bring it back.
   private readonly deletedMeetingIds: WritableSignal<ReadonlySet<string>> = signal(new Set());
   private readonly cancelledOccurrenceIds: WritableSignal<ReadonlyMap<string, readonly string[]>> = signal(new Map());
+  /** Key of the concurrent date picked on the Next meeting card; the first one when it is not among them. */
+  private readonly nextCardKey: WritableSignal<string | null> = linkedSignal({ source: this.userService.meetingFeedIdentity, computation: () => null });
   /** Current time, ticking every minute so ended dates drop out and day buckets roll over. */
   public readonly now: Signal<Date> = this.initClock();
 
@@ -84,14 +87,14 @@ export class MeetingsHomeStore {
   public readonly lastMeetingFailed: Signal<boolean> = this.lastMeetingFailedState.asReadonly();
 
   private readonly upcomingMeetings: Signal<Meeting[]> = this.initFeed(
-    () => this.userService.getUserMeetings(),
+    () => this.userService.getUserMeetings({ includeAttendance: true }),
     this.userService.meetingsRefresh$,
     this.upcomingLoadingState,
     this.upcomingFailedState
   );
-  // Carries `has_recording` / `has_ai_summary` for the past rows' Recording and AI Summary buttons.
+  // Carries `recording_share_url` / `has_ai_summary` for the Recording and AI Summary buttons, and organizer attendance.
   private readonly pastMeetings: Signal<PastMeeting[]> = this.initFeed(
-    () => this.userService.getUserPastMeetings({ includeArtifacts: true }),
+    () => this.userService.getUserPastMeetings({ includeArtifactsAndAttendance: true }),
     this.userService.pastMeetingsRefresh$,
     this.pastLoadingState,
     this.pastFailedState
@@ -102,6 +105,10 @@ export class MeetingsHomeStore {
     this.userService.pastMeetingsRefresh$,
     this.lastMeetingLoadingState,
     this.lastMeetingFailedState
+  );
+  // The latest-past feed has no attendance counts; the full past feed's record of the same meeting does.
+  private readonly pastAttendanceById: Signal<Map<string, PastMeetingAttendanceSummary>> = computed(
+    () => new Map(this.pastMeetings().flatMap((meeting) => (meeting.attendance_summary ? [[meeting.id, meeting.attendance_summary] as const] : [])))
   );
   // Past records may outlive their meeting, so past rows are hidden only until their feed answers again.
   private readonly deletedPastIds: WritableSignal<ReadonlySet<string>> = linkedSignal({ source: this.pastMeetings, computation: () => new Set<string>() });
@@ -125,12 +132,23 @@ export class MeetingsHomeStore {
   public readonly failed: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastFailed() : this.upcomingFailed()));
   /** The active tab's rows before search and filters. */
   public readonly tabRows: Signal<MeetingHomeRow[]> = computed(() => (this.tab() === 'past' ? this.pastRows() : this.upcomingRows()));
-  /** The Next meeting card's date, whatever the search and filters: the soonest one not yet over, else the soonest one. */
+  /** The soonest date not yet over, else the soonest one, whatever the search and filters; it anchors the Next meeting card. */
   public readonly nextRow: Signal<MeetingHomeRow | null> = this.initNextRow();
-  /** The next date is inside its join window, and is not a restricted meeting the viewer is not invited to. */
-  public readonly nextRowJoinable: Signal<boolean> = this.joinService.joinable(this.nextRow, this.now);
-  /** Join link for the next date, built for the real viewer while impersonating; null until joinable or when unavailable. */
-  public readonly nextRowJoinUrl: Signal<string | null> = this.joinService.joinUrl(this.nextRow, this.nextRowJoinable);
+  /** The next date and the dates not yet over that overlap it, soonest first; the Next meeting card pages through them. */
+  public readonly concurrentNextRows: Signal<MeetingHomeRow[]> = this.initConcurrentNextRows();
+  /** Position of the Next meeting card's date in the concurrent dates. */
+  public readonly nextCardIndex: Signal<number> = computed(() =>
+    Math.max(
+      0,
+      this.concurrentNextRows().findIndex((row) => row.key === this.nextCardKey())
+    )
+  );
+  /** The concurrent date the Next meeting card shows. */
+  public readonly nextCardRow: Signal<MeetingHomeRow | null> = computed(() => this.concurrentNextRows()[this.nextCardIndex()] ?? null);
+  /** The card's date is inside its join window, and is not a restricted meeting the viewer is not invited to. */
+  public readonly nextRowJoinable: Signal<boolean> = this.joinService.joinable(this.nextCardRow, this.now);
+  /** Join link for the card's date, built for the real viewer while impersonating; null until joinable or when unavailable. */
+  public readonly nextRowJoinUrl: Signal<string | null> = this.joinService.joinUrl(this.nextCardRow, this.nextRowJoinable);
   /** The list's rows: the active tab's rows that match the search and filters, the Next meeting card's date included. */
   public readonly filteredRows: Signal<MeetingHomeRow[]> = computed(() =>
     filterMeetingsHome(this.tabRows(), this.filters(), this.search(), this.userService.viewerUsername())
@@ -145,7 +163,7 @@ export class MeetingsHomeStore {
   public readonly lastMeeting: Signal<MeetingHomeRow | null> = computed(
     () =>
       this.latestPastMeetings()
-        .map((meeting) => toPastMeetingHomeRow(meeting))
+        .map((meeting) => toPastMeetingHomeRow(this.withPastAttendance(meeting)))
         .find((row) => row !== null && !this.deletedLatestPastIds().has(getMeetingSeriesUid(row.meeting))) ?? null
   );
   private readonly fetchedLastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = this.initLastMeetingArtifact((id) =>
@@ -213,6 +231,18 @@ export class MeetingsHomeStore {
   /** Keeps the Last meeting card in step after an organizer edits or approves the summary. */
   public setLastMeetingSummary(summary: PastMeetingSummary): void {
     this.lastMeetingSummaryState.set(summary);
+  }
+
+  /** Shows the previous (-1) or the next (1) concurrent date on the Next meeting card. */
+  public stepNextCard(step: -1 | 1): void {
+    const rows = this.concurrentNextRows();
+    const row = rows[Math.min(Math.max(this.nextCardIndex() + step, 0), rows.length - 1)];
+    if (row) this.nextCardKey.set(row.key);
+  }
+
+  private withPastAttendance(meeting: PastMeeting): PastMeeting {
+    const summary = this.pastAttendanceById().get(meeting.id);
+    return summary && !meeting.attendance_summary ? { ...meeting, attendance_summary: summary } : meeting;
   }
 
   private initClock(): Signal<Date> {
@@ -284,6 +314,24 @@ export class MeetingsHomeStore {
       const rows = this.upcomingRows();
       const nowMs = this.now().getTime();
       return rows.find((row) => Date.parse(row.startTime) + row.durationMinutes * 60_000 > nowMs) ?? rows[0] ?? null;
+    });
+  }
+
+  // Same overlap rule as the dashboard's My Meetings card.
+  private initConcurrentNextRows(): Signal<MeetingHomeRow[]> {
+    return computed(() => {
+      const next = this.nextRow();
+      if (!next) return [];
+      const nowMs = this.now().getTime();
+      const span = (row: MeetingHomeRow): [number, number] => {
+        const start = Date.parse(row.startTime);
+        return [start, start + row.durationMinutes * 60_000];
+      };
+      const [nextStart, nextEnd] = span(next);
+      return this.upcomingRows().filter((row) => {
+        const [start, end] = span(row);
+        return row === next || (end > nowMs && start < nextEnd && end > nextStart);
+      });
     });
   }
 

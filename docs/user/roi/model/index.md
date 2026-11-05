@@ -3,8 +3,9 @@ title: The ROI model (technical)
 description: A self-contained description of the LFX contribution ROI model — notation, economic setup, the two estimation stages, the inference step, and the assumptions the estimates rest on.
 audience: [all]
 product_area: Dashboards
+display_order: 8
 tags: [roi, model, markup, ces, revealed preference, assumptions, technical]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
@@ -142,11 +143,12 @@ The estimates rest on these assumptions. They are listed so a reader can judge w
 
 The equations above are the research methodology. In production, some compromises are made for technical feasibility. Some inference features are under development. In summary:
 
-| Topic                                 | Research methodology                                  | Product                                                                                                                          |
-| ------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Markup estimation                     | One logit-based ranking                               | Two methods, logistic and direct, both retained                                                                                  |
-| Elasticity estimation                 | GMM from the first-order conditions, with instruments | Least squares on the per-year first-order conditions (a constant instrument), with a closed-form `σ` when all types are flexible |
-| Mechanism and counterfactual analysis | Described                                             | Not implemented                                                                                                                  |
+| Topic                   | Research methodology                                  | Product                                                                                                                          |
+| ----------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Markup estimation       | One logit-based ranking                               | Two methods, logistic and direct, both retained                                                                                  |
+| Elasticity estimation   | GMM from the first-order conditions, with instruments | Least squares on the per-year first-order conditions (a constant instrument), with a closed-form `σ` when all types are flexible |
+| Mechanism analysis      | Described                                             | Only the [value driver decomposition](../value-driver-decomposition/) of the markup is implemented                               |
+| Counterfactual analysis | Described                                             | Not implemented                                                                                                                  |
 
 ## Pages in this section
 
@@ -154,3 +156,4 @@ The equations above are the research methodology. In production, some compromise
 - [Stage 2: CES allocation](../stage-2-ces/) — estimating elasticity and shares
 - [Inference](../inference/) — value, ROI, and annualization
 - [Model settings and defaults](../model-settings/)
+- [ROI documentation](../)

@@ -1084,6 +1084,8 @@ export interface PastMeeting extends Meeting {
   user_attended?: boolean;
   /** Whether a recording with a share URL is viewable by the user — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
   has_recording?: boolean;
+  /** Share URL of the largest recording session when `has_recording` is true — /api/user/past-meetings?include=artifacts only */
+  recording_share_url?: string;
   /** Whether an AI summary with content is visible to the viewer (organizers include awaiting approval) — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
   has_ai_summary?: boolean;
 }

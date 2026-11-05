@@ -46,6 +46,8 @@ export class InitiativeDetailComponent {
   // organization's address): go back there.
   private readonly lens = this.route.snapshot.data['lens'] as Lens | undefined;
   private readonly isNavLens = NAV_LENSES.includes(this.lens as NavLens);
+  // Lens pages (Org, Project, Foundation) show who created the initiative (lfx-crowdfunding#452).
+  protected readonly isLensPage = this.lens === 'org' || this.isNavLens;
   protected readonly backLink: string | string[] = this.initBackLink();
   protected readonly backQueryParams: Record<string, string> = this.isNavLens ? this.route.snapshot.queryParams : {};
 
@@ -99,9 +101,10 @@ export class InitiativeDetailComponent {
     });
   }
 
-  // CF sets is_owner only on the manage read; write responses would otherwise hide the creator's Edit attribution.
+  // CF sets is_owner and creator only on the manage read; write responses would otherwise drop them.
   private applyUpdate(updated: InitiativeDetail): void {
-    this.initiativeOverride.set({ ...updated, isOwner: this.initiative()?.isOwner ?? false });
+    const current = this.initiative();
+    this.initiativeOverride.set({ ...updated, isOwner: current?.isOwner ?? false, creator: current?.creator });
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────

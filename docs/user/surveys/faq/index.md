@@ -4,7 +4,7 @@ description: Frequently asked questions about creating, sending, and responding 
 audience: [all]
 product_area: Surveys
 tags: [surveys, faq, nps, feedback, reminders, results]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Surveys
 ---
 

@@ -4,7 +4,7 @@ description: Pick the company you are viewing in the Company Lens, switch to ano
 audience: [all]
 product_area: Company
 tags: [company, company-lens, switcher, switch-company, url, not-found, access]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Company
 ---
 

@@ -15,6 +15,7 @@ const {
   getAnnual,
   getInvestmentBreakdown,
   getProjects,
+  getValueDrivers,
   getProjectDetail,
   getProjectAnnual,
   logger,
@@ -28,6 +29,7 @@ const {
   getAnnual: vi.fn(),
   getInvestmentBreakdown: vi.fn(),
   getProjects: vi.fn(),
+  getValueDrivers: vi.fn(),
   getProjectDetail: vi.fn(),
   getProjectAnnual: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -44,6 +46,7 @@ vi.mock('../services/org-lens-roi.service', () => ({
     public getAnnual = getAnnual;
     public getInvestmentBreakdown = getInvestmentBreakdown;
     public getProjects = getProjects;
+    public getValueDrivers = getValueDrivers;
     public getProjectDetail = getProjectDetail;
     public getProjectAnnual = getProjectAnnual;
   },
@@ -93,6 +96,7 @@ describe('OrgLensRoiController — authorization gate', () => {
     getAnnual.mockResolvedValue({ rows: [] });
     getInvestmentBreakdown.mockResolvedValue({ rows: [], total: 0 });
     getProjects.mockResolvedValue({ method: 'logit', rows: [] });
+    getValueDrivers.mockResolvedValue({ method: 'logit', nProjects: 0, rows: [] });
     getProjectDetail.mockResolvedValue({ orgUid: ORG_UID, method: 'logit', project: { projectSlug: PROJECT_SLUG }, hasOrgLensProject: true });
     getProjectAnnual.mockResolvedValue({ method: 'logit', projectSlug: PROJECT_SLUG, rows: [], apportioned: true, efficiencyConstant: true });
   });
@@ -106,6 +110,7 @@ describe('OrgLensRoiController — authorization gate', () => {
     { name: 'getAnnual', operation: 'get_org_lens_roi_annual', service: getAnnual },
     { name: 'getInvestmentBreakdown', operation: 'get_org_lens_roi_investment_breakdown', service: getInvestmentBreakdown },
     { name: 'getProjects', operation: 'get_org_lens_roi_projects', service: getProjects },
+    { name: 'getValueDrivers', operation: 'get_org_lens_roi_value_drivers', service: getValueDrivers },
     { name: 'getProjectDetail', operation: 'get_org_lens_roi_project_detail', service: getProjectDetail },
     { name: 'getProjectAnnual', operation: 'get_org_lens_roi_project_annual', service: getProjectAnnual },
   ] as const;

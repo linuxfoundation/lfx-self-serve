@@ -4,7 +4,7 @@ description: How to create a group (committee) in LFX Self Serve with the four-s
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, create, wizard, join-mode, governance]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Committees
 ---
 

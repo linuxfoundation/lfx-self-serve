@@ -4,7 +4,7 @@ description: View the crowdfunding initiatives run on behalf of a project, found
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, project, foundation, company, attribution, lens]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Crowdfunding
 ---
 
@@ -26,6 +26,8 @@ Other users don't see the navigation item.
 ## What the page shows
 
 The page header reads **Initiatives**, with the description "Fundraising initiatives on LFX Crowdfunding run on behalf of" followed by the entity name. Below it, you get the same stats bar (**Active Initiatives**, **Total Raised**, **Total Sponsors**), the **Active**, **Pending**, and **Archived** filter pills, and the **New Initiative** button as the Me lens page. See [View Initiatives](../view-initiatives/) for details.
+
+Each initiative also shows **Created by** followed by the name of the person who created it, both in the list and at the top of its detail page. This appears only in the **Project**, **Foundation**, and **Company** lenses, not in the **Me** lens.
 
 Select an initiative to open its detail page. It offers the same tabs and actions described in [Manage Initiatives](../manage-initiatives/), except **Edit attribution**, which is available only to the initiative's creator from the **Me** lens.
 
