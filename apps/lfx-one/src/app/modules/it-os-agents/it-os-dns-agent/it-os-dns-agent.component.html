@@ -102,7 +102,7 @@
                             type="checkbox"
                             class="mt-1"
                             [checked]="picker.picks[domain.name]"
-                            [disabled]="!isActive(i, message)"
+                            [disabled]="i !== agent.activeIndex()"
                             (change)="picker.picks[domain.name] = checked($event)" />
                           <span class="flex flex-col">
                             <code class="font-mono text-xs">{{ domain.name }}</code>
@@ -114,7 +114,7 @@
                   }
 
                   <!-- Zone file upload -->
-                  @if (message.zoneUpload && isActive(i, message)) {
+                  @if (message.zoneUpload && i === agent.activeIndex()) {
                     <label class="flex flex-col gap-1 text-xs text-gray-600">
                       Zone files (.txt)
                       <input type="file" multiple accept=".txt" class="text-xs" (change)="onZoneFiles(message, $event)" data-testid="it-os-dns-zone-upload" />
@@ -131,7 +131,7 @@
                             class="rounded-md border border-gray-300 px-2 py-1 font-mono text-sm"
                             placeholder="Transfer code"
                             autocomplete="off"
-                            [disabled]="!isActive(i, message)"
+                            [disabled]="i !== agent.activeIndex()"
                             [value]="form.codes[name]"
                             (input)="form.codes[name] = inputValue($event)" />
                         </label>
@@ -141,7 +141,7 @@
                           type="checkbox"
                           class="mt-1"
                           [checked]="form.attestUnlocked"
-                          [disabled]="!isActive(i, message)"
+                          [disabled]="i !== agent.activeIndex()"
                           (change)="form.attestUnlocked = checked($event)" />
                         <span>{{ form.names.length > 1 ? 'These domains are' : 'My domain is' }} unlocked and DNSSEC is not enabled.</span>
                       </label>
@@ -151,7 +151,7 @@
                             type="checkbox"
                             class="mt-1"
                             [checked]="form.attestDnsElsewhere"
-                            [disabled]="!isActive(i, message)"
+                            [disabled]="i !== agent.activeIndex()"
                             (change)="form.attestDnsElsewhere = checked($event)" />
                           <span>My DNS service is not hosted by the domain registrar I am transferring from.</span>
                         </label>
@@ -162,43 +162,52 @@
                   <!-- Proposed changes -->
                   @if (message.plan; as plan) {
                     @if (plan.state === 'open') {
+                      @let view = planViews().get(plan);
+                      @let live = i === agent.activeIndex();
                       <div class="flex flex-col gap-2 rounded-md border border-gray-200 p-3" data-testid="it-os-dns-plan">
-                        @for (proposal of plan.proposals; track $index) {
+                        @for (proposal of plan.proposals; track $index; let p = $index) {
+                          @let row = view?.rows?.[p];
                           <label class="flex items-start gap-3">
-                            <input type="checkbox" class="mt-1" [checked]="proposal.on" (change)="toggle(proposal, $event)" />
+                            <input type="checkbox" class="mt-1" [checked]="proposal.on" [disabled]="!live" (change)="toggle(proposal, $event)" />
                             <span class="flex flex-1 flex-col gap-2">
-                              <span class="font-medium">{{ agent.describe(proposal) }}</span>
+                              <span class="font-medium">{{ row?.title }}</span>
                               <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-                                @for (row of agent.details(proposal.payload); track row.label) {
-                                  <dt class="text-gray-500">{{ row.label }}</dt>
-                                  <dd class="break-all font-mono">{{ row.value }}</dd>
+                                @for (detail of row?.details ?? []; track detail.label) {
+                                  <dt class="text-gray-500">{{ detail.label }}</dt>
+                                  <dd class="break-all font-mono">{{ detail.value }}</dd>
                                 }
                               </dl>
                               <span
                                 class="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs"
-                                [class]="agent.needsApproval(proposal) ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'">
-                                <i [class]="agent.needsApproval(proposal) ? 'fa-light fa-shield-check' : 'fa-light fa-bolt'" aria-hidden="true"></i>
+                                [class]="row?.needsApproval ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'">
+                                <i [class]="row?.needsApproval ? 'fa-light fa-shield-check' : 'fa-light fa-bolt'" aria-hidden="true"></i>
                                 <span>
-                                  <b>{{ agent.needsApproval(proposal) ? 'Needs LF IT approval' : 'Applies immediately' }}.</b>
-                                  {{ agent.reason(proposal) }}
+                                  <b>{{ row?.needsApproval ? 'Needs LF IT approval' : 'Applies immediately' }}.</b>
+                                  {{ row?.reason }}
                                 </span>
                               </span>
                             </span>
                           </label>
                         }
                         <div class="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2">
-                          <span class="text-xs text-gray-500">
-                            {{ planCounts(plan).on - planCounts(plan).approval }} apply now · {{ planCounts(plan).approval }} go to LF IT
-                          </span>
-                          <div class="flex gap-2">
-                            <lfx-button label="Cancel" size="small" severity="secondary" [outlined]="true" (onClick)="agent.cancelPlan(message)" />
-                            <lfx-button
-                              [label]="planConfirmLabel(plan)"
-                              size="small"
-                              [disabled]="planCounts(plan).on === 0 || agent.busy()"
-                              (onClick)="agent.confirmPlan(message)"
-                              data-testid="it-os-dns-plan-confirm" />
-                          </div>
+                          @if (live) {
+                            <span class="text-xs text-gray-500"
+                              >{{ (view?.on ?? 0) - (view?.approval ?? 0) }} apply now · {{ view?.approval ?? 0 }} go to LF IT</span
+                            >
+                            <div class="flex gap-2">
+                              <lfx-button label="Cancel" size="small" severity="secondary" [outlined]="true" (onClick)="agent.cancelPlan(message)" />
+                              <lfx-button
+                                [label]="view?.confirmLabel ?? ''"
+                                size="small"
+                                [disabled]="!view?.on || agent.busy()"
+                                (onClick)="agent.confirmPlan(message)"
+                                data-testid="it-os-dns-plan-confirm" />
+                            </div>
+                          } @else {
+                            <span class="text-xs text-gray-500" data-testid="it-os-dns-plan-replaced"
+                              >Replaced by a newer request. Nothing here was applied.</span
+                            >
+                          }
                         </div>
                       </div>
                     } @else if (plan.state === 'done') {
@@ -214,7 +223,7 @@
                   }
 
                   <!-- Next steps -->
-                  @if (message.actions?.length && isActive(i, message)) {
+                  @if (message.actions?.length && i === agent.activeIndex()) {
                     <div class="flex flex-wrap gap-2">
                       @for (chatAction of message.actions; track chatAction.label) {
                         <lfx-button
@@ -286,7 +295,7 @@
         @if (domain.registrar === 'DNSimple') {
           <div class="flex flex-col gap-1">
             <dt class="text-xs text-gray-500">Renews</dt>
-            <dd>{{ formatDate(domain.expires) }}</dd>
+            <dd>{{ expiresLabels()[domain.name] }}</dd>
           </div>
           <div class="flex flex-col gap-1">
             <dt class="text-xs text-gray-500">Auto-renew</dt>
@@ -390,7 +399,7 @@
                 <td class="px-2 py-2">
                   <lfx-tag [value]="stateLabels[domain.state]?.label ?? domain.state" [severity]="stateLabels[domain.state]?.severity ?? 'secondary'" />
                 </td>
-                <td class="whitespace-nowrap px-2 py-2 text-xs">{{ domain.registrar === 'DNSimple' ? formatDate(domain.expires) : '—' }}</td>
+                <td class="whitespace-nowrap px-2 py-2 text-xs">{{ domain.registrar === 'DNSimple' ? expiresLabels()[domain.name] : '—' }}</td>
                 <td class="px-2 py-2 text-xs">{{ domain.uses.join(', ') || '—' }}</td>
               </tr>
             } @empty {

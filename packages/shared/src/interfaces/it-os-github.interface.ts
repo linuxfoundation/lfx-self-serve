@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ItOsDomainStateLabel } from './it-os-dns.interface';
+
 export interface ItOsGithubMember {
   login: string;
   name: string;
@@ -26,4 +28,10 @@ export interface ItOsGithubOrg {
   /** False when GitHub has no org by this name (PCC linked_status not_created). */
   exists: boolean;
   members: ItOsGithubMember[];
+}
+
+/** One org as the orgs table shows it. */
+export interface ItOsGithubOrgRow {
+  org: ItOsGithubOrg;
+  linked: ItOsDomainStateLabel;
 }

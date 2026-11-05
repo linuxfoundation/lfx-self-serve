@@ -26,7 +26,7 @@ import {
   ItOsTransferProgress,
 } from '@lfx-one/shared/interfaces';
 
-import { esc, formatDate, htmlTable, listNames, mono, muted, notesHtml, plural, recordTable, toneIcon } from './it-os-dns-html';
+import { activeIndexOf, esc, formatDate, htmlTable, listNames, mono, muted, notesHtml, plural, recordTable, toneIcon, toneLabel } from './it-os-dns-html';
 
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const P = IT_OS_SAMPLE_PROJECT;
@@ -55,6 +55,10 @@ export class ItOsDnsAgentService {
   /** "Viewing as": LF staff get fee amounts when they ask; external members are referred to the Formation Team. */
   public readonly staff = signal(true);
   public readonly busy = computed(() => this.messages().some((m) => m.typing || (m.steps !== undefined && (m.shown ?? 0) <= m.steps.length)));
+  /** The one message whose controls are live (see activeIndexOf). */
+  public readonly activeIndex = computed(() =>
+    activeIndexOf(this.messages(), (m) => !!(m.plan || m.actions?.length || m.picker || m.transferForm || m.zoneUpload))
+  );
 
   private transfers: Record<string, ItOsTransferProgress> = {};
   private nsTries = 0;
@@ -88,7 +92,7 @@ export class ItOsDnsAgentService {
   }
 
   public runAction(message: ItOsChatMessage, chatAction: ItOsChatAction): void {
-    if (message.used || this.busy()) return;
+    if (!this.isLive(message)) return;
     message.used = true;
     this.push({ fromUser: true, text: chatAction.label });
     this.think(chatAction.run);
@@ -100,7 +104,7 @@ export class ItOsDnsAgentService {
   }
 
   public cancelPlan(message: ItOsChatMessage): void {
-    if (!message.plan) return;
+    if (!message.plan || !this.isLive(message)) return;
     message.plan.state = 'cancelled';
     this.push({ fromUser: true, text: 'Cancel' });
     this.think(() => this.bot('<p>OK, nothing changed.</p>'));
@@ -108,7 +112,7 @@ export class ItOsDnsAgentService {
 
   public confirmPlan(message: ItOsChatMessage): void {
     const plan = message.plan;
-    if (!plan) return;
+    if (!plan || !this.isLive(message)) return;
     plan.state = 'done';
     plan.results = plan.proposals.filter((p) => p.on).map((p) => this.submit(p.key, p.payload));
     this.push({ fromUser: true, text: 'Confirm' });
@@ -127,7 +131,7 @@ export class ItOsDnsAgentService {
   /** Zone files from the registrar: only .txt files are accepted, as in PCC. */
   public uploadZoneFiles(message: ItOsChatMessage, fileNames: string[]): void {
     const upload = message.zoneUpload;
-    if (!upload || !fileNames.length || this.busy()) return;
+    if (!upload || !fileNames.length || !this.isLive(message)) return;
     message.used = true;
     this.push({ fromUser: true, text: `Uploaded ${fileNames.join(', ')}` });
     this.think(() => {
@@ -177,6 +181,10 @@ export class ItOsDnsAgentService {
   }
 
   // === Message plumbing ===
+
+  private isLive(message: ItOsChatMessage): boolean {
+    return !this.busy() && this.messages().indexOf(message) === this.activeIndex();
+  }
 
   private push(message: ItOsChatMessage): void {
     this.messages.update((list) => [...list, message]);
@@ -363,9 +371,9 @@ export class ItOsDnsAgentService {
     const named = domainIn(text);
     const namedDomain = named ? this.domainBy(named) : undefined;
 
-    if (/auto.?renew/.test(t) || /\b(stop|cancel|don.?t)\s+renew/.test(t)) {
+    if (/auto.?renew/.test(t) || /\b(stop|cancel|don.?t|do not|no longer)\s+renew/.test(t)) {
       const d = namedDomain ?? this.domain(P.primaryDomain);
-      const off = /\boff\b|disable|stop|cancel/.test(t);
+      const off = /\boff\b|disable|stop|cancel|\bdon.?t\b|\bdo not\b|\bno longer\b/.test(t);
       return this.plan(
         off
           ? `<p>Every LF domain auto-renews as a standard, so turning it off for ${mono(d.name)} goes to LF IT. Here's the request:</p>`
@@ -608,7 +616,13 @@ export class ItOsDnsAgentService {
     };
     let html = htmlTable(
       ['Domain', 'Registrar', 'Lock off', 'DNSSEC off', 'DNS host'],
-      ds.map((d) => [mono(d.name), esc(d.registrar), toneIcon(d.locked ? 'bad' : 'ok'), toneIcon(d.dnssec ? 'bad' : 'ok'), dnsHost(d)])
+      ds.map((d) => [
+        mono(d.name),
+        esc(d.registrar),
+        toneLabel(d.locked ? 'bad' : 'ok', d.locked ? 'No' : 'Yes'),
+        toneLabel(d.dnssec ? 'bad' : 'ok', d.dnssec ? 'No' : 'Yes'),
+        dnsHost(d),
+      ])
     );
     if (blocked.length) {
       const groups = byRegistrar(blocked);

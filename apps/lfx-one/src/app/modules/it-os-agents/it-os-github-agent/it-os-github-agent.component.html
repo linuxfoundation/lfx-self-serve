@@ -22,11 +22,12 @@
             </tr>
           </thead>
           <tbody>
-            @for (org of agent.orgs(); track org.org) {
+            @for (row of rows(); track row.org.org) {
+              @let org = row.org;
               <tr class="border-t border-gray-100" data-testid="it-os-github-org-row">
                 <td class="py-2 pr-4 font-mono text-xs font-semibold">{{ org.org }}</td>
                 <td class="py-2 pr-4">
-                  <lfx-tag [value]="linkedLabels[agent.linked(org)].label" [severity]="linkedLabels[agent.linked(org)].severity" />
+                  <lfx-tag [value]="row.linked.label" [severity]="row.linked.severity" />
                 </td>
                 <td class="py-2 pr-4">
                   @if (org.exists) {
@@ -59,7 +60,7 @@
             <p class="text-sm text-gray-500">Only owners can invite {{ lfAccount }} or change its role</p>
           </div>
           <ul class="flex flex-col gap-2">
-            @for (owner of agent.owners(first); track owner.login) {
+            @for (owner of firstOwners(); track owner.login) {
               <li class="flex items-center gap-2 text-sm">
                 <code class="font-mono text-xs font-semibold">{{ owner.login }}</code>
                 <span class="text-gray-500">{{ owner.name }}</span>

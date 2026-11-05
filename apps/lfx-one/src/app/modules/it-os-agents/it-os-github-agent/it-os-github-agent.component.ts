@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { IT_OS_GITHUB_LF_LABELS, IT_OS_GITHUB_LINKED_LABELS, IT_OS_LF_GITHUB_ACCOUNT } from '@lfx-one/shared/constants';
+import { ItOsGithubMember, ItOsGithubOrgRow } from '@lfx-one/shared/interfaces';
 
 import { ItOsAgentShellComponent } from '../it-os-agent-shell/it-os-agent-shell.component';
 import { ItOsGithubAgentService } from '../services/it-os-github-agent.service';
@@ -22,11 +23,20 @@ export class ItOsGithubAgentComponent {
 
   // === Constants ===
   protected readonly lfAccount = IT_OS_LF_GITHUB_ACCOUNT;
-  protected readonly linkedLabels = IT_OS_GITHUB_LINKED_LABELS;
   protected readonly lfLabels = IT_OS_GITHUB_LF_LABELS;
 
   // === Simple WritableSignals ===
   public readonly tab = signal('agent');
+
+  // === Computed ===
+  protected readonly rows: Signal<ItOsGithubOrgRow[]> = computed(() =>
+    this.agent.orgs().map((org) => ({ org, linked: IT_OS_GITHUB_LINKED_LABELS[this.agent.linked(org)] }))
+  );
+  /** Owners of the first org, which the Details tab lists. */
+  protected readonly firstOwners: Signal<ItOsGithubMember[]> = computed(() => {
+    const first = this.agent.orgs()[0];
+    return first ? this.agent.owners(first) : [];
+  });
 
   public connectAnother(): void {
     this.tab.set('agent');

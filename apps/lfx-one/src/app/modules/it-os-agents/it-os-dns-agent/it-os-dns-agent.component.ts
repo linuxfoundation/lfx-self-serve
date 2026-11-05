@@ -10,9 +10,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { IT_OS_DNS_SUGGESTIONS, IT_OS_DOMAIN_FILTERS, IT_OS_DOMAIN_STATE_LABELS, IT_OS_LF_NAMESERVERS } from '@lfx-one/shared/constants';
-import { ItOsChatMessage, ItOsDnsRecord, ItOsDomain, ItOsPlan, ItOsProposal } from '@lfx-one/shared/interfaces';
+import { ItOsChatMessage, ItOsDnsRecord, ItOsDomain, ItOsPlan, ItOsPlanView, ItOsProposal } from '@lfx-one/shared/interfaces';
 
-import { formatDate } from '../services/it-os-dns-html';
+import { formatDate, planView, scrollKeyOf } from '../services/it-os-dns-html';
 import { ItOsDnsAgentService } from '../services/it-os-dns-agent.service';
 
 // Domains & DNS agent (#4257): a chat-first agent plus a Details tab listing every domain. Sample data only.
@@ -35,7 +35,6 @@ export class ItOsDnsAgentComponent {
     { label: 'LF staff', value: 'staff' },
     { label: 'External maintainer', value: 'external' },
   ];
-  protected readonly formatDate = formatDate;
 
   // === Forms ===
   public readonly chatForm = new FormGroup({ message: new FormControl('', { nonNullable: true }) });
@@ -55,9 +54,42 @@ export class ItOsDnsAgentComponent {
     const name = this.selectedName();
     return name ? this.agent.domains().find((d) => d.name === name) : undefined;
   });
-  public readonly selectedRecords: Signal<ItOsDnsRecord[]> = computed(() =>
-    [...(this.selected()?.records ?? [])].sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name))
+  /**
+   * Reads the domain list itself rather than `selected()`: the service updates domains in place and
+   * re-emits the list, so `selected()` keeps the same reference and would not trigger a recompute.
+   */
+  public readonly selectedRecords: Signal<ItOsDnsRecord[]> = computed(() => {
+    const name = this.selectedName();
+    const domain = name ? this.agent.domains().find((d) => d.name === name) : undefined;
+    return [...(domain?.records ?? [])].sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+  });
+  /** Expiry dates as shown, by domain name. */
+  public readonly expiresLabels: Signal<Record<string, string>> = computed(() =>
+    Object.fromEntries(this.agent.domains().map((d) => [d.name, formatDate(d.expires)]))
   );
+  /** What each plan in the conversation shows, recomputed when the messages change. */
+  protected readonly planViews: Signal<Map<ItOsPlan, ItOsPlanView>> = computed(
+    () =>
+      new Map(
+        this.agent
+          .messages()
+          .filter((m) => m.plan)
+          .map((m) => {
+            const plan = m.plan as ItOsPlan;
+            return [
+              plan,
+              planView(plan.proposals, (p) => ({
+                title: this.agent.describe(p),
+                details: this.agent.details(p.payload),
+                needsApproval: this.agent.needsApproval(p),
+                reason: this.agent.reason(p),
+              })),
+            ];
+          })
+      )
+  );
+  /** Changes only when a message is added or a progress step appears, not when a field is edited. */
+  private readonly scrollKey = computed(() => scrollKeyOf(this.agent.messages()));
 
   private readonly conversation = viewChild<ElementRef<HTMLElement>>('conversation');
 
@@ -66,9 +98,9 @@ export class ItOsDnsAgentComponent {
     // The service keeps the demo across visits, so start the switch from its current value.
     this.viewForm.reset({ role: this.agent.staff() ? 'staff' : 'external' }, { emitEvent: false });
     this.viewForm.controls.role.valueChanges.pipe(takeUntilDestroyed()).subscribe((role) => this.agent.staff.set(role === 'staff'));
-    // Keep the newest message in view.
+    // Keep the newest message in view, without jumping while the user edits a form further up.
     effect(() => {
-      this.agent.messages();
+      this.scrollKey();
       const el = this.conversation()?.nativeElement;
       if (el && isPlatformBrowser(this.platformId)) setTimeout(() => (el.scrollTop = el.scrollHeight));
     });
@@ -94,8 +126,11 @@ export class ItOsDnsAgentComponent {
     this.selectedName.set(name);
   }
 
+  /** Back to the chat with the open domain named in the composer, so the request goes to that domain. */
   public askAgent(): void {
+    const name = this.selectedName();
     this.selectedName.set(null);
+    if (name) this.chatForm.controls.message.setValue(`For ${name}: `);
     this.tab.set('agent');
   }
 
@@ -113,23 +148,6 @@ export class ItOsDnsAgentComponent {
       message,
       Array.from(files ?? []).map((f) => f.name)
     );
-  }
-
-  /** Only the newest message's controls are live; earlier ones are history. */
-  protected isActive(index: number, message: ItOsChatMessage): boolean {
-    return index === this.agent.messages().length - 1 && !message.used;
-  }
-
-  protected planCounts(plan: ItOsPlan): { on: number; approval: number } {
-    const on = plan.proposals.filter((p) => p.on);
-    return { on: on.length, approval: on.filter((p) => this.agent.needsApproval(p)).length };
-  }
-
-  protected planConfirmLabel(plan: ItOsPlan): string {
-    const { on, approval } = this.planCounts(plan);
-    if (on && approval === on) return 'Submit for approval';
-    if (approval) return `Apply ${on - approval}, submit ${approval}`;
-    return `Apply ${on === 1 ? '1 change' : `${on} changes`}`;
   }
 
   protected toggle(proposal: ItOsProposal, event: Event): void {

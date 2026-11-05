@@ -49,7 +49,7 @@
                           type="checkbox"
                           class="mt-1"
                           [checked]="form.values[field.id] === true"
-                          [disabled]="!isActive(i, message)"
+                          [disabled]="i !== engine().activeIndex()"
                           (change)="setChecked(form, field, $event)" />
                         <span class="flex flex-col">
                           <span>{{ field.label }}</span>
@@ -66,7 +66,7 @@
                             rows="7"
                             class="rounded-md border border-gray-300 px-2 py-1 font-mono text-xs"
                             [placeholder]="field.placeholder ?? ''"
-                            [disabled]="!isActive(i, message)"
+                            [disabled]="i !== engine().activeIndex()"
                             [value]="textValue(form, field)"
                             (input)="setText(form, field, $event)"></textarea>
                         } @else {
@@ -74,7 +74,7 @@
                             class="rounded-md border border-gray-300 px-2 py-1 text-sm"
                             autocomplete="off"
                             [placeholder]="field.placeholder ?? ''"
-                            [disabled]="!isActive(i, message)"
+                            [disabled]="i !== engine().activeIndex()"
                             [value]="textValue(form, field)"
                             (input)="setText(form, field, $event)" />
                         }
@@ -82,7 +82,7 @@
                           <span class="text-xs text-gray-500">{{ field.hint }}</span>
                         }
                       </label>
-                      @if (field.sample && isActive(i, message)) {
+                      @if (field.sample && i === engine().activeIndex()) {
                         <button type="button" class="w-fit text-xs font-medium text-blue-600 hover:underline" (click)="fillSample(form, field)">
                           Use sample addresses
                         </button>
@@ -95,43 +95,52 @@
               <!-- Proposed changes -->
               @if (message.plan; as plan) {
                 @if (plan.state === 'open') {
+                  @let view = planViews().get(plan);
+                  @let live = i === engine().activeIndex();
                   <div class="flex flex-col gap-2 rounded-md border border-gray-200 p-3" [attr.data-testid]="testId() + '-plan'">
-                    @for (change of plan.changes; track $index) {
+                    @for (change of plan.changes; track $index; let c = $index) {
+                      @let row = view?.rows?.[c];
                       <label class="flex items-start gap-3">
-                        <input type="checkbox" class="mt-1" [checked]="change.on" (change)="toggle(change, $event)" />
+                        <input type="checkbox" class="mt-1" [checked]="change.on" [disabled]="!live" (change)="toggle(change, $event)" />
                         <span class="flex flex-1 flex-col gap-2">
-                          <span class="font-medium">{{ engine().describe(change) }}</span>
+                          <span class="font-medium">{{ row?.title }}</span>
                           <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-                            @for (row of engine().details(change.payload); track row.label) {
-                              <dt class="text-gray-500">{{ row.label }}</dt>
-                              <dd class="whitespace-pre-line break-all font-mono">{{ row.value }}</dd>
+                            @for (detail of row?.details ?? []; track detail.label) {
+                              <dt class="text-gray-500">{{ detail.label }}</dt>
+                              <dd class="whitespace-pre-line break-all font-mono">{{ detail.value }}</dd>
                             }
                           </dl>
                           <span
                             class="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs"
-                            [class]="engine().needsApproval(change) ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'">
-                            <i [class]="engine().needsApproval(change) ? 'fa-light fa-shield-check' : 'fa-light fa-bolt'" aria-hidden="true"></i>
+                            [class]="row?.needsApproval ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'">
+                            <i [class]="row?.needsApproval ? 'fa-light fa-shield-check' : 'fa-light fa-bolt'" aria-hidden="true"></i>
                             <span>
-                              <b>{{ engine().needsApproval(change) ? 'Needs LF IT approval' : 'Applies immediately' }}.</b>
-                              {{ engine().reason(change) }}
+                              <b>{{ row?.needsApproval ? 'Needs LF IT approval' : 'Applies immediately' }}.</b>
+                              {{ row?.reason }}
                             </span>
                           </span>
                         </span>
                       </label>
                     }
                     <div class="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2">
-                      <span class="text-xs text-gray-500">
-                        {{ planCounts(plan).on - planCounts(plan).approval }} apply now · {{ planCounts(plan).approval }} go to LF IT
-                      </span>
-                      <div class="flex gap-2">
-                        <lfx-button label="Cancel" size="small" severity="secondary" [outlined]="true" (onClick)="engine().cancelPlan(message)" />
-                        <lfx-button
-                          [label]="planConfirmLabel(plan)"
-                          size="small"
-                          [disabled]="planCounts(plan).on === 0 || engine().busy()"
-                          (onClick)="engine().confirmPlan(message)"
-                          [attr.data-testid]="testId() + '-plan-confirm'" />
-                      </div>
+                      @if (live) {
+                        <span class="text-xs text-gray-500"
+                          >{{ (view?.on ?? 0) - (view?.approval ?? 0) }} apply now · {{ view?.approval ?? 0 }} go to LF IT</span
+                        >
+                        <div class="flex gap-2">
+                          <lfx-button label="Cancel" size="small" severity="secondary" [outlined]="true" (onClick)="engine().cancelPlan(message)" />
+                          <lfx-button
+                            [label]="view?.confirmLabel ?? ''"
+                            size="small"
+                            [disabled]="!view?.on || engine().busy()"
+                            (onClick)="engine().confirmPlan(message)"
+                            [attr.data-testid]="testId() + '-plan-confirm'" />
+                        </div>
+                      } @else {
+                        <span class="text-xs text-gray-500" [attr.data-testid]="testId() + '-plan-replaced'"
+                          >Replaced by a newer request. Nothing here was applied.</span
+                        >
+                      }
                     </div>
                   </div>
                 } @else if (plan.state === 'done') {
@@ -147,7 +156,7 @@
               }
 
               <!-- Next steps -->
-              @if (message.actions?.length && isActive(i, message)) {
+              @if (message.actions?.length && i === engine().activeIndex()) {
                 <div class="flex flex-wrap gap-2">
                   @for (chatAction of message.actions; track chatAction.label) {
                     <lfx-button

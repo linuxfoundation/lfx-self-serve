@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, effect, ElementRef, inject, input, PLATFORM_ID, viewChild } from '@angular/core';
+import { Component, computed, effect, ElementRef, inject, input, PLATFORM_ID, Signal, viewChild } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { ItOsAgentMessage, ItOsChange, ItOsChangePlan, ItOsChatField, ItOsChatForm } from '@lfx-one/shared/interfaces';
+import { ItOsChange, ItOsChangePlan, ItOsChatField, ItOsChatForm, ItOsPlanView } from '@lfx-one/shared/interfaces';
 
 import { ItOsChatEngine } from '../services/it-os-chat-engine';
+import { planView, scrollKeyOf } from '../services/it-os-dns-html';
 
 // Chat for the IT OS GitHub, email forwarding and mailing list agents (#4257): messages, inline forms,
 // proposed changes to confirm, next-step buttons and suggestion chips. The agent's engine holds the state.
@@ -32,12 +33,37 @@ export class ItOsAgentChatComponent {
   // === Forms ===
   public readonly chatForm = new FormGroup({ message: new FormControl('', { nonNullable: true }) });
 
+  // === Computed ===
+  /** What each plan in the conversation shows, recomputed when the messages change. */
+  protected readonly planViews: Signal<Map<ItOsChangePlan, ItOsPlanView>> = computed(() => {
+    const engine = this.engine();
+    return new Map(
+      engine
+        .messages()
+        .filter((m) => m.plan)
+        .map((m) => {
+          const plan = m.plan as ItOsChangePlan;
+          return [
+            plan,
+            planView(plan.changes, (c) => ({
+              title: engine.describe(c),
+              details: engine.details(c.payload),
+              needsApproval: engine.needsApproval(c),
+              reason: engine.reason(c),
+            })),
+          ];
+        })
+    );
+  });
+  /** Changes only when a message is added or a progress step appears, not when a field is edited. */
+  private readonly scrollKey = computed(() => scrollKeyOf(this.engine().messages()));
+
   private readonly conversation = viewChild<ElementRef<HTMLElement>>('conversation');
 
   public constructor() {
-    // Keep the newest message in view.
+    // Keep the newest message in view, without jumping while the user edits a form further up.
     effect(() => {
-      this.engine().messages();
+      this.scrollKey();
       const el = this.conversation()?.nativeElement;
       if (el && isPlatformBrowser(this.platformId)) setTimeout(() => (el.scrollTop = el.scrollHeight));
     });
@@ -48,23 +74,6 @@ export class ItOsAgentChatComponent {
     if (!text.trim() || this.engine().busy()) return;
     this.chatForm.reset();
     this.engine().send(text);
-  }
-
-  /** Only the newest message's controls are live; earlier ones are history. */
-  protected isActive(index: number, message: ItOsAgentMessage): boolean {
-    return index === this.engine().messages().length - 1 && !message.used;
-  }
-
-  protected planCounts(plan: ItOsChangePlan): { on: number; approval: number } {
-    const on = plan.changes.filter((c) => c.on);
-    return { on: on.length, approval: on.filter((c) => this.engine().needsApproval(c)).length };
-  }
-
-  protected planConfirmLabel(plan: ItOsChangePlan): string {
-    const { on, approval } = this.planCounts(plan);
-    if (on && approval === on) return 'Submit for approval';
-    if (approval) return `Apply ${on - approval}, submit ${approval}`;
-    return `Apply ${on === 1 ? '1 change' : `${on} changes`}`;
   }
 
   protected toggle(change: ItOsChange, event: Event): void {

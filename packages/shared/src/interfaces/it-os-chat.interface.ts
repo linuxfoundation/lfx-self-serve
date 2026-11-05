@@ -73,3 +73,21 @@ export interface ItOsScenario {
   id: string;
   label: string;
 }
+
+/** One proposed change as the chat shows it, worked out once per render rather than in the template. */
+export interface ItOsPlanRowView {
+  title: string;
+  details: { label: string; value: string }[];
+  needsApproval: boolean;
+  reason: string;
+}
+
+/** A plan as the chat shows it: one row per change, plus the counts and confirm label for the ticked ones. */
+export interface ItOsPlanView {
+  rows: ItOsPlanRowView[];
+  /** Ticked changes. */
+  on: number;
+  /** Ticked changes that go to LF IT. */
+  approval: number;
+  confirmLabel: string;
+}

@@ -34,6 +34,34 @@ describe('ItOsDnsAgentService', () => {
     expect(greeting.actions?.[0].label).toBe('Transfer all 6');
   });
 
+  it('treats "don\'t renew" as turning auto-renew off', () => {
+    expect(ask("Don't renew examplefdn.io").plan?.proposals[0].payload).toEqual({ domain: 'examplefdn.io', on: false });
+    expect(ask('Do not renew examplefdn.io').plan?.proposals[0].payload).toEqual({ domain: 'examplefdn.io', on: false });
+  });
+
+  it('only lets the newest plan be confirmed, and keeps it live through informational replies', () => {
+    const older = ask('Stop renewing examplefdn.io');
+    const newer = ask("Don't renew examplefdn.io");
+    ask('How many domains do we have?');
+
+    expect(service.messages().indexOf(newer)).toBe(service.activeIndex());
+
+    service.confirmPlan(older);
+    vi.runAllTimers();
+    expect(older.plan?.state).toBe('open');
+
+    service.confirmPlan(newer);
+    vi.runAllTimers();
+    expect(newer.plan?.state).toBe('done');
+    expect(service.activeIndex()).toBe(-1);
+  });
+
+  it('applies a request prefilled from the Details tab to that domain', () => {
+    const payload = ask('For examplefdn.io: point blog at 192.0.2.50').plan?.proposals[0].payload;
+
+    expect(payload).toMatchObject({ domain: 'examplefdn.io', name: 'blog', content: '192.0.2.50' });
+  });
+
   it('sends turning auto-renew off to LF IT for approval', () => {
     const reply = ask('Stop renewing examplefdn.io');
     const proposal = reply.plan?.proposals[0];

@@ -52,3 +52,12 @@ export interface ItOsSyncDiff {
   filtered: number;
   inSync: boolean;
 }
+
+/** One row of the mailing lists table, worked out once per change rather than in the template. */
+export interface ItOsMailingListRow {
+  list: ItOsMailingList;
+  diff: ItOsSyncDiff | null;
+  /** Sync direction and summary, e.g. "Committee → List · 2 to add". Empty when the list isn't linked. */
+  syncText: string;
+  subscribers: string;
+}

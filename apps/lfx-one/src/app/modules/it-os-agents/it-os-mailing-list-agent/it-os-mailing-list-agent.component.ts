@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { TagComponent } from '@components/tag/tag.component';
+import { ItOsMailingListRow } from '@lfx-one/shared/interfaces';
 
 import { ItOsAgentShellComponent } from '../it-os-agent-shell/it-os-agent-shell.component';
 import { ItOsMailingListAgentService } from '../services/it-os-mailing-list-agent.service';
@@ -20,4 +21,23 @@ export class ItOsMailingListAgentComponent {
 
   // === Simple WritableSignals ===
   public readonly tab = signal('agent');
+
+  // === Computed ===
+  /** Re-read when the lists or the sample data change (the service updates lists in place and bumps `version`). */
+  protected readonly summary: Signal<string> = computed(() => {
+    this.agent.version();
+    return `${this.agent.subLists().length} sub-lists under main · ${this.agent.status().text}`;
+  });
+  protected readonly rows: Signal<ItOsMailingListRow[]> = computed(() => {
+    this.agent.version();
+    return this.agent.ordered().map((list) => {
+      const diff = this.agent.syncDiff(list);
+      return {
+        list,
+        diff,
+        syncText: diff ? `${this.agent.syncLabel(list.sync)} · ${this.agent.syncSummary(diff)}` : '',
+        subscribers: list.subscribers.toLocaleString(),
+      };
+    });
+  });
 }

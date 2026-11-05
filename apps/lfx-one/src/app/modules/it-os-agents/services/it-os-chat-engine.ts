@@ -13,7 +13,7 @@ import {
   ItOsScenario,
 } from '@lfx-one/shared/interfaces';
 
-import { esc } from './it-os-dns-html';
+import { activeIndexOf, esc } from './it-os-dns-html';
 
 const THINK_MS = 500;
 const STEP_MS = 420;
@@ -33,6 +33,11 @@ export abstract class ItOsChatEngine {
   public readonly busy = computed(() => this.messages().some((m) => m.typing || (m.steps !== undefined && (m.shown ?? 0) <= m.steps.length)));
   /** Bumped when the sample data changes so computed views re-read it. */
   public readonly version = signal(0);
+  /**
+   * The one message whose controls are live: the newest message with a plan, form or buttons, unless it
+   * was already used. Informational replies in between don't retire it; a newer interactive message does.
+   */
+  public readonly activeIndex = computed(() => activeIndexOf(this.messages(), (m) => !!(m.plan || m.form || m.actions?.length)));
 
   public abstract readonly scenarios: ItOsScenario[];
 
@@ -79,7 +84,7 @@ export abstract class ItOsChatEngine {
   }
 
   public runAction(message: ItOsAgentMessage, chatAction: ItOsChatAction): void {
-    if (message.used || this.busy()) return;
+    if (!this.isLive(message)) return;
     message.used = true;
     this.push({ fromUser: true, text: chatAction.label });
     this.think(chatAction.run);
@@ -96,7 +101,7 @@ export abstract class ItOsChatEngine {
   }
 
   public cancelPlan(message: ItOsAgentMessage): void {
-    if (!message.plan) return;
+    if (!message.plan || !this.isLive(message)) return;
     message.plan.state = 'cancelled';
     this.push({ fromUser: true, text: 'Cancel' });
     this.think(() => this.bot('<p>OK, nothing changed.</p>'));
@@ -104,7 +109,7 @@ export abstract class ItOsChatEngine {
 
   public confirmPlan(message: ItOsAgentMessage): void {
     const plan = message.plan;
-    if (!plan || plan.state !== 'open') return;
+    if (!plan || !this.isLive(message)) return;
     const skipped = plan.changes.filter((c) => !c.on);
     plan.state = 'done';
     plan.results = plan.changes.filter((c) => c.on).map((c) => this.submit(c.key, c.payload));
@@ -212,6 +217,10 @@ export abstract class ItOsChatEngine {
       }
     };
     this.later(tick, STEP_MS);
+  }
+
+  private isLive(message: ItOsAgentMessage): boolean {
+    return !this.busy() && this.messages().indexOf(message) === this.activeIndex();
   }
 
   private submit(key: string, payload: ItOsChangePayload): ItOsActionResult {
