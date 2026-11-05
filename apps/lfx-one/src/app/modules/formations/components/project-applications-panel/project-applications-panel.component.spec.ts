@@ -49,16 +49,18 @@ function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectA
 describe('ProjectApplicationsPanelComponent (#3037)', () => {
   let service: ProjectApplicationService;
   let getApplications: MockInstance<ProjectApplicationService['getApplications']>;
+  let getProject: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     TestBed.resetTestingModule();
+    getProject = vi.fn(() => of(null));
     await TestBed.configureTestingModule({
       imports: [ProjectApplicationsPanelComponent],
       providers: [
         provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])) } },
+        { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])), getProject } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
         DialogService,
@@ -196,5 +198,49 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
     expect(staff.fixture.nativeElement.querySelector('[data-testid="project-applications-submitter-a"]')).not.toBeNull();
     const mine = await mount('submitter', [buildApplication({ uid: 'a' })]);
     expect(mine.fixture.nativeElement.querySelector('[data-testid="project-applications-submitter-a"]')).toBeNull();
+  });
+
+  describe('started from (#5187)', () => {
+    const AAIF_UID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const startedFrom = (fixture: ComponentFixture<ProjectApplicationsPanelComponent>, uid: string): string | null =>
+      (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="project-applications-started-from-${uid}"]`)?.textContent?.trim() ?? null;
+
+    const settle = async (fixture: ComponentFixture<ProjectApplicationsPanelComponent>): Promise<void> => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('shows "Started from: {foundation}" on a staff row once the name resolves, reading each foundation once', async () => {
+      getProject.mockReturnValue(of({ uid: AAIF_UID, name: 'Agentic AI Foundation' }));
+      const { fixture } = await mount('staff', [
+        buildApplication({ uid: 'a', target_parent_uid: AAIF_UID }),
+        buildApplication({ uid: 'b', target_parent_uid: AAIF_UID }),
+        buildApplication({ uid: 'c' }),
+      ]);
+      await settle(fixture);
+
+      expect(startedFrom(fixture, 'a')).toBe('Started from: Agentic AI Foundation');
+      expect(startedFrom(fixture, 'b')).toBe('Started from: Agentic AI Foundation');
+      expect(startedFrom(fixture, 'c')).toBeNull();
+      expect(getProject).toHaveBeenCalledTimes(1);
+      expect(getProject).toHaveBeenCalledWith(AAIF_UID, false);
+    });
+
+    it('shows nothing for a foundation that does not resolve', async () => {
+      const { fixture } = await mount('staff', [buildApplication({ uid: 'a', target_parent_uid: AAIF_UID })]);
+      await settle(fixture);
+
+      expect(startedFrom(fixture, 'a')).toBeNull();
+    });
+
+    it('does not show or look anything up in the submitter list', async () => {
+      getProject.mockReturnValue(of({ uid: AAIF_UID, name: 'Agentic AI Foundation' }));
+      const { fixture } = await mount('submitter', [buildApplication({ uid: 'a', target_parent_uid: AAIF_UID })]);
+      await settle(fixture);
+
+      expect(startedFrom(fixture, 'a')).toBeNull();
+      expect(getProject).not.toHaveBeenCalled();
+    });
   });
 });
