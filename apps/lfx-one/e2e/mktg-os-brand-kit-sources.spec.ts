@@ -12,6 +12,7 @@ const FAILED_REASON = 'This page does not exist on the site (the server answered
 const STACKED_FIX = 'Fix: Upload the logo package (the ZIP linked on aaif.io/brand) or the stacked file in the form.';
 const CONFLICT_WARNING = "Coral is #FF702D on the brand page but the site's stylesheet also uses #FF7D2D; the kit keeps #FF702D.";
 const KEPT_CORAL = 'kept #FF702D';
+const FAILED_DETAIL = 'HTTP 404';
 
 test.describe('Brand kit Sources tab: the report in the agent’s words', () => {
   test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -27,27 +28,27 @@ test.describe('Brand kit Sources tab: the report in the agent’s words', () => 
     await expect(failed.getByTestId('brand-kit-web-view-failed-item')).toHaveCount(findings.sources_failed.length);
     const firstFailed = failed.getByTestId('brand-kit-web-view-failed-item').first();
     await expect(firstFailed).toContainText(findings.sources_failed[0].source);
-    await expect(firstFailed.locator('span').nth(1)).toHaveText(FAILED_REASON);
-    await expect(firstFailed).toContainText(findings.sources_failed[0].detail ?? 'fixture');
+    await expect(firstFailed.getByTestId('brand-kit-web-view-failed-reason')).toHaveText(FAILED_REASON);
+    await expect(firstFailed.getByTestId('brand-kit-web-view-failed-detail')).toHaveText(FAILED_DETAIL);
 
     const missing = page.getByTestId('brand-kit-web-view-missing-assets');
     const missingItems = missing.getByTestId('brand-kit-web-view-missing-item');
     await expect(missingItems).toHaveCount(findings.missing_assets.length);
     for (const [index, asset] of findings.missing_assets.entries()) {
       await expect(missingItems.nth(index)).toContainText(BRAND_KIT_REPORT_ASSET_LABELS[asset.asset]);
-      await expect(missingItems.nth(index)).toContainText(asset.reason);
-      if (asset.fix) await expect(missingItems.nth(index)).toContainText(`Fix: ${asset.fix}`);
+      await expect(missingItems.nth(index).getByTestId('brand-kit-web-view-missing-reason')).toHaveText(asset.reason);
+      if (asset.fix) await expect(missingItems.nth(index).getByTestId('brand-kit-web-view-missing-fix')).toHaveText(`Fix: ${asset.fix}`);
     }
-    await expect(missingItems.nth(1).locator('span').nth(2)).toHaveText(STACKED_FIX);
+    await expect(missingItems.nth(1).getByTestId('brand-kit-web-view-missing-fix')).toHaveText(STACKED_FIX);
 
     const warnings = page.getByTestId('brand-kit-web-view-warnings');
     const warningItems = warnings.getByTestId('brand-kit-web-view-warning-item');
     await expect(warningItems).toHaveCount(findings.warnings.length);
     for (const [index, warning] of findings.warnings.entries()) await expect(warningItems.nth(index)).toContainText(warning.text);
-    await expect(warningItems.first().locator('span').first()).toHaveText(CONFLICT_WARNING);
+    await expect(warningItems.first().getByTestId('brand-kit-web-view-warning-text')).toHaveText(CONFLICT_WARNING);
     // The links, in the report's order: one per warning that names an http(s) source.
     const links = warnings.getByTestId('brand-kit-web-view-warning-source-link');
-    const expectedHrefs = findings.warnings.map((warning) => warning.source).filter((source): source is string => !!source);
+    const expectedHrefs = findings.warnings.map((warning) => warning.source).filter((source): source is string => /^https?:\/\//.test(source ?? ''));
     await expect(links).toHaveCount(expectedHrefs.length);
     expect(await links.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href')))).toEqual(expectedHrefs);
 
@@ -61,7 +62,7 @@ test.describe('Brand kit Sources tab: the report in the agent’s words', () => 
         await expect(conflictItems.nth(index).getByTestId(`brand-kit-web-view-swatch-${value.hex.slice(1)}`)).toHaveText(value.hex);
       await expect(conflictItems.nth(index)).toContainText(`kept ${conflict.chosen}`);
     }
-    await expect(conflictItems.first().locator(':scope > span').last()).toHaveText(KEPT_CORAL);
+    await expect(conflictItems.first().getByTestId('brand-kit-web-view-conflict-kept')).toHaveText(KEPT_CORAL);
 
     await expect(panel).not.toContainText('lf-reference');
     await expect(page.getByTestId('brand-kit-web-view-accepted')).toHaveCount(0);

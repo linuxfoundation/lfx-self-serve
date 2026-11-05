@@ -627,10 +627,19 @@
         "basis": "project"
       },
       {
+        "path": "chapters.type.google_fonts",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.type.note",
+        "basis": "project"
+      },
+      {
         "path": "chapters.type.summary",
         "basis": "lf-reference",
         "uses": [
-          "chapters.type.family"
+          "chapters.type.family",
+          "chapters.type.note"
         ]
       },
       {
@@ -727,7 +736,35 @@
         ]
       },
       {
-        "path": "chapters.voice",
+        "path": "chapters.voice.umbrella",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.line",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.source",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.note",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.voice.attributes[0]",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.attributes[1]",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.attributes[2]",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.attributes[3]",
         "basis": "project"
       }
     ]

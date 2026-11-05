@@ -82,8 +82,8 @@ carry their empty lines (`BRAND_KIT_SOURCES_EMPTY_LINES`). Everything comes from
 Approving a revision snapshots what its report showed at that moment into the approval annotation
 (`accepted`: failed sources by `source`, missing assets by `asset`, warnings by `code|text`, gaps by
 their exact text, conflicts by `name`; see [revisions](../backend/mktg-document-revisions.md)). Under
-an approval that carries the snapshot, each listed item reads "Accepted when vN was approved" and
-anything the report gained since reads unmarked. An approval made before the snapshot existed marks
+an approval that carries the snapshot, each listed item reads "Accepted when vN was approved" (a
+later run is a new revision, with its own approval). An approval made before the snapshot existed marks
 nothing and keeps the derived line under the gaps ("Accepted when vN was approved; still open.").
 
 At the Family header's shared 800px content-query threshold, the title stays left of the tiles;

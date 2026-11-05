@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  BRAND_KIT_INTAKE,
   MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION,
   MKTG_ARTIFACT_INTAKE_MODES,
   MKTG_ARTIFACT_PARTITION_REGEX,
@@ -544,7 +545,7 @@ export class MktgDocumentStoreService {
     if (view.revision.latest && view.approval) return view;
     // A brand kit approval also records what its report shows at this moment: the Sources tab marks those items
     // afterwards. Other documents' approvals stay as they were.
-    const accepted = type.agentKey === 'brand-kit' ? mktgAcceptedSnapshotOf(view.sidecar?.['report']) : null;
+    const accepted = type.agentKey === BRAND_KIT_INTAKE.agentId ? mktgAcceptedSnapshotOf(view.sidecar?.['report']) : null;
     const committed = await this.writeCurrent(
       req,
       project,

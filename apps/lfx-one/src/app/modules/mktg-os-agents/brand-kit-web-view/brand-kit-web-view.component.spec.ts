@@ -515,7 +515,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(conflicts?.textContent).toContain('Coral');
       expect(conflicts?.textContent).toContain('#FF7D2D');
       for (const conflict of conflictList) expect(conflicts?.textContent).toContain(`kept ${conflict.chosen}`);
-      const swatches = Array.from(conflicts?.querySelectorAll('div[style]') ?? []) as HTMLElement[];
+      const swatches = Array.from(conflicts?.querySelectorAll('[data-testid^="brand-kit-web-view-swatch-"]') ?? []) as HTMLElement[];
       expect(swatches).toHaveLength(conflictList.reduce((count, conflict) => count + conflict.values.length, 0));
       // The Colour chapter's swatch card at list size: the hex sits on its own ground.
       expect(swatches[0].closest('li')?.className).toContain('rounded-xl');

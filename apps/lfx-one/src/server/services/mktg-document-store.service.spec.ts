@@ -703,7 +703,16 @@ describe('MktgDocumentStoreService', () => {
             missing_assets: [{ asset: 'logo_stacked', reason: 'No stacked logo was uploaded.' }],
             warnings: [{ code: 'font_unverified', text: 'The typeface could not be verified.' }],
           },
-          color_conflicts: [{ name: 'Coral', values: [{ hex: '#FF702D', source: 'brand_page: x' }], chosen: '#FF702D' }],
+          color_conflicts: [
+            {
+              name: 'Coral',
+              values: [
+                { hex: '#FF702D', source: 'brand_page: x' },
+                { hex: '#FF7D2D', source: 'stylesheet: y' },
+              ],
+              chosen: '#FF702D',
+            },
+          ],
         },
       };
       const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, full, 'reported');

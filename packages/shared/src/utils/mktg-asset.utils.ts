@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_ACCEPTED_KEYS } from '../constants/mktg-asset.constants';
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
 import type { MktgAssetHeaderMetadata, MktgAssetReport } from '../interfaces/mktg-asset.interface';
 import type { MktgDocumentAgentKey, MktgRevisionAccepted, MktgRevisionApproval, MktgRevisionResponse } from '../interfaces/mktg-document-store.interface';
@@ -34,8 +35,6 @@ export function describeMktgAcceptedItem(version: number | null): string {
 export function mktgWarningAcceptedKey(warning: { code: string; text: string }): string {
   return `${warning.code}|${warning.text}`;
 }
-
-const MKTG_ACCEPTED_KEYS = ['sources_failed', 'missing_assets', 'warnings', 'gaps', 'color_conflicts'] as const;
 
 /**
  * What a report shows, by stable key, for the approval snapshot: tolerant of any report shape, since it is read from

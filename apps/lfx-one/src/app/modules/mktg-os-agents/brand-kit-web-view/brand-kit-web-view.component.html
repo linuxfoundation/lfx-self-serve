@@ -765,9 +765,9 @@
               @for (failed of sources.failed; track $index) {
                 <li class="flex flex-col" data-testid="brand-kit-web-view-failed-item">
                   <span class="text-gray-800">{{ failed.title }}</span>
-                  <span class="text-xs text-amber-700">{{ failed.text }}</span>
+                  <span class="text-xs text-amber-700" data-testid="brand-kit-web-view-failed-reason">{{ failed.text }}</span>
                   @if (failed.detail) {
-                    <span [class]="caption">{{ failed.detail }}</span>
+                    <span [class]="caption" data-testid="brand-kit-web-view-failed-detail">{{ failed.detail }}</span>
                   }
                   @if (failed.accepted) {
                     <span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
@@ -786,9 +786,9 @@
               @for (missing of sources.missing; track $index) {
                 <li class="flex flex-col" data-testid="brand-kit-web-view-missing-item">
                   <span class="text-gray-800">{{ missing.title }}</span>
-                  <span class="text-xs text-amber-700">{{ missing.text }}</span>
+                  <span class="text-xs text-amber-700" data-testid="brand-kit-web-view-missing-reason">{{ missing.text }}</span>
                   @if (missing.fix) {
-                    <span class="text-xs text-gray-700">{{ fixPrefix }}{{ missing.fix }}</span>
+                    <span class="text-xs text-gray-700" data-testid="brand-kit-web-view-missing-fix">{{ fixPrefix }}{{ missing.fix }}</span>
                   }
                   @if (missing.accepted) {
                     <span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
@@ -806,7 +806,7 @@
             <ul class="flex flex-col gap-1.5 text-sm" data-testid="brand-kit-web-view-warnings">
               @for (warning of sources.warnings; track $index) {
                 <li class="flex flex-col" data-testid="brand-kit-web-view-warning-item">
-                  <span class="text-gray-800">{{ warning.text }}</span>
+                  <span class="text-gray-800" data-testid="brand-kit-web-view-warning-text">{{ warning.text }}</span>
                   @if (warning.href) {
                     <a
                       class="text-xs text-blue-600 hover:text-blue-800"
@@ -851,7 +851,7 @@
                       </li>
                     }
                   </ul>
-                  <span class="text-xs text-gray-700"
+                  <span class="text-xs text-gray-700" data-testid="brand-kit-web-view-conflict-kept"
                     >{{ keptWord }} <span class="font-mono">{{ conflict.chosen }}</span></span
                   >
                   @if (conflict.accepted) {
@@ -872,7 +872,9 @@
                 <li>
                   {{ gap.text }}
                   @if (gap.accepted) {
-                    <span class="block text-xs text-gray-500" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
+                    <span class="block"
+                      ><span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span></span
+                    >
                   }
                 </li>
               }

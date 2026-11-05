@@ -806,7 +806,7 @@ describe('the report’s v2 fields (brand-kit ≥ 2.2.0)', () => {
     expect(report.findings?.warnings.map((entry) => entry.code)).toEqual(['color_conflict', 'palette_from_page_text', 'brand_page_guessed']);
     expect(report.color_conflicts?.map((entry) => [entry.name, entry.chosen])).toEqual([['Coral', '#FF702D']]);
     expect(report.color_conflicts?.flatMap((entry) => entry.values.map((value) => value.hex))).toEqual(['#FF702D', '#FF7D2D']);
-    expect(report.rules).toHaveLength(47);
+    expect(report.rules).toHaveLength(56);
     // Every hex in the envelope is uppercase; no identifier but the synthetic one.
     expect(
       JSON.stringify(envelope)
