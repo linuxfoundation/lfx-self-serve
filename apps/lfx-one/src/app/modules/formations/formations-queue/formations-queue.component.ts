@@ -4,6 +4,7 @@
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
 import { ProjectApplicationService } from '@services/project-application.service';
@@ -20,6 +21,8 @@ import {
   createEmptyFormationsQueueResponse,
   FORMATIONS_QUEUE_PAGE_TAB_OPTIONS,
   LF_FOUNDATION_ROOT_SLUG,
+  PROJECT_APPLICATION_FROM_FOUNDATION_COPY,
+  PROJECT_APPLICATION_PARENT_QUERY_PARAM,
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
 import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, switchMap } from 'rxjs';
@@ -37,7 +40,14 @@ import { ProjectApplicationsPanelComponent } from '../components/project-applica
  */
 @Component({
   selector: 'lfx-formations-queue',
-  imports: [FormationPageTabsComponent, FormationsTableComponent, ProjectApplicationsPanelComponent, StatCardGridComponent, PageHeaderComponent],
+  imports: [
+    ButtonComponent,
+    FormationPageTabsComponent,
+    FormationsTableComponent,
+    ProjectApplicationsPanelComponent,
+    StatCardGridComponent,
+    PageHeaderComponent,
+  ],
   templateUrl: './formations-queue.component.html',
   styleUrl: './formations-queue.component.scss',
 })
@@ -50,6 +60,7 @@ export class FormationsQueueComponent {
 
   protected readonly pageTabOptions: FilterPillOption[] = FORMATIONS_QUEUE_PAGE_TAB_OPTIONS;
   protected readonly tabs = PROJECT_APPLICATION_TABS;
+  protected readonly proposeLabel = PROJECT_APPLICATION_FROM_FOUNDATION_COPY.proposeButton;
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly filters = signal<FormationsQueueFilterState>({ subStage: undefined, search: '' });
@@ -81,6 +92,17 @@ export class FormationsQueueComponent {
       return false;
     }
     return this.pageTab() === PROJECT_APPLICATION_TABS.formations;
+  });
+
+  /**
+   * `?parent=<selected foundation uid>` for the "Propose a project" button (#5187), or `null` before a foundation is
+   * selected. The foundation is only a prefill hint for the formation team; it grants and places nothing, so any
+   * viewer of this page may start a proposal from it — including on The Linux Foundation, where `showProposalsTab`
+   * is deliberately unchanged.
+   */
+  protected readonly proposeQueryParams: Signal<Record<string, string> | null> = computed(() => {
+    const uid = this.projectContextService.selectedFoundation()?.uid;
+    return uid ? { [PROJECT_APPLICATION_PARENT_QUERY_PARAM]: uid } : null;
   });
 
   private readonly response: Signal<FormationsQueueResponse> = this.initResponse();

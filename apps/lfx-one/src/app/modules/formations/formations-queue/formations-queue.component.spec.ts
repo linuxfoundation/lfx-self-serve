@@ -273,3 +273,52 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
     expect(query(fixture, 'formations-queue-proposals')).toBeNull();
   });
 });
+
+describe('FormationsQueueComponent — "Propose a project" button (#5187)', () => {
+  let fixture: ComponentFixture<FormationsQueueComponent>;
+  let selectedFoundation: ReturnType<typeof signal<ProjectContext | null>>;
+
+  const render = async (foundation: ProjectContext | null): Promise<void> => {
+    TestBed.resetTestingModule();
+    selectedFoundation = signal<ProjectContext | null>(foundation);
+    await TestBed.configureTestingModule({
+      imports: [FormationsQueueComponent],
+      providers: [
+        provideRouter([]),
+        { provide: FormationService, useValue: { getFormationsQueue: vi.fn(() => of(createEmptyFormationsQueueResponse())) } },
+        { provide: ProjectContextService, useValue: { selectedFoundation } },
+        { provide: ProjectApplicationService, useValue: { getAccess: () => of(false) } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(FormationsQueueComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  const button = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="formations-queue-propose-project"]');
+  const href = (): string | null => button()?.querySelector('a')?.getAttribute('href') ?? null;
+
+  it('links to the propose form with the selected foundation as the parent', async () => {
+    await render({ uid: 'aaif-uid-1', name: 'Agentic AI Foundation', slug: 'aaif' } as ProjectContext);
+
+    expect(button()?.textContent).toContain('Propose a project');
+    expect(href()).toBe('/formations/propose?parent=aaif-uid-1');
+  });
+
+  it('is offered on The Linux Foundation root too, without exposing the proposals tab to a non-team viewer', async () => {
+    await render({ uid: 'tlf-uid-1', name: 'The Linux Foundation', slug: 'tlf' } as ProjectContext);
+
+    expect(href()).toBe('/formations/propose?parent=tlf-uid-1');
+    expect((fixture.nativeElement as HTMLElement).querySelector('lfx-formation-page-tabs')).toBeNull();
+  });
+
+  it('follows the selection, and is hidden until a foundation is selected', async () => {
+    await render(null);
+    expect(button()).toBeNull();
+
+    selectedFoundation.set({ uid: 'aaif-uid-1', name: 'Agentic AI Foundation', slug: 'aaif' } as ProjectContext);
+    fixture.detectChanges();
+    expect(href()).toBe('/formations/propose?parent=aaif-uid-1');
+  });
+});
