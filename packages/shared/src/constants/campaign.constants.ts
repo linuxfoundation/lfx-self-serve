@@ -5036,12 +5036,21 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
 export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
 
 /**
+ * The Google creative text fields campaign-service bounds by RUNE count rather than by display width:
+ * the call to action (`maxDemandGenCallToActionRunes`, `maxDisplayCallToActionRunes`), the Performance
+ * Max asset group name (`maxAssetGroupNameRunes`) and its display paths (`maxDisplayPathRunes`). Every
+ * other bounded creative field — headlines, long headlines, descriptions, business name — is judged by
+ * `textWeight`, where a double-width character counts twice. Read by `googleCreativeFieldWidth`.
+ */
+export const GOOGLE_CREATIVE_RUNE_COUNTED_CONTROLS: readonly string[] = ['callToActionText', 'assetGroupName', 'path1', 'path2'];
+
+/**
  * Why a Performance Max create with no short description is held, as the clause the Implement tab's
  * creative error follows its section name with, worded once for the tab and the BFF's refusal (#5219). campaign-service
  * refuses that create before the budget (`validatePerformanceMaxCreative`, `pmax_creative.go`), but
  * the job reports only "platform campaign creation failed", so the reason has to be said here.
  */
-export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL = `needs at least one description of ${GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH} characters or less, which Google shows on small placements. Shorten one or add a short one; CJK and full-width characters count double.`;
+export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL = `needs at least one description of ${GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH} characters or fewer, which Google shows on small placements. Shorten one or add a short one; CJK and full-width characters count double.`;
 
 /** {@link GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL} as a whole sentence, the form the tab's creative error takes. */
 export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL = `Performance Max creative ${GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL}`;

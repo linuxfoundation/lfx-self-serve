@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { GOOGLE_CHANNELS_WITH_CREATIVE, GOOGLE_CREATIVE_FIELD_SPECS } from '../constants/campaign.constants';
 import type { GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
 import {
+  googleCreativeFieldWidth,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
   googlePerformanceMaxShortDescriptionMissing,
@@ -111,5 +112,34 @@ describe('googlePerformanceMaxShortDescriptionMissing', () => {
     expect(googlePerformanceMaxShortDescriptionMissing(['', '  '])).toBe(false);
     expect(googlePerformanceMaxShortDescriptionMissing(undefined)).toBe(false);
     expect(googlePerformanceMaxShortDescriptionMissing('short')).toBe(false);
+  });
+});
+
+describe('googleCreativeFieldWidth', () => {
+  it('counts a CJK ideograph twice on the fields campaign-service bounds by display width', () => {
+    for (const control of ['headlines', 'longHeadlines', 'longHeadline', 'descriptions', 'businessName']) {
+      expect(googleCreativeFieldWidth(control, '会会a')).toBe(5);
+    }
+  });
+
+  it('counts runes on the call to action, asset group name and display paths', () => {
+    for (const control of ['callToActionText', 'assetGroupName', 'path1', 'path2']) {
+      expect(googleCreativeFieldWidth(control, '会会a')).toBe(3);
+    }
+  });
+
+  it('counts an emoji once in both regimes, as campaign-service does', () => {
+    expect(googleCreativeFieldWidth('headlines', '\u{1F600}\u{1F600}')).toBe(2);
+    expect(googleCreativeFieldWidth('callToActionText', '\u{1F600}\u{1F600}')).toBe(2);
+  });
+
+  /** Every catalogue field with a width is measured by one of the two regimes upstream uses for it. */
+  it('treats every rune-counted catalogue control as a real catalogue field', () => {
+    const controls = new Set(
+      Object.values(GOOGLE_CREATIVE_FIELD_SPECS).flatMap((specs) => (specs as readonly GoogleCreativeFieldSpec[]).map((spec) => spec.control))
+    );
+    for (const control of ['callToActionText', 'assetGroupName', 'path1', 'path2']) {
+      expect(controls.has(control)).toBe(true);
+    }
   });
 });

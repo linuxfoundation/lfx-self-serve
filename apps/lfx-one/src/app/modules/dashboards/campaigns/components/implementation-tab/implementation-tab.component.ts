@@ -288,12 +288,12 @@ import {
   campaignBiddingPayload,
   campaignFlightDays,
   campaignLabelColumns,
-  codePointLength,
   dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
   describeCampaignDispatchFailure,
   googleAdditionalSearchAdsRefusal,
   googleAdScheduleRefusal,
+  googleAdsTextWeight,
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
   googleChannelOffersManualCpc,
@@ -301,6 +301,7 @@ import {
   googleConversionActionsTextWithPicked,
   googleCreateNegativeKeywords,
   googleCreateNegativeKeywordsRefusal,
+  googleCreativeFieldWidth,
   googleCreativeImageDrift,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
@@ -308,7 +309,6 @@ import {
   googleDeviceBidModifierRefusal,
   googleExcludedAgeRangesRefusal,
   googleExcludedGendersRefusal,
-  googleAdsTextWeight,
   googleExcludedGeoListRefusal,
   googlePerformanceMaxShortDescriptionMissing,
   googlePickedConversionActionIds,
@@ -7156,7 +7156,7 @@ export class ImplementationTabComponent implements OnInit {
    * generated, so they stay the operator's.
    *
    * Every value is held to its field's own catalogue bounds (`GOOGLE_CREATIVE_FIELD_SPECS`): trimmed,
-   * measured with `codePointLength` as the field validators measure it, de-duplicated and capped at
+   * measured with `googleCreativeFieldWidth` as the field validators measure it, de-duplicated and capped at
    * the field's `max`, so the seed never puts a value on screen its own validator refuses. One
    * description short enough for Google's short slot is kept in the set whenever the brief has one.
    *
@@ -7178,7 +7178,7 @@ export class ImplementationTabComponent implements OnInit {
       const unique = [
         ...new Set(values.filter((value): value is string => typeof value === 'string').map((value) => value.replace(/\s*[\r\n]+\s*/g, ' ').trim())),
       ];
-      return unique.filter((value) => value !== '' && (spec.width === undefined || codePointLength(value) <= spec.width));
+      return unique.filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
     };
     const capped = (control: string, values: string[]): string[] => values.slice(0, specs.find((field) => field.control === control)?.max ?? values.length);
 
@@ -8649,7 +8649,8 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * A rule over a creative list that holds Create, said under the field it is about as well as beneath
    * the sections, or null. Today only Performance Max's short description (#5219), which the
-   * prefilled copy of a generated brief always breaks, so it is shown without waiting for a blur.
+   * prefilled copy breaks whenever none of the brief's descriptions is 60 wide or less, so it is
+   * shown without waiting for a blur.
    * Read off {@link googleCreativePayload}, as {@link googleCreativeError} is, so the two agree.
    */
   private creativeListRuleError(
@@ -10307,7 +10308,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   private creativeFieldValidators(field: GoogleCreativeFieldSpec): ValidatorFn[] {
     if (field.kind === 'text') {
-      return field.width === undefined ? [] : [this.creativeTextBounds(field.width)];
+      return field.width === undefined ? [] : [this.creativeTextBounds(field.control, field.width)];
     }
     return [this.creativeListBounds(field)];
   }
@@ -10376,34 +10377,26 @@ export class ImplementationTabComponent implements OnInit {
    * trimmed entries ({@link splitCreativeLines} trims each line); this makes the scalar fields
    * agree with it and with the wire.
    *
-   * Measured in CODE POINTS, not UTF-16 units, because `String.length` disagrees with BOTH of the
-   * regimes campaign-service measures these widths in on every non-BMP character. Upstream counts
-   * `assetGroupName` and `callToActionText` with `utf8.RuneCountInString` — a straight rune count —
-   * and every other scalar with `textWeight` (`demandgen_creative.go:406`), which sums
-   * `googleAdsCharWeight` per rune and so charges a wide character 2. The two are not the same
-   * number, and this validator matches neither exactly; it does not have to. Every rune weighs at
-   * least 1, so the code-point count is a LOWER BOUND on the display weight and never exceeds the
-   * rune count, which puts this bound on the permissive side of both — it can fail to catch a
-   * refusal upstream will make, which costs a round trip, but it can never refuse a create upstream
-   * would have accepted. `String.length` has no such guarantee: at a width of 30, a 16-emoji
-   * headline is 32 UTF-16 units and 16 runes, so measuring it the JS way refuses a value upstream
-   * counts as 16 and accepts. (15 emoji is exactly 30 units and squeaks through the old check —
-   * the over-refusal starts at the first emoji past half the width.) Same over-refusal the
-   * trimming above exists to avoid, one layer down.
-   * {@link codePointLength} is the shared helper for this and is documented as `len([]rune(s))`;
-   * the Microsoft keyword box documents the same hazard.
+   * Measured the way campaign-service measures that field, through `googleCreativeFieldWidth`, never
+   * in UTF-16 units. Upstream counts `assetGroupName`, `callToActionText` and the display paths with
+   * `utf8.RuneCountInString` — a straight rune count — and every other scalar (business name, Display's
+   * long headline) with `textWeight`, which charges a wide character 2. Matching each exactly keeps
+   * both promises at once: nothing upstream would accept is refused here, and a value upstream will
+   * refuse — a business name of 13 ideographs is 26 wide — is caught here instead of after the
+   * budget. Before #5219's review this counted code points for every field, a lower bound on the
+   * display width that let wide text through. `String.length` would over-refuse instead: at a width
+   * of 30, a 16-emoji headline is 32 UTF-16 units but 16 runes.
    *
-   * Local rather than the shared `maxCodePointsValidator`, which trims and counts code points
-   * identically, for one reason: that validator reports its own `maxCodePoints` error key, and
-   * every message in {@link creativeFieldError} reads Angular's `maxlength` shape. Keeping
-   * `{ requiredLength, actualLength }` is what lets the width change without touching the error
-   * rendering at all. `actualLength` reports the trimmed code-point count, which is the number the
-   * bound was actually applied to.
+   * Local rather than the shared `maxCodePointsValidator` for one reason: that validator reports its
+   * own `maxCodePoints` error key, and every message in {@link creativeFieldError} reads Angular's
+   * `maxlength` shape. Keeping `{ requiredLength, actualLength }` is what lets the width change
+   * without touching the error rendering at all. `actualLength` reports the trimmed, measured
+   * length, which is the number the bound was actually applied to.
    */
-  private creativeTextBounds(width: number): ValidatorFn {
-    return (control: AbstractControl): ValidationErrors | null => {
-      const text = typeof control.value === 'string' ? control.value.trim() : '';
-      const length = codePointLength(text);
+  private creativeTextBounds(control: string, width: number): ValidatorFn {
+    return (formControl: AbstractControl): ValidationErrors | null => {
+      const text = typeof formControl.value === 'string' ? formControl.value.trim() : '';
+      const length = googleCreativeFieldWidth(control, text);
       if (length <= width) return null;
       return { maxlength: { requiredLength: width, actualLength: length } };
     };
@@ -10420,7 +10413,7 @@ export class ImplementationTabComponent implements OnInit {
       if (field.max !== undefined && lines.length > field.max) {
         return { creativeListMax: { label: field.label, max: field.max, actual: lines.length } };
       }
-      if (field.width !== undefined && lines.some((line) => codePointLength(line) > (field.width as number))) {
+      if (field.width !== undefined && lines.some((line) => googleCreativeFieldWidth(field.control, line) > (field.width as number))) {
         return { creativeListWidth: { label: field.label, width: field.width } };
       }
       return null;
