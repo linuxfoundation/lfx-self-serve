@@ -4,7 +4,7 @@ description: How to create and send an NPS survey to the members of one or more 
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, create, nps, feedback, reminders, email, schedule]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Surveys
 ---
 
@@ -27,6 +27,8 @@ The **Create Survey** form is a four-step wizard: **Audience & Type**, **Timing 
 2. Under **NPS Survey Template**, open the list that reads **Select Survey** and choose a template. A template is required, or you see "Please select a survey template."
 
    The list shows the current SurveyMonkey templates, so new or renamed templates appear without waiting for an app update. While the list loads, it shows a loading indicator and can't be opened. If the templates fail to load, you see "We couldn't load survey templates." Select **Try again** to reload them. You can't move to the next step until a template is chosen from a loaded list. If no templates exist yet, you see "No survey templates are available yet."
+
+   If the list reloads and your chosen template is no longer available, the choice is cleared. Select an available template before continuing.
 
    To ask for a template that isn't in the list, select **Contact support** next to **Need a new template?**. This opens the support chat. If support chat isn't available, you see a "Support Unavailable" message instead.
 

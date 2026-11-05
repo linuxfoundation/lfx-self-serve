@@ -253,6 +253,7 @@ describe('SurveyManageComponent survey templates (#5124)', () => {
   const serializer = new DefaultUrlSerializer();
 
   let getSurveyTemplates: ReturnType<typeof vi.fn>;
+  let getSurvey: ReturnType<typeof vi.fn>;
 
   const surveyCommittee = (uid: string) => ({
     committee_id: uid,
@@ -317,7 +318,7 @@ describe('SurveyManageComponent survey templates (#5124)', () => {
             navigateByUrl: vi.fn().mockResolvedValue(true),
           },
         },
-        { provide: SurveyService, useValue: { getSurvey: vi.fn().mockReturnValue(of(editSurvey)), getSurveyTemplates } },
+        { provide: SurveyService, useValue: { getSurvey, getSurveyTemplates } },
         { provide: ProjectService, useValue: { getProject: vi.fn().mockReturnValue(of({ writer: true } as Project)) } },
         { provide: CommitteeService, useValue: { fetchCommittee: vi.fn().mockReturnValue(of(null)), getCommittee: vi.fn().mockReturnValue(of(null)) } },
         {
@@ -347,6 +348,7 @@ describe('SurveyManageComponent survey templates (#5124)', () => {
 
   beforeEach(() => {
     getSurveyTemplates = vi.fn().mockReturnValue(of([]));
+    getSurvey = vi.fn().mockReturnValue(of(editSurvey));
   });
 
   it('scopes create mode to the active project and the ?committee_uid= group', async () => {
@@ -402,6 +404,111 @@ describe('SurveyManageComponent survey templates (#5124)', () => {
     await fixture.whenStable();
     expect(component.form().get('surveyTemplate')?.enabled).toBe(true);
     expect(component.canGoNext()).toBe(true);
+  });
+
+  it.each([{ templates: [] }, { templates: [{ id: '2', title: 'Replacement Survey' }] }])(
+    'clears a selected template omitted from a successful refresh (%j) and blocks navigation and submission',
+    async ({ templates: refreshedTemplates }) => {
+      getSurveyTemplates.mockReturnValueOnce(of([{ id: '1', title: 'Board Survey' }])).mockReturnValueOnce(of(refreshedTemplates));
+      const fixture = await mount({});
+      const component = fixture.componentInstance;
+      component.form().patchValue({
+        committees: [{ uid: 'c-1', name: 'Board' }],
+        surveyTemplate: '1',
+        cutoffDate: new Date(Date.now() + 86_400_000),
+      });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(component.canGoNext()).toBe(true);
+
+      component.retryTemplates();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(component.surveyTemplates().status).toBe('ready');
+      expect(component.form().get('surveyTemplate')?.value).toBe('');
+      expect(component.form().get('surveyTemplate')?.hasError('required')).toBe(true);
+      expect(component.canGoNext()).toBe(false);
+      component.nextStep();
+      expect(component.currentStep()).toBe(1);
+      component.onSubmit();
+      expect(TestBed.inject(ConfirmationService).confirm).not.toHaveBeenCalled();
+    }
+  );
+
+  it('preserves a selected template still present in a synchronously refreshed list', async () => {
+    getSurveyTemplates.mockReturnValueOnce(of([{ id: '1', title: 'Board Survey' }])).mockReturnValueOnce(of([{ id: '1', title: 'Renamed Board Survey' }]));
+    const fixture = await mount({});
+    const component = fixture.componentInstance;
+    component.form().patchValue({ committees: [{ uid: 'c-1', name: 'Board' }], surveyTemplate: '1' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    component.retryTemplates();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component.form().get('surveyTemplate')?.value).toBe('1');
+    expect(component.canGoNext()).toBe(true);
+  });
+
+  it.each([new HttpErrorResponse({ status: 503 }), new Error('network unavailable')])(
+    'shows an error after the owning survey fails (%s), then refetches it before loading templates',
+    async (error) => {
+      const pendingSurvey = new Subject<Survey>();
+      getSurvey.mockReturnValueOnce(throwError(() => error)).mockReturnValueOnce(pendingSurvey.asObservable());
+      getSurveyTemplates.mockReturnValue(of([{ id: '1', title: 'Board Survey' }]));
+      const fixture = await mount({ surveyId: 'survey-uid' });
+      const component = fixture.componentInstance;
+
+      expect(component.surveyTemplates()).toEqual({ status: 'error', options: [] });
+      expect(component.form().get('surveyTemplate')?.disabled).toBe(true);
+      expect(component.canGoNext()).toBe(false);
+      expect(getSurveyTemplates).not.toHaveBeenCalled();
+      expect(TestBed.inject(ProjectService).getProject).not.toHaveBeenCalled();
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+
+      component.retryTemplates();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(getSurvey).toHaveBeenNthCalledWith(2, 'survey-uid', undefined, { skipCache: true });
+      expect(component.surveyTemplates()).toEqual({ status: 'loading', options: [] });
+      expect(getSurveyTemplates).not.toHaveBeenCalled();
+      expect(component.form().get('surveyTemplate')?.disabled).toBe(true);
+
+      pendingSurvey.next(editSurvey);
+      pendingSurvey.complete();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(getSurveyTemplates).toHaveBeenCalledExactlyOnceWith(SURVEY_PROJECT_UID, SURVEY_COMMITTEE_UID);
+      expect(component.surveyTemplates()).toEqual({ status: 'ready', options: [{ label: 'Board Survey', value: '1' }] });
+      expect(component.form().get('surveyTemplate')?.enabled).toBe(true);
+    }
+  );
+
+  it('keeps recovery available when retrying the owning survey also fails', async () => {
+    getSurvey.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const fixture = await mount({ surveyId: 'survey-uid' });
+    const component = fixture.componentInstance;
+
+    component.retryTemplates();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getSurvey).toHaveBeenCalledTimes(2);
+    expect(component.surveyTemplates()).toEqual({ status: 'error', options: [] });
+    expect(component.form().get('surveyTemplate')?.disabled).toBe(true);
+    expect(getSurveyTemplates).not.toHaveBeenCalled();
+  });
+
+  it('preserves the not-found redirect for an owning-survey 404', async () => {
+    getSurvey.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    await mount({ surveyId: 'survey-uid' });
+
+    expect(TestBed.inject(Router).navigate).toHaveBeenCalledExactlyOnceWith(['/surveys']);
+    expect(getSurveyTemplates).not.toHaveBeenCalled();
   });
 
   it('sorts options by title', async () => {

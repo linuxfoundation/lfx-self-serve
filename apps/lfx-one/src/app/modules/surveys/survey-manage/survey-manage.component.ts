@@ -99,6 +99,8 @@ export class SurveyManageComponent {
   private readonly internalStep = signal<number>(1);
   // Bumped by "Try again" so the template fetch reruns for the same access target.
   private readonly templateReload = signal<number>(0);
+  private readonly surveyReload = signal<number>(0);
+  private readonly surveyLoadFailed = signal<boolean>(false);
   // Reuse the granting candidate from the existing access probe for template authorization.
   private readonly templateCommitteeUid = signal<string | null>(null);
   private readonly templateProjectWriter = signal<boolean>(false);
@@ -157,6 +159,10 @@ export class SurveyManageComponent {
   }
 
   public retryTemplates(): void {
+    if (this.surveyLoadFailed()) {
+      this.surveyReload.update((count) => count + 1);
+      return;
+    }
     this.templateReload.update((count) => count + 1);
   }
 
@@ -383,14 +389,16 @@ export class SurveyManageComponent {
   /** Keeps the picker and Next locked unless the template list has loaded. */
   private initTemplateControlLock(): void {
     toObservable(this.surveyTemplates)
-      .pipe(
-        map((state) => state.status === 'ready'),
-        distinctUntilChanged(),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((ready) => {
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((state) => {
         const control = this.form().get('surveyTemplate');
-        if (!control || control.enabled === ready) return;
+        if (!control) return;
+        const ready = state.status === 'ready';
+        // Reconcile every successful list, including synchronous ready-to-ready refreshes.
+        if (ready && control.value && !state.options.some((option) => option.value === control.value)) {
+          control.setValue('');
+        }
+        if (control.enabled === ready) return;
         // Emit so formValue and canGoNext also recompute when a held value is locked.
         if (ready) {
           control.enable();
@@ -474,14 +482,19 @@ export class SurveyManageComponent {
   private initSurveyTemplates(): Signal<SurveyTemplatesState> {
     const loading: SurveyTemplatesState = { status: 'loading', options: [] };
     return toSignal(
-      combineLatest([toObservable(this.templateAccessTarget), toObservable(this.templateReload)]).pipe(
-        filter((entry): entry is [SurveyTemplateAccessTarget, number] => entry[0] !== null),
+      combineLatest([toObservable(this.templateAccessTarget), toObservable(this.templateReload), toObservable(this.surveyLoadFailed)]).pipe(
         distinctUntilChanged(
-          ([prevTarget, prevReload], [target, reload]) =>
-            prevTarget.projectUid === target.projectUid && prevTarget.committeeUid === target.committeeUid && prevReload === reload
+          ([prevTarget, prevReload, prevFailed], [target, reload, failed]) =>
+            prevTarget?.projectUid === target?.projectUid && prevTarget?.committeeUid === target?.committeeUid && prevReload === reload && prevFailed === failed
         ),
-        switchMap(([target]) =>
-          this.surveyService.getSurveyTemplates(target.projectUid, target.committeeUid).pipe(
+        switchMap(([target, , failed]) => {
+          if (failed) {
+            return of<SurveyTemplatesState>({ status: 'error', options: [] });
+          }
+          if (!target) {
+            return of(loading);
+          }
+          return this.surveyService.getSurveyTemplates(target.projectUid, target.committeeUid).pipe(
             map(
               (templates): SurveyTemplatesState => ({
                 status: 'ready',
@@ -490,8 +503,8 @@ export class SurveyManageComponent {
             ),
             catchError(() => of<SurveyTemplatesState>({ status: 'error', options: [] })),
             startWith(loading)
-          )
-        )
+          );
+        })
       ),
       { initialValue: loading }
     );
@@ -563,16 +576,17 @@ export class SurveyManageComponent {
    */
   private initSurvey(): Signal<Survey | null> {
     return toSignal(
-      toObservable(this.surveyId).pipe(
-        switchMap((id) => {
+      combineLatest([toObservable(this.surveyId), toObservable(this.surveyReload)]).pipe(
+        switchMap(([id, reload]) => {
+          this.surveyLoadFailed.set(false);
           if (!id) {
             return of(null);
           }
-          return this.surveyService.getSurvey(id).pipe(
+          const request = reload > 0 ? this.surveyService.getSurvey(id, undefined, { skipCache: true }) : this.surveyService.getSurvey(id);
+          return request.pipe(
             catchError((error) => {
-              // Only a real 404 ejects — the fetch exists for context sync (no form pre-population
-              // yet), so a transient 5xx/network blip leaves the page mounted; the context simply
-              // stays uncorrected rather than mislabeling a server error as "not found".
+              // Only a real 404 ejects; transient failures expose Try again and reload this
+              // owning survey before templates can resolve their authorization target.
               if (error instanceof HttpErrorResponse && error.status === 404) {
                 this.messageService.add({
                   severity: 'error',
@@ -580,9 +594,12 @@ export class SurveyManageComponent {
                   detail: `${this.surveyLabel.singular} not found`,
                 });
                 this.router.navigate(['/surveys']);
+              } else {
+                this.surveyLoadFailed.set(true);
               }
               return of(null);
-            })
+            }),
+            startWith(null)
           );
         })
       ),
@@ -720,7 +737,10 @@ export class SurveyManageComponent {
         // Committee is valid if locked via group context, or if the form control has selections
         const committeesValue = this.committeeContext() ? [this.committeeContext()] : (form.get('committees')?.value as CommitteeReference[] | null);
         const committeesValid = Array.isArray(committeesValue) && committeesValue.length > 0;
-        const surveyTemplateValid = !!form.get('surveyTemplate')?.valid && !!form.get('surveyTemplate')?.value;
+        const templateControl = form.get('surveyTemplate');
+        const templates = this.surveyTemplates();
+        const surveyTemplateValid =
+          !!templateControl?.valid && templates.status === 'ready' && templates.options.some((option) => option.value === templateControl.value);
         return committeesValid && surveyTemplateValid;
       }
       case 2: {
