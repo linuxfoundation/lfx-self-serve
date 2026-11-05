@@ -20,7 +20,7 @@ tags:
     conversion actions,
     implement,
   ]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Dashboards
 ---
 
@@ -113,8 +113,14 @@ On Search and Display campaigns, the bidding settings include **Conversion Actio
 - **Match type** (Exact, Phrase or Broad) applies to every keyword in the box. Exact is the default.
 - You can add more negative keywords from **Optimize** once the campaign is live.
 
+## Performance Max descriptions
+
+Google Ads shows a short description on small placements, so a Performance Max campaign needs at least one description of **60 characters or less**. Chinese, Japanese, Korean and full-width characters count double.
+
+The descriptions filled in from the brief are often longer than that. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
+
 ## If something is wrong
 
-If a window, adjustment, exclusion, excluded place, display path, ad or negative keyword would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
+If a window, adjustment, exclusion, excluded place, display path, ad, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
 If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to a campaign type that does not take them, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type.
