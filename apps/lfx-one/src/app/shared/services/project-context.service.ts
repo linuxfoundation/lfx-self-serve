@@ -265,8 +265,6 @@ export class ProjectContextService {
       });
   }
 
-  // The URL sync runs outside the same-context early return: a stale `?project=` left by a prior
-  // selection must still be corrected when the incoming selection already matches the current one.
   /**
    * Re-fetches the active project's record and stage after a write moved it (#5134: the formation card's
    * stage edit), so the nav and badges stop showing the previous stage until the context reloads. Only the
@@ -279,6 +277,8 @@ export class ProjectContextService {
     }
   }
 
+  // The URL sync runs outside the same-context early return: a stale `?project=` left by a prior
+  // selection must still be corrected when the incoming selection already matches the current one.
   public setFoundation(foundation: ProjectContext, syncUrl = true): void {
     if (!isSameProjectContext(this.foundationSelection(), foundation)) {
       this.foundationSelection.set(foundation);
