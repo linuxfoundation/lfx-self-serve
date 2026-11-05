@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { inject } from '@angular/core';
-import { CanActivateFn, Router, UrlTree } from '@angular/router';
-import { ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
+import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
+import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
 
 import { AccountContextService } from '../services/account-context.service';
 
@@ -29,8 +29,19 @@ import { AccountContextService } from '../services/account-context.service';
  * Runs on the server too. The selection is restored from the cookie before the first guard, so a
  * roll-up SSR render of `/org/profile` redirects rather than rendering a page it cannot fill.
  */
-export const orgRollUpSingleOrgPageGuard: CanActivateFn = (): boolean | UrlTree => {
+export const orgRollUpSingleOrgPageGuard: CanActivateFn = (route: ActivatedRouteSnapshot): boolean | UrlTree => {
   if (!inject(AccountContextService).isRollUp()) {
+    return true;
+  }
+  // One address is let through: a corporate-signing return minted on the leftover
+  // `/org/easycla/{group}?org={A}&signed=1` shape, which the BFF still generates while
+  // `ORG_EASYCLA_RETURN_IN_PATH` is off. It names its own organization and `OrgClaReturnService`
+  // adopts it after an access check — but that has not run when this guard fires, so redirecting
+  // on a roll-up cookie would throw away the agreement destination and the signing confirmation
+  // for a trip opened in another tab. Adoption re-points the selection off the roll-up anyway, so
+  // nothing combined renders. `navigateToSelectedOrg` carves the same return out of its default
+  // insert, for the same reason (#4415, Copilot).
+  if (route.queryParamMap.has(ORG_EASYCLA_RETURN_ORG_PARAM)) {
     return true;
   }
   return inject(Router).createUrlTree(['/org', ORG_ROLLUP_SEGMENT, 'overview']);

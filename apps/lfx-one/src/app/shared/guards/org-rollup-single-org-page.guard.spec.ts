@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router, UrlTree } from '@angular/router';
+import { convertToParamMap, Router, UrlTree } from '@angular/router';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AccountContextService } from '../services/account-context.service';
@@ -25,7 +25,10 @@ describe('orgRollUpSingleOrgPageGuard', () => {
     });
   });
 
-  const run = (): boolean | UrlTree => TestBed.runInInjectionContext(() => orgRollUpSingleOrgPageGuard({} as never, {} as never) as boolean | UrlTree);
+  const run = (queryParams: Record<string, string> = {}): boolean | UrlTree =>
+    TestBed.runInInjectionContext(
+      () => orgRollUpSingleOrgPageGuard({ queryParamMap: convertToParamMap(queryParams) } as never, {} as never) as boolean | UrlTree
+    );
 
   it('redirects the roll-up to its own overview', () => {
     isRollUp.set(true);
@@ -38,5 +41,24 @@ describe('orgRollUpSingleOrgPageGuard', () => {
 
   it('lets a concrete organization through', () => {
     expect(run()).toBe(true);
+  });
+
+  /**
+   * Copilot on PR #4415. The BFF still mints `/org/easycla/{group}?org={A}&signed=1` while
+   * `ORG_EASYCLA_RETURN_IN_PATH` is off. `OrgClaReturnService.adopt` access-checks and adopts that
+   * organization, but it has not run when this guard fires — so a roll-up cookie (set in another
+   * tab mid-signing) would redirect the return away and lose the agreement destination and the
+   * signing confirmation.
+   */
+  it('lets a corporate-signing return through, roll-up cookie or not', () => {
+    isRollUp.set(true);
+
+    expect(run({ org: '0014100000AaaAAAAA', signed: '1' })).toBe(true);
+  });
+
+  it('still redirects an EasyCLA address that carries no signing return', () => {
+    isRollUp.set(true);
+
+    expect(run({ signed: '1' })).toBeInstanceOf(UrlTree);
   });
 });
