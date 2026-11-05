@@ -23,7 +23,7 @@ The page heading is **People —** followed by the organization's name. The line
 | **Committee**       | Employees who sit on foundation committees                                                                          |
 | **Key Contacts**    | Employees named as contacts on the organization's foundation memberships                                            |
 | **Contributors**    | Employees who contributed code, and whether they are maintainers                                                    |
-| **Event Attendees** | Employees who registered for, attended or spoke at events                                                           |
+| **Event Attendees** | People who registered for, attended or spoke at events                                                              |
 | **Trainees**        | Employees who enrolled in courses or earned certifications                                                          |
 | **Org Lens Access** | Who can open the organization, covered in [Manage Org Lens Access](../manage-org-lens-access/)                      |
 
@@ -124,7 +124,7 @@ A saved change shows **Board roles reassigned**, **Committee roles reassigned** 
 
 ## What do the Event Attendees and Trainees tabs show?
 
-The **Event Attendees** tab shows the employees who registered for, attended or spoke at events in the time range. Its cards count **Speakers**, **Attendees**, **Events** and **Foundations**, and its columns are **Name**, **Role** (**Speaker** or **Attendee**), **Events**, **Last Attended** and **Most Recent Event**. By default it counts everyone who registered or attended. The **Count** filter narrows that to registrations or attendance only, and **Counted by**, under **More filters**, decides whom an event is credited to. Some people are counted in the cards but not listed. The filters and what each option counts are in [Events and Event Attendees](../org-events/).
+The **Event Attendees** tab shows the people who registered for, attended or spoke at events in the time range. Its cards count **Speakers**, **Attendees**, **Events** and **Foundations**, and its columns are **Name**, **Role** (**Speaker** or **Attendee**), **Events**, **Last Attended** and **Most Recent Event**. By default **Count** is **All**, which counts everyone who registered or attended: choose **Attended** to count only people marked as attended. **Counted by**, under **More filters**, decides whom an event is credited to, and defaults to **All relations**. A person is listed by name only when they registered with a company email address or are a current employee; everyone else is counted in the cards but not listed. The filters and what each option counts are in [Events and Event Attendees](../org-events/).
 
 The **Trainees** tab shows the employees who enrolled in a course or earned a certificate in the time range.
 
