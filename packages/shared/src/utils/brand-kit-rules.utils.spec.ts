@@ -149,7 +149,7 @@ describe('brandKitApproveFindings', () => {
       },
       {
         title: 'https://cdn.synthetic-foundation.example/files/synthetic/production/synthetic-logo-package.zip?dl=',
-        text: 'The logo package on synthetic-foundation.example/brand is a ZIP file, which the agent can’t download from a link. Upload it in the form to add the stacked, reversed, symbol and primary files.',
+        text: 'The logo package on synthetic-foundation.example/brand is a ZIP file, which the agent can’t download from a link. Upload the stacked, reversed, symbol and primary files as SVG in the form, or a ZIP of the SVG files under 150 KB; a larger ZIP may not send.',
         detail: 'linked ZIP, not readable from a link',
       },
     ]);
@@ -157,7 +157,7 @@ describe('brandKitApproveFindings', () => {
     expect(findings.missing[0]).toEqual({
       title: 'Primary logo',
       text: 'The site’s header links a logo image (synthetic-logo-838x203.svg) that was not read in this run, so the kit shows placeholder marks.',
-      fix: 'Upload the logo package (the ZIP linked on synthetic-foundation.example/brand) or the primary file in the form.',
+      fix: 'Upload the primary file as SVG in the form, or a ZIP of the SVG files under 150 KB; the full package linked on synthetic-foundation.example/brand is likely too large to send.',
     });
   });
 

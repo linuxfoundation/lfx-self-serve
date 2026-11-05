@@ -69,7 +69,7 @@ describe('Approval with open gaps dialog', () => {
       ['https://synthetic-foundation.example/brand-guidelines', 'This page does not exist on the site (the server answered 404).', 'HTTP 404'],
       [
         'https://cdn.synthetic-foundation.example/files/synthetic/production/synthetic-logo-package.zip?dl=',
-        'The logo package on synthetic-foundation.example/brand is a ZIP file, which the agent can’t download from a link. Upload it in the form to add the stacked, reversed, symbol and primary files.',
+        'The logo package on synthetic-foundation.example/brand is a ZIP file, which the agent can’t download from a link. Upload the stacked, reversed, symbol and primary files as SVG in the form, or a ZIP of the SVG files under 150 KB; a larger ZIP may not send.',
         'linked ZIP, not readable from a link',
       ],
     ]);
@@ -80,7 +80,7 @@ describe('Approval with open gaps dialog', () => {
     expect(missingItems[0]).toEqual([
       'Primary logo',
       'The site’s header links a logo image (synthetic-logo-838x203.svg) that was not read in this run, so the kit shows placeholder marks.',
-      'Fix: Upload the logo package (the ZIP linked on synthetic-foundation.example/brand) or the primary file in the form.',
+      'Fix: Upload the primary file as SVG in the form, or a ZIP of the SVG files under 150 KB; the full package linked on synthetic-foundation.example/brand is likely too large to send.',
     ]);
     // The gaps still follow, as before.
     expect(root.textContent).toContain('No logo files');

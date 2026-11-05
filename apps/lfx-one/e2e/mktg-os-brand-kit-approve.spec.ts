@@ -44,7 +44,7 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     await expect(dialog.getByTestId('mktg-document-view-approve-missing-item-title')).toHaveText(['Primary logo', 'Stacked logo', 'Symbol', 'Reversed logo']);
     const firstMissing = dialog.getByTestId('mktg-document-view-approve-missing-item').first();
     await expect(firstMissing.getByTestId('mktg-document-view-approve-missing-item-reason')).toContainText('was not read in this run');
-    await expect(firstMissing.getByTestId('mktg-document-view-approve-missing-item-fix')).toContainText('Fix: Upload the logo package');
+    await expect(firstMissing.getByTestId('mktg-document-view-approve-missing-item-fix')).toContainText('Fix: Upload the primary file as SVG in the form');
     // Today's one-line form is gone for a v2 report; the gaps still follow.
     await expect(dialog).not.toContainText('brand-guidelines — HTTP 404');
     await expect(dialog).toContainText('No logo files');
