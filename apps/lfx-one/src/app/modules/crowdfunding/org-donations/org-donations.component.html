@@ -70,11 +70,6 @@
                             <lfx-tag value="Recurring" severity="info" [rounded]="true" />
                           }
                         </div>
-                        @if (item.initiativeCreator) {
-                          <div class="text-xs text-gray-500 mt-0.5" [attr.data-testid]="'org-donation-initiative-creator-' + item.id">
-                            Created by {{ item.initiativeCreator }}
-                          </div>
-                        }
                       </td>
                       <td class="px-4 py-3 text-gray-500 whitespace-nowrap">{{ item.date | date: 'MMM d, y' : 'UTC' }}</td>
                       <td class="px-4 py-3 text-gray-900">{{ item.donorName }}</td>

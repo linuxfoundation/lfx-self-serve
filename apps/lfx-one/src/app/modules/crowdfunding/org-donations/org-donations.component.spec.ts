@@ -71,9 +71,9 @@ describe('OrgDonationsComponent (#415)', () => {
     expect(service.getOrgDonations).toHaveBeenCalledTimes(1);
   });
 
-  it('links the initiative to its crowdfunding page and names its creator, when CF sends them', async () => {
+  it('links the initiative to its crowdfunding page when CF sends its slug', async () => {
     rows = [
-      { ...donation(), initiativeSlug: 'synthetic-fund', initiativeCreator: 'Synthetic Owner' },
+      { ...donation(), initiativeSlug: 'synthetic-fund' },
       { ...donation(), id: 'synthetic-donation-2' },
     ];
     accountContext.selectedAccount.set({ accountId: '', accountName: 'Synthetic Org', uid: ORG_UID });
@@ -84,11 +84,9 @@ describe('OrgDonationsComponent (#415)', () => {
     expect(link?.getAttribute('href')).toMatch(/[^/]\/initiatives\/synthetic-fund$/);
     expect(link?.getAttribute('target')).toBe('_blank');
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(root().querySelector('[data-testid="org-donation-initiative-creator-synthetic-donation-1"]')?.textContent).toContain('Created by Synthetic Owner');
 
-    // No slug or creator: plain name, no creator line.
+    // No slug: plain name.
     expect(root().querySelector('[data-testid="org-donation-initiative-link-synthetic-donation-2"]')).toBeNull();
-    expect(root().querySelector('[data-testid="org-donation-initiative-creator-synthetic-donation-2"]')).toBeNull();
     expect(root().querySelector('[data-testid="org-donation-row-synthetic-donation-2"]')?.textContent).toContain('Synthetic Fund');
   });
 
