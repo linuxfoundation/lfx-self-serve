@@ -302,23 +302,17 @@
           </tbody>
         </table>
 
-        @if (canShowMore() || totalFiltered() > initialLimit) {
-          <div class="grid grid-cols-3 items-center border-t border-gray-200 px-4 py-3" data-testid="org-people-trainees-show-all-footer">
-            <span class="text-xs italic text-gray-400">{{ footerCountLabel() }}</span>
-            <div class="text-center">
-              @if (canShowMore()) {
-                <button
-                  type="button"
-                  class="bg-transparent p-0 text-sm font-medium text-blue-600 hover:underline"
-                  data-testid="org-people-trainees-show-all-button"
-                  (click)="showAll()">
-                  Show All
-                </button>
-              }
-            </div>
-            <div></div>
-          </div>
-        }
+        <p-paginator
+          [first]="pageFirst()"
+          [rows]="pageSize()"
+          [totalRecords]="totalFiltered()"
+          [rowsPerPageOptions]="rowsPerPageOptions()"
+          [showCurrentPageReport]="true"
+          [showFirstLastIcon]="false"
+          currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+          [styleClass]="paginatorStyleClass()"
+          (onPageChange)="onPageChange($event)"
+          data-testid="org-people-trainees-paginator" />
       }
     </div>
 
@@ -329,13 +323,13 @@
       } @else {
         <section class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-people-trainees-outside">
           <h3 class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-            {{ outsideLearnersHeading }} ({{ outsideLearners().length | number }})
+            {{ outsideLearnersHeading }} ({{ outsideTotal() | number }})
           </h3>
-          @if (outsideLearners().length === 0) {
+          @if (outsideTotal() === 0) {
             <p class="px-4 py-3 text-xs text-gray-500" data-testid="org-people-trainees-outside-empty">No one in this list matches the search.</p>
           } @else {
             <ul class="divide-y divide-gray-100">
-              @for (learner of outsideLearners(); track learner.personKey) {
+              @for (learner of visibleOutsideLearners(); track learner.personKey) {
                 <li class="flex items-center justify-between gap-4 px-4 py-2" [attr.data-testid]="'org-people-trainees-outside-' + learner.personKey">
                   <span class="truncate text-sm text-gray-900">{{ learner.name || 'Name not available' }}</span>
                   @if (learner.status === 'Certified') {
@@ -352,6 +346,17 @@
                 </li>
               }
             </ul>
+            <p-paginator
+              [first]="outsidePageFirst()"
+              [rows]="outsidePageSize()"
+              [totalRecords]="outsideTotal()"
+              [rowsPerPageOptions]="outsideRowsPerPageOptions()"
+              [showCurrentPageReport]="true"
+              [showFirstLastIcon]="false"
+              currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+              [styleClass]="outsidePaginatorStyleClass()"
+              (onPageChange)="onOutsidePageChange($event)"
+              data-testid="org-people-trainees-outside-paginator" />
           }
         </section>
       }
