@@ -285,24 +285,26 @@ test.describe('Meetings home page', () => {
   });
 
   test.describe('Pending RSVPs', () => {
-    test('answering from the popover drops each date until the button hides', async ({ page }) => {
+    test('answering from the drawer drops each date until the drawer closes and the button hides', async ({ page }) => {
       const mocks = await gotoMeetingsHome(page);
 
       await page.getByTestId('meetings-home-pending-rsvps-button').click();
-      const popover = page.getByRole('dialog', { name: 'Pending RSVPs' });
-      const rows = popover.getByTestId('meetings-home-pending-rsvps-row');
+      const drawer = page.getByRole('dialog', { name: 'Pending RSVPs' });
+      const rows = drawer.getByTestId('meetings-home-pending-rsvps-row');
       await expect(rows).toHaveCount(3);
+      await expect(drawer.getByTestId('ui-drawer-subtitle')).toHaveText('3 waiting for a response');
 
       await rows.filter({ hasText: TITLES.oneOff }).getByTestId('meetings-home-rsvp-accepted').click();
       await expect(rows).toHaveCount(2);
       await expect(page.getByTestId('meetings-home-pending-rsvps-count')).toHaveText('2');
+      await expect(drawer.getByTestId('ui-drawer-subtitle')).toHaveText('2 waiting for a response');
 
       await rows.filter({ hasText: 'Nov 6' }).getByTestId('meetings-home-rsvp-declined').click();
       const scope = page.getByRole('dialog', { name: 'RSVP to recurring meeting' });
       await scope.getByRole('radio', { name: 'All occurrences' }).check();
       await scope.getByTestId('meetings-home-rsvp-scope-ok').click();
 
-      await expect(popover).toHaveCount(0);
+      await expect(drawer).toHaveCount(0);
       await expect(page.getByTestId('meetings-home-pending-rsvps-button')).toHaveCount(0);
       expect(mocks.rsvpPosts).toEqual([
         expect.objectContaining({ response: 'accepted', scope: 'all' }),
