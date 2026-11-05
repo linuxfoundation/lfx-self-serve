@@ -75,6 +75,41 @@ describe('ProjectApplicationService (#3037)', () => {
     request.flush({ application: buildApplication(), etag: null });
   });
 
+  it('sends the starting foundation as target_parent_uid when given, and nothing when null (#5187)', () => {
+    service.create({ project_name: 'Example' }, '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d').subscribe();
+    const withParent = http.expectOne('/api/project-applications');
+    expect(withParent.request.body).toEqual({ application: { project_name: 'Example' }, target_parent_uid: '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d' });
+    withParent.flush({ application: buildApplication(), etag: null });
+
+    service.create({ project_name: 'Example' }, null).subscribe();
+    const without = http.expectOne('/api/project-applications');
+    expect(without.request.body).toEqual({ application: { project_name: 'Example' } });
+    without.flush({ application: buildApplication(), etag: null });
+  });
+
+  it('resolves the starting foundation through the cached project read, and to null without a usable uid (#5187)', () => {
+    const uid = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const names: (string | undefined)[] = [];
+    service.getStartedFrom(uid).subscribe((project) => names.push(project?.name));
+    service.getStartedFrom(uid).subscribe((project) => names.push(project?.name));
+    http.expectOne(`/api/projects/${uid}`).flush({ uid, name: 'Example Foundation' });
+    expect(names).toEqual(['Example Foundation', 'Example Foundation']);
+
+    const missing: unknown[] = [];
+    service.getStartedFrom(null).subscribe((project) => missing.push(project));
+    service.getStartedFrom('agentic-ai-foundation').subscribe((project) => missing.push(project));
+    http.expectNone('/api/projects/agentic-ai-foundation');
+    expect(missing).toEqual([null, null]);
+  });
+
+  it('resolves the starting foundation to null when the project cannot be read', () => {
+    const uid = '11111111-2222-4333-8444-555555555555';
+    let result: unknown = 'pending';
+    service.getStartedFrom(uid).subscribe((project) => (result = project));
+    http.expectOne(`/api/projects/${uid}`).flush({ error: 'forbidden' }, { status: 403, statusText: 'Forbidden' });
+    expect(result).toBeNull();
+  });
+
   it('sends the held revision as If-Match on every mutation', () => {
     const application = buildApplication();
     service.revise(application, { project_name: 'Renamed' }).subscribe();

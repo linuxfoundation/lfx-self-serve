@@ -66,6 +66,17 @@ export const PROJECT_APPLICATION_MISSION_MAX = 500;
 /** Most additional formation contacts one application may list. */
 export const PROJECT_APPLICATION_FORMATION_LIST_MAX = 25;
 
+/** Query-string key carrying the foundation a proposal was started from, on `/formations/propose` (#5187). */
+export const PROJECT_APPLICATION_PARENT_QUERY_PARAM = 'parent';
+
+/** Copy for starting a proposal from a foundation's Formations page, and for reviewing where one started (#5187). */
+export const PROJECT_APPLICATION_FROM_FOUNDATION_COPY = {
+  proposeButton: 'Propose a project',
+  proposingUnder: 'Proposing under',
+  change: 'Change',
+  startedFrom: 'Started from',
+} as const;
+
 /** Contact for questions before submitting, shown on the propose page. */
 export const PROJECT_APPLICATION_CONTACT_EMAIL = 'formation@linuxfoundation.org';
 

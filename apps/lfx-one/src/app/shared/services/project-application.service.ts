@@ -6,6 +6,7 @@ import { inject, Injectable, Signal, signal } from '@angular/core';
 import type {
   AcceptProjectApplicationRequest,
   CreateProjectApplicationRequest,
+  Project,
   ProjectApplication,
   ProjectApplicationAccess,
   ProjectApplicationAnswers,
@@ -13,7 +14,8 @@ import type {
   ProjectApplicationViewMode,
 } from '@lfx-one/shared/interfaces';
 import { PROJECT_APPLICATION_API_BASE_PATH } from '@lfx-one/shared/constants';
-import { upsertProjectApplication } from '@lfx-one/shared/utils';
+import { isUuid, upsertProjectApplication } from '@lfx-one/shared/utils';
+import { ProjectService } from '@services/project.service';
 import { catchError, map, Observable, of, take, throwError } from 'rxjs';
 
 /**
@@ -24,6 +26,7 @@ import { catchError, map, Observable, of, take, throwError } from 'rxjs';
 @Injectable({ providedIn: 'root' })
 export class ProjectApplicationService {
   private readonly http = inject(HttpClient);
+  private readonly projectService = inject(ProjectService);
 
   /**
    * Write results the index hasn't caught up with yet, per list mode. The list applies them to every read
@@ -64,8 +67,18 @@ export class ProjectApplicationService {
     );
   }
 
-  public create(application: ProjectApplicationAnswers): Observable<ProjectApplicationWriteResult> {
-    const body: CreateProjectApplicationRequest = { application };
+  /**
+   * The project a proposal started from (#5187), for the formation team's "Started from" line and the accept
+   * form's parent prefill. One cached read per uid (`ProjectService.getProject`); resolves to `null` — never an
+   * error — for no hint, a value that is not a UUID, or a project the reader cannot load, so the caller just shows nothing.
+   */
+  public getStartedFrom(targetParentUid: string | null | undefined): Observable<Project | null> {
+    return targetParentUid && isUuid(targetParentUid) ? this.projectService.getProject(targetParentUid, false) : of(null);
+  }
+
+  /** `targetParentUid` is the foundation the applicant started from (#5187); omitted from the body when absent. */
+  public create(application: ProjectApplicationAnswers, targetParentUid?: string | null): Observable<ProjectApplicationWriteResult> {
+    const body: CreateProjectApplicationRequest = { application, ...(targetParentUid ? { target_parent_uid: targetParentUid } : {}) };
     return this.http.post<ProjectApplicationWriteResult>(PROJECT_APPLICATION_API_BASE_PATH, body).pipe(take(1));
   }
 
