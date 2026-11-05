@@ -115,7 +115,7 @@ On Search and Display campaigns, the bidding settings include **Conversion Actio
 
 ## Performance Max descriptions
 
-Google Ads shows a short description on small placements, so a Performance Max campaign needs at least one description of **60 characters or less**. Chinese, Japanese, Korean and full-width characters count double.
+Google Ads shows a short description on small placements, so a Performance Max campaign needs at least one description of **60 characters or fewer**. Chinese, Japanese, Korean and full-width characters count double.
 
 The descriptions filled in from the brief are often longer than that. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
 
