@@ -62,6 +62,13 @@ for (const width of [1440, 390]) {
     const item = await list.locator('ul > li').first().evaluate(metrics);
     expect(item.fontSize).toBe(question.fontSize);
     expect(item.lineHeight).toBe(host.lineHeight);
+    // The bullet is in the answer's text colour, not the typography plugin's light grey (the tester, hand test round 1).
+    const marker = await list
+      .locator('ul > li')
+      .first()
+      .evaluate((element) => getComputedStyle(element, '::marker').color);
+    const text = await list.locator('p').evaluate((element) => getComputedStyle(element).color);
+    expect(marker).toBe(text);
 
     // (c) Thousands separators stay verbatim.
     const price = page.getByTestId('mktg-faq-view-answer-0-2');
