@@ -94,16 +94,29 @@ export class ProjectApplicationService {
     }
     this.staffLoadingState.set(true);
     this.staffErrorState.set(false);
+    // A response only counts for the identity the read started under; the identity-change reset also cancels the read.
+    const identity = this.userService.meetingFeedIdentity();
+    const current = (): boolean => identity === this.userService.meetingFeedIdentity();
     const read: Subscription = this.getApplications('staff').subscribe({
       next: (applications) => {
+        if (!current()) {
+          return;
+        }
         this.reconcile('staff', applications);
         this.staffFetched.set(applications);
       },
       error: () => {
+        if (!current()) {
+          return;
+        }
         this.staffErrorState.set(true);
         this.staffLoadingState.set(false);
       },
-      complete: () => this.staffLoadingState.set(false),
+      complete: () => {
+        if (current()) {
+          this.staffLoadingState.set(false);
+        }
+      },
     });
     this.staffRead = read;
   }
@@ -217,6 +230,7 @@ export class ProjectApplicationService {
   }
 
   private resetForIdentityChange(): void {
+    const readWasInFlight = !!this.staffRead && !this.staffRead.closed;
     this.staffRead?.unsubscribe();
     this.staffRead = null;
     this.staffFetched.set(null);
@@ -226,6 +240,10 @@ export class ProjectApplicationService {
     this.overlays.staff.set([]);
     this.deletions.submitter.set(new Set());
     this.deletions.staff.set(new Set());
+    // Someone was waiting on the old identity's read; the new identity's view needs its own.
+    if (readWasInFlight) {
+      this.refreshStaff();
+    }
   }
 
   private applicationPath(uid: string): string {

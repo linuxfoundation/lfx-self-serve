@@ -7,6 +7,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import type { ProjectApplication } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
+import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectApplicationService } from './project-application.service';
@@ -304,6 +305,33 @@ describe('ProjectApplicationService (#3037)', () => {
       expect(service.overlay('staff')()).toEqual([]);
       expect([...service.deletedUids('submitter')()]).toEqual([]);
       http.match('/api/profile'); // UserService's own post-render avatar read, unrelated to this test
+    });
+
+    it('drops a response that belongs to the previous identity and reads again for the new one', () => {
+      const first = new Subject<ProjectApplication[]>();
+      const second = new Subject<ProjectApplication[]>();
+      const read = vi.spyOn(service, 'getApplications').mockReturnValueOnce(first).mockReturnValueOnce(second);
+      const user = TestBed.inject(UserService);
+      TestBed.tick();
+
+      (user.user as ReturnType<typeof signal>).set({ sub: 'auth0|a' });
+      TestBed.tick();
+      service.refreshStaff();
+      expect(read).toHaveBeenCalledTimes(1);
+
+      (user.user as ReturnType<typeof signal>).set({ sub: 'auth0|b' });
+      TestBed.tick();
+      first.next([buildApplication({ uid: 'a-only' })]);
+      first.complete();
+      expect(service.staffApplications()).toBeNull();
+      expect(service.pendingStaffCount()).toBeNull();
+
+      expect(read).toHaveBeenCalledTimes(2);
+      second.next([buildApplication({ uid: 'b-only' })]);
+      second.complete();
+      expect(service.staffApplications()?.map((app) => app.uid)).toEqual(['b-only']);
+      expect(service.pendingStaffCount()).toBe(1);
+      http.match('/api/profile');
     });
   });
 });
