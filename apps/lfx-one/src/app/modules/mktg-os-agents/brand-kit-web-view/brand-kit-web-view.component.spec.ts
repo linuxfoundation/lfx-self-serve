@@ -219,7 +219,8 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v3');
       // Viewing a new Draft does not relabel the independently approved print target.
       expect(query('mktg-brand-kit-print')?.getAttribute('data-revision')).toBe('V1.0');
-      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V1.0');
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('Brand kit · V1.0');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V3.0');
     });
 
     it('prints approved kit bytes while the screen renders a different Draft', async () => {
