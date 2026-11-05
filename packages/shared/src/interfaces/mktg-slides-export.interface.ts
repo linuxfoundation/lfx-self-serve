@@ -289,30 +289,34 @@ export interface MktgLogoPngOptions {
 /** The one colour a logo variant is recoloured to: white for the reversed variants, black for the one-colour lockup. */
 export type MktgLogoRecolourInk = 'white' | 'black';
 
-/** An SVG root's user space: its viewBox, or its size from the origin (server-side). */
-export interface MktgLogoUserSpace {
-  minX: number;
-  minY: number;
+/** The pixel size of a drawn PNG, read from its header (server-side). */
+export interface MktgLogoPngSize {
   width: number;
   height: number;
 }
 
-/** An SVG root tag as the server read it: its offsets in the text, whether it closes itself, and every value of each attribute by exact name (server-side). */
-export interface MktgLogoSvgRoot {
-  start: number;
-  end: number;
-  selfClosing: boolean;
-  attributes: Map<string, string[]>;
-}
-
-/** The SVG source of one logo variant: the text to draw (null when the server tried to derive it and could not), and whether the server derived it (a crop or a recolour) rather than took it as uploaded (server-side). */
+/** A logo variant drawn from an SVG as it is: an upload (`derived: false`), or the server's crop of the primary through the shared viewBox helper (`derived: true`) (server-side). */
 export interface MktgLogoVariantSvgSource {
-  svg: string | null;
+  kind: 'svg';
+  svg: string;
   derived: boolean;
 }
 
-/** The SVG source of each logo variant the server draws for a deck, by variant; a variant that cannot be derived is absent (server-side). */
-export type MktgLogoVariantSvgSources = Partial<Record<MktgSlidesExportLogoVariant, MktgLogoVariantSvgSource>>;
+/** A logo variant the server derives by recolouring the drawn PNG of another logo image (the primary, or the symbol) to one ink; always the server's own (server-side). */
+export interface MktgLogoVariantRecolourSource {
+  kind: 'recolour';
+  of: 'primary' | 'symbol';
+  ink: MktgLogoRecolourInk;
+}
+
+/** What one logo variant is drawn from (server-side). */
+export type MktgLogoVariantSource = MktgLogoVariantSvgSource | MktgLogoVariantRecolourSource;
+
+/** What each logo variant is drawn from, by variant; a variant that does not apply to the kit (no symbol) is absent (server-side). */
+export type MktgLogoVariantSources = Partial<Record<MktgSlidesExportLogoVariant, MktgLogoVariantSource>>;
+
+/** The PNG of each logo image drawn so far in one export, by image: the bytes, or null when the server tried to draw it and could not (server-side). */
+export type MktgLogoDrawnPngs = Partial<Record<MktgSlidesExportLogoImage, Uint8Array | null>>;
 
 /**
  * The kit's SVG logo drawn as a PNG on the server (server-side). `png` is a

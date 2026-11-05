@@ -45,7 +45,8 @@ import {
   MktgSlidesExportLogContext,
   MktgSlidesExportPublishedLogo,
   MktgSlidesExportPublishedPng,
-  MktgLogoVariantSvgSource,
+  MktgLogoDrawnPngs,
+  MktgLogoVariantSource,
   MktgSlidesExportRecord,
   MktgSlidesExportResultContext,
   MktgSlidesExportResultResponse,
@@ -88,7 +89,7 @@ import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID, MKTG_SLIDES_EXPORT_FOLDER_ID_ENV 
 import { ConflictError, ResourceNotFoundError } from '../errors';
 import { getAvatarCdnPrefix } from '../utils/avatar-url.util';
 import { rasterizeLogoSvg } from '../utils/mktg-logo-png.util';
-import { logoVariantSvgSources } from '../utils/mktg-logo-variants.util';
+import { logoVariantSources, recolourLogoPngSvg } from '../utils/mktg-logo-variants.util';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
@@ -490,9 +491,10 @@ export class MktgSlidesExportService {
    * placeholder has no logo to send, as in the print (`mktgPrintBrand`): a
    * placeholder mark never reaches a deck.
    *
-   * Beside a published primary go the variants the deck's layouts place,
-   * each drawn from its own SVG source (`logoVariantSvgSources`) under the
-   * same size rules and published under the same key scheme. A variant that
+   * Beside a published primary go the variants the deck's layouts place
+   * (`logoVariantSources`): an uploaded SVG or the shared crop drawn as it
+   * is, or the drawn primary or symbol PNG recoloured, each under the same
+   * size rules and published under the same key scheme. A variant that
    * cannot be drawn or published is left out, with one log line: the note is
    * the primary's alone, and the deck drops that slot (slides-export 1.1.2).
    */
@@ -529,14 +531,19 @@ export class MktgSlidesExportService {
       return { ...primary, variants: {} };
     }
 
-    // Each variant is drawn and uploaded on its own, all four at once: the
-    // draws run on the rasterizer's thread pool and the uploads are independent
-    // I/O, so the start waits for the slowest, not the sum. A variant that
-    // fails, or throws, drops out alone; the URLs are assembled in the
-    // intake's order.
-    const sources = logoVariantSvgSources(logo.files, logo.symbol_viewbox);
+    // The symbol is drawn first, on its own: the reversed symbol is recoloured
+    // from its PNG, as the reversed and one-colour lockups are from the
+    // primary's. Then the four variants are drawn and uploaded at once, each
+    // settling alone, and the URLs are assembled in the intake's order. The
+    // draws overlap in libuv's pool; the parse, the PNG encode and the ink scan
+    // run on the event loop. A variant that fails, or throws, drops out alone.
+    const sources = logoVariantSources(logo.files, logo.symbol_viewbox);
+    const pngs: MktgLogoDrawnPngs = { primary: drawn.png };
+    if (sources.symbol) {
+      pngs.symbol = await this.drawLogoVariant(req, 'symbol', sources.symbol, pngs);
+    }
     const published = await Promise.allSettled(
-      MKTG_SLIDES_EXPORT_LOGO_VARIANTS.map((variant) => this.publishLogoVariant(req, project, variant, sources[variant]))
+      MKTG_SLIDES_EXPORT_LOGO_VARIANTS.map((variant) => this.publishLogoVariant(req, project, variant, sources[variant], pngs))
     );
     const variants: MktgSlidesExportLogoVariantUrls = {};
     MKTG_SLIDES_EXPORT_LOGO_VARIANTS.forEach((variant, index) => {
@@ -554,42 +561,66 @@ export class MktgSlidesExportService {
   }
 
   /**
-   * Draw one logo variant from its SVG source and publish it; its public URL,
-   * or null when it had no source, could not be drawn or could not be
-   * published. A source the server derived (a crop or a recolour) that will
-   * not draw, or a recolour the server could not make of the artwork's shape,
-   * is logged as a warning: the primary drew, and someone should look at why
-   * its variant did not. An upload that will not draw is the kit's own
-   * artwork, input the user controls, so it is traced at debug, as
-   * logging-patterns.md asks. A variant is drawn with `requireInk`, so one
-   * that paints nothing (a crop of empty space) is dropped, not published.
+   * Draw one logo variant as a PNG: an SVG source as it is, or a recolour of
+   * the drawn PNG of the image it names (null when that image was not drawn,
+   * which was logged when it failed). Every variant is drawn with
+   * `requireInk`, so one that paints nothing (a crop of empty space, a logo
+   * whose content lies off its canvas) is dropped, not published. A failure
+   * of the server's own making (a crop, a recolour) is logged as a warning:
+   * the primary drew, and someone should look at why its variant did not. An
+   * upload that will not draw is the kit's own artwork, input the user
+   * controls, so it is traced at debug, as logging-patterns.md asks.
+   */
+  private async drawLogoVariant(
+    req: Request,
+    variant: MktgSlidesExportLogoVariant,
+    source: MktgLogoVariantSource,
+    pngs: MktgLogoDrawnPngs
+  ): Promise<Uint8Array | null> {
+    let svg: string | null;
+    let derived: boolean;
+    if (source.kind === 'svg') {
+      svg = source.svg;
+      derived = source.derived;
+    } else {
+      const base = pngs[source.of];
+      if (!base) {
+        return null;
+      }
+      svg = recolourLogoPngSvg(base, source.ink);
+      derived = true;
+    }
+    const message = 'A logo variant could not be drawn as a PNG — the deck drops that slot';
+    const drawn = svg === null ? null : await rasterizeLogoSvg(svg, { requireInk: true });
+    if (drawn?.png) {
+      return drawn.png;
+    }
+    const detail = { variant, derived, reason: drawn?.reason ?? 'unreadable', detail: drawn?.detail ?? 'the drawn image is not a PNG' };
+    if (derived) {
+      logger.warning(req, 'mktg_slides_export_logo', message, detail);
+    } else {
+      logger.debug(req, 'mktg_slides_export_logo', message, detail);
+    }
+    return null;
+  }
+
+  /**
+   * Publish one logo variant: its public URL, or null when it has no source,
+   * could not be drawn (now, or earlier for one drawn ahead of the others) or
+   * could not be published.
    */
   private async publishLogoVariant(
     req: Request,
     project: string,
     variant: MktgSlidesExportLogoVariant,
-    source: MktgLogoVariantSvgSource | undefined
+    source: MktgLogoVariantSource | undefined,
+    pngs: MktgLogoDrawnPngs
   ): Promise<string | null> {
     if (!source) {
       return null;
     }
-    const message = 'A logo variant could not be drawn as a PNG — the deck drops that slot';
-    if (source.svg === null) {
-      // The primary drew, but the artwork has a shape the server cannot recolour safely (no user space, a root it cannot wrap).
-      logger.warning(req, 'mktg_slides_export_logo', message, { variant, derived: true, reason: 'not-derived' });
-      return null;
-    }
-    const drawn = await rasterizeLogoSvg(source.svg, { requireInk: true });
-    if (drawn.png === null) {
-      const detail = { variant, derived: source.derived, reason: drawn.reason, detail: drawn.detail };
-      if (source.derived) {
-        logger.warning(req, 'mktg_slides_export_logo', message, detail);
-      } else {
-        logger.debug(req, 'mktg_slides_export_logo', message, detail);
-      }
-      return null;
-    }
-    return (await this.publishLogoPng(req, project, drawn.png, variant)).url;
+    const png = variant in pngs ? pngs[variant] : await this.drawLogoVariant(req, variant, source, pngs);
+    return png ? (await this.publishLogoPng(req, project, png, variant)).url : null;
   }
 
   /**

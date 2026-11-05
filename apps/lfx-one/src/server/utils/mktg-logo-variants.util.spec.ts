@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@lfx-one/shared/utils', async () => await vi.importActual('@lfx-one/shared/utils/brand-kit.utils'));
 
 import { isRasterizableLogoSvg, rasterizeLogoSvg } from './mktg-logo-png.util';
-import { logoSvgRoot, logoSvgUserSpace, logoVariantSvgSources, recolourLogoSvg } from './mktg-logo-variants.util';
+import { logoPngSize, logoVariantSources, recolourLogoPngSvg } from './mktg-logo-variants.util';
 
 const SVG_NS = 'xmlns="http://www.w3.org/2000/svg"';
 /** A synthetic lockup: a filled mark on the left, a stroke-only rule and an unpainted group on the right. */
@@ -18,310 +18,245 @@ const LOCKUP = `<svg ${SVG_NS} viewBox="0 0 20 10">${LOCKUP_BODY}</svg>`;
 const WHITE_MATRIX = '0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0';
 const BLACK_MATRIX = '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0';
 const WHITE: Rgba = [255, 255, 255, 255];
+const BLACK: Rgba = [0, 0, 0, 255];
 const CLEAR: Rgba = [0, 0, 0, 0];
 
 type Rgba = [number, number, number, number];
 
-/** The drawn pixels of an SVG at 200px wide, read back from resvg's pixmap. */
-function draw(svg: string): { at: (x: number, y: number) => Rgba; painted: () => number; width: number; height: number } {
-  const image = new Resvg(svg, { logLevel: 'off', font: { loadSystemFonts: false }, fitTo: { mode: 'width', value: 200 } }).render();
-  const pixels = image.pixels;
+/** The pixels of an image, read back from resvg's pixmap. */
+interface Pixels {
+  at: (x: number, y: number) => Rgba;
+  painted: () => number;
+  width: number;
+  height: number;
+}
+
+/** An SVG drawn at the rasterizer's size, read back as pixels. */
+function draw(svg: string): Pixels {
+  const image = new Resvg(svg, { logLevel: 'off', font: { loadSystemFonts: false }, fitTo: { mode: 'width', value: 1200 } }).render();
+  return pixelsOf(image.pixels, image.width, image.height);
+}
+
+/** A PNG read back as pixels, through an SVG that only places it. */
+function readPng(png: Uint8Array): Pixels {
+  const size = logoPngSize(png) as { width: number; height: number };
+  const svg = `<svg ${SVG_NS} viewBox="0 0 ${size.width} ${size.height}"><image href="data:image/png;base64,${Buffer.from(png).toString('base64')}" width="${size.width}" height="${size.height}"/></svg>`;
+  const image = new Resvg(svg, { logLevel: 'off', font: { loadSystemFonts: false }, fitTo: { mode: 'width', value: size.width } }).render();
+  return pixelsOf(image.pixels, image.width, image.height);
+}
+
+function pixelsOf(pixels: Uint8Array, width: number, height: number): Pixels {
   return {
-    width: image.width,
-    height: image.height,
-    at: (x, y) => Array.from(pixels.subarray((y * image.width + x) * 4, (y * image.width + x) * 4 + 4)) as Rgba,
+    width,
+    height,
+    at: (x, y) => Array.from(pixels.subarray((y * width + x) * 4, (y * width + x) * 4 + 4)) as Rgba,
     painted: () => pixels.filter((_, index) => index % 4 === 3 && pixels[index] > 0).length,
   };
 }
 
-function pngSize(bytes: Uint8Array): { width: number; height: number } {
-  const view = Buffer.from(bytes);
-  return { width: view.readUInt32BE(16), height: view.readUInt32BE(20) };
+/** The primary drawn as the service draws it, as PNG bytes. */
+async function drawnPng(svg: string): Promise<Uint8Array> {
+  const drawn = await rasterizeLogoSvg(svg);
+  expect(drawn.reason).toBeNull();
+  return drawn.png as Uint8Array;
 }
 
-/** A mark drawn inside a viewBox that starts away from the origin. */
-function offsetMark(viewBox: string): string {
-  const [minX, minY] = viewBox.split(' ').map(Number);
-  return `<svg ${SVG_NS} viewBox="${viewBox}"><path d="M${minX + 1} ${minY + 1}h8v8h-8z" fill="#1f6feb"/></svg>`;
-}
-
-describe('logoSvgRoot', () => {
-  it('reads the root tag token by token, either quote, every value whole, to its `>` or `/>`', () => {
-    const root = logoSvgRoot(
-      `<?xml version="1.0"?>\n<svg ${SVG_NS} aria-label='a "quoted" label with viewBox="9 9 9 9" inside' viewBox = "0 0 20 10"\n width='20'>${LOCKUP_BODY}</svg>`
-    );
-    expect(root?.start).toBe(22);
-    expect(root?.selfClosing).toBe(false);
-    expect(root?.attributes.get('viewBox')).toEqual(['0 0 20 10']);
-    expect(root?.attributes.get('width')).toEqual(['20']);
-    expect(root?.attributes.get('aria-label')).toEqual(['a "quoted" label with viewBox="9 9 9 9" inside']);
-    expect([...(root?.attributes.keys() ?? [])]).toEqual(['xmlns', 'aria-label', 'viewBox', 'width']);
-    const selfClosing = `<svg ${SVG_NS} data-x="a/>" viewBox="0 0 20 10"/>`;
-    expect(logoSvgRoot(selfClosing)).toMatchObject({ start: 0, selfClosing: true, end: selfClosing.length });
-  });
-
-  it('keeps every value of a repeated name, and reads nothing it does not understand', () => {
-    expect(logoSvgRoot(`<svg ${SVG_NS} viewBox="0 0 1 1" viewBox="0 0 2 2"/>`)?.attributes.get('viewBox')).toEqual(['0 0 1 1', '0 0 2 2']);
-    // A valueless attribute, an unquoted value, a prefixed root, a tag that never closes, no root at all.
-    expect(logoSvgRoot(`<svg ${SVG_NS} hidden viewBox="0 0 20 10">`)).toBeNull();
-    expect(logoSvgRoot(`<svg ${SVG_NS} width=20>`)).toBeNull();
-    expect(logoSvgRoot(`<svg:svg xmlns:svg="http://www.w3.org/2000/svg" viewBox="0 0 10 10"/>`)).toBeNull();
-    expect(logoSvgRoot(`<svg ${SVG_NS} viewBox="0 0 20 10"`)).toBeNull();
-    expect(logoSvgRoot('not an svg')).toBeNull();
-    expect(logoSvgRoot(`<SVG ${SVG_NS}/>`)).toBeNull();
+describe('logoPngSize', () => {
+  it('reads the pixel size from the PNG header, and nothing from bytes that are not a PNG', async () => {
+    expect(logoPngSize(await drawnPng(LOCKUP))).toEqual({ width: 1200, height: 600 });
+    expect(logoPngSize(new TextEncoder().encode('<svg/>'))).toBeNull();
+    expect(logoPngSize(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
   });
 });
 
-describe('logoSvgUserSpace', () => {
-  it('reads the root viewBox, in either quote, with commas or exponents, as the user space', () => {
-    expect(logoSvgUserSpace(LOCKUP)).toEqual({ minX: 0, minY: 0, width: 20, height: 10 });
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="-50,-50, 3e2 300"/>`)).toEqual({ minX: -50, minY: -50, width: 300, height: 300 });
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox='500 500 200 100'/>`)).toEqual({ minX: 500, minY: 500, width: 200, height: 100 });
+describe('recolourLogoPngSvg', () => {
+  it('writes an SVG of its own that places the PNG under a colour-matrix filter whose region is exactly the image', async () => {
+    const png = await drawnPng(LOCKUP);
+    const white = recolourLogoPngSvg(png, 'white');
+    expect(white).toBe(
+      `<svg ${SVG_NS} viewBox="0 0 1200 600" width="1200" height="600">` +
+        `<defs><filter id="lfx-one-recolour" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="600" color-interpolation-filters="sRGB">` +
+        `<feColorMatrix type="matrix" values="${WHITE_MATRIX}"/></filter></defs>` +
+        `<image href="data:image/png;base64,${Buffer.from(png).toString('base64')}" x="0" y="0" width="1200" height="600" style="filter:url(#lfx-one-recolour)"/></svg>`
+    );
+    expect(recolourLogoPngSvg(png, 'black')).toContain(`values="${BLACK_MATRIX}"`);
+    expect(recolourLogoPngSvg(new TextEncoder().encode('not a png'), 'white')).toBeNull();
   });
 
-  it('reads a viewBox only when it can read it exactly as the parser does, and guesses nothing otherwise', () => {
-    // Another spelling of the name, which the parser ignores; the same beside the real one; a repeat.
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewbox="500 500 200 100" width="200" height="100"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewbox="500 500 200 100" viewBox="0 0 200 100"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 1 1" viewBox="0 0 2 2"/>`)).toBeNull();
-    // A character reference, which the parser decodes and the server does not.
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="&#53;00 500 200 100"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="&#50;00" height="100"/>`)).toBeNull();
-    // Numbers run together, which the parser reads as four and a split reads as three.
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="500-500 200 100"/>`)).toBeNull();
-    // A decoy inside another attribute's value is never read; the real viewBox is.
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} aria-label='x viewBox="500 500 200 100"' viewBox="0 0 200 100"/>`)).toEqual({
-      minX: 0,
-      minY: 0,
-      width: 200,
-      height: 100,
-    });
-    // Too many or too few numbers, a zero size, a value too long to be a viewBox.
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 10"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 0 10"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 ${'1'.repeat(60)} 10"/>`)).toBeNull();
+  it('is the same text for the same PNG, so the published variant keeps its content-addressed key', async () => {
+    const png = await drawnPng(LOCKUP);
+    expect(recolourLogoPngSvg(png, 'white')).toBe(recolourLogoPngSvg(png, 'white'));
   });
 
-  it('falls back to a width and height in user units from the origin only without any viewBox, and to nothing otherwise', () => {
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="200" height="100px"/>`)).toEqual({ minX: 0, minY: 0, width: 200, height: 100 });
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} width=' 2e2 ' height='.5'/>`)).toEqual({ minX: 0, minY: 0, width: 200, height: 0.5 });
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="100%" height="100"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="200"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="200" height="0"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS}/>`)).toBeNull();
-    expect(logoSvgUserSpace('not an svg')).toBeNull();
+  it('draws every painted pixel in the ink, fills and strokes alike, keeps each pixel’s alpha, and leaves the background transparent', async () => {
+    const soft = `<svg ${SVG_NS} viewBox="0 0 20 10">${LOCKUP_BODY}<rect x="12" y="1" width="6" height="2" fill="#0a0" fill-opacity="0.5"/></svg>`;
+    const original = draw(soft);
+    expect(original.at(300, 300)).toEqual([31, 111, 235, 255]);
+    expect(original.at(900, 300)).toEqual([221, 102, 34, 255]);
+    expect(original.at(900, 120)[3]).toBeGreaterThan(100);
+    expect(original.at(900, 120)[3]).toBeLessThan(160);
+
+    const white = draw(recolourLogoPngSvg(await drawnPng(soft), 'white') as string);
+    expect(white.at(300, 300)).toEqual(WHITE);
+    expect(white.at(900, 300)).toEqual(WHITE);
+    // The half-transparent rectangle keeps its alpha and takes the ink (premultiplied in the pixmap: white at half alpha).
+    expect(white.at(900, 120)[3]).toBe(original.at(900, 120)[3]);
+    expect(white.at(900, 120)[0]).toBe(white.at(900, 120)[3]);
+    expect(white.at(0, 0)).toEqual(CLEAR);
+    expect(white.at(1199, 599)).toEqual(CLEAR);
+    // An unpainted group stays unpainted: the alpha row is the identity.
+    expect(white.at(900, 480)).toEqual(CLEAR);
+    expect(white.painted()).toBe(original.painted());
+
+    const black = draw(recolourLogoPngSvg(await drawnPng(soft), 'black') as string);
+    expect(black.at(300, 300)).toEqual(BLACK);
+    expect(black.at(900, 300)).toEqual(BLACK);
+    expect(black.at(900, 120)).toEqual([0, 0, 0, original.at(900, 120)[3]]);
+    expect(black.at(0, 0)).toEqual(CLEAR);
   });
 
-  it('refuses a size it cannot read in bounded time, however long the value', () => {
+  it('passes the rasterizer’s own rules and keeps the size rule per drawn PNG', async () => {
+    const white = recolourLogoPngSvg(await drawnPng(LOCKUP), 'white') as string;
+    expect(isRasterizableLogoSvg(white)).toBe(true);
+    const drawn = await rasterizeLogoSvg(white, { requireInk: true });
+    expect(drawn.reason).toBeNull();
+    expect(logoPngSize(drawn.png as Uint8Array)).toEqual({ width: 1200, height: 600 });
+    expect(readPng(drawn.png as Uint8Array).at(300, 300)).toEqual(WHITE);
+  });
+
+  it('never reads the logo’s own markup, so every root shape the rasterizer draws recolours whole, and one it draws empty is blank', async () => {
+    const mark = (root: string, body = '<path d="M501 501h80v80h-80z" fill="#1f6feb"/>'): string => `<svg ${root}>${body}</svg>`;
+    const ns = `xmlns="http://www.w3.org/2000/svg"`;
+    const shapes: string[] = [
+      mark(`${ns} viewBox='500 500 200 100'`),
+      mark(`${ns} viewbox="500 500 200 100" width="200" height="100"`, '<path d="M1 1h80v80H1z" fill="#1f6feb"/>'),
+      mark(`${ns} viewBox="&#53;00 500 200 100"`),
+      mark(`${ns} aria-label='x viewBox="0 0 20 10"' viewBox="500 500 200 100"`),
+      mark(`${ns} viewBox="500-500 200 100"`),
+      mark(`${ns} viewBox="500\u00a0500\u3000200\u2003100" width="200" height="100"`, '<path d="M1 1h80v80H1z" fill="#1f6feb"/>'),
+      mark(`${ns} viewBox="500,,500,200,100" width="200" height="100"`, '<path d="M1 1h80v80H1z" fill="#1f6feb"/>'),
+      mark(`${ns} xmlns:s="http://www.w3.org/2000/svg" s:viewBox="500 500 200 100"`),
+      mark(`${ns} viewBox="0 0 200 100" transform="translate(1000 1000)"`, '<path d="M1 1h80v80H1z" fill="#1f6feb"/>'),
+      mark(`${ns} viewBox="0 0 200 100" transform="scale(0.5)"`, '<path d="M1 1h80v80H1z" fill="#1f6feb"/>'),
+      mark(`${ns} data-x="a/>" data-y="b>c" viewBox="500 500 200 100"`),
+      `<!-- <svg viewBox="0 0 1 1"> -->${mark(`${ns} viewBox="500 500 200 100"`)}<!-- </svg> -->`,
+      `<svg ${ns} viewBox="500 500 200 100"><path d="M501 501h80v80h-80z" fill="#1f6feb"/></svg >`,
+      `<s:svg xmlns:s="http://www.w3.org/2000/svg" viewBox="500 500 200 100"><svg ${ns} viewBox="500 500 200 100"><path d="M501 501h80v80h-80z" fill="#1f6feb"/></svg></s:svg>`,
+      mark(`${ns} viewBox="500 500 200 100" ${Array.from({ length: 100_000 }, () => `data-a="x"`).join(' ')}`),
+    ];
+    let drawnWhole = 0;
+    let blank = 0;
     const started = performance.now();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="${'1'.repeat(100_000)}x" height="100"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} width="${'1'.repeat(100_000)}" height="100"/>`)).toBeNull();
-    expect(logoSvgUserSpace(`<svg ${SVG_NS} viewBox="0 0 ${'1'.repeat(100_000)} 10"/>`)).toBeNull();
+    for (const svg of shapes) {
+      // The primary is drawn as today; a shape the rasterizer refuses has no variants at all.
+      const primary = await rasterizeLogoSvg(svg);
+      if (primary.png === null) {
+        expect(primary.reason, svg.slice(0, 80)).toBe('unreadable');
+        continue;
+      }
+      const plain = readPng(primary.png);
+      const white = await rasterizeLogoSvg(recolourLogoPngSvg(primary.png, 'white') as string, { requireInk: true });
+      if (plain.painted() === 0) {
+        expect(white, svg.slice(0, 80)).toMatchObject({ png: null, reason: 'blank' });
+        blank += 1;
+        continue;
+      }
+      expect(white.reason, svg.slice(0, 80)).toBeNull();
+      const recoloured = readPng(white.png as Uint8Array);
+      expect(recoloured.painted(), svg.slice(0, 80)).toBe(plain.painted());
+      expect(recoloured.painted(), svg.slice(0, 80)).toBeGreaterThan(0);
+      drawnWhole += 1;
+    }
+    // Most shapes draw; the translated root draws off its canvas and is blank; the rest never reach a variant.
+    expect(drawnWhole).toBeGreaterThanOrEqual(8);
+    expect(blank).toBeGreaterThanOrEqual(1);
+    expect(drawnWhole + blank).toBeLessThanOrEqual(shapes.length);
+    // Nothing here parses the root: the shapes cost the rasterizer's draws and no more.
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  it('settles a root with a hundred thousand repeated attributes in bounded time: nothing of the server’s reads the root', async () => {
+    const svg = `<svg ${SVG_NS} viewBox="0 0 20 10" ${Array.from({ length: 100_000 }, () => `data-a="x"`).join(' ')}>${LOCKUP_BODY}</svg>`;
+    const files = { primary: { ref: 'logo.svg', svg }, stacked: null, symbol: { ref: 'symbol.svg', svg }, reversed: null };
+    const started = performance.now();
+    // The sources name the uploads and the recolours without reading them; the rasterizer refuses the repeat at once.
+    const sources = logoVariantSources(files, null);
+    expect(sources.symbol).toEqual({ kind: 'svg', svg, derived: false });
+    expect(await rasterizeLogoSvg(svg)).toMatchObject({ png: null, reason: 'unreadable' });
     expect(performance.now() - started).toBeLessThan(50);
   });
 });
 
-describe('recolourLogoSvg', () => {
-  it('declares one colour-matrix filter over the root’s user space after the root tag and wraps the root’s content in a group that applies it inline', () => {
-    const white = recolourLogoSvg(LOCKUP, 'white');
-    expect(white).toBe(
-      `<svg ${SVG_NS} viewBox="0 0 20 10">` +
-        `<defs><filter id="lfx-one-recolour" filterUnits="userSpaceOnUse" x="-2" y="-1" width="24" height="12" color-interpolation-filters="sRGB">` +
-        `<feColorMatrix type="matrix" values="${WHITE_MATRIX}"/></filter></defs>` +
-        `<g style="filter:url(#lfx-one-recolour)">${LOCKUP_BODY}</g></svg>`
-    );
-    expect(recolourLogoSvg(LOCKUP, 'black')).toContain(`values="${BLACK_MATRIX}"`);
-  });
-
-  it('sets the region from the root’s own viewBox, or from its size when it has none, at full precision', () => {
-    expect(recolourLogoSvg(offsetMark('300 0 100 100'), 'white')).toContain('x="290" y="-10" width="120" height="120"');
-    expect(recolourLogoSvg(offsetMark('-50 -50 300 300'), 'white')).toContain('x="-80" y="-80" width="360" height="360"');
-    expect(recolourLogoSvg(`<svg ${SVG_NS} width="20" height="10">${LOCKUP_BODY}</svg>`, 'white')).toContain('x="-2" y="-1" width="24" height="12"');
-    const tiny = `<svg ${SVG_NS} viewBox="0 0 0.0000002 0.0000001"><path d="M0 0h0.0000002v0.0000001H0z" fill="#1f6feb"/></svg>`;
-    expect(recolourLogoSvg(tiny, 'white')).toContain('x="-2e-8" y="-1e-8" width="2.4e-7" height="1.2e-7"');
-    expect(draw(recolourLogoSvg(tiny, 'white') as string).painted()).toBe(draw(tiny).painted());
-  });
-
-  it('is the same transform for the same input, so the published PNG keeps its content-addressed key', () => {
-    expect(recolourLogoSvg(LOCKUP, 'white')).toBe(recolourLogoSvg(LOCKUP, 'white'));
-  });
-
-  it('leaves a self-closing root, which paints nothing, as it is — unless a `</svg>` follows it after all', () => {
-    expect(recolourLogoSvg(`<svg ${SVG_NS} viewBox="0 0 10 3"/>`, 'white')).toBe(`<svg ${SVG_NS} viewBox="0 0 10 3"/>`);
-    expect(recolourLogoSvg(`<svg ${SVG_NS} viewBox="0 0 10 3"/><path d="M0 0h1v1z"/></svg>`, 'white')).toBeNull();
-  });
-
-  it('is not fooled by a `/>` or a `>` inside a root attribute’s value', () => {
-    const decoy = `<svg ${SVG_NS} data-x="a/>" data-y="b>c" viewBox="0 0 20 10">${LOCKUP_BODY}</svg>`;
-    const white = recolourLogoSvg(decoy, 'white');
-    expect(white).toContain(`data-y="b>c" viewBox="0 0 20 10"><defs>`);
-    expect(draw(white as string).at(50, 50)).toEqual(WHITE);
-  });
-
-  it('refuses, with null, an SVG it cannot wrap or place a region in, rather than hand back the colour original', () => {
-    expect(recolourLogoSvg('not an svg', 'white')).toBeNull();
-    // No closing tag after the root.
-    expect(recolourLogoSvg(`<svg ${SVG_NS} viewBox="0 0 10 10"><path d="M0 0h1v1z"/>`, 'white')).toBeNull();
-    // A closing tag spelled with a space, which the wrapper does not match.
-    expect(recolourLogoSvg(`<svg ${SVG_NS} viewBox="0 0 10 10"><path d="M0 0h1v1z"/></svg >`, 'white')).toBeNull();
-    // A prefixed root.
-    expect(recolourLogoSvg(`<svg:svg xmlns:svg="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><svg:path d="M0 0h1v1z"/></svg:svg>`, 'white')).toBeNull();
-    // No user space to set the region in.
-    expect(recolourLogoSvg(`<svg ${SVG_NS}><path d="M0 0h1v1z"/></svg>`, 'white')).toBeNull();
-    expect(recolourLogoSvg(`<svg ${SVG_NS} width="100%" height="100%"><path d="M0 0h1v1z"/></svg>`, 'white')).toBeNull();
-    // A root tag the server cannot read whole.
-    expect(recolourLogoSvg(`<svg ${SVG_NS} hidden viewBox="0 0 20 10">${LOCKUP_BODY}</svg>`, 'white')).toBeNull();
-  });
-
-  it('reads the viewBox exactly as the parser does, so the region never misses the canvas: each shape draws whole or is refused', () => {
-    const mark = (root: string): string => `<svg ${SVG_NS} ${root}><path d="M501 501h8v8h-8z" fill="#1f6feb"/></svg>`;
-    const whole = [mark(`viewBox='500 500 200 100'`), mark(`aria-label='x viewBox="0 0 20 10"' viewBox="500 500 200 100"`)];
-    for (const svg of whole) {
-      const white = draw(recolourLogoSvg(svg, 'white') as string);
-      expect(white.painted(), svg).toBe(draw(svg).painted());
-      expect(white.painted(), svg).toBeGreaterThan(0);
-      expect(white.at(2, 2), svg).toEqual(WHITE);
-    }
-    const refused = [
-      mark(`viewbox="500 500 200 100" width="200" height="100"`),
-      mark(`viewbox="500 500 200 100" viewBox="0 0 200 100"`),
-      mark(`viewBox="&#53;00 500 200 100"`),
-      mark(`viewBox="500-500 200 100"`),
-      mark(`viewBox="500 500 200 100" viewBox="500 500 200 100"`),
-    ];
-    for (const svg of refused) {
-      expect(recolourLogoSvg(svg, 'white'), svg).toBeNull();
-    }
-  });
-
-  it('draws every painted pixel in the ink, fills and strokes alike, on a transparent background', () => {
-    const original = draw(LOCKUP);
-    expect(original.at(50, 50)).toEqual([31, 111, 235, 255]);
-    expect(original.at(150, 50)).toEqual([221, 102, 34, 255]);
-
-    const white = draw(recolourLogoSvg(LOCKUP, 'white') as string);
-    expect(white.at(50, 50)).toEqual(WHITE);
-    expect(white.at(150, 50)).toEqual(WHITE);
-    expect(white.at(0, 0)).toEqual(CLEAR);
-    expect(white.at(199, 99)).toEqual(CLEAR);
-    // An unpainted group stays unpainted: the alpha row is the identity.
-    expect(white.at(150, 80)).toEqual(CLEAR);
-
-    const black = draw(recolourLogoSvg(LOCKUP, 'black') as string);
-    expect(black.at(50, 50)).toEqual([0, 0, 0, 255]);
-    expect(black.at(150, 50)).toEqual([0, 0, 0, 255]);
-    expect(black.at(0, 0)).toEqual(CLEAR);
-  });
-
-  it('keeps a stroke-only line, whose bounding box has no area, by filtering in user space', () => {
-    const rule = `<svg ${SVG_NS} viewBox="0 0 20 10"><path d="M1 5h18" stroke="#d62" stroke-width="2" fill="none"/></svg>`;
-    expect(draw(recolourLogoSvg(rule, 'white') as string).at(100, 50)).toEqual(WHITE);
-  });
-
-  it('draws the whole mark when the viewBox starts away from the origin, on either side of it', () => {
-    for (const viewBox of ['300 0 100 100', '500 500 200 100', '-50 -50 300 300']) {
-      const original = draw(offsetMark(viewBox));
-      const white = draw(recolourLogoSvg(offsetMark(viewBox), 'white') as string);
-      expect(white.painted(), viewBox).toBe(original.painted());
-      expect(white.painted(), viewBox).toBeGreaterThan(0);
-      // The mark sits one unit in from the viewBox's corner: its first pixels are the ink, the far corner is clear.
-      const unit = 200 / Number(viewBox.split(' ')[2]);
-      expect(white.at(Math.ceil(unit * 2), Math.ceil(unit * 2)), viewBox).toEqual(WHITE);
-      expect(white.at(white.width - 1, white.height - 1), viewBox).toEqual(CLEAR);
-    }
-  });
-
-  it('is not overridden by a filter the logo’s own stylesheet sets on groups', () => {
-    const styled = `<svg ${SVG_NS} viewBox="0 0 20 10"><style>g{filter:none}</style>${LOCKUP_BODY}</svg>`;
-    expect(draw(recolourLogoSvg(styled, 'white') as string).at(50, 50)).toEqual(WHITE);
-  });
-
-  it('adds nothing the rasterizer refuses, and keeps the size rule per drawn PNG', async () => {
-    const white = recolourLogoSvg(LOCKUP, 'white') as string;
-    expect(isRasterizableLogoSvg(white)).toBe(true);
-    const drawn = await rasterizeLogoSvg(white);
-    expect(drawn.reason).toBeNull();
-    expect(pngSize(drawn.png as Uint8Array)).toEqual({ width: 1200, height: 600 });
-  });
-});
-
-describe('logoVariantSvgSources', () => {
+describe('logoVariantSources', () => {
   const none = { primary: null, stacked: null, symbol: null, reversed: null };
   const primary = { ref: 'logo.svg', svg: LOCKUP };
-  const derived = (svg: string | null | undefined) => ({ svg, derived: true });
-  const uploaded = (svg: string | null | undefined) => ({ svg, derived: false });
+  const crop = { kind: 'svg', svg: `<svg ${SVG_NS} viewBox="0 0 10 10">${LOCKUP_BODY}</svg>`, derived: true };
+  const reversedOfPrimary = { kind: 'recolour', of: 'primary', ink: 'white' };
+  const oneColour = { kind: 'recolour', of: 'primary', ink: 'black' };
+  const reversedSymbol = { kind: 'recolour', of: 'symbol', ink: 'white' };
 
   it('derives nothing without a primary SVG', () => {
-    expect(logoVariantSvgSources(none, '0 0 10 10')).toEqual({});
-    expect(logoVariantSvgSources({ ...none, primary: { ref: 'logo.png', svg: null } }, '0 0 10 10')).toEqual({});
+    expect(logoVariantSources(none, '0 0 10 10')).toEqual({});
+    expect(logoVariantSources({ ...none, primary: { ref: 'logo.png', svg: null } }, '0 0 10 10')).toEqual({});
   });
 
-  it('derives the reversed and one-colour lockups from the primary, and no symbol without a viewBox or a symbol file', () => {
-    const sources = logoVariantSvgSources({ ...none, primary }, null);
-    expect(Object.keys(sources).sort()).toEqual(['one_color', 'reversed']);
-    expect(sources.reversed).toEqual(derived(recolourLogoSvg(LOCKUP, 'white')));
-    expect(sources.one_color).toEqual(derived(recolourLogoSvg(LOCKUP, 'black')));
+  it('recolours the drawn primary for the reversed and one-colour lockups, and names no symbol without a viewBox or a symbol file', () => {
+    expect(logoVariantSources({ ...none, primary }, null)).toEqual({ reversed: reversedOfPrimary, one_color: oneColour });
   });
 
-  it('crops the symbol out of the primary with the shared viewBox helper, and reverses that crop for the reversed symbol', async () => {
-    const sources = logoVariantSvgSources({ ...none, primary }, '0 0 10 10');
-    expect(Object.keys(sources).sort()).toEqual(['one_color', 'reversed', 'symbol', 'symbol_reversed']);
-    // The crop box becomes the root viewBox; the content is untouched.
-    expect(sources.symbol).toEqual(derived(`<svg ${SVG_NS} viewBox="0 0 10 10">${LOCKUP_BODY}</svg>`));
-    expect(sources.symbol_reversed).toEqual(derived(recolourLogoSvg(sources.symbol?.svg as string, 'white')));
-    // The crop is square, so each symbol PNG is drawn square at the drawing size; the lockups keep their 2:1.
-    expect(pngSize((await rasterizeLogoSvg(sources.symbol?.svg as string)).png as Uint8Array)).toEqual({ width: 1200, height: 1200 });
-    expect(pngSize((await rasterizeLogoSvg(sources.symbol_reversed?.svg as string)).png as Uint8Array)).toEqual({ width: 1200, height: 1200 });
-    expect(pngSize((await rasterizeLogoSvg(sources.reversed?.svg as string)).png as Uint8Array)).toEqual({ width: 1200, height: 600 });
-    expect(pngSize((await rasterizeLogoSvg(sources.one_color?.svg as string)).png as Uint8Array)).toEqual({ width: 1200, height: 600 });
-    // The reversed symbol is the crop in white: the mark is drawn white, the rule to the right of the crop is gone.
-    const reversedSymbol = draw(sources.symbol_reversed?.svg as string);
-    expect(reversedSymbol.width).toBe(reversedSymbol.height);
-    expect(reversedSymbol.at(100, 100)).toEqual(WHITE);
-    expect(reversedSymbol.at(2, 2)).toEqual(CLEAR);
+  it('crops the symbol out of the primary with the shared viewBox helper, and recolours that drawn crop for the reversed symbol', async () => {
+    const sources = logoVariantSources({ ...none, primary }, '0 0 10 10');
+    expect(sources).toEqual({ symbol: crop, symbol_reversed: reversedSymbol, reversed: reversedOfPrimary, one_color: oneColour });
+    // The crop is square, so the symbol PNGs are drawn square at the drawing size; the reversed symbol is the crop in white.
+    const symbol = await rasterizeLogoSvg(crop.svg, { requireInk: true });
+    expect(logoPngSize(symbol.png as Uint8Array)).toEqual({ width: 1200, height: 1200 });
+    const reversed = await rasterizeLogoSvg(recolourLogoPngSvg(symbol.png as Uint8Array, 'white') as string, { requireInk: true });
+    const pixels = readPng(reversed.png as Uint8Array);
+    expect(pixels.width).toBe(pixels.height);
+    expect(pixels.at(600, 600)).toEqual(WHITE);
+    expect(pixels.at(10, 10)).toEqual(CLEAR);
+    expect(pixels.painted()).toBe(readPng(symbol.png as Uint8Array).painted());
   });
 
-  it('reverses a symbol cropped out of the right of the lockup whole: the region follows the crop box', () => {
-    const sources = logoVariantSvgSources({ ...none, primary }, '10 0 10 10');
-    expect(sources.symbol?.svg).toBe(`<svg ${SVG_NS} viewBox="10 0 10 10">${LOCKUP_BODY}</svg>`);
-    const reversedSymbol = draw(sources.symbol_reversed?.svg as string);
+  it('crops a symbol out of the right of the lockup whole: the rasterizer, not the server, reads the crop box', async () => {
+    const sources = logoVariantSources({ ...none, primary }, '10 0 10 10');
+    expect(sources.symbol).toEqual({ kind: 'svg', svg: `<svg ${SVG_NS} viewBox="10 0 10 10">${LOCKUP_BODY}</svg>`, derived: true });
+    const symbol = await rasterizeLogoSvg((sources.symbol as { svg: string }).svg, { requireInk: true });
+    const reversed = await rasterizeLogoSvg(recolourLogoPngSvg(symbol.png as Uint8Array, 'white') as string, { requireInk: true });
+    const pixels = readPng(reversed.png as Uint8Array);
     // The crop holds the stroke-only rule, drawn white across its middle, and no mark.
-    expect(reversedSymbol.painted()).toBe(draw(sources.symbol?.svg as string).painted());
-    expect(reversedSymbol.at(100, 100)).toEqual(WHITE);
-    expect(reversedSymbol.at(100, 20)).toEqual(CLEAR);
+    expect(pixels.painted()).toBe(readPng(symbol.png as Uint8Array).painted());
+    expect(pixels.at(600, 600)).toEqual(WHITE);
+    expect(pixels.at(600, 120)).toEqual(CLEAR);
+  });
+
+  it('refuses a symbol cropped out of empty space as blank, so it is dropped rather than published transparent', async () => {
+    const sources = logoVariantSources({ ...none, primary }, '10 0 10 3');
+    expect(await rasterizeLogoSvg((sources.symbol as { svg: string }).svg, { requireInk: true })).toMatchObject({ png: null, reason: 'blank' });
   });
 
   it('drops a width and height from the cropped root, so the crop fills its box', () => {
     const sized = { ref: 'logo.svg', svg: `<svg ${SVG_NS} width="200" height="100" viewBox="0 0 20 10">${LOCKUP_BODY}</svg>` };
-    expect(logoVariantSvgSources({ ...none, primary: sized }, '0 0 10 10').symbol).toEqual(derived(`<svg ${SVG_NS} viewBox="0 0 10 10">${LOCKUP_BODY}</svg>`));
+    expect(logoVariantSources({ ...none, primary: sized }, '0 0 10 10').symbol).toEqual(crop);
   });
 
-  it('lets an uploaded symbol or reversed SVG win over derivation, and reverses the symbol file, never the reversed file', () => {
+  it('lets an uploaded symbol or reversed SVG win over derivation, and recolours the symbol, never the reversed file', () => {
     const symbolFile = { ref: 'symbol.svg', svg: `<svg ${SVG_NS} viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#1f6feb"/></svg>` };
     const reversedFile = { ref: 'reversed.svg', svg: `<svg ${SVG_NS} viewBox="0 0 20 10"><path d="M1 1h8v8H1z" fill="#fff"/></svg>` };
-    const sources = logoVariantSvgSources({ ...none, primary, symbol: symbolFile, reversed: reversedFile }, '0 0 10 10');
-    expect(sources.symbol).toEqual(uploaded(symbolFile.svg));
-    expect(sources.reversed).toEqual(uploaded(reversedFile.svg));
-    expect(sources.symbol_reversed).toEqual(derived(recolourLogoSvg(symbolFile.svg, 'white')));
-    expect(sources.one_color).toEqual(derived(recolourLogoSvg(LOCKUP, 'black')));
+    expect(logoVariantSources({ ...none, primary, symbol: symbolFile, reversed: reversedFile }, '0 0 10 10')).toEqual({
+      symbol: { kind: 'svg', svg: symbolFile.svg, derived: false },
+      symbol_reversed: reversedSymbol,
+      reversed: { kind: 'svg', svg: reversedFile.svg, derived: false },
+      one_color: oneColour,
+    });
   });
 
-  it('falls back to the crop when the uploaded symbol or reversed file is not an SVG', () => {
-    const sources = logoVariantSvgSources(
+  it('falls back to the crop and the recolour when the uploaded symbol or reversed file is not an SVG', () => {
+    const sources = logoVariantSources(
       { ...none, primary, symbol: { ref: 'symbol.png', svg: null }, reversed: { ref: 'reversed.png', svg: null } },
       '0 0 10 10'
     );
-    expect(sources.symbol).toEqual(derived(`<svg ${SVG_NS} viewBox="0 0 10 10">${LOCKUP_BODY}</svg>`));
-    expect(sources.reversed).toEqual(derived(recolourLogoSvg(LOCKUP, 'white')));
-  });
-
-  it('leaves a recoloured variant with no source, so the caller can say so, when the primary cannot be recoloured, and keeps the ones it can', () => {
-    const unspaced = { ref: 'logo.svg', svg: `<svg ${SVG_NS}>${LOCKUP_BODY}</svg>` };
-    const symbolFile = { ref: 'symbol.svg', svg: `<svg ${SVG_NS} viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#1f6feb"/></svg>` };
-    expect(logoVariantSvgSources({ ...none, primary: unspaced }, null)).toEqual({ reversed: derived(null), one_color: derived(null) });
-    const sources = logoVariantSvgSources({ ...none, primary: unspaced, symbol: symbolFile }, null);
-    expect(sources.symbol).toEqual(uploaded(symbolFile.svg));
-    expect(sources.symbol_reversed).toEqual(derived(recolourLogoSvg(symbolFile.svg, 'white')));
-    expect(sources.reversed).toEqual(derived(null));
+    expect(sources.symbol).toEqual(crop);
+    expect(sources.reversed).toEqual(reversedOfPrimary);
   });
 });

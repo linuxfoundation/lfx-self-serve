@@ -148,7 +148,7 @@ import { isMktgSlidesExportStale } from '../../../../../packages/shared/src/util
 import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID } from '../constants';
 import { ConflictError } from '../errors';
 import { rasterizeLogoSvg } from '../utils/mktg-logo-png.util';
-import { recolourLogoSvg } from '../utils/mktg-logo-variants.util';
+import { recolourLogoPngSvg } from '../utils/mktg-logo-variants.util';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { MktgSlidesExportService } from './mktg-slides-export.service';
 import { ObjectStoreService } from './object-store.service';
@@ -759,8 +759,9 @@ describe('MktgSlidesExportService', () => {
     it('drops the one variant whose upload throws and still sends the others', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
-      // The variants upload at once, so the reversed lockup is picked by its bytes: the primary recoloured white, as the server draws it.
-      store.failPublicPutImages = [Buffer.from((await rasterizeLogoSvg(recolourLogoSvg(LOCKUP_SVG, 'white') as string)).png as Uint8Array)];
+      // The variants upload at once, so the reversed lockup is picked by its bytes: the drawn primary recoloured white, as the server draws it.
+      const primaryPng = (await rasterizeLogoSvg(LOCKUP_SVG)).png as Uint8Array;
+      store.failPublicPutImages = [Buffer.from((await rasterizeLogoSvg(recolourLogoPngSvg(primaryPng, 'white') as string)).png as Uint8Array)];
 
       await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
 
@@ -800,31 +801,46 @@ describe('MktgSlidesExportService', () => {
       );
     });
 
-    it('warns, naming the variant, when a derived variant cannot be made, and still sends the ones it can', async () => {
+    it('recolours from the drawn PNGs, so a primary whose root says nothing of its size still gets every variant', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
-      // A primary with no viewBox and no size draws (the rasterizer sizes it), but gives the recolour no region to filter in.
+      // A primary with no viewBox and no size: the rasterizer sizes it, and the recolours read only what it drew.
       await seedKit(documentStore, {
-        svg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1h8v8H1z" fill="#1f6feb"/></svg>',
+        svg: "<svg xmlns='http://www.w3.org/2000/svg'><path d='M1 1h8v8H1z' fill='#1f6feb'/></svg>",
         symbol: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#1f6feb"/></svg>',
       });
 
       const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
 
-      const lines = sentLogoLines();
-      expect(lines['LOGO URL']).toMatch(LOGO_URL);
-      expect(lines['LOGO SYMBOL URL']).toMatch(LOGO_URL);
-      expect(lines['LOGO SYMBOL REVERSED URL']).toMatch(LOGO_URL);
-      expect(lines['LOGO REVERSED URL']).toBe('none');
-      expect(lines['LOGO ONE-COLOR URL']).toBe('none');
-      expect(started.logoNote).toBeNull();
-      for (const variant of ['reversed', 'one_color']) {
-        expect(loggerMocks.warning).toHaveBeenCalledWith(
-          req,
-          'mktg_slides_export_logo',
-          expect.any(String),
-          expect.objectContaining({ variant, derived: true, reason: 'not-derived' })
-        );
+      for (const value of Object.values(sentLogoLines())) {
+        expect(value).toMatch(LOGO_URL);
       }
+      expect(started.logoNote).toBeNull();
+      expect(store.publicImages.size).toBe(5);
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
+    });
+
+    it('draws the symbol once and recolours the reversed symbol from it, and skips the reversed symbol when the symbol did not draw', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // An uploaded symbol that sets live text: it does not draw, so neither symbol line is sent, and only the symbol is logged (at debug: it is an upload).
+      await seedKit(documentStore, {
+        svg: LOCKUP_SVG,
+        symbol: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><text x="0" y="6" font-size="6">S</text></svg>',
+      });
+
+      await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO SYMBOL URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(lines['LOGO REVERSED URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO ONE-COLOR URL']).toMatch(LOGO_URL);
+      expect(loggerMocks.debug).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ variant: 'symbol', derived: false, reason: 'live-text' })
+      );
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
     });
 
     it('drops a variant that draws as nothing — a symbol cropped out of empty space — with a warning, and still sends the others', async () => {
@@ -842,14 +858,14 @@ describe('MktgSlidesExportService', () => {
       expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
       expect(started.logoNote).toBeNull();
       expect(store.publicImages.size).toBe(3);
-      for (const variant of ['symbol', 'symbol_reversed']) {
-        expect(loggerMocks.warning).toHaveBeenCalledWith(
-          req,
-          'mktg_slides_export_logo',
-          expect.any(String),
-          expect.objectContaining({ variant, derived: true, reason: 'blank' })
-        );
-      }
+      // One line for the crop; the reversed symbol, which is recoloured from it, goes without a second one.
+      expect(loggerMocks.warning).toHaveBeenCalledTimes(1);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ variant: 'symbol', derived: true, reason: 'blank' })
+      );
     });
 
     it('publishes no variant when the primary itself could not be published', async () => {
