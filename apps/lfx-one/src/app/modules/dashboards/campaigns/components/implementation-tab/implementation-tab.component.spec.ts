@@ -6273,6 +6273,140 @@ describe('ImplementationTabComponent google creative minimums', () => {
 });
 
 /**
+ * Demand Gen's video ad (#5226): a second creative for the same channel, picked by an ad-format
+ * choice. Only the chosen format renders and is sent; the other keeps what was typed and says so.
+ */
+describe('ImplementationTabComponent demand gen video ad', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  /** A video ad campaign-service accepts, as the form holds it: one entry per line. */
+  const VIDEO_COMPLETE = {
+    youtubeVideoIds: 'dQw4w9WgXcQ',
+    headlines: 'Join us in Salt Lake City',
+    longHeadlines: 'Four days of cloud native talks and labs',
+    descriptions: 'Register today',
+    businessName: 'Acme',
+    callToAction: 'SIGN_UP',
+    logoImages: 'https://example.com/logo.png',
+  };
+
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('renders the image ad by default, and the video ad in its place once Video is chosen', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    expect(c['googleCreativeSections']().map((s: { groupName: string }) => s.groupName)).toEqual(['demandGenCreative']);
+    expect(find('implementation-creative-demand-gen-format')).not.toBeNull();
+
+    c['campaignForm'].controls.demandGenAdFormat.setValue('video');
+    fixture.detectChanges();
+
+    const sections = c['googleCreativeSections']();
+    expect(sections.map((s: { groupName: string; format: string }) => [s.groupName, s.format])).toEqual([['demandGenVideoCreative', 'video']]);
+    expect(c['campaignForm'].controls.demandGenVideoCreative.enabled).toBe(true);
+    expect(c['campaignForm'].controls.demandGenCreative.enabled).toBe(false);
+    expect(find('implementation-creative-demand-gen-youtubeVideoIds')).not.toBeNull();
+    expect(find('implementation-creative-demand-gen-marketingImages')).toBeNull();
+    // The call to action is a closed list, so a select with "None" first.
+    const cta = find('implementation-creative-demand-gen-callToAction') as HTMLSelectElement | null;
+    expect(cta?.tagName).toBe('SELECT');
+    expect(cta?.options[0].value).toBe('');
+  });
+
+  it('sends only the video ad, keeps the image ad typed, and says it is not sent', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenCreative.patchValue({ headlines: 'An image headline' });
+    c['campaignForm'].controls.demandGenAdFormat.setValue('video');
+    c['campaignForm'].controls.demandGenVideoCreative.patchValue(VIDEO_COMPLETE);
+    fixture.detectChanges();
+
+    expect(c['googleCreativePayload']()).toEqual({
+      demandGenVideoCreative: {
+        youtubeVideoIds: ['dQw4w9WgXcQ'],
+        headlines: ['Join us in Salt Lake City'],
+        longHeadlines: ['Four days of cloud native talks and labs'],
+        descriptions: ['Register today'],
+        businessName: 'Acme',
+        callToAction: 'SIGN_UP',
+        logoImages: ['https://example.com/logo.png'],
+      },
+    });
+    expect(c['googleCreativeError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+    expect(c['campaignForm'].controls.demandGenCreative.controls.headlines.value).toBe('An image headline');
+    expect(c['demandGenFormatHeldMessage']()).toContain('image ad you entered is kept but not sent');
+    expect(find('implementation-demand-gen-format-held')?.textContent).toContain('kept but not sent');
+    expect(find('implementation-demand-gen-format-held-live')?.textContent).toContain('kept but not sent');
+  });
+
+  it('holds Create on the shared judge the BFF refuses on, and releases it once the ad is valid', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenAdFormat.setValue('video');
+    c['campaignForm'].controls.demandGenVideoCreative.patchValue({ ...VIDEO_COMPLETE, youtubeVideoIds: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' });
+
+    expect(c['googleCreativeError']()).toContain('is a link, not a video ID');
+    expect(c['canSubmit']()).toBe(false);
+
+    c['campaignForm'].controls.demandGenVideoCreative.patchValue({ youtubeVideoIds: 'dQw4w9WgXcQ', headlines: 'h'.repeat(41) });
+    expect(c['googleCreativeError']()).toContain('longer than the 40 characters');
+
+    c['campaignForm'].controls.demandGenVideoCreative.patchValue({ headlines: 'h'.repeat(40) });
+    expect(c['googleCreativeError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('blocks nothing for a wholly empty video ad, the shell campaign-service accepts', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenAdFormat.setValue('video');
+
+    expect(c['googleCreativePayload']()).toEqual({});
+    expect(c['googleCreativeError']()).toBeNull();
+    expect(c['demandGenFormatHeldMessage']()).toBe('');
+  });
+
+  it('carries the format and both creatives through the draft, and restores the format', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    let captured: CampaignImplementationDraft | null = null;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    c['campaignForm'].controls.demandGenAdFormat.setValue('video');
+    c['campaignForm'].controls.demandGenVideoCreative.patchValue({ youtubeVideoIds: 'dQw4w9WgXcQ' });
+    c['emitDraft']();
+
+    const draft = captured as unknown as CampaignImplementationDraft;
+    expect(draft.demandGenAdFormat).toBe('video');
+    expect(draft.googleCreatives?.['demandGenVideoCreative']?.['youtubeVideoIds']).toBe('dQw4w9WgXcQ');
+
+    c['campaignForm'].controls.demandGenAdFormat.setValue('image');
+    restoreGoogleDraft(fixture, c, {
+      includeDemandGen: true,
+      demandGenAdFormat: 'video',
+      googleCreatives: { demandGenVideoCreative: { youtubeVideoIds: 'abc123' } },
+    });
+    expect(c['campaignForm'].controls.demandGenAdFormat.value).toBe('video');
+    expect(c['campaignForm'].controls.demandGenVideoCreative.controls.youtubeVideoIds.value).toBe('abc123');
+  });
+
+  it('withdraws both Demand Gen formats and the held note when the channel moves away', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenAdFormat.setValue('video');
+    c['campaignForm'].controls.demandGenCreative.patchValue({ headlines: 'An image headline' });
+    c['campaignForm'].patchValue({ includeDemandGen: false, includeDisplay: true });
+    fixture.detectChanges();
+
+    expect(c['googleCreativeSections']().map((s: { groupName: string }) => s.groupName)).toEqual(['displayCreative']);
+    expect(c['campaignForm'].controls.demandGenVideoCreative.enabled).toBe(false);
+    expect(c['googleCreativePayload']()).not.toHaveProperty('demandGenVideoCreative');
+    expect(c['demandGenFormatHeldMessage']()).toBe('');
+  });
+});
+
+/**
  * The results step's Reddit notice. Uses `configureGoogleTab` deliberately: that helper is a
  * plain ImplementationTabComponent harness with nothing Google-specific in its providers, and
  * the results step renders straight off the `results` signal with no capability gate.

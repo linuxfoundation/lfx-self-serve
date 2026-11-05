@@ -163,6 +163,10 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-action-picker-live">
   {{ googleConversionActionPickerAnnouncement() }}
 </div>
+<!-- The Demand Gen format the create will not send, kept and announced on the same terms (#5226); empty off Demand Gen. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-format-held-live">
+  {{ demandGenFormatHeldMessage() }}
+</div>
 <!-- The first ad's display-width errors, announced on the same terms; empty off Search. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
   {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
@@ -2464,7 +2468,9 @@
         whenever Search is ticked alongside it. See its docblock for why each one is withheld rather
         than shown and ignored.
       -->
-      @for (section of googleCreativeSections(); track section.channel) {
+      <!-- Tracked by the group, not the channel: Demand Gen's two formats share a channel, and a
+           `formGroupName` does not re-register when its name changes in place. -->
+      @for (section of googleCreativeSections(); track section.groupName) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" [attr.data-testid]="'implementation-creative-section-' + section.channel">
           <h3 class="text-sm font-semibold text-gray-900">{{ section.label }} Creative</h3>
           <!--
@@ -2477,6 +2483,43 @@
           <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
           @if (section.channel === 'performance-max' && performanceMaxPrefillShown()) {
             <p class="mt-1 text-xs text-gray-500" data-testid="implementation-creative-prefill-notice-performance-max">{{ performanceMaxPrefillNotice }}</p>
+          }
+          <!--
+            Demand Gen builds ONE ad, an image ad or a video ad (#5226). The choice decides which of the
+            two creative groups this section renders and the create sends; the other keeps what was
+            typed into it, and the note below says it will not be sent.
+          -->
+          @if (section.channel === 'demand-gen') {
+            <fieldset class="mt-4 flex flex-col gap-2" data-testid="implementation-creative-demand-gen-format">
+              <legend class="text-xs font-medium text-gray-700">Ad format</legend>
+              <div class="flex flex-wrap gap-4">
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    formControlName="demandGenAdFormat"
+                    value="image"
+                    [attr.aria-describedby]="demandGenFormatHeldMessage() ? 'implementation-demand-gen-format-held' : null"
+                    class="border-gray-300 text-blue-600 focus:ring-blue-500"
+                    data-testid="implementation-creative-demand-gen-format-image" />
+                  Image ad
+                </label>
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    formControlName="demandGenAdFormat"
+                    value="video"
+                    [attr.aria-describedby]="demandGenFormatHeldMessage() ? 'implementation-demand-gen-format-held' : null"
+                    class="border-gray-300 text-blue-600 focus:ring-blue-500"
+                    data-testid="implementation-creative-demand-gen-format-video" />
+                  Video ad (YouTube)
+                </label>
+              </div>
+              @if (demandGenFormatHeldMessage()) {
+                <p id="implementation-demand-gen-format-held" class="text-xs text-gray-500" data-testid="implementation-demand-gen-format-held">
+                  {{ demandGenFormatHeldMessage() }}
+                </p>
+              }
+            </fieldset>
           }
           <div class="mt-4 flex flex-col gap-4" [formGroupName]="section.groupName">
             @for (field of section.fields; track field.control) {
@@ -2493,6 +2536,18 @@
                     rows="3"
                     class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
+                } @else if (field.options) {
+                  <!-- A closed list upstream accepts, so a select rather than free text; empty sends none. -->
+                  <select
+                    [id]="section.channel + '-' + field.control"
+                    [formControlName]="field.control"
+                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control">
+                    <option value="">None</option>
+                    @for (option of field.options; track option.value) {
+                      <option [value]="option.value">{{ option.label }}</option>
+                    }
+                  </select>
                 } @else {
                   <input
                     type="text"

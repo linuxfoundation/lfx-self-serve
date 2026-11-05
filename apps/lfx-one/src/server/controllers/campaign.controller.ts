@@ -25,6 +25,7 @@ import {
   googleSearchAdPathsRefusal,
 } from '@lfx-one/shared/utils/campaign-google-search-ads.utils';
 import { googlePerformanceMaxShortDescriptionMissing } from '@lfx-one/shared/utils/campaign-google-creative.utils';
+import { googleDemandGenVideoCreativeRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-video.utils';
 import {
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
@@ -81,6 +82,7 @@ import type {
   GoogleCampaignChannel,
   GoogleCreativeFieldSpec,
   GoogleCreativeImageRef,
+  GoogleCreativeWireFields,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
   TwitterCampaignCreateRequest,
@@ -162,6 +164,8 @@ import {
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
+  GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_SEARCH_AD_GROUP_NAME,
@@ -322,21 +326,29 @@ type NormalizedProximityTarget = Omit<CampaignProximityTarget, 'radiusUnit'> & {
  * `video` has no entry on purpose — see `GOOGLE_VIDEO_CREATE_SUPPORTED`. `search` has none either:
  * its copy rides as top-level `headlines`/`descriptions`/`keywords`, not under a creative key.
  */
-const GOOGLE_CREATIVE_FIELDS: Record<string, { key: string; lists: readonly string[]; images: readonly string[]; scalars: readonly string[] }> =
-  Object.fromEntries(
-    GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => {
-      const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
-      return [
-        channel,
-        {
-          key: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
-          lists: fields.filter((f) => f.kind === 'list').map((f) => f.control),
-          images: fields.filter((f) => f.image !== undefined).map((f) => f.control),
-          scalars: fields.filter((f) => f.kind === 'text').map((f) => f.control),
-        },
-      ];
-    })
-  );
+/** One creative catalogue, reduced to what the normalizer needs: its request key and each field's shape. */
+function googleCreativeWireFields(key: string, fields: readonly GoogleCreativeFieldSpec[]): GoogleCreativeWireFields {
+  return {
+    key,
+    lists: fields.filter((f) => f.kind === 'list').map((f) => f.control),
+    images: fields.filter((f) => f.image !== undefined).map((f) => f.control),
+    scalars: fields.filter((f) => f.kind === 'text').map((f) => f.control),
+  };
+}
+
+const GOOGLE_CREATIVE_FIELDS: Record<string, GoogleCreativeWireFields> = Object.fromEntries(
+  GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => [
+    channel,
+    googleCreativeWireFields(GOOGLE_CREATIVE_REQUEST_KEYS[channel], GOOGLE_CREATIVE_FIELD_SPECS[channel]),
+  ])
+);
+
+/**
+ * The Demand Gen VIDEO ad's wire shape (#5226): the second creative Demand Gen can carry, under its own
+ * key, sent INSTEAD of `demandGenCreative`. Kept out of {@link GOOGLE_CREATIVE_FIELDS} because that
+ * table is one creative per channel; `googleCreative` adds this one on Demand Gen.
+ */
+const GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELDS = googleCreativeWireFields(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY, GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS);
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
@@ -1511,6 +1523,16 @@ export class CampaignController {
               operation: 'campaign_create',
               service: 'campaign_controller',
             })
+          );
+          return;
+        }
+
+        // The Demand Gen video ad (#5226), through the same shared judge the Implement tab holds
+        // Create on, so a video ad Go would refuse after dispatch is named here first.
+        const videoRefusal = this.googleDemandGenVideoRefusal(body, googleChannel);
+        if (videoRefusal) {
+          next(
+            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY, videoRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
           );
           return;
         }
@@ -5309,7 +5331,7 @@ export class CampaignController {
   private unservedGoogleAssetField(body: CampaignCreateRequest): string | null {
     if (canUseGoogleCreativeAssets()) return null;
     const raw = body as unknown as Record<string, unknown>;
-    for (const spec of Object.values(GOOGLE_CREATIVE_FIELDS)) {
+    for (const spec of [...Object.values(GOOGLE_CREATIVE_FIELDS), GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELDS]) {
       const creative = raw?.[spec.key];
       if (creative === null || typeof creative !== 'object' || Array.isArray(creative)) continue;
       for (const field of spec.images) {
@@ -6081,6 +6103,26 @@ export class CampaignController {
   }
 
   /**
+   * Why campaign-service would refuse this create's Demand Gen video ad (#5226), or `null`.
+   *
+   * Judged only on a Demand Gen create, and only on what {@link googleCreative} would SEND: on any
+   * other channel the video ad is not put on the wire, as an image creative left under an unselected
+   * channel is not. Two refusals: an image ad beside the video ad — upstream builds ONE ad from the
+   * pair and refuses both (`errDemandGenTwoCreatives`) — and every rule of the ad itself, through
+   * `googleDemandGenVideoCreativeRefusal`, which mirrors `validateDemandGenVideoSpec`.
+   */
+  private googleDemandGenVideoRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
+    if (googleChannel !== 'demand-gen') return null;
+    const sent = this.googleCreative(body, 'demand-gen');
+    const video = sent[GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY];
+    if (video === undefined) return null;
+    if (sent[GOOGLE_CREATIVE_REQUEST_KEYS['demand-gen']] !== undefined) {
+      return 'A Demand Gen campaign takes an image ad or a video ad, not both. Clear one of them and create again.';
+    }
+    return googleDemandGenVideoCreativeRefusal(video);
+  }
+
+  /**
    * The Search campaign's ads as campaign-service takes them, spread-ready.
    *
    * The first ad's display paths go out as the campaign-level `path1`/`path2`, trimmed and omitted
@@ -6788,7 +6830,17 @@ export class CampaignController {
   private googleCreative(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
     const spec = GOOGLE_CREATIVE_FIELDS[channel];
     if (!spec) return {};
+    // Demand Gen carries one of two creatives: the image ad, or the video ad (#5226). Both are
+    // normalized and emitted when present, so a request carrying both reaches `createCampaign`'s
+    // refusal (`googleDemandGenVideoRefusal`) rather than having one silently dropped here.
+    if (channel === 'demand-gen') {
+      return { ...this.googleCreativeFrom(body, spec), ...this.googleCreativeFrom(body, GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELDS) };
+    }
+    return this.googleCreativeFrom(body, spec);
+  }
 
+  /** {@link googleCreative} for one catalogue: that creative's key, normalized, or `{}`. */
+  private googleCreativeFrom(body: CampaignCreateRequest, spec: GoogleCreativeWireFields): Record<string, unknown> {
     // `as Record<string, unknown>` rather than the typed interface: the value arrives off an
     // unvalidated request body, so every field has to be re-tested at runtime anyway and the
     // declared type would only make the tests look redundant.

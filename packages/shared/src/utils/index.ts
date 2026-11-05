@@ -137,6 +137,7 @@ export * from './campaign-google-conversion-actions.utils';
 export * from './campaign-google-criteria.utils';
 export * from './campaign-google-search-ads.utils';
 export * from './campaign-google-creative.utils';
+export * from './campaign-google-demand-gen-video.utils';
 export * from './campaign-event-details.utils';
 export * from './campaign.utils';
 export * from './campaign-optimize.utils';

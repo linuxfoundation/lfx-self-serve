@@ -47,6 +47,7 @@ import type {
   CreativeAssetQueueStatusView,
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
+  GoogleCreativeGroup,
   GoogleCreativeSharedCap,
   GoogleDeviceBidMode,
   KeywordActionOutcome,
@@ -4540,6 +4541,7 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'targetRoas', label: 'target ROAS', normalized: true },
   { field: 'conversionActions', label: 'conversion actions', normalized: true },
   { field: 'demandGenCreative', label: 'Demand Gen creative', normalized: true },
+  { field: 'demandGenVideoCreative', label: 'Demand Gen video ad', normalized: true },
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
 ] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
@@ -4928,6 +4930,78 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeFieldSpec[]>;
 
 /**
+ * The calls to action a Demand Gen video ad accepts: campaign-service's `demandGenVideoCallToActions`
+ * (`internal/platform/googleads/demandgen_video_creative.go`), each a Google `CallToActionType` a
+ * validateOnly probe accepted. Deliberately short rather than Google's whole enum — the same probe
+ * refused `REGISTER` and `GET_STARTED` — so anything else is refused before the budget.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION = [
+  { value: 'SIGN_UP', label: 'Sign up' },
+  { value: 'LEARN_MORE', label: 'Learn more' },
+  { value: 'BOOK_NOW', label: 'Book now' },
+  { value: 'VISIT_SITE', label: 'Visit site' },
+  { value: 'WATCH_NOW', label: 'Watch now' },
+] as const;
+
+/**
+ * The most YouTube videos one Demand Gen video ad carries: campaign-service's `maxVideoAdVideos`
+ * (`video_creative.go`), which `validateDemandGenVideoSpec` applies to this ad too.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_MAX_VIDEOS = 5;
+
+/**
+ * The Demand Gen VIDEO responsive ad's fields (#460/#481), in render order — the
+ * {@link GOOGLE_CREATIVE_FIELD_SPECS} entry for the format Demand Gen offers beside its image ad.
+ *
+ * Every bound is `validateDemandGenVideoSpec`'s (`demandgen_video_creative.go`), and several differ
+ * from the image ad's on purpose:
+ *
+ * - Headlines are **40** wide, not 30: a validateOnly probe accepted 40 and refused 41 for this ad
+ *   type (`maxDemandGenVideoHeadlineWeight`).
+ * - Long headlines are required (1-5 at 90); the image ad has none.
+ * - Exactly **one** square logo, where the image ad takes 1-5: no source states this ad type's
+ *   range, so campaign-service caps it conservatively.
+ * - The call to action is a closed list ({@link GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION}), not the
+ *   image ad's free text.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS = [
+  {
+    control: 'youtubeVideoIds',
+    label: 'YouTube video IDs',
+    kind: 'list',
+    min: 1,
+    max: GOOGLE_DEMAND_GEN_VIDEO_MAX_VIDEOS,
+    hint: 'Bare video IDs, one per line, such as dQw4w9WgXcQ. A watch URL is refused upstream rather than parsed.',
+  },
+  { control: 'headlines', label: 'Headlines', kind: 'list', min: 1, max: 5, width: 40 },
+  { control: 'longHeadlines', label: 'Long headlines', kind: 'list', min: 1, max: 5, width: 90 },
+  { control: 'descriptions', label: 'Descriptions', kind: 'list', min: 1, max: 5, width: 90 },
+  { control: 'businessName', label: 'Business name', kind: 'text', width: 25, requiredOnce: true, hint: 'Required by Google once a creative is supplied.' },
+  {
+    control: 'callToAction',
+    label: 'Call to action',
+    kind: 'text',
+    options: GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION,
+    hint: 'Optional. Leave it on none to send no call to action.',
+  },
+  {
+    control: 'logoImages',
+    label: 'Logo image (1:1)',
+    kind: 'list',
+    min: 1,
+    max: 1,
+    hint: 'Required: exactly one square logo.',
+    image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+  },
+] as const satisfies readonly GoogleCreativeFieldSpec[];
+
+/** The `googleAdsConfig` key the Demand Gen video ad rides under, beside {@link GOOGLE_CREATIVE_REQUEST_KEYS}. */
+export const GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY = 'demandGenVideoCreative' satisfies keyof CampaignCreateRequest;
+
+/** The Demand Gen video section's heading, beside {@link GOOGLE_CREATIVE_SECTION_TITLES}. */
+export const GOOGLE_DEMAND_GEN_VIDEO_SECTION_TITLE = 'Demand Gen video';
+
+/**
  * How far a stored image's aspect ratio may sit from its Google slot's target, as a fraction of the
  * target — campaign-service's `demandGenAspectTolerance`, which every Google slot is held to (Google
  * documents ±1%). Measured as `ShapeRule.ratioDrift` measures it: `|got - want| / want`.
@@ -5027,6 +5101,30 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
   'performance-max': 'Performance Max',
   display: 'Display',
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
+
+/**
+ * Every creative the Implement tab collects, one entry per form group: each channel's image creative,
+ * then Demand Gen's video ad (#5226). The tab finds a group's catalogue here by its name, so a slot key
+ * (`<group>.<control>`) resolves the same way whichever of Demand Gen's two formats it belongs to.
+ */
+export const GOOGLE_CREATIVE_GROUPS: readonly GoogleCreativeGroup[] = [
+  ...GOOGLE_CHANNELS_WITH_CREATIVE.map(
+    (channel): GoogleCreativeGroup => ({
+      channel,
+      format: 'image',
+      groupName: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
+      label: GOOGLE_CREATIVE_SECTION_TITLES[channel],
+      fields: GOOGLE_CREATIVE_FIELD_SPECS[channel],
+    })
+  ),
+  {
+    channel: 'demand-gen',
+    format: 'video',
+    groupName: GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+    label: GOOGLE_DEMAND_GEN_VIDEO_SECTION_TITLE,
+    fields: GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
+  },
+];
 
 /**
  * The short-description width Performance Max needs at least one description to fit: Google renders
