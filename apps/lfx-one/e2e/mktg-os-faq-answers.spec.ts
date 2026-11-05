@@ -38,12 +38,19 @@ for (const width of [1440, 390]) {
     await openAssetDocument(page, 'faq', 200, true, false, { ...nativeAssetRevisionResponse('faq'), markdown: JSON.stringify(faqAnswersContent()) });
     await expect(page.getByTestId('mktg-faq-view-panel-faq')).toBeVisible();
 
-    // (a) A plain answer reads as one paragraph, exactly as stored, with its source beside it.
+    // (a) A plain answer reads as one paragraph, exactly as stored, with its source beside it, at the question's size and
+    //     the answer's own leading (styles.scss gives a bare `p` text-base; the host's font size must win).
     const plain = page.getByTestId('mktg-faq-view-answer-0-0');
     await expect(plain).toHaveText(FAQ_PLAIN_ANSWER);
     await expect(plain.locator('p')).toHaveCount(1);
     await expect(plain.locator('ul')).toHaveCount(0);
     await expect(page.getByTestId('mktg-faq-view-source-0-0')).toHaveText('Website');
+    const metrics = (element: Element) => ({ fontSize: getComputedStyle(element).fontSize, lineHeight: getComputedStyle(element).lineHeight });
+    const question = await page.getByTestId('mktg-faq-view-question-0-0').locator('dt').evaluate(metrics);
+    const host = await plain.evaluate(metrics);
+    const paragraph = await plain.locator('p').evaluate(metrics);
+    expect(paragraph.fontSize).toBe(question.fontSize);
+    expect(paragraph.lineHeight).toBe(host.lineHeight);
 
     // (b) The lead-in is a paragraph, then the five items as a bulleted list, in order, with no "- " left in the text.
     const list = page.getByTestId('mktg-faq-view-answer-0-1');
@@ -52,6 +59,9 @@ for (const width of [1440, 390]) {
     await expect(list.locator('ul > li')).toHaveText([...FAQ_LIST_ITEMS]);
     await expect(list).not.toContainText('- ');
     await expect(page.getByTestId('mktg-faq-view-source-0-1')).toHaveText('Docs');
+    const item = await list.locator('ul > li').first().evaluate(metrics);
+    expect(item.fontSize).toBe(question.fontSize);
+    expect(item.lineHeight).toBe(host.lineHeight);
 
     // (c) Thousands separators stay verbatim.
     const price = page.getByTestId('mktg-faq-view-answer-0-2');

@@ -78,9 +78,10 @@
                     @if (row.answered) {
                       <dd class="flex flex-wrap items-start gap-2">
                         <!-- The answer is the agent's restricted Markdown: a plain sentence stays one paragraph; a lead-in and its "- " lines
-                             become a paragraph and a list. The host neutralises `prose` so a plain answer keeps today's size, colour and line height. -->
+                             become a paragraph and a list. The host neutralises `prose` so a plain answer keeps today's size, colour and line
+                             height; `p`/`li` inherit the host's size and leading because styles.scss's base rule gives a bare `p` its own. -->
                         <lfx-markdown-renderer
-                          class="grow basis-64 text-sm leading-relaxed text-gray-800 [&_.prose]:text-inherit [&_.prose]:leading-[inherit]"
+                          class="grow basis-64 text-sm leading-relaxed text-gray-800 [&_.prose]:text-inherit [&_.prose]:leading-[inherit] [&_p]:[font-size:inherit] [&_p]:[line-height:inherit] [&_li]:[font-size:inherit] [&_li]:[line-height:inherit]"
                           [content]="row.answer"
                           [restricted]="true"
                           [attr.data-testid]="'mktg-faq-view-answer-' + g + '-' + q" />

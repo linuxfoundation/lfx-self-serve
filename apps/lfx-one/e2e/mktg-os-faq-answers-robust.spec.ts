@@ -76,20 +76,21 @@ test('FAQ answer structure in the family PDF frame', async ({ page }, info) => {
   const listAnswer = pairs.nth(1).getByTestId('mktg-faq-print-answer');
   await expect(listAnswer.locator('p + ul')).toHaveCount(1);
   await expect(listAnswer.locator('ul > li')).toHaveCount(FAQ_LIST_ITEMS.length);
-  // The list prints with visible disc markers, in the sheet's ink and size, not the screen renderer's rem utilities.
+  // The list prints with visible disc markers in the sheet's ink and typeface; the lead-in and its items are one size
+  // (styles.scss gives a bare `p` text-base/leading-normal, the printed answer's size since before this list; the `li` matches it).
   await expect(listAnswer.locator('ul')).toHaveCSS('list-style-type', 'disc');
-  const sheet = await frame.getByTestId('mktg-faq-print').evaluate((element) => {
+  const metrics = (element: Element) => {
     const style = getComputedStyle(element);
-    return { color: style.color, fontSize: style.fontSize, fontFamily: style.fontFamily };
-  });
-  const item = await listAnswer
-    .locator('ul > li')
-    .first()
-    .evaluate((element) => {
-      const style = getComputedStyle(element);
-      return { color: style.color, fontSize: style.fontSize, fontFamily: style.fontFamily };
-    });
-  expect(item).toEqual(sheet);
+    return { color: style.color, fontSize: style.fontSize, lineHeight: style.lineHeight, fontFamily: style.fontFamily };
+  };
+  const sheet = await frame.getByTestId('mktg-faq-print').evaluate(metrics);
+  const lead = await listAnswer.locator('p').evaluate(metrics);
+  const item = await listAnswer.locator('ul > li').first().evaluate(metrics);
+  expect({ color: item.color, fontFamily: item.fontFamily }).toEqual({ color: sheet.color, fontFamily: sheet.fontFamily });
+  expect({ fontSize: item.fontSize, lineHeight: item.lineHeight }).toEqual({ fontSize: lead.fontSize, lineHeight: lead.lineHeight });
+  // A plain printed answer keeps the same size and leading as the lead-in: one answer size across the sheet.
+  const plain = await pairs.nth(0).getByTestId('mktg-faq-print-answer').locator('p').evaluate(metrics);
+  expect({ fontSize: plain.fontSize, lineHeight: plain.lineHeight }).toEqual({ fontSize: lead.fontSize, lineHeight: lead.lineHeight });
   await page.screenshot({ path: info.outputPath('faq-answers-print-structure.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);

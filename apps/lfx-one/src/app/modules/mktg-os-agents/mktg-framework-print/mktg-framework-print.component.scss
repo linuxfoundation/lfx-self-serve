@@ -99,9 +99,12 @@
 
 /* The FAQ's answers are the agent's restricted Markdown (a paragraph, or a
    lead-in and a bulleted list) through the shared renderer, whose screen
-   utilities are rem: inside this sheet they give way to its typeface, size,
-   ink and pt spacing, and the list keeps a disc marker in the ink. Scoped to
-   the FAQ print, so the framework print does not move. */
+   utilities are rem: inside this sheet they give way to its typeface and ink,
+   pt spacing, and a disc marker in the ink. The paragraph keeps the size the
+   printed answer always had: styles.scss's base rule gives a bare `p`
+   text-base and leading-normal, so the list items get the same two tokens and
+   the lead-in and its bullets are one size. Scoped to the FAQ print, so the
+   framework print does not move. */
 :host ::ng-deep .lfx-faq-print .prose {
   max-width: none;
   color: inherit;
@@ -110,9 +113,9 @@
   line-height: inherit;
 
   p {
+    @apply text-base leading-normal;
     margin: 0;
     font-family: inherit;
-    line-height: inherit;
   }
 
   ul {
@@ -122,6 +125,7 @@
   }
 
   li {
+    @apply text-base leading-normal;
     margin: 1.5pt 0;
     padding-left: 2pt;
   }
