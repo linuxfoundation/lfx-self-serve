@@ -148,18 +148,25 @@ export class FormationCardComponent {
     const projectUid = this.view()?.uid;
     if (!projectUid) return;
 
-    let drawerClosed = false;
-    const save = (changes: UpdateFormationRecordRequest): Observable<void> => this.saveRecord(projectUid, changes, () => drawerClosed);
+    // Per open: set as soon as a dismissal is requested (Escape, backdrop, header close ask `canClose` before the exit
+    // animation starts) and again once `closed` fires, so a failure in either window is surfaced as a toast.
+    let dismissing = false;
+    const save = (changes: UpdateFormationRecordRequest): Observable<void> => this.saveRecord(projectUid, changes, () => dismissing);
     this.drawerService
       .open<boolean, FormationRecordEditDrawerData, FormationRecordEditDrawerComponent>(FormationRecordEditDrawerComponent, {
         data: { projectUid, openRequiredCount: this.openRequiredCount(), save },
         width: 520,
+        // Never blocks: the write is the card's, so closing mid-PUT is safe. It only records that the drawer is on its way out.
+        canClose: () => {
+          dismissing = true;
+          return true;
+        },
       })
       // `take(1)` bounds the subscription; it is deliberately not tied to the card's lifetime, so a closure that lands after
       // the card is torn down is still recorded for a write that outlives both.
       .closed.pipe(take(1))
       .subscribe(() => {
-        drawerClosed = true;
+        dismissing = true;
       });
   }
 
@@ -168,10 +175,10 @@ export class FormationCardComponent {
    * outcome to the drawer, which only listens. After a save the active project's stage is re-read (a no-op on the
    * foundation drill-down, where the context is the foundation and not the edited child) and the host is told to
    * reload the checklist — but only while this card still shows the project that was saved. A failure is shown inline
-   * only while the drawer's outcome subscriber is still attached (and the drawer has not finished closing); with no live
-   * subscriber the drawer is gone or going, so it is surfaced as a toast instead of an inline message nobody can see.
+   * only while the drawer is open, not being dismissed (`canClose` was never asked) and its outcome subscriber is still
+   * attached; otherwise the drawer is gone or going, so it is surfaced as a toast instead of an inline message nobody can see.
    */
-  private saveRecord(projectUid: string, changes: UpdateFormationRecordRequest, isDrawerClosed: () => boolean): Observable<void> {
+  private saveRecord(projectUid: string, changes: UpdateFormationRecordRequest, isDismissing: () => boolean): Observable<void> {
     const outcome = new ReplaySubject<void>(1);
     this.projectService.updateFormationRecord(projectUid, changes).subscribe({
       next: () => {
@@ -184,7 +191,7 @@ export class FormationCardComponent {
         outcome.complete();
       },
       error: (error: unknown) => {
-        if (!outcome.observed || isDrawerClosed()) {
+        if (!outcome.observed || isDismissing()) {
           this.messageService.add({ severity: 'error', summary: 'Not saved', detail: FORMATION_RECORD_ERROR_MESSAGES.generic });
         }
         outcome.error(error);

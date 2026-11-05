@@ -324,6 +324,7 @@ describe('FormationCardComponent', () => {
 
     interface DrawerConfig {
       data: { projectUid: string; openRequiredCount: number; save: (changes: { legal_entity_name: string }) => Observable<void> };
+      canClose: () => boolean;
     }
     async function openEditDrawer(value = formation()): Promise<DrawerConfig> {
       await renderWithInput(value);
@@ -422,6 +423,47 @@ describe('FormationCardComponent', () => {
         expect(outcome).toHaveBeenCalledWith(failure);
         expect(messageAdd).not.toHaveBeenCalled();
         expect(refreshActiveProject).not.toHaveBeenCalled();
+      });
+
+      it('toasts, with no inline error, when a dismissal was requested (canClose asked) before the exit animation ended', async () => {
+        const config = await openEditDrawer();
+        const outcome = vi.fn();
+
+        config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: outcome });
+        // Escape, the backdrop and the header close all ask canClose first; the drawer is still subscribed until it is destroyed.
+        expect(config.canClose()).toBe(true);
+        putRequest.error(failure);
+
+        expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Not saved' }));
+        expect(drawerClosed.observed).toBe(true);
+      });
+
+      it('keeps the failure inline when no dismissal was requested and the drawer is open and subscribed', async () => {
+        const config = await openEditDrawer();
+        const outcome = vi.fn();
+        const canClose = vi.spyOn(config, 'canClose');
+
+        config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: outcome });
+        putRequest.error(failure);
+
+        expect(canClose).not.toHaveBeenCalled();
+        expect(outcome).toHaveBeenCalledWith(failure);
+        expect(messageAdd).not.toHaveBeenCalled();
+      });
+
+      it('starts every open undismissed, so a dismissed earlier drawer does not toast a later inline failure', async () => {
+        const first = await openEditDrawer();
+        first.canClose();
+        const button = fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"] button') as HTMLButtonElement;
+        button.click();
+        const second = openDrawer.mock.calls[1][1] as DrawerConfig;
+        const outcome = vi.fn();
+
+        second.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: outcome });
+        putRequest.error(failure);
+
+        expect(outcome).toHaveBeenCalledWith(failure);
+        expect(messageAdd).not.toHaveBeenCalled();
       });
 
       it('toasts when the drawer stopped listening before it finished closing', async () => {
