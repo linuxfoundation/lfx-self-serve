@@ -402,7 +402,7 @@ describe('MktgFaqViewComponent', () => {
 
     it('keeps thousands separators verbatim', () => {
       expect(answer(2).querySelectorAll('p')).toHaveLength(1);
-      expect(answer(2).textContent).toBe(FAQ_PRICE_ANSWER);
+      expect(answer(2).querySelector('p')?.textContent).toBe(FAQ_PRICE_ANSWER);
       expect(answer(2).textContent).toContain('$5,000 to $75,000');
     });
 
