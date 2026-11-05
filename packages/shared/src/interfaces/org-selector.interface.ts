@@ -497,8 +497,15 @@ export interface AccessAwareOrgsResult {
   degraded: boolean;
   /** Spec 053 — whether `resolveIsStaff` answered; `failed` results are cached only under `ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS` (see `getAccessAwareOrgs`). */
   staffCheck: OrgLensStaffCheck;
+  familyRoots: Map<string, OrgFamilyRoot>;
   /** Spec 053 — per-computation UUID echoed into that computation's warnings. Set on every computed result; surfaced on the wire (`RoleGrantsResponse.correlationId`) only when `staffCheck === 'failed'`. */
   correlationId?: string;
+}
+
+export interface OrgFamilyRoot {
+  rootUid: string;
+  rootName: string | null;
+  rootLogoUrl: string | null;
 }
 
 /** Serializable form of `AccessAwareOrgsResult` for the shared cache — Maps stored as ordered entry arrays. */
@@ -516,6 +523,7 @@ export interface AccessAwareOrgsCacheEntry {
   degraded: boolean;
   /** Required, so an entry written before spec 053 fails the shape guard and is recomputed rather than answering `undefined` for the staff-check state. */
   staffCheck: OrgLensStaffCheck;
+  familyRoots: [string, OrgFamilyRoot][];
   /** Stored with a `failed` staff check so a short-TTL hit renders the reference that was logged; a `failed` entry without it (or with `isStaff: true` or `isContractor: true`) fails the shape guard. */
   correlationId?: string;
 }

@@ -12,6 +12,7 @@ import {
   MemberServiceB2bOrgResponse,
   MemberServiceB2bOrgUpdateBody,
   OrgCanonicalRecord,
+  OrgRollUpSetResponse,
   OrgUpdateRequest,
   RoleGrantsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -90,6 +91,35 @@ export class OrgIdentityController {
       if (result.correlationId) {
         res.setHeader(ORG_ROLE_GRANTS_CORRELATION_HEADER, result.correlationId);
       }
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async getRollUpSet(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_roll_up_set');
+
+    try {
+      const username = getEffectiveUsername(req);
+      if (!username) {
+        throw ServiceValidationError.forField('username', 'Authenticated username is required', {
+          operation: 'get_org_roll_up_set',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+
+      const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
+      const result: OrgRollUpSetResponse = await this.orgRoleGrantsService.getRollUpSet(req, username, bypassCache);
+
+      logger.success(req, 'get_org_roll_up_set', startTime, {
+        family_count: result.families.length,
+        org_count: result.families.reduce((total, family) => total + family.orgs.length, 0),
+        lookup_outcome: result.lookupOutcome,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
       res.json(result);
     } catch (error) {
       next(error);

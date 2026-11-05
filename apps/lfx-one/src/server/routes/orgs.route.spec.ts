@@ -24,6 +24,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  */
 
 const getAccessAwareOrgs = vi.fn();
+const getRollUpSet = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
@@ -41,6 +42,7 @@ vi.mock('../services/access-check.service', () => ({
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
+    public getRollUpSet = getRollUpSet;
   },
 }));
 vi.mock('../services/microservice-proxy.service', () => ({
@@ -187,6 +189,20 @@ describe('orgs router — Org Lens read gate', () => {
     const res = await fetch(`${baseUrl}/api/orgs/me/role-grants`);
 
     expect(res.status).not.toBe(403);
+  });
+});
+
+describe('orgs router — GET /me/roll-up-set (#4126)', () => {
+  it('serves the roll-up set from its own handler, not the canonical-record catch-all', async () => {
+    const rollUpSet = { families: [], degraded: false, lookupOutcome: 'ok' };
+    getRollUpSet.mockResolvedValue(rollUpSet);
+
+    const res = await fetch(`${baseUrl}/api/orgs/me/roll-up-set?refresh=1`);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(rollUpSet);
+    expect(getRollUpSet).toHaveBeenCalledWith(expect.anything(), 'lguerra', true);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 });
 
