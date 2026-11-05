@@ -120,7 +120,9 @@ test.describe('People › Trainees — paging and people-list tiles', () => {
     await showing(table, 1, 50, TABLE_TOTAL);
 
     await pickRowsPerPage(page, outside, 50);
-    await showing(outside, 1, OUTSIDE_TOTAL, OUTSIDE_TOTAL);
+    await showing(outside, 1, 50, OUTSIDE_TOTAL);
+    await nextPage(outside);
+    await showing(outside, 51, OUTSIDE_TOTAL, OUTSIDE_TOTAL);
     await showing(table, 1, 50, TABLE_TOTAL);
   });
 
@@ -135,9 +137,10 @@ test.describe('People › Trainees — paging and people-list tiles', () => {
     await nextPage(outside);
     await showing(table, 11, 20, TABLE_TOTAL);
     await showing(outside, 11, 20, OUTSIDE_TOTAL);
+    // '00' matches the names 001 to 009 in each list.
     await search.fill('00');
-    await showing(table, 1, 10, 9);
-    await showing(outside, 1, 10, 9);
+    await showing(table, 1, 9, 9);
+    await showing(outside, 1, 9, 9);
     await search.fill('');
     await showing(table, 1, 10, TABLE_TOTAL);
 
@@ -183,8 +186,9 @@ test.describe('People › Trainees — paging and people-list tiles', () => {
     await showing(table, 26, 50, TABLE_TOTAL);
     await expect(page.getByTestId('org-people-trainees-rows').locator('[data-testid$="-detail-row"]')).toHaveCount(0);
 
+    // 'Trainee 0' matches every name, so only the reset moves the page, and the 25 rows per page stay.
     await page.getByPlaceholder('Search trainees...').fill('Trainee 0');
-    await showing(table, 1, 25, 59);
+    await showing(table, 1, 25, TABLE_TOTAL);
   });
 });
 

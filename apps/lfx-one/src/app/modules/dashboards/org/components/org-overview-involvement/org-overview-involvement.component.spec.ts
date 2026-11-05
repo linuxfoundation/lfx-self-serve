@@ -147,7 +147,7 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
     expect(card.tooltipText).toBe(pageTile.tooltip);
     expect(card.tooltipText).toContain('people list');
     // The learners outside the people list are not part of the headline.
-    expect(card.value).not.toBe((TRAINING_STATS.peopleWithTrainingActivity + TRAINING_STATS.learnersOutsidePeopleList).toLocaleString('en-US'));
+    expect(card.value).not.toBe((TRAINING_STATS.peopleWithTrainingActivity + (TRAINING_STATS.learnersOutsidePeopleList ?? 0)).toLocaleString('en-US'));
     expect(metrics.filter((metric) => metric.category === 'education').map((metric) => metric.testId)).toEqual([
       'org-overview-involvement-card-people-with-training-activity',
       'org-overview-involvement-card-certified-employees',

@@ -404,7 +404,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
         rosterMembers: 40,
         rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
         peopleWithTrainingActivity: 0,
-        learnersOutsidePeopleList: 0,
+        learnersOutsidePeopleList: null,
         coursesTaken: 0,
         certifications: 0,
         certifiedPeople: 0,
@@ -665,7 +665,7 @@ describe('OrgLensTrainingService — a filter valid for the organization but wit
     expect(stats).toMatchObject({
       range: NO_ROWS_RANGE,
       peopleWithTrainingActivity: 0,
-      learnersOutsidePeopleList: 0,
+      learnersOutsidePeopleList: null,
       coursesTaken: 0,
       certifications: 0,
       certifiedPeople: 0,

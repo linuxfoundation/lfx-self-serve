@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ORG_TRAINING_IN_PROGRESS_RULE,
   ORG_TRAINING_NO_ROSTER_NOTE,
+  ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE,
   ORG_TRAINING_STAT_DEFINITIONS,
   ORG_TRAINING_STAT_TILES,
 } from '../constants/org-training-stats.constants';
@@ -138,6 +139,13 @@ describe('buildOrgTrainingStatTiles', () => {
   it('says there is no program for a null roster', () => {
     const tile = buildOrgTrainingStatTiles({ ...stats, rosterMembers: null }, '730d')[0];
     expect(tile.caption).toBe(ORG_TRAINING_NO_ROSTER_NOTE);
+  });
+
+  it('shows an em dash, not a zero, and says why for an outside-learners count left uncounted by a filter', () => {
+    const tile = buildOrgTrainingStatTiles({ ...stats, learnersOutsidePeopleList: null }, '730d').find((t) => t.key === 'learnersOutsidePeopleList')!;
+    expect(tile.display).toBe('—');
+    expect(tile.caption).toBe(ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE);
+    expect(tile.tooltip).toContain(ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE);
   });
 
   it('keeps courses taken = certifications + trainings completed + in progress in the fixture', () => {

@@ -349,8 +349,8 @@ export class OrgLensTrainingService {
       FROM f
     `;
 
-    // Learners the warehouse attributes to the org outside its people list (lfx-self-serve#4287): they carry no course
-    // data, so they are counted only while no filter is set (their own tile); a key that also has people-list rows is that person.
+    // Learners the warehouse attributes to the org outside its people list (lfx-self-serve#4287): counted only while no filter
+    // is set, like their list, and null (not counted) otherwise; a key that also has people-list rows is that person.
     // They are never added to the people-list numbers: every other metric reads the people-list pairs `f`.
     const inRange = orgTrainingRangePredicate(query.range);
     const outsideSql = `
@@ -386,7 +386,7 @@ export class OrgLensTrainingService {
       WHERE ACCOUNT_ID = ?
     `;
 
-    // Learners outside the people list carry no course data to filter on, so any filter zeroes their own count.
+    // Any filter leaves learners outside the people list uncounted (null), as their list is hidden then.
     const includeOutside = !hasOrgTrainingFilter(query);
     const [pairsResult, outsideResult, asOfResult, rosterResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingPairStatsRow>(pairsSql, binds),
@@ -411,7 +411,7 @@ export class OrgLensTrainingService {
       rosterMembers: roster ? roster.ROSTER_MEMBERS : null,
       rosterMembersAsOf: roster ? toIsoTimestamp(roster.AS_OF_TS) : null,
       peopleWithTrainingActivity: pairs?.PEOPLE ?? 0,
-      learnersOutsidePeopleList: outside,
+      learnersOutsidePeopleList: includeOutside ? outside : null,
       coursesTaken,
       certifications,
       certifiedPeople: pairs?.CERTIFIED_PEOPLE ?? 0,
@@ -619,7 +619,7 @@ function emptyTrainingStats(range: OrgLensTimeRange, asOf: string | null, roster
     rosterMembers,
     rosterMembersAsOf,
     peopleWithTrainingActivity: 0,
-    learnersOutsidePeopleList: 0,
+    learnersOutsidePeopleList: null,
     coursesTaken: 0,
     certifications: 0,
     certifiedPeople: 0,
@@ -644,7 +644,7 @@ function isTrainingStats(value: unknown): boolean {
     isNullableNumber(v.rosterMembers) &&
     isNullableString(v.rosterMembersAsOf) &&
     isNumber(v.peopleWithTrainingActivity) &&
-    isNumber(v.learnersOutsidePeopleList) &&
+    isNullableNumber(v.learnersOutsidePeopleList) &&
     isNumber(v.coursesTaken) &&
     isNumber(v.certifications) &&
     isNumber(v.certifiedPeople) &&

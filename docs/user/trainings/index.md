@@ -4,7 +4,7 @@ description: View your Linux Foundation training enrollments and certifications 
 audience: [all]
 product_area: Trainings
 tags: [trainings, courses, enrollments, certifications, learning]
-last_updated: 2026-11-03
+last_updated: 2026-11-05
 intercom_collection: Trainings
 ---
 
@@ -66,7 +66,7 @@ Every number states what it counts (people or person-course pairs), its window a
 
 - **Training-program roster members** — everyone LF Education's training program lists for your organization today, including people who never enrolled in a course. It is live and **does not follow the time range or the filters**, and says so. Shows "—" and "No LF Education training program on record" when your organization has no training program.
 - **People with training activity** — distinct people on your organization's people list with at least one enrollment or certificate in the range. Learners who are not on the people list are not counted here, and it is not a subset of the roster members. With the default time range and no filters, it equals the **Trainees** card on People › All Employees for the same time range in its default **All employees** view: the current and former employees on the people list with training in that range. The **Current employees** view can show fewer.
-- **Learners not on the people list** — distinct people linked to your organization who are not on its people list and have an enrollment or certificate in the range. Shown as 0 and not counted while a foundation, project, course, level or format is selected, because these learners carry no course data. They are not part of any people-list number, so they never add to **People with training activity**.
+- **Learners not on the people list** — distinct people linked to your organization who are not on its people list and have an enrollment or certificate in the range. Shown as a dash (**—**) and not counted while a foundation, project, course, level or format is selected, like their list. They are not part of any people-list number, so they never add to **People with training activity**.
 - **Courses taken** — person-course pairs on your organization's people list in the range. A course a person took more than once counts once. Courses taken = **Certifications** + **Trainings completed** + **Courses in progress**.
 - **Certifications** — pairs of certification products that ended in a certificate in the range. **Certified people** counts the distinct people behind them.
 - **Trainings completed** — pairs of training products that ended in a certificate in the range.

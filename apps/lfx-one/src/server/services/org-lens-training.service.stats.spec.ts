@@ -181,7 +181,7 @@ describe('OrgLensTrainingService — stats over person-course pairs', () => {
     execute.mockClear();
     mockStatsRows({ pairs: [PAIR_ROW], outside: [{ PEOPLE: 3 }] });
     const filtered = await service.getTrainingStats(ACCOUNT, { ...QUERY, level: 'Beginner' }, 'org-grant');
-    expect(filtered.learnersOutsidePeopleList).toBe(0);
+    expect(filtered.learnersOutsidePeopleList).toBeNull();
     expect(filtered.peopleWithTrainingActivity).toBe(PAIR_ROW.PEOPLE);
     expect(outsideCalls()).toBe(0);
   });

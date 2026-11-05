@@ -541,7 +541,7 @@ describe('pairs SQL run against SQLite over mixed-attribute rows', () => {
       const stats = await service.getTrainingStats(ACCOUNT, q, 'auditor-entitlement');
 
       // The learners off the people list are their own number, only while no filter is set; they never enter the people count.
-      const outside = Object.values(filters).some((value) => value !== undefined) ? 0 : handOutsidePeople();
+      const outside = Object.values(filters).some((value) => value !== undefined) ? null : handOutsidePeople();
       const fromSql: Expected = {
         coursesTaken: stats.coursesTaken,
         certifications: stats.certifications,
@@ -571,7 +571,7 @@ describe('pairs SQL run against SQLite over mixed-attribute rows', () => {
 
     for (const filters of [{ level: 'Beginner' }, { foundation: 'f-a' }, { project: 'proj-a' }, { course: 'Intro to K8s' }, { format: 'E-Learning' }]) {
       const filtered = await service.getTrainingStats(ACCOUNT, query(filters), 'auditor-entitlement');
-      expect(filtered.learnersOutsidePeopleList, JSON.stringify(filters)).toBe(0);
+      expect(filtered.learnersOutsidePeopleList, JSON.stringify(filters)).toBeNull();
       expect(filtered.peopleWithTrainingActivity, JSON.stringify(filters)).toBe(handCount(query(filters)).people);
     }
   });

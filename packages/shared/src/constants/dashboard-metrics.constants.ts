@@ -363,12 +363,12 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
 ];
 
 // ============================================
-// Org Overview Involvement Metrics (cross-foundation, non-clickable)
+// Org Overview Involvement Metrics (cross-foundation)
 // ============================================
 
 /**
  * Engagement card configuration for the /org/overview involvement section.
- * 6 cards aggregated across all LF foundations. Cards are NOT clickable — no drawerType.
+ * 7 cards aggregated across all LF foundations. No drawerType: only the 3 Education cards are clickable, opening the Training page.
  */
 export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
   {

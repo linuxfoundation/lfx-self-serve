@@ -42,8 +42,8 @@ export interface OrgTrainingStats {
   rosterMembersAsOf: string | null;
   /** Distinct people-list people in the filtered pairs; learners outside the people list are not included. */
   peopleWithTrainingActivity: number;
-  /** Distinct learners outside the people list in range (their own tile, never added to the people-list numbers); 0 while a course-level filter is set. */
-  learnersOutsidePeopleList: number;
+  /** Distinct learners outside the people list in range (their own tile, never added to the people-list numbers); null (not counted) while a course-level filter is set. */
+  learnersOutsidePeopleList: number | null;
   coursesTaken: number;
   /** Certified pairs of `Certification` products. */
   certifications: number;

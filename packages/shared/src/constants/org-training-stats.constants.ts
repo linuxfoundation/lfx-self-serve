@@ -10,6 +10,9 @@ import type { OrgTrainingStatDefinition, OrgTrainingStatKey, OrgTrainingStatTile
 /** Caption and tooltip suffix of the roster stat for an organization with no LF Education training program (no roster row). */
 export const ORG_TRAINING_NO_ROSTER_NOTE = 'No LF Education training program on record for this organization';
 
+/** Caption and tooltip suffix of the outside-learners stat while a filter leaves it uncounted (a null count). */
+export const ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE = 'Not counted while a foundation, project, course, level or format is selected';
+
 /** The rule behind "in progress", stated on its tiles and tooltips: no hidden snapshot. */
 export const ORG_TRAINING_IN_PROGRESS_RULE = 'Enrolled in the selected range, no certificate in the range';
 
@@ -34,7 +37,7 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
     label: 'Learners not on the people list',
     unit: 'people',
     definition:
-      'Distinct people with a training or certification enrollment or certificate dated in the selected range who are linked to this organization but not on its people list. Shown as 0 and not counted while a foundation, project, course, level or format is selected, because they carry no course data. Not part of the people-list numbers.',
+      'Distinct people with a training or certification enrollment or certificate dated in the selected range who are linked to this organization but not on its people list. Shown as — and not counted while a foundation, project, course, level or format is selected, like their list. Not part of the people-list numbers.',
   },
   coursesTaken: {
     label: 'Courses taken',
