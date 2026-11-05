@@ -369,18 +369,6 @@ export const BRAND_KIT_BOOK_PAGES = [
   { id: 'back-cover', chapter: null, title: 'Back cover' },
 ] as const;
 
-/** The eight illustrative icons of the iconography page, with the Font Awesome class each is drawn with. */
-export const BRAND_KIT_ICON_SAMPLES = [
-  { label: 'Documents', icon: 'fa-light fa-file-lines' },
-  { label: 'Community', icon: 'fa-light fa-people-group' },
-  { label: 'Global', icon: 'fa-light fa-globe' },
-  { label: 'Code', icon: 'fa-light fa-code' },
-  { label: 'Events', icon: 'fa-light fa-calendar-days' },
-  { label: 'Metrics', icon: 'fa-light fa-chart-line' },
-  { label: 'Verified', icon: 'fa-light fa-badge-check' },
-  { label: 'Newsletter', icon: 'fa-light fa-envelope-open-text' },
-] as const;
-
 /** The alphabet line the typography page sets in the typeface. */
 export const BRAND_KIT_TYPE_SPECIMEN = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz 0123456789';
 

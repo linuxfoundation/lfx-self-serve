@@ -413,11 +413,14 @@ describe('BrandKitWebViewComponent', () => {
       expect(scale?.textContent).toContain('Eyebrow');
     });
 
-    it('Visual: the iconography rules and icons, the imagery rule and what to avoid, the graphic elements in the kit’s colours', async () => {
+    it('Visual: the iconography rules and the recommended set with no sample icon, the imagery rule and what to avoid, the graphic elements in the kit’s colours', async () => {
       await open('visual');
 
-      expect(query('brand-kit-web-view-icons')?.querySelectorAll('i')).toHaveLength(8);
-      expect(query('brand-kit-web-view-icons')?.textContent).toContain('Recommended set: Lucide');
+      const icons = query('brand-kit-web-view-icons');
+      expect(icons?.textContent).toContain('Line.');
+      expect(icons?.textContent).toContain('Label.');
+      expect(icons?.querySelectorAll('i')).toHaveLength(0);
+      expect(icons?.textContent).toContain('Recommended set: Lucide');
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Structure.');
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Hackers');
       expect(query('brand-kit-web-view-elements')?.textContent).toContain('Primary button');

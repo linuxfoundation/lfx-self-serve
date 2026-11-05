@@ -607,12 +607,6 @@ export interface BrandKitUsageView {
   dark: boolean;
 }
 
-/** One icon sample of the iconography page. */
-export interface BrandKitIconView {
-  label: string;
-  icon: string;
-}
-
 /** One chapter as the web view's overview summarises it, with the tab that opens it. */
 export interface BrandKitChapterSummary {
   id: BrandKitWebViewTabId;
@@ -684,7 +678,6 @@ export interface BrandKitBookView {
   /** The alphabet line. */
   specimen: string;
   visual: BrandKitVisualChapter;
-  icons: BrandKitIconView[];
   usage: BrandKitUsageChapter;
   usageTiles: BrandKitUsageView[];
   voice: BrandKitVoiceChapter;
