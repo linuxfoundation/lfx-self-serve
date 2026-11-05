@@ -12,7 +12,7 @@ The **Permissions** page lists the people who have been granted access to a proj
 
 ## Role labels are not permissions
 
-You may see a **Maintainer** or **Contributor** label next to a project in LFX Self Serve, for example on the **Project Involvement** cards on the [Work history & Affiliations](../account/work-history/) tab, or in the project selector. These labels describe your involvement with the project. They do not grant any access:
+You may see a **Maintainer** or **Contributor** label next to a project in LFX Self Serve, for example on the **Project Involvement** cards on the [Work history & Affiliations](../account/work-history/) tab, or in the context picker in the top navigation. These labels describe your involvement with the project. They do not grant any access:
 
 - A **Contributor** label does not stop you from viewing a project.
 - A **Maintainer** label does not let you manage a project.
@@ -31,7 +31,7 @@ If you don't have **Manage** access, the page is read-only and shows: _You have 
 
 ## Permission roles
 
-All permissions apply to the entire project, including its committees, meetings, and mailing lists.
+Each role applies across the whole project. View and Manage cover all project content, including committees, meetings, and mailing lists; Meeting Coordinator covers the project's meetings.
 
 | Role                    | What it allows                                                                                             |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -66,7 +66,7 @@ If no account matches the email, a **User Not Found** dialog asks whether to add
 ### Remove a user
 
 1. Open the actions menu on the person's row and select **Remove**.
-2. Confirm with **Remove**. This revokes all of their permissions for the project.
+2. Confirm with **Remove**. This removes the role assigned to them on this page. Access they have from elsewhere, such as a group they manage, is not removed here.
 
 ## Related
 
