@@ -534,6 +534,9 @@ export class CommitteeSettingsTabComponent {
   }
 
   private getMlErrorDetail(err: any, fallback: string): string {
+    if (err?.status === 403) {
+      return 'You need Manage access to this mailing list to link or unlink it.';
+    }
     const body = err?.error;
     if (body?.error?.includes?.('subgroup not found') || body?.code === 'NOT_FOUND') {
       return 'Mailing list sync failed — the Groups.io subgroup may not exist for this list';
