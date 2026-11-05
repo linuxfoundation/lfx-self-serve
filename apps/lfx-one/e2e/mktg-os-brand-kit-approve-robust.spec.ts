@@ -71,7 +71,7 @@ for (const width of [1440, 390]) {
         if (parseFloat(getComputedStyle(element).opacity) < 1) return false;
         element = element.parentElement;
       }
-      return document.getAnimations().every((animation) => animation.playState !== 'running');
+      return dialogElement.getAnimations({ subtree: true }).every((animation) => animation.playState !== 'running');
     });
     // Settled: the first section's top is not above the scrolling content's top, and focus is in the dialog.
     await expect

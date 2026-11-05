@@ -31,8 +31,8 @@ export class MktgApproveGapsDialogComponent {
   public readonly report = this.config.data;
   /** A v2 report's failed sources and missing assets as the Sources tab words them; both empty for a v1 report. */
   public readonly findings = brandKitApproveFindings(this.report);
-  /** Whether the report carries the v2 findings: then the top list is the two groups (and the gaps), else today's list. */
-  public readonly hasFindings = this.report !== undefined && 'findings' in this.report && this.report.findings !== undefined;
+  /** Whether a v2 report has a failed source or a missing asset to show: then the top list is the two groups, else today's list. */
+  public readonly showsFindings = this.findings.failed.length > 0 || this.findings.missing.length > 0;
   /** The colour conflicts, each value with its source in words and the kept one marked; empty for a v1 report. */
   public readonly colorConflicts = brandKitColorConflictViews(this.report);
   /** One line per chapter the LF reference supplied rules to; empty for a v1 report. */

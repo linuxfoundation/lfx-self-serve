@@ -120,6 +120,23 @@ describe('Approval with open gaps dialog', () => {
     expect(root.textContent).not.toContain('lf-reference');
   });
 
+  it('lists leftover gaps the old way when a v2 report has nothing in either findings group', async () => {
+    const report: BrandKitReport = {
+      sources_read: [],
+      sources_failed: [],
+      gaps: ['Missing evidence'],
+      notes: '',
+      version: 2,
+      findings: { sources_failed: [], missing_assets: [], warnings: [] },
+      color_conflicts: [],
+      rules: [{ path: 'chapters.voice', basis: 'project' }],
+    };
+    const root = await render(report);
+    expect(root.querySelector('ul')?.textContent).toContain('Missing evidence');
+    expect(query(root, 'mktg-document-view-approve-failed')).toBeNull();
+    expect(query(root, 'mktg-document-view-approve-missing')).toBeNull();
+  });
+
   it('leaves a section out when the report has nothing for it, and today’s list out when there is no failed source or gap', async () => {
     const report: BrandKitReport = {
       sources_read: [],
