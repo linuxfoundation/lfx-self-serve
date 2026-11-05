@@ -60,23 +60,37 @@
             appendTo="body"
             [form]="form()"
             control="surveyTemplate"
-            [options]="surveyTemplateOptions"
+            [options]="templatesState().options"
+            [loading]="templatesState().status === 'loading'"
             optionLabel="label"
             optionValue="value"
             placeholder="Select Survey"
             data-testid="survey-template-select">
           </lfx-select>
 
-          @if (form().get('surveyTemplate')?.touched && !form().get('surveyTemplate')?.value) {
+          @if (templatesState().status === 'error') {
+            <div class="flex items-center gap-2" role="alert">
+              <p class="text-red-500 text-xs" data-testid="survey-template-error">We couldn't load survey templates.</p>
+              <button type="button" class="text-blue-600 hover:text-blue-700 text-xs" (click)="retryTemplates.emit()" data-testid="survey-template-retry">
+                Try again
+              </button>
+            </div>
+          } @else if (templatesState().status === 'ready' && !templatesState().options.length) {
+            <p class="text-sm text-gray-500" data-testid="survey-template-empty">No survey templates are available yet.</p>
+          } @else if (templatesState().status === 'ready' && form().get('surveyTemplate')?.touched && !form().get('surveyTemplate')?.value) {
             <p class="text-red-500 text-xs">Please select a survey template.</p>
           }
 
           <p class="text-sm text-gray-500 mt-2">
             Need a new template?
-            <a href="#" (click)="$event.preventDefault()" class="text-blue-600 hover:text-blue-700 inline-flex items-center gap-1">
-              Send request
-              <i class="fa-light fa-arrow-up-right-from-square text-xs"></i>
-            </a>
+            <button
+              type="button"
+              lfxOpenIntercom
+              class="text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+              data-testid="survey-template-contact-support">
+              Contact support
+              <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+            </button>
           </p>
         </div>
       </div>

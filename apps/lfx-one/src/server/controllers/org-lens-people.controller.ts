@@ -3,6 +3,8 @@
 
 import {
   DEFAULT_ORG_EMPLOYMENT,
+  DEFAULT_ORG_EVENTS_ATTRIBUTION,
+  DEFAULT_ORG_EVENTS_PARTICIPATION,
   EMAIL_REGEX,
   ORG_EMPLOYMENT_OPTIONS,
   ORG_LENS_DEFAULT_TIME_RANGE,
@@ -10,7 +12,7 @@ import {
   ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
   PERSON_KEY_PATTERN,
 } from '@lfx-one/shared/constants';
-import type { OrgEmploymentFilter, OrgLensTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
+import type { OrgAllEmployeesResponse, OrgEmploymentFilter, OrgLensTimeRange, OrgProjectScope, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
 import {
   isFilterSafeIdentifier,
   isFilterSafeUsername,
@@ -83,9 +85,12 @@ export class OrgLensPeopleController {
         org_scope: orgScope,
       });
 
-      const response = live
-        ? await this.directoryService.getLive(req, orgUid, range, filters, teamMembers, orgScope)
-        : await this.service.getAllEmployees(orgUid, range, filters, teamMembers, orgScope);
+      // The summary behind the Event Attendees tile does not depend on the roster, so both reads run together.
+      const rosterRead = live
+        ? this.directoryService.getLive(req, orgUid, range, filters, teamMembers, orgScope)
+        : this.service.getAllEmployees(orgUid, range, filters, teamMembers, orgScope);
+      const [roster, eventAttendeesTotal] = await Promise.all([rosterRead, this.readEventAttendeesTotal(req, orgUid, range, filters.projectScope)]);
+      const response = this.withEventAttendeesTotal(roster, eventAttendeesTotal);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -606,6 +611,43 @@ export class OrgLensPeopleController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * The All Employees Event Attendees tile is the number the People -> Event Attendees tab shows as Attendees at its defaults
+   * (all relations, registered or attended; lfx-self-serve#4598): the same warehouse summary row, through the same reader and
+   * cache entry, so the two cannot drift. Events are LF constructs, so the Non-LF project scope keeps the listed-employee count
+   * (`undefined`), as does the unranged roster read. A summary that cannot be read gives `null`, which marks the tile unavailable
+   * instead of counting something else; it never fails the roster, and it never rejects.
+   */
+  private async readEventAttendeesTotal(
+    req: Request,
+    orgUid: string,
+    range: OrgLensTimeRange | null,
+    projectScope: OrgProjectScope
+  ): Promise<number | null | undefined> {
+    if (range === null || projectScope === 'non_lf') {
+      return undefined;
+    }
+    try {
+      const { attendeesCount } = await this.eventAttendeesService.readSummary(orgUid, range, DEFAULT_ORG_EVENTS_ATTRIBUTION, DEFAULT_ORG_EVENTS_PARTICIPATION);
+      return attendeesCount;
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_people_all', 'Event attendee summary read failed, the tile is marked unavailable', {
+        err: error,
+        org_uid: orgUid,
+      });
+      return null;
+    }
+  }
+
+  private withEventAttendeesTotal(response: OrgAllEmployeesResponse, eventAttendeesTotal: number | null | undefined): OrgAllEmployeesResponse {
+    if (eventAttendeesTotal === undefined) {
+      return response;
+    }
+    return eventAttendeesTotal === null
+      ? { ...response, eventAttendeesTotal }
+      : { ...response, eventAttendeesTotal, stats: { ...response.stats, eventAttendees: eventAttendeesTotal } };
   }
 
   private assertPersonKey(personKey: string | undefined, operation: string): asserts personKey is string {

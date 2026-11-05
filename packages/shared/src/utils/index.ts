@@ -133,6 +133,7 @@ export * from './campaign-bidding.utils';
 export * from './campaign-twitter.utils';
 export * from './campaign-google-assets.utils';
 export * from './campaign-google-criteria.utils';
+export * from './campaign-google-search-ads.utils';
 export * from './campaign-google-creative.utils';
 export * from './campaign-event-details.utils';
 export * from './campaign.utils';

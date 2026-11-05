@@ -437,7 +437,7 @@ function dayOffset(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** The six row-level conjunction flags dbt computes: (registered | attended) AND (company email | account | any relation). */
+/** The nine row-level conjunction flags dbt computes: (registered | attended | registered or attended) AND (company email | account | any relation). */
 function countsFlags(fixture: {
   companyEmail?: boolean;
   accountCredited?: boolean;
@@ -456,6 +456,7 @@ function countsFlags(fixture: {
     Object.entries(credited).flatMap(([suffix, flag]) => [
       [`IS_COUNTED_REGISTERED_${suffix}`, registered && flag ? 1 : 0],
       [`IS_COUNTED_ATTENDED_${suffix}`, attended && flag ? 1 : 0],
+      [`IS_COUNTED_ALL_${suffix}`, (registered || attended) && flag ? 1 : 0],
     ])
   );
 }
@@ -535,6 +536,7 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
         EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT,
         IS_COUNTED_REGISTERED_COMPANY_EMAIL INTEGER, IS_COUNTED_REGISTERED_ACCOUNT INTEGER, IS_COUNTED_REGISTERED_ALL INTEGER,
         IS_COUNTED_ATTENDED_COMPANY_EMAIL INTEGER, IS_COUNTED_ATTENDED_ACCOUNT INTEGER, IS_COUNTED_ATTENDED_ALL INTEGER,
+        IS_COUNTED_ALL_COMPANY_EMAIL INTEGER, IS_COUNTED_ALL_ACCOUNT INTEGER, IS_COUNTED_ALL_ALL INTEGER,
         IS_COUNTED_SPEAKER_COMPANY_EMAIL INTEGER, IS_COUNTED_SPEAKER_ACCOUNT INTEGER, IS_COUNTED_SPEAKER_ALL INTEGER, IS_LISTABLE INTEGER
       )`
     );
@@ -623,6 +625,18 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     expect(await refs({ participation: 'attended' })).toEqual([1]);
   });
 
+  it('lists everyone who registered or attended when Count is All, through the ALL flag of the attribution', async () => {
+    addRow({ ref: 1, days: -5, attended: true });
+    addRow({ ref: 2, days: -5 });
+    addRow({ ref: 3, days: -5, registered: false });
+    addRow({ ref: 4, days: -5, registered: false, attended: true });
+    addRow({ ref: 5, days: -5, companyEmail: false, accountCredited: true });
+
+    expect(await refs({ participation: 'all' })).toEqual([1, 2, 4]);
+    expect(await refs({ participation: 'all', attribution: 'account' })).toEqual([5]);
+    expect(await refs({ participation: 'all', attribution: 'all' })).toEqual([1, 2, 4, 5]);
+  });
+
   it('flags a Speaker only for an accepted talk the served attribution credits', async () => {
     const speakers = async (attribution: 'company_email' | 'account' | 'all'): Promise<number[]> =>
       (await read({ attribution })).details
@@ -700,5 +714,17 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     const response = await read({ range: '90d', attribution: 'all', participation: 'attended' });
 
     expect(response.summary).toEqual({ attendeesCount: 11, listedAttendeesCount: 4, speakersCount: 2, eventsCount: 3, foundationsCount: 1 });
+  });
+
+  it('reads the registered-or-attended summary row when Count is All', async () => {
+    const insertSummary = database.prepare(
+      'INSERT INTO ORG_EVENT_PARTICIPATION_SUMMARY (ACCOUNT_ID, TIME_RANGE, ATTRIBUTION, PARTICIPATION, ATTENDEES_COUNT, LISTED_ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    insertSummary.run(ACCOUNT, '730d', 'all', 'registered', 8, 3, 2, 4, 2);
+    insertSummary.run(ACCOUNT, '730d', 'all', 'all', 13, 5, 2, 6, 3);
+
+    const response = await read({ range: '730d', attribution: 'all', participation: 'all' });
+
+    expect(response.summary).toEqual({ attendeesCount: 13, listedAttendeesCount: 5, speakersCount: 2, eventsCount: 6, foundationsCount: 3 });
   });
 });

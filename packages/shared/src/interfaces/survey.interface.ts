@@ -619,6 +619,71 @@ export interface SurveyReviewFormValue {
 }
 
 /**
+ * SurveyMonkey survey template
+ * @description Upstream `GET /surveys/templates` item (lfx-v2-survey-service, proxied from ITX)
+ */
+export interface SurveyTemplate {
+  /** SurveyMonkey survey ID, sent as `survey_monkey_id` on create */
+  id: string;
+  /** Template title */
+  title: string;
+  /** SurveyMonkey nickname (may be empty) */
+  nickname?: string;
+  /** SurveyMonkey API link (may be empty) */
+  href?: string;
+}
+
+/**
+ * Survey template dropdown option
+ * @description A {@link SurveyTemplate} mapped for the NPS Survey Template select
+ */
+export interface SurveyTemplateOption {
+  /** Template title */
+  label: string;
+  /** SurveyMonkey survey ID */
+  value: string;
+}
+
+/**
+ * Survey wizard template-list state
+ * @description Load status plus title-sorted options for the template picker and review step
+ */
+export interface SurveyTemplatesState {
+  /** Fetch status */
+  status: 'loading' | 'ready' | 'error';
+  /** Options sorted by title; empty unless `status` is `ready` */
+  options: SurveyTemplateOption[];
+}
+
+/**
+ * Survey wizard template-list authorization target
+ * @description Query scope for `GET /api/surveys/templates`; upstream admits a project writer or a committee writer
+ */
+export interface SurveyTemplateAccessTarget {
+  /** Project UID (v2) the survey belongs to */
+  projectUid: string;
+  /** Committee UID (v2) for a committee writer, when the wizard has one */
+  committeeUid: string | null;
+}
+
+/**
+ * Survey email audience
+ * @description Which default email draft a template gets. ITX templates carry no category, so it is derived from the template title.
+ */
+export type SurveyEmailAudience = 'general' | 'maintainer';
+
+/**
+ * Survey email draft
+ * @description Default subject and body the wizard's Email Draft step starts from
+ */
+export interface SurveyEmailDraft {
+  /** Email subject line */
+  subject: string;
+  /** Plain-text email body with template variables */
+  body: string;
+}
+
+/**
  * Survey review data for display
  * @description Formatted data for the review step
  */

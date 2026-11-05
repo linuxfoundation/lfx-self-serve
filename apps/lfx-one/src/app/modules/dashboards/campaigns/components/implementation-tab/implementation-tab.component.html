@@ -2353,6 +2353,28 @@
       }
 
       <!--
+        Google Ads: the Search campaign's display paths, its second and third ads, and its create-time
+        negative keywords (#4991). Search only, on the campaign-service road; errors are the shared
+        refusals the BFF answers the create with, and Create waits on them.
+      -->
+      @if (googleSearchAdsAvailable()) {
+        <lfx-campaign-google-search-ads-panel
+          [path1]="googleSearchPath1()"
+          (path1Change)="onGoogleSearchPath1Change($event)"
+          [path2]="googleSearchPath2()"
+          (path2Change)="onGoogleSearchPath2Change($event)"
+          [additionalAds]="googleAdditionalSearchAds()"
+          (additionalAdsChange)="onGoogleAdditionalSearchAdsChange($event)"
+          [negativeKeywordsText]="googleNegativeKeywordsText()"
+          (negativeKeywordsTextChange)="onGoogleNegativeKeywordsTextChange($event)"
+          [negativeKeywordMatchType]="googleNegativeKeywordMatchType()"
+          (negativeKeywordMatchTypeChange)="onGoogleNegativeKeywordMatchTypeChange($event)"
+          [pathsError]="googleSearchPathsError()"
+          [adsError]="googleAdditionalSearchAdsError()"
+          [negativeKeywordsError]="googleNegativeKeywordsError()" />
+      }
+
+      <!--
         Google Ads: per-channel creative.
 
         One section per selected channel that carries a creative OBJECT rather than the two copy

@@ -42,11 +42,11 @@ export interface OrgInvolvementMaintainersMonthlyResponse {
 export interface OrgInvolvementEventAttendanceMonthlyResponse {
   accountId: string;
   accountName: string;
-  /** Distinct people who registered at foundation events over the window — NOT the sum of the monthly points. */
+  /** Distinct people who registered or attended foundation events over the window — NOT the sum of the monthly points. */
   totalAttended: number;
   /** Distinct accepted speakers over the window — NOT the sum of the monthly points. */
   totalSpeakers: number;
-  /** The attribution the numbers use — `account` when the company has no company-email data. */
+  /** The attribution the numbers use — the all-relations default; `account` only if the pinned attribution is ever Company email and the company has no company-email data. */
   servedAttribution: OrgEventsAttribution;
   attendeesMonthlyData: number[];
   speakersMonthlyData: number[];

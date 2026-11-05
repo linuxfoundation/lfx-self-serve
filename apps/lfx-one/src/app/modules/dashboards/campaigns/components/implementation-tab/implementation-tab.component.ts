@@ -29,6 +29,7 @@ import {
   CAMPAIGN_BUDGET_DEFAULTS,
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
+  CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES,
   CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_MIME_TYPES,
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
@@ -136,6 +137,7 @@ import {
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
+  GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -164,6 +166,7 @@ import {
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOAL_LABELS,
   REDDIT_VIDEO_GOALS,
+  googleAdsEchoed,
   googleAdsToLower,
   googleAdsTrimSpace,
   isCanonicalGoogleAdsResourceId,
@@ -203,6 +206,7 @@ import type {
   CampaignExistingRow,
   CampaignIndexDoc,
   CampaignKeyword,
+  CampaignNegativeKeywordMatchType,
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignGoogleImageAssetBlock,
@@ -226,6 +230,7 @@ import type {
   CampaignPriceOfferingDraft,
   CampaignPromotion,
   CampaignPromotionDraft,
+  CampaignSearchAd,
   CampaignSitelink,
   CampaignStructuredSnippet,
   CampaignStructuredSnippetDraft,
@@ -279,10 +284,13 @@ import {
   dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
   describeCampaignDispatchFailure,
+  googleAdditionalSearchAdsRefusal,
   googleAdScheduleRefusal,
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
   googleChannelOffersManualCpc,
+  googleCreateNegativeKeywords,
+  googleCreateNegativeKeywordsRefusal,
   googleCreativeImageDrift,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
@@ -295,11 +303,15 @@ import {
   googlePromotionRefusal,
   googleScheduleAdjustmentIgnoredSentence,
   googleScheduleAdjustmentStrategiesOn,
+  googleSearchAdCopyWidthRefusal,
+  googleSearchAdPathsRefusal,
   googleStrategyTakesScheduleAdjustments,
+  googleSuggestedNegativeKeywordsText,
   googleUpperCodeList,
   isHttpUrl,
   isReversedCampaignFlight,
   joinAsSentenceList,
+  parseNegativeKeywordInput,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -309,6 +321,7 @@ import {
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
+import { CampaignGoogleSearchAdsPanelComponent } from '../campaign-google-search-ads-panel/campaign-google-search-ads-panel.component';
 import { CampaignGoogleTargetingPanelComponent } from '../campaign-google-targeting-panel/campaign-google-targeting-panel.component';
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
@@ -363,6 +376,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     SlicePipe,
     CampaignBiddingControlComponent,
     CampaignGoogleExclusionsPanelComponent,
+    CampaignGoogleSearchAdsPanelComponent,
     CampaignGoogleTargetingPanelComponent,
     CreativeLibraryUploadComponent,
     CreativeSlotGridComponent,
@@ -1675,6 +1689,19 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleExcludedAgeRanges = signal<GoogleAdsAgeRange[]>([]);
   protected readonly googleExcludedGenders = signal<GoogleAdsGender[]>([]);
   protected readonly googleExcludedGeoTargets = signal<string[]>([]);
+  /**
+   * The Search campaign's first-ad display paths, its second and third ads, and its create-time
+   * negative keywords (the editor's raw text and the one match type they all take), edited in
+   * `lfx-campaign-google-search-ads-panel` (#4991). Empty sends the one ad and no negatives, exactly
+   * as before. The negatives are seeded from the brief's suggestions in `populateFromBrief`.
+   */
+  protected readonly googleSearchPath1 = signal('');
+  protected readonly googleSearchPath2 = signal('');
+  protected readonly googleAdditionalSearchAds = signal<CampaignSearchAd[]>([]);
+  protected readonly googleNegativeKeywordsText = signal('');
+  protected readonly googleNegativeKeywordMatchType = signal<CampaignNegativeKeywordMatchType>(
+    CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'].defaultMatchType
+  );
   /**
    * The languages Google Ads can target on this path, offered as a closed list.
    *
@@ -3296,6 +3323,12 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && (this.googleAdSchedulesError() !== null || this.googleDeviceBidModifiersError() !== null)) return false;
     // A demographic exclusion or excluded location the BFF would refuse; the message is under the exclusions panel.
     if (googleSelected && (this.googleDemographicExclusionsError() !== null || this.googleExcludedGeoTargetsError() !== null)) return false;
+    // A display path, further ad or negative keyword the BFF would refuse; the message is under the Search ads panel.
+    if (
+      googleSelected &&
+      (this.googleSearchPathsError() !== null || this.googleAdditionalSearchAdsError() !== null || this.googleNegativeKeywordsError() !== null)
+    )
+      return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -3612,6 +3645,15 @@ export class ImplementationTabComponent implements OnInit {
    * compares for the clash. `canSubmit` blocks on it.
    */
   protected readonly googleExcludedGeoTargetsError: Signal<string | null> = this.initGoogleExcludedGeoTargetsError();
+  /**
+   * Whether the Search ads panel shows, and so whether the request carries its paths, further ads and
+   * negatives: Search on the campaign-service road, the one channel upstream takes them on.
+   */
+  protected readonly googleSearchAdsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_SEARCH_ADS));
+  /** The shared refusals the BFF would answer the create with, or `null`; `canSubmit` blocks on each. */
+  protected readonly googleSearchPathsError: Signal<string | null> = this.initGoogleSearchPathsError();
+  protected readonly googleAdditionalSearchAdsError: Signal<string | null> = this.initGoogleAdditionalSearchAdsError();
+  protected readonly googleNegativeKeywordsError: Signal<string | null> = this.initGoogleNegativeKeywordsError();
   /** The held-targeting sentence, or `''`; one string feeds the visible notice and the live region, as for languages. */
   protected readonly googleTargetingWithheldMessage: Signal<string> = this.initGoogleTargetingWithheldMessage();
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
@@ -4834,6 +4876,31 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  protected onGoogleSearchPath1Change(path: string): void {
+    this.googleSearchPath1.set(path);
+    this.emitDraft();
+  }
+
+  protected onGoogleSearchPath2Change(path: string): void {
+    this.googleSearchPath2.set(path);
+    this.emitDraft();
+  }
+
+  protected onGoogleAdditionalSearchAdsChange(ads: CampaignSearchAd[]): void {
+    this.googleAdditionalSearchAds.set(ads);
+    this.emitDraft();
+  }
+
+  protected onGoogleNegativeKeywordsTextChange(text: string): void {
+    this.googleNegativeKeywordsText.set(text);
+    this.emitDraft();
+  }
+
+  protected onGoogleNegativeKeywordMatchTypeChange(matchType: CampaignNegativeKeywordMatchType): void {
+    this.googleNegativeKeywordMatchType.set(matchType);
+    this.emitDraft();
+  }
+
   /**
    * Add one audience segment, reporting whether it was actually added.
    *
@@ -5324,6 +5391,9 @@ export class ImplementationTabComponent implements OnInit {
       ...(platforms.includes('google-ads') ? this.googleLanguagesPayload() : {}),
       // Ad schedules and device adjustments, on the same Google gate, already withheld per channel.
       ...(platforms.includes('google-ads') ? this.googleTargetingPayload() : {}),
+      // The first ad's display paths, the further ads and the negatives, on the same gate, and
+      // already withheld unless the dispatched channel is Search.
+      ...(platforms.includes('google-ads') ? this.googleSearchAdsPayload() : {}),
       // The audience segments, Google-gated for the same reason, and already withheld unless the
       // dispatched channel is Search, the one channel upstream attaches audience criteria on.
       ...(platforms.includes('google-ads') ? this.googleAudienceSegmentsPayload() : {}),
@@ -6802,6 +6872,15 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleExcludedGeoTargets !== undefined) {
       this.googleExcludedGeoTargets.set([...draft.googleExcludedGeoTargets]);
     }
+    // Copied on the same rule, and held rather than sent while a channel other than Search is
+    // selected. The negatives' text restores over the brief's suggestions `populateFromBrief` seeded.
+    if (draft.googleSearchPath1 !== undefined) this.googleSearchPath1.set(draft.googleSearchPath1);
+    if (draft.googleSearchPath2 !== undefined) this.googleSearchPath2.set(draft.googleSearchPath2);
+    if (draft.googleAdditionalSearchAds !== undefined) {
+      this.googleAdditionalSearchAds.set(draft.googleAdditionalSearchAds.map((ad) => this.copySearchAd(ad)));
+    }
+    if (draft.googleNegativeKeywordsText !== undefined) this.googleNegativeKeywordsText.set(draft.googleNegativeKeywordsText);
+    if (draft.googleNegativeKeywordMatchType !== undefined) this.googleNegativeKeywordMatchType.set(draft.googleNegativeKeywordMatchType);
     // Copied on the same rule, and restored whatever the channel selection is: the section and
     // `googleAudienceSegmentsPayload` both gate on `googleAudienceSegmentsAvailable`, so a list
     // restored under a non-Search channel is held, not sent.
@@ -7155,6 +7234,11 @@ export class ImplementationTabComponent implements OnInit {
       googleExcludedAgeRanges: [...this.googleExcludedAgeRanges()],
       googleExcludedGenders: [...this.googleExcludedGenders()],
       googleExcludedGeoTargets: [...this.googleExcludedGeoTargets()],
+      googleSearchPath1: this.googleSearchPath1(),
+      googleSearchPath2: this.googleSearchPath2(),
+      googleAdditionalSearchAds: this.googleAdditionalSearchAds().map((ad) => this.copySearchAd(ad)),
+      googleNegativeKeywordsText: this.googleNegativeKeywordsText(),
+      googleNegativeKeywordMatchType: this.googleNegativeKeywordMatchType(),
       googleAudienceSegments: [...this.googleAudienceSegments()],
       googleCallouts: [...this.googleCallouts()],
       // Entries copied too, for the reason the restore above gives in the other direction.
@@ -7480,6 +7564,10 @@ export class ImplementationTabComponent implements OnInit {
 
     // A stored brief can lack the list; every reader maps or filters it (#4848).
     this.briefKeywords.set(Array.isArray(brief.keywords) ? brief.keywords : []);
+    // The brief's suggested negatives seed the create-time editor (#4991), one per line, filtered to
+    // what the shared judge accepts and capped at its count, as the Microsoft seed below is filtered:
+    // an untouched create must not open held on a suggestion. A draft's own text restores over this.
+    this.googleNegativeKeywordsText.set(googleSuggestedNegativeKeywordsText(brief.negativeKeywords));
 
     // Microsoft's seed (LFXV2-3312). The brief's own keywords feed it DIRECTLY, with no
     // translation: `CampaignKeyword.matchType` is already the PascalCase vocabulary
@@ -7606,6 +7694,11 @@ export class ImplementationTabComponent implements OnInit {
     this.googleExcludedAgeRanges.set([]);
     this.googleExcludedGenders.set([]);
     this.googleExcludedGeoTargets.set([]);
+    this.googleSearchPath1.set('');
+    this.googleSearchPath2.set('');
+    this.googleAdditionalSearchAds.set([]);
+    this.googleNegativeKeywordsText.set('');
+    this.googleNegativeKeywordMatchType.set(CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'].defaultMatchType);
     this.googleAudienceSegments.set([]);
     this.googleCallouts.set([]);
     this.googleSitelinks.set([]);
@@ -8582,6 +8675,38 @@ export class ImplementationTabComponent implements OnInit {
       if (!this.googleDemographicExclusionsAvailable()) return null;
       const channel = this.googleBiddingChannel();
       return googleExcludedAgeRangesRefusal(this.googleExcludedAgeRanges(), channel) ?? googleExcludedGendersRefusal(this.googleExcludedGenders(), channel);
+    });
+  }
+
+  private initGoogleSearchPathsError(): Signal<string | null> {
+    return computed(() => (this.googleSearchAdsAvailable() ? googleSearchAdPathsRefusal(this.googleSearchPath1(), this.googleSearchPath2()) : null));
+  }
+
+  /**
+   * The first ad's copy judged for display width first — campaign-service refuses an over-wide line
+   * on every Search ad, the campaign-level copy included, with one ad or three — then the further ads.
+   * Read through `campaignFormRevision` because the copy controls are not signals.
+   */
+  private initGoogleAdditionalSearchAdsError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleSearchAdsAvailable()) return null;
+      void this.campaignFormRevision();
+      const { headlines, descriptions } = this.campaignForm.getRawValue();
+      return googleSearchAdCopyWidthRefusal(headlines, descriptions, 'ad 1') ?? googleAdditionalSearchAdsRefusal(this.googleAdditionalSearchAds());
+    });
+  }
+
+  /**
+   * The editor's own line problems first — numbered as the operator sees them — then the shared
+   * refusal on what the request would carry, which adds the count cap.
+   */
+  private initGoogleNegativeKeywordsError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.googleSearchAdsAvailable()) return null;
+      const text = this.googleNegativeKeywordsText();
+      const { problems } = parseNegativeKeywordInput(text, CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'].maxTextLength);
+      if (problems.length > 0) return `Negative keyword line ${problems[0].line} ("${googleAdsEchoed(problems[0].text)}"): ${problems[0].reason}`;
+      return googleCreateNegativeKeywordsRefusal(googleCreateNegativeKeywords(text, this.googleNegativeKeywordMatchType()));
     });
   }
 
@@ -9583,6 +9708,27 @@ export class ImplementationTabComponent implements OnInit {
     const excluded = this.googleExcludedGeoTargets();
     if (this.googleExcludedGeoTargetsAvailable() && excluded.length > 0) payload.excludedGeoTargets = [...excluded];
     return payload;
+  }
+
+  /**
+   * The first ad's display paths, the further ads and the negatives as the request carries them, each
+   * gated by `googleSearchAdsAvailable` — the computed the panel renders on — and omitted when empty.
+   * Paths and ad lines are sent as typed; the BFF trims them and drops blank lines.
+   */
+  private googleSearchAdsPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleSearchAdsAvailable()) return {};
+    const payload: Partial<CampaignCreateRequest> = {};
+    if (this.googleSearchPath1().trim() !== '') payload.path1 = this.googleSearchPath1();
+    if (this.googleSearchPath2().trim() !== '') payload.path2 = this.googleSearchPath2();
+    const ads = this.googleAdditionalSearchAds();
+    if (ads.length > 0) payload.additionalSearchAds = ads.map((ad) => this.copySearchAd(ad));
+    const negatives = googleCreateNegativeKeywords(this.googleNegativeKeywordsText(), this.googleNegativeKeywordMatchType());
+    if (negatives.length > 0) payload.negativeKeywords = negatives;
+    return payload;
+  }
+
+  private copySearchAd(ad: CampaignSearchAd): CampaignSearchAd {
+    return { headlines: [...ad.headlines], descriptions: [...ad.descriptions], path1: ad.path1 ?? '', path2: ad.path2 ?? '' };
   }
 
   /** Whether the dispatched Google channel (`googleBiddingChannel`, null off the campaign-service road) is in `channels`. */

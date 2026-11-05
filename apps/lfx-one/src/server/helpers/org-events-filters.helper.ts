@@ -10,6 +10,7 @@ import {
   ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
   ORG_EVENTS_FOUNDATION_ID_MAX_LENGTH,
   ORG_EVENTS_FOUNDATION_QUERY_PARAM,
+  ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT,
   ORG_EVENTS_PARTICIPATION_OPTIONS,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
   ORG_EVENTS_SCOPE_OPTIONS,
@@ -65,10 +66,9 @@ export function parseOrgEventsFilters(req: Request, operation: string): OrgEvent
   };
 }
 
-/** `REGISTERED_COUNT_<ATTRIBUTION>` or `ATTENDED_COUNT_<ATTRIBUTION>` of `ORG_EVENTS` — the per-event distinct-people count of an option. */
+/** `ALL_COUNT_<ATTRIBUTION>`, `REGISTERED_COUNT_<ATTRIBUTION>` or `ATTENDED_COUNT_<ATTRIBUTION>` of `ORG_EVENTS` — the per-event distinct-people count of an option. */
 export function orgEventsCountColumn(attribution: OrgEventsAttribution, participation: OrgEventsParticipation): string {
-  const prefix = participation === 'attended' ? 'ATTENDED_COUNT' : 'REGISTERED_COUNT';
-  return `${prefix}_${ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[attribution]}`;
+  return `${ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT[participation]}_COUNT_${ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[attribution]}`;
 }
 
 /** `HAS_FOOTPRINT_<ATTRIBUTION>` of `ORG_EVENTS` — whether the company has activity at the event under the attribution. */
@@ -78,10 +78,11 @@ export function orgEventsFootprintColumn(attribution: OrgEventsAttribution): str
 
 /**
  * `ORG_EVENT_PARTICIPATION` predicate selecting the attendees an attribution and participation count (no leading `AND`):
- * the one row-level conjunction flag dbt computes for the pair (`IS_COUNTED_REGISTERED_COMPANY_EMAIL`, `IS_COUNTED_ATTENDED_ALL`, ...).
+ * the one row-level conjunction flag dbt computes for the pair (`IS_COUNTED_REGISTERED_COMPANY_EMAIL`, `IS_COUNTED_ATTENDED_ALL`,
+ * `IS_COUNTED_ALL_ACCOUNT` — registered or attended, ...).
  */
 export function orgEventsAttendeePredicate(attribution: OrgEventsAttribution, participation: OrgEventsParticipation): string {
-  return `IS_COUNTED_${participation === 'attended' ? 'ATTENDED' : 'REGISTERED'}_${ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[attribution]} = TRUE`;
+  return `IS_COUNTED_${ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT[participation]}_${ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[attribution]} = TRUE`;
 }
 
 /**

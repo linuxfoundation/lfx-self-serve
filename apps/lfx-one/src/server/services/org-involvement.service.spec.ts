@@ -352,16 +352,22 @@ describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)'
     MONTH_START_DATE: month,
     HAS_COMPANY_EMAIL_COVERAGE: coverage,
     ATTENDEES_REGISTERED_COMPANY_EMAIL: 3,
+    ATTENDEES_ALL_COMPANY_EMAIL: 4,
     SPEAKERS_COMPANY_EMAIL: 1,
     TOTAL_ATTENDEES_REGISTERED_COMPANY_EMAIL: 5,
+    TOTAL_ATTENDEES_ALL_COMPANY_EMAIL: 6,
     TOTAL_SPEAKERS_COMPANY_EMAIL: 2,
     ATTENDEES_REGISTERED_ACCOUNT: 30,
+    ATTENDEES_ALL_ACCOUNT: 40,
     SPEAKERS_ACCOUNT: 10,
     TOTAL_ATTENDEES_REGISTERED_ACCOUNT: 50,
+    TOTAL_ATTENDEES_ALL_ACCOUNT: 60,
     TOTAL_SPEAKERS_ACCOUNT: 20,
     ATTENDEES_REGISTERED_ALL: 300,
+    ATTENDEES_ALL_ALL: 400,
     SPEAKERS_ALL: 100,
     TOTAL_ATTENDEES_REGISTERED_ALL: 500,
+    TOTAL_ATTENDEES_ALL_ALL: 600,
     TOTAL_SPEAKERS_ALL: 200,
   });
 
@@ -369,7 +375,7 @@ describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)'
     execute.mockReset();
   });
 
-  it('reads the company-email columns: monthly distinct people as the sparkline, the distinct total as the headline', async () => {
+  it('reads the all-relations, registered-or-attended columns: monthly distinct people as the sparkline, the distinct total as the headline', async () => {
     execute.mockResolvedValue({ rows: [monthlyRow(new Date(2030, 0, 15), true), monthlyRow(new Date(2030, 1, 15), true)] });
 
     const response = await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
@@ -377,27 +383,27 @@ describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)'
     expect(response).toEqual({
       accountId: 'acc-1',
       accountName: 'Account One',
-      // The headline is the distinct total, not the sum of the two monthly points (3 + 3).
-      totalAttended: 5,
-      totalSpeakers: 2,
-      servedAttribution: 'company_email',
-      attendeesMonthlyData: [3, 3],
-      speakersMonthlyData: [1, 1],
+      // The headline is the distinct total, not the sum of the two monthly points (400 + 400).
+      totalAttended: 600,
+      totalSpeakers: 200,
+      servedAttribution: 'all',
+      attendeesMonthlyData: [400, 400],
+      speakersMonthlyData: [100, 100],
       monthlyLabels: ['Jan 2030', 'Feb 2030'],
     });
   });
 
-  it('serves the account columns when the company has no company-email data', async () => {
+  it('does not fall back to the account columns for a company with no company-email data: all relations needs none', async () => {
     execute.mockResolvedValue({ rows: [monthlyRow(new Date(2030, 0, 15), false)] });
 
     const response = await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
 
     expect(response).toMatchObject({
-      totalAttended: 50,
-      totalSpeakers: 20,
-      servedAttribution: 'account',
-      attendeesMonthlyData: [30],
-      speakersMonthlyData: [10],
+      totalAttended: 600,
+      totalSpeakers: 200,
+      servedAttribution: 'all',
+      attendeesMonthlyData: [400],
+      speakersMonthlyData: [100],
     });
   });
 
@@ -408,7 +414,9 @@ describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)'
 
     const [sql, binds] = execute.mock.calls[0] as [string, string[]];
     expect(sql).toContain('ORG_EVENT_PARTICIPATION_MONTHLY');
-    expect(sql).toContain('TOTAL_ATTENDEES_REGISTERED_COMPANY_EMAIL');
+    expect(sql).toContain('ATTENDEES_ALL_ALL');
+    expect(sql).toContain('TOTAL_ATTENDEES_ALL_ALL');
+    expect(sql).toContain('TOTAL_SPEAKERS_ALL');
     expect(sql).not.toMatch(/REGISTRATION_COUNT|TOTAL_REGISTRATIONS|TOTAL_ATTENDED/);
     expect(binds).toEqual(['acc-1']);
   });
@@ -421,7 +429,7 @@ describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)'
       accountName: '',
       totalAttended: 0,
       totalSpeakers: 0,
-      servedAttribution: 'company_email',
+      servedAttribution: 'all',
       attendeesMonthlyData: [],
       speakersMonthlyData: [],
       monthlyLabels: [],
@@ -433,6 +441,6 @@ describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)'
 
     await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
 
-    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('events:v2');
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('events:v3');
   });
 });

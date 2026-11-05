@@ -3,8 +3,8 @@
 
 // Wording the Org Lens Overview Events cards add to the shared Events phrases (lfx-self-serve#4598).
 
-/** Subtitle of the Overview "Event Attendees" card — the card counts registrations, so it says so. */
-export const ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE = 'Employees registered at foundation events';
+/** Subtitle of the Overview "Event Attendees" card — the card counts people who registered or attended, so it says so. */
+export const ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE = 'Employees who registered or attended foundation events';
 
 /** Subtitle of the Overview "Event Speakers" card. */
 export const ORG_OVERVIEW_EVENT_SPEAKERS_SUBTITLE = 'Employee speakers accepted at foundation events';
@@ -13,5 +13,5 @@ export const ORG_OVERVIEW_EVENT_SPEAKERS_SUBTITLE = 'Employee speakers accepted 
 export const ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE =
   'The headline counts distinct people over the whole period, so it is not the sum of the monthly points: a person active in several months is one person in the headline and one point in each of those months.';
 
-/** Phrase the Overview "Event Speakers" tooltip adds for what it counts. */
+/** Phrase the Overview "Event Speakers" tooltip adds for what it counts; the tooltip then adds the phrase of the attribution that was served. */
 export const ORG_EVENTS_SPEAKERS_CAPTION_PHRASE = 'Accepted speakers.';

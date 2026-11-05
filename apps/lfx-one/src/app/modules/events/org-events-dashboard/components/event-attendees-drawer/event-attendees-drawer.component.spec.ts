@@ -58,6 +58,13 @@ describe('EventAttendeesDrawerComponent', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
+  it('labels each row Registered or attended when Count is All, and requests everyone who registered or attended', async () => {
+    const { getEventAttendees } = await open('all');
+
+    expect(getEventAttendees).toHaveBeenCalledWith('acc-1', 'event-1', expect.objectContaining({ participation: 'all' }));
+    expect(document.body.querySelector('[data-testid="event-attendee-status"]')?.textContent?.trim()).toBe('Registered or attended');
+  });
+
   it('labels each row Attended when Count is Attended, and requests attended people', async () => {
     const { getEventAttendees } = await open('attended');
 

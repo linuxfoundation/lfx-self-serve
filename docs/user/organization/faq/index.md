@@ -1,11 +1,31 @@
 ---
 title: Organization FAQ
-description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
 tags:
-  [organization, faq, switch-organization, org-overview, dashboard, memberships, projects, workspaces, easycla, cla, ccla, cla-manager, access, remove, invite]
-last_updated: 2026-11-04
+  [
+    organization,
+    faq,
+    switch-organization,
+    org-overview,
+    dashboard,
+    memberships,
+    projects,
+    workspaces,
+    events,
+    training,
+    meetings,
+    groups,
+    easycla,
+    cla,
+    ccla,
+    cla-manager,
+    access,
+    remove,
+    invite,
+  ]
+last_updated: 2026-11-05
 intercom_collection: Organization
 ---
 
@@ -15,7 +35,7 @@ You switch organizations from the organization switcher at the top of the sideba
 
 ## What does the Org Overview dashboard show?
 
-The Org Overview, the **Dashboard** of the Organization lens, summarizes how the selected organization takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the organization's active contributors, maintainer roles, event attendees (registered, counted by company email) and speakers, certified employees and training enrollments. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the organization's role, voting status and meeting participation. Selecting a foundation row, other than **Outside LF**, opens **Memberships**, and selecting an LF project opens that project's page. Return on investment (ROI) figures are on a separate page for Linux Foundation staff. See [What is the Org Overview?](../org-overview/#what-is-the-org-overview).
+The Org Overview, the **Dashboard** of the Organization lens, summarizes how the selected organization takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the organization's active contributors, maintainer roles, event attendees (registered or attended, all relations) and speakers, certified employees and training enrollments. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the organization's role, voting status and meeting participation. Selecting a foundation row, other than **Outside LF**, opens **Memberships**, and selecting an LF project opens that project's page. Return on investment (ROI) figures are on a separate page for Linux Foundation staff. See [What is the Org Overview?](../org-overview/#what-is-the-org-overview).
 
 ## What does the Memberships page show?
 
@@ -28,6 +48,30 @@ The Projects page lists the open source projects in the selected organization's 
 ## How do I add a project to the Projects page?
 
 Add it to a workspace with **Add Project**. You must be able to edit the organization, for example as an Admin. In the **Organization** lens, open **Projects**, pick the workspace in the workspace menu, select **Add Project**, search in **Search and select projects**, select one or more projects, then select **Add project(s)**. Workspaces are shared, so everyone who can open the organization sees the change. If you can only view the organization, **Add Project** is unavailable and says **You have view-only access to this organization**. See [How do I add a project to a workspace?](../projects/#how-do-i-add-a-project-to-a-workspace).
+
+## What do the People and Code Contributions pages show?
+
+The People page lists the selected organization's employees and how each one takes part in the Linux Foundation, and the Code Contributions page shows their code contributions to open source projects. People has the tabs **All Employees**, **Board**, **Committee**, **Key Contacts**, **Contributors**, **Event Attendees**, **Trainees** and **Org Lens Access**. Code Contributions counts the organization's **Projects with Activity**, **Repositories** and code contributions, and lists them on a **Repositories** tab and a **Commits** tab. Both pages are under **Organization Engagement** in the Organization lens sidebar. A CLA Manager or initial CLA Manager designee with no other role on the organization sees **EasyCLA** instead. See [What is the People page?](../people/#what-is-the-people-page) and [What is the Code Contributions page?](../code-contributions/#what-is-the-code-contributions-page).
+
+## Does the time range carry between People and Code Contributions?
+
+Yes. The time range you pick on People or Code Contributions carries to the other page when you open it from the sidebar, and so do **Organization scope** and **Team members**. Project type, the code count, the foundation, and the employee and employment choices do not carry. On People, the time range applies to **All Employees**, **Contributors**, **Event Attendees** and **Trainees**, and switching tabs keeps it. **Clear filters** on Code Contributions, **All Employees** or **Contributors** puts the time range back to **Past 2 years**, the default. See [Does the time range carry from People to Code Contributions?](../people/#does-the-time-range-carry-from-people-to-code-contributions).
+
+## What does the Events page show?
+
+The Events page in the Organization lens lists the foundation events where the selected organization has registrants, a submitted speaker or a sponsorship, on an **Upcoming** tab and a **Past** tab. Three tiles count **Upcoming Events**, **Past Events** and **Total Events**. By default the page counts everyone who registered or attended (**All**), credits people by **All relations**, and on the **Past** tab covers the last 2 years. **Show** set to **All foundation events** also lists events with no activity from the organization. Select an attendee count to open the people behind it. The page is under **Organization Engagement** in the Organization lens sidebar. See [Events page](../org-events/#events-page).
+
+## What does the Training & Certification page show?
+
+The Training & Certification page shows the Linux Foundation training courses and certifications the selected organization's people enrolled in or completed over a time range. Nine cards count its learners and courses, such as **Courses taken**, **Certifications** and **Completion rate**, and a table on the **Certifications** and **Trainings** tabs groups them by course, foundation, project, level or format. The time range defaults to **Past 2 years**. **Clear all** resets only the five filters under **More filters**, and keeps the time range, **Group by** and the search. Select a **Certified**, **Completed** or **In progress** number to see the current employees behind it. The sidebar item is **Training & Certification**, under **Organization Engagement**, and the page heading reads **Training & Certifications —** followed by the organization's name. See [What is the Training & Certification page?](../training/#what-is-the-training-amp-certification-page).
+
+## What does the Organization lens Meetings page show?
+
+The Organization lens Meetings page shows how the selected organization's employees take part in Linux Foundation project meetings over a time range, as totals for the organization, without listing people or individual meetings. Four cards count **Employees Active**, **Meetings Attended**, **Projects Supported** and **Foundations Supported**, each compared with the prior period. **Where your people spend time** splits the organization's attendance by foundation, project, meeting type and role, and **How attendance impacts project influence** shows, for each project with a published Ecosystem Influence Score, how much of the influence shown for it comes from meeting attendance, leaving out the membership-tier part of the score. The time range defaults to **Past 365 days**. Only meetings scheduled in LFX are counted. Your own meetings are a different page. See [What is the Organization lens Meetings page?](../meetings/#what-is-the-organization-lens-meetings-page).
+
+## What does the Groups page show?
+
+The Groups page lists the working groups, committees and other groups across Linux Foundation projects where the selected organization's employees hold seats, with how many of its people sit on each one. Tiles count **Total Groups**, **Total Seats** and each group type. Groups in the **Board** category are not listed: those seats are on **Memberships**. You can search the list, filter it by foundation and type, select a seat count to see who holds the seats, and select **Export to CSV** to download it. The page has no time range: it shows the seats held now. See [What is the Groups page?](../groups/#what-is-the-groups-page).
 
 ## Why can't I edit this corporate CLA?
 

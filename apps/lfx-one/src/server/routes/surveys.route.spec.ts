@@ -6,8 +6,9 @@ import type { Response } from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { byId, reminders, resyncPreview, resync, surveyWriteRateLimiter } = vi.hoisted(() => ({
+const { byId, templates, reminders, resyncPreview, resync, surveyWriteRateLimiter } = vi.hoisted(() => ({
   byId: vi.fn((_req: unknown, res: Response) => res.json({})),
+  templates: vi.fn((_req: unknown, res: Response) => res.json([])),
   reminders: vi.fn((_req: unknown, res: Response) => res.json({ recipient_count: 1 })),
   resyncPreview: vi.fn((_req: unknown, res: Response) => res.json({ affected_recipients: [], affected_committees: [] })),
   resync: vi.fn((_req: unknown, res: Response) => res.status(204).send()),
@@ -16,6 +17,7 @@ const { byId, reminders, resyncPreview, resync, surveyWriteRateLimiter } = vi.ho
 vi.mock('../controllers/survey.controller', () => ({
   SurveyController: class {
     public getSurveyById = byId;
+    public getSurveyTemplates = templates;
     public sendSurveyReminders = reminders;
     public getResyncPreview = resyncPreview;
     public resyncRecipients = resync;
@@ -62,5 +64,16 @@ describe('survey follow-up route dispatch (#4340)', () => {
     expect(resyncPreview).toHaveBeenCalledOnce();
     expect(byId).not.toHaveBeenCalled();
     expect(surveyWriteRateLimiter).not.toHaveBeenCalled();
+  });
+});
+
+describe('survey template route dispatch (#5124)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('dispatches GET /templates to the templates handler, not the survey UID handler', async () => {
+    const response = await fetch(`${baseUrl}/api/surveys/templates?project_uid=p-1`);
+    expect(response.status).toBe(200);
+    expect(templates).toHaveBeenCalledOnce();
+    expect(byId).not.toHaveBeenCalled();
   });
 });

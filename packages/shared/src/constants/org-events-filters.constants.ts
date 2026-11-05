@@ -17,13 +17,13 @@ import type {
 
 /** "Counted by" options, default first. */
 export const ORG_EVENTS_ATTRIBUTION_OPTIONS: readonly OrgEventsAttributionOption[] = [
+  { label: 'All relations', value: 'all' },
   { label: 'Company email', value: 'company_email' },
   { label: 'Account on registration', value: 'account' },
-  { label: 'All relations', value: 'all' },
 ] as const;
 
 /** Default "Counted by" — the URL drops `?attribution=` when it is active. The Overview is pinned to it. */
-export const DEFAULT_ORG_EVENTS_ATTRIBUTION: OrgEventsAttribution = 'company_email';
+export const DEFAULT_ORG_EVENTS_ATTRIBUTION: OrgEventsAttribution = 'all';
 
 /** URL query parameter of the "Counted by" filter. */
 export const ORG_EVENTS_ATTRIBUTION_QUERY_PARAM = 'attribution';
@@ -33,10 +33,10 @@ export const ORG_EVENTS_ATTRIBUTION_LABEL = 'Counted by';
 
 /** Tooltip on the "Counted by" filter, per option. */
 export const ORG_EVENTS_ATTRIBUTION_TOOLTIP: Readonly<Record<OrgEventsAttribution, string>> = {
+  all: 'Everyone related to the company: company-email registrations, registrations credited to the account, and current employees. People are counted, not listed, unless they used a company address or are current employees.',
   company_email: 'People who registered with one of the company’s own email addresses.',
   account:
     'Registrations credited to the company’s account, whatever address was used. People are counted, not listed, unless they also used a company address or are current employees.',
-  all: 'Everyone related to the company: company-email registrations, registrations credited to the account, and current employees. People are counted, not listed, unless they used a company address or are current employees.',
 };
 
 /** Phrase a caption or tooltip adds for the attribution it counts. */
@@ -54,12 +54,13 @@ export const ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE = 'No company-email data is
 
 /** "Count" options, default first. */
 export const ORG_EVENTS_PARTICIPATION_OPTIONS: readonly OrgEventsParticipationOption[] = [
+  { label: 'All', value: 'all' },
   { label: 'Registered', value: 'registered' },
   { label: 'Attended', value: 'attended' },
 ] as const;
 
 /** Default "Count" — the URL drops `?participation=` when it is active. The Overview is pinned to it. */
-export const DEFAULT_ORG_EVENTS_PARTICIPATION: OrgEventsParticipation = 'registered';
+export const DEFAULT_ORG_EVENTS_PARTICIPATION: OrgEventsParticipation = 'all';
 
 /** URL query parameter of the "Count" filter. */
 export const ORG_EVENTS_PARTICIPATION_QUERY_PARAM = 'participation';
@@ -69,14 +70,23 @@ export const ORG_EVENTS_PARTICIPATION_LABEL = 'Count';
 
 /** Tooltip on the "Count" filter, per option. */
 export const ORG_EVENTS_PARTICIPATION_TOOLTIP: Readonly<Record<OrgEventsParticipation, string>> = {
+  all: 'People who registered or attended, cancelled and denied registrations excluded.',
   registered: 'Everyone who registered, cancelled and denied registrations excluded.',
   attended: 'Only people marked as attended. Counts events that have ended.',
 };
 
 /** Phrase a caption or tooltip adds for the participation it counts. */
 export const ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE: Readonly<Record<OrgEventsParticipation, string>> = {
+  all: 'Registered or attended.',
   registered: 'Registered attendees.',
   attended: 'Attended, events that have ended.',
+};
+
+/** Status badge on each person row of the attendees drawer, per participation: with Count All a row is a person who registered or attended. */
+export const ORG_EVENTS_PARTICIPATION_BADGE_LABEL: Readonly<Record<OrgEventsParticipation, string>> = {
+  all: 'Registered or attended',
+  registered: 'Registered',
+  attended: 'Attended',
 };
 
 /** Tooltip on the disabled "Count" filter on the Upcoming tab, where no one has attended yet. */
@@ -116,12 +126,21 @@ export const ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX: Readonly<Record<OrgEventsAttr
   all: 'ALL',
 };
 
+/** The one mapping from a participation to its segment of a warehouse column (`<SEGMENT>_COUNT_<ATTRIBUTION>`, `IS_COUNTED_<SEGMENT>_<ATTRIBUTION>`); never built from user input. */
+export const ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT: Readonly<Record<OrgEventsParticipation, string>> = {
+  all: 'ALL',
+  registered: 'REGISTERED',
+  attended: 'ATTENDED',
+};
+
 /** The per-attribution metric columns of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview selects. */
 export const ORG_EVENT_ATTENDANCE_METRIC_COLUMNS: readonly OrgEventAttendanceMetricColumn[] = Object.values(ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX).flatMap(
   (suffix) => [
     `ATTENDEES_REGISTERED_${suffix}` as const,
+    `ATTENDEES_ALL_${suffix}` as const,
     `SPEAKERS_${suffix}` as const,
     `TOTAL_ATTENDEES_REGISTERED_${suffix}` as const,
+    `TOTAL_ATTENDEES_ALL_${suffix}` as const,
     `TOTAL_SPEAKERS_${suffix}` as const,
   ]
 );

@@ -50,9 +50,9 @@ export function effectiveOrgEventsAttribution(attribution: OrgEventsAttribution,
 }
 
 /**
- * The participation a read serves for a pick: `attended` only on a tab of ended events — upcoming events have no
- * attendance, so the Upcoming tab always counts registrations.
+ * The participation a read serves for a pick: `attended` and `all` only on a tab of ended events — upcoming events have no
+ * attendance, so the Upcoming tab always counts registrations (and `all`, registered or attended, is registered there).
  */
 export function effectiveOrgEventsParticipation(participation: OrgEventsParticipation, isPastTab: boolean): OrgEventsParticipation {
-  return participation === 'attended' && !isPastTab ? 'registered' : participation;
+  return participation !== 'registered' && !isPastTab ? 'registered' : participation;
 }

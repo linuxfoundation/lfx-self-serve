@@ -127,7 +127,7 @@ export class OrgInvolvementService {
   public async getEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     return withOrgCache(
       accountId,
-      'events:v2',
+      'events:v3',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchEventAttendanceMonthly(accountId),
       OrgInvolvementService.hasAccountId
@@ -300,9 +300,10 @@ export class OrgInvolvementService {
   }
 
   /**
-   * Overview Event Attendees / Event Speakers: pinned to the defaults (company email, registered, 2 years). dbt computes
-   * every number; this reads the columns of the served attribution — `account` when the company has no company-email data.
-   * The headline is the distinct-people total, not the sum of the monthly points.
+   * Overview Event Attendees / Event Speakers: pinned to the defaults (all relations, registered or attended, 2 years). dbt
+   * computes every number; this reads the columns of the served attribution (`ATTENDEES_ALL_*` for attendees: people who
+   * registered or attended). The served attribution is `account` only if the pinned default is ever Company email and the
+   * company has no company-email data. The headline is the distinct-people total, not the sum of the monthly points.
    */
   private async fetchEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     const query = `
@@ -339,10 +340,10 @@ export class OrgInvolvementService {
     return {
       accountId: firstRow.ACCOUNT_ID,
       accountName: firstRow.ACCOUNT_NAME,
-      totalAttended: firstRow[`TOTAL_ATTENDEES_REGISTERED_${suffix}`] || 0,
+      totalAttended: firstRow[`TOTAL_ATTENDEES_ALL_${suffix}`] || 0,
       totalSpeakers: firstRow[`TOTAL_SPEAKERS_${suffix}`] || 0,
       servedAttribution,
-      attendeesMonthlyData: result.rows.map((row) => row[`ATTENDEES_REGISTERED_${suffix}`] || 0),
+      attendeesMonthlyData: result.rows.map((row) => row[`ATTENDEES_ALL_${suffix}`] || 0),
       speakersMonthlyData: result.rows.map((row) => row[`SPEAKERS_${suffix}`] || 0),
       monthlyLabels: result.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
     };
