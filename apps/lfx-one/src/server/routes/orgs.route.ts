@@ -66,6 +66,7 @@ function buildOrgsRouter(): Router {
 
   // Spec 020 — org-selector identity & role-grants endpoints.
   router.get('/me/role-grants', (req, res, next) => orgIdentityController.getRoleGrants(req, res, next));
+  router.get('/me/roll-up-set', (req, res, next) => orgIdentityController.getRollUpSet(req, res, next));
   router.get('/uid/:uid', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
   // Spec 050 — Org Lens address-segment resolver (slug or SFID → org the caller can read). Auth-only:
   // per-row FGA is applied upstream by query-service with the caller's context (contracts/
