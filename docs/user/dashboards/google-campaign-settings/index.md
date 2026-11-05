@@ -85,7 +85,8 @@ On Search and Display campaigns, the bidding settings include **Conversion Actio
 
 - **Pick conversion actions** lists the account's enabled conversion actions, each with its category. **Primary** marks one that counts toward the account's conversions by default. Picking one adds its id to the **Conversion Actions** box.
 - You can still type ids into the box, one per line, as an id such as 987654321 or a full `customers/<id>/conversionActions/<id>` name. Picking keeps the ids you typed.
-- If the list cannot be shown, a note above the **Conversion Actions** box says why: your account cannot read it, it is not available here, or Google Ads did not answer. Type the ids instead.
+- If the list cannot be shown, a note above the **Conversion Actions** box says why: your account cannot read it, it is not available here yet, or it could not be read for this project's Google Ads account. Type the ids instead.
+- If the account has no enabled conversion actions, a note says so. Type ids, or leave the box blank to use the account's own goals.
 
 ## Networks, display path, more ads and negative keywords (Search only)
 
@@ -116,4 +117,4 @@ On Search and Display campaigns, the bidding settings include **Conversion Actio
 
 If a window, adjustment, exclusion, excluded place, display path, ad or negative keyword would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
-If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and are not sent. Excluded locations are sent for every campaign type.
+If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to a campaign type that does not take them, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type.
