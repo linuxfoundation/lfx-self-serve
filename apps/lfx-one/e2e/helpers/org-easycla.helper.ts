@@ -136,7 +136,7 @@ export async function stubAccountContext(page: Page): Promise<void> {
     total: 1,
   });
 
-  // Spec 050: an org-addressed EasyCLA address (`/org/{segment}/easycla/…`) goes through the
+  // Spec 050: an org-addressed EasyCLA address (`/company/{segment}/easycla/…`) goes through the
   // resolver on arrival. The mock organization publishes no slug, so its canonical address is the
   // SFID form — which is also what the BFF mints for a signing return.
   await page.route('**/api/orgs/resolve/*', (route) => {
@@ -183,7 +183,7 @@ export async function stubPermissionChecks(page: Page, allowed = true): Promise<
 }
 
 /**
- * Land on `/org/easycla` with the M3 flag on and the CLA list stubbed by the caller.
+ * Land on `/company/easycla` with the M3 flag on and the CLA list stubbed by the caller.
  *
  * The visit to `/` first, then a reload, is the sequence the other Org Lens specs use to get an
  * authenticated app running before the guarded URL is requested.
@@ -203,7 +203,7 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
 }
 
 /**
- * Land on `/org/easycla/{claGroupId}` with the same context `gotoEasyclaList` establishes.
+ * Land on `/company/easycla/{claGroupId}` with the same context `gotoEasyclaList` establishes.
  *
  * Addressed by CLA Group since #2364, with `signatureId` optional: pass it only where the case is
  * about naming one of several agreements in one group, so every other case exercises the bare

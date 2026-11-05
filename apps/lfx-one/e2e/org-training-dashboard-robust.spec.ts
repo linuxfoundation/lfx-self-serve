@@ -45,7 +45,7 @@ test.describe('Org Training Dashboard — structure', () => {
   });
 
   test('a filter in the URL is counted on the collapsed toggle and enables Clear all, which removes it', async ({ page }) => {
-    await gotoOrgTrainingPage(page, '/org/training?format=Online');
+    await gotoOrgTrainingPage(page, '/company/training?format=Online');
     await expect(page.getByTestId('org-training-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     const clearAll = page.getByTestId('org-training-filter-clear-all').getByRole('button');

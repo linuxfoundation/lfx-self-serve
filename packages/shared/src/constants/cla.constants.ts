@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgClaDesigneeRefusal, OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+import { ORG_LENS_URL_ROOT } from './org-lens-url.constants';
 
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
@@ -245,7 +246,7 @@ export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
  * item 4) is one release after the gate has been on for a full signing-session lifetime, not one
  * release after this deploy.
  */
-export const ORG_EASYCLA_PATH = '/org/easycla';
+export const ORG_EASYCLA_PATH = `/${ORG_LENS_URL_ROOT}/easycla`;
 
 /**
  * Query parameter naming which corporate agreement an `/org/{org}/easycla/{claGroupId}` address is about,
@@ -295,7 +296,13 @@ export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
  * own authorized organizations and ignores anything absent from that list, so a crafted link cannot
  * select an organization the viewer does not hold.
  */
-export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
+export const ORG_EASYCLA_RETURN_ORG_PARAM = 'company';
+
+/**
+ * The pre-rename name of {@link ORG_EASYCLA_RETURN_ORG_PARAM} (`?org=`, #5064). Never written; still read, because
+ * signing trips opened before the rename return on it, and the legacy `/org/easycla` redirect carries it over.
+ */
+export const ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM = 'org';
 
 /**
  * Query parameter saying a corporate signing trip is in flight, carried on the CLA Group address
@@ -322,6 +329,7 @@ export const ORG_EASYCLA_RETURN_SIGNED_PARAM = 'signed';
  */
 export const ORG_EASYCLA_RETURN_PARAMS_RESET: Readonly<Record<string, null>> = Object.freeze({
   [ORG_EASYCLA_RETURN_ORG_PARAM]: null,
+  [ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM]: null,
   [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null,
 });
 

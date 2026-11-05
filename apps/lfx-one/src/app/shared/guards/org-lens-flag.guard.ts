@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { CanMatchFn, Router, UrlTree } from '@angular/router';
-import { CF_ORG_DONATIONS_FLAG, ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { CF_ORG_DONATIONS_FLAG, LENS_DEFAULT_ROUTES, ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { orgLensPagePath } from '@lfx-one/shared/utils';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
@@ -37,7 +37,7 @@ const orgLensFlagGuard =
       const target = router.getCurrentNavigation()?.extractedUrl;
       const segments = target?.root.children['primary']?.segments.map((segment) => segment.path) ?? [];
       const addressed = orgLensPagePath(segments, 'overview');
-      return addressed === '/org/overview' ? router.createUrlTree(orgLensNavigation.orgLensLink('overview')) : router.parseUrl(addressed);
+      return addressed === `${LENS_DEFAULT_ROUTES.org}/overview` ? router.createUrlTree(orgLensNavigation.orgLensLink('overview')) : router.parseUrl(addressed);
     };
 
     // A locally pinned value decides on its own, before the provider is consulted at all — waiting

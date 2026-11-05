@@ -78,7 +78,7 @@ async function render(memberships: OrgActiveMembership[] = [], projects: OrgMemb
       // lfxOpenIntercom (the empty state's contact-support link) injects the app-root MessageService.
       MessageService,
       { provide: AccountContextService, useValue: { selectedAccount } },
-      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },
+      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/company', ...segments] } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       {
         provide: OrgLensEmptyStateService,

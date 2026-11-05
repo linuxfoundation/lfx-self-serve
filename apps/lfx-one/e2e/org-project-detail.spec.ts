@@ -27,8 +27,8 @@ import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
-const DETAIL_URL = '/org/projects/k8s';
-const DETAIL_URL_BOGUS = '/org/projects/totally-bogus-project';
+const DETAIL_URL = '/company/projects/k8s';
+const DETAIL_URL_BOGUS = '/company/projects/totally-bogus-project';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 test.setTimeout(90_000);
@@ -431,7 +431,7 @@ test.describe('Org Project Detail — Contributors drawer deep-link', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('influence-card-detail-title')).toBeHidden();
     await expect(page.getByTestId('project-detail-page')).toBeVisible();
-    await expect(page).toHaveURL(/\/org\/projects\/k8s/);
+    await expect(page).toHaveURL(/\/company\/projects\/k8s/);
   });
 
   test('ignores an unknown ?card= value and loads the page with no drawer', async ({ page }) => {
@@ -526,7 +526,7 @@ test.describe('Org Project Detail — hero health popup', () => {
   }
 
   async function gotoHero(page: Page): Promise<void> {
-    await page.goto('/org/projects/kubernetes', { waitUntil: 'domcontentloaded' });
+    await page.goto('/company/projects/kubernetes', { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
   }
 

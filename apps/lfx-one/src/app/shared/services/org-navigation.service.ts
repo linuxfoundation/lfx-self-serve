@@ -545,7 +545,7 @@ export class OrgNavigationService {
     // to /org/overview), keep them there so they see the empty state instead of bouncing back to /.
     // The redirect-to-/ still fires from other entry points (sidebar background refresh on /), where
     // staying put would be confusing.
-    if (this.router.url.startsWith('/org')) {
+    if (this.router.url.startsWith(LENS_DEFAULT_ROUTES.org)) {
       return;
     }
 

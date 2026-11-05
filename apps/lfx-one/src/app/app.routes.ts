@@ -7,6 +7,7 @@ import {
   MAILING_LIST_LABEL,
   MKTG_OS_AGENTS_LABEL,
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
+  ORG_LENS_URL_ROOT,
   ORG_SEGMENT_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
@@ -31,6 +32,7 @@ import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
+import { legacyOrgLensMatcher, legacyOrgLensRedirect } from './shared/utils/legacy-org-lens-redirect.utils';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
@@ -50,10 +52,10 @@ const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/or
 
 /**
  * Org Lens page routes, EasyCLA included (its DR-004 exemption ended with lfx-self-serve#2743: the
- * legacy `/org/easycla*` mount stays one release for in-flight signing returns). Built by a
+ * legacy `/company/easycla*` mount stays one release for in-flight signing returns). Built by a
  * function so the same definitions can be mounted twice without sharing route objects: once under
- * `/org/{page}` (legacy form; Phase 5 adds the redirect guard) and once under
- * `/org/:orgSegment/{page}` (spec 050 address scheme).
+ * `/company/{page}` (legacy form; Phase 5 adds the redirect guard) and once under
+ * `/company/:orgSegment/{page}` (spec 050 address scheme).
  */
 function orgLensPageRoutes(): Routes {
   return [
@@ -423,19 +425,27 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/participating-orgs/participating-orgs.component').then((m) => m.ParticipatingOrgsComponent),
       },
-      // Org Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `org` node, as a sibling
-      // outside the `org/:orgSegment` subtree: `orgPathParamGuard` (CanActivate on that subtree)
+      // Pre-rename addresses (#5064): every `/org/…` form — `/org`, `/org/not-found`, `/org/{slug|SFID}/{page}`,
+      // the legacy `/org/{page}` — redirects to the same address under `/company`, query and fragment kept.
+      // The Express layer answers full page loads with a 301 before this runs; this covers in-app and
+      // client-side navigations. Declared before the `company` nodes so nothing there can claim `org`.
+      {
+        matcher: legacyOrgLensMatcher,
+        redirectTo: legacyOrgLensRedirect,
+      },
+      // Company Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `company` node, as a sibling
+      // outside the `company/:orgSegment` subtree: `orgPathParamGuard` (CanActivate on that subtree)
       // redirects here, so the address must resolve without re-entering the guard that sent the
       // viewer to it (no loop).
       {
-        path: 'org/not-found',
+        path: `${ORG_LENS_URL_ROOT}/not-found`,
         title: 'Company Not Found',
         data: { lens: 'org' },
         loadComponent: () => import('./modules/dashboards/org/org-not-found/org-not-found.component').then((m) => m.OrgNotFoundComponent),
       },
-      // Org Lens (GA) — unresolvable /org/* addresses land on the dead end above via `orgPathParamGuard`.
+      // Org Lens (GA), addressed `/company/…` — unresolvable addresses land on the dead end above via `orgPathParamGuard`.
       {
-        path: 'org',
+        path: ORG_LENS_URL_ROOT,
         data: { lens: 'org' },
         children: [
           {
@@ -443,10 +453,10 @@ export const routes: Routes = [
             pathMatch: 'full',
             redirectTo: 'overview',
           },
-          // Legacy `/org/{page}` addresses (spec 050 Phase 5 adds the default-organization redirect guard).
+          // Legacy `/company/{page}` addresses (no organization named) (spec 050 Phase 5 adds the default-organization redirect guard).
           ...orgLensPageRoutes(),
           {
-            // Spec 050 — `/org/{orgSegment}/{page}`: the organization is named in the address (slug, or
+            // Spec 050 — `/company/{orgSegment}/{page}`: the organization is named in the address (slug, or
             // 18-char SFID when it has none). Declared after every static page so a page name can never
             // be taken for an organization; the matcher rejects those values as belt-and-braces and the
             // guard resolves the segment through the access-filtered BFF before any child renders.

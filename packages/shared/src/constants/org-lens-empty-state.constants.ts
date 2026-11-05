@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ORG_LENS_URL_ROOT } from './org-lens-url.constants';
+
 /**
  * Org Lens empty-state registry (lfx-self-serve#2533, phase 1).
  *
@@ -52,7 +54,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     headline: 'This link does not open a company',
     reason: 'Search for a company in the switcher above to open its Company Lens.',
     icon: 'fa-light fa-building-circle-xmark',
-    primary: { label: 'Go to Company Lens', route: ['/org', 'overview'] },
+    primary: { label: 'Go to Company Lens', route: [`/${ORG_LENS_URL_ROOT}`, 'overview'] },
   },
   'could-not-load': {
     headline: 'Some companies could not be loaded',

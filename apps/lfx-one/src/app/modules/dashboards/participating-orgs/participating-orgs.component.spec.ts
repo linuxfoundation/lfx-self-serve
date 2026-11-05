@@ -163,7 +163,7 @@ describe('ParticipatingOrgsComponent', () => {
 
     const name = query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`);
     expect(name?.tagName).toBe('A');
-    expect(name?.getAttribute('href')).toBe(`/org/${SYNTHETIC_ORG_ACCOUNT_ID}/memberships/${FOUNDATION_SLUG}`);
+    expect(name?.getAttribute('href')).toBe(`/company/${SYNTHETIC_ORG_ACCOUNT_ID}/memberships/${FOUNDATION_SLUG}`);
     expect(text('participating-orgs-subtitle')).toBe(
       'Every organization contributing to Synthetic Project, ranked by activity and split by Synthetic Foundation membership.'
     );

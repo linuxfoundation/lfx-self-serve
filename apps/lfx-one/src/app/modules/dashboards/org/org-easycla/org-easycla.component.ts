@@ -12,13 +12,12 @@ import {
   ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
   ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_CLA_SIGN_SELECTION_STATE,
-  ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_EASYCLA_SIGNATURE_PARAM,
   ORG_LENS_EMPTY_STATE_COPY,
 } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
-import { orgClaOpenLabel } from '@lfx-one/shared/utils';
+import { easyclaReturnOrgParam, orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, of, skip, switchMap, take, tap } from 'rxjs';
@@ -468,7 +467,7 @@ export class OrgEasyclaComponent {
     // The address is only followed in a browser, and the strip below is a browser navigation.
     if (!isPlatformBrowser(this.platformId)) return;
 
-    const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    const named = easyclaReturnOrgParam((name) => this.route.snapshot.queryParamMap.get(name));
     if (!named) return;
 
     // `?org=` names an organization on the leftover mount only (`/org/easycla…`, until one release

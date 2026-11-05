@@ -54,7 +54,7 @@ describe('InitiativeDetailComponent Edit attribution visibility (lfx-crowdfundin
           },
         },
         { provide: CrowdfundingService, useValue: { getInitiativeBySlug: () => of(opts.initiative ?? detail()) } },
-        { provide: OrgLensNavigationService, useValue: { orgLensLink: () => ['/org', 'initiatives'] } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLink: () => ['/company', 'initiatives'] } },
         { provide: DialogService, useValue: { open: () => ({ onClose: dialogClose }) } },
         { provide: MessageService, useValue: { add: () => undefined } },
       ],

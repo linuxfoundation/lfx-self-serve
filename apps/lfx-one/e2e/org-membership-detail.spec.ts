@@ -13,7 +13,7 @@
  *
  * Prerequisites:
  * - Dev server running on localhost:4200 (or whatever Playwright config baseURL points to)
- * - Organization context has at least one membership (the existing /org/memberships list has rows)
+ * - Organization context has at least one membership (the existing /company/memberships list has rows)
  *
  * Mock semantics (v1): every foundationId returns the same `sharedKeyContacts` payload, so
  * the sample foundation data (Sam Chen as Representative, two-person Billing row, etc.)
@@ -25,9 +25,9 @@ import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
-const MEMBERSHIPS_URL = '/org/memberships';
-const DETAIL_URL_FOUNDATION = '/org/memberships/sample-foundation';
-const DETAIL_URL_BOGUS = '/org/memberships/totally-bogus-foundation';
+const MEMBERSHIPS_URL = '/company/memberships';
+const DETAIL_URL_FOUNDATION = '/company/memberships/sample-foundation';
+const DETAIL_URL_BOGUS = '/company/memberships/totally-bogus-foundation';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 test.setTimeout(90_000);
@@ -81,13 +81,13 @@ test.describe('Org Membership Detail — testid resolution (SC-014, FR-034)', ()
 
   test('URL fragment ↔ tab sync — direct goto activates correct tab (spec 016 round 7)', async ({ page }) => {
     // Direct goto with #docs activates the Documentation tab without a click
-    await page.goto('/org/memberships/sample-foundation#docs', { waitUntil: 'domcontentloaded' });
+    await page.goto('/company/memberships/sample-foundation#docs', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('membership-detail-docs-content')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     // INFO: Future Epic implementation — #governance is hidden, so a direct goto falls back
     // to the default Key Contacts tab instead of the (removed) Governance empty page.
-    await page.goto('/org/memberships/sample-foundation#governance', { waitUntil: 'domcontentloaded' });
+    await page.goto('/company/memberships/sample-foundation#governance', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('membership-detail-page')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('membership-detail-governance-empty-state')).toHaveCount(0);
     await expect(page.getByTestId('membership-detail-key-contacts-card')).toBeVisible();

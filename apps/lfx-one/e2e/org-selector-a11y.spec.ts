@@ -30,9 +30,9 @@
 import { expect, Page, test } from '@playwright/test';
 
 // The org-selector trigger only renders (data-visible=true) while the active lens is 'org'; on the
-// default 'me' lens the sidebar keeps it in the DOM but CSS-hidden. Navigating to `/org` sets the
+// default 'me' lens the sidebar keeps it in the DOM but CSS-hidden. Navigating to `/company` sets the
 // active lens deterministically so these tests never depend on a per-user cookie preference.
-const APP_HOME = '/org';
+const APP_HOME = '/company';
 const SIDEBAR_TIMEOUT = 30_000;
 
 test.setTimeout(120_000);

@@ -27,7 +27,7 @@ import {
   SYNTHETIC_SECOND_ORG_LEGAL_NAME,
 } from './fixtures/mock-data/synthetic-org.mock';
 
-const PROFILE_URL = '/org/profile';
+const PROFILE_URL = '/company/profile';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 // Spec 002: the org identifier is the 18-char Salesforce account id (SFID); uid === accountId.

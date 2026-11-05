@@ -143,7 +143,7 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
     const fixture = TestBed.createComponent(OrgOverviewInvolvementComponent);
     fixture.componentInstance.openTraining();
 
-    expect(navigate).toHaveBeenCalledWith(['/org', 'acme', 'training']);
+    expect(navigate).toHaveBeenCalledWith(['/company', 'acme', 'training']);
     navigate.mockRestore();
   });
 

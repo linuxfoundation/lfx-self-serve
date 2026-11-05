@@ -46,7 +46,7 @@ describe('orgLensClaM3EnabledGuard', () => {
         })
     );
 
-    targetUrl = '/org/easycla';
+    targetUrl = '/company/easycla';
     router = {
       createUrlTree: vi.fn().mockImplementation((commands: string[]) => ({ redirected: commands.join('/') })),
       parseUrl: vi.fn().mockImplementation((url: string) => ({ redirected: url })),
@@ -75,7 +75,7 @@ describe('orgLensClaM3EnabledGuard', () => {
         { provide: Router, useValue: router },
         // Spec 050: on the legacy address the fallback carries the *selected* organization; this suite
         // pins the redirect rules, so the address builder is stubbed to the org-aware form.
-        { provide: OrgLensNavigationService, useValue: { orgLensLink: (page: string) => ['/org', 'acme-inc', page] } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLink: (page: string) => ['/company', 'acme-inc', page] } },
         { provide: PLATFORM_ID, useValue: 'browser' },
       ],
     });
@@ -107,8 +107,8 @@ describe('orgLensClaM3EnabledGuard', () => {
 
     const result = await runGuard();
 
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/org', 'acme-inc', 'overview']);
-    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/company', 'acme-inc', 'overview']);
+    expect(result).toEqual({ redirected: '/company/acme-inc/overview' });
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
@@ -125,8 +125,8 @@ describe('orgLensClaM3EnabledGuard', () => {
 
     const result = await runGuard();
 
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/org', 'acme-inc', 'overview']);
-    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/company', 'acme-inc', 'overview']);
+    expect(result).toEqual({ redirected: '/company/acme-inc/overview' });
   });
 
   it('fails closed to the selected organization overview when the provider never becomes ready', async () => {
@@ -139,23 +139,23 @@ describe('orgLensClaM3EnabledGuard', () => {
 
     vi.useRealTimers();
 
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/org', 'acme-inc', 'overview']);
-    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/company', 'acme-inc', 'overview']);
+    expect(result).toEqual({ redirected: '/company/acme-inc/overview' });
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
-  // Spec 050 phase 2 (lfx-self-serve#2743): under `/org/{segment}/easycla` the address names the
+  // Spec 050 phase 2 (lfx-self-serve#2743): under `/company/{segment}/easycla` the address names the
   // organization, and this CanMatch runs before the path guard adopts it — the URL, not the
   // selection, is what the fallback must keep, or a shared link would bounce to the cookie's org.
   it('keeps the addressed organization when the flag is off on an org-addressed EasyCLA page', async () => {
-    targetUrl = '/org/other-org/easycla/cla-group-1';
+    targetUrl = '/company/other-org/easycla/cla-group-1';
     getFlagOverride.mockReturnValue(false);
 
     const result = await runGuard();
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/org/other-org/overview');
+    expect(router.parseUrl).toHaveBeenCalledWith('/company/other-org/overview');
     expect(router.createUrlTree).not.toHaveBeenCalled();
-    expect(result).toEqual({ redirected: '/org/other-org/overview' });
+    expect(result).toEqual({ redirected: '/company/other-org/overview' });
   });
 
   it.each([
