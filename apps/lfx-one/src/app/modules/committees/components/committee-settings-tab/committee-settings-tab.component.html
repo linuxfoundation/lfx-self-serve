@@ -48,6 +48,7 @@
               [outlined]="true"
               size="small"
               styleClass="flex-shrink-0"
+              [disabled]="mailingListLinkBlocked()"
               (onClick)="openMailingListPicker()"
               data-testid="settings-add-mailing-list-btn"></lfx-button>
           }
@@ -60,7 +61,9 @@
           </div>
         } @else if (associatedMailingLists().length === 0) {
           <div class="text-[12.5px] text-gray-400 py-2">
-            @if (canEdit()) {
+            @if (canEdit() && mailingListLinkBlocked()) {
+              No mailing lists associated. You need Manage access to a mailing list to link it to this group.
+            } @else if (canEdit()) {
               No mailing lists associated. Click "+ Add List" to link one.
             } @else {
               No mailing lists associated.
@@ -95,6 +98,7 @@
                 </div>
               </div>
               @if (canEdit()) {
+                @let removable = ml.writer === true;
                 <lfx-button
                   [icon]="removingMlUid() === ml.uid ? 'fa-light fa-spinner-third fa-spin' : 'fa-light fa-xmark'"
                   [text]="true"
@@ -102,9 +106,9 @@
                   size="small"
                   severity="secondary"
                   styleClass="!text-gray-400 hover:!text-red-500"
-                  [disabled]="!!removingMlUid()"
+                  [disabled]="!!removingMlUid() || !removable"
                   [ariaLabel]="'Remove mailing list ' + ml.group_name"
-                  [tooltip]="'Remove mailing list ' + ml.group_name"
+                  [tooltip]="removable ? 'Remove mailing list ' + ml.group_name : 'You need Manage access to this mailing list to unlink it.'"
                   (onClick)="removeMailingList(ml)"
                   [attr.data-testid]="'settings-remove-ml-' + ml.uid"></lfx-button>
               }

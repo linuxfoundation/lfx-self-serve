@@ -4,8 +4,8 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
-import { Committee } from '@lfx-one/shared/interfaces';
+import { provideRouter, Router } from '@angular/router';
+import { Committee, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -437,5 +437,129 @@ describe('CommitteeSettingsTabComponent — general settings (name, type, parent
 
     expect(component.form.controls.name.invalid).toBe(true);
     expect(component.form.invalid).toBe(true);
+  });
+});
+
+describe('CommitteeSettingsTabComponent — mailing list write access', () => {
+  let fixture: ComponentFixture<CommitteeSettingsTabComponent>;
+  let component: CommitteeSettingsTabComponent;
+  let updateMailingList: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+
+  const COMMITTEE = { uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1', category: 'Board', has_slack_webhook: false } as Committee;
+
+  const list = (uid: string, writer: boolean): GroupsIOMailingList => ({ uid, group_name: uid, writer }) as GroupsIOMailingList;
+
+  async function setup(projectLists: GroupsIOMailingList[], associatedLists: GroupsIOMailingList[] = []): Promise<void> {
+    updateMailingList = vi.fn(() => of({}));
+    messageAdd = vi.fn();
+
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi.fn(() => of(associatedLists)),
+            getMailingListsByProject: vi.fn(() => of(projectLists)),
+            updateMailingList,
+          },
+        },
+        { provide: MessageService, useValue: { add: messageAdd } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  const addButton = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="settings-add-mailing-list-btn"] button');
+
+  it('disables Add List and explains why when lists exist but none are writable', async () => {
+    await setup([list('ml-1', false)]);
+
+    expect(component.mailingListLinkBlocked()).toBe(true);
+    expect(addButton()?.hasAttribute('disabled')).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('You need Manage access to a mailing list');
+  });
+
+  it('keeps Add List enabled when at least one list is writable', async () => {
+    await setup([list('ml-1', false), list('ml-2', true)]);
+
+    expect(component.mailingListLinkBlocked()).toBe(false);
+    expect(addButton()?.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('keeps Add List enabled when the project has no lists, so Create New List stays reachable', async () => {
+    await setup([]);
+
+    expect(component.mailingListLinkBlocked()).toBe(false);
+  });
+
+  it('disables the remove button on an associated list the user cannot write', async () => {
+    await setup([list('ml-1', false)], [list('ml-1', false)]);
+
+    const removeButton = fixture.nativeElement.querySelector('[data-testid="settings-remove-ml-ml-1"] button');
+    expect(removeButton?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('shows a permission message when every association update is rejected with 403', async () => {
+    await setup([list('ml-1', true), list('ml-2', true)]);
+    updateMailingList.mockImplementation(() => throwError(() => ({ status: 403 })));
+
+    (component as unknown as { saveMailingListAssociation(a: Set<string>, b: Set<string>): void }).saveMailingListAssociation(
+      new Set(['ml-1', 'ml-2']),
+      new Set()
+    );
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Permission denied' }));
+  });
+
+  it('falls back to the generic error when only some failures are 403', async () => {
+    await setup([list('ml-1', true), list('ml-2', true)]);
+    updateMailingList.mockImplementation((uid: string) => throwError(() => ({ status: uid === 'ml-1' ? 403 : 500 })));
+
+    (component as unknown as { saveMailingListAssociation(a: Set<string>, b: Set<string>): void }).saveMailingListAssociation(
+      new Set(['ml-1', 'ml-2']),
+      new Set()
+    );
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Failed to update mailing list associations' }));
+  });
+
+  it('shows the permission message when removing a list is rejected with 403', async () => {
+    await setup([list('ml-1', true)], [list('ml-1', true)]);
+    updateMailingList.mockImplementation(() => throwError(() => ({ status: 403 })));
+
+    component.removeMailingList(list('ml-1', true));
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Manage access') }));
+  });
+
+  it('stays on the Settings tab with a toast when the group is no longer writable, instead of redirecting', async () => {
+    await setup([list('ml-1', true)]);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    component.openMailingListPicker();
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'warn', detail: expect.stringContaining('permission to manage mailing lists') })
+    );
   });
 });
