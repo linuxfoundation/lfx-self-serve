@@ -57,7 +57,7 @@ Select **Use a different email** to return to an empty address form and start ag
 
 _Keep your account secure by using a strong password and enabling two-factor authentication._
 
-- **Change Password** — fill in **Current Password**, **New Password**, and **Confirm New Password**, then select **Change Password**. A strength meter under **New Password** lists the requirements under _Requirements (must meet at least 3 of 4 criteria):_ — **At least 8 characters**, **Lowercase letter (a-z)**, **Uppercase letter (A-Z)**, **Number (0-9)**, and **Special character (!@#$%^&\*)**. The meter appears once you start typing a new password. **Reset** clears the form. If you don't know your current password, select **Forgot your password? Start the account recovery process.** under the **Current Password** field.
+- **Change Password** — fill in **Current Password**, **New Password**, and **Confirm New Password**, then select **Change Password**. Your new password must be **at least 8 characters** and contain at least 3 of these 4: a **Lowercase letter (a-z)**, an **Uppercase letter (A-Z)**, a **Number (0-9)**, or a **Special character (!@#$%^&\*)**. A strength meter under **New Password** checks each one as you type. **Reset** clears the form. If you don't know your current password, select **Forgot your password? Start the account recovery process.** under the **Current Password** field.
 - **Account Recovery** — select **Send Reset Link** to email yourself a password reset link.
 - **Two-Factor Authentication** — currently shows "Two-factor authentication settings are currently unavailable." The **Set up 2FA** button is disabled.
 
