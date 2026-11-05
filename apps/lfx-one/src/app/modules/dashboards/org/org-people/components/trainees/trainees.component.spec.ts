@@ -620,7 +620,8 @@ describe('TraineesComponent', () => {
     const outsideCount = (): number => outsideList()?.querySelectorAll('li').length ?? 0;
     // The rows-per-page choice goes through the paginator's real PrimeNG dropdown: open it, then click the option in the overlay.
     const choosePageSize = async (paginatorTestId: string, rows: number): Promise<void> => {
-      // PrimeNG's overlay reads matchMedia, which the test DOM lacks.
+      // PrimeNG's overlay reads matchMedia and scrolls the selected option into view, which the test DOM lacks.
+      Element.prototype.scrollIntoView ??= () => undefined;
       window.matchMedia ??= ((query: string) =>
         ({
           matches: false,

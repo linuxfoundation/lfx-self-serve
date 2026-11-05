@@ -116,7 +116,9 @@ export function buildOrgTrainingStatTiles(stats: OrgTrainingStats | null, range:
     // Only an explicit null roster means "no program"; a field a legacy payload lacks (undefined) is just unavailable.
     const noRoster = stats !== null && layout.key === 'rosterMembers' && reading.value === null;
     const notCounted = stats !== null && layout.key === 'learnersOutsidePeopleList' && reading.value === null;
-    const note = noRoster ? ORG_TRAINING_NO_ROSTER_NOTE : notCounted ? ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE : null;
+    let note: string | null = null;
+    if (noRoster) note = ORG_TRAINING_NO_ROSTER_NOTE;
+    else if (notCounted) note = ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE;
     const value = typeof reading.value === 'number' && Number.isFinite(reading.value) ? reading.value : null;
     const tooltip = tileTooltip(definition, range, stats, asOf, note);
     const display = tileDisplay(layout.key, value);

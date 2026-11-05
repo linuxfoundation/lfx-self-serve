@@ -4,7 +4,7 @@
 import type { OrgTraineeDetailRow, OrgTraineeOutsideLearner, OrgTraineeRow, OrgTraineesResponse, OrgTrainingStats } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
-import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_LEGAL_NAME, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
 
 export const ORG_TRAINING_URL = '/org/training';
 export const DATA_LOAD_TIMEOUT = 30_000;
@@ -339,6 +339,28 @@ export async function stubOrgTraineesRoutes(page: Page, options: TraineesStubOpt
 export async function gotoOrgPageWithTrainees(page: Page, url: string, options: TraineesStubOptions = {}): Promise<OrgTrainingApiGuard> {
   await seedSelectedOrgCookie(page);
   const guard = await guardUnstubbedApi(page);
+  // The org selector bootstraps from this list; a 503 from the guard would clear the selected organization.
+  await page.route('**/api/nav/org-items*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          {
+            uid: MOCK_ACCOUNT_ID,
+            accountId: MOCK_ACCOUNT_ID,
+            name: SYNTHETIC_ORG_LEGAL_NAME,
+            logoUrl: null,
+            primaryDomain: SYNTHETIC_ORG_DOMAIN,
+            isMember: true,
+          },
+        ],
+        next_page_token: null,
+        upstream_failed: false,
+        total: 1,
+      }),
+    })
+  );
   await stubOrgTrainingRoutes(page);
   await stubOrgTraineesRoutes(page, options);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
