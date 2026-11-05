@@ -52,7 +52,7 @@ export class UiDrawerComponent {
   public readonly subtitle = input<string>('');
   /** Puts the first footer action on the left, for a secondary or destructive action; otherwise the actions sit on the right. */
   public readonly splitFooter = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** No header or footer; the content fills an unpadded scrolling body. Also set by `UiDrawerConfig.bare`. */
+  /** No header or footer; the content fills an unpadded scrolling body. Also set by `UiDrawerConfig.bare`. Don't project the header or footer slots: they never show. */
   public readonly bare = input<boolean, unknown>(false, { transform: booleanAttribute });
 
   /** Id of the title; `UiDrawerService` points `aria-labelledby` at it. Inside a service-opened drawer it derives from the dialog id. */
