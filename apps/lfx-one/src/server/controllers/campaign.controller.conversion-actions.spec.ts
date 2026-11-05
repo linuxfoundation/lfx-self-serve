@@ -119,6 +119,26 @@ describe('CampaignController.getGoogleAdsConversionActions', () => {
     });
   });
 
+  it('drops a row whose id or resource name cannot be sent, and offers a repeated id once', async () => {
+    const row = ACTIONS.conversion_actions[0];
+    svcList.mockResolvedValueOnce({
+      ...ACTIONS,
+      conversion_actions: [
+        row,
+        { ...row, name: 'Repeat' },
+        { ...row, id: 'abc' },
+        { ...row, id: '3333333333', resource_name: 'customers/1234567890/userLists/3333333333' },
+        { ...row, id: '4444444444', resource_name: '' },
+      ],
+    });
+    const res = buildRes();
+
+    await new CampaignController().getGoogleAdsConversionActions(buildReq({ project: 'tlf' }), res, vi.fn());
+
+    const ids = (vi.mocked(res.json).mock.calls[0][0] as { actions: { id: string }[] }).actions.map((a) => a.id);
+    expect(ids).toEqual(['1111111111', '4444444444']);
+  });
+
   it('admits a ROOT global_marketing_ops holder too', async () => {
     checkRootWriter.mockResolvedValue(false);
     checkRootCampaignManager.mockResolvedValue(true);

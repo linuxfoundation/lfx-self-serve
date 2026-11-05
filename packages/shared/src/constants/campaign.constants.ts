@@ -2030,9 +2030,10 @@ export const GOOGLE_DEVICE_BID_MODE_LABELS = {
 export const GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS = 20;
 
 /**
- * The Google channels that take responsive search ads, their display paths and campaign-level
- * negative keywords: Search alone. campaign-service refuses `adGroups`, `path1`/`path2` and
- * `negativeKeywords` on every other channel (`preflightCampaignKind`) rather than dropping them.
+ * The Google channels that take responsive search ads, their display paths, campaign-level negative
+ * keywords and the Search partners opt-in: Search alone. campaign-service refuses `adGroups`,
+ * `path1`/`path2`, `negativeKeywords` and `searchPartners` on every other channel
+ * (`preflightCampaignKind`) rather than dropping them.
  */
 export const GOOGLE_CHANNELS_WITH_SEARCH_ADS = ['search'] as const;
 
@@ -5096,21 +5097,38 @@ export const GOOGLE_ADS_MAX_CONVERSION_ACTIONS = 100;
 export const GOOGLE_ADS_CONVERSION_ACTION_PATTERN = /^(?:\d+|customers\/\d+\/conversionActions\/\d+)$/;
 
 /**
- * Why the Implement tab's conversion-action picker offers no list, keyed by how the read failed. Each
- * ends by pointing at the free-text box, which works exactly as it did before the picker:
- * - `forbidden` (403): the list names every foundation's actions on the shared account, so the BFF and
- *   the gateway answer only a root principal — and the gateway refuses everyone until
- *   `openfga.rootProjectUid` is set for the deployment.
- * - `unavailable` (404): the list isn't available here — the BFF route is off on this deployment, or
- *   campaign-service answered NotFound for the project.
- * - `failed`: anything else, including campaign-service's 503 when Google fails or the account holds
- *   more than 500 enabled actions.
+ * The bare numeric conversion action id — the short form of {@link
+ * GOOGLE_ADS_CONVERSION_ACTION_PATTERN}.
+ */
+export const GOOGLE_ADS_CONVERSION_ACTION_ID_PATTERN = /^\d+$/;
+
+/**
+ * Why the Implement tab's conversion-action picker offers no list. Each ends by pointing at the
+ * free-text box, which works exactly as it did before the picker:
+ * - `forbidden`: the BFF said this caller may not read the list
+ *   (`CampaignListResult.googleConversionActionsEnabled` is false), so no request is made. The list
+ *   names every foundation's actions on the shared account, so only a root principal is answered.
+ * - `unavailable`: the read was made and answered 403 or 404. The BFF had already said the caller may
+ *   read it, so a 403 is campaign-service's gateway, which denies the route until the deployment sets
+ *   `openfga.rootProjectUid`; a 404 is the BFF route off, or campaign-service's NotFound for the project.
+ * - `failed`: anything else — campaign-service's 400, 500 or 503 (including an account holding more
+ *   than 500 enabled actions, which does not clear on retry), or no answer at all.
  */
 export const GOOGLE_CONVERSION_ACTION_PICKER_REASONS = {
   forbidden: "Your account can't list this Google Ads account's conversion actions. Enter their ids below instead.",
   unavailable: "The conversion action list isn't available here yet. Enter their ids below instead.",
-  failed: "Google Ads couldn't list the conversion actions just now. Enter their ids below instead.",
+  failed: "The conversion action list couldn't be read for this project's Google Ads account. Enter their ids below instead.",
 } as const;
+
+/** What the picker says while its list is being read. */
+export const GOOGLE_CONVERSION_ACTION_PICKER_LOADING = "Loading this account's conversion actions…";
+
+/**
+ * What the picker says when the account has no enabled conversion action. A blank box sends no
+ * `conversionActions`, so the campaign uses the account's own conversion goals.
+ */
+export const GOOGLE_CONVERSION_ACTION_PICKER_EMPTY =
+  "This Google Ads account has no enabled conversion actions. Enter ids below or leave the box blank to use the account's own goals.";
 
 /**
  * The numeric bounds campaign-service applies to the three money/ratio fields, in whole units of

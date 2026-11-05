@@ -8676,6 +8676,20 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
     expect(c['canSubmit']()).toBe(true);
   });
 
+  it('says the Search settings are held, not sent, after a switch to a channel that takes none', () => {
+    const c = seedSearchAds();
+    c['onGoogleSearchPartnersChange'](true);
+    fixture.detectChanges();
+    expect(query('implementation-google-search-ads-withheld')).toBeNull();
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
+    fixture.detectChanges();
+
+    const held = 'Display campaigns do not take Search settings, so Search partners, the display path, 1 more ad and 2 negative keywords will not be sent.';
+    expect(query('implementation-google-search-ads-withheld')?.textContent).toContain(held);
+    expect(query('implementation-google-search-ads-withheld-live')?.textContent).toContain(held);
+  });
+
   it('sends searchPartners only when ticked, and round-trips and resets it', () => {
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
@@ -8759,7 +8773,7 @@ describe('ImplementationTabComponent google conversion action picker', () => {
   it('reads nothing while the conversion section is not shown', async () => {
     await setup(() => of(ACTIONS));
     seedChannel(fixture, { includePerformanceMax: true });
-    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', true);
+    fixture.componentRef.setInput('googleConversionActionsEnabled', true);
     fixture.detectChanges();
 
     expect(read).not.toHaveBeenCalled();
@@ -8768,13 +8782,13 @@ describe('ImplementationTabComponent google conversion action picker', () => {
   it('shows the refusal with no request for a caller the BFF would refuse, and waits while that is unanswered', async () => {
     await setup(() => of(ACTIONS));
     seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions' });
-    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', null);
+    fixture.componentRef.setInput('googleConversionActionsEnabled', null);
     fixture.detectChanges();
     expect(read).not.toHaveBeenCalled();
     expect(query('implementation-google-conversion-action-picker-unavailable')).toBeNull();
     expect(query('implementation-google-conversion-actions')).not.toBeNull();
 
-    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', false);
+    fixture.componentRef.setInput('googleConversionActionsEnabled', false);
     fixture.detectChanges();
     expect(read).not.toHaveBeenCalled();
     expect(query('implementation-google-conversion-action-picker-unavailable')?.textContent).toContain("Your account can't list");
@@ -8785,7 +8799,7 @@ describe('ImplementationTabComponent google conversion action picker', () => {
     await setup(() => of(ACTIONS));
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions', googleConversionActions: '999' });
-    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', true);
+    fixture.componentRef.setInput('googleConversionActionsEnabled', true);
     fixture.detectChanges();
 
     expect(read).toHaveBeenCalledWith('tlf');
@@ -8806,20 +8820,113 @@ describe('ImplementationTabComponent google conversion action picker', () => {
   });
 
   it.each([
-    ['a non-root caller (403)', 403, "Your account can't list"],
+    ['the gateway denying an allowed caller (403)', 403, "isn't available here yet"],
     ['a route off on this deployment (404)', 404, "isn't available here yet"],
-    ['a Google failure (503)', 503, "couldn't list the conversion actions"],
+    ['a campaign-service failure (503)', 503, "couldn't be read for this project's Google Ads account"],
   ])('falls back to the free-text box with the reason for %s', async (_label, status, reason) => {
     await setup(() => throwError(() => new HttpErrorResponse({ status })));
     const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions' });
-    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', true);
+    fixture.componentRef.setInput('googleConversionActionsEnabled', true);
     fixture.detectChanges();
 
     expect(query('implementation-google-conversion-action-picker')).toBeNull();
     expect(query('implementation-google-conversion-action-picker-unavailable')?.textContent).toContain(reason);
+    expect(query('implementation-google-conversion-action-picker-live')?.textContent).toContain(reason);
     expect(query('implementation-google-conversion-actions')).not.toBeNull();
     c['campaignForm'].patchValue({ googleConversionActions: '987654321' });
     expect(c['googleBiddingPayload']()['conversionActions']).toEqual(['987654321']);
+  });
+
+  describe('a read in flight', () => {
+    let answers: Subject<GoogleAdsConversionActionsResult>[];
+
+    async function setupInFlight(): Promise<Record<string, any>> {
+      answers = [];
+      await setup(() => {
+        const answer = new Subject<GoogleAdsConversionActionsResult>();
+        answers.push(answer);
+        return answer;
+      });
+      const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions' });
+      fixture.componentRef.setInput('googleConversionActionsEnabled', true);
+      fixture.detectChanges();
+      return c;
+    }
+
+    it('says it is loading, on screen and in the live region', async () => {
+      await setupInFlight();
+
+      expect(answers).toHaveLength(1);
+      expect(query('implementation-google-conversion-action-picker-loading')?.textContent).toContain("Loading this account's conversion actions");
+      expect(query('implementation-google-conversion-action-picker-live')?.textContent).toContain("Loading this account's conversion actions");
+    });
+
+    it("drops the previous foundation's answer when the foundation changes mid-flight", async () => {
+      const c = await setupInFlight();
+      TestBed.inject(ProjectContextService).setFoundation({ uid: 'uid-other', slug: 'other', name: 'other' } as ProjectContext, false);
+      fixture.detectChanges();
+
+      expect(read).toHaveBeenLastCalledWith('other');
+      expect(answers[0].observed).toBe(false);
+      answers[0].next(ACTIONS);
+      fixture.detectChanges();
+      expect(c['googleConversionActionPicker']().status).toBe('loading');
+
+      answers[1].next({ accountId: '999', actions: [ACTIONS.actions[1]] });
+      fixture.detectChanges();
+      expect(c['googleConversionActionPicker']().actions.map((a: { id: string }) => a.id)).toEqual(['222']);
+    });
+
+    it('cancels the read when the section is hidden mid-flight', async () => {
+      const c = await setupInFlight();
+      c['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
+      fixture.detectChanges();
+
+      expect(answers[0].observed).toBe(false);
+      expect(c['googleConversionActionPicker']().status).toBe('idle');
+    });
+
+    it('cancels the read and shows the refusal when the capability turns to no mid-flight', async () => {
+      const c = await setupInFlight();
+      fixture.componentRef.setInput('googleConversionActionsEnabled', false);
+      fixture.detectChanges();
+
+      expect(answers[0].observed).toBe(false);
+      expect(c['googleConversionActionPicker']().reason).toContain("Your account can't list");
+    });
+
+    it('cancels the read when the tab is destroyed mid-flight', async () => {
+      await setupInFlight();
+      fixture.destroy();
+
+      expect(answers[0].observed).toBe(false);
+    });
+  });
+
+  it('says the account has no enabled actions when the list is empty', async () => {
+    await setup(() => of({ accountId: '1234567890', actions: [] }));
+    seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions' });
+    fixture.componentRef.setInput('googleConversionActionsEnabled', true);
+    fixture.detectChanges();
+
+    expect(query('implementation-google-conversion-action-picker-empty')?.textContent).toContain('no enabled conversion actions');
+    expect(query('implementation-google-conversion-action-picker-live')?.textContent).toContain('no enabled conversion actions');
+  });
+
+  it('says ids entered for Search are held, not sent, after a switch to a channel that takes none', async () => {
+    await setup(() => of(ACTIONS));
+    const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions', googleConversionActions: '111\n\n 999 ' });
+    fixture.componentRef.setInput('googleConversionActionsEnabled', true);
+    fixture.detectChanges();
+    expect(query('implementation-google-conversion-actions-withheld')).toBeNull();
+
+    c['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
+    fixture.detectChanges();
+
+    const held = 'Performance Max campaigns do not take conversion actions, so the 2 you entered will not be sent.';
+    expect(query('implementation-google-conversion-actions-withheld')?.textContent).toContain(held);
+    expect(query('implementation-google-conversion-actions-withheld-live')?.textContent).toContain(held);
+    expect(c['googleBiddingPayload']()).not.toHaveProperty('conversionActions');
   });
 });
 
@@ -13432,7 +13539,8 @@ describe('ImplementationTabComponent google stored images', () => {
             listCreativeAssets,
             getLinkedInAccounts: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
-            // The conversion-action picker's read (#4991): this suite is about images, so the list is empty.
+            // The conversion-action picker's read (#4991): this suite is about images, so the list
+            // is empty.
             getGoogleAdsConversionActions: () => of({ accountId: '', actions: [] }),
           },
         },

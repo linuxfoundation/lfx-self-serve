@@ -10,7 +10,10 @@ import type { GoogleAdsConversionActionOption } from '../interfaces/campaign.int
  * lines the box would hold had the operator typed them.
  */
 
-/** The listed actions the text names — by `id` or `resourceName`, one trimmed line each — in list order. */
+/**
+ * The listed actions the text names — by `id` or `resourceName`, one trimmed line each — in list
+ * order.
+ */
 export function googlePickedConversionActionIds(text: string, actions: readonly GoogleAdsConversionActionOption[]): string[] {
   const lines = new Set(conversionActionLines(text));
   return actions.filter((action) => lines.has(action.id) || lines.has(action.resourceName)).map((action) => action.id);
@@ -19,8 +22,8 @@ export function googlePickedConversionActionIds(text: string, actions: readonly 
 /**
  * The text after the picker changes to `pickedIds`: the picked actions first, in list order, each
  * keeping the line it already had (so a typed resource name is not respelled as an id) or written as
- * its `id`; then every other line exactly as typed, including ids the list does not hold. Blank lines
- * are dropped, as the request drops them.
+ * its `id`; then every other line, trimmed, including ids the list does not hold. Blank lines are
+ * dropped. The request trims each line and drops blanks the same way, so nothing it would send changes.
  */
 export function googleConversionActionsTextWithPicked(text: string, pickedIds: readonly string[], actions: readonly GoogleAdsConversionActionOption[]): string {
   const lines = conversionActionLines(text);

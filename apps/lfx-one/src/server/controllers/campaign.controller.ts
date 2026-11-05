@@ -108,6 +108,8 @@ import {
   GOOGLE_ADS_GEO_SEARCH_BOUNDS,
   GOOGLE_ADS_GEO_SEARCH_COUNTRY_PATTERN,
   GOOGLE_ADS_GEO_SUGGESTION_ID_PATTERN,
+  GOOGLE_ADS_CONVERSION_ACTION_ID_PATTERN,
+  GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
   GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_LANGUAGE_ID_PATTERN,
@@ -2990,8 +2992,13 @@ export class CampaignController {
       // in the service. Only on the campaign-service create path (`canCreateWithAudienceSegments`, the
       // same test the create route refuses on), and that test runs first so a deployment that cannot
       // send segments asks no persona question at all.
-      const googleAudienceSegmentsEnabled = canCreateWithAudienceSegments() && (await this.isRootCampaignPrincipal(req));
-      const result: CampaignListResult = { ...listed, googleAudienceSegmentsEnabled };
+      // The conversion-action picker's read (#4991) is answered on the same two checks its route makes:
+      // the create road, then a root principal. The persona question is asked once, and only when
+      // either capability could be granted.
+      const rootOnCreatePath = (canCreateWithAudienceSegments() || canCreateWithGoogleCriteria()) && (await this.isRootCampaignPrincipal(req));
+      const googleAudienceSegmentsEnabled = canCreateWithAudienceSegments() && rootOnCreatePath;
+      const googleConversionActionsEnabled = canCreateWithGoogleCriteria() && rootOnCreatePath;
+      const result: CampaignListResult = { ...listed, googleAudienceSegmentsEnabled, googleConversionActionsEnabled };
       logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
       res.json(result);
     } catch (error) {
@@ -3546,8 +3553,19 @@ export class CampaignController {
       }
       const result: GoogleAdsConversionActionsResult = {
         accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
+        // A row whose id is not the bare numeric id `conversionActions` accepts, or whose resource
+        // name is
+        // neither absent nor the full form, cannot be sent, so it is dropped rather than offered; a
+        // repeated id is offered once, since the picker keys its rows by id. Upstream names the fields
+        // this way; this is the belt.
         actions: payload.conversion_actions
-          .filter((a) => typeof a?.id === 'string' && a.id !== '' && typeof a.resource_name === 'string')
+          .filter(
+            (a, i, all) =>
+              typeof a?.id === 'string' &&
+              GOOGLE_ADS_CONVERSION_ACTION_ID_PATTERN.test(a.id) &&
+              (a.resource_name === '' || (typeof a.resource_name === 'string' && GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test(a.resource_name))) &&
+              all.findIndex((other) => other?.id === a.id) === i
+          )
           .map((a) => ({
             id: a.id,
             resourceName: a.resource_name,
@@ -5262,7 +5280,8 @@ export class CampaignController {
    *
    * The bidding plan and creative entries (`normalized`) count only when the cutover's own
    * normalizers would send them (see the constant). For every other entry, only a NON-EMPTY value
-   * counts: absent, `null`, an empty string, `false` and an empty list ask for nothing, and the legacy creator serves those
+   * counts: absent, `null`, an empty string, `false` and an empty list ask for nothing, and the
+   * legacy creator serves those
    * requests exactly as asked, so refusing one would be over-refusal. Any other present value — a
    * malformed non-list included — is a request for something the legacy creator cannot do, and is
    * named rather than dropped, as `unservedGoogleGeoField` treats a radius target.
@@ -5831,8 +5850,9 @@ export class CampaignController {
 
   /**
    * The Search campaign's Search partners shape, display paths, the first ad's copy width, the
-   * further ads and the create-time negatives, judged in that order, or `null`. Off Search a non-empty one is refused by name; on Search each
-   * goes through its shared judge. An empty path, list or absent key asks for nothing on any channel.
+   * further ads and the create-time negatives, judged in that order, or `null`. Off Search a
+   * non-empty one is refused by name; on Search each goes through its shared judge. An empty path,
+   * an empty list, `false` Search partners or an absent key asks for nothing on any channel.
    */
   private googleSearchAdsRefusal(body: CampaignCreateRequest, googleChannel: unknown): { field: string; message: string } | null {
     const raw = body as unknown as Record<string, unknown>;
@@ -5843,12 +5863,13 @@ export class CampaignController {
       return { field: 'searchPartners', message: 'Google Ads Search partners must be true or false.' };
     }
     const onSearch = typeof googleChannel === 'string' && (GOOGLE_CHANNELS_WITH_SEARCH_ADS as readonly string[]).includes(googleChannel);
+    // Each with what it asks for and how to take it back, so a checkbox is not told to be removed.
     const fields = [
-      ['path1', 'display paths'],
-      ['path2', 'display paths'],
-      ['additionalSearchAds', 'more than one responsive search ad'],
-      ['negativeKeywords', 'negative keywords at create'],
-      ['searchPartners', 'Search partners'],
+      ['path1', 'display paths', 'Clear the display path'],
+      ['path2', 'display paths', 'Clear the display path'],
+      ['additionalSearchAds', 'more than one responsive search ad', 'Remove the extra ads'],
+      ['negativeKeywords', 'negative keywords at create', 'Clear the negative keywords'],
+      ['searchPartners', 'Search partners', 'Untick Search partners'],
     ] as const;
     if (!onSearch) {
       const offSearch = fields.find(([field]) => asked(raw[field]));
@@ -5857,7 +5878,7 @@ export class CampaignController {
         typeof googleChannel === 'string' ? (GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel) : 'this';
       return {
         field: offSearch[0],
-        message: `Google Ads takes ${offSearch[1]} only on Search campaigns, not on ${channelLabel} campaigns. Remove them or pick Search, then create again.`,
+        message: `Google Ads takes ${offSearch[1]} only on Search campaigns, not on ${channelLabel} campaigns. ${offSearch[2]} or pick Search, then create again.`,
       };
     }
     // Path 1 judged alone first, so a refusal is filed under the field it is about.

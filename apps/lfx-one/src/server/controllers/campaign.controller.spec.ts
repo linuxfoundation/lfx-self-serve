@@ -8152,6 +8152,8 @@ describe('CampaignController.listBriefCampaigns', () => {
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: expected }));
+    // The conversion-action picker's capability (#4991): the same two checks its route makes.
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleConversionActionsEnabled: expected }));
   });
 
   it('answers no without asking who the caller is when the create path does not serve', async () => {
@@ -8160,7 +8162,7 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false, googleConversionActionsEnabled: false }));
     expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
   });
 

@@ -2330,7 +2330,10 @@ export interface GoogleAdsConversionActionOption {
   primaryForGoal: boolean;
 }
 
-/** One action as the picker lists it: the action, and the label it is shown with, built once when the list is read. */
+/**
+ * One action as the picker lists it: the action, and the label it is shown with, built once when
+ * the list is read.
+ */
 export interface GoogleConversionActionPickerOption extends GoogleAdsConversionActionOption {
   label: string;
 }
@@ -5985,6 +5988,16 @@ export interface CampaignListResult {
    * capabilities above (`boolean | null`, `null` for unanswered): only an explicit yes shows the section.
    */
   googleAudienceSegmentsEnabled: boolean;
+  /**
+   * Whether THIS caller may read the Implement tab's conversion-action picker list (#4991), through
+   * `GET /api/campaigns/google/conversion-actions`. Per caller: true only when the campaign-service
+   * create path serves the create AND the caller is a ROOT writer or ROOT campaign manager — the two
+   * checks that route makes — because the shared LF Google Ads account lists every foundation's
+   * actions. Its own field rather than {@link googleAudienceSegmentsEnabled}, whose root-only meaning
+   * lasts only until a user list can be mapped to a project. Optional, so a BFF that predates it reads
+   * as unanswered (`null` on the client) and the tab keeps its free-text box without asking.
+   */
+  googleConversionActionsEnabled?: boolean;
   /**
    * Whether the Implement tab may SEARCH Google's geo target table for postal-code targets, through
    * `GET /api/campaigns/google/geo-targets`, instead of asking for a typed constant id.

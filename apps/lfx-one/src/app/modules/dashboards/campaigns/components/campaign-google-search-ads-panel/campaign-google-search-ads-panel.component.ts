@@ -23,9 +23,10 @@ import { UiTextareaComponent } from '@shared/uikit/textarea/textarea.component';
  * The Google Search campaign's networks, its ads beyond the first ad's copy, and its create-time
  * negative keywords, on the Implement tab (#4991).
  *
- * The first ad's headlines and descriptions stay in the tab's own copy sections; this panel adds that
- * ad's display paths, up to two more ads with their own copy and paths, and the campaign-level
- * negative keywords. Same contract as `campaign-google-exclusions-panel`: it renders straight from the
+ * The first ad's headlines and descriptions stay in the tab's own copy sections; this panel adds the
+ * Search partners opt-in, that ad's display paths, up to two more ads with their own copy and paths,
+ * and the campaign-level negative keywords. Same contract as `campaign-google-exclusions-panel`: it
+ * renders straight from the
  * values it is given and writes every edit back through them, and the tab owns them — the draft, the
  * reset for a new brief, the Search gate and the shared refusals (`googleSearchAdPathsRefusal`,
  * `googleAdditionalSearchAdsRefusal`, `googleCreateNegativeKeywordsRefusal`) the BFF refuses a create with.

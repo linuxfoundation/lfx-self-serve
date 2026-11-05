@@ -151,6 +151,14 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-targeting-withheld-live">
   {{ googleTargetingWithheldMessage() }}
 </div>
+<!-- Search partners, display paths, further ads and negatives held off Search, announced likewise. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-ads-withheld-live">
+  {{ googleSearchAdsWithheldMessage() }}
+</div>
+<!-- Conversion actions held by a channel that takes none, announced on the same terms. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-actions-withheld-live">
+  {{ googleConversionActionsWithheldMessage() }}
+</div>
 <!-- Device adjustments held by a bidding strategy that takes none, announced on the same terms. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-device-adjustments-held-live">
   {{ googleDeviceAdjustmentsHeldMessage() }}
@@ -2250,6 +2258,13 @@
 
           @if (googleTakesConversionActions()) {
             <div class="flex flex-col gap-2">
+              <!--
+                The picker's loading line, reason or empty note, announced. Mounted with the section and only
+                its text changes, so the change is announced; the visible notes below carry no role.
+              -->
+              <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-action-picker-live">
+                {{ googleConversionActionPickerAnnouncement() }}
+              </div>
               @switch (googleConversionActionPicker().status) {
                 @case ('loaded') {
                   <lfx-ui-multi-select
@@ -2262,10 +2277,13 @@
                       <lfx-ui-option [value]="action.id" [label]="action.label" />
                     }
                   </lfx-ui-multi-select>
+                  @if (googleConversionActionPicker().actions.length === 0) {
+                    <p class="text-xs text-gray-500" data-testid="implementation-google-conversion-action-picker-empty">{{ conversionActionPickerEmpty }}</p>
+                  }
                 }
                 @case ('loading') {
                   <p class="text-xs text-gray-500" data-testid="implementation-google-conversion-action-picker-loading">
-                    Loading this account's conversion actions…
+                    {{ conversionActionPickerLoading }}
                   </p>
                 }
                 @case ('unavailable') {
@@ -2281,14 +2299,19 @@
                 formControlName="googleConversionActions"
                 class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 data-testid="implementation-google-conversion-actions"></textarea>
-              <span class="text-xs text-gray-400">
+              <span class="text-xs text-gray-500">
                 An id such as 987654321, or a full customers/&lt;id&gt;/conversionActions/&lt;id&gt; name. Leave blank to use the account's own conversion
                 goals.
                 @if (googleConversionActionPicker().status === 'loaded') {
-                  Picking from the list above fills this box; ids it doesn't hold stay as typed.
+                  Picking from the list above fills this box; any other id stays, trimmed, and blank lines are dropped.
                 }
               </span>
             </div>
+          }
+          @if (googleConversionActionsWithheldMessage(); as warning) {
+            <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-conversion-actions-withheld">
+              <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+            </p>
           }
 
           @if (googleBiddingError()) {
@@ -2397,8 +2420,8 @@
       }
 
       <!--
-        Google Ads: the Search campaign's display paths, its second and third ads, and its create-time
-        negative keywords (#4991). Search only, on the campaign-service road; errors are the shared
+        Google Ads: the Search campaign's Search partners opt-in, display paths, its second and third
+        ads, and its create-time negative keywords (#4991). Search only, on the campaign-service road; errors are the shared
         refusals the BFF answers the create with, and Create waits on them.
       -->
       @if (googleSearchAdsAvailable()) {
@@ -2418,6 +2441,11 @@
           [pathsError]="googleSearchPathsError()"
           [adsError]="googleAdditionalSearchAdsError()"
           [negativeKeywordsError]="googleNegativeKeywordsError()" />
+      }
+      @if (googleSearchAdsWithheldMessage(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-search-ads-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
       }
 
       <!--

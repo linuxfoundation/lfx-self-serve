@@ -139,6 +139,8 @@ import {
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
+  GOOGLE_CONVERSION_ACTION_PICKER_EMPTY,
+  GOOGLE_CONVERSION_ACTION_PICKER_LOADING,
   GOOGLE_CONVERSION_ACTION_PICKER_REASONS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -663,6 +665,13 @@ export class ImplementationTabComponent implements OnInit {
    * that still holds segments raises `googleAudienceSegmentsBlock` rather than dropping them.
    */
   public readonly googleAudienceSegmentsEnabled = input<boolean | null>(null);
+  /**
+   * Whether THIS caller may read the conversion-action picker's list —
+   * `CampaignListResult.googleConversionActionsEnabled`,
+   * the two checks its route makes. `false` shows the refusal note with no request; `null` (unanswered)
+   * keeps the free-text box and asks nothing.
+   */
+  public readonly googleConversionActionsEnabled = input<boolean | null>(null);
 
   /** @see microsoftScheduleEnabled — an explicit yes, never a `null`. */
   protected readonly microsoftScheduleAvailable = computed<boolean>(() => this.microsoftScheduleEnabled() === true);
@@ -1707,7 +1716,10 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleSearchPath1 = signal('');
   protected readonly googleSearchPath2 = signal('');
   protected readonly googleAdditionalSearchAds = signal<CampaignSearchAd[]>([]);
-  /** Whether the Search campaign also serves on Google's search partners; off is Google Search only, as before. */
+  /**
+   * Whether the Search campaign also serves on Google's search partners; off is Google Search
+   * only, as before.
+   */
   protected readonly googleSearchPartners = signal(false);
   protected readonly googleNegativeKeywordsText = signal('');
   protected readonly googleNegativeKeywordMatchType = signal<CampaignNegativeKeywordMatchType>(
@@ -3659,8 +3671,9 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleExcludedGeoTargetsError: Signal<string | null> = this.initGoogleExcludedGeoTargetsError();
   /**
-   * Whether the Search ads panel shows, and so whether the request carries its paths, further ads and
-   * negatives: Search on the campaign-service road, the one channel upstream takes them on.
+   * Whether the Search ads panel shows, and so whether the request carries its Search partners
+   * opt-in, paths, further ads and negatives: Search on the campaign-service road, the one channel
+   * upstream takes them on.
    */
   protected readonly googleSearchAdsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_SEARCH_ADS));
   /** The shared refusals the BFF would answer the create with, or `null`; `canSubmit` blocks on each. */
@@ -3673,6 +3686,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleFirstAdHeadlinesError: Signal<string | null> = this.initGoogleFirstAdCopyWidthError('headlines');
   protected readonly googleFirstAdDescriptionsError: Signal<string | null> = this.initGoogleFirstAdCopyWidthError('descriptions');
   protected readonly googleNegativeKeywordsError: Signal<string | null> = this.initGoogleNegativeKeywordsError();
+  /**
+   * The held-Search-settings sentence, or `''`: Search partners, display paths, further ads and
+   * negatives kept for a switch back and not sent off Search. One string feeds the visible notice and
+   * the live region, as for the targeting panel.
+   */
+  protected readonly googleSearchAdsWithheldMessage: Signal<string> = this.initGoogleSearchAdsWithheldMessage();
   /** The held-targeting sentence, or `''`; one string feeds the visible notice and the live region, as for languages. */
   protected readonly googleTargetingWithheldMessage: Signal<string> = this.initGoogleTargetingWithheldMessage();
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
@@ -3708,6 +3727,18 @@ export class ImplementationTabComponent implements OnInit {
    * and the free-text box is the way in, exactly as before.
    */
   protected readonly googleConversionActionPicker: Signal<GoogleConversionActionPickerState> = this.initGoogleConversionActionPicker();
+  /**
+   * The picker's loading line, reason or empty note, for its always-mounted live region; `''`
+   * otherwise.
+   */
+  protected readonly googleConversionActionPickerAnnouncement: Signal<string> = this.initGoogleConversionActionPickerAnnouncement();
+  protected readonly conversionActionPickerEmpty = GOOGLE_CONVERSION_ACTION_PICKER_EMPTY;
+  protected readonly conversionActionPickerLoading = GOOGLE_CONVERSION_ACTION_PICKER_LOADING;
+  /**
+   * The held-conversion-actions sentence, or `''`: ids entered for a channel that takes none are kept
+   * for a switch back and not sent. One string feeds the visible notice and the live region.
+   */
+  protected readonly googleConversionActionsWithheldMessage: Signal<string> = this.initGoogleConversionActionsWithheldMessage();
   /** The listed actions the free-text value names, which the picker shows as picked. */
   protected readonly googlePickedConversionActions: Signal<string[]> = this.initGooglePickedConversionActions();
   protected readonly googleBiddingError: Signal<string | null> = this.initGoogleBiddingError();
@@ -5436,7 +5467,8 @@ export class ImplementationTabComponent implements OnInit {
       ...(platforms.includes('google-ads') ? this.googleLanguagesPayload() : {}),
       // Ad schedules and device adjustments, on the same Google gate, already withheld per channel.
       ...(platforms.includes('google-ads') ? this.googleTargetingPayload() : {}),
-      // The first ad's display paths, the further ads, the negatives and Search partners, on the same gate, and
+      // The first ad's display paths, the further ads, the negatives and Search partners, on the
+      // same gate, and
       // already withheld unless the dispatched channel is Search.
       ...(platforms.includes('google-ads') ? this.googleSearchAdsPayload() : {}),
       // The audience segments, Google-gated for the same reason, and already withheld unless the
@@ -6924,7 +6956,7 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleAdditionalSearchAds !== undefined) {
       this.googleAdditionalSearchAds.set(draft.googleAdditionalSearchAds.map((ad) => this.copySearchAd(ad)));
     }
-    if (draft.googleSearchPartners !== undefined) this.googleSearchPartners.set(draft.googleSearchPartners);
+    if (draft.googleSearchPartners !== undefined) this.googleSearchPartners.set(draft.googleSearchPartners === true);
     if (draft.googleNegativeKeywordsText !== undefined) this.googleNegativeKeywordsText.set(draft.googleNegativeKeywordsText);
     if (draft.googleNegativeKeywordMatchType !== undefined) this.googleNegativeKeywordMatchType.set(draft.googleNegativeKeywordMatchType);
     // Copied on the same rule, and restored whatever the channel selection is: the section and
@@ -9433,10 +9465,11 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * The conversion-action picker's list, read only while the section is shown and only for a caller
-   * the BFF would answer. `googleAudienceSegmentsEnabled` is the same per-caller answer the route
-   * gives — the campaign-service create road AND a root campaign principal — so `false` shows the
-   * refusal note with no request (a non-root operator would always earn a 403), and `null`
-   * (unanswered) waits on the free-text box. Each action carries its label, built once here.
+   * the BFF would answer. `googleConversionActionsEnabled` is the per-caller answer its route gives —
+   * the campaign-service create road AND a root campaign principal — so `false` shows the refusal
+   * note with no request, and `null` (unanswered) waits on the free-text box. A 403 after that yes is
+   * the upstream gateway, which denies the route until the deployment opens it, so it reads as
+   * unavailable here rather than as the caller's fault. Each action carries its label, built once.
    */
   private initGoogleConversionActionPicker(): Signal<GoogleConversionActionPickerState> {
     const state = (status: GoogleConversionActionPickerState['status'], reason: string | null = null): GoogleConversionActionPickerState => ({
@@ -9449,7 +9482,7 @@ export class ImplementationTabComponent implements OnInit {
     const trigger = computed(() => ({
       projectSlug: this.activeFoundationSlug(),
       shown: this.googleTakesConversionActions(),
-      allowed: this.googleAudienceSegmentsEnabled(),
+      allowed: this.googleConversionActionsEnabled(),
     }));
     return toSignal(
       toObservable(trigger).pipe(
@@ -9466,8 +9499,7 @@ export class ImplementationTabComponent implements OnInit {
             ),
             catchError((err: unknown) => {
               const status = err instanceof HttpErrorResponse ? err.status : 0;
-              if (status === 403) return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.forbidden));
-              if (status === 404) return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.unavailable));
+              if (status === 403 || status === 404) return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.unavailable));
               return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.failed));
             }),
             startWith(state('loading'))
@@ -9478,7 +9510,57 @@ export class ImplementationTabComponent implements OnInit {
     );
   }
 
-  /** The listed actions the free-text value names, read through `campaignFormRevision` because that control is not a signal. */
+  private initGoogleConversionActionPickerAnnouncement(): Signal<string> {
+    return computed(() => {
+      const picker = this.googleConversionActionPicker();
+      if (picker.status === 'loading') return GOOGLE_CONVERSION_ACTION_PICKER_LOADING;
+      if (picker.status === 'unavailable') return picker.reason ?? '';
+      if (picker.status === 'loaded' && picker.actions.length === 0) return GOOGLE_CONVERSION_ACTION_PICKER_EMPTY;
+      return '';
+    });
+  }
+
+  /**
+   * Ids entered under a channel that takes conversion actions, held when the dispatched channel takes
+   * none: `googleBiddingPayload` sends them only while `googleTakesConversionActions`. Counted as the
+   * request would count them — trimmed, blank lines dropped. Read through `campaignFormRevision`.
+   */
+  private initGoogleConversionActionsWithheldMessage(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel || this.googleTakesConversionActions()) return '';
+      void this.campaignFormRevision();
+      const count = this.splitCreativeLines(this.campaignForm.getRawValue().googleConversionActions).length;
+      if (count === 0) return '';
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take conversion actions, so the ${count} you entered will not be sent. Switch the channel back to keep them.`;
+    });
+  }
+
+  /**
+   * What a non-Search channel holds back from the Search ads panel, said out loud, as
+   * {@link initGoogleTargetingWithheldMessage} does for the targeting panel: the lists are kept for a
+   * switch back and not sent. `''` off the campaign-service road, on Search, and when nothing is held.
+   */
+  private initGoogleSearchAdsWithheldMessage(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel || this.googleSearchAdsAvailable()) return '';
+      const held: string[] = [];
+      if (this.googleSearchPartners()) held.push('Search partners');
+      if (googleAdsTrimSpace(this.googleSearchPath1()) !== '' || googleAdsTrimSpace(this.googleSearchPath2()) !== '') held.push('the display path');
+      const ads = this.googleAdditionalSearchAds().length;
+      if (ads > 0) held.push(`${ads} more ${ads === 1 ? 'ad' : 'ads'}`);
+      const negatives = googleCreateNegativeKeywords(this.googleNegativeKeywordsText(), this.googleNegativeKeywordMatchType()).length;
+      if (negatives > 0) held.push(`${negatives} negative ${negatives === 1 ? 'keyword' : 'keywords'}`);
+      if (held.length === 0) return '';
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take Search settings, so ${joinAsSentenceList(held)} will not be sent. Switch the channel back to keep them.`;
+    });
+  }
+
+  /**
+   * The listed actions the free-text value names, read through `campaignFormRevision` because that
+   * control is not a signal.
+   */
   private initGooglePickedConversionActions(): Signal<string[]> {
     return computed(() => {
       void this.campaignFormRevision();
