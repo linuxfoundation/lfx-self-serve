@@ -4,7 +4,7 @@ description: Request a visa support letter to help international attendees obtai
 audience: [all]
 product_area: Events
 tags: [events, visa-letters, visa, travel, attendance]
-last_updated: 2026-10-02
+last_updated: 2026-11-05
 intercom_collection: Events
 ---
 
@@ -18,9 +18,9 @@ A visa support letter helps international attendees obtain the travel documentat
 2. Select **Events** from the left navigation sidebar.
 3. Open the **Visa Letters** tab.
 4. Select **New Letter Application**.
-5. **Choose an Event** — select the event you are attending, then continue. The list shows upcoming events where your registration has been accepted and the event offers visa letters.
-6. Review the **Terms and Conditions** and continue to accept them.
-7. On the **Apply** step, complete the applicant information and submit your request.
+5. **Choose an Event** — select the event you are attending, then select **Next Step**. The list shows upcoming events where your registration has been accepted and the event offers visa letters.
+6. **Terms and Conditions** — review them and select **I Agree**.
+7. **Apply** — complete the **Applicant Information** and select **Submit Application**. Use **Previous Step** to go back and change an earlier step.
 
 ## What the application asks for
 
@@ -42,11 +42,23 @@ Enter your details exactly as they appear on your passport so the letter is issu
 
 Your request appears on the **Visa Letters** tab with its current **Status**, along with the event, location, and application date. The Linux Foundation events team reviews your request and follows up with your visa support letter.
 
+The status is one of **Submitted**, **Approved**, **Denied**, or **Expired**.
+
+Use **Search visa letters...** or the **Status** filter to find a request. Until you submit one, the tab shows _No visa letter requests yet_.
+
 ## Download your visa letter
 
 When your request shows **Approved**, a **Download Letter** button appears at the end of its row. Select it to save your visa support letter as a PDF. The button is available until the event ends.
 
-Some letters are prepared by hand. If yours is one of them, Download Letter tells you the events team will email the letter to you instead.
+Some letters are prepared by hand. If yours is one of them, **Download Letter** shows _The events team will email you this visa letter._ instead of downloading a file. If it shows _Your visa letter is not ready yet._, try again later.
+
+## Start from a link
+
+A link to `/events?tab=visa-letters&event=<event id>` opens the Visa Letters tab and starts a request for that event. If you aren't eligible to request a letter for that event, the dialog stays on **Choose an Event** and a notification says **Event not found** — _We couldn't find that event among your eligible registered events — please choose it below._
+
+## Can't start a request?
+
+If **New Letter Application** is disabled and a message says _Your account is missing the required Salesforce ID. Please contact support._, select **Contact Support** in the message. LFX support needs to fix your account before you can request a letter.
 
 ## Questions
 
