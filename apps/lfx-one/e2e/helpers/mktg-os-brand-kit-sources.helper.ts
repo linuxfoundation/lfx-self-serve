@@ -43,12 +43,12 @@ export async function openBrandKitSources(
   const report = options.report === 'v1' ? brandKitReportV1() : brandKitReportV2Fixture();
   const accepted = mktgAcceptedSnapshotOf(report);
   const base = columnAssetRevisionResponse('brand-kit');
-  const approval =
-    options.approval === 'snapshot'
-      ? { approvedAt: '2026-11-04T10:00:00Z', approvedBy: null, accepted }
-      : options.approval === 'legacy'
-        ? { approvedAt: '2026-11-04T10:00:00Z', approvedBy: null }
-        : null;
+  const approvals = {
+    snapshot: { approvedAt: '2026-11-04T10:00:00Z', approvedBy: null, accepted },
+    legacy: { approvedAt: '2026-11-04T10:00:00Z', approvedBy: null },
+    none: null,
+  };
+  const approval = approvals[options.approval ?? 'none'];
   const revision = { ...base.revision, approval };
   const response: MktgRevisionResponse = {
     ...base,

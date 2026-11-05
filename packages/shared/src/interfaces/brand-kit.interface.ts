@@ -330,7 +330,8 @@ export interface BrandKitSourcesView {
 
 /**
  * The skill's report: shown to the reviewer, never stored as content. The v1 fields are always there; the v2 fields
- * (brand-kit ≥ 2.2.0) are optional, and a v1 report renders as it always did.
+ * (brand-kit ≥ 2.2.0) are optional. A v1 report shows its legacy sources_failed list under Failed sources, and the
+ * v2 groups show their empty lines.
  */
 export interface BrandKitReport extends MktgAssetReport {
   version?: typeof BRAND_KIT_REPORT_V2;
