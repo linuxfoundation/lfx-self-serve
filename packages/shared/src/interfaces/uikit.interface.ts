@@ -104,6 +104,8 @@ export interface UiDrawerConfig<D = unknown> extends Omit<UiModalConfig<D>, 'rol
   size?: UiDrawerSize;
   /** Custom width in px for the `default` size, in place of 560. It never exceeds the window less its 8px insets. */
   width?: number;
+  /** Same as the layout's `bare` input: no header or footer, and the content fills an unpadded scrolling body. Don't project the header or footer slots. Defaults to `false`. */
+  bare?: boolean;
   /**
    * Asked before the user dismisses the drawer with Escape, a backdrop click or the close button; return `false` to keep it open,
    * for example while a form has unsaved changes. It may return a promise, such as the answer of a confirm modal. A promise that
