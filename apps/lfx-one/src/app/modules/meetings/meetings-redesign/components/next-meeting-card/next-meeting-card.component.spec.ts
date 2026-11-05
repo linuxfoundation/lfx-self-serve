@@ -259,7 +259,7 @@ describe('NextMeetingCardComponent', () => {
 
       expect(notes(fixture)).toEqual({ window: null, startsIn: null, live: 'The meeting is in progress' });
       expect(query(fixture, 'meetings-home-next-card-in-progress')?.classList).toContain('text-blue-600');
-      expect(query(fixture, 'meetings-home-next-card-in-progress')?.querySelector('.next-meeting-live-dot')?.getAttribute('aria-hidden')).toBe('true');
+      expect(query(fixture, 'meetings-home-next-card-in-progress')?.querySelector('.meeting-live-dot')?.getAttribute('aria-hidden')).toBe('true');
     });
 
     it('shows no note once the date is over', async () => {

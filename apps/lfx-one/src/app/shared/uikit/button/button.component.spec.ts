@@ -305,6 +305,18 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('href')).toBe('/meetings/create');
   });
 
+  it('opens an external href in a new tab without an opener, and drops it while disabled', async () => {
+    await set('href', 'https://zoom.example.test/j/1');
+    expect(el().tagName).toBe('A');
+    expect(el().getAttribute('href')).toBe('https://zoom.example.test/j/1');
+    expect(el().getAttribute('target')).toBe('_blank');
+    expect(el().getAttribute('rel')).toBe('noopener noreferrer');
+    expect(el().classList).toContain('!no-underline');
+    await set('disabled', true);
+    expect(el().hasAttribute('href')).toBe(false);
+    expect(el().getAttribute('aria-disabled')).toBe('true');
+  });
+
   it('pins a link label colour in every state and never underlines it', async () => {
     await set('variant', 'tertiary-accent');
     await set('link', '/meetings');

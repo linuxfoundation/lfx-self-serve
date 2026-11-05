@@ -27,7 +27,7 @@ import { UiSpinnerComponent } from '../spinner/spinner.component';
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
- * Button with eight variants and four sizes (tiny 24px, small 28px, default 32px, large 40px). Renders a native `<button>`, or a router link when `link` is set.
+ * Button with eight variants and four sizes (tiny 24px, small 28px, default 32px, large 40px). Renders a native `<button>`, a router link when `link` is set, or a new-tab link to another site when `href` is set.
  * Supports a leading and a trailing Font Awesome icon, an icon-only circle, a loading state and full width.
  *
  * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipIcon`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
@@ -97,6 +97,8 @@ export class UiButtonComponent {
   public readonly popoverAlign = input<UiMenuAlign>('start');
   /** When set, renders a router link instead of a button. Accepts a path or a commands array. */
   public readonly link = input<string | unknown[] | null>(null);
+  /** External URL, such as a Zoom link: renders an `<a>` that opens it in a new tab. Wins over `link`. */
+  public readonly href = input<string | null>(null);
   /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */
   /** Tooltip text, forwarded to the inner button. An empty value shows nothing. See `lfxUiTooltip` for the full contract. */
   public readonly tooltip = input<string>('', { alias: 'lfxUiTooltip' });
@@ -150,7 +152,7 @@ export class UiButtonComponent {
   // A busy button keeps focus and its look, so keyboard activation is stopped here instead of with `disabled`.
   // A disabled link has no native `disabled` either, so a programmatic click is stopped the same way.
   protected onClick(event: Event): void {
-    if (!this.loading() && !(this.link() !== null && this.disabled())) return;
+    if (!this.loading() && !((this.link() !== null || this.href() !== null) && this.disabled())) return;
     event.preventDefault();
     event.stopPropagation();
   }
@@ -244,7 +246,7 @@ export class UiButtonComponent {
         size.box,
         shape,
         this.fullWidth() ? 'w-full' : '',
-        this.link() !== null ? `!no-underline ${linkInks[this.variant()]}` : '',
+        this.link() !== null || this.href() !== null ? `!no-underline ${linkInks[this.variant()]}` : '',
         pointer,
       ]
         .filter(Boolean)

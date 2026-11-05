@@ -5,7 +5,7 @@ import { Clipboard } from '@angular/cdk/clipboard';
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Injector, signal, WritableSignal } from '@angular/core';
+import { Component, Injector, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Title } from '@angular/platform-browser';
 import { environment } from '@environments/environment';
@@ -21,6 +21,11 @@ import { MeetingsHomeEditService } from '../../services/meetings-home-edit.servi
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDetailsDrawerComponent } from './meeting-details-drawer.component';
 import { MeetingDetailsContext } from './meeting-details.context';
+import { MeetingDetailsScheduleComponent } from './schedule/meeting-details-schedule.component';
+
+// The schedule section has its own spec; the shell only places it.
+@Component({ selector: 'lfx-meeting-details-schedule', template: '' })
+class ScheduleStubComponent {}
 
 const MEETING = {
   id: 'synthetic-meeting',
@@ -128,6 +133,10 @@ describe('MeetingDetailsDrawerComponent', () => {
         },
         { provide: UserService, useValue: { viewerUsername: signal('synthetic-viewer'), refreshUserMeetings, refreshUserPastMeetings } },
       ],
+    });
+    TestBed.overrideComponent(MeetingDetailsDrawerComponent, {
+      remove: { imports: [MeetingDetailsScheduleComponent] },
+      add: { imports: [ScheduleStubComponent] },
     });
   });
 

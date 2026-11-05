@@ -13,7 +13,30 @@
   }
 </ng-template>
 
-@if (link() !== null) {
+@if (href() !== null) {
+  <a
+    [attr.href]="disabled() || loading() ? null : href()"
+    target="_blank"
+    rel="noopener noreferrer"
+    [class]="classes()"
+    [attr.aria-label]="ariaLabel() || null"
+    [attr.role]="disabled() || loading() ? 'link' : null"
+    [attr.aria-disabled]="disabled() || null"
+    [attr.aria-busy]="loading() || null"
+    [attr.tabindex]="linkTabIndex()"
+    [lfxUiTooltip]="tooltip()"
+    [lfxUiTooltipTitle]="tooltipTitle()"
+    [lfxUiTooltipIcon]="tooltipIcon()"
+    [lfxUiTooltipShortcut]="tooltipShortcut()"
+    [lfxUiTooltipSide]="tooltipSide()"
+    [lfxUiTooltipDelay]="tooltipDelay()"
+    [lfxUiTooltipDisabled]="tooltipDisabled() || disabled()"
+    (click)="onClick($event)"
+    (mousedown)="onMouseDown($event)"
+    data-testid="ui-button">
+    <ng-container [ngTemplateOutlet]="content" />
+  </a>
+} @else if (link() !== null) {
   <a
     [routerLink]="disabled() || loading() ? null : link()"
     [class]="classes()"

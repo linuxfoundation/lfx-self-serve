@@ -336,3 +336,12 @@ export interface MeetingDetailsArtifactData {
   transcriptUrl: string | null;
   summary: PastMeetingSummary | null;
 }
+
+/** Join link of a meeting date; `url` and `error` are both null while it loads or outside the join window. */
+export interface MeetingJoinLink {
+  url: string | null;
+  /** Why the link could not be built, shown to the viewer. */
+  error: string | null;
+  /** Error code of a failed request, such as `NOT_REGISTERED_FOR_MEETING`. */
+  code: string | null;
+}
