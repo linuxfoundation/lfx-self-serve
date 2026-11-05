@@ -41,6 +41,7 @@ import { MeetingDetailsHeaderComponent } from './header/meeting-details-header.c
 import { MeetingDetailsContext } from './meeting-details.context';
 import { MeetingDetailsProjectLinkComponent } from './project-link/meeting-details-project-link.component';
 import { MeetingDetailsArtifactsService } from './tools/meeting-details-artifacts.service';
+import { MeetingDetailsOwnActionsComponent } from './tools/own-actions/meeting-details-own-actions.component';
 import { MeetingDetailsToolsComponent } from './tools/meeting-details-tools.component';
 
 /**
@@ -52,6 +53,7 @@ import { MeetingDetailsToolsComponent } from './tools/meeting-details-tools.comp
   selector: 'lfx-meeting-details-drawer',
   imports: [
     MeetingDetailsHeaderComponent,
+    MeetingDetailsOwnActionsComponent,
     MeetingDetailsProjectLinkComponent,
     MeetingDetailsToolsComponent,
     UiAvatarComponent,

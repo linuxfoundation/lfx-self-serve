@@ -121,12 +121,17 @@ describe('MeetingDetailsDrawerComponent', () => {
           useValue: {
             getMeetingDetail,
             removedRegistrationMeetingIds: signal(new Set<string>()),
+            getMeetingRegistrants: () => of([]),
+            getPastMeetingParticipants: () => of([]),
             getPastMeetingRecording: () => of({ sessions: [{ total_size: 1, share_url: 'https://zoom.example/rec' }] }),
             getPastMeetingTranscript: () => of({ recording_files: [] }),
             getPastMeetingSummary: () => throwError(() => new HttpErrorResponse({ status: 404 })),
           },
         },
-        { provide: UserService, useValue: { viewerUsername: signal('synthetic-viewer'), refreshUserMeetings, refreshUserPastMeetings } },
+        {
+          provide: UserService,
+          useValue: { viewerUsername: signal('synthetic-viewer'), refreshUserMeetings, refreshUserPastMeetings, confirmedMeetingRsvps: () => [] },
+        },
       ],
     });
   });
