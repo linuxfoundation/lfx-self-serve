@@ -14,6 +14,7 @@ import { getMailingListEmail } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { TooltipModule } from 'primeng/tooltip';
 import { finalize, take } from 'rxjs';
 
 import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
@@ -21,7 +22,16 @@ import { MailingListTypePipe } from '../committee-settings-tab/pipes/mailing-lis
 
 @Component({
   selector: 'lfx-mailing-list-picker-dialog',
-  imports: [ButtonComponent, CheckboxComponent, InputTextComponent, ReactiveFormsModule, TagComponent, MailingListEmailPipe, MailingListTypePipe],
+  imports: [
+    ButtonComponent,
+    CheckboxComponent,
+    InputTextComponent,
+    ReactiveFormsModule,
+    TagComponent,
+    TooltipModule,
+    MailingListEmailPipe,
+    MailingListTypePipe,
+  ],
   templateUrl: './mailing-list-picker-dialog.component.html',
 })
 export class MailingListPickerDialogComponent {
@@ -60,7 +70,7 @@ export class MailingListPickerDialogComponent {
     const associatedUids = this.config.data.associatedUids as Set<string>;
     const controls: Record<string, FormControl<boolean>> = {};
     for (const ml of this.mailingLists) {
-      controls[ml.uid] = new FormControl(associatedUids.has(ml.uid), { nonNullable: true });
+      controls[ml.uid] = new FormControl({ value: associatedUids.has(ml.uid), disabled: !this.canModify(ml) }, { nonNullable: true });
     }
     this.mlCheckboxForm = new FormGroup(controls);
 
@@ -72,7 +82,15 @@ export class MailingListPickerDialogComponent {
       });
   }
 
+  /** Linking or unlinking a list updates the list itself, so the user needs write access to it. */
+  public canModify(ml: GroupsIOMailingList): boolean {
+    return ml.writer === true;
+  }
+
   public toggleMailingList(uid: string): void {
+    const ml = this.mailingLists.find((m) => m.uid === uid);
+    if (!ml || !this.canModify(ml)) return;
+
     const current = new Set(this.selectedMailingListUids());
     if (current.has(uid)) {
       current.delete(uid);

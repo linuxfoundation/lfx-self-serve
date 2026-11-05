@@ -5,7 +5,7 @@ import { QUERY_SERVICE_MAX_PAGE_SIZE, QUERY_SERVICE_MAX_PAGES } from '@lfx-one/s
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import type { GroupsIOMemberResponse, MailingListMember } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { checkSingleAccessStrict, addAccessToResource, addAccessToResources, proxyRequest, getEffectiveEmail } = vi.hoisted(() => ({
   checkSingleAccessStrict: vi.fn(),
@@ -334,5 +334,49 @@ describe('MailingListService member authorization', () => {
       await expect(service.deleteMember(req, 'list-1', 'member-1')).rejects.toBe(lookupError);
       expect(proxiedMethods()).not.toContain('DELETE');
     });
+  });
+});
+
+describe('MailingListService.updateMailingList index wait', () => {
+  const service = new MailingListService();
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function routeUpdate(indexedCommittees: { uid: string }[][]): void {
+    let queryCalls = 0;
+    proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, path: string) => {
+      if (path === '/query/resources') {
+        const committees = indexedCommittees[Math.min(queryCalls++, indexedCommittees.length - 1)];
+        return { resources: [{ data: { uid: 'list-1', committees } }] };
+      }
+      return { uid: 'list-1', committees: [] };
+    });
+  }
+
+  it('waits until the linked group is visible in the index before returning', async () => {
+    routeUpdate([[], [], [{ uid: 'committee-1' }]]);
+
+    const pending = service.updateMailingList(req, 'list-1', { committee_uid: 'committee-1' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const result = await pending;
+
+    expect(result.committees).toEqual([{ uid: 'committee-1' }]);
+    expect(proxyRequest.mock.calls.filter((call) => call[2] === '/query/resources')).toHaveLength(3);
+  });
+
+  it('does not wait on a specific group when unlinking', async () => {
+    routeUpdate([[]]);
+
+    const result = await service.updateMailingList(req, 'list-1', { committee_uid: null });
+
+    expect(result.uid).toBe('list-1');
+    expect(proxyRequest.mock.calls.filter((call) => call[2] === '/query/resources')).toHaveLength(1);
   });
 });

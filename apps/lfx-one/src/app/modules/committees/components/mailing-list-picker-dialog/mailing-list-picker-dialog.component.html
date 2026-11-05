@@ -44,14 +44,24 @@
         </thead>
         <tbody>
           @for (ml of filteredMailingLists(); track ml.uid) {
+            @let modifiable = canModify(ml);
             <tr
-              class="border-t border-gray-100 cursor-pointer transition-colors"
+              class="border-t border-gray-100 transition-colors"
+              [class.cursor-pointer]="modifiable"
+              [class.cursor-not-allowed]="!modifiable"
+              [class.opacity-60]="!modifiable"
               [class.bg-blue-50]="selectedMailingListUids().has(ml.uid)"
-              [class.hover:bg-gray-50]="!selectedMailingListUids().has(ml.uid)"
+              [class.hover:bg-gray-50]="modifiable && !selectedMailingListUids().has(ml.uid)"
+              [pTooltip]="modifiable ? '' : 'You need Manage access to this mailing list to link or unlink it.'"
+              tooltipPosition="top"
               (click)="toggleMailingList(ml.uid)"
+              [attr.aria-disabled]="!modifiable"
               [attr.data-testid]="'settings-ml-picker-row-' + ml.uid">
               <td class="py-3 px-4">
-                <lfx-checkbox [form]="mlCheckboxForm" [control]="ml.uid" [binary]="true"></lfx-checkbox>
+                <!-- The row click is the only toggle path; the checkbox only reflects state. -->
+                <div class="pointer-events-none">
+                  <lfx-checkbox [form]="mlCheckboxForm" [control]="ml.uid" [binary]="true"></lfx-checkbox>
+                </div>
               </td>
               <td class="py-3 px-2 font-semibold text-gray-900">{{ ml.group_name }}</td>
               <td class="py-3 px-2 text-gray-500">

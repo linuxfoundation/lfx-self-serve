@@ -121,6 +121,14 @@ export class CommitteeSettingsTabComponent {
   // Associated mailing lists (queried directly by committee_uid tag)
   public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
 
+  // Linking or unlinking updates the mailing list itself, so it needs write access on that list.
+  // Only block once lists have loaded and none are writable — an empty list is the picker's own
+  // "no mailing lists" state, which still offers Create New List.
+  public mailingListLinkBlocked: Signal<boolean> = computed(() => {
+    const lists = this.projectMailingLists();
+    return lists.length > 0 && !lists.some((ml) => ml.writer === true);
+  });
+
   // Derived loading state: true until first emission from associatedMailingLists
   public mlLoading = computed(() => this.mlLoadingInternal() && !!this.committee()?.uid);
 
@@ -468,7 +476,7 @@ export class CommitteeSettingsTabComponent {
       return;
     }
 
-    const updates$: Observable<{ uid: string; success: boolean }>[] = [];
+    const updates$: Observable<{ uid: string; success: boolean; status?: number }>[] = [];
 
     // Associate: set committee_uid on newly selected MLs
     for (const uid of added) {
@@ -477,7 +485,7 @@ export class CommitteeSettingsTabComponent {
         updates$.push(
           this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid)).pipe(
             map(() => ({ uid, success: true })),
-            catchError(() => of({ uid, success: false }))
+            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
           )
         );
       }
@@ -490,7 +498,7 @@ export class CommitteeSettingsTabComponent {
         updates$.push(
           this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, null)).pipe(
             map(() => ({ uid, success: true })),
-            catchError(() => of({ uid, success: false }))
+            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
           )
         );
       }
@@ -511,6 +519,12 @@ export class CommitteeSettingsTabComponent {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Mailing list associations updated' });
           } else if (succeeded > 0) {
             this.messageService.add({ severity: 'warn', summary: 'Partial Success', detail: `${succeeded} updated, ${failed} failed` });
+          } else if (results.every((r) => r.success || r.status === 403)) {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Permission denied',
+              detail: 'You need Manage access to these mailing lists to link or unlink them. No changes were saved.',
+            });
           } else {
             this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update mailing list associations' });
           }
