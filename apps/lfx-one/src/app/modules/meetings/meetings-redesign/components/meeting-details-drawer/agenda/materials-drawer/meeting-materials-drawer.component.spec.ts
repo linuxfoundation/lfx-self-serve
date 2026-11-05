@@ -3,7 +3,7 @@
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MeetingMaterialsDrawerData, PastMeetingAttachment, PresignAttachmentResponse } from '@lfx-one/shared/interfaces';
+import { MeetingAttachment, MeetingMaterialsDrawerData, MeetingOccurrence, PastMeetingAttachment, PresignAttachmentResponse } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject, throwError } from 'rxjs';
@@ -16,6 +16,18 @@ const FILE = { uid: 'file-1', type: 'file', name: 'Deck.pdf', meeting_and_occurr
 const LINK = { uid: 'link-1', type: 'link', name: 'Notes', link: 'https://docs.example/notes', created_at: '2050-01-01T00:00:00Z' } as PastMeetingAttachment;
 const UPLOADED = { uid: 'file-new', type: 'file', name: 'Minutes.pdf', created_at: '2050-01-02T00:00:00Z' } as PresignAttachmentResponse;
 
+const OCCURRENCE = { occurrence_id: '2524640400', start_time: '2050-01-01T09:00:00.000Z', duration: 30 } as MeetingOccurrence;
+const SERIES_FILE = {
+  uid: 'series-1',
+  meeting_id: 'synthetic-meeting',
+  type: 'file',
+  name: 'Charter.pdf',
+  created_at: '2050-01-01T00:00:00Z',
+} as MeetingAttachment;
+const DATE_FILE = { ...SERIES_FILE, uid: 'date-1', name: 'Agenda.pdf', occurrence_id: OCCURRENCE.occurrence_id } as MeetingAttachment;
+const OTHER_DATE_FILE = { ...SERIES_FILE, uid: 'other-1', name: 'Other.pdf', occurrence_id: '2525245200' } as MeetingAttachment;
+const DESCRIPTION_LINK = { ...SERIES_FILE, uid: 'desc-1', type: 'link', name: 'Doc', link: 'https://docs.example', source: 'description' } as MeetingAttachment;
+
 describe('MeetingMaterialsDrawerComponent', () => {
   let fixture: ComponentFixture<MeetingMaterialsDrawerComponent>;
   let getPastMeetingAttachments: ReturnType<typeof vi.fn>;
@@ -25,6 +37,7 @@ describe('MeetingMaterialsDrawerComponent', () => {
   let onChanged: ReturnType<typeof vi.fn>;
   let close: ReturnType<typeof vi.fn>;
   let toastShow: ReturnType<typeof vi.fn>;
+  let upcoming: Record<string, ReturnType<typeof vi.fn>>;
 
   const render = async (): Promise<void> => {
     fixture = TestBed.createComponent(MeetingMaterialsDrawerComponent);
@@ -63,13 +76,38 @@ describe('MeetingMaterialsDrawerComponent', () => {
     onChanged = vi.fn();
     close = vi.fn();
     toastShow = vi.fn();
-    const data: MeetingMaterialsDrawerData = { pastMeetingId: PAST_ID, onChanged: onChanged as MeetingMaterialsDrawerData['onChanged'] };
+    upcoming = {
+      getMeetingAttachments: vi.fn(() => of([SERIES_FILE, DATE_FILE, OTHER_DATE_FILE, DESCRIPTION_LINK])),
+      createMeetingAttachment: vi.fn(() => of({ ...SERIES_FILE, uid: 'link-new', type: 'link', name: 'Repo', link: 'https://repo.example' })),
+      deleteMeetingAttachment: vi.fn(() => of(undefined)),
+      updateMeetingAttachment: vi.fn(() => of(undefined)),
+      uploadMeetingFile: vi.fn(() => of(UPLOADED)),
+      recordAttachmentChanges: vi.fn(),
+      recordAttachmentScopeChanges: vi.fn(),
+    };
+    const data: MeetingMaterialsDrawerData = {
+      pastMeetingId: PAST_ID,
+      occurrence: null,
+      canScopeToOccurrence: false,
+      onChanged: onChanged as MeetingMaterialsDrawerData['onChanged'],
+    };
 
     TestBed.configureTestingModule({
       providers: [
         { provide: DIALOG_DATA, useValue: data },
         { provide: DialogRef, useValue: { close } },
-        { provide: MeetingService, useValue: { getPastMeetingAttachments, createPastMeetingAttachment, deletePastMeetingAttachment, uploadPastMeetingFile } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getPastMeetingAttachments,
+            createPastMeetingAttachment,
+            deletePastMeetingAttachment,
+            uploadPastMeetingFile,
+            ...upcoming,
+            attachmentChanges: () => new Map(),
+            attachmentScopeOverrides: () => new Map(),
+          },
+        },
         { provide: UiToastService, useValue: { show: toastShow } },
       ],
     });
@@ -245,5 +283,121 @@ describe('MeetingMaterialsDrawerComponent', () => {
     expect(close).not.toHaveBeenCalled();
     expect(queryAll('meeting-materials-pending-item')).toHaveLength(1);
     expect(query('meeting-materials-existing-files')).toBeNull();
+  });
+  describe('on an upcoming recurring meeting', () => {
+    const renderUpcoming = async (canScopeToOccurrence = true): Promise<void> => {
+      const data: MeetingMaterialsDrawerData = {
+        meetingId: 'synthetic-meeting',
+        occurrence: OCCURRENCE,
+        canScopeToOccurrence,
+      };
+      TestBed.overrideProvider(DIALOG_DATA, { useValue: data });
+      await render();
+    };
+    const rowFor = (name: string): HTMLElement | undefined => queryAll('meeting-materials-existing-item').find((row) => row.textContent?.includes(name));
+
+    it('lists the series and the shown date, each with its scope', async () => {
+      await renderUpcoming();
+
+      expect(upcoming['getMeetingAttachments']).toHaveBeenCalledWith('synthetic-meeting');
+      expect(rowFor('Other.pdf')).toBeUndefined();
+      expect(rowFor('Charter.pdf')?.textContent).toContain('All occurrences');
+      expect(rowFor('Agenda.pdf')?.textContent).toContain('This occurrence');
+    });
+
+    it('uploads a file with the scope it was queued with', async () => {
+      await renderUpcoming();
+      const occurrenceTile = query('meeting-materials-scope-occurrence')?.querySelector('input') as HTMLInputElement;
+      occurrenceTile.click();
+      await fixture.whenStable();
+      expect(query('meeting-materials-scope')?.textContent).toContain('apply to this occurrence only');
+
+      await pick(pdf('Minutes.pdf'));
+      await click(query('meeting-materials-save'));
+
+      expect(upcoming['uploadMeetingFile']).toHaveBeenCalledWith('synthetic-meeting', expect.any(File), {
+        name: 'Minutes.pdf',
+        file_size: 1024,
+        file_type: 'application/pdf',
+        occurrence_id: OCCURRENCE.occurrence_id,
+      });
+      expect(upcoming['recordAttachmentChanges']).toHaveBeenCalledWith('synthetic-meeting', {
+        added: [expect.objectContaining({ uid: 'file-new', occurrence_id: OCCURRENCE.occurrence_id })],
+      });
+    });
+
+    it('saves a staged scope change and shares it with every list', async () => {
+      await renderUpcoming();
+      await click(rowFor('Charter.pdf')?.querySelector('[data-testid="meeting-materials-scope-toggle"]') as HTMLElement);
+      expect(rowFor('Charter.pdf')?.textContent).toContain('Unsaved');
+
+      await click(query('meeting-materials-save'));
+
+      expect(upcoming['updateMeetingAttachment']).toHaveBeenCalledWith('synthetic-meeting', 'series-1', {
+        type: 'file',
+        category: 'Other',
+        name: 'Charter.pdf',
+        occurrence_id: OCCURRENCE.occurrence_id,
+      });
+      expect(upcoming['recordAttachmentScopeChanges']).toHaveBeenCalledWith([{ uid: 'series-1', occurrence_id: OCCURRENCE.occurrence_id }]);
+      expect(close).toHaveBeenCalled();
+    });
+
+    it('keeps a scope change that failed to save staged for a retry', async () => {
+      (upcoming['updateMeetingAttachment'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(throwError(() => new Error('down')));
+      await renderUpcoming();
+      await click(rowFor('Charter.pdf')?.querySelector('[data-testid="meeting-materials-scope-toggle"]') as HTMLElement);
+
+      await click(query('meeting-materials-save'));
+
+      expect(upcoming['recordAttachmentScopeChanges']).not.toHaveBeenCalled();
+      expect(rowFor('Charter.pdf')?.textContent).toContain('Unsaved');
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('deletes from the series and drops a scope change staged on the deleted item', async () => {
+      await renderUpcoming();
+      await click(rowFor('Charter.pdf')?.querySelector('[data-testid="meeting-materials-scope-toggle"]') as HTMLElement);
+      await click(rowFor('Charter.pdf')?.querySelector('[data-testid="meeting-materials-delete"]') as HTMLElement);
+
+      await click(query('meeting-materials-save'));
+
+      expect(upcoming['deleteMeetingAttachment']).toHaveBeenCalledWith('synthetic-meeting', 'series-1');
+      expect(upcoming['updateMeetingAttachment']).not.toHaveBeenCalled();
+      expect(upcoming['recordAttachmentChanges']).toHaveBeenCalledWith('synthetic-meeting', { added: [] });
+      expect(onChanged).not.toHaveBeenCalled();
+      expect(close).toHaveBeenCalled();
+    });
+
+    it('offers no scope change for a link lifted from the description', async () => {
+      await renderUpcoming();
+
+      expect(rowFor('Doc')?.querySelector('[data-testid="meeting-materials-scope-toggle"]')).toBeNull();
+      expect(rowFor('Charter.pdf')?.querySelector('[data-testid="meeting-materials-scope-toggle"]')).not.toBeNull();
+    });
+
+    it('shows scopes but offers no changes once the date cannot take one', async () => {
+      await renderUpcoming(false);
+
+      expect(query('meeting-materials-scope-picker')).toBeNull();
+      expect(query('meeting-materials-scope-toggle')).toBeNull();
+      expect(rowFor('Charter.pdf')?.textContent).toContain('All occurrences');
+    });
+
+    it('records a new link for every list showing the meeting', async () => {
+      await renderUpcoming();
+      await type('meeting-materials-link-title', 'Repo');
+      await type('meeting-materials-link-url', 'https://repo.example');
+      await click(query('meeting-materials-link-add'));
+
+      expect(upcoming['createMeetingAttachment']).toHaveBeenCalledWith('synthetic-meeting', {
+        type: 'link',
+        category: 'Other',
+        name: 'Repo',
+        link: 'https://repo.example',
+      });
+      expect(upcoming['recordAttachmentChanges']).toHaveBeenCalledWith('synthetic-meeting', { added: [expect.objectContaining({ uid: 'link-new' })] });
+      expect(onChanged).not.toHaveBeenCalled();
+    });
   });
 });
