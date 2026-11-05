@@ -1343,7 +1343,7 @@ export class CommitteeViewComponent {
     }
 
     const ref = this.dialogService.open(AcceptInviteOrganizationDialogComponent, {
-      header: 'Confirm Organization',
+      header: 'Confirm Company',
       width: '32rem',
       modal: true,
       closable: true,

@@ -4,7 +4,7 @@
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="participating-orgs-page">
   <lfx-page-header
     data-testid="participating-orgs-header"
-    title="Participating Organizations"
+    title="Participating Companies"
     [description]="subtitle()"
     titleTestId="participating-orgs-title"
     descriptionTestId="participating-orgs-subtitle" />
@@ -13,14 +13,14 @@
     @case ('forbidden') {
       <lfx-empty-state
         icon="fa-light fa-lock"
-        title="You don't have access to this project's participating organizations"
+        title="You don't have access to this project's participating companies"
         data-testid="participating-orgs-no-access" />
     }
     @case ('error') {
       <div role="alert" data-testid="participating-orgs-error">
         <lfx-empty-state
           icon="fa-light fa-triangle-exclamation"
-          title="Failed to load participating organizations"
+          title="Failed to load participating companies"
           [subtitle]="errorSubtitle()"
           ctaLabel="Retry"
           ctaIcon="fa-light fa-arrow-rotate-left"
@@ -54,13 +54,13 @@
 
         <div class="flex flex-col gap-3 px-5 pt-4 pb-3 sm:flex-row sm:items-center" data-testid="participating-orgs-filter-bar">
           <div class="relative flex-1" data-testid="participating-orgs-search-field">
-            <label class="sr-only" for="participating-orgs-search">Search organizations</label>
+            <label class="sr-only" for="participating-orgs-search">Search companies</label>
             <lfx-input-text
               [form]="filterForm"
               control="search"
               inputId="participating-orgs-search"
               [maxlength]="maxSearchLength"
-              placeholder="Search organizations"
+              placeholder="Search companies"
               icon="fa-light fa-search"
               size="small"
               styleClass="w-full"
@@ -136,7 +136,7 @@
                   @let icons = sortIconMap();
                   @let aria = ariaSortMap();
                   <th scope="col" [attr.aria-sort]="aria.name">
-                    <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'name', label: 'Organization', icon: icons.name, end: false }" />
+                    <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'name', label: 'Company', icon: icons.name, end: false }" />
                   </th>
                   <th scope="col" class="w-28 text-right" [attr.aria-sort]="aria.commits">
                     <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'commits', label: 'Commits', icon: icons.commits, end: true }" />
@@ -264,7 +264,7 @@
                 <tr>
                   <td colspan="6" class="py-10 text-center text-sm text-gray-500" data-testid="participating-orgs-no-match">
                     @if (!pageLoading()) {
-                      No organizations match these filters.
+                      No companies match these filters.
                     }
                   </td>
                 </tr>

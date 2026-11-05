@@ -177,7 +177,7 @@ describe('EventsSpeakersComponent', () => {
       'events-speakers-by-year',
     ]);
     expect(heading('events-speakers-status')).toBe('Proposals by status count');
-    expect(heading('events-speakers-organizations')).toBe('Most active organizations proposals submitted');
+    expect(heading('events-speakers-organizations')).toBe('Most active companies proposals submitted');
   });
 
   it('ranks the organizations and keeps individual speakers on their own line', async () => {

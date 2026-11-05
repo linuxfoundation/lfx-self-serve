@@ -642,7 +642,7 @@ describe('committeeJoinErrorMessage', () => {
     ['message', { message: ORG_REQUIRED }],
   ])('reads the organization-requirement text under %s', (_key, body) => {
     expect(committeeJoinErrorMessage(httpErrorWithBody(400, body), 'TSC')).toBe(
-      'This group requires a verified organization to join. Please contact an admin for access.'
+      'This group requires a verified company to join. Please contact an admin for access.'
     );
   });
 

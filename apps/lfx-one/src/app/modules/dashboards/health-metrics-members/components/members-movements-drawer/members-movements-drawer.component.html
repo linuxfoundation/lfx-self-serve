@@ -32,12 +32,12 @@
         variant="compact"
         icon="fa-light fa-triangle-exclamation"
         title="List unavailable"
-        subtitle="We could not load these organizations. Close the panel and try again."
+        subtitle="We could not load these companies. Close the panel and try again."
         data-testid="members-movements-drawer-error" />
     } @else if (loading() && rows().length === 0) {
       <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="members-movements-drawer-loading" aria-hidden="true" />
     } @else if (rows().length === 0) {
-      <p class="text-[13px] text-gray-500" data-testid="members-movements-drawer-empty">No organizations are listed for this movement.</p>
+      <p class="text-[13px] text-gray-500" data-testid="members-movements-drawer-empty">No companies are listed for this movement.</p>
     } @else {
       <ul class="flex flex-col" data-testid="members-movements-drawer-list">
         @for (row of rows(); track row.accountId) {
@@ -60,7 +60,7 @@
       </ul>
 
       @if (loadFailed()) {
-        <p class="text-[12px] text-red-600" data-testid="members-movements-drawer-more-error">The next organizations could not be loaded. Try again.</p>
+        <p class="text-[12px] text-red-600" data-testid="members-movements-drawer-more-error">The next companies could not be loaded. Try again.</p>
       }
       @if (hasMore()) {
         <lfx-button label="Show more" [text]="true" size="small" [loading]="loading()" (onClick)="onShowMore()" data-testid="members-movements-drawer-more" />

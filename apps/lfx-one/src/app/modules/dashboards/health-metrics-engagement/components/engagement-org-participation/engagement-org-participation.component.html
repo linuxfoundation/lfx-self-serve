@@ -6,12 +6,12 @@
     <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
       <div class="w-full sm:w-64">
         <!-- The placeholder and icon give the box no accessible name, so the label carries it. -->
-        <label class="sr-only" for="engagement-org-participation-search">Search organization</label>
+        <label class="sr-only" for="engagement-org-participation-search">Search company</label>
         <lfx-input-text
           [form]="searchForm"
           control="search"
           inputId="engagement-org-participation-search"
-          placeholder="Search organization..."
+          placeholder="Search company..."
           icon="fa-light fa-search"
           size="small"
           styleClass="!h-[30px] !rounded-full !border-gray-200 !text-[12px] w-full"
@@ -38,8 +38,8 @@
     <lfx-empty-state
       variant="compact"
       icon="fa-light fa-triangle-exclamation"
-      title="Organization participation unavailable"
-      subtitle="We could not load organization participation for this foundation. Refresh the page to try again."
+      title="Company participation unavailable"
+      subtitle="We could not load company participation for this foundation. Refresh the page to try again."
       data-testid="engagement-org-participation-error" />
   } @else if (empty()) {
     <!-- The shell shows the section's empty state. -->
@@ -47,8 +47,8 @@
     <lfx-empty-state
       variant="compact"
       icon="fa-light fa-building"
-      title="No organizations match this filter"
-      subtitle="No organization in this scope matches the current search and activity filter."
+      title="No companies match this filter"
+      subtitle="No company in this scope matches the current search and activity filter."
       data-testid="engagement-org-participation-empty" />
   } @else {
     <lfx-table
@@ -67,7 +67,7 @@
       data-testid="engagement-org-participation-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Company</span></th>
           <th scope="col"><span class="text-[12px] font-normal text-gray-500">Tier</span></th>
           <th scope="col"><span class="text-[12px] font-normal text-gray-500">Meetings attended</span></th>
           <th scope="col"><span class="text-[12px] font-normal text-gray-500">Avg reps</span></th>

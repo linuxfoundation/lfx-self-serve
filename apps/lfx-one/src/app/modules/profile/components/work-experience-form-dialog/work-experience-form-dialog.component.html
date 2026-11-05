@@ -4,15 +4,15 @@
 <div class="flex flex-col gap-4" data-testid="work-experience-form-dialog">
   <!-- Description -->
   @if (data.mode === 'add') {
-    <p class="text-sm text-slate-500">Add your work experience to ensure your contributions are attributed to the correct organization over time.</p>
+    <p class="text-sm text-slate-500">Add your work experience to ensure your contributions are attributed to the correct company over time.</p>
   } @else {
-    <p class="text-sm text-slate-500">Update your work experience to ensure your contributions are attributed to the correct organization over time.</p>
+    <p class="text-sm text-slate-500">Update your work experience to ensure your contributions are attributed to the correct company over time.</p>
   }
 
   <div class="flex flex-col gap-4 border-t border-slate-100 pt-4">
     <!-- Organization (search) -->
     <div class="flex flex-col gap-1">
-      <label class="text-xs font-bold text-slate-700">Organization *</label>
+      <label class="text-xs font-bold text-slate-700">Company *</label>
       <lfx-organization-search
         [form]="form"
         nameControl="organization"
@@ -27,9 +27,9 @@
           <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
           @if (!form.controls.domain.value) {
             <!-- A typed-but-unselected name has no domain, so /organizations/resolve can never succeed on retry. -->
-            Select an organization from the search results, or choose "I want to create" and provide a website.
+            Select a company from the search results, or choose "I want to create" and provide a website.
           } @else {
-            Couldn't resolve this organization. Please try again.
+            Couldn't resolve this company. Please try again.
           }
         </p>
       }

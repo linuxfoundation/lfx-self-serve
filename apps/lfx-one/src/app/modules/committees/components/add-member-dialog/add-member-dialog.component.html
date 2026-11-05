@@ -170,7 +170,7 @@
     @if (showOrganizationField()) {
       <div class="flex w-full flex-col gap-2">
         <label class="block text-sm font-medium text-gray-700">
-          Organization
+          Company
           @if (organizationRequiredForDirectAdd()) {
             <span class="text-red-600" aria-hidden="true">*</span>
           } @else {
@@ -180,16 +180,16 @@
         @if (isDirectAdd()) {
           <p class="text-xs text-gray-500">
             @if (organizationRequiredForDirectAdd()) {
-              This group requires an organization for each member. Add one person at a time — search for their organization below, or enter the name and
-              website. Selecting someone above may auto-populate this field from their profile.
+              This group requires a company for each member. Add one person at a time — search for their company below, or enter the name and website. Selecting
+              someone above may auto-populate this field from their profile.
             } @else {
-              Optionally set a default organization for the new member(s). If you select an existing user above, this auto-populates from their profile.
+              Optionally set a default company for the new member(s). If you select an existing user above, this auto-populates from their profile.
             }
           </p>
         } @else {
           <p class="text-xs text-gray-500">
-            Invitees must confirm their organization when accepting. Optionally set a suggested default here — it pre-fills the accept flow but is not required.
-            If you select an existing user above, this will auto-populate from their profile.
+            Invitees must confirm their company when accepting. Optionally set a suggested default here — it pre-fills the accept flow but is not required. If
+            you select an existing user above, this will auto-populate from their profile.
           </p>
         }
         <lfx-organization-search
@@ -197,7 +197,7 @@
           nameControl="organization"
           domainControl="organization_url"
           idControl="organization_id"
-          placeholder="Search for organization..."
+          placeholder="Search for company..."
           styleClass="w-full"
           inputStyleClass="text-sm w-full"
           panelStyleClass="text-sm w-full"
@@ -215,7 +215,7 @@
         @if (directAddRequiresSingleEmail()) {
           <p class="text-xs text-amber-600" role="alert" data-testid="add-member-single-email-required">
             <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
-            Remove extra email addresses — when organization is required, add one member at a time.
+            Remove extra email addresses — when company is required, add one member at a time.
           </p>
         }
       </div>
