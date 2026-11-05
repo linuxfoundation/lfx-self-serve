@@ -85,7 +85,7 @@ Each card shows its total number of attendances and a bar for each value with it
 
 Select **Projects** at the end of a row to open that project's page in the Organization lens.
 
-Select a row to expand it. The expanded row breaks the score down into the measures behind it, with the share of each, and highlights meeting attendance. **Board Members (all time)** and **Committee Members (all time)** count standing seats over all time, so they change little with the time range. A sentence under the breakdown gives the same share as a number of influence points, out of the points shown for the project in the period.
+Select a row to expand it. The expanded row breaks the influence shown down into the measures behind it, with the share of each, and highlights meeting attendance. **Board Members (all time)** and **Committee Members (all time)** count standing seats over all time, so they change little with the time range. A sentence under the breakdown gives the same share as a number of influence points, out of the points shown for the project in the period.
 
 Because a project appears only once it has a published Ecosystem Influence Score, this list can be shorter than the projects in **By project**. The page says so under the table.
 
