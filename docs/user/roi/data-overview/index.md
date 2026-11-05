@@ -3,8 +3,9 @@ title: ROI data overview
 description: The data behind the ROI model — contribution types, sources, how each is priced, the observation window, and the known limitations.
 audience: [all]
 product_area: Dashboards
+display_order: 4
 tags: [roi, data, contribution types, sources, observation window, limitations]
-last_updated: 2026-10-30
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 
@@ -34,7 +35,16 @@ Everything is indexed by:
 - **Time** (_t_): months for participation, calendar years for contribution levels
 - **Contribution type** (_k_)
 
-The universe is member organizations that have an LF account mapped to them and are affiliated with a project. Expenditure data is only available for these organizations.
+Which organization-project pairs exist is described in [Which pairs are modelled](#which-pairs-are-modelled).
+
+## Which pairs are modelled
+
+The universe is every member organization crossed with every project where it has any observed contribution: code or community activity (on LF projects and on non-LF projects such as those tracked by crowd.dev), or a membership, event, sponsorship, meeting, course, or Linux Foundation key-project record. It is not limited to projects the organization is a member of. Organizations are limited to those with an LF account mapped as a member, because spending data and the Org Lens account join depend on it.
+
+- **Non-LF projects** have no entry in the LF project directory. Their name comes from the activity record, and their start is the first month of observed activity. They are flagged as non-LF so an LF-only view can be restored.
+- **LF attribution wins.** A contribution present under both an LF project and a non-LF project is credited to the LF project. A name shared by an LF and a non-LF project is one real project, and the LF project is the one reported.
+- **Key-project fee split.** A Linux Foundation key project counts toward the membership fee split only when the organization has contribution evidence there, so the fee is not spread over projects that never reach the output.
+- **Entry to the first stage** needs at least three active months of code or community activity. A pair in the universe that never reaches that, such as a membership-only pair, has no markup and so no ROI. See [Contribution frequency](#contribution-frequency-stage-1-input).
 
 ## Contribution types and sources
 
@@ -64,7 +74,7 @@ Expenditure for a type in a year is **quantity × price**. For fixed-unit types 
 A monthly record with an active flag for each organization-project pair:
 
 - A month is **active** if the organization had any code or community activity on the project in that month. Code and community activity are pooled. Meetings, events, memberships, and courses do not count toward the flag.
-- A pair is included if it has at least one active month on or after the project's start date. The record starts at the later of the model's start date and the project start date and runs to the end of the observation window. Projects with no start date are dropped.
+- A pair is included if it has at least 3 active months on or after the project's start date. The record starts at the later of the model's start date and the project start date and runs to the end of the observation window. A project's start is its recorded start date or, for projects outside the LF project directory, its first month of observed activity.
 - Each month also carries the **previous month's** active flag.
 - The stage 1 participation model uses organization and project effects, the previous month's active flag (to control for past activity), and the pair's investment scale and observation window (so that team size and project age are not mistaken for perceived value). See [Stage 1: markups](../stage-1-markups/).
 
@@ -92,7 +102,7 @@ The target distribution of markups (see [Model settings and defaults](../model-s
 
 ## Known limitations
 
-- Hours per activity are domain-knowledge estimates, not measurements ([details](../activity-time-costs/)).
+- Hours per activity are domain-knowledge estimates, not measurements ([details](../contribution-labor/#hours-per-activity)).
 - Salaries and overhead multipliers are flat parameters, not organization-specific.
 - Event currency conversion uses a fixed exchange-rate table. Registrations in other currencies are dropped.
 - The cost of a Linux Foundation membership is distributed evenly across an organization's key projects.
@@ -101,7 +111,7 @@ The target distribution of markups (see [Model settings and defaults](../model-s
 
 ## Related reading
 
-- [Contribution labor](../contribution-labor/)
+- [Contribution labor and time costs](../contribution-labor/)
 - [Financial expenditures](../financial-expenditures/)
-- [Activity time costs](../activity-time-costs/)
 - [The model (technical)](../model/)
+- [ROI documentation](../)

@@ -85,7 +85,7 @@ On a keyboard, move to a foundation or project row and press Enter or Space to o
 
 ## Where are the return on investment (ROI) figures?
 
-Return on investment (ROI) figures are not on the Org Overview. They are on the separate **ROI Metrics** page, which only Linux Foundation staff can see. See [ROI metrics](../../dashboards/roi/) for what that page shows and how the figures are estimated.
+Return on investment (ROI) figures are not on the Org Overview. They are on the separate **ROI Metrics** page, which only Linux Foundation staff can see. See the [ROI documentation](../../roi/) for what that page shows and how the figures are estimated.
 
 ## What do the messages on the Org Overview mean?
 
@@ -110,4 +110,4 @@ If a link shows a message such as **You do not have access to this organization*
 - [Projects and project detail](../projects/) — the organization's projects, and each project's influence and leaderboards
 - [Manage Org Lens Access](../manage-org-lens-access/) — who can open the organization, and how an Admin adds or removes them
 - [Organization FAQ](../faq/) — short answers about the Organization lens
-- [ROI metrics](../../dashboards/roi/) — return on investment estimates, for Linux Foundation staff
+- [ROI documentation](../../roi/) — how return on investment is estimated and read, for Linux Foundation staff
