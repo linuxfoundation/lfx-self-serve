@@ -4,7 +4,7 @@ description: Frequently asked questions about LFX events.
 audience: [all]
 product_area: Events
 tags: [events, faq, attendance]
-last_updated: 2026-10-27
+last_updated: 2026-11-05
 intercom_collection: Events
 ---
 
@@ -14,19 +14,19 @@ intercom_collection: Events
 
 ## Why don't I see any events?
 
-Your current project context or lens may not have any scheduled events. Try switching to the **Me** lens to see events across all your affiliations. Events may also be added on a rolling basis as they are scheduled.
+Your own events are on the **Events** page in the **Me** lens. If you just registered, the event can take up to an hour to appear — hover **Can't see your registered event?** at the top of the page for a reminder. If you have no upcoming registrations, switch the **Upcoming** tab to **All Events** to see events from your affiliated projects, or select **Discover Events** to browse [events.linuxfoundation.org](https://events.linuxfoundation.org/).
 
 ## Can I register for events from LFX Self Serve?
 
-Event registration is handled externally (not within LFX Self Serve). Events shows events you are already registered for across all foundations. To register for a new event, visit the event's external registration page.
+You start from LFX Self Serve and finish on the event's own site. On the **Upcoming** tab, events from your affiliated projects that you aren't registered for show a **Register** button, which opens the event's registration page in a new tab. A new registration can take up to an hour to appear in your list. See [Register for an event](../browse-events/#register-for-an-event).
 
 ## Can I filter events by project or date?
 
-Filter using the **All Foundations**, **All Roles**, and **All Statuses** dropdowns. Tabs include **Upcoming**, **Past**, [**Visa Letters**](../visa-letters/), and [**Travel Funding**](../travel-funding/).
+Yes. Search by name with **Search events...**, filter by **Foundation**, **Role**, and **Status**, and sort by event name, foundation, date, or location. Tabs include **Upcoming**, **Past**, [**Visa Letters**](../visa-letters/), and [**Travel Funding**](../travel-funding/). The **Status** filter appears on the **Past** tab and the request tabs, and **Foundation** and **Role** aren't shown on the request tabs. See [Filter and search](../browse-events/#filter-and-search).
 
 ## Can I see events I attended in the past?
 
-Yes. Select the **Past** tab on the Events page to view events you have previously attended.
+Yes. Select the **Past** tab on the Events page. It lists past events you registered for, with **Attended** on the ones you attended — filter **Status** to **Attended** to see only those.
 
 ## How do I get notified about new events?
 
@@ -55,4 +55,12 @@ Open the **Past** tab on the Events page, find the event, and select **Download 
 
 ## Who do I contact about a specific event?
 
-Contact the event organizer listed on the event detail page, or reach out to LFX support.
+Select the event in your list to open its event page, or reach out to LFX support.
+
+## Can I see my foundation's events?
+
+Yes, if you have access to a foundation in the Foundation lens. Select **Events** in the Foundation lens sidebar to see the foundation's upcoming, open-for-registration, and past events. See [Foundation Events](../foundation-events/).
+
+## Can I see my company's events?
+
+Yes, in the Organization lens. Select **Events** in the Organization lens sidebar to see the events your company's people registered for, spoke at, or sponsored. See [Events and Event Attendees](../../organization/org-events/).
