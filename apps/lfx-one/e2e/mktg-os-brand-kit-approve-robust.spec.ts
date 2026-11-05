@@ -54,7 +54,7 @@ for (const width of [1440, 1024, 390]) {
 }
 
 for (const width of [1440, 390]) {
-  test(`the approve dialog opens read from its top, with focus inside it (${width}px)`, async ({ page }, info) => {
+  test(`the approve dialog opens read from its top, with focus inside it and its buttons pinned in view (${width}px)`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 1000 });
     await openAssetDocument(page, 'brand-kit', 200, true, false, brandKitDraftRevisionResponse(brandKitReportV2RulesFixture()));
     await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
@@ -73,6 +73,26 @@ for (const width of [1440, 390]) {
       .toBeGreaterThanOrEqual(-1);
     expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null)).toBe(true);
     await page.screenshot({ path: info.outputPath(`approve-dialog-opened-${width}.png`), fullPage: true });
+
+    // The buttons are in view at the same time, pinned to the bottom of the scroll area, and stay put when the body scrolls.
+    const content = dialog.getByTestId('mktg-document-view-approve-confirm').locator('xpath=ancestor::*[contains(@class, "p-dialog-content")][1]');
+    const anyway = dialog.getByTestId('mktg-document-view-approve-anyway');
+    await expect(anyway).toBeVisible();
+    const contentBox = await content.boundingBox();
+    const before = await anyway.boundingBox();
+    if (!contentBox || !before) throw new Error('The dialog content and its Approve button must be rendered');
+    expect(before.y + before.height, `viewport ${width}px: the button must sit inside the content's box`).toBeLessThanOrEqual(
+      contentBox.y + contentBox.height + 1
+    );
+    expect(before.y, `viewport ${width}px`).toBeGreaterThanOrEqual(contentBox.y - 1);
+    await content.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    const after = await anyway.boundingBox();
+    if (!after) throw new Error('The Approve button must stay rendered');
+    expect(Math.abs(after.y - before.y), `viewport ${width}px: the footer must be sticky`).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: info.outputPath(`approve-dialog-footer-${width}.png`), fullPage: true });
   });
 }
 
