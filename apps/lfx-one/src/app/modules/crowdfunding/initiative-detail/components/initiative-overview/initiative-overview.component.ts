@@ -23,7 +23,5 @@ export class InitiativeOverviewComponent {
 
   // Owner-authored HTML, sanitized here rather than left to the [innerHTML] binding alone.
   // Older plain-text descriptions keep their line breaks.
-  protected readonly descriptionHtml = computed(
-    () => this.sanitizer.sanitize(SecurityContext.HTML, plainTextToHtml(this.initiative().description)) ?? ''
-  );
+  protected readonly descriptionHtml = computed(() => this.sanitizer.sanitize(SecurityContext.HTML, plainTextToHtml(this.initiative().description)) ?? '');
 }
