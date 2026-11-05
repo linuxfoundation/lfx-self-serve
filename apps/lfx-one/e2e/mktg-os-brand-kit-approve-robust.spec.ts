@@ -93,7 +93,11 @@ test.describe('at a phone width', () => {
       const [title, number, badge] = await Promise.all([card.locator('h4').boundingBox(), card.locator('h4 + span').boundingBox(), pill.boundingBox()]);
       if (!title || !number || !badge) throw new Error(`The ${id} card must render its title, number and pill`);
       const diagnostic = `${id}: title ${JSON.stringify(title)}, number ${JSON.stringify(number)}, pill ${JSON.stringify(badge)}`;
-      expect(Math.abs(title.y - number.y), diagnostic).toBeLessThanOrEqual(1);
+      // One header line: the title is a single line of text-base and the (smaller, baseline-aligned) number sits inside its line box.
+      expect(title.height, diagnostic).toBeLessThanOrEqual(30);
+      expect(number.y, diagnostic).toBeGreaterThanOrEqual(title.y - 1);
+      expect(number.y + number.height, diagnostic).toBeLessThanOrEqual(title.y + title.height + 1);
+      // The pill is on its own row under the header.
       expect(badge.y, diagnostic).toBeGreaterThanOrEqual(title.y + title.height - 1);
       const widths = await card.evaluate((element) => [element.scrollWidth, element.clientWidth]);
       expect(widths[0], `${id}: scrollWidth ${widths[0]} vs clientWidth ${widths[1]}`).toBe(widths[1]);
