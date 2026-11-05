@@ -72,6 +72,8 @@ const LF_PRODUCTS: Partial<Project> = {
   parent_uid: 'root-uid',
   stage: 'Active',
   legal_entity_type: 'Internal Allocation',
+  // Membership-funded on paper, so only the Internal Allocation rule sends it to The Linux Foundation's roster.
+  funding_model: ['Membership'],
 };
 
 const NEWSLETTER_GROUP = { uid: 'c-news', name: 'Acme Weekly', category: 'Newsletter', project_uid: 'f-1' };
@@ -100,6 +102,7 @@ describe('NewsletterInviteService', () => {
   const deps = {
     memberBenefitService: {
       resolveEligibility: vi.fn(),
+      resolveEligibilityByRoster: vi.fn(),
       findMemberCompanyForEmail: vi.fn(),
       isEmailInGroup: vi.fn(),
       isGroupMember: vi.fn(),
@@ -125,6 +128,11 @@ describe('NewsletterInviteService', () => {
     resolveVerifiedUserEmails.mockResolvedValue([MATCH.email]);
     getEffectiveName.mockReturnValue('Jane Doe');
     deps.memberBenefitService.resolveEligibility.mockResolvedValue({ verified_emails: [MATCH.email], match: MATCH });
+    // The batched grid check behaves like resolveEligibility per roster, with a failed roster as null.
+    deps.memberBenefitService.resolveEligibilityByRoster.mockImplementation(async (r: Request, token: string, emails: string[], slugs: string[]) => {
+      const settled = await Promise.allSettled(slugs.map((slug) => deps.memberBenefitService.resolveEligibility(r, token, emails, slug)));
+      return new Map(slugs.map((slug, i) => [slug, settled[i].status === 'fulfilled' ? settled[i].value : null]));
+    });
     deps.committeeService.getMyCommitteeUids.mockResolvedValue(new Set(['c-news', 'c-board']));
     deps.newsletterService.getMyNewsletters.mockResolvedValue({ newsletters: [], complete: true });
     deps.projectService.getProjectsByIds.mockImplementation(async (_req: Request, uids: Set<string>) => {

@@ -229,6 +229,25 @@ export class NewsletterMemberBenefitService {
     verifiedEmails: string[],
     membershipSlug: string = MEMBER_BENEFIT_FOUNDATION_SLUG
   ): Promise<NewsletterMemberBenefitEligibility> {
+    const result = (await this.resolveEligibilityByRoster(req, m2mToken, verifiedEmails, [membershipSlug], { failSoft: false })).get(membershipSlug);
+    // Unreachable: without failSoft a roster failure throws instead of mapping to null.
+    if (!result) throw new Error(`Eligibility for ${membershipSlug} was not resolved`);
+    return result;
+  }
+
+  /**
+   * {@link resolveEligibility} for several membership rosters at once (the My Newsletters grid),
+   * sharing one b2b_org domain lookup. With `failSoft`, a roster whose index cannot be loaded maps
+   * to null (logged) instead of failing the others.
+   */
+  public async resolveEligibilityByRoster(
+    req: Request,
+    m2mToken: string,
+    verifiedEmails: string[],
+    membershipSlugs: string[],
+    options: { failSoft: boolean } = { failSoft: true }
+  ): Promise<Map<string, NewsletterMemberBenefitEligibility | null>> {
+    const results = new Map<string, NewsletterMemberBenefitEligibility | null>();
     const companyEmails: { email: string; candidates: string[] }[] = [];
     for (const email of verifiedEmails) {
       const domain = emailDomain(email);
@@ -238,28 +257,28 @@ export class NewsletterMemberBenefitService {
     }
 
     if (companyEmails.length === 0) {
-      return { verified_emails: verifiedEmails, match: null, denied_reason: 'no_company_email' };
+      for (const slug of membershipSlugs) results.set(slug, { verified_emails: verifiedEmails, match: null, denied_reason: 'no_company_email' });
+      return results;
     }
 
     const allCandidates = [...new Set(companyEmails.flatMap((entry) => entry.candidates))].slice(0, MEMBER_BENEFIT_MAX_CANDIDATE_DOMAINS);
-    const [index, b2bMatches] = await Promise.all([this.getDomainIndex(req, m2mToken, membershipSlug), this.findB2bOrgMatches(req, m2mToken, allCandidates)]);
+    const indexLoads = Promise.allSettled(membershipSlugs.map((slug) => this.getDomainIndex(req, m2mToken, slug)));
+    const [indexes, b2bMatches] = await Promise.all([indexLoads, this.findB2bOrgMatches(req, m2mToken, allCandidates)]);
 
-    for (const { email, candidates } of companyEmails) {
-      for (const candidate of candidates) {
-        const company = this.pickCompany(candidate, index, b2bMatches);
-        if (company) {
-          const match: NewsletterMemberBenefitMatch = { email, b2b_org_uid: company.b2b_org_uid, company_name: company.company_name };
-          logger.debug(req, 'newsletter_member_benefit_eligibility', 'Verified email matched an active member company', {
-            b2b_org_uid: company.b2b_org_uid,
-            matched_domain: candidate,
-            membership_slug: membershipSlug,
-          });
-          return { verified_emails: verifiedEmails, match };
-        }
+    membershipSlugs.forEach((membershipSlug, i) => {
+      const loaded = indexes[i];
+      if (loaded.status === 'rejected') {
+        if (!options.failSoft) throw loaded.reason;
+        logger.warning(req, 'newsletter_member_benefit_eligibility', 'Membership roster could not be checked', {
+          membership_slug: membershipSlug,
+          err: loaded.reason,
+        });
+        results.set(membershipSlug, null);
+        return;
       }
-    }
-
-    return { verified_emails: verifiedEmails, match: null, denied_reason: 'not_member_company' };
+      results.set(membershipSlug, this.matchEligibility(req, verifiedEmails, companyEmails, loaded.value, b2bMatches, membershipSlug));
+    });
+    return results;
   }
 
   /**
@@ -394,6 +413,32 @@ export class NewsletterMemberBenefitService {
     if (!resourceId) return '';
     const colon = resourceId.indexOf(':');
     return colon === -1 ? resourceId : resourceId.substring(colon + 1);
+  }
+
+  /** The first verified company email that matches the roster's index (primary first, most specific domain first). */
+  private matchEligibility(
+    req: Request,
+    verifiedEmails: string[],
+    companyEmails: { email: string; candidates: string[] }[],
+    index: MemberBenefitDomainIndex,
+    b2bMatches: Map<string, string[]>,
+    membershipSlug: string
+  ): NewsletterMemberBenefitEligibility {
+    for (const { email, candidates } of companyEmails) {
+      for (const candidate of candidates) {
+        const company = this.pickCompany(candidate, index, b2bMatches);
+        if (company) {
+          const match: NewsletterMemberBenefitMatch = { email, b2b_org_uid: company.b2b_org_uid, company_name: company.company_name };
+          logger.debug(req, 'newsletter_member_benefit_eligibility', 'Verified email matched an active member company', {
+            b2b_org_uid: company.b2b_org_uid,
+            matched_domain: candidate,
+            membership_slug: membershipSlug,
+          });
+          return { verified_emails: verifiedEmails, match };
+        }
+      }
+    }
+    return { verified_emails: verifiedEmails, match: null, denied_reason: 'not_member_company' };
   }
 
   /** Exact-domain company for a candidate: the membership index first, then b2b_org hits that hold an active membership in that index. */

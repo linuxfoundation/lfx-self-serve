@@ -387,18 +387,11 @@ export class NewsletterInviteService {
       return { inviter: unavailable, eligibilityBySlug };
     }
 
-    const results = await Promise.allSettled(slugs.map((slug) => this.memberBenefitService.resolveEligibility(req, m2mToken, verifiedEmails, slug)));
-    results.forEach((result, i) => {
-      if (result.status === 'fulfilled') {
-        eligibilityBySlug.set(slugs[i], result.value);
-        return;
-      }
-      logger.warning(req, 'get_my_newsletter_foundations', 'Inviter eligibility check failed for one membership roster — its invites hidden', {
-        membership_slug: slugs[i],
-        err: result.reason,
-      });
-      eligibilityBySlug.set(slugs[i], null);
-    });
+    // One call for every roster: the b2b_org domain lookup is shared, and a roster that cannot be
+    // checked maps to null so only its cards read `unavailable`.
+    for (const [slug, eligibility] of await this.memberBenefitService.resolveEligibilityByRoster(req, m2mToken, verifiedEmails, slugs)) {
+      eligibilityBySlug.set(slug, eligibility);
+    }
 
     const groupSlugs = new Set([...groups.values()].map((entry) => entry.membership.slug));
     const match = [...eligibilityBySlug.entries()].find(([slug, eligibility]) => groupSlugs.has(slug) && eligibility?.match)?.[1]?.match;
