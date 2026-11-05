@@ -64,6 +64,16 @@ export interface UiAvatarItem {
   tone?: UiAvatarTone;
 }
 
+/** A status pinned to the top right of a uikit avatar, such as an RSVP answer or attendance. */
+export interface UiAvatarStatus {
+  /** Font Awesome class string for the glyph, such as `fa-solid fa-check`. */
+  icon: string;
+  /** Colour role of the circle. The glyph is white, or neutral-900 on `warning` for contrast. */
+  tone: UiTone;
+  /** What the status means, such as `RSVP: Yes`. It is the tooltip and is added to the avatar's accessible name. */
+  label: string;
+}
+
 /** Options for `UiModalService.open`. Every field is optional. */
 export interface UiModalConfig<D = unknown> {
   /** Passed to the modal content, which reads it with the CDK `DIALOG_DATA` token. */
@@ -94,6 +104,8 @@ export interface UiDrawerConfig<D = unknown> extends Omit<UiModalConfig<D>, 'rol
   size?: UiDrawerSize;
   /** Custom width in px for the `default` size, in place of 560. It never exceeds the window less its 8px insets. */
   width?: number;
+  /** Same as the layout's `bare` input: no header or footer, and the content fills an unpadded scrolling body. Don't project the header or footer slots. Defaults to `false`. */
+  bare?: boolean;
   /**
    * Asked before the user dismisses the drawer with Escape, a backdrop click or the close button; return `false` to keep it open,
    * for example while a form has unsaved changes. It may return a promise, such as the answer of a confirm modal. A promise that
