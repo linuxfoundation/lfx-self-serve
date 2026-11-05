@@ -64,6 +64,16 @@ export interface UiAvatarItem {
   tone?: UiAvatarTone;
 }
 
+/** A status pinned to the top right of a uikit avatar, such as an RSVP answer or attendance. */
+export interface UiAvatarStatus {
+  /** Font Awesome class string for the white glyph, such as `fa-solid fa-check`. */
+  icon: string;
+  /** Colour role of the circle: `neutral` is neutral-400, any other role its 500 step. */
+  tone: UiTone;
+  /** What the status means, such as `RSVP: Yes`. It is the tooltip and is added to the avatar's accessible name. */
+  label: string;
+}
+
 /** Options for `UiModalService.open`. Every field is optional. */
 export interface UiModalConfig<D = unknown> {
   /** Passed to the modal content, which reads it with the CDK `DIALOG_DATA` token. */
