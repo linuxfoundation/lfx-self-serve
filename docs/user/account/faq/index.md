@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github]
-last_updated: 2026-11-02
+last_updated: 2026-11-05
 intercom_collection: Account
 ---
 
@@ -38,7 +38,11 @@ Go to [**Profile & Account**](/profile) and use the **Work history & Affiliation
 
 ## What are affiliations, and how are my contributions attributed?
 
-Affiliations are the Linux Foundation projects and organizations you are associated with. They are calculated automatically from your **verified identities**, your **work experience**, and the overlap between your contribution timestamps and your employment dates — you don't add projects manually. View and adjust them on the **Work history & Affiliations** tab (`/profile/attributions`); you can confirm your affiliation history and your maintainer/contributor role, and override anything the system gets wrong. See [Work history & Affiliations](../work-history/).
+Affiliations are the Linux Foundation projects and organizations you are associated with. They are calculated automatically from your **verified identities**, your **work experience**, and the overlap between your contribution timestamps and your employment dates — you don't add projects manually. View and adjust them on the **Work history & Affiliations** tab (`/profile/attributions`); you can confirm your affiliation history and override anything the system gets wrong. See [Work history & Affiliations](../work-history/).
+
+## I'm listed as a contributor on a project. How do I get maintainer access?
+
+The **Maintainer** and **Contributor** labels on your projects describe your involvement only; neither grants access. Access to a project (**View**, **Manage**, or **Meeting Coordinator**) is granted by a project manager on the project's **Permissions** page. Contact a project manager for the project and ask them to add you with the role you need. If you don't know who that is, contact support. See [Permissions](../../permissions/).
 
 ## Why don't my GitHub contributions show up?
 
