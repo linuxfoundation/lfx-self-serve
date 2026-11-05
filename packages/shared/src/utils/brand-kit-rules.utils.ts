@@ -129,17 +129,19 @@ export function brandKitColorConflictViews(report: MktgAssetReport | null | unde
 
 /**
  * Whether the report has something open that approving accepts: what the
- * approve dialog lists first. For a report with the v2 findings, a source
- * that could not be read or an asset not found (the findings, which the
- * legacy fields need not mirror) or an open gap; for any other report, a
- * failed source or an open gap. The dialog's header and the decision to
- * show it both read this, so they count what the list shows.
+ * approve dialog lists first. An open gap; for a report with the v2
+ * findings, a source that could not be read or an asset not found (the
+ * findings, which the legacy fields need not mirror); otherwise a legacy
+ * failed source: a v2 report whose two groups are empty falls back to the
+ * legacy fields, as the dialog's list does. The dialog's header and the
+ * decision to show it both read this, so they count what the list shows.
  */
 export function mktgReportHasOpenGaps(report: MktgAssetReport | null | undefined): boolean {
   if (!report) return false;
   if (report.gaps.length > 0) return true;
   const findings = isBrandKitReport(report) ? report.findings : undefined;
-  return findings ? findings.sources_failed.length > 0 || findings.missing_assets.length > 0 : report.sources_failed.length > 0;
+  if (findings && (findings.sources_failed.length > 0 || findings.missing_assets.length > 0)) return true;
+  return report.sources_failed.length > 0;
 }
 
 /**

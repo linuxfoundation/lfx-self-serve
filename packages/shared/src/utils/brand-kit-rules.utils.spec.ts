@@ -182,6 +182,8 @@ describe('mktgReportHasOpenGaps', () => {
     ],
     ['empty findings and a gap', { ...V1_REPORT, findings: EMPTY_FINDINGS, gaps: ['Missing evidence'] }, true],
     ['empty findings, no gap, a conflict', { ...V1_REPORT, findings: EMPTY_FINDINGS, color_conflicts: brandKitReportV2RulesFixture().color_conflicts }, false],
+    // Both v2 groups empty: the legacy failed source the dialog's list falls back to counts.
+    ['empty findings, no gap, a legacy failed source', { ...V1_REPORT, findings: EMPTY_FINDINGS, sources_failed: [{ name: 'Docs', reason: '404' }] }, true],
   ];
   it.each(cases)('with %s: %s', (_case, report, expected) => {
     expect(mktgReportHasOpenGaps(report)).toBe(expected);
@@ -198,6 +200,11 @@ describe('mktgReportNeedsApprovalReview', () => {
     ['an LF-reference rule only', { ...V1_REPORT, color_conflicts: [], rules: [{ path: 'chapters.voice', basis: 'lf-reference' }] }, true],
     ['project rules only', { ...V1_REPORT, color_conflicts: [], rules: [{ path: 'chapters.voice', basis: 'project' }] }, false],
     ['findings only, legacy fields empty', { ...V1_REPORT, findings: brandKitReportV2RulesFixture().findings }, true],
+    [
+      'empty findings, a legacy failed source only',
+      { ...V1_REPORT, findings: { sources_failed: [], missing_assets: [], warnings: [] }, sources_failed: [{ name: 'Docs', reason: '404' }] },
+      true,
+    ],
   ];
   it.each(cases)('with %s: %s', (_case, report, expected) => {
     expect(mktgReportNeedsApprovalReview(report)).toBe(expected);
