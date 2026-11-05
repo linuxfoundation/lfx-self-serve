@@ -23,7 +23,7 @@ The page heading is **People —** followed by the organization's name. The line
 | **Committee**       | Employees who sit on foundation committees                                                                          |
 | **Key Contacts**    | Employees named as contacts on the organization's foundation memberships                                            |
 | **Contributors**    | Employees who contributed code, and whether they are maintainers                                                    |
-| **Event Attendees** | Employees who attended or spoke at events                                                                           |
+| **Event Attendees** | Employees who registered for, attended or spoke at events                                                           |
 | **Trainees**        | Employees who enrolled in courses or earned certifications                                                          |
 | **Org Lens Access** | Who can open the organization, covered in [Manage Org Lens Access](../manage-org-lens-access/)                      |
 
@@ -124,14 +124,17 @@ A saved change shows **Board roles reassigned**, **Committee roles reassigned** 
 
 ## What do the Event Attendees and Trainees tabs show?
 
-The **Event Attendees** tab shows the employees who attended or spoke at events in the time range, and the **Trainees** tab shows the employees who enrolled in courses or earned certifications in it. Select a row on either tab to expand it and see each event, course or certification.
+The **Event Attendees** tab shows the employees who registered for, attended or spoke at events in the time range. Its cards count **Speakers**, **Attendees**, **Events** and **Foundations**, and its columns are **Name**, **Role** (**Speaker** or **Attendee**), **Events**, **Last Attended** and **Most Recent Event**. By default it counts everyone who registered or attended. The **Count** filter narrows that to registrations or attendance only, and **Counted by**, under **More filters**, decides whom an event is credited to. Some people are counted in the cards but not listed. The filters and what each option counts are in [Events and Event Attendees](../org-events/).
 
-| Tab                 | Cards                                                                       | Columns                                                                                                | Filters                                 |
-| ------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| **Event Attendees** | **Speakers**, **Attendees**, **Events**, **Foundations**                    | **Name**, **Role** (**Speaker** or **Attendee**), **Events**, **Last Attended**, **Most Recent Event** | Foundation, **All Events**, time range  |
-| **Trainees**        | **Trainees**, **Courses Enrolled**, **Certifications**, **Completion Rate** | **Name**, **Status** (**Certified** or **Enrolled**), **Courses**, **Certs**, **Most Recent Course**   | Foundation, **All Courses**, time range |
+The **Trainees** tab shows the employees who enrolled in a course or earned a certificate in the time range.
 
-Both tabs show 30 people at first. Select **Show All** at the bottom to see the rest.
+- **Filters:** a search box and the time range, and under **More filters**, **Foundation**, **Project**, **Course**, **Level** and **Format**. **Clear all** resets them. The filters change both the cards and the table. The search changes the table only.
+- **Cards:** **Training-program roster members**, **People with training activity**, **Courses taken**, **Certifications**, **Certified people**, **Trainings completed**, **Completion rate**, **Courses in progress** and **People in training**. Point at a card to see what it counts. **Training-program roster members** is today's count of the people on the organization's LF Education training program, and does not follow the time range or the filters.
+- **Columns:** **Name**, **Status** (**Certified** or **Enrolled**), **Courses**, **Certs**, **Trainings**, **In progress** and **Most Recent Course**.
+- **Former employees:** they can count in the cards, but the table lists current employees only. When they do, a note under the cards says how many.
+- **Learners not on the people list:** learners linked to the organization who are not on its people list are listed under the table by name and status. They are hidden while a foundation, project, course, level or format is selected.
+
+Select a row on either tab to expand it and see each event, course or certification. Both tabs show 30 people at first. Select **Show All** at the bottom to see the rest.
 
 ## How do I filter a People tab?
 
@@ -193,5 +196,6 @@ A tab that finds nobody says so in its table, and a tab that fails to load names
 - [Choose and switch an organization](../choose-an-organization/) — pick the organization these people belong to
 - [Org Overview dashboard](../org-overview/) — the **Dashboard**, with the organization's involvement at a glance
 - [Memberships](../memberships/) — the foundation memberships behind the board, committee and key contact seats, and the steps for editing a single key contact
+- [Events and Event Attendees](../org-events/) — the **Event Attendees** filters, defaults and what each option counts
 - [Manage Org Lens Access](../manage-org-lens-access/) — the **Org Lens Access** tab
 - [Organization FAQ](../faq/) — short answers about the Organization lens
