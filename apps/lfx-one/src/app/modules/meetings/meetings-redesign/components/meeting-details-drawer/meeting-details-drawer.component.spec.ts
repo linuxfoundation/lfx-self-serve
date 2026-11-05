@@ -75,6 +75,7 @@ describe('MeetingDetailsDrawerComponent', () => {
   let requestClose: ReturnType<typeof vi.fn<() => void>>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
   let refreshUserPastMeetings: ReturnType<typeof vi.fn>;
+  let clearRemovedRegistration: ReturnType<typeof vi.fn>;
   let closeDialog: ReturnType<typeof vi.fn>;
   let dialogClosed: Subject<void>;
 
@@ -114,6 +115,7 @@ describe('MeetingDetailsDrawerComponent', () => {
     requestClose = vi.fn<() => void>();
     refreshUserMeetings = vi.fn();
     refreshUserPastMeetings = vi.fn();
+    clearRemovedRegistration = vi.fn();
     closeDialog = vi.fn();
     dialogClosed = new Subject<void>();
     const drawerContext = new UiDrawerContext('right', 1080);
@@ -130,6 +132,7 @@ describe('MeetingDetailsDrawerComponent', () => {
           provide: MeetingService,
           useValue: {
             getMeetingDetail,
+            clearRemovedRegistration,
             removedRegistrationMeetingIds: signal(new Set<string>()),
             getMeetingRegistrants: () => of([]),
             getPastMeetingParticipants: () => of([]),
@@ -521,6 +524,16 @@ describe('MeetingDetailsDrawerComponent', () => {
       now.set(new Date('2026-11-06T00:00:00Z'));
       context().refreshList();
       expect(refreshUserPastMeetings).toHaveBeenCalledTimes(1);
+    });
+
+    it('counts a registration made in the drawer as an invitation and refreshes the list', async () => {
+      await render(row({ ...MEETING, invited: false } as Meeting));
+      expect(context().invited()).toBe(false);
+
+      context().markRegistered();
+      expect(clearRemovedRegistration).toHaveBeenCalledWith(MEETING.id);
+      expect(context().invited()).toBe(true);
+      expect(refreshUserMeetings).toHaveBeenCalledTimes(1);
     });
   });
 });
