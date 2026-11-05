@@ -50,6 +50,8 @@ interface DecisionRequests {
 interface WriteStubs {
   /** Status code answered for `PATCH …/status` and `POST …/withdraw`; 204 when unset. */
   applicationWrite?: number;
+  /** The `error` text of a failed write's body, as the BFF relays upstream's; `stubbed` when unset. */
+  applicationWriteError?: string;
 }
 
 const fulfillJson = (route: Route, status: number, body: unknown) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -57,7 +59,7 @@ const fulfillJson = (route: Route, status: number, body: unknown) => route.fulfi
 async function stubWrites(page: Page, decisions: DecisionRequests, stubs: WriteStubs = {}): Promise<void> {
   const answer = (route: Route) => {
     const status = stubs.applicationWrite ?? 204;
-    return status === 204 ? route.fulfill({ status }) : fulfillJson(route, status, { error: 'stubbed' });
+    return status === 204 ? route.fulfill({ status }) : fulfillJson(route, status, { error: stubs.applicationWriteError ?? 'stubbed' });
   };
 
   await page.route('**/api/mentorship/admin/applications/*/status', (route) => {
@@ -194,14 +196,17 @@ test.describe('Admin Current Mentees — application decisions', () => {
     await expect.poll(() => requests.mentees.length).toBeGreaterThan(readsBefore);
   });
 
-  test('shows the term-closed message when an accept is refused because the term closed (422)', async ({ page }) => {
-    await open(page, requests, decisions, { applicationWrite: 422 });
+  test('names the reason upstream gave when an accept is refused (422)', async ({ page }) => {
+    await open(page, requests, decisions, {
+      applicationWrite: 422,
+      applicationWriteError: 'eligibility criteria not met: the mentee already holds an accepted mentorship',
+    });
 
     await pickAction(page, PENDING_ID, 'Accept');
     await page.locator('[data-test="mentorship-admin-accept-attendance"]').click();
     await page.getByRole('option').first().click();
     await page.getByTestId('mentorship-admin-accept-confirm').getByRole('button').click();
 
-    await expect(page.getByText("This term is closed, so the application can't be accepted.")).toBeVisible();
+    await expect(page.getByText("This application can't be accepted: the mentee is already accepted in another mentorship that hasn't ended.")).toBeVisible();
   });
 });

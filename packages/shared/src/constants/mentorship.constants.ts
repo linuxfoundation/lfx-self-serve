@@ -12,6 +12,8 @@ import type {
   MentorshipUpstreamProgramStatus,
 } from '../interfaces/mentorship.interface';
 import type {
+  MentorshipAdminDecisionOutcome,
+  MentorshipAdminDecisionRefusal,
   MentorshipAdminMenteeStatusFilter,
   MentorshipAdminMenteeTab,
   MentorshipAdminMentorAction,
@@ -20,6 +22,7 @@ import type {
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipTermRowStatus,
+  MentorshipUpstreamReasonMessage,
 } from '../interfaces/mentorship-admin.interface';
 
 /**
@@ -127,8 +130,9 @@ export const MENTORSHIP_ATTENDANCE_TYPE_LABELS: Record<(typeof MENTORSHIP_ATTEND
 
 /** Shown when a decision hits a 409: the application moved on, so the list reloads. */
 export const MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE = 'This application changed. The list has been refreshed.';
-/** Shown when an accept hits a 422: the application's term is no longer open. */
-export const MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE = "This term is closed, so the application can't be accepted.";
+/** Shown when an accept hits a 422 whose reason `MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS` does not know. */
+export const MENTORSHIP_ADMIN_ACCEPT_REFUSED_MESSAGE =
+  "This application can't be accepted: the program is hidden, the term is closed, or the mentee is already accepted in another mentorship.";
 /** Graduate confirmation warning; `{count}` is the number of tasks not yet Submitted or Completed. */
 export const MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE = "{count} tasks aren't Submitted or Completed.";
 export const MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE = "{count} task isn't Submitted or Completed.";
@@ -142,14 +146,14 @@ export const MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE = "Withdraw this applicat
 export const MENTORSHIP_ADMIN_GRADUATE_CONFIRM_MESSAGE = 'Graduate this mentee?';
 export const MENTORSHIP_ADMIN_UNDO_GRADUATION_CONFIRM_MESSAGE =
   'Undo this graduation? The mentee goes back to Accepted and no email is sent. Their graduation email has already gone out.';
-/** Shown when Undo graduation hits a 422: the mentee holds another accepted mentorship, or the term is no longer open. */
+/** Shown when Undo graduation hits a 422 whose reason `MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS` does not know. */
 export const MENTORSHIP_ADMIN_UNDO_GRADUATION_REFUSED_MESSAGE =
-  "This graduation can't be undone: the mentee is accepted in another mentorship, or this term is no longer open.";
+  "This graduation can't be undone: the program is hidden, the term is closed, or the mentee is already accepted in another mentorship.";
 export const MENTORSHIP_ADMIN_REOPEN_CONFIRM_MESSAGE = 'Re-open this application? It goes back to review, and no email is sent.';
 /** Shown when Re-open hits a 409: the application changed, or the mentee has since applied to the term again. */
 export const MENTORSHIP_ADMIN_REOPEN_CONFLICT_MESSAGE =
   "This application can't be re-opened: it changed, or the mentee has applied to this term again. The list has been refreshed.";
-/** Shown when Re-open hits a 422: the program is hidden, the term is closed, or the mentee is at the pending-application limit. */
+/** Shown when Re-open hits a 422 whose reason `MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS` does not know. */
 export const MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE =
   "This application can't be re-opened: the program is hidden, the term is closed, or the mentee already has three applications under review.";
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_HEADER = 'Decline by Term';
@@ -171,6 +175,32 @@ export const MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES = {
 } as const;
 export const MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE = "The change couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is still being saved. Try again in a moment.';
+
+/**
+ * Why the mentorship service refused a decision with a 422, matched against its error text (`lfx-mentorship`
+ * `ApplicationRepository.Update`: the term-open and `checkMenteeAvailable` checks on an accept, the term-open and
+ * pending-limit checks on a re-open, and `checkApplicationProgramNotHidden` on any move to pending, accepted or
+ * graduated). One 422 status covers all of them, so the toast names the one upstream gave. The first entry whose
+ * `match` the text contains wins.
+ */
+export const MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS: readonly MentorshipUpstreamReasonMessage[] = [
+  { match: 'already holds an accepted mentorship', message: "the mentee is already accepted in another mentorship that hasn't ended." },
+  { match: 'not open for this term', message: 'the term is closed.' },
+  { match: 'program is hidden', message: 'the program is hidden. Unhide it, then try again.' },
+  { match: 'applications under review', message: 'the mentee already has three applications under review.' },
+];
+
+/**
+ * The decisions upstream can refuse with a 422, and how their toast reads. Decline and Withdraw are absent: upstream
+ * has no 422 for them, so any 422 there gets `MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE`. Graduate's only known 422 is
+ * a hidden program, so an unknown one keeps the generic copy.
+ */
+export const MENTORSHIP_ADMIN_DECISION_REFUSALS: Readonly<Partial<Record<MentorshipAdminDecisionOutcome, MentorshipAdminDecisionRefusal>>> = {
+  accepted: { lead: "This application can't be accepted:", fallback: MENTORSHIP_ADMIN_ACCEPT_REFUSED_MESSAGE },
+  graduated: { lead: "This mentee can't be graduated:", fallback: MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE },
+  ungraduated: { lead: "This graduation can't be undone:", fallback: MENTORSHIP_ADMIN_UNDO_GRADUATION_REFUSED_MESSAGE },
+  reopened: { lead: "This application can't be re-opened:", fallback: MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE },
+};
 
 /**
  * Download by Status on Current and Past Mentees: one CSV of the tab's applications (open terms for Current, closed
@@ -429,6 +459,17 @@ export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT = 'Search by name, LF 
 /** Shown when a full-email search finds no one: that address has no LF account. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE =
   'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.';
+
+/**
+ * Invite 422 reasons, matched against the mentorship service's error text (`ProgramMemberService.userByLFID`), other
+ * than the LF account being missing: a 422 no entry matches keeps `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE`.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS: readonly MentorshipUpstreamReasonMessage[] = [
+  {
+    match: 'belongs to another mentorship user',
+    message: "This person's LF email address is already used by another Mentorship account, so they can't be invited.",
+  },
+];
 
 /**
  * Shown when any other search finds no one. It can be a name or an LF username, so it does not say the account is

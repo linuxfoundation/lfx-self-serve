@@ -117,6 +117,7 @@ import type {
   MentorshipProgramMentor,
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
+  MentorshipUpstreamReasonMessage,
 } from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
@@ -952,6 +953,16 @@ export function mentorshipMenteeApplyBlockedState(
   const message = upstreamMessage?.toLowerCase() ?? '';
   const match = message ? MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES.find((entry) => message.includes(entry.match)) : undefined;
   return match?.state ?? MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES[reason];
+}
+
+/**
+ * The copy of the first entry whose `match` the mentorship service's error text contains, ignoring case, or
+ * `undefined` when there is no text or no entry matches.
+ */
+export function mentorshipUpstreamReasonMessage(entries: readonly MentorshipUpstreamReasonMessage[], upstreamMessage?: string | null): string | undefined {
+  const message = upstreamMessage?.toLowerCase() ?? '';
+  if (!message) return undefined;
+  return entries.find((entry) => message.includes(entry.match))?.message;
 }
 
 /**

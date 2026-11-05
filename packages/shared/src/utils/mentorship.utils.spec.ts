@@ -161,7 +161,23 @@ import {
   toMentorshipUtcInstant,
   buildMentorshipGraduateTaskWarning,
   mentorshipMenteeApplyBlockedState,
+  mentorshipUpstreamReasonMessage,
 } from './mentorship.utils';
+
+describe('mentorshipUpstreamReasonMessage', () => {
+  const entries = [
+    { match: 'not open for this term', message: 'the term is closed.' },
+    { match: 'program is hidden', message: 'the program is hidden.' },
+  ];
+
+  it('picks the copy of the first entry the upstream text contains, ignoring case', () => {
+    expect(mentorshipUpstreamReasonMessage(entries, 'Eligibility criteria not met: The program is hidden')).toBe('the program is hidden.');
+  });
+
+  it.each([undefined, null, '', 'eligibility criteria not met: some new rule'])('answers undefined for %j', (message) => {
+    expect(mentorshipUpstreamReasonMessage(entries, message)).toBeUndefined();
+  });
+});
 
 describe('mentorshipMenteeApplyBlockedState', () => {
   it('picks the state for the rule named in the upstream message, ignoring case', () => {
