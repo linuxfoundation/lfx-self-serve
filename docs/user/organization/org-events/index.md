@@ -4,7 +4,7 @@ description: How the Organization lens Events page and People → Event Attendee
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, events, event-attendees, registered, attended, counted-by, company-email, filters, all-employees]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Organization
 ---
 
@@ -47,6 +47,8 @@ Open **Events** in the Organization lens sidebar. The three tiles at the top, **
 | **Count**                           | **All** (default, registered or attended), **Registered** or **Attended**. It is disabled on the Upcoming tab, where registrations are always counted.                                                    |
 | **Show**                            | **My org's activity** (default): events where the organization has registrants, a submitted speaker or a sponsorship. **All foundation events** also lists events with no activity from the organization. |
 | **Counted by** (under More filters) | See [Counted by](#counted-by).                                                                                                                                                                            |
+
+Each tab lists events with **Event Name** (opens the event's page in a new tab), **Foundation**, **Date**, **Location**, **Event Attendees**, **Event Speakers** (_Accepted / Submitted_), and **Event Sponsor** (Yes or No). On the **Upcoming** tab an **Action** column offers **Register** (the event's registration page) or **View** (the event's page). Narrow the list with **Search events...** and the status filter: **All Statuses**, **Registered**, **Speaker Submitted**, **Speaker Accepted**, or **Event Sponsor**. Select a speaker count to open the event's speakers drawer.
 
 The **Event Attendees** column header and cells explain what the number counts when you point at them. Select an attendee count to open the people behind it. Linux Foundation staff also see the event's registration goal next to the count.
 
