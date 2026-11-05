@@ -12,12 +12,7 @@ import { DynamicDialogRef } from 'primeng/dynamicdialog';
 @Component({
   selector: 'lfx-mktg-approve-gaps-footer',
   imports: [ButtonComponent],
-  template: `
-    <div class="flex justify-end gap-2" data-testid="mktg-document-view-approve-footer">
-      <lfx-button label="Cancel" severity="secondary" [outlined]="true" data-testid="mktg-document-view-approve-cancel" (onClick)="close(false)" />
-      <lfx-button label="Approve anyway" severity="primary" data-testid="mktg-document-view-approve-anyway" (onClick)="close(true)" />
-    </div>
-  `,
+  templateUrl: './mktg-approve-gaps-footer.component.html',
 })
 export class MktgApproveGapsFooterComponent {
   private readonly ref = inject(DynamicDialogRef);
