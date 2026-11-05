@@ -107,7 +107,7 @@ describe('OrgRoiValueDriversComponent', () => {
   it('explains what the bars mean without the term markup', async () => {
     await render(of(REFERENCE));
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(q('org-roi-value-drivers-how-to-read')?.textContent).toContain('relative to the typical organization-project pair');
+    expect(q('org-roi-value-drivers-how-to-read')?.textContent).toContain('relative to the typical company-project pair');
     expect(q('org-roi-value-drivers-typical')?.textContent).toContain('not that the driver provides no value');
     expect(q('org-roi-value-drivers-association')?.textContent).toContain('associations, not proven causes');
     expect(q('org-roi-value-drivers-directional')?.textContent).toContain(
