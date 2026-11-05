@@ -1,6 +1,6 @@
 ---
 title: Organization FAQ
-description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Organization Profile page shows and who can edit it, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
 tags:
@@ -17,6 +17,7 @@ tags:
     training,
     meetings,
     groups,
+    profile,
     easycla,
     cla,
     ccla,
@@ -72,6 +73,10 @@ The Organization lens Meetings page shows how the selected organization's employ
 ## What does the Groups page show?
 
 The Groups page lists the working groups, committees and other groups across Linux Foundation projects where the selected organization's employees hold seats, with how many of its people sit on each one. Tiles count **Total Groups**, **Total Seats** and each group type. Groups in the **Board** category are not listed: those seats are on **Memberships**. You can search the list, filter it by foundation and type, select a seat count to see who holds the seats, and select **Export to CSV** to download it. The page has no time range: it shows the seats held now. See [What is the Groups page?](../groups/#what-is-the-groups-page).
+
+## What does the Organization Profile page show, and who can edit it?
+
+The Organization Profile page shows the selected organization's logo, name, description, website, number of employees, industry, sector, and its **Primary Address** and **Billing Address**. Anyone who can open the organization in the Organization lens can see it, but only someone who can edit the organization, such as an **Org Admin Editor**, sees **Edit Profile**. In the edit form you can change the website, number of employees, Crunchbase profile, industry, technology sector and description, then select **Save Changes**. A new logo must be an SVG (Scalable Vector Graphics) image file of 2MB or less, and it saves as soon as it uploads, separately from **Save Changes**. The organization name and the addresses cannot be changed on this page. Changes save to the organization's record, so everyone who can open the organization sees them. See [Who can edit the organization profile?](../org-profile/#who-can-edit-the-organization-profile).
 
 ## Why can't I edit this corporate CLA?
 
