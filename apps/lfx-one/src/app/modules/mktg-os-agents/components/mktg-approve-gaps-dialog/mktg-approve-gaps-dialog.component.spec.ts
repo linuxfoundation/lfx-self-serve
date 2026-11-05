@@ -67,16 +67,21 @@ describe('Approval with open gaps dialog', () => {
     const items = queryAll(root, 'mktg-document-view-approve-conflict');
     expect(items).toHaveLength(2);
     expect(items[0].querySelector('span')?.textContent).toBe('Coral');
+    // Each value row: its first line (swatch, hex and, for the kept one, the pill right after the hex), then its source under them.
+    const text = (element: Element): string => element.textContent?.trim() ?? '';
     const values = (item: HTMLElement): string[][] =>
-      Array.from(item.querySelectorAll('li')).map((value) => Array.from(value.querySelectorAll('span')).map((span) => span.textContent?.trim() ?? ''));
+      Array.from(item.querySelectorAll('li')).map((value) => {
+        const [line, source] = Array.from(value.children);
+        return [...Array.from(line.querySelectorAll('span')).map(text), text(source)];
+      });
     expect(values(items[0])).toEqual([
-      ['', '#FF702D', 'From the brand page — synthetic-foundation.example', 'kept #FF702D'],
+      ['', '#FF702D', 'kept #FF702D', 'From the brand page — synthetic-foundation.example'],
       ['', '#FF7D2D', 'From the site’s CSS — synthetic-foundation.example'],
     ]);
     expect(items[1].querySelector('span')?.textContent).toBe('Black');
     expect(values(items[1])).toEqual([
       ['', '#171717', 'From the site’s CSS — synthetic-foundation.example'],
-      ['', '#000000', 'From the brand page — synthetic-foundation.example', 'kept #000000'],
+      ['', '#000000', 'kept #000000', 'From the brand page — synthetic-foundation.example'],
     ]);
     // Each value draws its swatch in its own colour.
     const swatches = Array.from(items[0].querySelectorAll<HTMLElement>('[aria-hidden="true"]')).map((swatch) => swatch.style.background.toLowerCase());
@@ -92,9 +97,10 @@ describe('Approval with open gaps dialog', () => {
     expect(queryAll(root, 'mktg-document-view-approve-rule').map((line) => line.textContent)).toEqual([
       'Logo: 20 of 21 rules',
       'Color: 4 of 5 rules',
-      'Type: 5 of 9 rules',
+      'Type: 5 of 11 rules',
       'Visual: 9 of 9 rules',
       'Usage: 2 of 2 rules',
+      'Voice: 1 of 8 rules',
     ]);
     expect(root.textContent).not.toContain('chapters.');
     expect(root.textContent).not.toContain('lf-reference');

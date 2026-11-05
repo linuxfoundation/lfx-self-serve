@@ -23,13 +23,18 @@
               <span class="font-medium text-gray-900">{{ conflict.name }}</span>
               <ul class="flex flex-col gap-1">
                 @for (value of conflict.values; track value.hex) {
-                  <li class="flex min-w-0 flex-wrap items-center gap-2 [overflow-wrap:anywhere]">
-                    <span class="h-4 w-4 shrink-0 rounded-full border border-gray-200" [style.background]="value.hex" aria-hidden="true"></span>
-                    <span class="font-mono text-gray-900">{{ value.hex }}</span>
-                    <span class="text-gray-600">{{ value.source }}</span>
-                    @if (value.kept) {
-                      <span class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600">{{ keptPrefix }}{{ value.hex }}</span>
-                    }
+                  <!-- Every value has the same two lines: the swatch, the hex and (for the one kept) its pill; then where it was seen, under the hex. -->
+                  <li class="flex min-w-0 flex-col gap-0.5">
+                    <span class="flex items-center gap-2">
+                      <span class="h-4 w-4 shrink-0 rounded-full border border-gray-200" [style.background]="value.hex" aria-hidden="true"></span>
+                      <span class="font-mono text-gray-900">{{ value.hex }}</span>
+                      @if (value.kept) {
+                        <span class="shrink-0 rounded-full border border-gray-200 px-2 py-0.5 text-xs whitespace-nowrap text-gray-600"
+                          >{{ keptPrefix }}{{ value.hex }}</span
+                        >
+                      }
+                    </span>
+                    <span class="pl-6 text-gray-600 [overflow-wrap:anywhere]">{{ value.source }}</span>
                   </li>
                 }
               </ul>

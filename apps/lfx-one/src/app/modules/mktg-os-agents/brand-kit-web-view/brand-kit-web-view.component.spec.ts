@@ -342,7 +342,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(document.activeElement).toBe(query('brand-kit-web-view-panel-color'));
     });
 
-    it('Overview: a pill beside each chapter’s number says where its rules come from — the project, the LF reference, or how many of them the reference supplied', async () => {
+    it('Overview: a pill under each chapter’s title says where its rules come from — the project, the LF reference, or how many of them the reference supplied', async () => {
       const kit = brandKitTestRevision();
       kit.report = brandKitReportV2RulesFixture();
       fixture.componentRef.setInput('kit', kit);
@@ -353,15 +353,16 @@ describe('BrandKitWebViewComponent', () => {
       expect(pills).toEqual({
         logo: 'LF reference default for 20 of 21 rules',
         color: 'LF reference default for 4 of 5 rules',
-        type: 'LF reference default for 5 of 9 rules',
+        type: 'LF reference default for 5 of 11 rules',
         visual: 'LF reference default',
         usage: 'LF reference default',
-        voice: 'From the project',
+        voice: 'LF reference default for 1 of 8 rules',
       });
-      // The pill sits in the chapter's heading row, in the mode pill's style, and the number stays.
+      // The pill sits in its own row right under the chapter's heading row (title and number only), in the mode pill's style.
       const heading = query('brand-kit-web-view-chapter-logo')?.querySelector('div');
-      expect(heading?.contains(query('brand-kit-web-view-chapter-basis-logo'))).toBe(true);
       expect(heading?.textContent).toContain('01');
+      expect(heading?.contains(query('brand-kit-web-view-chapter-basis-logo'))).toBe(false);
+      expect(heading?.nextElementSibling?.contains(query('brand-kit-web-view-chapter-basis-logo'))).toBe(true);
       expect(query('brand-kit-web-view-chapter-basis-logo')?.className).toBe('rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600');
       expect(query('brand-kit-web-view-panel-overview')?.textContent).not.toContain('chapters.');
     });

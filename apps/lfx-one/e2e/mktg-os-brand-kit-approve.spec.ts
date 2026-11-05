@@ -43,6 +43,10 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     await expect(items.first()).toContainText('From the site’s CSS — synthetic-foundation.example');
     await expect(items.first()).toContainText('kept #FF702D');
     await expect(items.first()).not.toContainText('kept #FF7D2D');
+    // The kept pill sits in the same row as the value it marks, never beside the other value.
+    const valueRows = items.first().getByRole('listitem');
+    await expect(valueRows.filter({ hasText: '#FF702D' })).toContainText('kept #FF702D');
+    await expect(valueRows.filter({ hasText: '#FF7D2D' })).not.toContainText('kept');
     // No raw source key or stylesheet path reaches the reviewer.
     await expect(dialog).not.toContainText('brand_page:');
     await expect(dialog).not.toContainText('_next/static');
@@ -52,9 +56,10 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     await expect(dialog.getByTestId('mktg-document-view-approve-rule')).toHaveText([
       'Logo: 20 of 21 rules',
       'Color: 4 of 5 rules',
-      'Type: 5 of 9 rules',
+      'Type: 5 of 11 rules',
       'Visual: 9 of 9 rules',
       'Usage: 2 of 2 rules',
+      'Voice: 1 of 8 rules',
     ]);
     await expect(dialog).not.toContainText('chapters.');
     await page.screenshot({ path: info.outputPath('approve-dialog-conflicts-and-rules.png'), fullPage: true });
@@ -81,7 +86,7 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     // Nothing failed and nothing is open: no list before the two sections.
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm').locator(':scope > ul')).toHaveCount(0);
     await expect(dialog.getByTestId('mktg-document-view-approve-conflict')).toHaveCount(1);
-    await expect(dialog.getByTestId('mktg-document-view-approve-rule')).toHaveCount(5);
+    await expect(dialog.getByTestId('mktg-document-view-approve-rule')).toHaveCount(6);
     await page.screenshot({ path: info.outputPath('approve-dialog-review-header.png'), fullPage: true });
 
     await dialog.getByTestId('mktg-document-view-approve-anyway').getByRole('button').click();
@@ -123,11 +128,11 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     await expect(chapters).toBeVisible();
     await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-logo')).toHaveText('LF reference default for 20 of 21 rules');
     await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-color')).toHaveText('LF reference default for 4 of 5 rules');
-    await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-type')).toHaveText('LF reference default for 5 of 9 rules');
+    await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-type')).toHaveText('LF reference default for 5 of 11 rules');
     await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-visual')).toHaveText('LF reference default');
     await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-usage')).toHaveText('LF reference default');
-    await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-voice')).toHaveText('From the project');
-    // Beside the chapter's number, not instead of it.
+    await expect(chapters.getByTestId('brand-kit-web-view-chapter-basis-voice')).toHaveText('LF reference default for 1 of 8 rules');
+    // Under the chapter's title and number, not instead of them.
     await expect(chapters.getByTestId('brand-kit-web-view-chapter-logo')).toContainText('01');
     await page.screenshot({ path: info.outputPath('overview-basis-pills.png'), fullPage: true });
   });

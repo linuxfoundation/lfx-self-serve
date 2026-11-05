@@ -26,7 +26,7 @@ for (const width of [1440, 1024, 390]) {
     await expect(dialog.getByTestId('mktg-document-view-approve-conflicts')).toBeVisible();
     await expect(dialog.getByTestId('mktg-document-view-approve-conflict')).toHaveCount(1);
     await expect(dialog.getByTestId('mktg-document-view-approve-rules')).toBeVisible();
-    await expect(dialog.getByTestId('mktg-document-view-approve-rule')).toHaveCount(5);
+    await expect(dialog.getByTestId('mktg-document-view-approve-rule')).toHaveCount(6);
     await expect(dialog.getByTestId('mktg-document-view-approve-cancel')).toBeVisible();
     await expect(dialog.getByTestId('mktg-document-view-approve-anyway')).toBeVisible();
     // The dialog, and everything in it, stays inside the viewport: no sideways scroll of the page or of the dialog.
@@ -77,5 +77,27 @@ test.describe('at a laptop width', () => {
     await expect(dialog.getByTestId('mktg-document-view-approve-conflicts')).toHaveCount(0);
     await expect(dialog.getByTestId('mktg-document-view-approve-rules')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('approve-dialog-v1.png'), fullPage: true });
+  });
+});
+
+test.describe('at a phone width', () => {
+  test.use({ viewport: { width: 390, height: 1000 } });
+
+  test('each chapter card keeps its title and number on one line, the basis pill under them, and nothing scrolls sideways', async ({ page }, info) => {
+    await openAssetDocument(page, 'brand-kit', 200, true, false, brandKitDraftRevisionResponse(brandKitReportV2RulesFixture()));
+    const chapters = page.getByTestId('brand-kit-web-view-chapters');
+    for (const id of CHAPTERS) {
+      const card = chapters.getByTestId(`brand-kit-web-view-chapter-${id}`);
+      const pill = card.getByTestId(`brand-kit-web-view-chapter-basis-${id}`);
+      await expect(pill).toBeVisible();
+      const [title, number, badge] = await Promise.all([card.locator('h4').boundingBox(), card.locator('h4 + span').boundingBox(), pill.boundingBox()]);
+      if (!title || !number || !badge) throw new Error(`The ${id} card must render its title, number and pill`);
+      const diagnostic = `${id}: title ${JSON.stringify(title)}, number ${JSON.stringify(number)}, pill ${JSON.stringify(badge)}`;
+      expect(Math.abs(title.y - number.y), diagnostic).toBeLessThanOrEqual(1);
+      expect(badge.y, diagnostic).toBeGreaterThanOrEqual(title.y + title.height - 1);
+      const widths = await card.evaluate((element) => [element.scrollWidth, element.clientWidth]);
+      expect(widths[0], `${id}: scrollWidth ${widths[0]} vs clientWidth ${widths[1]}`).toBe(widths[1]);
+    }
+    await page.screenshot({ path: info.outputPath('overview-chapters-390.png'), fullPage: true });
   });
 });
