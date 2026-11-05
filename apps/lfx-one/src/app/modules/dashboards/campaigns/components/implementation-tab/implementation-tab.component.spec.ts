@@ -8759,18 +8759,37 @@ describe('ImplementationTabComponent google conversion action picker', () => {
   it('reads nothing while the conversion section is not shown', async () => {
     await setup(() => of(ACTIONS));
     seedChannel(fixture, { includePerformanceMax: true });
+    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', true);
     fixture.detectChanges();
 
     expect(read).not.toHaveBeenCalled();
+  });
+
+  it('shows the refusal with no request for a caller the BFF would refuse, and waits while that is unanswered', async () => {
+    await setup(() => of(ACTIONS));
+    seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions' });
+    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', null);
+    fixture.detectChanges();
+    expect(read).not.toHaveBeenCalled();
+    expect(query('implementation-google-conversion-action-picker-unavailable')).toBeNull();
+    expect(query('implementation-google-conversion-actions')).not.toBeNull();
+
+    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', false);
+    fixture.detectChanges();
+    expect(read).not.toHaveBeenCalled();
+    expect(query('implementation-google-conversion-action-picker-unavailable')?.textContent).toContain("Your account can't list");
+    expect(query('implementation-google-conversion-actions')).not.toBeNull();
   });
 
   it('offers the list on Search and writes picks into the free-text value, so the request is what typing would send', async () => {
     await setup(() => of(ACTIONS));
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions', googleConversionActions: '999' });
+    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', true);
     fixture.detectChanges();
 
     expect(read).toHaveBeenCalledWith('tlf');
+    expect(c['googleConversionActionPicker']().actions[0].label).toBe('Event Registrations · Signup · Primary');
     expect(query('implementation-google-conversion-action-picker')).not.toBeNull();
     expect(query('implementation-google-conversion-actions')).not.toBeNull();
     expect(c['googlePickedConversionActions']()).toEqual([]);
@@ -8793,6 +8812,7 @@ describe('ImplementationTabComponent google conversion action picker', () => {
   ])('falls back to the free-text box with the reason for %s', async (_label, status, reason) => {
     await setup(() => throwError(() => new HttpErrorResponse({ status })));
     const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions' });
+    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', true);
     fixture.detectChanges();
 
     expect(query('implementation-google-conversion-action-picker')).toBeNull();

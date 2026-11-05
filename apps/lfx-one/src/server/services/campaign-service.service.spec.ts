@@ -6112,6 +6112,37 @@ describe('CampaignServiceClient.listGoogleAdsAccounts', () => {
   });
 });
 
+describe('CampaignServiceClient.listGoogleAdsConversionActions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's conversion-action read with no query or body", async () => {
+    const actions = { account_id: '1234567890', conversion_actions: [], conversion_action_count: 0 };
+    proxyRequest.mockResolvedValueOnce(actions);
+
+    const result = await new CampaignServiceClient().listGoogleAdsConversionActions(req, 'lf/ai');
+
+    expect(result).toBe(actions);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/conversion-actions', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsConversionActions(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsConversionActions(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
 describe('CampaignServiceClient.suggestGoogleAdsGeoTargets', () => {
   beforeEach(() => {
     vi.clearAllMocks();

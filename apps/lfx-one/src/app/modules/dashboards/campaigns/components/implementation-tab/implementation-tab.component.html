@@ -2259,7 +2259,7 @@
                     (valuesChange)="onGooglePickedConversionActionsChange($event)"
                     data-testid="implementation-google-conversion-action-picker">
                     @for (action of googleConversionActionPicker().actions; track action.id) {
-                      <lfx-ui-option [value]="action.id" [label]="googleConversionActionLabel(action)" />
+                      <lfx-ui-option [value]="action.id" [label]="action.label" />
                     }
                   </lfx-ui-multi-select>
                 }

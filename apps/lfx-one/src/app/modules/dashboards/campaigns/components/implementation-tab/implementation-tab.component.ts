@@ -3702,14 +3702,14 @@ export class ImplementationTabComponent implements OnInit {
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
   /**
-   * The conversion-action picker's list (#4991), read only while the section is shown. Any failure —
-   * a non-root caller, the route off or denied on this deployment, Google failing — leaves the picker
-   * `unavailable` with a reason, and the free-text box is the way in, exactly as before.
+   * The conversion-action picker's list (#4991), read only while the section is shown and only for a
+   * caller the BFF would answer (`googleAudienceSegmentsEnabled`). A caller it would refuse, the route
+   * off or denied on this deployment, or Google failing leaves the picker `unavailable` with a reason,
+   * and the free-text box is the way in, exactly as before.
    */
   protected readonly googleConversionActionPicker: Signal<GoogleConversionActionPickerState> = this.initGoogleConversionActionPicker();
   /** The listed actions the free-text value names, which the picker shows as picked. */
   protected readonly googlePickedConversionActions: Signal<string[]> = this.initGooglePickedConversionActions();
-  protected readonly googleConversionActionLabel = googleConversionActionLabel;
   protected readonly googleBiddingError: Signal<string | null> = this.initGoogleBiddingError();
   protected readonly googleCreativeError: Signal<string | null> = this.initGoogleCreativeError();
   protected readonly googleCreativeEmptyWarning: Signal<string | null> = this.initGoogleCreativeEmptyWarning();
@@ -9424,21 +9424,46 @@ export class ImplementationTabComponent implements OnInit {
    * Performance Max select conversions through a resource that cannot be written until the
    * campaign exists, and campaign-service refuses the list there rather than dropping it.
    */
+  private initGoogleTakesConversionActions(): Signal<boolean> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      return channel !== null && (GOOGLE_CONVERSION_ACTION_CHANNELS as readonly string[]).includes(channel);
+    });
+  }
+
+  /**
+   * The conversion-action picker's list, read only while the section is shown and only for a caller
+   * the BFF would answer. `googleAudienceSegmentsEnabled` is the same per-caller answer the route
+   * gives — the campaign-service create road AND a root campaign principal — so `false` shows the
+   * refusal note with no request (a non-root operator would always earn a 403), and `null`
+   * (unanswered) waits on the free-text box. Each action carries its label, built once here.
+   */
   private initGoogleConversionActionPicker(): Signal<GoogleConversionActionPickerState> {
     const state = (status: GoogleConversionActionPickerState['status'], reason: string | null = null): GoogleConversionActionPickerState => ({
       status,
       actions: [],
       reason,
     });
-    // The project and whether the section is shown are read INSIDE the trigger, so a foundation switch
-    // or the section going away drops the read rather than finishing it for what is no longer on screen.
-    const trigger = computed(() => ({ projectSlug: this.activeFoundationSlug(), shown: this.googleTakesConversionActions() }));
+    // The project, whether the section is shown and whether this caller may read the list are read
+    // INSIDE the trigger, so a change to any of them drops a read that no longer applies.
+    const trigger = computed(() => ({
+      projectSlug: this.activeFoundationSlug(),
+      shown: this.googleTakesConversionActions(),
+      allowed: this.googleAudienceSegmentsEnabled(),
+    }));
     return toSignal(
       toObservable(trigger).pipe(
-        switchMap(({ projectSlug, shown }) => {
-          if (!shown || projectSlug === '') return of(state('idle'));
+        switchMap(({ projectSlug, shown, allowed }) => {
+          if (!shown || projectSlug === '' || allowed === null) return of(state('idle'));
+          if (!allowed) return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.forbidden));
           return this.campaignService.getGoogleAdsConversionActions(projectSlug).pipe(
-            map((result): GoogleConversionActionPickerState => ({ status: 'loaded', actions: result.actions, reason: null })),
+            map(
+              (result): GoogleConversionActionPickerState => ({
+                status: 'loaded',
+                actions: result.actions.map((action) => ({ ...action, label: googleConversionActionLabel(action) })),
+                reason: null,
+              })
+            ),
             catchError((err: unknown) => {
               const status = err instanceof HttpErrorResponse ? err.status : 0;
               if (status === 403) return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.forbidden));
@@ -9453,20 +9478,13 @@ export class ImplementationTabComponent implements OnInit {
     );
   }
 
-  /** Read through `campaignFormRevision`, because the free-text control is not a signal. */
+  /** The listed actions the free-text value names, read through `campaignFormRevision` because that control is not a signal. */
   private initGooglePickedConversionActions(): Signal<string[]> {
     return computed(() => {
       void this.campaignFormRevision();
       const picker = this.googleConversionActionPicker();
       if (picker.status !== 'loaded') return [];
       return googlePickedConversionActionIds(this.campaignForm.getRawValue().googleConversionActions, picker.actions);
-    });
-  }
-
-  private initGoogleTakesConversionActions(): Signal<boolean> {
-    return computed(() => {
-      const channel = this.googleBiddingChannel();
-      return channel !== null && (GOOGLE_CONVERSION_ACTION_CHANNELS as readonly string[]).includes(channel);
     });
   }
 

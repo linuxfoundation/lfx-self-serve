@@ -5101,7 +5101,8 @@ export const GOOGLE_ADS_CONVERSION_ACTION_PATTERN = /^(?:\d+|customers\/\d+\/con
  * - `forbidden` (403): the list names every foundation's actions on the shared account, so the BFF and
  *   the gateway answer only a root principal — and the gateway refuses everyone until
  *   `openfga.rootProjectUid` is set for the deployment.
- * - `unavailable` (404): the route is off on this deployment.
+ * - `unavailable` (404): the list isn't available here — the BFF route is off on this deployment, or
+ *   campaign-service answered NotFound for the project.
  * - `failed`: anything else, including campaign-service's 503 when Google fails or the account holds
  *   more than 500 enabled actions.
  */

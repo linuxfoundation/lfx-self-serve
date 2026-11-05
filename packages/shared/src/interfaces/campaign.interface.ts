@@ -2330,6 +2330,11 @@ export interface GoogleAdsConversionActionOption {
   primaryForGoal: boolean;
 }
 
+/** One action as the picker lists it: the action, and the label it is shown with, built once when the list is read. */
+export interface GoogleConversionActionPickerOption extends GoogleAdsConversionActionOption {
+  label: string;
+}
+
 /** The conversion-action read: the account it came from and its enabled actions, sorted by name. */
 export interface GoogleAdsConversionActionsResult {
   accountId: string;
@@ -2343,7 +2348,7 @@ export interface GoogleAdsConversionActionsResult {
  */
 export interface GoogleConversionActionPickerState {
   status: 'idle' | 'loading' | 'loaded' | 'unavailable';
-  actions: GoogleAdsConversionActionOption[];
+  actions: GoogleConversionActionPickerOption[];
   reason: string | null;
 }
 
@@ -4348,6 +4353,10 @@ export interface CampaignServiceAccessibleAccount {
 }
 
 /** `GET /projects/{id}/connection-google-ads/accounts` (`list-google-ads-accounts`). */
+export interface CampaignServiceAccessibleAccounts {
+  accounts: CampaignServiceAccessibleAccount[];
+}
+
 /** One entry of campaign-service's `google-ads-conversion-actions` result, as it is on the wire. */
 export interface CampaignServiceGoogleAdsConversionAction {
   id: string;
@@ -4364,10 +4373,6 @@ export interface CampaignServiceGoogleAdsConversionActions {
   account_id: string;
   conversion_actions: CampaignServiceGoogleAdsConversionAction[];
   conversion_action_count: number;
-}
-
-export interface CampaignServiceAccessibleAccounts {
-  accounts: CampaignServiceAccessibleAccount[];
 }
 
 /**
