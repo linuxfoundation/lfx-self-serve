@@ -21,12 +21,6 @@ export const MY_VOTES_STATS_WINDOW_DAYS = VOTES_STATS_WINDOW_DAYS;
 /** Sentinel thrown by `submitMyResponse` when the user has no pre-allocated vote_response row. */
 export const INVITATION_NOT_FOUND = 'INVITATION_NOT_FOUND';
 
-/** Page size for the paginated comment-response lists in the vote comment results. */
-export const VOTE_COMMENT_RESULTS_PAGE_SIZE = 25;
-
-/** Page-size options for the comment-results paginator in the vote comment results. Includes the default page size. */
-export const VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
-
 /** Notice above text-only comment results, keyed by why the comments carry no names (#4330). */
 export const VOTE_COMMENT_ANONYMOUS_NOTICES: Record<VoteCommentAnonymityReason, string> = {
   pseudo_anonymous:

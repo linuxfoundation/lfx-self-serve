@@ -1361,40 +1361,41 @@ describe('VoteDetailComponent', () => {
       expect(read(fixture, 'myResponse')).toBeNull();
     });
 
-    it('starts a new vote on the first comments page even when its prompt ID matches', async () => {
+    it('resets comment expansion for a new vote even when its prompt ID matches', async () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id })));
       queryParamMap.next(convertToParamMap({ tab: 'comments' }));
       const fixture = await setup();
       const commentList = fixture.debugElement.query(By.css('lfx-vote-comment-results'));
-      commentList.triggerEventHandler('pageStateChange', new Map([['prompt-1', { first: 20, rows: 20 }]]));
+      commentList.triggerEventHandler('expansionStateChange', new Map([['prompt-1', false]]));
       TestBed.tick();
-      expect(read<Map<string, unknown>>(fixture, 'commentPaginatorState').size).toBe(1);
+      expect(read<Map<string, boolean>>(fixture, 'commentExpansionState').size).toBe(1);
 
       paramMap.next(convertToParamMap({ id: 'vote-2' }));
       TestBed.tick();
 
-      expect(read<Map<string, unknown>>(fixture, 'commentPaginatorState').size).toBe(0);
-      expect(fixture.debugElement.query(By.css('lfx-vote-comment-results')).properties['pageState']).toEqual(new Map());
+      expect(read<Map<string, boolean>>(fixture, 'commentExpansionState').size).toBe(0);
+      expect(fixture.debugElement.query(By.css('lfx-vote-comment-results')).properties['expansionState']).toEqual(new Map());
     });
 
-    it('preserves the comments page across tab switches and a same-vote refresh', async () => {
+    it('preserves comment expansion across tab switches and a same-vote refresh', async () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       queryParamMap.next(convertToParamMap({ tab: 'comments' }));
       const fixture = await setup();
-      const page = new Map([['prompt-1', { first: 20, rows: 20 }]]);
-      fixture.debugElement.query(By.css('lfx-vote-comment-results')).triggerEventHandler('pageStateChange', page);
+      const expansion = new Map([['prompt-1', false]]);
+      fixture.debugElement.query(By.css('lfx-vote-comment-results')).triggerEventHandler('expansionStateChange', expansion);
       TestBed.tick();
 
       queryParamMap.next(convertToParamMap({ tab: 'results' }));
       TestBed.tick();
       queryParamMap.next(convertToParamMap({ tab: 'comments' }));
       TestBed.tick();
-      expect(read(fixture, 'commentPaginatorState')).toEqual(page);
+      expect(read(fixture, 'commentExpansionState')).toEqual(expansion);
+      expect(fixture.debugElement.query(By.css('lfx-vote-comment-results')).properties['expansionState']).toEqual(expansion);
 
       call(fixture, 'onVoteSubmitted', 'vote-1');
       TestBed.tick();
-      expect(read(fixture, 'commentPaginatorState')).toEqual(page);
+      expect(read(fixture, 'commentExpansionState')).toEqual(expansion);
     });
 
     it('discards retained results after visiting a vote without results access', async () => {
