@@ -191,6 +191,7 @@ describe('MktgCommentsPanelComponent', () => {
     fixture.detectChanges();
     expect(runner.send).toHaveBeenCalledWith(scope, 1);
     expect(send()?.disabled).toBe(true);
+    expect(send()?.textContent).toContain('Sending 1 comment to the agent…');
     expect(el.querySelector('[data-testid="mktg-comments-feed"]')).toBeNull();
     stream.next({
       type: 'submitted',
@@ -202,6 +203,9 @@ describe('MktgCommentsPanelComponent', () => {
     threads.set([mktgCommentFixture({ status: 'sent' })]);
     fixture.detectChanges();
     expect(send()).not.toBeNull();
+    // The accepted send flipped the comment open → sent beneath the spinner: the label keeps the count from the click.
+    expect(send()?.textContent).toContain('Sending 1 comment to the agent…');
+    expect(send()?.textContent).not.toContain('Send 0 open comments');
     pending = true;
     stream.error(new HttpErrorResponse({ status: 503, error: { code: 'MKTG_REDRAFT_START_UNCERTAIN' } }));
     fixture.detectChanges();
@@ -218,6 +222,45 @@ describe('MktgCommentsPanelComponent', () => {
     el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-release"] button')?.click();
     fixture.detectChanges();
     expect(el.textContent).toContain('Send released');
+  });
+
+  it('keeps the count from the click on the Send label until the run settles, then reads the live count again', async () => {
+    const threads = signal([mktgCommentFixture({ id: 'first' }), mktgCommentFixture({ id: 'second' })]);
+    const stream = new Subject<MktgRedraftProgress>();
+    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded: signal(true), threads })] });
+    TestBed.overrideProvider(MktgDocumentRedraftClientService, {
+      useValue: { hasIntent: () => false, hasAcceptedAttempt: () => false, canRelease: () => false, resume: () => EMPTY, send: () => stream },
+    });
+    const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
+    fixture.componentRef.setInput('scope', mktgCommentScopeFixture());
+    fixture.componentRef.setInput('priorVersion', 1);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const send = () => el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button');
+    const labels: string[] = [];
+    const record = () => labels.push(send()?.textContent?.trim() ?? '');
+    record();
+    expect(labels.at(-1)).toContain('Send 2 open comments to the agent');
+    send()?.click();
+    fixture.detectChanges();
+    record();
+    expect(labels.at(-1)).toContain('Sending 2 comments to the agent…');
+    // The server marks the comments sent once it accepts the redraft; the panel re-reads them while the button still spins.
+    threads.set(threads().map((row) => ({ ...row, status: 'sent' as const })));
+    fixture.detectChanges();
+    record();
+    stream.next({ type: 'activity', activity: [] });
+    fixture.detectChanges();
+    record();
+    expect(labels.slice(1).every((label) => label.includes('Sending 2 comments to the agent…'))).toBe(true);
+    expect(labels.some((label) => label.includes('Send 0 open comments'))).toBe(false);
+    // Settled without landing: the frozen count is released and the label reads the live count again.
+    stream.next({ type: 'failed', message: 'Synthetic failure' });
+    stream.complete();
+    fixture.detectChanges();
+    threads.set([mktgCommentFixture({ id: 'third' })]);
+    fixture.detectChanges();
+    expect(send()?.textContent).toContain('Send 1 open comment to the agent');
   });
 
   it.each([
