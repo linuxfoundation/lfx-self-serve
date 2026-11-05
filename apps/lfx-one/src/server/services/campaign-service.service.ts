@@ -3056,9 +3056,6 @@ export class CampaignServiceClient {
         // `input` attribute carrying the whole shape, so a flat body is rejected with
         // `"input" is missing from body` before any handler runs.
         input: {
-          // Omitted rather than sent empty when the caller named none: upstream reads ABSENCE as
-          // "use the configured workflow", and an empty string is a value it would try to parse.
-          ...(body.sourceWorkflowUrl && body.sourceWorkflowUrl.trim() !== '' ? { source_workflow_url: body.sourceWorkflowUrl.trim() } : {}),
           name: body.name,
           brief_ids: body.briefIds,
           ...(body.sendDates && body.sendDates.length > 0 ? { send_dates: body.sendDates } : {}),

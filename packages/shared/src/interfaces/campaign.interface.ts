@@ -604,22 +604,14 @@ export interface CampaignSequenceSendRow {
 }
 
 /**
- * What a send workflow is built from: the series' briefs, in SEND ORDER, and the workflow whose
- * schedule and enrollment it copies.
+ * What a send workflow is built from: the series' briefs, in SEND ORDER. The workflow it copies is
+ * always the deployment's configured survey-sequence workflow, chosen by campaign-service.
  *
  * Brief ids rather than HubSpot email ids, because which draft a brief produced is
  * campaign-service's own record -- a client that looked that up could pair a brief with another
  * campaign's email, and a workflow is exactly where that goes unnoticed: every step looks filled in.
  */
 export interface CampaignSendWorkflowRequest {
-  /**
-   * The workflow to copy. Its HubSpot editor URL, or its bare numeric id. Only ever READ.
-   *
-   * OPTIONAL: omitted, campaign-service uses the deployment's configured survey-sequence
-   * workflow, which is the ordinary case -- an operator should not have to find a URL in HubSpot
-   * to do the usual thing.
-   */
-  sourceWorkflowUrl?: string;
   /** Name for the new workflow. */
   name: string;
   /** The briefs this workflow sends, in send order. At least two -- one email needs no workflow. */

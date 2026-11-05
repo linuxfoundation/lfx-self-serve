@@ -9904,8 +9904,12 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().selectedEmailTemplateId(), 'the rows on screen are the ones being replaced').toBe('');
     });
 
+    const restoredBriefCampaigns = (platforms: string[]): Observable<CampaignListResult> =>
+      of({ campaigns: platforms.map((platform) => ({ platform })), possiblyStale: platforms.length === 0 } as unknown as CampaignListResult);
+
     it('treats a restored approved survey send as possibly staged until the series is started over', () => {
       stageable(1);
+      vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(restoredBriefCampaigns(['hubspot']));
       const component = fixture.componentInstance as unknown as {
         onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
         canGenerateEmailCopy(): boolean;
@@ -9921,6 +9925,38 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       expect(component.surveySingleSendRestored()).toBe(false);
       expect(component.canGenerateEmailCopy()).toBe(true);
+    });
+
+    it('releases a restored approved survey send whose brief has no HubSpot draft', () => {
+      stageable(1);
+      vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(restoredBriefCampaigns([]));
+      const component = fixture.componentInstance as unknown as {
+        onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        canGenerateEmailCopy(): boolean;
+        surveySingleSendRestored(): boolean;
+      };
+
+      component.onRestoreSavedEmailBrief(surveyBrief, 'brief-saved-only', '"1"', true);
+
+      expect(component.surveySingleSendRestored(), 'approval follows every save, so it does not show a draft').toBe(false);
+      expect(component.canGenerateEmailCopy()).toBe(true);
+    });
+
+    it('keeps a restored approved survey send held while its draft check is out or has failed', () => {
+      stageable(1);
+      const answer = new Subject<CampaignListResult>();
+      const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(answer.asObservable());
+      const component = fixture.componentInstance as unknown as {
+        onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        surveySingleSendRestored(): boolean;
+      };
+
+      component.onRestoreSavedEmailBrief(surveyBrief, 'brief-unknown', '"1"', true);
+      expect(component.surveySingleSendRestored(), 'unknown while the check is out').toBe(true);
+
+      answer.error(new Error('query service down'));
+      expect(list).toHaveBeenCalledWith(expect.any(String), 'brief-unknown');
+      expect(component.surveySingleSendRestored(), 'a failed check cannot rule a draft out').toBe(true);
     });
 
     it('does not hold back a restored survey brief that was never approved, since nothing was staged from it', () => {
@@ -9962,6 +9998,36 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySeriesRestarted(), 'the next write uses new briefs').toBe(true);
       expect(seq().sequenceNeedsRestart()).toBe(false);
       expect(seq().canGenerateSurveySequence()).toBe(true);
+    });
+
+    it('moves past a restart number another tab already used when the first send is refused', async () => {
+      stageable(3);
+      seq().surveySequenceSends.set([]);
+      const component = fixture.componentInstance as unknown as {
+        emailBriefOutput(): CampaignBriefOutput | null;
+        activeFoundationSlug(): string;
+        writeSeriesRestart(projectSlug: string, baseSlug: string, restart: number): void;
+      };
+      const baseSlug = component.emailBriefOutput()?.eventDetails?.slug ?? '';
+      // This tab restarted once; another tab already wrote a series under the next number.
+      component.writeSeriesRestart(component.activeFoundationSlug(), baseSlug, 1);
+      const slugs: string[] = [];
+      persistBrief.mockImplementation((brief: CampaignBriefOutput) => {
+        const slug = brief.eventDetails?.slug ?? '';
+        slugs.push(slug);
+        return of(
+          slug === `${baseSlug}-r2`
+            ? { enabled: true, briefId: 'other-tab', approved: false, created: false, conflict: 'unowned-brief-exists' }
+            : { enabled: true, briefId: `brief-${slugs.length}`, etag: '"1"', approved: true, created: true }
+        ) as never;
+      });
+
+      await seq().onGenerateSurveySequence();
+
+      expect(slugs[0]).toBe(`${baseSlug}-r2`);
+      expect(new Set(slugs.slice(1)), 'every send of the series is written under the next free number').toEqual(new Set([`${baseSlug}-r3`]));
+      expect(seq().sequenceNeedsRestart(), 'no extra round of Start over').toBe(false);
+      expect(seq().surveySequenceSends()).toHaveLength(3);
     });
 
     it('builds the workflow once, and holds Build after an unconfirmed create', async () => {

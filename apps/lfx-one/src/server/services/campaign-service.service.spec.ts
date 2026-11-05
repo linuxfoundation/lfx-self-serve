@@ -6639,28 +6639,27 @@ describe('CampaignServiceClient.createSendWorkflow', () => {
     vi.clearAllMocks();
   });
 
-  it('posts the request wrapped in `input`, omitting an unnamed source workflow and absent dates', async () => {
+  it('posts the request wrapped in `input`, omitting absent dates', async () => {
     proxyRequest.mockResolvedValueOnce(wire);
 
-    await new CampaignServiceClient().createSendWorkflow(req, 'tlf', { sourceWorkflowUrl: '  ', name: 'Cloud Survey - Workflow', briefIds: ['a', 'b'] });
+    await new CampaignServiceClient().createSendWorkflow(req, 'tlf', { name: 'Cloud Survey - Workflow', briefIds: ['a', 'b'] });
 
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/send-workflows', 'POST', undefined, {
       input: { name: 'Cloud Survey - Workflow', brief_ids: ['a', 'b'] },
     });
   });
 
-  it('sends the dates and a named source workflow when given', async () => {
+  it('sends the dates when given', async () => {
     proxyRequest.mockResolvedValueOnce(wire);
 
     await new CampaignServiceClient().createSendWorkflow(req, 'tlf', {
-      sourceWorkflowUrl: ' 1700 ',
       name: 'w',
       briefIds: ['a', 'b'],
       sendDates: ['2026-11-02', '2026-11-09'],
     });
 
     expect(proxyRequest.mock.calls[0][5]).toEqual({
-      input: { source_workflow_url: '1700', name: 'w', brief_ids: ['a', 'b'], send_dates: ['2026-11-02', '2026-11-09'] },
+      input: { name: 'w', brief_ids: ['a', 'b'], send_dates: ['2026-11-02', '2026-11-09'] },
     });
   });
 

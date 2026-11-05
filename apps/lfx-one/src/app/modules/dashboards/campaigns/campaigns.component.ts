@@ -18,6 +18,7 @@ import {
   CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_EMAIL_TYPES,
   CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS,
+  CAMPAIGN_SURVEY_SERIES_RESTART_MAX_SKIPS,
   CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX,
   CAMPAIGN_SURVEY_TYPES,
   DEFAULT_CAMPAIGN_SURVEY_TYPE_ID,
@@ -110,7 +111,7 @@ import { filter, finalize, firstValueFrom, from, skip, Subscription, switchMap, 
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
-import { readCampaignWriteErrorMessage } from '../../../shared/utils/campaign-write-error.utils';
+import { isDefiniteRefusal, readCampaignWriteErrorMessage } from '../../../shared/utils/campaign-write-error.utils';
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
@@ -2220,10 +2221,13 @@ export class CampaignsComponent {
   /** Every scope the single Stage button created a draft under; survives the display reset. */
   private readonly singleSendStagedScopes = signal<ReadonlySet<string>>(new Set());
   /**
-   * Approved survey briefs restored from an earlier session. Their draft may exist, and staging
-   * again would hand it back unchanged, so they are treated as staged until started over.
+   * Approved survey briefs restored from an earlier session whose HubSpot draft exists, or could
+   * not be ruled out. Staging again would hand that draft back unchanged, so they are treated as
+   * staged until started over.
    */
   private readonly restoredSendScopes = signal<ReadonlySet<string>>(new Set());
+  /** Orders the restore's draft check, so a late answer for an earlier restore cannot release a hold. */
+  private restoredSendCheckGeneration = 0;
   /**
    * Set when Write all met a send brief saved in an earlier page session, which this page cannot
    * own. Start the series over is then the way on: it writes on new briefs instead of adopting
@@ -2490,10 +2494,6 @@ export class CampaignsComponent {
     );
   });
 
-  /**
-   * Each send's body as it will be STAGED, keyed by brief id, so the review panel shows the same
-   * cleaned HTML the draft receives rather than the raw generated markup.
-   */
   /** One row per written send, joined here so the template reads values rather than calling lookups. */
   protected readonly surveySequenceRows = computed<CampaignSequenceSendRow[]>(() => {
     const bodies = this.surveySequenceBodies();
@@ -2507,6 +2507,10 @@ export class CampaignsComponent {
     }));
   });
 
+  /**
+   * Each send's body as it will be STAGED, keyed by brief id, so the review panel shows the same
+   * cleaned HTML the draft receives rather than the raw generated markup.
+   */
   protected readonly surveySequenceBodies = computed<ReadonlyMap<string, string>>(() => {
     const brief = this.emailBriefOutput();
     return new Map(this.surveySequenceSends().map((send) => [send.briefId, this.sequenceSendContent(brief, send).bodyHtml]));
@@ -3804,8 +3808,7 @@ export class CampaignsComponent {
     this.onEmailProceedFromPlanning(brief, approved ? briefId : undefined);
     // Only an approved brief can have been staged: campaign-service refuses to create from any other.
     if (approved && this.isSurvey()) {
-      const scope = this.stageScopeKey(this.activeFoundationSlug(), briefId);
-      this.restoredSendScopes.update((scopes) => new Set(scopes).add(scope));
+      this.checkRestoredSendDraft(this.activeFoundationSlug(), briefId);
     }
 
     // Read back the saved audience with the id this restore was HANDED, not with `emailBriefId`.
@@ -3814,6 +3817,40 @@ export class CampaignsComponent {
     // is keyed by the brief id either way, since approval governs creating FROM the brief, not
     // whether it has one.
     void this.restoreEmailAudience(this.activeFoundationSlug(), briefId);
+  }
+
+  /**
+   * Hold a restored survey brief as possibly staged until its campaign list shows it has no HubSpot
+   * draft.
+   *
+   * Approval alone proves nothing: the BFF approves after every save, so a brief saved and never
+   * staged is approved too, and holding every one of them made Restore a dead end. Held while the
+   * check is out and when it fails, since an unknown answer must not invite a second stage. A list
+   * with no HubSpot campaign releases the hold. An empty list is also read as "not staged": the
+   * index can lag a very recent stage, but a stage from an earlier session has long been indexed,
+   * and staging a brief that does have a draft gets that draft back rather than a second one.
+   */
+  private checkRestoredSendDraft(projectSlug: string, briefId: string): void {
+    const scope = this.stageScopeKey(projectSlug, briefId);
+    this.restoredSendScopes.update((scopes) => new Set(scopes).add(scope));
+    const generation = ++this.restoredSendCheckGeneration;
+    this.campaignService
+      .listBriefCampaigns(projectSlug, briefId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          if (generation !== this.restoredSendCheckGeneration || result.campaigns.some((campaign) => campaign.platform === 'hubspot')) {
+            return;
+          }
+          this.restoredSendScopes.update((scopes) => {
+            const next = new Set(scopes);
+            next.delete(scope);
+            return next;
+          });
+        },
+        // Kept held: a failed read cannot show that no draft exists.
+        error: () => undefined,
+      });
   }
 
   /**
@@ -4333,27 +4370,47 @@ export class CampaignsComponent {
 
     const baseSlug = brief.eventDetails?.slug ?? '';
     this.seriesBase = { projectSlug, baseSlug };
-    const restart = this.readSeriesRestart(projectSlug, baseSlug);
-    const seriesSlug = restart > 0 ? `${baseSlug}-r${restart + 1}` : baseSlug;
+    let restart = this.readSeriesRestart(projectSlug, baseSlug);
 
     const written: CampaignSequenceSend[] = [];
     try {
       for (const stage of stages) {
         this.surveySequenceProgress.set(`Writing the ${this.surveyStageLabel(stage)}...`);
 
-        // A COPY of the planned brief under this send's own stage. The brief carries its stage as
-        // part of its identity, so the same pasted source becomes a separate row per send rather
-        // than one row the sends overwrite in turn.
-        const staged: CampaignBriefOutput = {
-          ...brief,
-          deliveryType: 'survey',
-          emailStage: stage,
+        let briefId = '';
+        for (let skips = 0; ; skips++) {
           // After a start-over, a NEW identity: campaign-service hands back a brief's existing
           // draft on a second create, so writing the original briefs again would show new copy
           // while HubSpot kept the old drafts.
-          eventDetails: { ...brief.eventDetails, slug: seriesSlug },
-        };
-        const briefId = await this.persistSequenceBrief(staged, projectSlug, isCurrent);
+          const seriesSlug = restart > 0 ? `${baseSlug}-r${restart + 1}` : baseSlug;
+          // A COPY of the planned brief under this send's own stage. The brief carries its stage as
+          // part of its identity, so the same pasted source becomes a separate row per send rather
+          // than one row the sends overwrite in turn.
+          const staged: CampaignBriefOutput = {
+            ...brief,
+            deliveryType: 'survey',
+            emailStage: stage,
+            eventDetails: { ...brief.eventDetails, slug: seriesSlug },
+          };
+          try {
+            briefId = await this.persistSequenceBrief(staged, projectSlug, isCurrent);
+            break;
+          } catch (error) {
+            // The restart count is per tab, so another tab or editor may already have written a
+            // series under this number. When the FIRST send of a restarted series is refused as
+            // unowned, nothing of this series exists yet, so moving on to the next number is safe
+            // and spares the operator another round of Start over. A refusal on a later send, or
+            // past the bound, still asks them to start over.
+            const skipToNextRestart =
+              isCurrent() && restart > 0 && written.length === 0 && this.sequenceNeedsRestart() && skips < CAMPAIGN_SURVEY_SERIES_RESTART_MAX_SKIPS;
+            if (!skipToNextRestart) {
+              throw error;
+            }
+            this.sequenceNeedsRestart.set(false);
+            restart++;
+            this.writeSeriesRestart(projectSlug, baseSlug, restart);
+          }
+        }
         if (!isCurrent()) {
           return;
         }
@@ -4472,7 +4529,7 @@ export class CampaignsComponent {
           // so the draft may exist, as the single-send path assumes. Held, not retried. Only an
           // explicit 4xx is a refusal that created nothing and stays retryable; a 408 or 429 says
           // the request timed out or was throttled, which does not prove nothing was created.
-          const refused = error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
+          const refused = this.isDefiniteCreateRefusal(error);
           if (!refused && isCurrent()) {
             this.holdUnresolvedSend(send.briefId);
           }
@@ -4624,7 +4681,7 @@ export class CampaignsComponent {
       }
       // Only a 4xx other than 408/429 created nothing, as `onStageSequenceSends` reads it. Anything
       // else may have built the workflow, so Build stays off until the operator has looked.
-      const refused = error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
+      const refused = this.isDefiniteCreateRefusal(error);
       if (!refused) {
         this.sendWorkflowUnconfirmed.set(true);
       }
@@ -8147,13 +8204,21 @@ export class CampaignsComponent {
   }
 
   /**
+   * Whether a failed create provably created nothing: a 4xx other than 408 or 429. A timeout or a
+   * throttle does not prove the create was refused, so neither may be retried as if it were.
+   * Shared by series staging and the workflow build so both read a refusal the same way.
+   */
+  private isDefiniteCreateRefusal(error: unknown): boolean {
+    return error instanceof HttpErrorResponse && isDefiniteRefusal(error.status) && error.status !== 429;
+  }
+
+  /**
    * The operator-facing text of a failed workflow build.
    *
    * Upstream's own message is preferred over anything written here, because it is the only part
    * that is actionable: it names the send that is not staged, or both step counts when the chosen
-   * workflow's shape does not match. Same extraction order as the repo's other API error readers
-   * (`document-form.component.ts`) -- the BFF's envelope puts it under `error`, Goa's under
-   * `message`.
+   * workflow's shape does not match. Read with the shared `readCampaignWriteErrorMessage`: a
+   * VALIDATION_ERROR's reason from `errors[]`, else the envelope's `error`, else `message`.
    */
   private sendWorkflowErrorText(error: unknown, fallback = 'The workflow could not be built.'): string {
     // The shared reader, which takes a VALIDATION_ERROR's reason from `errors[]` rather than its

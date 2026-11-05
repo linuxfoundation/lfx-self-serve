@@ -3931,6 +3931,13 @@ export const CAMPAIGN_SEND_WORKFLOW_MAX_SENDS = 10;
  */
 export const CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX = 'lfx-campaigns-survey-series-restart:';
 
+/**
+ * How many restart numbers Write all moves past on its own when the first send of a restarted
+ * series is refused as already saved. The count is per tab, so another tab or editor may have used
+ * the next few numbers already; past this bound the operator is asked to start over again.
+ */
+export const CAMPAIGN_SURVEY_SERIES_RESTART_MAX_SKIPS = 5;
+
 /** A send-workflow date as campaign-service takes it: a calendar date, YYYY-MM-DD. */
 export const CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 

@@ -3229,10 +3229,6 @@ export class CampaignController {
     const briefIds = (body?.briefIds ?? []).map((id) => id.trim());
     const name = typeof body?.name === 'string' ? body.name.trim() : '';
 
-    // The source workflow is NOT required here. It is optional upstream -- a series is normally
-    // built from the deployment's configured workflow, and the UI therefore sends none -- so
-    // requiring it at this hop refused every ordinary request before it reached the service that
-    // knows the default.
     if (name.length > CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS) {
       refuse('name', `name must be at most ${CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS} characters`);
       return;
@@ -3250,9 +3246,8 @@ export class CampaignController {
 
     const startTime = logger.startOperation(req, 'send_workflow_create', { projectSlug, sends: briefIds.length });
     try {
-      // No `sourceWorkflowUrl` from the caller: the UI never sends one, and campaign-service then
-      // copies the deployment's own survey workflow. Forwarding a client-chosen one only widens
-      // what a request can ask for.
+      // Only the name, briefs and dates are forwarded: campaign-service always copies its own
+      // configured survey workflow, so a request cannot choose which workflow is copied.
       const created = await this.campaignServiceClient.createSendWorkflow(req, projectSlug, {
         name,
         briefIds,
