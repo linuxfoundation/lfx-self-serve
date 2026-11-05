@@ -219,11 +219,11 @@ export class ProjectApplicationsPanelComponent implements OnInit {
       }
       this.deepLinkHandled = true;
       const application = isUuid(uid) ? this.applications().find((row) => row.uid.toLowerCase() === uid.toLowerCase()) : undefined;
-      if (!application) {
-        return;
-      }
       untracked(() => {
-        this.open(application);
+        if (application) {
+          this.open(application);
+        }
+        // Dropped whether or not it matched, so a later refresh of the URL can't open a drawer unexpectedly.
         void this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { [PROJECT_APPLICATION_DEEP_LINK_QUERY_PARAM]: null },

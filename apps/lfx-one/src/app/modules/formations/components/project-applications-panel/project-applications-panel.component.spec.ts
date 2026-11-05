@@ -307,17 +307,18 @@ describe('ProjectApplicationsPanelComponent — deep link (#5229)', () => {
     expect(panel.selectedUid()).toBe(KNOWN);
   });
 
-  it('ignores a uid that is not in the queue', async () => {
+  it('opens nothing for a uid that is not in the queue, but still strips the param', async () => {
     const panel = await mount('staff', OTHER, [buildApplication({ uid: KNOWN })]);
     expect(panel.selectedUid()).toBeNull();
     expect(panel.drawerVisible()).toBe(false);
-    expect(navigate).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate.mock.calls[0][1]).toMatchObject({ queryParams: { application: null }, replaceUrl: true });
   });
 
-  it('ignores a malformed uid', async () => {
+  it('opens nothing for a malformed uid, but still strips the param', async () => {
     const panel = await mount('staff', 'not-a-uuid', [buildApplication({ uid: 'not-a-uuid' })]);
     expect(panel.selectedUid()).toBeNull();
-    expect(navigate).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledTimes(1);
   });
 
   it('ignores the param in submitter mode', async () => {
