@@ -35,16 +35,13 @@ export interface OrgEventsSummaryRow {
   UPCOMING_EVENTS: number;
 }
 
-/** Per-event header read for the attendees drawer: the served option's counts and whether the event has ended. */
+/** Per-event header read for the attendees drawer: the event's name and whether it has ended. */
 export interface OrgEventDrawerHeaderRow {
   EVENT_NAME: string | null;
   IS_PAST_EVENT: boolean | null;
-  ALL_COUNT: number | null;
-  REGISTERED_COUNT: number | null;
-  ATTENDED_COUNT: number | null;
 }
 
-/** Raw row returned by the per-event attendees drawer query: a listed person; the warehouse nulls the name and title of everyone else. */
+/** Raw row returned by the per-event attendees drawer query: one person the picked option credits to the organization, by name (title only for roster employees). */
 export interface OrgEventAttendeesDrawerRow {
   PARTICIPANT_REF: number;
   DISPLAY_NAME: string | null;
@@ -65,7 +62,7 @@ export interface OrgEventsCoverageRow {
   HAS_COMPANY_EMAIL_COVERAGE: boolean | null;
 }
 
-/** Listed person × event row from `ORG_EVENT_PARTICIPATION` (list predicate, ended events, range window). */
+/** Person × event row from `ORG_EVENT_PARTICIPATION` (attendee predicate, ended events, range window); everyone credited is listed. */
 export interface OrgEventParticipationRow {
   PARTICIPANT_REF: number;
   PERSON_KEY: string | null;
@@ -88,7 +85,6 @@ export interface OrgEventParticipationRow {
 /** Row from `ORG_EVENT_PARTICIPATION_SUMMARY` for one (account, range, attribution, participation). */
 export interface OrgEventParticipationSummaryRow {
   ATTENDEES_COUNT: number | null;
-  LISTED_ATTENDEES_COUNT: number | null;
   SPEAKERS_COUNT: number | null;
   EVENTS_COUNT: number | null;
   FOUNDATIONS_COUNT: number | null;

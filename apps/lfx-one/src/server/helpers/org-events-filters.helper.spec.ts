@@ -38,7 +38,7 @@ function buildReq(query: Record<string, unknown>): Request {
 describe('parseOrgEventsFilters', () => {
   it('defaults every missing param', () => {
     expect(parseOrgEventsFilters(buildReq({}), 'op')).toEqual({
-      attribution: 'all',
+      attribution: 'verified',
       participation: 'all',
       scope: 'activity',
       foundation: '',
