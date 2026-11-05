@@ -83,7 +83,7 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   public readonly placeholder = input<string>('');
   /** What the list says when no row matches. The typed text follows it in quotes, so `No projects match` reads `No projects match “xyz”`. */
   public readonly emptyText = input<string>('No matches');
-  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `small`, `default` or `large` button. */
+  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `tiny`, `default` or `large` button. */
   public readonly size = input<UiInputSize>('medium');
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
@@ -272,9 +272,9 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
       // Library recipe (same as Input): 1px ring at rest, stronger ring plus a 4px halo when focused or open (accent) or invalid (danger).
       const dangerHalo = 'shadow-[0_0_0_1px_theme(colors.ui.danger.700),0_0_0_4px_theme(colors.ui.danger.200)]';
       const interactive =
-        'cursor-text hover:edge-hover focus-within:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)] data-[open]:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
+        'cursor-text hover:edge-control-hover focus-within:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)] data-[open]:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
       // A disabled field keeps the resting ring only, so it does not look interactive on hover.
-      const rest = this.isDisabled() ? 'edge cursor-not-allowed' : `edge ${interactive}`;
+      const rest = this.isDisabled() ? 'edge-control cursor-not-allowed' : `edge-control ${interactive}`;
       const ring = this.error() ? dangerHalo : rest;
       const fill = this.isDisabled() ? 'bg-ui-neutral-50 text-ui-neutral-500' : 'bg-ui-background-100 text-ui-neutral-900';
       // forced-colors: shadows vanish, so a real border keeps the field visible and an outline marks focus.

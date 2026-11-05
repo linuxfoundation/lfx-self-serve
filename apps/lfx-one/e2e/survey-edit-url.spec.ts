@@ -16,6 +16,7 @@
  *   - The enriched cases seed the OPPOSITE lens/context from the survey's owning tier, so a pass
  *     proves the URL follows the entity, not the viewer; the fallback case seeds the MATCHING
  *     lens, since the lens-driven prefix is exactly the behavior under test there.
+ *   - The create wizard shows the empty-template message and Contact support when the live list is empty (GH-5124).
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -229,7 +230,7 @@ async function setProjectCookie(page: Page, uid: string, slug: string, name: str
 
 // Gated on env vars rather than on URL sniffing so genuine auth-flow regressions (expired
 // storageState, broken Auth0 login helper) still fail loudly when creds ARE configured.
-const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
+const AUTH_CREDS_PRESENT = !!process.env['TEST_USERNAME'] && !!process.env['TEST_PASSWORD'];
 
 function skipWhenAuthMissing(): void {
   if (!AUTH_CREDS_PRESENT) {
@@ -351,5 +352,28 @@ test.describe('Survey edit URL derives from the survey’s owning tier (GH-1569)
     await expect(page).toHaveURL(new RegExp(`/project/surveys/${MOCK_SURVEY_UID}/edit\\?committee_uid=${MOCK_COMMITTEE_UID}$`), { timeout: PAGE_LOAD_TIMEOUT });
     expect(new URL(page.url()).searchParams.has('project')).toBe(false);
     await expect(page.getByTestId('survey-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  });
+});
+
+test.describe('Survey template empty state (GH-5124)', () => {
+  test('shows an empty-template message and Contact support without allowing Next', async ({ page }) => {
+    await stubPersona(page, ['executive-director']);
+    await stubProjectApi(page);
+    await stubCommittees(page);
+    await stubLensItems(page);
+    await setPersonaAndLensCookies(page, ['executive-director'], 'project');
+    await page.route('**/api/surveys/templates*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+
+    await gotoSpa(page, `/project/surveys/create?project=${OTHER_PROJECT_SLUG}`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+
+    await expect(page.getByTestId('survey-template-empty')).toHaveText('No survey templates are available yet.', { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('survey-template-contact-support')).toBeVisible();
+    await expect(page.getByTestId('survey-template-error')).toHaveCount(0);
+    await expect(page.getByTestId('survey-manage-next-btn').getByRole('button')).toBeDisabled();
   });
 });

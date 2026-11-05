@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE, RSVP_RESPONSES } from '@lfx-one/shared/constants';
+import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE, QUERY_SERVICE_MAX_PAGES, RSVP_RESPONSES } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiRequestOptions,
@@ -498,7 +498,10 @@ export class MeetingService {
     const fetchChunk = async (chunk: string[]): Promise<void> => {
       try {
         let pageToken: string | undefined;
+        let page = 0;
+        const requestedTokens = new Set<string>();
         do {
+          page++;
           const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'v1_meeting',
             tags: chunk,
@@ -516,6 +519,25 @@ export class MeetingService {
             }
           }
           pageToken = response.page_token;
+          // Same bound as fetchAllQueryResources (#4964): stop this chunk on a repeated token or at the
+          // page cap, keeping the entries already mapped — consistent with the per-chunk failure skip below.
+          if (pageToken) {
+            let stopReason: 'repeated_page_token' | 'max_pages' | undefined;
+            if (requestedTokens.has(pageToken)) {
+              stopReason = 'repeated_page_token';
+            } else if (page >= QUERY_SERVICE_MAX_PAGES) {
+              stopReason = 'max_pages';
+            }
+            if (stopReason) {
+              logger.warning(req, 'resolve_created_by_for_meetings', 'Pagination stopped early for a chunk', {
+                chunk_size: chunk.length,
+                page,
+                reason: stopReason,
+              });
+              break;
+            }
+            requestedTokens.add(pageToken);
+          }
         } while (pageToken);
       } catch (error) {
         logger.warning(req, 'resolve_created_by_for_meetings', 'Failed to resolve created_by for a chunk, skipping', {
@@ -1435,6 +1457,11 @@ export class MeetingService {
       { failOnPartial }
     );
 
+    return this.dedupePastMeetingParticipants(raw);
+  }
+
+  /** Merges one past meeting's participant records into one row per person (see {@link getPastMeetingParticipants}). */
+  public dedupePastMeetingParticipants(raw: PastMeetingParticipant[]): PastMeetingParticipant[] {
     // Plain union-find over connected identity-match edges (pure transitive closure, no
     // conflict veto during union). isSamePerson is not transitive — a no-username row can
     // share an email with two records that carry different, conflicting usernames — so a

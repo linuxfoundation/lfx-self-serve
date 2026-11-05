@@ -1,0 +1,8 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (logo(); as url) {
+  <img #logoImg class="h-full w-full object-contain" [src]="url" alt="" (error)="onLogoError(url)" data-testid="meetings-home-project-logo-image" />
+} @else {
+  <i class="fa-light fa-layer-group text-[8px] text-gray-500" data-testid="meetings-home-project-logo-placeholder"></i>
+}

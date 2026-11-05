@@ -60,6 +60,8 @@ export interface BackendInitiative {
   attribution?: BackendAttribution;
   /** Set only on the manage read (`/initiatives/{id}/manage`); omitted when false. */
   is_owner?: boolean;
+  /** Owner's display name; set only on the lens list and the manage read. */
+  creator?: string;
 }
 
 /** Snake_case attribution as sent and returned by the upstream crowdfunding service. */
@@ -72,6 +74,26 @@ export interface BackendAttribution {
 
 export interface BackendCrowdfundingResponse {
   data: BackendInitiative[];
+  meta: { total: number; limit: number; offset: number };
+}
+
+/** Raw snake_case row from GET /crowdfunding/organizations/{uid}/donations on the upstream crowdfunding service. */
+export interface BackendOrgDonation {
+  id: string;
+  type: 'one_time' | 'recurring';
+  initiative_id?: string;
+  initiative_name?: string;
+  initiative_slug?: string;
+  donor_name: string;
+  donor_email: string;
+  amount_cents: number;
+  frequency?: string;
+  status: string;
+  created_on: string;
+}
+
+export interface BackendOrgDonationListResponse {
+  data: BackendOrgDonation[];
   meta: { total: number; limit: number; offset: number };
 }
 

@@ -6,6 +6,7 @@ import type { GetOrgEventsOptions } from '@lfx-one/shared/interfaces';
 import type { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseOrgEventsFilters } from '../helpers/org-events-filters.helper';
 import { getStringQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensEventsService } from '../services/org-lens-events.service';
@@ -32,7 +33,8 @@ export class OrgLensEventsController {
         throw new AuthenticationError('User authentication required', { operation: 'get_org_lens_events_summary' });
       }
 
-      const summary = await this.service.getOrgEventsSummary(req, accountId);
+      const filters = parseOrgEventsFilters(req, 'get_org_lens_events_summary');
+      const summary = await this.service.getOrgEventsSummary(req, accountId, filters);
 
       logger.success(req, 'get_org_lens_events_summary', startTime, { account_id: accountId });
 
@@ -67,6 +69,8 @@ export class OrgLensEventsController {
       const status = rawStatus && VALID_ORG_EVENT_STATUS_VALUES.has(rawStatus) ? rawStatus : null;
       const sortField = rawSortField;
 
+      const filters = parseOrgEventsFilters(req, 'get_org_lens_events');
+
       const options: GetOrgEventsOptions = {
         isPast,
         searchQuery: getStringQueryParam(req, 'searchQuery'),
@@ -75,6 +79,11 @@ export class OrgLensEventsController {
         offset,
         sortField,
         sortOrder,
+        attribution: filters.attribution,
+        participation: filters.participation,
+        eventScope: filters.scope,
+        foundation: filters.foundation,
+        range: filters.range,
       };
 
       const response = await this.service.getOrgEvents(req, accountId, options);
@@ -84,6 +93,31 @@ export class OrgLensEventsController {
         result_count: response.data.length,
         total: response.total,
       });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:accountId/lens/events/foundations */
+  public async getOrgEventFoundations(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const accountId = req.params['accountId'];
+    const startTime = logger.startOperation(req, 'get_org_lens_event_foundations', { account_id: accountId });
+
+    try {
+      this.assertAccountId(accountId, 'get_org_lens_event_foundations');
+
+      const userEmail = getEffectiveEmail(req);
+      if (!userEmail) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_lens_event_foundations' });
+      }
+
+      const { attribution, scope } = parseOrgEventsFilters(req, 'get_org_lens_event_foundations');
+      const response = await this.service.getOrgEventFoundations(req, accountId, { attribution, scope });
+
+      logger.success(req, 'get_org_lens_event_foundations', startTime, { account_id: accountId, result_count: response.data.length });
 
       res.setHeader('Cache-Control', 'no-store');
       res.json(response);
@@ -110,8 +144,9 @@ export class OrgLensEventsController {
         throw ServiceValidationError.forField('eventId', 'eventId path parameter is required', { operation: 'get_event_attendees' });
       }
 
+      const { attribution, participation } = parseOrgEventsFilters(req, 'get_event_attendees');
       const searchQuery = getStringQueryParam(req, 'searchQuery');
-      const response = await this.service.getEventAttendees(req, accountId, eventId, searchQuery ?? undefined);
+      const response = await this.service.getEventAttendees(req, accountId, eventId, { attribution, participation, searchQuery });
 
       logger.success(req, 'get_event_attendees', startTime, { account_id: accountId, event_id: eventId, count: response.total });
 

@@ -25,6 +25,9 @@ export enum NatsSubjects {
   LOOKUP_V1_MAPPING = 'lfx.lookup_v1_mapping',
   PERSONAS_GET = 'lfx.personas-api.get',
   IMPERSONATION_TOKEN_EXCHANGE = 'lfx.auth-service.impersonation.token_exchange',
+  // Auth0 user search (auth-service) — request carries the admin's own access token as `subject_token`, which the
+  // service verifies (can_impersonate) before searching; used by the impersonation picker.
+  USER_SEARCH = 'lfx.auth-service.user.search',
   // Preferred meeting-invitation email (meeting-service) — request carries the user's v1
   // API-gateway token in the `token` field (forwarded to v1 /v1/me), not the auth-service
   // { user: { auth_token } } wrapper used by the subjects above.

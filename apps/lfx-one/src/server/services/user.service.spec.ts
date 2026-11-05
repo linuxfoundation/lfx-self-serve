@@ -1698,7 +1698,7 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     });
   }
 
-  it('flags recordings with a share URL and visible summaries with content', async () => {
+  it('flags recordings with a share URL, returns that URL, and flags visible summaries with content', async () => {
     mockIndexes(
       [pastMeeting('m1:1'), pastMeeting('m2:1'), pastMeeting('m3:1')],
       [recording('m1:1', 'https://zoom.example/rec/1'), recording('m2:1')],
@@ -1707,10 +1707,10 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
 
     const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
 
-    expect(result.map((m) => [m.id, m.has_recording, m.has_ai_summary])).toEqual([
-      ['m1:1', true, true],
-      ['m2:1', false, false],
-      ['m3:1', false, false],
+    expect(result.map((m) => [m.id, m.has_recording, m.recording_share_url, m.has_ai_summary])).toEqual([
+      ['m1:1', true, 'https://zoom.example/rec/1', true],
+      ['m2:1', false, undefined, false],
+      ['m3:1', false, undefined, false],
     ]);
     for (const type of ['v1_past_meeting_recording', 'v1_past_meeting_summary']) {
       expect(proxyRequest).toHaveBeenCalledWith(
@@ -1740,12 +1740,21 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     expect(Object.fromEntries(result.map((m) => [m.id, m.has_ai_summary]))).toEqual({ 'invited:1': false, 'organized:1': true });
   });
 
+  it('does not flag a whitespace-only summary', async () => {
+    mockIndexes([pastMeeting('blank:1'), pastMeeting('real:1')], [], [summary('blank:1', { content: ' \n\t ' }), summary('real:1')]);
+
+    const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
+
+    expect(Object.fromEntries(result.map((m) => [m.id, m.has_ai_summary]))).toEqual({ 'blank:1': false, 'real:1': true });
+  });
+
   it('leaves only the failed flag undefined when one index lookup fails', async () => {
     mockIndexes([pastMeeting('m1:1')], new Error('recording index down'), [summary('m1:1')]);
 
     const [result] = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
 
     expect(result.has_recording).toBeUndefined();
+    expect(result.recording_share_url).toBeUndefined();
     expect(result.has_ai_summary).toBe(true);
   });
 
@@ -1758,6 +1767,7 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     expect(types).not.toContain('v1_past_meeting_recording');
     expect(types).not.toContain('v1_past_meeting_summary');
     expect(result).not.toHaveProperty('has_recording');
+    expect(result).not.toHaveProperty('recording_share_url');
     expect(result).not.toHaveProperty('has_ai_summary');
   });
 

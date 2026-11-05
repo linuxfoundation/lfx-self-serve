@@ -98,7 +98,7 @@ describe('UiTabsComponent', () => {
     expect(tab('upcoming').className).toContain('pb-[14px]');
     expect(tab('upcoming').className).toContain('gap-[7px]');
     expect(tab('upcoming').className).toContain('aria-selected:after:h-[2px]');
-    expect(tab('upcoming').className).toContain('text-ui-neutral-500');
+    expect(tab('upcoming').className).toContain('text-ui-neutral-700');
     expect(tab('upcoming').className).toContain('hover:text-ui-neutral-900');
     expect(tab('upcoming').className).toContain('duration-ui-base');
     expect(tab('upcoming').className).toContain('focus-visible:shadow-focus');

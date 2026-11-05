@@ -16,7 +16,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { MicroserviceError } from '../errors';
+import { AuthenticationError, MicroserviceError } from '../errors';
 import { logger } from './logger.service';
 import { NatsService } from './nats.service';
 
@@ -570,9 +570,9 @@ export class EmailVerificationService {
    * Non-throwing variant for callers that can degrade gracefully (e.g. email backfill).
    * Returns an empty array on failure. Use listIdentities() when identity data is critical.
    */
-  public async listIdentitiesSafe(req: Request, userIdentifier: string): Promise<Auth0Identity[]> {
+  public async listIdentitiesSafe(req: Request): Promise<Auth0Identity[]> {
     try {
-      return await this.listIdentities(req, userIdentifier);
+      return await this.listIdentities(req);
     } catch (error) {
       logger.warning(req, 'list_identities_safe', 'Identity list unavailable — continuing without it', { err: error });
       return [];
@@ -580,20 +580,34 @@ export class EmailVerificationService {
   }
 
   /**
-   * List linked identities for a user via NATS.
-   * @param req - Express request object for logging
-   * @param userIdentifier - User's subject ID (e.g. auth0|123456789), username, or email — sent as raw string to auth-service which resolves it without JWT audience validation (same convention as getUserEmails)
+   * List the effective user's linked identities via NATS.
+   *
+   * auth-service only lists identities for a principal proven by a token it verifies, so the
+   * request's bearer token is sent — never a bare sub, username, or email, which it rejects with
+   * "a valid JWT token is required". During impersonation `req.bearerToken` is the target's
+   * impersonation token, so the target's identities are returned.
+   * @param req - Express request carrying the effective user's bearer token
    * @returns Array of Auth0 linked identities
+   * @throws {AuthenticationError} 401 when the request has no bearer token
    * @throws {MicroserviceError} 503 when the auth service is unavailable
    */
-  public async listIdentities(req: Request, userIdentifier: string): Promise<Auth0Identity[]> {
+  public async listIdentities(req: Request): Promise<Auth0Identity[]> {
+    const authToken = req.bearerToken;
+    if (!authToken) {
+      throw new AuthenticationError('Authentication required to list identities', {
+        operation: 'list_identities',
+        service: 'email_verification_service',
+        path: req.path,
+      });
+    }
+
     const codec = this.natsService.getCodec();
 
     logger.debug(req, 'list_identities', 'Listing user identities via NATS');
 
     let parsed: ListIdentitiesNatsResponse;
     try {
-      const payload = JSON.stringify({ user: { auth_token: userIdentifier } });
+      const payload = JSON.stringify({ user: { auth_token: authToken } });
       const response = await this.natsService.request(NatsSubjects.USER_IDENTITY_LIST, codec.encode(payload), {
         timeout: NATS_CONFIG.REQUEST_TIMEOUT,
       });

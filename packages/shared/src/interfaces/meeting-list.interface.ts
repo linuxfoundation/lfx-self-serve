@@ -24,6 +24,9 @@ export interface MeetingHomeRow {
   myRsvp?: MeetingRsvp | null;
 }
 
+/** Next meeting card's join state: before the join window, inside it before the start, or under way. */
+export type MeetingHomeJoinState = 'early' | 'soon' | 'live';
+
 /** Applied filters on the meetings home list (search is kept separately). */
 export interface MeetingsHomeFilters {
   /** Foundation UID: the foundation's own meetings and its non-foundation child projects'; null means all foundations. */
@@ -81,8 +84,6 @@ export interface MeetingHomeRowLink {
 /** Project eyebrow of a meetings home row. */
 export interface MeetingHomeRowProject {
   name: string;
-  /** Shown in the logo tile when there is no logo. */
-  initial: string;
   /** Logo URL; empty when the project has none. */
   logo: string;
   /** Project or foundation overview; null without a project slug. */
@@ -109,7 +110,7 @@ export interface MeetingHomeRowOrganizer {
   photo: string;
 }
 
-/** One date in the Pending RSVPs popover of the meetings home page, with what its row shows. */
+/** One date in the Pending RSVPs drawer of the meetings home page, with what its row shows. */
 export interface MeetingPendingRsvpItem {
   row: MeetingHomeRow;
   project: MeetingHomeRowProject | null;
@@ -154,12 +155,6 @@ export interface MeetingSummaryDialogData {
   onChange?: (summary: PastMeetingSummary) => void;
 }
 
-/** What the meetings home recording dialog opens with. */
-export interface MeetingRecordingDialogData {
-  row: MeetingHomeRow;
-  shareUrl: string;
-}
-
 /** What the meetings home edit scope dialog opens with. */
 export interface MeetingEditScopeDialogData {
   row: MeetingHomeRow;
@@ -178,8 +173,42 @@ export interface MeetingDeleteDialogData {
 
 /** A past meeting artifact a meetings home row loads on click, named for its error copy. */
 export interface MeetingHomeArtifact {
-  /** Lower-case name in messages, e.g. "recording". */
+  /** Lower-case name in messages, e.g. "summary". */
   noun: string;
   /** Name in a toast title, e.g. "AI Summary". */
   title: string;
+}
+
+/** What a meetings home attendance count or bar segment measures. */
+export type MeetingHomeAttendanceKind = 'yes' | 'maybe' | 'no' | 'attended';
+
+/** One answer count in the meetings home attendance legend. */
+export interface MeetingHomeAttendanceCount {
+  kind: MeetingHomeAttendanceKind;
+  /** "Yes", "Maybe" or "No". */
+  label: string;
+  count: number;
+}
+
+/** One coloured part of the meetings home attendance bar. */
+export interface MeetingHomeAttendanceSegment {
+  kind: MeetingHomeAttendanceKind;
+  /** Width as a percentage of the invited count. */
+  percent: number;
+}
+
+/** Attendance shown to the organizer on a meetings home row or card. */
+export interface MeetingHomeAttendance {
+  /** "12 of 16 attending · 75%" upcoming, "9 of 20 attended · 45%" past. */
+  label: string;
+  /** Spoken description of the bar. */
+  ariaLabel: string;
+  /** Bar segments with a count above zero. */
+  segments: MeetingHomeAttendanceSegment[];
+  /** Yes, Maybe and No counts, zeros included; empty for a past meeting. */
+  answers: MeetingHomeAttendanceCount[];
+  /** Invitees with no answer; null for a past meeting. */
+  noResponse: number | null;
+  /** A past meeting that fewer than half of the invitees attended. */
+  poor: boolean;
 }

@@ -23,9 +23,9 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
+import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { PersonaService } from '@services/persona.service';
-import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
@@ -95,7 +95,6 @@ export class MeetingsRedesignComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly createArtifactDialog = inject(CreateArtifactDialogService);
   private readonly composer = inject(MeetingComposerService);
-  private readonly projectContext = inject(ProjectContextService);
   protected readonly store = inject(MeetingsHomeStore);
 
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
@@ -103,18 +102,17 @@ export class MeetingsRedesignComponent {
   private readonly tabsBar = viewChild<ElementRef<HTMLElement>>('tabsBar');
   private readonly list = viewChild<ElementRef<HTMLElement>>('list');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
+  private readonly chips = viewChild(UiChipGroupComponent, { read: ElementRef });
   /** Takes focus when the last pending RSVP is answered. */
   protected readonly createButton = viewChild<UiButtonComponent>('createButton');
-  /** Takes focus when the last pending RSVP is answered and there is no Create Meeting button. */
-  protected readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
   /** Takes focus when the last filter chip is removed. */
   protected readonly filtersControl = viewChild(MeetingsFiltersComponent);
 
   protected readonly idPrefix = 'meetings-redesign';
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
+  /** Widths of the skeleton row's buttons: Yes / No / Maybe upcoming, Recording and AI Summary past. */
+  protected readonly skeletonButtons: Record<MeetingDashboardView, string[]> = { upcoming: ['58px', '76px', '54px'], past: ['134px', '108px'] };
   protected readonly personaLoaded = this.personaService.personaLoaded;
-  // shortcut: gated on meeting write access in the active project context. revisit: when Me-lens create gating is settled
-  protected readonly canWriteMeetings: Signal<boolean> = this.projectContext.canWriteMeetings;
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
   /** Measured tabs bar height; the day headings stick right below it. */
@@ -132,9 +130,9 @@ export class MeetingsRedesignComponent {
   /** Where the day headings stick: below the sticky header and tabs bar. */
   protected readonly dayHeadingTop: Signal<number> = computed(() => this.stickyTop() + this.headerHeight() + this.tabsBarHeight());
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
-  /** The Next meeting as a one-item list, so its menu is keyed by row. */
+  /** The Next meeting card's date as a one-item list, so its menu is keyed by row. */
   protected readonly nextRows: Signal<MeetingHomeRow[]> = computed(() => {
-    const row = this.store.nextRow();
+    const row = this.store.nextCardRow();
     return row ? [row] : [];
   });
   /** The Last meeting as a one-item list, so its menu is keyed by row. */
@@ -144,12 +142,12 @@ export class MeetingsRedesignComponent {
   });
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
-  /** Header Create Meeting; the empty Upcoming tab offers its own in the empty state instead, per the design. */
-  protected readonly showCreate: Signal<boolean> = computed(
-    () => this.canWriteMeetings() && !(this.store.tab() === 'upcoming' && this.tabEmpty() && !this.store.failed())
-  );
   /** The active tab has meetings, but none match the search and filters. */
-  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.matchingRows().length === 0);
+  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
+  /** Any applied filter wins over the search in the no-results copy. */
+  protected readonly noResultsDescription: Signal<string> = computed(() =>
+    countAppliedMeetingFilters(this.store.filters()) > 0 ? 'No meetings match your filters' : 'No meetings match your search'
+  );
   /** "All N meetings loaded" once every row of a list longer than one page is shown. */
   protected readonly allLoaded: Signal<boolean> = computed(
     () => !this.store.loading() && !this.store.hasMore() && this.store.filteredRows().length > MEETINGS_HOME_PAGE_SIZE
@@ -162,6 +160,13 @@ export class MeetingsRedesignComponent {
     afterRenderEffect(() => {
       this.list();
       untracked(() => this.updateScroll());
+    });
+    // A new tab, search or filters starts at the list's first row, so a trigger left in view does not load a page.
+    afterRenderEffect(() => {
+      this.store.tab();
+      this.store.search();
+      this.store.filters();
+      untracked(() => this.scrollToListStart());
     });
     // The composer saves in place, so refetch to show the new or edited meeting; skip(1) drops the replayed count.
     toObservable(this.composer.saveCount)
@@ -266,6 +271,20 @@ export class MeetingsRedesignComponent {
 
   private tabItem(value: MeetingDashboardView, label: string, unknown: boolean, count: number): UiTabItem {
     return unknown ? { value, label } : { value, label, count, countLabel: `${count} ${count === 1 ? 'meeting' : 'meetings'}` };
+  }
+
+  /** Scrolls the chips or list back up to just below the sticky tabs bar when they have scrolled under it. */
+  private scrollToListStart(): void {
+    const centre = this.centre()?.nativeElement;
+    const start: HTMLElement | undefined = this.chips()?.nativeElement ?? this.list()?.nativeElement;
+    if (!centre || !start) return;
+
+    const desktop = this.columnHeight() !== null;
+    const stickyEdge = desktop ? centre.getBoundingClientRect().top : this.stickyTop();
+    const offset = start.getBoundingClientRect().top - (stickyEdge + this.headerHeight() + this.tabsBarHeight());
+    if (offset >= 0) return;
+    if (desktop) centre.scrollBy({ top: offset });
+    else window.scrollBy({ top: offset });
   }
 
   /** Bottom padding of every ancestor up to `main` — the layout's content wrapper sits above the route-entry host, not directly over this one. */

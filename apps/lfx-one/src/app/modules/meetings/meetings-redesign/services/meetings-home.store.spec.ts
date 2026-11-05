@@ -166,7 +166,8 @@ describe('MeetingsHomeStore', () => {
 
       expect(userService['getUserMeetings']).toHaveBeenCalledTimes(1);
       expect(userService['getUserPastMeetings']).toHaveBeenCalledTimes(1);
-      expect(userService['getUserPastMeetings']).toHaveBeenCalledWith({ includeArtifacts: true });
+      expect(userService['getUserMeetings']).toHaveBeenCalledWith({ includeAttendance: true });
+      expect(userService['getUserPastMeetings']).toHaveBeenCalledWith({ includeArtifactsAndAttendance: true });
       expect(store.upcomingLoading()).toBe(true);
       expect(store.pastLoading()).toBe(true);
 
@@ -216,7 +217,7 @@ describe('MeetingsHomeStore', () => {
       expect(store.pastFailed()).toBe(false);
       expect(console.error).toHaveBeenCalledWith('Failed to load meetings for the meetings home page:', expect.any(Error));
       expect(toast.show).toHaveBeenCalledTimes(1);
-      expect(toast.show).toHaveBeenCalledWith(expect.objectContaining({ variant: 'dark' }));
+      expect(toast.show).toHaveBeenCalledWith(expect.objectContaining({ variant: 'warning', position: 'bottom-center' }));
 
       const refreshed$ = new Subject<Meeting[]>();
       (userService['getUserMeetings'] as ReturnType<typeof vi.fn>).mockReturnValue(refreshed$);
@@ -451,9 +452,8 @@ describe('MeetingsHomeStore', () => {
 
       store.loadMore();
 
-      // The soonest date sits in the Next meeting card, not the list.
-      expect(shown()).toBe(MEETINGS_HOME_PAGE_SIZE + 4);
-      expect(counted()).toBe(MEETINGS_HOME_PAGE_SIZE + 4);
+      expect(shown()).toBe(MEETINGS_HOME_PAGE_SIZE + 5);
+      expect(counted()).toBe(MEETINGS_HOME_PAGE_SIZE + 5);
       expect(store.hasMore()).toBe(false);
     });
 
@@ -480,26 +480,25 @@ describe('MeetingsHomeStore', () => {
   });
 
   describe('next meeting', () => {
-    it('takes the soonest date out of the Upcoming list, whatever the search, and keeps it in the tab rows', () => {
+    it('is the soonest date, whatever the search, and stays in the Upcoming list', () => {
       const store = create();
       upcoming$.next([buildMeeting({ id: 'later', start_time: inDays(3).toISOString() }), buildMeeting({ id: 'soon', start_time: inDays(1).toISOString() })]);
 
       expect(store.nextRow()?.meeting.id).toBe('soon');
-      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['later']);
-      expect(store.upcomingRows()).toHaveLength(2);
+      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['soon', 'later']);
 
-      store.setSearch('sync');
+      store.setSearch('nothing matches');
       expect(store.nextRow()?.meeting.id).toBe('soon');
-      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['later']);
+      expect(store.filteredRows()).toEqual([]);
     });
 
-    it('is the first date of a series, leaving its later dates in the list', () => {
+    it('is the first date of a series', () => {
       const store = create();
       const series = weeklyMeeting([inDays(1), inDays(8)]);
       upcoming$.next([series]);
 
       expect(store.nextRow()?.occurrenceId).toBe(seconds(inDays(1)));
-      expect(store.filteredRows().map((row) => row.occurrenceId)).toEqual([store.upcomingRows()[1].occurrenceId]);
+      expect(store.filteredRows()).toHaveLength(2);
     });
 
     it('passes over a date that is over but still in its join buffer for the one starting next', () => {
@@ -509,7 +508,7 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['over', 'up']);
       expect(store.nextRow()?.meeting.id).toBe('up');
-      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['over']);
+      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['over', 'up']);
     });
 
     it('builds the join link for the real viewer inside the join window only', () => {
@@ -551,6 +550,75 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.nextRowJoinable()).toBe(false);
       expect(store.nextRowJoinUrl()).toBeNull();
+    });
+
+    it('pages the card through the dates that overlap the next one, keeping all of them listed and joining the one shown', () => {
+      const store = create();
+      const start = Date.now() + 5 * 60_000;
+      const at = (minutes: number): string => new Date(start + minutes * 60_000).toISOString();
+      upcoming$.next([
+        buildMeeting({ id: 'first', start_time: at(0) }),
+        buildMeeting({ id: 'overlap', start_time: at(59) }),
+        buildMeeting({ id: 'after', start_time: at(60) }),
+      ]);
+      TestBed.tick();
+
+      expect(store.concurrentNextRows().map((row) => row.meeting.id)).toEqual(['first', 'overlap']);
+      expect(store.nextCardIndex()).toBe(0);
+      expect(store.nextCardRow()?.meeting.id).toBe('first');
+      expect(store.nextRowJoinable()).toBe(true);
+
+      store.stepNextCard(-1);
+      expect(store.nextCardRow()?.meeting.id).toBe('first');
+
+      store.stepNextCard(1);
+      store.stepNextCard(1);
+      expect(store.nextCardIndex()).toBe(1);
+      expect(store.nextCardRow()?.meeting.id).toBe('overlap');
+      expect(store.nextRow()?.meeting.id).toBe('first');
+      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['first', 'overlap', 'after']);
+      expect(store.nextRowJoinable()).toBe(false);
+    });
+
+    it('keeps the picked date across a refetch, and falls back to the first one once it is gone', () => {
+      const store = create();
+      const start = inDays(1).getTime();
+      const at = (minutes: number): string => new Date(start + minutes * 60_000).toISOString();
+      const first = buildMeeting({ id: 'first', start_time: at(0) });
+      const second = buildMeeting({ id: 'second', start_time: at(0) });
+      upcoming$.next([first, second]);
+      store.stepNextCard(1);
+
+      upcoming$.next([first, second, buildMeeting({ id: 'third', start_time: at(30) })]);
+      expect(store.nextCardRow()?.meeting.id).toBe('second');
+      expect(store.concurrentNextRows()).toHaveLength(3);
+
+      upcoming$.next([first]);
+      expect(store.concurrentNextRows()).toHaveLength(1);
+      expect(store.nextCardRow()?.meeting.id).toBe('first');
+    });
+
+    it("starts a new viewer on the first concurrent date, not the previous viewer's pick", () => {
+      const store = create();
+      const start = inDays(1).toISOString();
+      const meetings = [buildMeeting({ id: 'first', start_time: start }), buildMeeting({ id: 'second', start_time: start })];
+      upcoming$.next(meetings);
+      store.stepNextCard(1);
+      expect(store.nextCardRow()?.meeting.id).toBe('second');
+
+      identity.set('viewer-b');
+      upcoming$.next(meetings);
+
+      expect(store.nextCardRow()?.meeting.id).toBe('first');
+    });
+
+    it('leaves an overlapping date that is already over out of the pager', () => {
+      const store = create();
+      const ago = (minutes: number): string => new Date(Date.now() - minutes * 60_000).toISOString();
+      upcoming$.next([buildMeeting({ id: 'over', start_time: ago(70) }), buildMeeting({ id: 'live', start_time: ago(30), duration: 90 })]);
+
+      expect(store.nextRow()?.meeting.id).toBe('live');
+      expect(store.concurrentNextRows().map((row) => row.meeting.id)).toEqual(['live']);
     });
 
     it('is null without upcoming dates and keeps the Past list whole', () => {
@@ -664,6 +732,18 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.lastMeetingLoading()).toBe(false);
       expect(store.pastLoading()).toBe(true);
+      expect(store.lastMeeting()?.key).toBe('m-past-b');
+    });
+
+    it("takes the attendance counts from the full past feed's record of the same meeting", () => {
+      const store = create();
+      const latest = buildPastMeeting('b', inDays(-1));
+      latestPast$.next([latest]);
+      expect(store.lastMeeting()?.meeting).not.toHaveProperty('attendance_summary');
+
+      past$.next([{ ...latest, attendance_summary: { invited: 8, attended: 3 } }]);
+
+      expect((store.lastMeeting()?.meeting as PastMeeting).attendance_summary).toEqual({ invited: 8, attended: 3 });
       expect(store.lastMeeting()?.key).toBe('m-past-b');
     });
 

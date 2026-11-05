@@ -110,6 +110,7 @@ function buildOrgsRouter(): Router {
   // intentionally use `:accountId`. /events is an exact path and won't capture /events/summary or the per-event
   // /attendees and /speakers paths, so ordering isn't strictly required; they're grouped here for readability.
   router.get('/:accountId/lens/events/summary', (req, res, next) => orgLensEventsController.getOrgEventsSummary(req, res, next));
+  router.get('/:accountId/lens/events/foundations', (req, res, next) => orgLensEventsController.getOrgEventFoundations(req, res, next));
   router.get('/:accountId/lens/events/:eventId/attendees', (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
   router.get('/:accountId/lens/events/:eventId/speakers', (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
   router.get('/:accountId/lens/events', (req, res, next) => orgLensEventsController.getOrgEvents(req, res, next));
@@ -187,17 +188,11 @@ function buildOrgsRouter(): Router {
   router.put('/:orgUid/lens/access/users/:email', (req, res, next) => orgLensAccessController.changeRole(req, res, next));
   router.delete('/:orgUid/lens/access/users/:email', (req, res, next) => orgLensAccessController.removeUser(req, res, next));
 
-  // LFXV2-1895 — Org Lens Training & Certifications stat strip.
+  // Shared Training / Trainees view: one stats call, one options call, one group-by table + drawer.
   router.get('/:orgUid/lens/training/stats', (req, res, next) => orgLensTrainingController.getTrainingStats(req, res, next));
-  // LFXV2-1896 — Certifications tab table + drill-down rosters. The more-specific
-  // :courseId/employees route MUST be registered before the list route so Express matches it first.
-  router.get('/:orgUid/lens/training/certifications/:courseId/employees', (req, res, next) =>
-    orgLensTrainingController.getCertificationEmployees(req, res, next)
-  );
-  router.get('/:orgUid/lens/training/certifications', (req, res, next) => orgLensTrainingController.getOrgCertifications(req, res, next));
-  // LFXV2-1897 — Trainings tab table + drill-down rosters.
-  router.get('/:orgUid/lens/training/trainings/:courseId/employees', (req, res, next) => orgLensTrainingController.getTrainingEmployees(req, res, next));
-  router.get('/:orgUid/lens/training/trainings', (req, res, next) => orgLensTrainingController.getOrgTrainings(req, res, next));
+  router.get('/:orgUid/lens/training/filter-options', (req, res, next) => orgLensTrainingController.getFilterOptions(req, res, next));
+  router.get('/:orgUid/lens/training/groups/employees', (req, res, next) => orgLensTrainingController.getGroupEmployees(req, res, next));
+  router.get('/:orgUid/lens/training/groups', (req, res, next) => orgLensTrainingController.getGroups(req, res, next));
 
   // LFXV2-2014 — Org Lens Groups page (working groups / committees the org's employees participate in).
   router.get('/:orgUid/lens/groups', (req, res, next) => orgLensGroupsController.getGroups(req, res, next));
@@ -218,6 +213,7 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/roi/investment-breakdown', requireOrgLensRoiAudience, (req, res, next) =>
     orgLensRoiController.getInvestmentBreakdown(req, res, next)
   );
+  router.get('/:orgUid/lens/roi/value-drivers', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getValueDrivers(req, res, next));
   router.get('/:orgUid/lens/roi/projects', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getProjects(req, res, next));
   // Parameterized, so it stays below every literal above — `investment-breakdown` would otherwise
   // be captured as a project slug.

@@ -86,6 +86,7 @@ import {
   CreativeAssetUploadResult,
   GenerateEmailCopyResult,
   GoogleAdsAccountOption,
+  GoogleAdsConversionActionsResult,
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
   HubSpotEmailMonitorResponse,
@@ -676,6 +677,16 @@ export class CampaignService {
    */
   public getGoogleAdsAccounts(projectSlug: string): Observable<GoogleAdsAccountOption[]> {
     return this.http.get<GoogleAdsAccountOption[]>('/api/campaigns/google/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The enabled conversion actions on the Google Ads account a create uses, for the Implement tab's
+   * picker (#4991). A 403 for a non-root caller (and for everyone until the deployment opens the
+   * upstream route), a 404 while the campaign-service create road is off; the tab falls back to its
+   * free-text box on any failure.
+   */
+  public getGoogleAdsConversionActions(projectSlug: string): Observable<GoogleAdsConversionActionsResult> {
+    return this.http.get<GoogleAdsConversionActionsResult>('/api/campaigns/google/conversion-actions', { params: { project: projectSlug } });
   }
 
   /**

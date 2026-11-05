@@ -3421,7 +3421,9 @@ describe('CampaignController.createCampaign cutover', () => {
     );
 
     expect(createCampaigns).not.toHaveBeenCalled();
-    expect(refusalFrom().field).toBe('excludedGeoTargets');
+    const error = refusalFrom();
+    expect(error.field).toBe('excludedGeoTargets');
+    expect(error.message).toContain('Google Ads cannot both target and exclude 9031945');
   });
 
   /**
@@ -3596,7 +3598,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.field).toBe('excludedGeoTargets');
-    expect(error.message).toContain('US');
+    expect(error.message).toContain('Google Ads cannot both target and exclude US');
     // Only the clashing half is named — `CA` is targeted and not excluded, and naming it would
     // send the operator looking at the wrong chip.
     expect(error.message).not.toContain('CA');
@@ -3706,6 +3708,11 @@ describe('CampaignController.createCampaign cutover', () => {
       demandGenCreative: { headlines: ['Build with open source'] },
       performanceMaxCreative: { businessName: 'Example Foundation' },
       displayCreative: { headlines: ['Join us this spring'] },
+      path1: 'kubecon',
+      path2: 'na',
+      additionalSearchAds: [{ headlines: ['Register today'], descriptions: ['Join the community in Salt Lake City.'] }],
+      negativeKeywords: [{ text: 'free tickets', matchType: 'Exact' }],
+      searchPartners: true,
     };
     const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
 
@@ -3740,6 +3747,42 @@ describe('CampaignController.createCampaign cutover', () => {
 
       expect(next).not.toHaveBeenCalled();
       expect(legacyCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      ['path1', { path1: 'kubecon' }],
+      ['path2', { path2: 'na' }],
+      ['additionalSearchAds', { additionalSearchAds: [{ headlines: ['Register today'], descriptions: ['Join us.'] }] }],
+      ['negativeKeywords', { negativeKeywords: [{ text: 'free tickets', matchType: 'Exact' }] }],
+    ])('refuses the Search-only %s by name while the cutover is dark (#4991)', async (field, overrides) => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe(field);
+    });
+
+    it('still serves searchPartners false on the legacy road, which asks for Google Search alone (#4991)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody({ searchPartners: false }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(legacyCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('still serves an empty display path on the legacy road, which asks for nothing (#4991)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody({ path1: '', path2: '' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(legacyCreate).toHaveBeenCalledTimes(1);
     });
 
     // The bidding plan and creative are judged by what the cutover's own normalizers would send
@@ -4007,7 +4050,7 @@ describe('CampaignController.createCampaign cutover', () => {
     // The contrast for every ad-schedule refusal below: without it they would all pass on a
     // controller that refused or dropped every schedule. `bidModifier` is a pointer upstream —
     // absent means "listed but unadjusted" — so the key must be OMITTED rather than zero-filled,
-    // since 0 is the -100% "do not serve" opt-out and would mean the opposite.
+    // since 0 is the -100% modifier Google refuses on an ad schedule.
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000010', error: null });
 
     await controller.createCampaign(
@@ -4171,17 +4214,96 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toHaveLength(2);
   });
 
-  it('dispatches a schedule whose bid modifier is 0, the opt-out rather than a value below the floor', async () => {
-    // `validateBidModifier` returns EARLY on 0: it is the -100% "do not serve here" modifier, which
-    // is how a day-parted campaign switches off the hours it does not want. A guard that tested the
-    // range first would refuse the one modifier such a campaign is certain to carry.
+  it('refuses a schedule whose bid modifier is 0 (-100%), which Google takes only as a device exclusion', async () => {
+    // campaign-service's `validateBidModifier` accepts 0 for a schedule as for a device and forwards
+    // it, but Google's CampaignCriterion contract takes 0.1-10.0 on an ad schedule, so the criteria
+    // mutate would fail after the budget exists (#5088 review). Refused here, before anything is created.
+    await controller.createCampaign(buildReq(googleBody({ adSchedules: [{ ...WEEKDAY, bidModifier: 0 }] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('adSchedules');
+    expect(error.message).toBe(
+      'The Google Ads ad schedule 1 has a bid modifier of 0. Google accepts 0.1 to 10 on an ad schedule (-90% to +900%). A bid modifier of 0 excludes a device, not an ad schedule. To stop serving at that time, remove this window and keep at least one other: with windows, the campaign serves only in them; with none, it serves around the clock. Fix it and create again.'
+    );
+  });
+
+  it('dispatches a schedule at -90% (bid modifier 0.1), the lowest adjustment Google takes on one', async () => {
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000014', error: null });
 
-    await controller.createCampaign(buildReq(googleBody({ adSchedules: [{ ...WEEKDAY, bidModifier: 0 }] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    await controller.createCampaign(buildReq(googleBody({ adSchedules: [{ ...WEEKDAY, bidModifier: 0.1 }] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(next).not.toHaveBeenCalled();
     const sent = (envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules'] as Record<string, unknown>[];
-    expect(sent[0]['bidModifier']).toBe(0);
+    expect(sent[0]['bidModifier']).toBe(0.1);
+  });
+
+  // Google stores an ad-schedule bid adjustment under Smart Bidding and never bids it; campaign-service
+  // forwards it, so the shared judge refuses it under the EFFECTIVE strategy (#5088 review). The way
+  // out names only the strategies that apply it which the channel offers.
+  it.each([
+    [
+      'search under Maximize Conversions',
+      { biddingStrategy: 'maximize-conversions' },
+      'Maximize Conversions',
+      'or bid with Manual CPC or Maximize Clicks, then',
+    ],
+    ['search under Target CPA', { biddingStrategy: 'target-cpa', targetCpa: 20 }, 'Target CPA', 'or bid with Manual CPC or Maximize Clicks, then'],
+    [
+      'search under Maximize Conversion Value',
+      { biddingStrategy: 'maximize-conversion-value' },
+      'Maximize Conversion Value',
+      'or bid with Manual CPC or Maximize Clicks, then',
+    ],
+    ['search under Target ROAS', { biddingStrategy: 'target-roas', targetRoas: 4 }, 'Target ROAS', 'or bid with Manual CPC or Maximize Clicks, then'],
+    [
+      'display with no strategy, whose default is Maximize Conversions',
+      { campaignTypes: ['display'] },
+      'Maximize Conversions',
+      'or bid with Maximize Clicks, then',
+    ],
+    [
+      'performance-max with no strategy, whose default is Maximize Conversions',
+      { campaignTypes: ['performance-max'] },
+      'Maximize Conversions',
+      'adjustment, then',
+    ],
+  ])('refuses an ad schedule bid adjustment on %s, before the dispatcher', async (_label, overrides, strategyLabel, wayOut) => {
+    await controller.createCampaign(
+      buildReq(googleBody({ ...overrides, adSchedules: [WEEKDAY, { ...WEEKDAY, dayOfWeek: 'TUESDAY', bidModifier: 1.5 }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('adSchedules');
+    expect(error.message).toContain(
+      `The Google Ads ad schedule 2 has a bid modifier of 1.5. Google Ads applies an ad schedule bid adjustment only under Manual CPC or Maximize Clicks. Under ${strategyLabel} it would ignore it, so LFX One doesn't send one. Clear its bid`
+    );
+    expect(error.message).toContain(wayOut);
+  });
+
+  it.each([
+    ['an adjusted window under Maximize Clicks', { biddingStrategy: 'maximize-clicks', adSchedules: [{ ...WEEKDAY, bidModifier: 1.5 }] }],
+    [
+      'an adjusted window on Display under an explicit Maximize Clicks',
+      { campaignTypes: ['display'], biddingStrategy: 'maximize-clicks', adSchedules: [{ ...WEEKDAY, bidModifier: 1.5 }] },
+    ],
+    ['an adjusted window under a padded, upper-cased Manual CPC', { biddingStrategy: ' MANUAL-CPC ', adSchedules: [{ ...WEEKDAY, bidModifier: 1.5 }] }],
+    ['an unadjusted window under Target CPA', { biddingStrategy: 'target-cpa', targetCpa: 20, adSchedules: [WEEKDAY] }],
+  ])('dispatches %s, since Google applies it or there is nothing to ignore', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000025', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toHaveLength(1);
   });
 
   it('dispatches an exact repeat rather than refusing it, because upstream collapses one', async () => {
@@ -4369,16 +4491,84 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('Demand Gen');
   });
 
-  it.each([['video'], ['display']])('dispatches device bid modifiers on %s, which upstream leaves un-narrowed', async (channel) => {
+  it.each([['video'], ['display']])('dispatches a device exclusion on %s, which upstream leaves un-narrowed', async (channel) => {
     // The over-refusal guard for the channel fence: only Demand Gen and Performance Max are fenced
-    // off, so fencing the list to Search alone would refuse two creates Google takes.
+    // off, so fencing the list to Search alone would refuse two creates Google takes. An EXCLUSION,
+    // because both channels default to an automated strategy, under which only 0 is accepted.
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000021', error: null });
 
     await controller.createCampaign(
-      buildReq(googleBody({ campaignTypes: [channel], deviceBidModifiers: [MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
+      buildReq(googleBody({ campaignTypes: [channel], deviceBidModifiers: [{ device: 'MOBILE', bidModifier: 0 }] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers']).toHaveLength(1);
+  });
+
+  // `validateBiddingPlan` refuses any non-zero device modifier unless the EFFECTIVE strategy is
+  // manual-cpc: the one the request names, or the channel default when it names none.
+  // The way out names Manual CPC only where the channel offers it: Display and Video do not.
+  const WITH_MANUAL = 'Set it to 0 to exclude the device, remove it, or bid with Manual CPC, then create again.';
+  const WITHOUT_MANUAL = 'Set it to 0 to exclude the device or remove it, then create again.';
+
+  // The reason is Google's where Google ignores a device adjustment, and LFX One's (campaign-service's)
+  // policy under Maximize Clicks and Target CPA, where Google does apply one.
+  const SMART = (label: string) => `Google Ads doesn't apply a device bid adjustment under ${label}, except a -100% exclusion, so LFX One doesn't send one.`;
+  it.each([
+    ['display with no strategy, whose default is Maximize Conversions', { campaignTypes: ['display'] }, SMART('Maximize Conversions'), WITHOUT_MANUAL],
+    ['video with no strategy, whose default is Maximize Conversions', { campaignTypes: ['video'] }, SMART('Maximize Conversions'), WITHOUT_MANUAL],
+    [
+      'search under Maximize Clicks',
+      { biddingStrategy: 'maximize-clicks' },
+      "LFX One sends a device bid adjustment only under Manual CPC, so it doesn't send one under Maximize Clicks.",
+      WITH_MANUAL,
+    ],
+    [
+      'search under Target CPA',
+      { biddingStrategy: 'target-cpa', targetCpa: 20 },
+      "LFX One sends a device bid adjustment only under Manual CPC, so it doesn't send one under Target CPA.",
+      WITH_MANUAL,
+    ],
+  ])('refuses a device bid adjustment on %s, before the dispatcher', async (_label, overrides, reason, wayOut) => {
+    await controller.createCampaign(
+      buildReq(googleBody({ ...overrides, deviceBidModifiers: [{ device: 'TABLET', bidModifier: 0 }, MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('deviceBidModifiers');
+    expect(error.message).toBe(`The Google Ads device bid modifier 2 gives MOBILE a bid modifier of 1.2. ${reason} ${wayOut}`);
+  });
+
+  it('refuses a 0% device adjustment under an automated strategy, since it is a modifier of 1', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ biddingStrategy: 'maximize-conversions', deviceBidModifiers: [{ device: 'DESKTOP', bidModifier: 1 }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('gives DESKTOP a bid modifier of 1.');
+  });
+
+  it.each([
+    ['an exclusion under Maximize Conversions', { biddingStrategy: 'maximize-conversions', deviceBidModifiers: [{ device: 'MOBILE', bidModifier: 0 }] }],
+    ['an adjustment under a padded, upper-cased Manual CPC', { biddingStrategy: ' MANUAL-CPC ', deviceBidModifiers: [MOBILE_BID] }],
+    // U+FEFF is stripped by the JS trim `googleBidding` forwards with, though not by Go's TrimSpace:
+    // judging the raw body instead of the forwarded value would refuse a create upstream accepts.
+    ['an adjustment under a U+FEFF-padded Manual CPC', { biddingStrategy: '\uFEFFmanual-cpc', deviceBidModifiers: [MOBILE_BID] }],
+  ])('dispatches %s, which upstream accepts', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000024', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers']).toHaveLength(1);
@@ -4460,8 +4650,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
-    expect(error.message).toContain('CONNECTED_TV');
-    expect(error.message).toContain('MOBILE, DESKTOP, TABLET');
+    expect(error.message).toContain('names CONNECTED_TV, which is not one of MOBILE, DESKTOP, TABLET');
   });
 
   it('refuses a repeated device rather than collapsing it, because the second adjustment is the one Google drops', async () => {
@@ -4710,6 +4899,247 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(config).not.toHaveProperty('deviceBidModifiers');
     expect(config).not.toHaveProperty('excludedAgeRanges');
     expect(config).not.toHaveProperty('excludedGenders');
+  });
+
+  describe('Search ads, display paths and negatives at create (#4991)', () => {
+    it('sends the one ad exactly as before when no further ad is added, with the paths at campaign level', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004991', error: null });
+
+      await controller.createCampaign(buildReq(googleBody({ path1: ' kubecon ', path2: 'na' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config['headlines']).toEqual(['H1']);
+      expect(config['descriptions']).toEqual(['D1']);
+      expect(config['path1']).toBe('kubecon');
+      expect(config['path2']).toBe('na');
+      expect(config).not.toHaveProperty('adGroups');
+      expect(config).not.toHaveProperty('negativeKeywords');
+    });
+
+    it('sends every ad as one named ad group once a second ad is added, the first built from the campaign copy', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004992', error: null });
+
+      await controller.createCampaign(
+        buildReq(
+          googleBody({
+            path1: 'kubecon',
+            additionalSearchAds: [
+              { headlines: [' Register today ', ''], descriptions: ['Join us in Salt Lake City.'], path1: '', path2: '' },
+              { headlines: ['Save the date'], descriptions: ['Four days of talks.'], path1: 'agenda', path2: 'day1' },
+            ],
+          }),
+          { project: 'tlf', brief_id: 'b-1' }
+        ),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config['adGroups']).toEqual([
+        {
+          name: 'Main',
+          ads: [
+            { headlines: ['H1'], descriptions: ['D1'], path1: 'kubecon' },
+            { headlines: ['Register today'], descriptions: ['Join us in Salt Lake City.'] },
+            { headlines: ['Save the date'], descriptions: ['Four days of talks.'], path1: 'agenda', path2: 'day1' },
+          ],
+        },
+      ]);
+      // Keywords stay at campaign level, where the one group inherits them.
+      expect(config['keywords']).toEqual([{ text: 'kubernetes', matchType: 'EXACT' }]);
+    });
+
+    it('sends the negatives with the match type upper-cased and the text normalized', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004993', error: null });
+
+      await controller.createCampaign(
+        buildReq(
+          googleBody({
+            negativeKeywords: [
+              { text: 'free  tickets', matchType: 'Exact' },
+              { text: 'jobs', matchType: 'Phrase' },
+            ],
+          }),
+          { project: 'tlf', brief_id: 'b-1' }
+        ),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['negativeKeywords']).toEqual([
+        { text: 'free tickets', matchType: 'EXACT' },
+        { text: 'jobs', matchType: 'PHRASE' },
+      ]);
+    });
+
+    it.each([
+      ['path1', { path1: 'kubecon' }],
+      ['additionalSearchAds', { additionalSearchAds: [{ headlines: ['A'], descriptions: ['B'] }] }],
+      ['negativeKeywords', { negativeKeywords: [{ text: 'jobs', matchType: 'Exact' }] }],
+    ])('refuses %s by name off Search rather than dropping it', async (field, overrides) => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['display'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.field).toBe(field);
+      expect(error.message).toContain('only on Search campaigns');
+    });
+
+    it.each([
+      ['a path over 15 characters', { path1: 'kubecon-north-america' }, 'path1', 'longer than the 15'],
+      ['a path with a slash', { path1: 'kube/con' }, 'path1', '/ ? # & ='],
+      ['path 2 without path 1', { path2: 'na' }, 'path2', 'without display path 1'],
+      ['a CJK path over 15 display width', { path1: '日本語日本語日本語' }, 'path1', 'count double'],
+      [
+        'a fourth ad',
+        { additionalSearchAds: Array.from({ length: 3 }, () => ({ headlines: ['A'], descriptions: ['B'] })) },
+        'additionalSearchAds',
+        'at most 3',
+      ],
+      ['an ad with no headline', { additionalSearchAds: [{ headlines: ['  '], descriptions: ['B'] }] }, 'additionalSearchAds', 'headline to ad 2'],
+      ['an ad with no description', { additionalSearchAds: [{ headlines: ['A'], descriptions: [] }] }, 'additionalSearchAds', 'description to ad 2'],
+      ['a malformed ad', { additionalSearchAds: [{ headlines: 'A', descriptions: ['B'] }] }, 'additionalSearchAds', 'must be a list'],
+      ['an over-long ad path', { additionalSearchAds: [{ headlines: ['A'], descriptions: ['B'], path1: 'x'.repeat(16) }] }, 'additionalSearchAds', 'on ad 2'],
+      [
+        '61 negatives',
+        { negativeKeywords: Array.from({ length: 61 }, (_, i) => ({ text: `term ${i}`, matchType: 'Exact' })) },
+        'negativeKeywords',
+        'at most 60',
+      ],
+      ['a negative with a refused character', { negativeKeywords: [{ text: 'free!', matchType: 'Exact' }] }, 'negativeKeywords', 'letters, digits'],
+      ['an unknown match type', { negativeKeywords: [{ text: 'jobs', matchType: 'Fuzzy' }] }, 'negativeKeywords', 'Exact, Phrase or Broad'],
+      [
+        'the same negative twice',
+        {
+          negativeKeywords: [
+            { text: 'Jobs', matchType: 'Exact' },
+            { text: 'jobs', matchType: 'Exact' },
+          ],
+        },
+        'negativeKeywords',
+        'more than once',
+      ],
+    ])('refuses %s on Search before dispatch', async (_label, overrides, field, fragment) => {
+      await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.field).toBe(field);
+      expect(error.message).toContain(fragment);
+    });
+
+    it.each([['path1'], ['path2']])('bounds a %s longer than the shared field limit before the envelope trims it', async (field) => {
+      await controller.createCampaign(buildReq(googleBody({ path1: 'kubecon', [field]: 'x'.repeat(2049) }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.field).toBe(field);
+      expect(error.message).toContain('2048');
+    });
+
+    it('bounds an over-long negative keyword before the shared judge reads it', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ negativeKeywords: [{ text: 'x'.repeat(5000), matchType: 'Exact' }] }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.field).toBe('negativeKeywords.text');
+      expect(error.message).toContain('2048');
+    });
+
+    it.each([
+      ['headlines', { headlines: ['日'.repeat(16)] }, 'A headline on ad 1'],
+      ['descriptions', { descriptions: ['ｄ'.repeat(46)] }, 'A description on ad 1'],
+      ['headlines', { headlines: ['日'.repeat(16)], additionalSearchAds: [{ headlines: ['A'], descriptions: ['B'] }] }, 'A headline on ad 1'],
+    ])('refuses an over-wide first-ad %s by name, as campaign-service refuses it on every Search ad', async (field, overrides, fragment) => {
+      await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.field).toBe(field);
+      expect(error.message).toContain(fragment);
+    });
+
+    it('still dispatches first-ad copy at the widths Google allows', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004994', error: null });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ headlines: ['h'.repeat(30), '日'.repeat(15)], descriptions: ['d'.repeat(90)] }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(createCampaigns).toHaveBeenCalled();
+    });
+
+    it('sends searchPartners only when true, so false and absent both stay Google Search only', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004995', error: null });
+
+      await controller.createCampaign(buildReq(googleBody({ searchPartners: true }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+      await controller.createCampaign(buildReq(googleBody({ searchPartners: false }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect((createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>)['googleAdsConfig']['searchPartners']).toBe(true);
+      expect((createCampaigns.mock.calls[1][4] as Record<string, Record<string, unknown>>)['googleAdsConfig']).not.toHaveProperty('searchPartners');
+    });
+
+    it('refuses searchPartners off Search, and a non-boolean anywhere, but not false off Search', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], searchPartners: true }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+      expect(refusalFrom()).toMatchObject({ field: 'searchPartners', message: expect.stringContaining('only on Search campaigns') });
+
+      vi.mocked(next).mockClear();
+      await controller.createCampaign(buildReq(googleBody({ searchPartners: 'yes' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+      expect(refusalFrom()).toMatchObject({ field: 'searchPartners', message: expect.stringContaining('true or false') });
+
+      vi.mocked(next).mockClear();
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004996', error: null });
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], searchPartners: false }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+      const fields = vi.mocked(next).mock.calls.map((call) => (call[0] as unknown as ServiceValidationError)?.validationErrors?.[0]?.field);
+      expect(fields).not.toContain('searchPartners');
+    });
+
+    it.each([
+      ['an over-wide headline among the first 15 kept', [...Array.from({ length: 14 }, (_, i) => `H${i}`), '日'.repeat(16)], true],
+      ['an over-wide headline after 15 are kept', [...Array.from({ length: 15 }, (_, i) => `H${i}`), '日'.repeat(16)], false],
+      ['an over-wide line reached because repeats do not count', [...Array.from({ length: 15 }, () => 'Same'), '日'.repeat(16)], true],
+      ['an over-wide line reached because blanks do not count', [...Array.from({ length: 15 }, () => '  '), '日'.repeat(16)], true],
+    ])("judges first-ad width only where campaign-service's callerCopy reaches: %s", async (_label, headlines, refused) => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004997', error: null });
+
+      await controller.createCampaign(buildReq(googleBody({ headlines }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      if (refused) {
+        expect(refusalFrom().field).toBe('headlines');
+      } else {
+        expect(next).not.toHaveBeenCalled();
+      }
+    });
+
+    it('bounds the strings nested in the further ads before normalising them', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ additionalSearchAds: [{ headlines: ['x'.repeat(5000)], descriptions: ['B'] }] }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('additionalSearchAds.headlines');
+    });
   });
 
   it('dispatches the languages the operator picked, trimmed and upper-cased', async () => {
@@ -7725,6 +8155,8 @@ describe('CampaignController.listBriefCampaigns', () => {
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: expected }));
+    // The conversion-action picker's capability (#4991): the same two checks its route makes.
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleConversionActionsEnabled: expected }));
   });
 
   it('answers no without asking who the caller is when the create path does not serve', async () => {
@@ -7733,7 +8165,7 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false, googleConversionActionsEnabled: false }));
     expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
   });
 

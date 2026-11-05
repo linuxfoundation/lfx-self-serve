@@ -11,11 +11,17 @@
 
 import {
   BRAND_KIT_ANSWER_KEYS,
+  BRAND_KIT_CHAPTERS,
   BRAND_KIT_CONTRAST_GRADES,
   BRAND_KIT_FOUND_IN_KINDS,
   BRAND_KIT_LOGO_FILE_KINDS,
   BRAND_KIT_LOGO_SLOTS,
   BRAND_KIT_MODES,
+  BRAND_KIT_REPORT_ASSETS,
+  BRAND_KIT_REPORT_RULE_BASES,
+  BRAND_KIT_REPORT_SOURCE_KINDS,
+  BRAND_KIT_REPORT_V2,
+  BRAND_KIT_REPORT_WARNING_CODES,
   BRAND_KIT_TYPE_STEPS,
   BRAND_KIT_WEB_VIEW_TABS,
 } from '../constants/brand-kit.constants';
@@ -55,6 +61,9 @@ export type BrandKitLogoSlot = (typeof BRAND_KIT_LOGO_SLOTS)[number];
 
 /** One tab of the kit's web view. */
 export type BrandKitWebViewTabId = (typeof BRAND_KIT_WEB_VIEW_TABS)[number]['id'];
+
+/** One of the six chapters. */
+export type BrandKitChapterId = (typeof BRAND_KIT_CHAPTERS)[number]['id'];
 
 // ---------------------------------------------------------------------------
 // The kit tokens and the six chapters
@@ -221,8 +230,174 @@ export interface BrandKitChapters {
   voice: BrandKitVoiceChapter;
 }
 
-/** The skill's report: shown to the reviewer, never stored as content. */
-export type BrandKitReport = MktgAssetReport;
+/** What a failed source was. */
+export type BrandKitReportSourceKind = (typeof BRAND_KIT_REPORT_SOURCE_KINDS)[number];
+/** An asset the agent may report missing. */
+export type BrandKitReportAsset = (typeof BRAND_KIT_REPORT_ASSETS)[number];
+/** A warning the agent may raise. */
+export type BrandKitReportWarningCode = (typeof BRAND_KIT_REPORT_WARNING_CODES)[number];
+/** Where a rendered rule comes from. */
+export type BrandKitReportRuleBasis = (typeof BRAND_KIT_REPORT_RULE_BASES)[number];
+
+/** A source the agent could not read, in plain language; `detail` keeps the machine reason. */
+export interface BrandKitReportFailedSource {
+  source: string;
+  kind: BrandKitReportSourceKind;
+  reason: string;
+  detail?: string;
+}
+
+/** An asset the agent looked for and did not find, with the plain reason and, when it knows one, the fix. */
+export interface BrandKitReportMissingAsset {
+  asset: BrandKitReportAsset;
+  reason: string;
+  fix?: string;
+}
+
+/** Something the agent noticed about what it read; `source` names where. */
+export interface BrandKitReportWarning {
+  code: BrandKitReportWarningCode;
+  text: string;
+  source?: string;
+}
+
+/** One palette colour seen with different values in different sources; `chosen` is the hex the kit keeps. */
+export interface BrandKitReportColorConflict {
+  name: string;
+  values: { hex: string; source: string }[];
+  chosen: string;
+}
+
+/** The basis of one rule string the chapters render, by its path in the envelope. */
+export interface BrandKitReportRule {
+  path: string;
+  basis: BrandKitReportRuleBasis;
+  uses?: string[];
+}
+
+/** How many of a chapter's rendered rules come from the project's own sources and how many from the LF reference kit (report v2). */
+export interface BrandKitChapterRuleBasis {
+  id: BrandKitChapterId;
+  /** The chapter's title as the kit names it (`Logo`). */
+  title: string;
+  total: number;
+  project: number;
+  lfReference: number;
+}
+
+/** One value of a colour conflict as the approve dialog shows it: the hex, where it was found in words, and whether the kit kept it. */
+export interface BrandKitColorConflictValueView {
+  hex: string;
+  source: string;
+  kept: boolean;
+}
+
+/** One colour conflict as the approve dialog shows it. */
+export interface BrandKitColorConflictView {
+  name: string;
+  values: BrandKitColorConflictValueView[];
+  /** The hex the kit keeps. */
+  chosen: string;
+}
+
+/** One line of the approve dialog's LF-reference rules: a chapter and how many of its rules the reference supplied. */
+export interface BrandKitLfReferenceRuleLine {
+  id: BrandKitChapterId;
+  /** `Logo: 20 of 21 rules`. */
+  text: string;
+}
+
+/** A failed source as the approve dialog lists it: the source, the agent's plain reason and, when it gives one, the machine detail. */
+export interface BrandKitApproveFailedItem {
+  title: string;
+  text: string;
+  detail: string | null;
+}
+
+/** A missing asset as the approve dialog lists it: the asset's label, the agent's plain reason and, when it names one, the fix. */
+export interface BrandKitApproveMissingItem {
+  title: string;
+  text: string;
+  fix: string | null;
+}
+
+/** What a v2 report's approve dialog lists first, in the Sources tab's words; both empty for a v1 report. */
+export interface BrandKitApproveFindings {
+  failed: BrandKitApproveFailedItem[];
+  missing: BrandKitApproveMissingItem[];
+}
+
+/** The three findings groups of a v2 report, written by the agent in plain language; the UI never rewrites a reason. */
+export interface BrandKitReportFindings {
+  sources_failed: BrandKitReportFailedSource[];
+  missing_assets: BrandKitReportMissingAsset[];
+  warnings: BrandKitReportWarning[];
+}
+
+/** One line of a Sources tab group, with whether the current approval accepted it. */
+export interface BrandKitSourcesItem {
+  /** The stable key the approval snapshot stores. */
+  key: string;
+  title: string;
+  text: string;
+  /** Small grey text under the line (a failed source's machine detail). */
+  detail: string | null;
+  /** A second line, "Fix: …", when the agent names one. */
+  fix: string | null;
+  /** Where a warning was seen, shown as text; for a failed source, its full address when the title is a name for it. */
+  source: string | null;
+  /** The source as a link, only when it is an http(s) address; anything else stays text. */
+  href: string | null;
+  accepted: boolean;
+}
+
+/** One value of a conflicting colour, drawn as the Colour chapter draws a swatch: the hex on its own ground, in a legible ink. */
+export interface BrandKitSourcesConflictValue {
+  hex: string;
+  /** The hex without its `#`, for the swatch's testid as the Colour chapter writes it. */
+  hexDigits: string;
+  /** Where the value was seen, as the agent wrote it. */
+  source: string;
+  /** The same in words, as the palette names its provenance (`From the brand page — example.org`). */
+  sourceLabel: string;
+  /** A light colour needs a border to stand off the white card. */
+  light: boolean;
+  ink: string;
+}
+
+/** One colour seen with different values; the swatches in the order the agent gave. */
+export interface BrandKitSourcesConflict {
+  key: string;
+  name: string;
+  values: BrandKitSourcesConflictValue[];
+  chosen: string;
+  accepted: boolean;
+}
+
+/** The Sources tab as rendered: the four groups, the gaps with their markers, and the marker text. */
+export interface BrandKitSourcesView {
+  failed: BrandKitSourcesItem[];
+  missing: BrandKitSourcesItem[];
+  warnings: BrandKitSourcesItem[];
+  conflicts: BrandKitSourcesConflict[];
+  gaps: { text: string; accepted: boolean }[];
+  /** "Accepted when vN was approved" once the approval carries a snapshot; empty otherwise. */
+  acceptedMarker: string;
+  /** True when the current approval has no snapshot: the view falls back to the derived gaps line. */
+  legacyApproval: boolean;
+}
+
+/**
+ * The skill's report: shown to the reviewer, never stored as content. The v1 fields are always there; the v2 fields
+ * (brand-kit ≥ 2.2.0) are optional. A v1 report shows its legacy sources_failed list under Failed sources, and the
+ * v2 groups show their empty lines.
+ */
+export interface BrandKitReport extends MktgAssetReport {
+  version?: typeof BRAND_KIT_REPORT_V2;
+  findings?: BrandKitReportFindings;
+  color_conflicts?: BrandKitReportColorConflict[];
+  rules?: BrandKitReportRule[];
+}
 
 /** One logo file of the inputs record. */
 export interface BrandKitInputLogoFile {
@@ -542,12 +717,6 @@ export interface BrandKitUsageView {
   dark: boolean;
 }
 
-/** One icon sample of the iconography page. */
-export interface BrandKitIconView {
-  label: string;
-  icon: string;
-}
-
 /** One chapter as the web view's overview summarises it, with the tab that opens it. */
 export interface BrandKitChapterSummary {
   id: BrandKitWebViewTabId;
@@ -619,7 +788,6 @@ export interface BrandKitBookView {
   /** The alphabet line. */
   specimen: string;
   visual: BrandKitVisualChapter;
-  icons: BrandKitIconView[];
   usage: BrandKitUsageChapter;
   usageTiles: BrandKitUsageView[];
   voice: BrandKitVoiceChapter;

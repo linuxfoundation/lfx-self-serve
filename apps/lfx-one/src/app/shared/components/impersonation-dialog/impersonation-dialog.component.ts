@@ -6,17 +6,15 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { IMPERSONATION_EMPTY_TARGET_MESSAGE, IMPERSONATION_SELF_MESSAGE, IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
-import { ImpersonationSuggestion, RecentImpersonation } from '@lfx-one/shared/interfaces';
 import {
-  composeFullName,
-  excludeUserSearchIdentities,
-  hasLfAccount,
-  rankUserSearchResults,
-  resolveImpersonationStartErrorMessage,
-} from '@lfx-one/shared/utils';
+  IMPERSONATION_EMPTY_TARGET_MESSAGE,
+  IMPERSONATION_SEARCH_MIN_LENGTH,
+  IMPERSONATION_SELF_MESSAGE,
+  IMPERSONATION_TRANSITION_MESSAGES,
+} from '@lfx-one/shared/constants';
+import { ImpersonationSuggestion, RecentImpersonation } from '@lfx-one/shared/interfaces';
+import { excludeUserSearchIdentities, resolveImpersonationStartErrorMessage } from '@lfx-one/shared/utils';
 import { ImpersonationService } from '@services/impersonation.service';
-import { SearchService } from '@services/search.service';
 import { UserService } from '@services/user.service';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
@@ -30,7 +28,6 @@ import { map, Observable, of, Subject, switchMap, take } from 'rxjs';
 })
 export class ImpersonationDialogComponent {
   private readonly impersonationService = inject(ImpersonationService);
-  private readonly searchService = inject(SearchService);
   private readonly userService = inject(UserService);
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly dialogConfig = inject(DynamicDialogConfig, { optional: true });
@@ -81,9 +78,9 @@ export class ImpersonationDialogComponent {
 
   public submit(): void {
     // Start is never disabled, so anything can be tried: a pick sends its username, and otherwise whatever the field
-    // holds is sent as entered, for the exchange to resolve as an exact email or username. The directory only lists
-    // committee members, so an admin who knows an exact value must be able to try it unpicked, and an unknown user is
-    // refused by the start request. Read from the control rather than a mirrored signal so it is always what is shown.
+    // holds is sent as entered, for the exchange to resolve as an exact email or username. The search can miss someone
+    // (short text, or an account with no LFID), so an admin who knows an exact value must be able to try it unpicked,
+    // and an unknown user is refused by the start request. Read from the control rather than a mirrored signal so it is always what is shown.
     const typed = this.targetUserForm.controls.targetUser.value;
     const target = this.picked()?.targetUser ?? (typeof typed === 'string' ? typed.trim() : '');
     if (!target) {
@@ -165,11 +162,10 @@ export class ImpersonationDialogComponent {
   }
 
   /**
-   * What the picker offers for a typed query: matching recents first, then people from the directory.
-   * Fewer than two characters only filters the recents, as the directory search needs a real prefix to
-   * answer usefully. The directory is always searched as the signed-in admin (the route that also leaves
-   * the admin and the current target out), and only people with an LF account are listed — an
-   * impersonation target needs a username. A failed search falls back to the recents alone.
+   * What the picker offers for a typed query: matching recents first, then everyone with an LFID that the search finds
+   * by username, email or name. Fewer characters than the search needs only filters the recents. The search runs as the
+   * signed-in admin (the route also leaves the admin and the current target out) and returns only people with a
+   * username, since an impersonation target needs one. A failed search falls back to the recents alone.
    */
   private findSuggestions(query: string): Observable<ImpersonationSuggestion[]> {
     const term = query.trim().toLowerCase();
@@ -182,26 +178,14 @@ export class ImpersonationDialogComponent {
         entry.targetUser.toLowerCase().includes(term)
     );
 
-    if (term.length < 2) {
+    if (term.length < IMPERSONATION_SEARCH_MIN_LENGTH) {
       return of(recents);
     }
 
-    // The raw text goes to the directory: its exact-email lookup is case-sensitive and retries the lowercased form itself.
-    return this.searchService.searchUsers(query.trim(), 'committee_member', true).pipe(
-      map((users) => {
+    return this.impersonationService.searchUsers(query.trim()).pipe(
+      map((found) => {
         const listed = new Set(recents.map((entry) => entry.username.toLowerCase()));
-        const found = rankUserSearchResults(users.filter(hasLfAccount), term)
-          .filter((user) => !listed.has((user.username ?? '').toLowerCase()))
-          .map(
-            (user): ImpersonationSuggestion => ({
-              targetUser: user.username as string,
-              username: user.username as string,
-              email: user.email,
-              name: composeFullName(user.first_name, user.last_name) || undefined,
-            })
-          );
-
-        return [...recents, ...found];
+        return [...recents, ...found.filter((person) => !listed.has(person.username.toLowerCase()))];
       })
     );
   }

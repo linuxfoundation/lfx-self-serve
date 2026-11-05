@@ -4,7 +4,7 @@ description: Manage your work history and see how your project affiliations and 
 audience: [all]
 product_area: Account
 tags: [account, work-history, affiliations, project-involvement, attribution, maintainer]
-last_updated: 2026-11-02
+last_updated: 2026-11-05
 intercom_collection: Account
 ---
 
@@ -15,7 +15,7 @@ The **Work history & Affiliations** tab is where you record your employment hist
 - Add, edit, and delete work experience entries, and mark your current employer
 - See how your project contributions are attributed to organizations over time
 - Confirm or adjust your affiliation history when the system needs it
-- Confirm whether you are a maintainer or a contributor on a project
+- See whether a project lists you as a maintainer or a contributor
 
 ## Open Work history & Affiliations
 
@@ -62,9 +62,11 @@ Your contributions are attributed based on three inputs (see the **How affiliati
 
 When the system attributes contributions from your employment timeline, you may see a prompt: _We've attributed your project contributions based on your employment timeline. Confirm or adjust if needed._ Select **Confirm Affiliation History** (or **Edit Affiliation** on a project) to open the affiliation editor, where you can adjust the organization and dates per project and override anything the system got wrong.
 
-### Confirm your maintainer or contributor role
+### Maintainer and Contributor labels
 
-If the system detects you may be a maintainer, it asks you to verify: in the **Verify your role** dialog, choose **Yes, I'm a maintainer** or **No, I'm a contributor**. A role that comes from a project's repository configuration file is marked with a lock icon and the tooltip _Role defined in repository configuration file_; you can still open the role menu and change it to **Contributor** if it's wrong.
+A project card can show a **Maintainer** or **Contributor** label. It comes from the project's data: either the project's repository configuration file (marked with a lock icon and the tooltip _Role defined in repository configuration file._) or maintainer activity LFX detected. When LFX detects that you may be a maintainer, the label shows a question-mark icon; select it to open the **Verify your role** dialog and choose **Yes, I'm a maintainer** or **No, I'm a contributor**.
+
+> **Note:** This label describes your involvement only. It does not grant any access to the project, and a **Contributor** label can't be changed to **Maintainer** here. Access to a project is granted by a project manager on the project's **Permissions** page. See [Permissions](../../permissions/).
 
 If you haven't connected any identities or added work experience yet, the section shows _No project affiliations yet_. Once you have connected an identity, even one you haven't verified yet, or added work experience, it shows _No project contributions found_ until LFX finds contributions to a tracked project. Only verified identities are used to find your contributions, so if you see this message, check that the accounts you contribute with are verified on the [Identities](../identities/) tab. Both messages show buttons to **Verify identities** and **Add work experience**.
 
@@ -74,3 +76,4 @@ If you haven't connected any identities or added work experience yet, the sectio
 - [Identities](../identities/) — verified identities feed contribution attribution
 - [Edit your profile](../../profile/edit-profile/#set-your-organization) — the Organization field is populated from your work history
 - [Account FAQ](../faq/) — short answers about affiliations and account areas
+- [Permissions](../../permissions/) — how access to a project is actually granted

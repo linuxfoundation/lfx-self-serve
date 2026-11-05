@@ -98,7 +98,9 @@ export class InitiativeSettingsDrawerComponent {
 
       const input: UpdateInitiativeInput = {
         name,
-        description,
+        // Only send the description when the user edited it — the editor loads older plain-text
+        // descriptions as HTML, and saving another tab must not rewrite them unasked.
+        ...(details.form.controls['description'].dirty ? { description } : {}),
         // Only send industry when the user has explicitly changed topics — sending an
         // empty string clears the backend value, and existing slugs that don't map to
         // SS options would be lost if we always overwrite.

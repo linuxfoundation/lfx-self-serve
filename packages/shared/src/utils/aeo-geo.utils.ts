@@ -195,6 +195,7 @@ export function isAeoGeoEnvelope(value: unknown): value is AeoGeoEnvelope {
       'intake',
       'generated_at',
       'agent',
+      'quality',
     ])
   ) {
     return false;
