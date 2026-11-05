@@ -54,7 +54,8 @@ test('an approval in a second browser context updates the open document in place
   const ids = ['mktg-document-view-title', 'mktg-document-view-content', 'mktg-document-view-revisions', 'mktg-framework-view-tab-numbers'];
   for (const id of ids) await page.getByTestId(id).evaluate((node) => (node.dataset['liveIdentity'] = 'kept'));
   const originalUrl = page.url();
-  const content = await page.getByTestId('mktg-document-view-content').textContent();
+  // Visible text only: the approval mounts the print-only rendering (display:none on screen) inside the content, which textContent would count.
+  const content = await page.getByTestId('mktg-document-view-content').innerText();
   const fresh = await browser.newContext({ storageState: info.project.use.storageState, proxy: info.project.use.proxy, baseURL: info.project.use.baseURL });
   try {
     const approver = await fresh.newPage();
@@ -98,7 +99,7 @@ test('an approval in a second browser context updates the open document in place
     await expect(page).toHaveURL(originalUrl);
     for (const id of ids) await expect(page.getByTestId(id)).toHaveAttribute('data-live-identity', 'kept');
     await expect(tab).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByTestId('mktg-document-view-content')).toHaveText(content ?? '');
+    await expect(page.getByTestId('mktg-document-view-content')).toHaveText(content, { useInnerText: true });
     await expect(page.getByTestId('mktg-document-view-loading')).toHaveCount(0);
   } finally {
     await fresh.close();
