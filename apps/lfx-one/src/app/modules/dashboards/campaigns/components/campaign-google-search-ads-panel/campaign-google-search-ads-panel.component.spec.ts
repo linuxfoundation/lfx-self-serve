@@ -35,6 +35,7 @@ describe('CampaignGoogleSearchAdsPanelComponent', () => {
     additionalAds?: CampaignSearchAd[];
     negativeKeywordsText?: string;
     matchType?: CampaignNegativeKeywordMatchType;
+    searchPartners?: boolean;
     pathsError?: string | null;
     adsError?: string | null;
     negativeKeywordsError?: string | null;
@@ -44,6 +45,7 @@ describe('CampaignGoogleSearchAdsPanelComponent', () => {
     fixture.componentRef.setInput('additionalAds', inputs.additionalAds ?? []);
     fixture.componentRef.setInput('negativeKeywordsText', inputs.negativeKeywordsText ?? '');
     fixture.componentRef.setInput('negativeKeywordMatchType', inputs.matchType ?? 'Exact');
+    fixture.componentRef.setInput('searchPartners', inputs.searchPartners ?? false);
     fixture.componentRef.setInput('pathsError', inputs.pathsError ?? null);
     fixture.componentRef.setInput('adsError', inputs.adsError ?? null);
     fixture.componentRef.setInput('negativeKeywordsError', inputs.negativeKeywordsError ?? null);
@@ -64,6 +66,22 @@ describe('CampaignGoogleSearchAdsPanelComponent', () => {
 
   afterEach(() => {
     fixture.destroy();
+  });
+
+  it('offers Search partners as a labelled checkbox, ticked from its value, and writes a tick back', () => {
+    const partners: boolean[] = [];
+    fixture.componentInstance.searchPartners.subscribe((value) => partners.push(value));
+    render({ searchPartners: false });
+    const box = query('implementation-google-search-partners')?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    expect(query('implementation-google-search-partners')?.textContent).toContain('Include Google search partners');
+
+    box.click();
+    fixture.detectChanges();
+    expect(partners.at(-1)).toBe(true);
+
+    render({ searchPartners: true });
+    expect((query('implementation-google-search-partners')?.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(true);
   });
 
   it('writes a typed display path back', () => {

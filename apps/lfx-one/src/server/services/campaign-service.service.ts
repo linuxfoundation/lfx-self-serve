@@ -81,6 +81,7 @@ import type {
   CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
   CampaignServiceAccessibleAccounts,
+  CampaignServiceGoogleAdsConversionActions,
   CampaignServiceGoogleAdsGeoTargetSuggestions,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
@@ -3310,6 +3311,28 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/connection-google-ads/accounts`,
+      'GET'
+    );
+  }
+
+  /**
+   * The enabled conversion actions on the Google Ads account a create for this project uses
+   * (`list-google-ads-conversion-actions`), for the Implement tab's picker (#4991). Upstream admits
+   * only a root principal, and its gateway denies every caller until the deployment sets
+   * `openfga.rootProjectUid`; a 503 there includes an account holding more than 500 enabled actions.
+   * Failures are left to the caller, which falls back to the free-text box.
+   */
+  public async listGoogleAdsConversionActions(req: Request, projectSlug: string): Promise<CampaignServiceGoogleAdsConversionActions> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A conversion action read requires the project it belongs to.', {
+        operation: 'list_google_ads_conversion_actions',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsConversionActions>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/conversion-actions`,
       'GET'
     );
   }

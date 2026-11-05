@@ -3709,6 +3709,7 @@ describe('CampaignController.createCampaign cutover', () => {
       path2: 'na',
       additionalSearchAds: [{ headlines: ['Register today'], descriptions: ['Join the community in Salt Lake City.'] }],
       negativeKeywords: [{ text: 'free tickets', matchType: 'Exact' }],
+      searchPartners: true,
     };
     const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
 
@@ -3759,6 +3760,16 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(legacyCreate).not.toHaveBeenCalled();
       expect(refusalFrom().field).toBe(field);
+    });
+
+    it('still serves searchPartners false on the legacy road, which asks for Google Search alone (#4991)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody({ searchPartners: false }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(legacyCreate).toHaveBeenCalledTimes(1);
     });
 
     it('still serves an empty display path on the legacy road, which asks for nothing (#4991)', async () => {
@@ -5063,6 +5074,57 @@ describe('CampaignController.createCampaign cutover', () => {
 
       expect(next).not.toHaveBeenCalled();
       expect(createCampaigns).toHaveBeenCalled();
+    });
+
+    it('sends searchPartners only when true, so false and absent both stay Google Search only', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004995', error: null });
+
+      await controller.createCampaign(buildReq(googleBody({ searchPartners: true }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+      await controller.createCampaign(buildReq(googleBody({ searchPartners: false }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect((createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>)['googleAdsConfig']['searchPartners']).toBe(true);
+      expect((createCampaigns.mock.calls[1][4] as Record<string, Record<string, unknown>>)['googleAdsConfig']).not.toHaveProperty('searchPartners');
+    });
+
+    it('refuses searchPartners off Search, and a non-boolean anywhere, but not false off Search', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], searchPartners: true }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+      expect(refusalFrom()).toMatchObject({ field: 'searchPartners', message: expect.stringContaining('only on Search campaigns') });
+
+      vi.mocked(next).mockClear();
+      await controller.createCampaign(buildReq(googleBody({ searchPartners: 'yes' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+      expect(refusalFrom()).toMatchObject({ field: 'searchPartners', message: expect.stringContaining('true or false') });
+
+      vi.mocked(next).mockClear();
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004996', error: null });
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], searchPartners: false }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+      const fields = vi.mocked(next).mock.calls.map((call) => (call[0] as unknown as ServiceValidationError)?.validationErrors?.[0]?.field);
+      expect(fields).not.toContain('searchPartners');
+    });
+
+    it.each([
+      ['an over-wide headline among the first 15 kept', [...Array.from({ length: 14 }, (_, i) => `H${i}`), '日'.repeat(16)], true],
+      ['an over-wide headline after 15 are kept', [...Array.from({ length: 15 }, (_, i) => `H${i}`), '日'.repeat(16)], false],
+      ['an over-wide line reached because repeats do not count', [...Array.from({ length: 15 }, () => 'Same'), '日'.repeat(16)], true],
+      ['an over-wide line reached because blanks do not count', [...Array.from({ length: 15 }, () => '  '), '日'.repeat(16)], true],
+    ])("judges first-ad width only where campaign-service's callerCopy reaches: %s", async (_label, headlines, refused) => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004997', error: null });
+
+      await controller.createCampaign(buildReq(googleBody({ headlines }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      if (refused) {
+        expect(refusalFrom().field).toBe('headlines');
+      } else {
+        expect(next).not.toHaveBeenCalled();
+      }
     });
 
     it('bounds the strings nested in the further ads before normalising them', async () => {
@@ -8090,6 +8152,8 @@ describe('CampaignController.listBriefCampaigns', () => {
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: expected }));
+    // The conversion-action picker's capability (#4991): the same two checks its route makes.
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleConversionActionsEnabled: expected }));
   });
 
   it('answers no without asking who the caller is when the create path does not serve', async () => {
@@ -8098,7 +8162,7 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false, googleConversionActionsEnabled: false }));
     expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
   });
 
