@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, DestroyRef, inject, input, output, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
@@ -81,9 +81,6 @@ export class FormationCardComponent {
   private readonly destroyRef = inject(DestroyRef);
   /** Set on teardown so a write that outlives the card never emits on its destroyed output. */
   private destroyed = false;
-  private readonly unregisterDestroyed = this.destroyRef.onDestroy(() => {
-    this.destroyed = true;
-  });
 
   /**
    * Renders the card from an already-loaded checklist response instead of the project context —
@@ -136,6 +133,12 @@ export class FormationCardComponent {
 
   protected readonly adminToolUrl: Signal<string> = this.initAdminToolUrl();
 
+  public constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+    });
+  }
+
   /**
    * Opens the stage / legal-entity edit drawer through `UiDrawerService` (focus entry and return, dialog name
    * and Escape come with it). The card — not the drawer — owns the write ({@link saveRecord}), so a drawer
@@ -145,16 +148,18 @@ export class FormationCardComponent {
     const projectUid = this.view()?.uid;
     if (!projectUid) return;
 
-    let drawerOpen = true;
-    const save = (changes: UpdateFormationRecordRequest): Observable<void> => this.saveRecord(projectUid, changes, () => drawerOpen);
+    let drawerClosed = false;
+    const save = (changes: UpdateFormationRecordRequest): Observable<void> => this.saveRecord(projectUid, changes, () => drawerClosed);
     this.drawerService
       .open<boolean, FormationRecordEditDrawerData, FormationRecordEditDrawerComponent>(FormationRecordEditDrawerComponent, {
         data: { projectUid, openRequiredCount: this.openRequiredCount(), save },
         width: 520,
       })
-      .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      // `take(1)` bounds the subscription; it is deliberately not tied to the card's lifetime, so a closure that lands after
+      // the card is torn down is still recorded for a write that outlives both.
+      .closed.pipe(take(1))
       .subscribe(() => {
-        drawerOpen = false;
+        drawerClosed = true;
       });
   }
 
@@ -162,10 +167,11 @@ export class FormationCardComponent {
    * Runs the PUT detached from the drawer (no `takeUntilDestroyed`: a sent write must complete) and replays the
    * outcome to the drawer, which only listens. After a save the active project's stage is re-read (a no-op on the
    * foundation drill-down, where the context is the foundation and not the edited child) and the host is told to
-   * reload the checklist — but only while this card still shows the project that was saved. If the drawer is gone
-   * when the write fails, the error is surfaced as a toast instead of an inline message nobody can see.
+   * reload the checklist — but only while this card still shows the project that was saved. A failure is shown inline
+   * only while the drawer's outcome subscriber is still attached (and the drawer has not finished closing); with no live
+   * subscriber the drawer is gone or going, so it is surfaced as a toast instead of an inline message nobody can see.
    */
-  private saveRecord(projectUid: string, changes: UpdateFormationRecordRequest, isDrawerOpen: () => boolean): Observable<void> {
+  private saveRecord(projectUid: string, changes: UpdateFormationRecordRequest, isDrawerClosed: () => boolean): Observable<void> {
     const outcome = new ReplaySubject<void>(1);
     this.projectService.updateFormationRecord(projectUid, changes).subscribe({
       next: () => {
@@ -178,7 +184,7 @@ export class FormationCardComponent {
         outcome.complete();
       },
       error: (error: unknown) => {
-        if (!isDrawerOpen()) {
+        if (!outcome.observed || isDrawerClosed()) {
           this.messageService.add({ severity: 'error', summary: 'Not saved', detail: FORMATION_RECORD_ERROR_MESSAGES.generic });
         }
         outcome.error(error);
