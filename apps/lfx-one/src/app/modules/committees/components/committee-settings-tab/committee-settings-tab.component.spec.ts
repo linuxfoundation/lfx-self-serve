@@ -4,7 +4,7 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { Committee, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -549,5 +549,17 @@ describe('CommitteeSettingsTabComponent — mailing list write access', () => {
     component.removeMailingList(list('ml-1', true));
 
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Manage access') }));
+  });
+
+  it('stays on the Settings tab with a toast when the group is no longer writable, instead of redirecting', async () => {
+    await setup([list('ml-1', true)]);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    component.openMailingListPicker();
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'warn', detail: expect.stringContaining('permission to manage mailing lists') })
+    );
   });
 });
