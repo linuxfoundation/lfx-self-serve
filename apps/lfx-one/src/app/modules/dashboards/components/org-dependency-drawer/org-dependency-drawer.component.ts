@@ -108,7 +108,7 @@ export class OrgDependencyDrawerComponent {
     return computed(() => {
       const { topCompaniesCount, topCompaniesPercentage, otherCompaniesCount, otherCompaniesPercentage } = this.summaryData();
       return {
-        labels: [`${topCompaniesCount} Orgs (${topCompaniesPercentage}%)`, `${otherCompaniesCount} Other Orgs`],
+        labels: [`${topCompaniesCount} Companies (${topCompaniesPercentage}%)`, `${otherCompaniesCount} Other Companies`],
         datasets: [
           {
             data: [topCompaniesPercentage, otherCompaniesPercentage],

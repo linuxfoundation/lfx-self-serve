@@ -8,13 +8,13 @@ import type { OrgTrainingStatDefinition, OrgTrainingStatKey, OrgTrainingStatTile
 // everywhere. Definitions: lfx-self-serve#4286.
 
 /** Caption and tooltip suffix of the roster stat for an organization with no LF Education training program (no roster row). */
-export const ORG_TRAINING_NO_ROSTER_NOTE = 'No LF Education training program on record for this organization';
+export const ORG_TRAINING_NO_ROSTER_NOTE = 'No LF Education training program on record for this company';
 
 /** The rule behind "in progress", stated on its tiles and tooltips: no hidden snapshot. */
 export const ORG_TRAINING_IN_PROGRESS_RULE = 'Enrolled in the selected range, no certificate in the range';
 
 const PAIR_SCOPE =
-  "for people on this organization's people list, in the selected range and matching the filters. A course retaken counts once; learners not on the people list are not counted.";
+  "for people on this company's people list, in the selected range and matching the filters. A course retaken counts once; learners not on the people list are not counted.";
 
 export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, OrgTrainingStatDefinition>> = {
   rosterMembers: {
@@ -22,13 +22,13 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
     unit: 'people',
     window: 'live, not filtered',
     definition:
-      "People LF Education's training program lists for this organization, including people who never enrolled in a course. Today's count: it does not follow the time range or the filters. Counted from the organization's own training program, not merged with related organizations.",
+      "People LF Education's training program lists for this company, including people who never enrolled in a course. Today's count: it does not follow the time range or the filters. Counted from the company's own training program, not merged with related companies.",
   },
   peopleWithTrainingActivity: {
     label: 'People with training activity',
     unit: 'people',
     definition:
-      'Distinct people with at least one training or certification enrollment, or a certificate, dated in the selected range and matching the filters. Includes learners linked to this organization who are not on its people list while no foundation, project, course, level or format is selected. Not a subset of the roster members.',
+      'Distinct people with at least one training or certification enrollment, or a certificate, dated in the selected range and matching the filters. Includes learners linked to this company who are not on its people list while no foundation, project, course, level or format is selected. Not a subset of the roster members.',
   },
   coursesTaken: {
     label: 'Courses taken',
@@ -43,7 +43,7 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
   certifiedPeople: {
     label: 'Certified people',
     unit: 'people',
-    definition: "Distinct people on this organization's people list holding a certification certificate dated in the selected range, matching the filters.",
+    definition: "Distinct people on this company's people list holding a certification certificate dated in the selected range, matching the filters.",
   },
   trainingsCompleted: {
     label: 'Trainings completed',
@@ -65,7 +65,7 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
     label: 'People in training',
     unit: 'people',
     caption: ORG_TRAINING_IN_PROGRESS_RULE,
-    definition: `Distinct people with at least one course in progress: ${ORG_TRAINING_IN_PROGRESS_RULE.toLowerCase()}, on this organization's people list and matching the filters. Not a snapshot of today.`,
+    definition: `Distinct people with at least one course in progress: ${ORG_TRAINING_IN_PROGRESS_RULE.toLowerCase()}, on this company's people list and matching the filters. Not a snapshot of today.`,
   },
 };
 

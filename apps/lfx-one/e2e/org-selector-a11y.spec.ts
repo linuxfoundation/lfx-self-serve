@@ -104,7 +104,7 @@ test.describe('Org Selector — accessibility contract', () => {
     await expect(trigger).toHaveAttribute('aria-controls', 'org-selector-listbox');
     // aria-label carries the currently active organization; the exact copy is bounded but not asserted
     // verbatim so a future rename of the account-name signal doesn't break the a11y spec.
-    await expect(trigger).toHaveAttribute('aria-label', /Organization switcher, currently /i);
+    await expect(trigger).toHaveAttribute('aria-label', /Company switcher, currently /i);
   });
 
   test('A2 + A3: panel is modeled as listbox; rows carry aria-selected on the active row', async ({ page }) => {

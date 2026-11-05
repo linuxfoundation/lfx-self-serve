@@ -83,7 +83,7 @@ export class OrgProfileComponent {
     this.messageService.add({
       severity: 'success',
       summary: 'Profile updated',
-      detail: 'Your organization profile has been saved.',
+      detail: 'Your company profile has been saved.',
       life: 3000,
     });
   }

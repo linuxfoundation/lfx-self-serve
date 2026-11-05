@@ -26,10 +26,7 @@
       <p-skeleton height="24rem" />
     </div>
   } @else if (!hasCompany()) {
-    <lfx-empty-state
-      icon="fa-light fa-building"
-      title="Select an organization to view code contributions."
-      data-testid="org-contributions-no-company-empty-state" />
+    <lfx-empty-state icon="fa-light fa-building" title="Select a company to view code contributions." data-testid="org-contributions-no-company-empty-state" />
   } @else {
     <!-- KPI strip -->
     <lfx-stat-card-grid [cards]="kpiCards()" [loading]="isLoading()" data-testid="org-contributions-kpis" />

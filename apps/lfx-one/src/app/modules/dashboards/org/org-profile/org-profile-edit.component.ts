@@ -222,7 +222,7 @@ export class OrgProfileEditComponent implements OnInit {
       return {
         severity: 'error',
         summary: 'Permission denied',
-        detail: 'You no longer have permission to edit this organization.',
+        detail: 'You no longer have permission to edit this company.',
         life: 5000,
       };
     }
@@ -292,7 +292,7 @@ export class OrgProfileEditComponent implements OnInit {
   private toastForLogoError(error: unknown): { severity: string; summary: string; detail: string; life: number } {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
     if (status === 403) {
-      return { severity: 'error', summary: 'Permission denied', detail: 'You no longer have permission to edit this organization.', life: 5000 };
+      return { severity: 'error', summary: 'Permission denied', detail: 'You no longer have permission to edit this company.', life: 5000 };
     }
     if (status === 413) {
       return { severity: 'error', summary: 'Logo too large', detail: 'Logo must be 2MB or smaller.', life: 5000 };

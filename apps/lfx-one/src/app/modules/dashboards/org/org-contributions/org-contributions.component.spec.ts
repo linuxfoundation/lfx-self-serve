@@ -276,7 +276,7 @@ describe('OrgContributionsComponent', () => {
 
     expect(fixture.componentInstance['filterForm'].controls.orgScope.value).toBe('insights');
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ orgScope: 'insights' }));
-    expect(fixture.componentInstance['windowCaption']()).toContain("Only the company's LFX Insights organization");
+    expect(fixture.componentInstance['windowCaption']()).toContain("Only the company's LFX Insights page");
   });
 
   it('reads ?orgScope=all from a shared link into the picker and the request', async () => {
@@ -284,7 +284,7 @@ describe('OrgContributionsComponent', () => {
 
     expect(fixture.componentInstance['filterForm'].controls.orgScope.value).toBe('all');
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ orgScope: 'all' }));
-    expect(fixture.componentInstance['windowCaption']()).toContain('Every organization related to the company');
+    expect(fixture.componentInstance['windowCaption']()).toContain('Every company related to this one');
   });
 
   it('writes ?orgScope=all when All related organizations is picked, and drops it again for the Insights organization', async () => {
@@ -307,7 +307,7 @@ describe('OrgContributionsComponent', () => {
       orgScopeInfo: { accountId: 'acc-1', hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, relatedOrgCount: 3 },
     });
 
-    expect(fixture.componentInstance['windowCaption']()).toContain('Every organization related to the company');
+    expect(fixture.componentInstance['windowCaption']()).toContain('Every company related to this one');
   });
 
   it.each([

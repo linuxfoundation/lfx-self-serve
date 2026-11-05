@@ -30,7 +30,7 @@ import { OrgEasyclaComponent } from './org-easycla.component';
 function roleMissingError(): HttpErrorResponse {
   return new HttpErrorResponse({
     status: 403,
-    error: { error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' },
+    error: { error: "You don't have an EasyCLA role at this company.", code: 'EASYCLA_ROLE_MISSING' },
   });
 }
 
@@ -203,7 +203,7 @@ describe('OrgEasyclaComponent', () => {
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
       expect(button?.disabled).toBe(true);
       // A disabled control must say why, or a screen reader hears only "disabled".
-      expect(button?.getAttribute('aria-label')).toContain('select an organization first');
+      expect(button?.getAttribute('aria-label')).toContain('select a company first');
     });
 
     // `pageState()` reads null while the grants and persona are still resolving, so without
@@ -218,7 +218,7 @@ describe('OrgEasyclaComponent', () => {
       expect(button?.disabled).toBe(true);
       // Every reason the control is disabled needs its own wording, or the announcement is just
       // "disabled" with nothing behind it.
-      expect(button?.getAttribute('aria-label')).toContain('checking your organization access');
+      expect(button?.getAttribute('aria-label')).toContain('checking your company access');
     });
 
     /**
@@ -234,7 +234,7 @@ describe('OrgEasyclaComponent', () => {
 
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
       expect(button?.disabled).toBe(true);
-      expect(button?.getAttribute('aria-label')).toContain('loading the agreements this organization already holds');
+      expect(button?.getAttribute('aria-label')).toContain('loading the agreements this company already holds');
     });
 
     // A failed load is the same case with no recovery: there is no list to check a choice against,
@@ -257,7 +257,7 @@ describe('OrgEasyclaComponent', () => {
 
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
       expect(button?.disabled).toBe(true);
-      expect(button?.getAttribute('aria-label')).toBe("Sign a corporate CLA — you don't have an EasyCLA role at this organization");
+      expect(button?.getAttribute('aria-label')).toBe("Sign a corporate CLA — you don't have an EasyCLA role at this company");
       consoleError.mockRestore();
     });
 
@@ -664,7 +664,7 @@ describe('OrgEasyclaComponent', () => {
 
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
       expect(button?.disabled).toBe(true);
-      expect(button?.getAttribute('aria-label')).toContain('No organization linked to your account');
+      expect(button?.getAttribute('aria-label')).toContain('No company linked to your account');
     });
 
     it('withholds both answers until the grant and persona fetches have returned', async () => {
@@ -969,7 +969,7 @@ describe('OrgEasyclaComponent', () => {
       expect(state).toBeTruthy();
       expect(byTestId(fixture, 'org-easycla-role-missing-state')?.querySelector('h3')?.textContent?.trim()).toBe("We couldn't load your CLAs");
       expect(byTestId(fixture, 'org-easycla-role-missing-description')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-        "You don't have an EasyCLA role at this organization. Please contact support if you need EasyCLA assistance."
+        "You don't have an EasyCLA role at this company. Please contact support if you need EasyCLA assistance."
       );
       expect(state?.textContent).not.toContain('Refresh');
       expect(byTestId(fixture, 'org-easycla-error-state')).toBeNull();

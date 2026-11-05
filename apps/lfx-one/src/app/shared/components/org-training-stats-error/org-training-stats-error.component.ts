@@ -17,7 +17,7 @@ import { CardComponent } from '@components/card/card.component';
 })
 export class OrgTrainingStatsErrorComponent {
   public readonly testIdPrefix = input.required<string>();
-  public readonly message = input<string>("Something went wrong fetching this organization's training numbers. Please try again.");
+  public readonly message = input<string>("Something went wrong fetching this company's training numbers. Please try again.");
 
   public readonly retry = output<void>();
 

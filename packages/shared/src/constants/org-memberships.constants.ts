@@ -25,7 +25,7 @@ export const KEY_CONTACT_ROLE_CATALOG: readonly KeyContactRoleConfig[] = [
     required: true,
     minContacts: 1,
     maxContacts: 1,
-    tooltip: 'Primary voting representative for your organization on this membership.',
+    tooltip: 'Primary voting representative for your company on this membership.',
   },
   {
     role: 'Billing Contact',
@@ -97,7 +97,7 @@ export const KEY_CONTACT_ROLE_CATALOG: readonly KeyContactRoleConfig[] = [
     required: true,
     minContacts: 1,
     maxContacts: 1,
-    tooltip: 'Authorized to sign membership agreements on behalf of your organization.',
+    tooltip: 'Authorized to sign membership agreements on behalf of your company.',
   },
 ] as const;
 

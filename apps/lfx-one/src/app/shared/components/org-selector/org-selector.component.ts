@@ -103,7 +103,7 @@ export class OrgSelectorComponent {
   protected readonly selectedAccount: Signal<Account> = this.accountContextService.selectedAccount;
   protected readonly selectedAccountUid: Signal<string | null> = computed(() => this.selectedAccount().uid ?? null);
 
-  protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Organization');
+  protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Company');
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedAccount().logoUrl ?? '');
 
   protected readonly items: Signal<OrgItem[]> = this.orgNavigationService.items;
@@ -270,11 +270,11 @@ export class OrgSelectorComponent {
     let discoveredSeen = false;
     return rows.map((display) => {
       if (display.item.isAssigned === false) {
-        const heading = discoveredSeen ? null : 'All organizations';
+        const heading = discoveredSeen ? null : 'All companies';
         discoveredSeen = true;
         return this.toRow(display, heading, searchActive);
       }
-      const heading = assignedSeen ? null : 'Your organizations';
+      const heading = assignedSeen ? null : 'Your companies';
       assignedSeen = true;
       return this.toRow(display, heading, searchActive);
     });
@@ -635,13 +635,13 @@ export class OrgSelectorComponent {
   private personaToLabel(persona: OrgRolePersona | null, showOriginalSuffix: boolean): string {
     switch (persona) {
       case 'direct-writer':
-        return showOriginalSuffix ? 'Org Admin Editor (Original)' : 'Org Admin Editor';
+        return showOriginalSuffix ? 'Company Admin Editor (Original)' : 'Company Admin Editor';
       case 'direct-auditor':
-        return showOriginalSuffix ? 'Org Admin Viewer (Original)' : 'Org Admin Viewer';
+        return showOriginalSuffix ? 'Company Admin Viewer (Original)' : 'Company Admin Viewer';
       case 'inherited-writer':
-        return 'Org Admin Editor (Inherited)';
+        return 'Company Admin Editor (Inherited)';
       case 'inherited-auditor':
-        return 'Org Admin Viewer (Inherited)';
+        return 'Company Admin Viewer (Inherited)';
       default:
         return '';
     }

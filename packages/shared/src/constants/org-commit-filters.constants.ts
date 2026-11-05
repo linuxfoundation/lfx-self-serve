@@ -119,7 +119,7 @@ export const ORG_ALL_EMPLOYEE_CODE_NOTE = {
 export const ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION =
   `People with at least one code contribution (commit, pull request, review or comment) in ${ORG_DEFAULT_PROJECT_SCOPE_LABEL} ` +
   `over the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}, credited to the employer they had at the time, so people who have since left are included. ` +
-  "Counts the company's LFX Insights organization, in repositories LFX Insights counts (every related organization when it has none). " +
+  "Counts the company's LFX Insights page, in repositories LFX Insights counts (every related company when it has none). " +
   'Bots and CDP team members excluded.';
 
 /** The one commit definition, shown as the tooltip wherever Org Lens shows an all-branch commit count. */

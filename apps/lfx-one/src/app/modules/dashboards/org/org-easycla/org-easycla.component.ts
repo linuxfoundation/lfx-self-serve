@@ -125,12 +125,12 @@ export class OrgEasyclaComponent {
     // Every reason the control is disabled needs a branch here, or assistive technology announces
     // "disabled" with no explanation. Loading sits above the company check because it is why the
     // company is not known yet.
-    if (!this.orgContextLoaded()) return 'Sign a corporate CLA — checking your organization access';
-    if (!this.hasCompany()) return 'Sign a corporate CLA — select an organization first';
+    if (!this.orgContextLoaded()) return 'Sign a corporate CLA — checking your company access';
+    if (!this.hasCompany()) return 'Sign a corporate CLA — select a company first';
     if (this.signingOpen()) return 'Sign a corporate CLA — a signing request is already open';
     if (this.easyclaRoleMissing()) return ORG_CLA_EASYCLA_ROLE_MISSING_COPY.signClaAriaLabel;
-    if (this.fetchError()) return 'Sign a corporate CLA — this organization’s agreements could not be loaded';
-    if (!this.claListReady()) return 'Sign a corporate CLA — loading the agreements this organization already holds';
+    if (this.fetchError()) return 'Sign a corporate CLA — this company’s agreements could not be loaded';
+    if (!this.claListReady()) return 'Sign a corporate CLA — loading the agreements this company already holds';
     return 'Sign a corporate CLA';
   });
 

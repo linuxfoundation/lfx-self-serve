@@ -415,9 +415,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     getContributors = vi.fn(() => of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, accountId: ORG }));
     await mount();
 
-    expect(text('org-people-contributors-empty')).toContain(
-      `No contributors found for this organization in the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}`
-    );
+    expect(text('org-people-contributors-empty')).toContain(`No contributors found for this company in the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}`);
     expect(text('org-people-contributors-empty')).not.toContain('match the current filters');
   });
 
@@ -809,7 +807,7 @@ describe('ContributorsComponent — team members filter (lfx-self-serve#4685)', 
 
     const labelled = el().querySelector('[data-test="org-people-contributors-team-members-filter"] [aria-label="Team members"]');
     expect(labelled?.textContent?.trim()).toBe('Exclude team members');
-    expect((fixture.componentInstance as unknown as { teamMembersTooltip: string }).teamMembersTooltip).toContain('Org Lens does too by default.');
+    expect((fixture.componentInstance as unknown as { teamMembersTooltip: string }).teamMembersTooltip).toContain('Company Lens does too by default.');
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(router().url).toBe('/?tab=contributors');
     expect(clear()).toBeNull();
@@ -918,8 +916,8 @@ describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)
 
     expect(form().controls['orgScope'].value).toBe('insights');
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
-    expect(el().querySelector('[data-test="org-people-contributors-org-scope-filter"] [aria-label="Organization scope"]')?.textContent?.trim()).toBe(
-      'Insights organization'
+    expect(el().querySelector('[data-test="org-people-contributors-org-scope-filter"] [aria-label="Company scope"]')?.textContent?.trim()).toBe(
+      'Insights company'
     );
     expect(router().url).toBe('/?tab=contributors');
     expect(clear()).toBeNull();
@@ -967,12 +965,12 @@ describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)
     const tooltip = (): string | undefined =>
       fixture.debugElement.query(By.css('[data-testid="org-people-contributors-stat-contributors-info"]')).injector.get(Tooltip).content as string | undefined;
 
-    expect(tooltip()).toContain("Only the company's LFX Insights organization");
+    expect(tooltip()).toContain("Only the company's LFX Insights page");
 
     form().controls['orgScope'].setValue('all');
     await settle();
 
-    expect(tooltip()).toContain('Every organization related to the company');
+    expect(tooltip()).toContain('Every company related to this one');
   });
 
   it('says every related organization on the Contributors tile when the account has no Insights organization, even under insights', async () => {
@@ -981,7 +979,7 @@ describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)
     const tooltip = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-stat-contributors-info"]')).injector.get(Tooltip).content;
 
     expect(form().controls['orgScope'].value).toBe('insights');
-    expect(tooltip).toContain('Every organization related to the company');
+    expect(tooltip).toContain('Every company related to this one');
   });
 
   // lfx-self-serve#4735: the secondary filters sit behind "More filters".

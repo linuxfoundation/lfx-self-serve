@@ -358,7 +358,7 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
     expect(page.url()).toContain('/org/overview');
     await expect(root).toHaveAttribute('data-empty', 'true');
     await expect(page.getByTestId('org-overview-empty-state')).toBeVisible();
-    await expect(page.getByTestId('org-overview-empty-title')).toHaveText('No organization selected');
+    await expect(page.getByTestId('org-overview-empty-title')).toHaveText('No company selected');
   });
 });
 
@@ -456,7 +456,7 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     await expect(root).toHaveAttribute('data-no-access', 'true', { timeout: DATA_LOAD_TIMEOUT });
     expect(page.url()).toContain('/org/overview');
     await expect(page.getByTestId('org-overview-no-access-state')).toBeVisible();
-    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('No organization linked to your account');
+    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('No company linked to your account');
     await expect(page.getByTestId('org-overview-no-access-contact-support')).toBeVisible();
     // The skeleton and the no-org-selected empty state must NOT show in this branch.
     await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
@@ -752,8 +752,8 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
 
     await page.getByTestId('org-search-input').fill('co');
 
-    await expect(page.getByTestId('org-selector-section-assigned')).toHaveText('Your organizations');
-    await expect(page.getByTestId('org-selector-section-discovered')).toHaveText('All organizations');
+    await expect(page.getByTestId('org-selector-section-assigned')).toHaveText('Your companies');
+    await expect(page.getByTestId('org-selector-section-discovered')).toHaveText('All companies');
 
     // The chip is keyed on the row being discovered, not on a search being active — an assigned row
     // never carries one, whatever the caller typed.

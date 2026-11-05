@@ -398,7 +398,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack()], { totalCount: 3 })));
       const fixture = await render();
 
-      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgments-heading'))).toBe('Contributor Acknowledgments from My Organization');
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgments-heading'))).toBe('Contributor Acknowledgments from My Company');
       expect(textIn(byTestId(fixture, 'org-easycla-acknowledgments-subtitle'))).toBe("Employees who've acknowledged they're covered by this CLA.");
       expect(byTestId(fixture, 'org-easycla-acknowledgments-count')).toBeNull();
     });

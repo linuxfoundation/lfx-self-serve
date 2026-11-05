@@ -4,7 +4,7 @@
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-roi-page">
   <lfx-page-header title="ROI Metrics" titleTestId="org-roi-title" data-testid="org-roi-header">
     <span pageHeaderDescription data-testid="org-roi-subtitle">
-      A modelled view of what your organization invested in open source and what came back.
+      A modelled view of what your company invested in open source and what came back.
       @if (windowLabel()) {
         <span data-testid="org-roi-window">Covering {{ windowLabel() }}.</span>
       }
@@ -44,7 +44,7 @@
       </div>
     </section>
   } @else if (!hasCompany()) {
-    <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view ROI metrics." data-testid="org-roi-no-company-empty-state" />
+    <lfx-empty-state icon="fa-light fa-building" title="Select a company to view ROI metrics." data-testid="org-roi-no-company-empty-state" />
   } @else if (!hasAnalyticsId()) {
     <lfx-empty-state
       icon="fa-light fa-triangle-exclamation"
