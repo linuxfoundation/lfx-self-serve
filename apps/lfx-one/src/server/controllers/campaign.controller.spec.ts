@@ -13,6 +13,7 @@ import {
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
   GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
+  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
@@ -9757,6 +9758,69 @@ describe('CampaignController.createCampaign Google stored images', () => {
     );
 
     expect(sentCreative('performanceMaxCreative')['youtubeVideoIds']).toEqual(['abc']);
+  });
+
+  /**
+   * #5219: campaign-service refuses a started Performance Max creative unless one description has a
+   * display width of 60 or less, before the budget, and the job reports it only as "platform campaign
+   * creation failed". So the BFF names it first, judged on the descriptions the config will carry.
+   */
+  it('refuses a Performance Max creative whose every description is wider than 60, by name, creating nothing', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        body('performance-max', 'performanceMaxCreative', {
+          headlines: ['H1'],
+          descriptions: ['x'.repeat(61), ` ${'y'.repeat(90)} `, '   '],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.validationErrors[0].field).toBe('performanceMaxCreative.descriptions');
+    expect(error.validationErrors[0].message).toBe(GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL);
+  });
+
+  it('dispatches a Performance Max creative with one description of 60, wider ones beside it', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body('performance-max', 'performanceMaxCreative', { headlines: ['H1'], descriptions: ['y'.repeat(90), 'x'.repeat(60)] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentCreative('performanceMaxCreative')['descriptions']).toEqual(['y'.repeat(90), 'x'.repeat(60)]);
+  });
+
+  /** The rule is Performance Max's alone: Demand Gen and Display take long descriptions as they are. */
+  it.each([
+    ['demand-gen', 'demandGenCreative'],
+    ['display', 'displayCreative'],
+  ])('does not hold a %s creative whose descriptions are all wider than 60', async (channel, key) => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body(channel, key, { headlines: ['H1'], descriptions: ['y'.repeat(90)] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalled();
   });
 
   it('forwards pasted URLs whatever the Google-assets flag says', async () => {

@@ -150,6 +150,8 @@ import {
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_CREATIVE_SHARED_CAPS,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
+  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
+  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
@@ -306,7 +308,9 @@ import {
   googleDeviceBidModifierRefusal,
   googleExcludedAgeRangesRefusal,
   googleExcludedGendersRefusal,
+  googleAdsTextWeight,
   googleExcludedGeoListRefusal,
+  googlePerformanceMaxShortDescriptionMissing,
   googlePickedConversionActionIds,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
@@ -7182,7 +7186,9 @@ export class ImplementationTabComponent implements OnInit {
     const longHeadlines = capped('longHeadlines', fitting('longHeadlines', demandGen?.['headlines']));
     const descriptionPool = fitting('descriptions', [...this.asArray(search?.['descriptions']), ...this.asArray(demandGen?.['descriptions'])]);
     const descriptions = capped('descriptions', descriptionPool);
-    const isShort = (value: string): boolean => codePointLength(value) <= GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH;
+    // Google's display width, which campaign-service's short-description rule counts in; a code-point
+    // count would pick a CJK line upstream measures as too wide.
+    const isShort = (value: string): boolean => googleAdsTextWeight(value) <= GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH;
     const short = descriptionPool.find(isShort);
     if (short !== undefined && !descriptions.some(isShort)) {
       descriptions[descriptions.length - 1] = short;
@@ -8629,14 +8635,30 @@ export class ImplementationTabComponent implements OnInit {
       void this.campaignFormRevision();
       void this.campaignFormTouchRevision();
       const errors: Record<string, string> = {};
+      const payload = this.googleCreativePayload();
       for (const section of this.googleCreativeSections()) {
         for (const field of section.fields) {
-          const message = this.creativeFieldError(section.groupName, field);
+          const message = this.creativeFieldError(section.groupName, field) ?? this.creativeListRuleError(section, field, payload);
           if (message !== null) errors[`${section.groupName}.${field.control}`] = message;
         }
       }
       return errors;
     });
+  }
+
+  /**
+   * A rule over a creative list that holds Create, said under the field it is about as well as beneath
+   * the sections, or null. Today only Performance Max's short description (#5219), which the
+   * prefilled copy of a generated brief always breaks, so it is shown without waiting for a blur.
+   * Read off {@link googleCreativePayload}, as {@link googleCreativeError} is, so the two agree.
+   */
+  private creativeListRuleError(
+    section: GoogleCreativeSection,
+    field: GoogleCreativeFieldSpec,
+    payload: Record<string, Record<string, string | GoogleCreativeImageRef[]>>
+  ): string | null {
+    if (section.channel !== 'performance-max' || field.control !== 'descriptions') return null;
+    return googlePerformanceMaxShortDescriptionMissing(payload[section.groupName]?.['descriptions']) ? GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL : null;
   }
 
   /**
@@ -9709,6 +9731,12 @@ export class ImplementationTabComponent implements OnInit {
         const entries = field.min === 1 ? 'entry' : 'entries';
         return `needs at least ${field.min} ${entries} in ${field.label} — ${count} given.`;
       }
+    }
+    // Performance Max's short description (#5219): a rule over the whole list that no per-field
+    // bound can state, refused by campaign-service before the budget and reported by the job only as
+    // "platform campaign creation failed".
+    if (channel === 'performance-max' && googlePerformanceMaxShortDescriptionMissing(creative['descriptions'])) {
+      return GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL;
     }
     const rules: readonly GoogleCreativeEitherOrRule[] = GOOGLE_CREATIVE_EITHER_OR_RULES[channel];
     for (const rule of rules) {

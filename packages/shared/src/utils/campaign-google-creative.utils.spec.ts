@@ -5,7 +5,12 @@ import { describe, expect, it } from 'vitest';
 
 import { GOOGLE_CHANNELS_WITH_CREATIVE, GOOGLE_CREATIVE_FIELD_SPECS } from '../constants/campaign.constants';
 import type { GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
-import { googleCreativeImageFit, googleCreativeImageRequirement, storedCreativeAssetLabel } from './campaign-google-creative.utils';
+import {
+  googleCreativeImageFit,
+  googleCreativeImageRequirement,
+  googlePerformanceMaxShortDescriptionMissing,
+  storedCreativeAssetLabel,
+} from './campaign-google-creative.utils';
 
 const LANDSCAPE = { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 };
 const SQUARE_LOGO = { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 };
@@ -79,5 +84,32 @@ describe('GOOGLE_CREATIVE_FIELD_SPECS image shapes', () => {
     expect(shapes('demand-gen')['logoImages']).toEqual(SQUARE_LOGO);
     expect(shapes('performance-max')['logoImages']).toEqual(SQUARE_LOGO);
     expect(shapes('demand-gen')['tallPortraitImages']).toEqual({ ratioW: 9, ratioH: 16, minWidth: 600, minHeight: 1067 });
+  });
+});
+
+describe('googlePerformanceMaxShortDescriptionMissing', () => {
+  const long = 'Join KeycloakCon on March 15, 2027 in Barcelona. Half-day conference for IAM professionals';
+
+  it('holds a list whose every description is wider than 60, and releases it at exactly 60', () => {
+    expect(googlePerformanceMaxShortDescriptionMissing([long, 'x'.repeat(61)])).toBe(true);
+    expect(googlePerformanceMaxShortDescriptionMissing([long, 'x'.repeat(60)])).toBe(false);
+  });
+
+  it('counts CJK and full-width characters double, as campaign-service does', () => {
+    // 31 ideographs are 31 code points but a display width of 62.
+    expect(googlePerformanceMaxShortDescriptionMissing([long, '会'.repeat(31)])).toBe(true);
+    expect(googlePerformanceMaxShortDescriptionMissing([long, '会'.repeat(30)])).toBe(false);
+  });
+
+  it('measures the trimmed line and skips blank lines and non-strings', () => {
+    expect(googlePerformanceMaxShortDescriptionMissing([long, `  ${'x'.repeat(60)}  `])).toBe(false);
+    expect(googlePerformanceMaxShortDescriptionMissing([long, '   ', 42])).toBe(true);
+  });
+
+  it('judges nothing when no description is present', () => {
+    expect(googlePerformanceMaxShortDescriptionMissing([])).toBe(false);
+    expect(googlePerformanceMaxShortDescriptionMissing(['', '  '])).toBe(false);
+    expect(googlePerformanceMaxShortDescriptionMissing(undefined)).toBe(false);
+    expect(googlePerformanceMaxShortDescriptionMissing('short')).toBe(false);
   });
 });

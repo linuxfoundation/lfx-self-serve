@@ -24,6 +24,7 @@ import {
   googleSearchAdCopyWidthRefusal,
   googleSearchAdPathsRefusal,
 } from '@lfx-one/shared/utils/campaign-google-search-ads.utils';
+import { googlePerformanceMaxShortDescriptionMissing } from '@lfx-one/shared/utils/campaign-google-creative.utils';
 import {
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
@@ -162,6 +163,7 @@ import {
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
+  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_SEARCH_AD_GROUP_NAME,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
@@ -1494,6 +1496,21 @@ export class CampaignController {
         if (searchAdsRefusal) {
           next(
             ServiceValidationError.forField(searchAdsRefusal.field, searchAdsRefusal.message, { operation: 'campaign_create', service: 'campaign_controller' })
+          );
+          return;
+        }
+
+        // Performance Max's short description (#5219), judged on the descriptions the built config will
+        // carry. campaign-service refuses a started creative with none of 60 or less before the budget,
+        // but the job reports that only as "platform campaign creation failed", so it is named here.
+        const performanceMaxCreative = (configEnvelope['googleAdsConfig'] as { performanceMaxCreative?: { descriptions?: unknown } } | undefined)
+          ?.performanceMaxCreative;
+        if (googleChannel === 'performance-max' && googlePerformanceMaxShortDescriptionMissing(performanceMaxCreative?.descriptions)) {
+          next(
+            ServiceValidationError.forField('performanceMaxCreative.descriptions', GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
           );
           return;
         }

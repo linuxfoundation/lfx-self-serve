@@ -2487,6 +2487,9 @@
                     [id]="section.channel + '-' + field.control"
                     [formControlName]="field.control"
                     (blur)="onGoogleImageFieldBlur(section.groupName, field)"
+                    [attr.aria-describedby]="
+                      creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
+                    "
                     rows="3"
                     class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
@@ -2495,14 +2498,20 @@
                     type="text"
                     [id]="section.channel + '-' + field.control"
                     [formControlName]="field.control"
+                    [attr.aria-describedby]="
+                      creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
+                    "
                     class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
                 }
                 <span class="text-xs text-gray-400">{{ field.guidance }}</span>
                 @if (creativeFieldErrors()[section.groupName + '.' + field.control]; as error) {
-                  <span class="text-xs text-red-600" [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control">{{
-                    error
-                  }}</span>
+                  <span
+                    class="text-xs text-red-600"
+                    [id]="section.channel + '-' + field.control + '-error'"
+                    [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control"
+                    >{{ error }}</span
+                  >
                 }
                 @if (googleTypedImageWarnings()[section.groupName + '.' + field.control]; as warning) {
                   <span
