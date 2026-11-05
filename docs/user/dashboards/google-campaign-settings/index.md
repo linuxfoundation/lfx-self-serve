@@ -85,7 +85,7 @@ On Search and Display campaigns, the bidding settings include **Conversion Actio
 
 - **Pick conversion actions** lists the account's enabled conversion actions, each with its category. **Primary** marks one that counts toward the account's conversions by default. Picking one adds its id to the **Conversion Actions** box.
 - You can still type ids into the box, one per line, as an id such as 987654321 or a full `customers/<id>/conversionActions/<id>` name. Picking keeps the ids you typed.
-- If the list cannot be shown, a note under **Bidding** says why: your account cannot read it, it is not available yet, or Google Ads did not answer. Type the ids instead.
+- If the list cannot be shown, a note above the **Conversion Actions** box says why: your account cannot read it, it is not available here, or Google Ads did not answer. Type the ids instead.
 
 ## Networks, display path, more ads and negative keywords (Search only)
 
