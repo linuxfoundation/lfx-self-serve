@@ -526,6 +526,19 @@ describe('SidebarNavService', () => {
     expect(labels(sectionItems(items, 'Organization Engagement'))).toContain('People');
   });
 
+  // EasyCLA is single-organization for the same reason as Profile: a corporate CLA belongs to one
+  // company, so `/org/all/easycla` could only error (#4415, Copilot).
+  it('drops EasyCLA in roll-up mode even with the M3 flag on', () => {
+    activeLens.set('org');
+    orgEasyclaEnabled.set(true);
+    selectedOrgUid.set('all');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('EasyCLA');
+    expect(findByLink(items, '/org/all/easycla')).toBeUndefined();
+  });
+
   it('keeps Organization Profile for a concrete organization', () => {
     activeLens.set('org');
     selectedOrgUid.set('0014100000MgaAAAAA');

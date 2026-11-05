@@ -1,0 +1,42 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { Router, UrlTree } from '@angular/router';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import { AccountContextService } from '../services/account-context.service';
+import { orgRollUpSingleOrgPageGuard } from './org-rollup-single-org-page.guard';
+
+/**
+ * Cursor on PR #4415. Dropping Organization Profile from the sidebar does not stop the page
+ * loading: `navigateToSelectedOrg` canonicalizes a legacy `/org/profile` by inserting the selected
+ * segment, so in roll-up mode the app rewrites it to `/org/all/profile` itself, and the page then
+ * asks for `/api/orgs/uid/all` and errors.
+ */
+describe('orgRollUpSingleOrgPageGuard', () => {
+  const isRollUp = signal(false);
+
+  beforeEach(() => {
+    isRollUp.set(false);
+    TestBed.configureTestingModule({
+      providers: [{ provide: AccountContextService, useValue: { isRollUp } }],
+    });
+  });
+
+  const run = (): boolean | UrlTree => TestBed.runInInjectionContext(() => orgRollUpSingleOrgPageGuard({} as never, {} as never) as boolean | UrlTree);
+
+  it('redirects the roll-up to its own overview', () => {
+    isRollUp.set(true);
+
+    const result = run();
+
+    expect(result).toBeInstanceOf(UrlTree);
+    expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/org/all/overview');
+  });
+
+  it('lets a concrete organization through', () => {
+    expect(run()).toBe(true);
+  });
+});

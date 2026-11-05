@@ -259,7 +259,9 @@ export class SidebarNavService {
     // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else (flag-gated in the service).
     if (this.orgClaOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid)) return [this.orgEasyclaNavItem()];
     const base = this.orgLensItems();
-    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
+    // EasyCLA is single-organization too: a corporate CLA belongs to one company, so its requests
+    // need a concrete organization and `/org/all/easycla` could only error (#4415, Copilot).
+    const items = this.isOrgLensClaM3Enabled() && !this.accountContext.isRollUp() ? this.withEasyclaNavItem(base) : base;
     // Initiatives (#348) follows a direct writer grant on the selected organization — CF lists an
     // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
     const initiativesItems = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') ? [this.orgInitiativesNavItem()] : [];
