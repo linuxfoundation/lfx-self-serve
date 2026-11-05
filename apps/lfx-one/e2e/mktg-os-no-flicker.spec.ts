@@ -49,7 +49,6 @@ test('an approval in a second browser context updates the open document in place
   );
   await openKit(page, `/documents/${type.agentKey}/living`);
   await expect(page.getByTestId('mktg-document-view-content')).toBeVisible();
-  await expect(page.getByTestId('mktg-document-view-current-banner')).toHaveCount(0);
   const tab = page.getByTestId('mktg-framework-view-tab-numbers');
   await tab.click();
   const ids = ['mktg-document-view-title', 'mktg-document-view-content', 'mktg-document-view-revisions', 'mktg-framework-view-tab-numbers'];
@@ -92,13 +91,10 @@ test('an approval in a second browser context updates the open document in place
     await approver.getByTestId('mktg-document-view-approve').getByRole('button').click();
     await approver.getByRole('button', { name: 'Approve anyway', exact: true }).click();
     await expect(approver.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
-    await expect(page.getByTestId('mktg-document-view-current-banner')).toContainText('v4 is now the current version, approved by Synthetic reviewer', {
-      timeout: 20_000,
-    });
-    await expect(page.getByTestId('mktg-document-view-current-banner-open')).toHaveText('Open v4');
-    await expect(page.getByTestId('mktg-document-view-current-banner-open')).toHaveAttribute('href', new RegExp(`revision=${newer.id}`));
-    await expect(page.getByTestId('mktg-document-view-current-4')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-current-4')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('mktg-document-view-revision-label-4')).toContainText('Approved');
+    await expect(page.getByTestId('mktg-document-view-meta')).toContainText('the kit still shows v4, approved by Synthetic reviewer');
+    await expect(page.getByTestId('mktg-document-view-open-4')).toHaveAttribute('href', new RegExp(`revision=${newer.id}`));
     await expect(page).toHaveURL(originalUrl);
     for (const id of ids) await expect(page.getByTestId(id)).toHaveAttribute('data-live-identity', 'kept');
     await expect(tab).toHaveAttribute('aria-selected', 'true');
@@ -184,7 +180,6 @@ test('two document progress polls keep the selected tab, expanded history, compo
   const beforeStore = polls;
   await expect.poll(() => polls, { timeout: 20_000 }).toBeGreaterThan(beforeStore);
   await expect(page.getByTestId('mktg-document-view-revision-10')).toBeVisible();
-  await expect(page.getByTestId('mktg-document-view-current-banner')).toHaveCount(0);
   await expect(readiness).toHaveText(readyText ?? '');
   expect((await tabs.boundingBox())?.y).toBe(tabsTop);
   expect(bodyReads).toBe(bodyReadsBefore);
