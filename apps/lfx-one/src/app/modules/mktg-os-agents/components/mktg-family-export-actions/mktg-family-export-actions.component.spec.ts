@@ -45,8 +45,8 @@ describe('Family export slot', () => {
   });
   const api = { last: vi.fn(), running: vi.fn(), run: vi.fn(), printView: vi.fn() };
   const print = { prepare: vi.fn(), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
-  /** The frame's title names the saved PDF like the deck: the project, the family, the download's date; no version, as the family binds several revisions. */
-  const pdfTitle = expect.stringMatching(/^Synthetic project · Positioning & brand · \d{4}-\d{2}-\d{2}$/);
+  /** The frame's title names the saved PDF like the deck: the project, the family, the newest member revision's date; no version, as the family binds several revisions. */
+  const pdfTitle = 'Synthetic project · Positioning & brand · 2026-10-21';
   beforeEach(() => {
     vi.clearAllMocks();
     writer.set(true);
@@ -64,6 +64,7 @@ describe('Family export slot', () => {
         brand: mktgPrintBrand(null),
         projectName: 'Synthetic project',
         printedAt: '2026-10-28T00:00:00Z',
+        newestRevisionAt: '2026-10-21T10:00:00Z',
         fontFamily: null,
         weights: [400],
       })
@@ -423,6 +424,7 @@ describe('Family export slot', () => {
         brand,
         projectName: 'Synthetic project',
         printedAt: '2026-10-28T00:00:00Z',
+        newestRevisionAt: '2026-10-21T10:00:00Z',
         fontFamily: brand.fontFamily,
         weights: [400],
       })
@@ -554,6 +556,7 @@ describe('Family export slot', () => {
       brand: mktgPrintBrand(null),
       projectName: 'Synthetic project',
       printedAt: '2026-10-28T00:00:00Z',
+      newestRevisionAt: '2026-10-21T10:00:00Z',
       fontFamily: null,
       weights: [400],
     });

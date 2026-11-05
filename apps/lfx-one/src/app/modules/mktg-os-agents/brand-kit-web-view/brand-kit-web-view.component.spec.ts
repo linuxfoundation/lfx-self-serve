@@ -79,6 +79,7 @@ describe('BrandKitWebViewComponent', () => {
     // This fixture explicitly supplies the independently approved print payload.
     fixture.componentRef.setInput('approvedKit', kit);
     fixture.componentRef.setInput('approvedVersion', 1);
+    fixture.componentRef.setInput('approvedCreatedAt', '2026-10-20T23:30:00Z');
     await fixture.whenStable();
   };
 
@@ -620,8 +621,8 @@ describe('BrandKitWebViewComponent', () => {
       const frame = document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]');
       expect(frame?.contentDocument?.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
       expect(frame?.contentDocument?.querySelector('lfx-mktg-brand-kit-print')).not.toBeNull();
-      // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision, the download's date.
-      expect(frame?.contentDocument?.title).toMatch(/^Synthetic project · Brand kit · v1 · \d{4}-\d{2}-\d{2}$/);
+      // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision and that revision's own date.
+      expect(frame?.contentDocument?.title).toBe('Synthetic project · Brand kit · v1 · 2026-10-20');
       expect(frame?.contentDocument?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit · V1.0');
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
       expect(print).not.toHaveBeenCalled();

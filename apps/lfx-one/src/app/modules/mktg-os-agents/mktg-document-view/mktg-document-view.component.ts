@@ -402,6 +402,8 @@ export class MktgDocumentViewComponent {
   }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();
   protected readonly approvedVersion = computed(() => this.approvedView().revision?.revision.number ?? null);
+  /** When the approved revision was stored, as the page shows it; it dates the PDF's name. */
+  protected readonly approvedCreatedAt = computed(() => this.approvedView().revision?.revision.createdAt ?? null);
   protected readonly approvedFramework = computed(() => {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'foundation-message' ? foundationMessageAssetOfRevision(approved.markdown, approved.sidecar) : null;
@@ -1323,8 +1325,9 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     if (!isPlatformBrowser(this.platformId) || !view?.aeoGeoReport) return;
     this.aeoPrintRequested = true;
-    // The saved PDF's name, like the deck's title: the project, the label the page shows, the revision on the page, today.
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, mktgPrintDocumentTitle(this.projectName(), view.type.itemLabel, view.revision.number));
+    // The saved PDF's name, like the deck's title: the project, the label the page shows, the revision on the page and its date.
+    const title = mktgPrintDocumentTitle(this.projectName(), view.type.itemLabel, view.revision.number, view.revision.createdAt);
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, title);
   }
 
   protected onToggleAllRevisions(): void {

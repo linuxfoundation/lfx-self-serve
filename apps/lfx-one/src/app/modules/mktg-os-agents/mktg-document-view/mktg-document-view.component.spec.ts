@@ -1291,11 +1291,8 @@ describe('MktgDocumentViewComponent', () => {
       expect(print.printNow).not.toHaveBeenCalled();
       query('mktg-document-view-download')?.querySelector('button')?.click();
       // Same call stack, with no stability/font/network await after the click; the frame's title names the saved PDF
-      // like the deck: the project, the label the page shows, the revision on the page, the download's date.
-      expect(print.printNow).toHaveBeenCalledWith(
-        FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
-        expect.stringMatching(/^TestOrbit · AEO\/GEO report · v2 · \d{4}-\d{2}-\d{2}$/)
-      );
+      // like the deck: the project, the label the page shows, the revision on the page and that revision's own date.
+      expect(print.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'TestOrbit · AEO/GEO report · v2 · 2026-10-13');
       harness.fixture.destroy();
       expect(print.clear).toHaveBeenCalled();
     });

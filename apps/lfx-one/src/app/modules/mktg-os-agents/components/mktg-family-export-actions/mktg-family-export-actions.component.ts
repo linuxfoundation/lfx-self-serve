@@ -324,11 +324,18 @@ export class MktgFamilyExportActionsComponent {
   }
 
   /**
-   * The saved PDF's name, like the deck's title: the project, the family and today's date.
-   * The family binds several revisions, so it carries no version.
+   * The saved PDF's name, like the deck's title: the project, the family and the newest member revision's
+   * date, so the same set of members always gives the same name. The family binds several revisions, so
+   * it carries no version.
    */
   private pdfTitle(): string {
-    return mktgPrintDocumentTitle(this.printView()?.projectName ?? this.context.activeContext()?.name ?? 'Project', this.familyName(), null);
+    const view = this.printView();
+    return mktgPrintDocumentTitle(
+      view?.projectName ?? this.context.activeContext()?.name ?? 'Project',
+      this.familyName(),
+      null,
+      view?.newestRevisionAt ?? null
+    );
   }
 
   /** Readiness requires both completed font preparation and the current mounted document. Never prints asynchronously. */

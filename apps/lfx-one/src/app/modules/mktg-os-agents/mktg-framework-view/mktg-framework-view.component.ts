@@ -129,6 +129,8 @@ export class MktgFrameworkViewComponent {
   public readonly viewingDraft = input(false);
   public readonly approvedAsset = input<MktgFrameworkAsset | null>(null);
   public readonly approvedVersion = input<number | null>(null);
+  /** When the approved revision was stored (ISO), as the page shows it: it dates the PDF's name. */
+  public readonly approvedCreatedAt = input<string | null>(null);
   public readonly approvedLoading = input(false);
   public readonly approvedError = input('');
 
@@ -269,14 +271,17 @@ export class MktgFrameworkViewComponent {
    * the key numbers — through the browser's print dialog ("Save as PDF")
    * inside the click; the typeface is prepared ahead. The frame's title names
    * the saved PDF like the deck: the project, the asset, the approved revision
-   * and today's date.
+   * and that revision's date.
    */
   protected onDownloadPdf(): void {
     if (!this.printView()) {
       return;
     }
-    const title = mktgPrintDocumentTitle(this.projectName(), MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS['foundation-message'], this.approvedVersion());
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, title);
+    const label = MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS['foundation-message'];
+    this.printService.printNow(
+      FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+      mktgPrintDocumentTitle(this.projectName(), label, this.approvedVersion(), this.approvedCreatedAt())
+    );
   }
 
   // === Private initializers ===
