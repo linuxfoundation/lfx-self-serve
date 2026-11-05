@@ -607,14 +607,12 @@ export interface CampaignBriefOutput {
   structuredCopy: Record<string, unknown> | null;
   keywords: CampaignKeyword[];
   /**
-   * Negative keywords the brief generated from the event page, for the Optimize tab's
-   * negative-keyword editor to open pre-filled with once the campaign is live.
+   * Negative keywords the brief generated from the event page, as suggestions for two editors: the
+   * Implement tab's create-time negatives on a Search campaign (#4991), and the Optimize tab's
+   * negative-keyword editor once the campaign is live.
    *
-   * A SUGGESTION, and a weaker claim than {@link googleCallouts}' "seed": callouts are dispatched
-   * with the campaign at CREATE time, while negatives have no create-time path at all — upstream
-   * takes them only through `add-negative-keywords`, a mutation on a campaign that already exists.
-   * So this list is never sent by anything; it fills the editor's text, the operator edits it
-   * there, and nothing leaves until they press the button.
+   * A SUGGESTION: each editor opens with this text. On a Search create it is sent as shown unless the
+   * operator edits or clears it; on Optimize nothing leaves until they press the button.
    *
    * Text only, no match type. The match type is one choice for the whole request and belongs to the
    * platform the operator is sending to — Google offers three, Microsoft two, Reddit none — so the
@@ -629,8 +627,9 @@ export interface CampaignBriefOutput {
    * Already bounded by the generator to {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries of at
    * most {@link MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters — Google's cap, the narrowest
    * of the four platforms that take negatives, since the brief cannot know which campaign these
-   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`, so the editor
-   * never opens holding a line it would refuse the operator for typing.
+   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`. A stored brief
+   * is still runtime-arbitrary, so the Implement tab filters its seed through the same rules again
+   * (`googleSuggestedNegativeKeywordsText`) and never opens holding a line it would refuse.
    */
   negativeKeywords?: string[];
   hsUtm: string | null;
@@ -1389,6 +1388,21 @@ export interface CampaignImplementationDraft {
    * Absent and empty agree: the campaign excludes nowhere.
    */
   googleExcludedGeoTargets?: string[];
+  /**
+   * The first Search ad's display paths and the second and third ads, as the operator left them.
+   * Held and restored on the same rule as {@link googleAdSchedules}, so they are kept, not sent,
+   * while a channel other than Search is selected.
+   */
+  googleSearchPath1?: string;
+  googleSearchPath2?: string;
+  googleAdditionalSearchAds?: CampaignSearchAd[];
+  /**
+   * The create-time negative keywords as TYPED — the editor's raw text, one keyword per line — and
+   * the one match type they are all sent with. Raw so a reopened draft shows the line a refusal
+   * names; restored over the brief's suggestions.
+   */
+  googleNegativeKeywordsText?: string;
+  googleNegativeKeywordMatchType?: CampaignNegativeKeywordMatchType;
   /**
    * Google's callout extensions, as the operator typed them — already trimmed, because a callout
    * only becomes a chip once it has passed the add guards.
@@ -3221,6 +3235,18 @@ export interface GoogleAdScheduleRowView {
  */
 export type GoogleDeviceBidMode = 'default' | 'adjust' | 'exclude';
 
+/**
+ * One responsive search ad on a Google Search campaign (#4991): its copy and its optional display
+ * paths. Blank lines are dropped before sending; an ad that sets neither path inherits the
+ * campaign-level pair upstream.
+ */
+export interface CampaignSearchAd {
+  headlines: string[];
+  descriptions: string[];
+  path1?: string;
+  path2?: string;
+}
+
 /** One demographic exclusion checkbox on the Implementation tab: the value it writes, its label and whether it is ticked. */
 export interface GoogleExclusionOptionView {
   value: string;
@@ -3440,6 +3466,29 @@ export interface CampaignCreateRequest {
    * member: excluding it is a real choice a campaign makes.
    */
   excludedGenders?: GoogleAdsGender[];
+  /**
+   * The first responsive search ad's display paths — the segments Google shows after the final
+   * URL's domain, as in `example.com/kubecon/na`. Search only ({@link GOOGLE_CHANNELS_WITH_SEARCH_ADS});
+   * each at most {@link GOOGLE_ADS_MAX_SEARCH_AD_PATH_WIDTH} wide, `path2` only with `path1`. Sent
+   * as the campaign-level pair, which every ad that sets neither path inherits upstream.
+   */
+  path1?: string;
+  path2?: string;
+  /**
+   * The Search ad group's second and third responsive search ads (#4991). The first ad stays
+   * {@link headlines}, {@link descriptions}, {@link path1} and {@link path2}; with any entry here the
+   * BFF sends all of them as ONE named ad group (`adGroups`), so up to
+   * {@link GOOGLE_ADS_MAX_SEARCH_ADS_PER_AD_GROUP} ads in total. Absent or empty sends the single ad
+   * exactly as before.
+   */
+  additionalSearchAds?: CampaignSearchAd[];
+  /**
+   * Campaign-level negative keywords created with the Search campaign (#4991): queries it must
+   * never pay for. Search only, at most {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST}, each text on the
+   * rules `parseNegativeKeywordInput` applies with Google's 80-character cap. The BFF sends the match
+   * type upper-cased, as it sends {@link keywords}.
+   */
+  negativeKeywords?: CampaignNegativeKeywordInput[];
   /**
    * The Google campaign's callout extensions — short claims appended to the text ad, carrying no
    * link of their own.

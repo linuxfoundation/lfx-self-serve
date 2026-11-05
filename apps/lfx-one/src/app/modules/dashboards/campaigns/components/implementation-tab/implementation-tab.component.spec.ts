@@ -8480,6 +8480,214 @@ describe('ImplementationTabComponent google exclusions', () => {
 });
 
 /**
+ * The Search campaign's display paths, second and third ads, and create-time negative keywords (#4991).
+ */
+describe('ImplementationTabComponent google search ads and negatives', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  const SECOND_AD = { headlines: ['Register today'], descriptions: ['Join the community in Salt Lake City.'], path1: '', path2: '' };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  function seedSearchAds(patch: Record<string, unknown> = { includeSearch: true }): Record<string, any> {
+    const c = seedChannel(fixture, patch);
+    c['onGoogleSearchPath1Change']('kubecon');
+    c['onGoogleSearchPath2Change']('na');
+    c['onGoogleAdditionalSearchAdsChange']([SECOND_AD]);
+    c['onGoogleNegativeKeywordsTextChange']('free tickets\njobs');
+    c['onGoogleNegativeKeywordMatchTypeChange']('Phrase');
+    fixture.detectChanges();
+    return c;
+  }
+
+  it('submits the paths, the second ad and the negatives on Search, copied rather than shared', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedSearchAds();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['headlines']).toEqual(['Join us at KubeCon']);
+    expect(request['path1']).toBe('kubecon');
+    expect(request['path2']).toBe('na');
+    expect(request['additionalSearchAds']).toEqual([SECOND_AD]);
+    expect((request['additionalSearchAds'] as unknown[])[0]).not.toBe(c['googleAdditionalSearchAds']()[0]);
+    expect(request['negativeKeywords']).toEqual([
+      { text: 'free tickets', matchType: 'Phrase' },
+      { text: 'jobs', matchType: 'Phrase' },
+    ]);
+  });
+
+  it('sends none of the keys when nothing was set, so the one ad goes out as before', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleSearchAdsPayload']()).toEqual({});
+    expect(query('implementation-google-search-ads-panel')).not.toBeNull();
+  });
+
+  it.each([
+    ['display', { includeDisplay: true }],
+    ['performance-max', { includePerformanceMax: true }],
+    ['demand-gen', { includeDemandGen: true }],
+  ])('hides the panel and holds every key on %s', (_channel, patch) => {
+    const c = seedSearchAds(patch);
+
+    expect(query('implementation-google-search-ads-panel')).toBeNull();
+    expect(c['googleSearchAdsPayload']()).toEqual({});
+    // Held, not judged: nothing is sent, so nothing blocks Create.
+    c['onGoogleSearchPath2Change']('a/b');
+    expect(c['googleSearchPathsError']()).toBeNull();
+    expect(c['googleAdditionalSearchAds']()).toEqual([SECOND_AD]);
+  });
+
+  it('withholds the panel and every key off the campaign-service road', () => {
+    const c = seedSearchAds();
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+
+    expect(c['googleSearchAdsPayload']()).toEqual({});
+    expect(query('implementation-google-search-ads-panel')).toBeNull();
+  });
+
+  it.each([
+    [
+      'a path with a space',
+      (c: Record<string, any>) => c['onGoogleSearchPath1Change']('kube con'),
+      'googleSearchPathsError',
+      'implementation-google-search-paths-error',
+      'cannot hold spaces',
+    ],
+    [
+      'path 2 alone',
+      (c: Record<string, any>) => {
+        c['onGoogleSearchPath1Change']('');
+        c['onGoogleSearchPath2Change']('na');
+      },
+      'googleSearchPathsError',
+      'implementation-google-search-paths-error',
+      'without display path 1',
+    ],
+    [
+      'an ad with no headline',
+      (c: Record<string, any>) => c['onGoogleAdditionalSearchAdsChange']([{ ...SECOND_AD, headlines: [''] }]),
+      'googleAdditionalSearchAdsError',
+      'implementation-google-search-ads-error',
+      'Add at least one headline to ad 2',
+    ],
+    [
+      'a refused negative line',
+      (c: Record<string, any>) => c['onGoogleNegativeKeywordsTextChange']('jobs\nfree!'),
+      'googleNegativeKeywordsError',
+      'implementation-google-search-negatives-error',
+      'line 2',
+    ],
+    [
+      'more than 60 negatives',
+      (c: Record<string, any>) => c['onGoogleNegativeKeywordsTextChange'](Array.from({ length: 61 }, (_, i) => `term ${i}`).join('\n')),
+      'googleNegativeKeywordsError',
+      'implementation-google-search-negatives-error',
+      'at most 60',
+    ],
+  ])('holds Create on %s and shows the shared refusal under its section', (_case, act, signalName, errorId, message) => {
+    const c = seedSearchAds();
+    act(c);
+    fixture.detectChanges();
+
+    expect(c[signalName]()).toContain(message);
+    expect(c['canSubmit']()).toBe(false);
+    expect(query(errorId)?.textContent).toContain(message);
+  });
+
+  it("seeds the negatives from the brief's suggestions, one per line, with Google's default match type", () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
+      negativeKeywords: ['free tickets', 'jobs'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+    // The brief switch restores the draft's channel selection; tick Search again.
+    c['campaignForm'].patchValue({ includeSearch: true });
+    fixture.detectChanges();
+
+    expect(c['googleNegativeKeywordsText']()).toBe('free tickets\njobs');
+    expect(c['googleSearchAdsPayload']()['negativeKeywords']).toEqual([
+      { text: 'free tickets', matchType: 'Exact' },
+      { text: 'jobs', matchType: 'Exact' },
+    ]);
+  });
+
+  it('seeds only the suggestions the shared judge accepts, so an untouched create is not held', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
+      negativeKeywords: ['free!', 'x'.repeat(81), 'Jobs', 'jobs', ...Array.from({ length: 61 }, (_, i) => `term ${i}`)],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+    c['campaignForm'].patchValue({ includeSearch: true });
+    fixture.detectChanges();
+
+    const lines = (c['googleNegativeKeywordsText']() as string).split('\n');
+    expect(lines).toHaveLength(60);
+    expect(lines).not.toContain('free!');
+    expect(lines).not.toContain('jobs');
+    expect(c['googleNegativeKeywordsError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it("holds Create on a first-ad headline wider than Google's 30, counting CJK double", () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].patchValue({ headlines: ['日'.repeat(16)] });
+    fixture.detectChanges();
+
+    expect(c['googleAdditionalSearchAdsError']()).toContain('A headline on ad 1');
+    expect(c['canSubmit']()).toBe(false);
+    expect(query('implementation-google-search-ads-error')?.textContent).toContain('A headline on ad 1');
+  });
+
+  it('round-trips everything through a draft and empties it for a new brief', () => {
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const c = seedSearchAds();
+
+    expect(emitted?.googleSearchPath1).toBe('kubecon');
+    expect(emitted?.googleSearchPath2).toBe('na');
+    expect(emitted?.googleAdditionalSearchAds).toEqual([SECOND_AD]);
+    expect(emitted?.googleNegativeKeywordsText).toBe('free tickets\njobs');
+    expect(emitted?.googleNegativeKeywordMatchType).toBe('Phrase');
+
+    c['resetGoogleFields']();
+    expect(c['googleSearchPath1']()).toBe('');
+    expect(c['googleAdditionalSearchAds']()).toEqual([]);
+    expect(c['googleNegativeKeywordsText']()).toBe('');
+    expect(c['googleNegativeKeywordMatchType']()).toBe('Exact');
+
+    restoreGoogleDraft(fixture, c, {
+      googleSearchPath1: 'agenda',
+      googleSearchPath2: '',
+      googleAdditionalSearchAds: [SECOND_AD, SECOND_AD],
+      googleNegativeKeywordsText: 'jobs',
+      googleNegativeKeywordMatchType: 'Broad',
+    });
+
+    expect(c['googleSearchPath1']()).toBe('agenda');
+    expect(c['googleAdditionalSearchAds']()).toHaveLength(2);
+    expect(c['googleNegativeKeywordsText']()).toBe('jobs');
+    expect(c['googleNegativeKeywordMatchType']()).toBe('Broad');
+  });
+});
+
+/**
  * The Google audience segment chips.
  *
  * Free text, because campaign-service lists no user lists to pick from, so every branch of
