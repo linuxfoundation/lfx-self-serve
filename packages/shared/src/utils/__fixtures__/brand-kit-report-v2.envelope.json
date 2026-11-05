@@ -415,7 +415,7 @@
         },
         {
           "asset": "logo_stacked",
-          "reason": "No stacked logo was uploaded and the site shows none.",
+          "reason": "No stacked logo was uploaded and none was read from the site.",
           "fix": "Upload the logo package (the ZIP linked on aaif.io/brand) or the stacked file in the form."
         },
         {
@@ -425,7 +425,7 @@
         },
         {
           "asset": "logo_reversed",
-          "reason": "No white (reversed) logo was uploaded; dark grounds reuse the full-colour lockup until one is.",
+          "reason": "No white (reversed) logo was uploaded; dark grounds reuse the full-color lockup until one is.",
           "fix": "Upload the logo package (the ZIP linked on aaif.io/brand) or the reversed file in the form."
         }
       ],

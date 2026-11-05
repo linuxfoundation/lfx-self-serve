@@ -19,11 +19,11 @@ test.describe('Brand kit Sources tab structure', () => {
   test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
   for (const width of [1440, 1280, 390]) {
-    test(`the four groups and the approved markers fit at ${width}px`, async ({ page }, info) => {
+    test(`the four groups and the approved markers fit at ${width}px`, async ({ page, isMobile }, info) => {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
       await openBrandKitSources(page, { approval: 'snapshot' });
-      if (width === 390) {
-        // The collapsed rail settles before any geometry is read.
+      if (width === 390 && !isMobile) {
+        // The collapsed rail settles before any geometry is read; a touch shell has no rail, only the hamburger.
         await expect(page.getByTestId('main-content')).toHaveCSS('margin-left', '56px', { timeout: RAIL_TIMEOUT });
       }
       const panel = page.getByTestId('brand-kit-web-view-panel-sources');
