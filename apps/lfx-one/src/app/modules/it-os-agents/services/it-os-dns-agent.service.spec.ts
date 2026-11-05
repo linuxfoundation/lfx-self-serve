@@ -7,6 +7,7 @@ import { ItOsChatMessage } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ItOsDnsAgentService } from './it-os-dns-agent.service';
+import { scrollKeyOf } from './it-os-dns-html';
 
 describe('ItOsDnsAgentService', () => {
   let service: ItOsDnsAgentService;
@@ -60,6 +61,17 @@ describe('ItOsDnsAgentService', () => {
     const payload = ask('For examplefdn.io: point blog at 192.0.2.50').plan?.proposals[0].payload;
 
     expect(payload).toMatchObject({ domain: 'examplefdn.io', name: 'blog', content: '192.0.2.50' });
+  });
+
+  it('changes the scroll key when a reply replaces the typing placeholder, but not when a field changes', () => {
+    service.send('How many domains do we have?');
+    const typing = scrollKeyOf(service.messages());
+    vi.runAllTimers();
+    const replied = scrollKeyOf(service.messages());
+    service.togglePlan({ key: 'record.add', payload: { domain: 'examplefdn.io' }, on: true }, false);
+
+    expect(replied).not.toBe(typing);
+    expect(scrollKeyOf(service.messages())).toBe(replied);
   });
 
   it('sends turning auto-renew off to LF IT for approval', () => {

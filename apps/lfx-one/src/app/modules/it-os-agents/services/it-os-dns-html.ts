@@ -94,5 +94,11 @@ export const planView = <C extends { on: boolean }>(changes: C[], row: (change: 
   return { rows, on, approval, confirmLabel };
 };
 
-/** Autoscroll key for a conversation: the message count and the newest message's progress step. */
-export const scrollKeyOf = (messages: { shown?: number }[]): string => `${messages.length}:${messages[messages.length - 1]?.shown ?? 0}`;
+/**
+ * Autoscroll key for a conversation: the message count, whether the newest message is the typing
+ * placeholder (which a reply replaces without changing the count), and its progress step.
+ */
+export const scrollKeyOf = (messages: { typing?: boolean; shown?: number }[]): string => {
+  const last = messages[messages.length - 1];
+  return `${messages.length}:${last?.typing ? 'typing' : 'reply'}:${last?.shown ?? 0}`;
+};
