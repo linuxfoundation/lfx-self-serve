@@ -134,7 +134,7 @@ The **Trainees** tab shows the employees who enrolled in a course or earned a ce
 - **Former employees:** former employees on the people list can count in the cards, but the table lists current employees only. A note under the cards says how many, except while a foundation, project, course, level or format is selected: the note is then hidden, though they can still be counted.
 - **Learners not on the people list:** learners linked to the organization who are not on its people list are listed under the table by name and status. They are hidden while a foundation, project, course, level or format is selected.
 
-Select a row on either tab to expand it and see each event, course or certification. Both tabs show 30 people at first. Select **Show All** at the bottom to see the rest.
+Select a row on either tab to expand it and see each event, course or certification. **Event Attendees** shows 30 people at first: select **Show All** at the bottom to see the rest. On **Trainees**, the table and the **Learners not on the people list** list each have their own pages of 10 rows, with page numbers and **Showing 1 to 10 of N** at the bottom. When a list has more than 10 people, the menu next to the page numbers shows 25 or 50 rows per page. A new search, filter, time range or sort goes back to the first page.
 
 ## How do I filter a People tab?
 

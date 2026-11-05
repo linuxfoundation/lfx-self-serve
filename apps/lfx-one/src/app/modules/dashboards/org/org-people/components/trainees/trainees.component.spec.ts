@@ -635,6 +635,8 @@ describe('TraineesComponent', () => {
       await settle();
       const option = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find((node) => node.textContent?.trim() === String(rows));
       expect(option, `the ${rows} option`).toBeDefined();
+      // The options must render outside the component's overflow-hidden containers, or they get clipped.
+      expect(el().contains(option!)).toBe(false);
       option!.click();
       await settle();
     };
