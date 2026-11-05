@@ -485,7 +485,11 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
     expect(printer.prepare).toHaveBeenCalledWith(null);
-    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision, the download's date.
+    expect(printer.printNow).toHaveBeenCalledWith(
+      FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+      expect.stringMatching(/^TestOrbit · Messaging framework · v3 · \d{4}-\d{2}-\d{2}$/)
+    );
 
     fixture.destroy();
     expect(printer.clear).toHaveBeenCalled();
@@ -553,7 +557,10 @@ describe('MktgFrameworkViewComponent', () => {
 
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
     expect(printer.prepare).toHaveBeenCalledWith('Montserrat');
-    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    expect(printer.printNow).toHaveBeenCalledWith(
+      FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+      expect.stringMatching(/^TestOrbit · Messaging framework · v1 · \d{4}-\d{2}-\d{2}$/)
+    );
   });
 
   it('opens Sources from its tab without the duplicate reviewer-note link', async () => {

@@ -45,6 +45,8 @@ describe('Family export slot', () => {
   });
   const api = { last: vi.fn(), running: vi.fn(), run: vi.fn(), printView: vi.fn() };
   const print = { prepare: vi.fn(), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+  /** The frame's title names the saved PDF like the deck: the project, the family, the download's date; no version, as the family binds several revisions. */
+  const pdfTitle = expect.stringMatching(/^Synthetic project · Positioning & brand · \d{4}-\d{2}-\d{2}$/);
   beforeEach(() => {
     vi.clearAllMocks();
     writer.set(true);
@@ -298,7 +300,7 @@ describe('Family export slot', () => {
     expect(print.prepare).toHaveBeenCalledWith(null, [400]);
     expect(print.printNow).not.toHaveBeenCalled();
     button('pdf')?.click();
-    expect(print.printNow).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(print.printNow).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS, pdfTitle);
     expect(api.printView).toHaveBeenCalledOnce();
     fixture.destroy();
     expect(print.clear).toHaveBeenCalled();
@@ -319,7 +321,7 @@ describe('Family export slot', () => {
     await fixture.whenStable();
     expect(button('pdf')?.disabled).toBe(false);
     button('pdf')?.click();
-    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS, pdfTitle);
     expect(api.printView).toHaveBeenCalledOnce();
   });
 
@@ -354,7 +356,7 @@ describe('Family export slot', () => {
     expect(button('pdf')?.disabled).toBe(false);
     expect(print.printNow).not.toHaveBeenCalled();
     button('pdf')?.click();
-    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS, pdfTitle);
     expect(api.printView).toHaveBeenCalledOnce();
   });
 
@@ -392,7 +394,7 @@ describe('Family export slot', () => {
     expect(root.querySelector('[data-testid="family-export-pdf-ready"]')).toBeNull();
     expect(print.printNow).not.toHaveBeenCalled();
     button('pdf')?.click();
-    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS, pdfTitle);
   });
 
   it('composes all four print roots in exporter order with a family cover, contents and branded type', async () => {
@@ -498,7 +500,9 @@ describe('Family export slot', () => {
     expect(document?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveLength(5);
     expect(document?.querySelectorAll('lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveLength(5);
     expect(document?.querySelector('lfx-brand-kit-view')).toBeNull();
-    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit');
+    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-print-running-head"]')?.textContent).toContain(
+      'Synthetic project Brand kit · V1.0'
+    );
     expect(Array.from(document?.querySelectorAll('lfx-mktg-brand-kit-print h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual([
       '02.1',
       '02.2',
@@ -561,7 +565,7 @@ describe('Family export slot', () => {
     expect(button('pdf')?.disabled).toBe(false);
     expect(print.printNow).not.toHaveBeenCalled();
     button('pdf')?.click();
-    expect(print.printNow).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(print.printNow).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS, pdfTitle);
     expect(api.printView).toHaveBeenCalledOnce();
   });
 

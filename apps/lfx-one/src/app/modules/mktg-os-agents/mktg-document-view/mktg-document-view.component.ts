@@ -84,6 +84,7 @@ import {
   mktgAssetHeaderMetadata,
   mktgKitAssetLabel,
   mktgKitRootPath,
+  mktgPrintDocumentTitle,
   mktgReportHasOpenGaps,
   mktgReportNeedsApprovalReview,
   mktgRunRouteFor,
@@ -1319,9 +1320,11 @@ export class MktgDocumentViewComponent {
   }
 
   protected onDownload(): void {
-    if (!isPlatformBrowser(this.platformId) || !this.view()?.aeoGeoReport) return;
+    const view = this.view();
+    if (!isPlatformBrowser(this.platformId) || !view?.aeoGeoReport) return;
     this.aeoPrintRequested = true;
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    // The saved PDF's name, like the deck's title: the project, the label the page shows, the revision on the page, today.
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, mktgPrintDocumentTitle(this.projectName(), view.type.itemLabel, view.revision.number));
   }
 
   protected onToggleAllRevisions(): void {

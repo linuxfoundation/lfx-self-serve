@@ -33,6 +33,7 @@ import type {
 } from '../interfaces/mktg-print.interface';
 import { brandKitContrastRatio, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
 import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWeights } from './brand-kit.utils';
+import { mktgSlidesExportToday } from './mktg-slides-export.utils';
 import {
   foundationMessageAudienceRows,
   foundationMessageAvoidRows,
@@ -49,6 +50,18 @@ export function buildBoilerplatesPrintView(asset: MktgBoilerplatesAsset, brand: 
 
 export function buildFaqPrintView(asset: MktgFaqAsset, brand: MktgPrintBrand): FaqPrintView {
   return { brand, groups: faqGroupViews(asset.content) };
+}
+
+/**
+ * The title of a printed Marketing OS document, which the browser gives the
+ * saved PDF as its file name: `<Project> · <Asset> · v<N> · <YYYY-MM-DD>`,
+ * the shape of the deck's title (`mktgSlidesExportDeckTitle`), with the
+ * revision the page shows and the download's date. Without a version (the
+ * family PDF binds several revisions) the `v<N>` part is left out.
+ */
+export function mktgPrintDocumentTitle(projectName: string, asset: string, version: number | null, now: Date = new Date()): string {
+  const parts = [projectName.trim(), asset.trim(), version === null ? '' : `v${version}`, mktgSlidesExportToday(now)];
+  return parts.filter((part) => part !== '').join(' · ');
 }
 
 /** The LF look, for a project with no Brand Kit. */

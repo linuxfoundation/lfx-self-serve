@@ -87,8 +87,12 @@ export class MktgPrintService {
     return preparation;
   }
 
-  /** Called in the click task; creates the frame immediately, then prints once its own loader is idle. */
-  public printNow(bodyClass: string): void {
+  /**
+   * Called in the click task; creates the frame immediately, then prints once its own loader is idle.
+   * `title` names the frame's document, and so the PDF the browser saves (Chrome and Safari name it
+   * from the printed document's title); without one the page's own title stands.
+   */
+  public printNow(bodyClass: string, title?: string): void {
     const request = ++this.request;
     if (!isPlatformBrowser(this.platformId) || !this.document.defaultView) return;
     this.cleanupFrame?.();
@@ -141,7 +145,7 @@ export class MktgPrintService {
     doc.body.className = this.document.body.className;
     doc.body.classList.add(bodyClass);
     doc.body.style.cssText = this.document.body.style.cssText;
-    doc.title = this.document.title;
+    doc.title = title ?? this.document.title;
     const base = doc.createElement('base');
     base.href = this.document.baseURI;
     doc.head.appendChild(base);

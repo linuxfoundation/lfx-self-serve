@@ -33,6 +33,7 @@ import {
   BRAND_KIT_WEB_VIEW_TABS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitBookView,
@@ -54,6 +55,7 @@ import {
   describeMktgAcceptedGaps,
   mktgAssetHeaderFallback,
   mktgPrintBrand,
+  mktgPrintDocumentTitle,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -270,11 +272,15 @@ export class BrandKitWebViewComponent {
 
   /**
    * Prints the native portrait chapters inside the click, with the approved
-   * kit's typeface prepared ahead. The service guards SSR.
+   * kit's typeface prepared ahead. The service guards SSR. The frame's title
+   * names the saved PDF like the deck: the project, the asset, the approved
+   * revision and today's date.
    */
   protected onDownloadPdf(): void {
-    if (!this.printView()) return;
-    this.printService.printNow(BRAND_KIT_PRINT_BODY_CLASS);
+    const kit = this.approvedKit();
+    if (!kit || !this.printView()) return;
+    const title = mktgPrintDocumentTitle(this.projectName(), MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS['brand-kit'], this.approvedVersion() ?? kit.version);
+    this.printService.printNow(BRAND_KIT_PRINT_BODY_CLASS, title);
   }
 
   // === Private initializers ===

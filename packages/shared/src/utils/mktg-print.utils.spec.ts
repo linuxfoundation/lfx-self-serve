@@ -17,6 +17,7 @@ import {
   buildFoundationMessagePrintView,
   foundationMessagePrintSections,
   mktgPrintBrand,
+  mktgPrintDocumentTitle,
 } from './mktg-print.utils';
 import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
 import faqEnvelope from './__fixtures__/faq-envelope.json';
@@ -238,5 +239,23 @@ describe('the framework’s print', () => {
       ['Adoption', 'Docs · Slack'],
       ['', ''],
     ]);
+  });
+});
+
+describe('the printed document’s title, the saved PDF’s file name', () => {
+  const downloadedAt = new Date('2026-11-05T21:30:00Z');
+
+  it('names the PDF like the deck: the project, the asset, the revision on the page and the download’s date', () => {
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Brand kit', 3, downloadedAt)).toBe('Synthetic Foundation · Brand kit · v3 · 2026-11-05');
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Messaging framework', 1, downloadedAt)).toBe(
+      'Synthetic Foundation · Messaging framework · v1 · 2026-11-05'
+    );
+  });
+
+  it('leaves the version out when the document has none (the family PDF), and a project it does not know', () => {
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Positioning & brand', null, downloadedAt)).toBe(
+      'Synthetic Foundation · Positioning & brand · 2026-11-05'
+    );
+    expect(mktgPrintDocumentTitle('', 'AEO/GEO report', 2, downloadedAt)).toBe('AEO/GEO report · v2 · 2026-11-05');
   });
 });

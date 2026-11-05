@@ -30,6 +30,7 @@ import {
   FOUNDATION_MESSAGE_VIEW_TABS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
   MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
+  MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -52,6 +53,7 @@ import {
   foundationMessageAvoidRows,
   foundationMessageGoalViews,
   foundationMessageNumberRows,
+  mktgPrintDocumentTitle,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
@@ -265,13 +267,16 @@ export class MktgFrameworkViewComponent {
   /**
    * Prints the framework as one document — the cover, the framework and
    * the key numbers — through the browser's print dialog ("Save as PDF")
-   * inside the click; the typeface is prepared ahead.
+   * inside the click; the typeface is prepared ahead. The frame's title names
+   * the saved PDF like the deck: the project, the asset, the approved revision
+   * and today's date.
    */
   protected onDownloadPdf(): void {
     if (!this.printView()) {
       return;
     }
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    const title = mktgPrintDocumentTitle(this.projectName(), MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS['foundation-message'], this.approvedVersion());
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, title);
   }
 
   // === Private initializers ===

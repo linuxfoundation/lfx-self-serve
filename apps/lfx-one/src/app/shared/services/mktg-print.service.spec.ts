@@ -159,6 +159,15 @@ describe('MktgPrintService isolated frame', () => {
     expect(framePrint).toHaveBeenCalledOnce();
   });
 
+  it('titles the frame as the caller names the PDF, and after the page when the caller names nothing', () => {
+    document.title = 'Document · LFX';
+    configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Synthetic Foundation · Messaging framework · v2 · 2026-11-05');
+    expect(currentFrame().contentDocument?.title).toBe('Synthetic Foundation · Messaging framework · v2 · 2026-11-05');
+    expect(document.title).toBe('Document · LFX');
+    service.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    expect(currentFrame().contentDocument?.title).toBe('Document · LFX');
+  });
+
   it('waits for the cloned sheet before frame fonts and image decode, within one total cap', async () => {
     configure();
     const loaded = service.ensureFontStylesheet('https://fonts.example/print.css');
