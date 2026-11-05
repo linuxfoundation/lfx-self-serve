@@ -14,7 +14,7 @@ import type { Project, ProjectApplicationAnswers } from '@lfx-one/shared/interfa
 import { ProjectApplicationService } from '@services/project-application.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
-import { finalize } from 'rxjs';
+import { finalize, Subscription } from 'rxjs';
 
 import { ProjectApplicationFormComponent } from '../components/project-application-form/project-application-form.component';
 
@@ -51,6 +51,8 @@ export class ProposeProjectComponent {
   protected readonly errorMessage = signal<string | null>(null);
   /** The validated foundation the proposal started from; `null` for every other entry point and for any rejected `parent`. */
   protected readonly parentFoundation = signal<Project | null>(null);
+  /** The in-flight `parent` lookup, ended by Change so a late response cannot bring a cleared foundation back. */
+  private parentLookup: Subscription | null = null;
 
   // === Constructor ===
   public constructor() {
@@ -80,6 +82,7 @@ export class ProposeProjectComponent {
   }
 
   protected onChangeParent(): void {
+    this.parentLookup?.unsubscribe();
     this.parentFoundation.set(null);
     this.router.navigate([], {
       relativeTo: this.route,
@@ -103,7 +106,7 @@ export class ProposeProjectComponent {
     if (!uid) {
       return;
     }
-    this.projectApplicationService
+    this.parentLookup = this.projectApplicationService
       .getStartedFrom(uid)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((project) => this.parentFoundation.set(project));

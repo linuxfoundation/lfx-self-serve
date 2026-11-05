@@ -8,7 +8,7 @@ import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
 import type { Project, ProjectApplication, ProjectApplicationAnswers } from '@lfx-one/shared/interfaces';
 import { ProjectApplicationService } from '@services/project-application.service';
 import { MessageService } from 'primeng/api';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProposeProjectComponent } from './propose-project.component';
@@ -16,6 +16,7 @@ import { ProposeProjectComponent } from './propose-project.component';
 interface PageAccess {
   onSubmit: (answers: ProjectApplicationAnswers) => void;
   onCancel: () => void;
+  onChangeParent: () => void;
   submitting: () => boolean;
   errorMessage: () => string | null;
 }
@@ -112,6 +113,21 @@ describe('ProposeProjectComponent (#3037)', () => {
 
       expect(parentLine(fixture)).toBeNull();
       expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { parent: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+      component.onSubmit({ project_name: 'Example' });
+      expect(service.create).toHaveBeenCalledWith({ project_name: 'Example' }, null);
+    });
+
+    it('ignores a lookup that answers after Change, so a cleared foundation never comes back or reaches the body', async () => {
+      const pending = new Subject<Project | null>();
+      const { component, fixture, service } = await setup(created(), { parent: FOUNDATION_UID, project: pending });
+      fixture.detectChanges();
+      expect(parentLine(fixture)).toBeNull();
+
+      component.onChangeParent();
+      pending.next(FOUNDATION);
+      fixture.detectChanges();
+
+      expect(parentLine(fixture)).toBeNull();
       component.onSubmit({ project_name: 'Example' });
       expect(service.create).toHaveBeenCalledWith({ project_name: 'Example' }, null);
     });
