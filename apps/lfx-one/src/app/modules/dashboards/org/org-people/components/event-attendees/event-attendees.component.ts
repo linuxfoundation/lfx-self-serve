@@ -62,7 +62,7 @@ import { EventAttendeesService } from '../../services/event-attendees.service';
 
 import { eventDateOf } from './event-attendees.util';
 
-/** Event Attendees tab body — search + foundation + event + range filters, four stat cards, sortable table with chevron-toggled Events detail. */
+/** Event Attendees tab body — search, foundation, event, range and Count filters, Counted by behind "More filters", four stat cards, sortable table with chevron-toggled Events detail. */
 @Component({
   selector: 'lfx-org-people-event-attendees',
   imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, MoreFiltersToggleComponent, SelectComponent, SkeletonModule],
@@ -102,7 +102,7 @@ export class EventAttendeesComponent {
   protected readonly sortDirection = signal<OrgEventAttendeeSortDirection>(-1);
   protected readonly limit = signal<number>(ORG_EVENT_ATTENDEES_INITIAL_LIMIT);
   protected readonly expansion = signal<Record<number, boolean>>({});
-  // The secondary filter ("Counted by") behind "More filters": shown for this visit only.
+  // The secondary filter (Counted by) behind "More filters": shown for this visit only.
   protected readonly moreFiltersExpanded = signal(false);
   protected readonly retryTrigger = signal<number>(0);
   private readonly loadingState = signal<boolean>(true);
@@ -154,12 +154,6 @@ export class EventAttendeesComponent {
   protected readonly filteredDetails: Signal<OrgEventAttendeeDetailRow[]> = computed(() => this.initFilteredDetails());
 
   protected readonly stats: Signal<OrgEventAttendeeStatsBaseline> = computed(() => this.initStats());
-
-  // People the option counts but no row names (never named, by construction); shown with the unfiltered tiles they belong to.
-  protected readonly notListedCount = computed(() => {
-    const { attendeesCount, listedAttendeesCount } = this.response().summary;
-    return this.isRowFiltering() ? 0 : Math.max(attendeesCount - listedAttendeesCount, 0);
-  });
 
   protected readonly viewRows: Signal<OrgEventAttendeeRowVm[]> = computed(() => this.initViewRows());
 
@@ -226,7 +220,7 @@ export class EventAttendeesComponent {
 
   protected onPersonClick(row: OrgEventAttendeeRowVm, event: Event): void {
     event.stopPropagation();
-    // A listed person without a roster match has no person record to open.
+    // A person without a roster match has no person record to open.
     if (!row.personKey) return;
     this.drawer.open({
       personKey: row.personKey,
@@ -266,7 +260,7 @@ export class EventAttendeesComponent {
     const foundationId = this.offeredValue(values.foundation, this.foundationOptions());
     const eventId = this.offeredValue(values.event, this.eventOptions());
 
-    // Search is by who the person is (listed name and title); rows carry no email or event text to match.
+    // Search is by who the person is (name and title); rows carry no email or event text to match.
     return this.response().details.filter((row) => {
       if (foundationId && row.foundationId !== foundationId) return false;
       if (eventId && row.eventId !== eventId) return false;
@@ -284,9 +278,8 @@ export class EventAttendeesComponent {
   }
 
   private initStats(): OrgEventAttendeeStatsBaseline {
-    // All four tiles are the warehouse summary for the selection — the numbers the Overview shows, including people the rows
-    // never name — until search, foundation or event narrow the rows; then they are counted from the listed rows that remain,
-    // so the four tiles always agree with each other.
+    // All four tiles are the warehouse summary for the selection — the numbers the Overview shows — until search, foundation,
+    // or event narrow the rows; then they are counted from the rows that remain, so the four tiles always agree with each other.
     const attendees = new Set<number>();
     const speakers = new Set<number>();
     const events = new Set<string>();
@@ -388,7 +381,7 @@ export class EventAttendeesComponent {
     return `Showing ${visible.toLocaleString()} of ${this.totalFiltered().toLocaleString()}`;
   }
 
-  /** Search, foundation or event narrow the rows (not the server read), so the tiles follow the rows and the not-listed note stands down. */
+  /** Search, foundation or event narrow the rows (not the server read), so the tiles follow the rows. */
   private initIsRowFiltering(): boolean {
     const values = this.filterValues();
     const hasSearch = (values.search ?? '').trim().length > 0;

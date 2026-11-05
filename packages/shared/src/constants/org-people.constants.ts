@@ -227,7 +227,7 @@ export const ORG_EVENT_ATTENDEES_INITIAL_LIMIT = 30;
 export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   accountId: '',
   details: [],
-  summary: { attendeesCount: 0, listedAttendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 },
+  summary: { attendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 },
   servedAttribution: DEFAULT_ORG_EVENTS_ATTRIBUTION,
   foundationOptions: [],
   eventOptions: [],

@@ -66,18 +66,18 @@ let hasCoverage: boolean;
 
 /** The cache key of the compact read for a pick. */
 function compactKey(pick: Pick<OrgEventsFilters, 'range' | 'attribution' | 'participation'> = DEFAULT_PICK): string {
-  return buildOrgCacheKey(ACCOUNT, `people-event-attendees:v3:${pick.range}:${pick.attribution}:${pick.participation}`)!;
+  return buildOrgCacheKey(ACCOUNT, `people-event-attendees:v5:${pick.range}:${pick.attribution}:${pick.participation}`)!;
 }
 
 /**
- * Two listed people at the same event plus a second event, so a round trip has to survive the event
+ * Two people at the same event plus a second event, so a round trip has to survive the event
  * dictionary rather than just echoing rows back.
  */
 function mockWarehouse(): void {
   execute.mockImplementation(async (query: string) => {
     if (query.includes('TIME_RANGE')) {
       return {
-        rows: [{ ATTENDEES_COUNT: 5, LISTED_ATTENDEES_COUNT: 2, SPEAKERS_COUNT: 1, EVENTS_COUNT: 2, FOUNDATIONS_COUNT: 1 }],
+        rows: [{ ATTENDEES_COUNT: 5, SPEAKERS_COUNT: 1, EVENTS_COUNT: 2, FOUNDATIONS_COUNT: 1 }],
       };
     }
     if (query.includes('HAS_COMPANY_EMAIL_COVERAGE')) {
@@ -168,7 +168,7 @@ describe('OrgPeopleEventAttendeesService response', () => {
 
     expect(response.accountId).toBe(ACCOUNT);
     expect(response.servedAttribution).toBe('company_email');
-    expect(response.summary).toEqual({ attendeesCount: 5, listedAttendeesCount: 2, speakersCount: 1, eventsCount: 2, foundationsCount: 1 });
+    expect(response.summary).toEqual({ attendeesCount: 5, speakersCount: 1, eventsCount: 2, foundationsCount: 1 });
     expect(response.details.map((row) => [row.participantRef, row.eventId])).toEqual([
       [1, 'event-one'],
       [2, 'event-one'],
@@ -178,11 +178,19 @@ describe('OrgPeopleEventAttendeesService response', () => {
     expect(response.eventOptions).toEqual([{ eventId: 'event-one', eventName: 'Community Summit' }]);
   });
 
-  it('labels a listed person with no name neutrally and keeps a roster-less person non-linkable', async () => {
+  it('labels a person with no name neutrally and keeps a roster-less person non-linkable', async () => {
     const { details } = await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
 
     expect(details[0]).toMatchObject({ personKey: 'person-one', displayName: 'Ada Lovelace', jobTitle: 'Engineer', isSpeaker: true });
     expect(details[1]).toMatchObject({ personKey: null, displayName: 'Registered attendee', jobTitle: null, isSpeaker: false });
+  });
+
+  it('reads no listable predicate and no listed count: everyone credited is listed (lfx-self-serve#5158)', async () => {
+    await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
+
+    const queries = execute.mock.calls.map(([query]) => query as string);
+    expect(queries.some((query) => query.includes('IS_LISTABLE') || query.includes('LISTED_ATTENDEES_COUNT'))).toBe(false);
+    expect(queries.find((query) => query.includes('SELECT PARTICIPANT_REF'))).not.toMatch(/HAS_COMPANY_EMAIL\b(?!_)/);
   });
 
   it('carries no address on any field, whatever the warehouse sent', async () => {
@@ -234,7 +242,7 @@ describe('OrgPeopleEventAttendeesService response', () => {
 
     const response = await service.getEventAttendees(ACCOUNT, { ...DEFAULT_PICK, attribution: 'all' });
 
-    expect(response.summary).toEqual({ attendeesCount: 0, listedAttendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 });
+    expect(response.summary).toEqual({ attendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 });
     expect(response.details).toEqual([]);
   });
 
@@ -398,7 +406,7 @@ describe('OrgPeopleEventAttendeesService compact cache (GH-1906)', () => {
   });
 
   it('caches rows whose PERSON_KEY is null instead of missing forever', async () => {
-    // The detail query does not filter a null person key (listed people without a roster match have none), and the
+    // The detail query does not filter a null person key (people without a roster match have none), and the
     // uncached mapper passes it straight through; a guard demanding a string would make it a permanent miss.
     const fromMiss = await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
     expect(fromMiss.details.some((row) => row.personKey === null)).toBe(true);
@@ -448,6 +456,7 @@ function countsFlags(fixture: {
   const registered = fixture.registered !== false;
   const attended = fixture.attended === true;
   const credited = {
+    VERIFIED: fixture.companyEmail !== false || fixture.roster === true,
     COMPANY_EMAIL: fixture.companyEmail !== false,
     ACCOUNT: fixture.accountCredited === true,
     ALL: fixture.companyEmail !== false || fixture.accountCredited === true || fixture.roster === true,
@@ -473,9 +482,10 @@ interface ParticipationFixture {
   roster?: boolean;
   registered?: boolean;
   attended?: boolean;
+  /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the read must ignore it. */
   listable?: boolean;
   /** The row's `IS_COUNTED_SPEAKER_*` flags: an ACCEPTED talk credited under that attribution. All false for a submitted-only or elsewhere-credited talk. */
-  speaker?: { companyEmail?: boolean; account?: boolean; all?: boolean };
+  speaker?: { verified?: boolean; companyEmail?: boolean; account?: boolean; all?: boolean };
   account?: string;
 }
 
@@ -503,6 +513,7 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
       FOUNDATION_ID: fixture.foundationId ?? 'foundation-one',
       FOUNDATION_NAME: fixture.foundationName ?? (fixture.foundationId === 'foundation-two' ? 'Foundation Two' : 'Foundation One'),
       ...countsFlags(fixture),
+      IS_COUNTED_SPEAKER_VERIFIED: fixture.speaker?.verified ? 1 : 0,
       IS_COUNTED_SPEAKER_COMPANY_EMAIL: fixture.speaker?.companyEmail ? 1 : 0,
       IS_COUNTED_SPEAKER_ACCOUNT: fixture.speaker?.account ? 1 : 0,
       IS_COUNTED_SPEAKER_ALL: fixture.speaker?.all ? 1 : 0,
@@ -534,10 +545,10 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
         ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, PERSON_KEY TEXT, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
         EVENT_NAME TEXT, EVENT_LOCATION TEXT, EVENT_CITY TEXT, EVENT_COUNTRY TEXT, EVENT_URL TEXT,
         EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT,
-        IS_COUNTED_REGISTERED_COMPANY_EMAIL INTEGER, IS_COUNTED_REGISTERED_ACCOUNT INTEGER, IS_COUNTED_REGISTERED_ALL INTEGER,
-        IS_COUNTED_ATTENDED_COMPANY_EMAIL INTEGER, IS_COUNTED_ATTENDED_ACCOUNT INTEGER, IS_COUNTED_ATTENDED_ALL INTEGER,
-        IS_COUNTED_ALL_COMPANY_EMAIL INTEGER, IS_COUNTED_ALL_ACCOUNT INTEGER, IS_COUNTED_ALL_ALL INTEGER,
-        IS_COUNTED_SPEAKER_COMPANY_EMAIL INTEGER, IS_COUNTED_SPEAKER_ACCOUNT INTEGER, IS_COUNTED_SPEAKER_ALL INTEGER, IS_LISTABLE INTEGER
+        IS_COUNTED_REGISTERED_VERIFIED INTEGER, IS_COUNTED_REGISTERED_COMPANY_EMAIL INTEGER, IS_COUNTED_REGISTERED_ACCOUNT INTEGER, IS_COUNTED_REGISTERED_ALL INTEGER,
+        IS_COUNTED_ATTENDED_VERIFIED INTEGER, IS_COUNTED_ATTENDED_COMPANY_EMAIL INTEGER, IS_COUNTED_ATTENDED_ACCOUNT INTEGER, IS_COUNTED_ATTENDED_ALL INTEGER,
+        IS_COUNTED_ALL_VERIFIED INTEGER, IS_COUNTED_ALL_COMPANY_EMAIL INTEGER, IS_COUNTED_ALL_ACCOUNT INTEGER, IS_COUNTED_ALL_ALL INTEGER,
+        IS_COUNTED_SPEAKER_VERIFIED INTEGER, IS_COUNTED_SPEAKER_COMPANY_EMAIL INTEGER, IS_COUNTED_SPEAKER_ACCOUNT INTEGER, IS_COUNTED_SPEAKER_ALL INTEGER, IS_LISTABLE INTEGER
       )`
     );
     database.exec(
@@ -667,11 +678,30 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     expect(response.details.filter((row) => row.isSpeaker).map((row) => row.participantRef)).toEqual([1]);
   });
 
-  it('names only listable people', async () => {
+  it('lists everyone the selection credits, whatever the legacy listable flag says', async () => {
     addRow({ ref: 1, days: -5 });
-    addRow({ ref: 2, days: -5, name: null, listable: false });
+    addRow({ ref: 2, days: -5, name: 'Account Registrant', companyEmail: false, accountCredited: true, listable: false });
 
-    expect(await refs()).toEqual([1]);
+    const response = await read({ attribution: 'all' });
+
+    expect(response.details.map((row) => [row.participantRef, row.displayName])).toEqual([
+      [1, 'Person 1'],
+      [2, 'Account Registrant'],
+    ]);
+  });
+
+  it('Company email or employee (verified) leaves out people credited only by what they named on their registration', async () => {
+    addRow({ ref: 1, days: -5 });
+    addRow({ ref: 2, days: -5, companyEmail: false, roster: true });
+    addRow({ ref: 3, days: -5, companyEmail: false, accountCredited: true });
+    addRow({ ref: 4, days: -5, companyEmail: false, accountCredited: true, speaker: { account: true, all: true } });
+    addRow({ ref: 5, days: -5, speaker: { verified: true, companyEmail: true, all: true } });
+
+    const response = await read({ attribution: 'verified' });
+
+    expect(response.details.map((row) => row.participantRef).sort((a, b) => a - b)).toEqual([1, 2, 5]);
+    expect(response.details.filter((row) => row.isSpeaker).map((row) => row.participantRef)).toEqual([5]);
+    expect(response.servedAttribution).toBe('verified');
   });
 
   it("never reads another account's rows", async () => {
@@ -713,7 +743,7 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
 
     const response = await read({ range: '90d', attribution: 'all', participation: 'attended' });
 
-    expect(response.summary).toEqual({ attendeesCount: 11, listedAttendeesCount: 4, speakersCount: 2, eventsCount: 3, foundationsCount: 1 });
+    expect(response.summary).toEqual({ attendeesCount: 11, speakersCount: 2, eventsCount: 3, foundationsCount: 1 });
   });
 
   it('reads the registered-or-attended summary row when Count is All', async () => {
@@ -725,6 +755,6 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
 
     const response = await read({ range: '730d', attribution: 'all', participation: 'all' });
 
-    expect(response.summary).toEqual({ attendeesCount: 13, listedAttendeesCount: 5, speakersCount: 2, eventsCount: 6, foundationsCount: 3 });
+    expect(response.summary).toEqual({ attendeesCount: 13, speakersCount: 2, eventsCount: 6, foundationsCount: 3 });
   });
 });

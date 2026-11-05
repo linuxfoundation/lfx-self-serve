@@ -28,8 +28,8 @@ async function render(
   {
     settled = true,
     query = {} as Record<string, string>,
-    summaryServed = 'all',
-    listServed = 'all',
+    summaryServed = 'verified',
+    listServed = 'verified',
     summaryFails = false,
     listMode = 'ok' as 'ok' | 'pending' | 'error',
     foundations = [{ id: 'foundation-a', name: 'Foundation A' }],
@@ -91,7 +91,7 @@ describe('OrgEventsDashboardComponent', () => {
     expect(el.querySelector('[data-testid="org-events-stat-strip"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-events-title"]')?.textContent).toContain('Acme Motors, Inc.');
     expect(eventsService.getOrgEventsSummary).toHaveBeenCalledWith('acc-1', {
-      attribution: 'all',
+      attribution: 'verified',
       eventScope: 'activity',
       foundation: '',
       range: '730d',
@@ -123,7 +123,7 @@ describe('OrgEventsDashboardComponent', () => {
 
     expect(eventsService.getOrgEvents).toHaveBeenCalledTimes(1);
     const [, params] = eventsService.getOrgEvents.mock.calls[0] as unknown as [string, Record<string, unknown>];
-    expect(params).toMatchObject({ isPast: false, attribution: 'all', participation: 'registered', eventScope: 'activity', foundation: '' });
+    expect(params).toMatchObject({ isPast: false, attribution: 'verified', participation: 'registered', eventScope: 'activity', foundation: '' });
     expect(params['range']).toBeUndefined();
   });
 
@@ -149,14 +149,14 @@ describe('OrgEventsDashboardComponent', () => {
     });
   });
 
-  it('defaults Count to All and Counted by to All relations, and sends a Count of All on the Past tab', async () => {
+  it('defaults Count to All and Counted by to Company email or employee, and sends a Count of All on the Past tab', async () => {
     const { component, eventsService } = await render(null, { query: { tab: 'past' } });
 
     expect(component.filterForm.controls.participation.value).toBe('all');
-    expect(component.filterForm.controls.attribution.value).toBe('all');
+    expect(component.filterForm.controls.attribution.value).toBe('verified');
     expect(component.participationOptions[0]).toEqual({ label: 'All', value: 'all' });
     const [, params] = eventsService.getOrgEvents.mock.calls[0] as unknown as [string, Record<string, unknown>];
-    expect(params).toMatchObject({ isPast: true, participation: 'all', attribution: 'all' });
+    expect(params).toMatchObject({ isPast: true, participation: 'all', attribution: 'verified' });
   });
 
   it('shows Range only on the Past tab', async () => {

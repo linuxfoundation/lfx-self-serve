@@ -203,6 +203,7 @@ interface ParticipantFixture {
   roster?: boolean;
   registered?: boolean;
   attended?: boolean;
+  /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the drawer must ignore it. */
   listable?: boolean;
 }
 
@@ -608,17 +609,23 @@ describe('OrgLensEventsService attendees drawer', () => {
     addEvent({ isPast: true, registered: { companyEmail: 4, account: 6, all: 7 }, attended: { companyEmail: 2, account: 3, all: 4 } });
   });
 
-  it('lists only the people who may be named and counts the rest as not listed', async () => {
-    addParticipant({ ref: 1, name: 'Ada Lovelace' });
-    addParticipant({ ref: 2, name: 'Grace Hopper' });
-    addParticipant({ ref: 3, name: null, listable: false });
-    addParticipant({ ref: 4, name: null, listable: false });
+  it('lists everyone the option credits, whatever the legacy listable flag says, by name; titles only for roster employees (lfx-self-serve#5158)', async () => {
+    // The warehouse leaves JOB_TITLE NULL for everyone not on the roster; the fixtures mirror that.
+    addParticipant({ ref: 1, name: 'Ada Lovelace', title: null });
+    addParticipant({ ref: 2, name: 'Grace Hopper', title: null });
+    addParticipant({ ref: 3, name: 'Account Registrant', title: null, companyEmail: false, accountCredited: true, listable: false });
+    addParticipant({ ref: 4, name: 'Roster Employee', companyEmail: false, roster: true, listable: false });
 
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, attribution: 'all' });
 
-    expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace', 'Grace Hopper']);
-    expect(drawer.total).toBe(2);
-    expect(drawer.notListedCount).toBe(2);
+    expect(drawer.data.map((attendee) => [attendee.name, attendee.jobTitle])).toEqual([
+      ['Account Registrant', null],
+      ['Ada Lovelace', null],
+      ['Grace Hopper', null],
+      ['Roster Employee', 'Engineer'],
+    ]);
+    expect(drawer.total).toBe(4);
+    expect(drawer).not.toHaveProperty('notListedCount');
     expect(drawer.eventName).toBe('Community Summit');
   });
 
@@ -645,11 +652,9 @@ describe('OrgLensEventsService attendees drawer', () => {
 
     expect(registered.data.map((attendee) => attendee.name).sort()).toEqual(['Attended', 'Registered Only']);
     expect(attended.data.map((attendee) => attendee.name)).toEqual(['Attended']);
-    // The option count is the ORG_EVENTS column of the picked option: 2 attended minus 1 listed.
-    expect(attended.notListedCount).toBe(1);
   });
 
-  it('lists everyone who registered or attended when Count is All, and counts from the ALL_COUNT column', async () => {
+  it('lists everyone who registered or attended when Count is All', async () => {
     addParticipant({ ref: 1, name: 'Attended', attended: true });
     addParticipant({ ref: 2, name: 'Registered Only' });
     addParticipant({ ref: 3, name: 'Attended Unregistered', registered: false, attended: true });
@@ -658,27 +663,19 @@ describe('OrgLensEventsService attendees drawer', () => {
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, participation: 'all' });
 
     expect(drawer.data.map((attendee) => attendee.name).sort()).toEqual(['Attended', 'Attended Unregistered', 'Registered Only']);
-    // The event's ALL_COUNT_COMPANY_EMAIL is 4 (the larger of its 4 registered and 2 attended): 4 minus 3 listed.
-    expect(drawer.notListedCount).toBe(1);
+    expect(drawer.total).toBe(3);
   });
 
-  it('counts registrations for an event that has not ended, whatever participation is picked', async () => {
+  it('lists registrants for an event that has not ended, whatever participation is picked', async () => {
     addEvent({ eventId: 'future', registered: { companyEmail: 2 }, attended: { companyEmail: 0 } });
     addParticipant({ ref: 1, eventId: 'future', name: 'Ada Lovelace' });
 
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'future', { ...options, participation: 'attended' });
 
     expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace']);
-    expect(drawer.notListedCount).toBe(1);
   });
 
-  it('never reports a negative not-listed count', async () => {
-    for (let ref = 1; ref <= 6; ref++) addParticipant({ ref, name: `Person ${ref}` });
-
-    expect((await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options)).notListedCount).toBe(0);
-  });
-
-  it('labels a listed person with no name neutrally and returns no address in any field', async () => {
+  it('labels a person with no name neutrally and returns no address in any field', async () => {
     addParticipant({ ref: 1, name: null });
     addParticipant({ ref: 2, name: 'ada@company.test', title: 'ada@company.test' });
     addParticipant({ ref: 3, name: 'Grace Hopper', title: 'Admiral' });
@@ -699,19 +696,16 @@ describe('OrgLensEventsService attendees drawer', () => {
     expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Grace Hopper']);
   });
 
-  it('keeps notListedCount the same whatever the name search narrows to', async () => {
+  it('narrows only what is shown with a name search, never what is cached', async () => {
     addParticipant({ ref: 1, name: 'Ada Lovelace' });
-    addParticipant({ ref: 2, name: 'Grace Hopper' });
-    addParticipant({ ref: 3, name: null, listable: false });
-    addParticipant({ ref: 4, name: null, listable: false });
+    addParticipant({ ref: 2, name: 'Grace Hopper', companyEmail: false, accountCredited: true, listable: false });
 
-    const unsearched = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options);
-    const searched = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, searchQuery: 'hopper' });
-    const noMatch = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, searchQuery: 'nobody' });
+    const searched = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, attribution: 'all', searchQuery: 'hopper' });
+    const unsearched = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, attribution: 'all' });
+    const noMatch = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, attribution: 'all', searchQuery: 'nobody' });
 
-    expect(unsearched.notListedCount).toBe(2);
-    expect(searched.notListedCount).toBe(2);
-    expect(noMatch.notListedCount).toBe(2);
+    expect(searched.data.map((attendee) => attendee.name)).toEqual(['Grace Hopper']);
+    expect(unsearched.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace', 'Grace Hopper']);
     expect(noMatch.data).toEqual([]);
   });
 
