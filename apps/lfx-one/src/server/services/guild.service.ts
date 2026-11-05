@@ -53,6 +53,12 @@ export class GuildService {
   // request. Never cache sessions across users or polls.
   private static readonly resultPayloads = new WeakMap<Request, { sessionId: string; payloads: string[] }>();
 
+  /**
+   * @param workspaceName Targets a workspace other than the Marketing OS one, under the same owner
+   * and API key. IT OS passes its own dev workspace here (see it-os-agents.controller.ts).
+   */
+  public constructor(private readonly workspaceName?: string) {}
+
   private get apiUrl(): string {
     // Strip trailing slashes so a configured `https://host/` doesn't produce `https://host//api/...`.
     return (process.env['GUILD_API_URL'] || GUILD_DEFAULT_API_URL).replace(/\/+$/, '');
@@ -67,7 +73,7 @@ export class GuildService {
   }
 
   private get workspace(): string {
-    return process.env['GUILD_WORKSPACE_NAME'] || GUILD_DEFAULT_WORKSPACE_NAME;
+    return this.workspaceName || process.env['GUILD_WORKSPACE_NAME'] || GUILD_DEFAULT_WORKSPACE_NAME;
   }
 
   /**

@@ -938,6 +938,11 @@ environment:
   GUILD_WORKSPACE_NAME:
     value:
 
+  # IT OS live agents (dev only). Leave empty everywhere except dev: when empty, /api/it-os-agents
+  # refuses every call. Uses the same owner and API key as above.
+  GUILD_IT_OS_WORKSPACE_NAME:
+    value:
+
   # Transport for the Message Foundation batch intake payload. Default "false"
   # sends the BFF-rendered form text; set to "true" (no redeploy needed beyond
   # this value) once Guild delivers structured agent inputs verbatim.

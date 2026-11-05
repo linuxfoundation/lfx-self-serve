@@ -396,3 +396,22 @@ describe('GuildService — workspace defaults and configuration guard', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('GuildService workspace override', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('creates sessions in the workspace passed to the constructor, under the same owner', async () => {
+    vi.stubEnv('GUILD_API_KEY', 'test-key');
+    vi.stubEnv('GUILD_API_URL', 'https://guild.test');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'session-1' }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new GuildService('it-os-sandbox').createSession(req, { message: 'hi', handle: 'it-os-domains' });
+
+    expect(fetchMock.mock.calls[0][0]).toBe('https://guild.test/api/workspaces/linux-foundation/it-os-sandbox/sessions');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ agent_id: 'linux-foundation~it-os-domains' });
+  });
+});
