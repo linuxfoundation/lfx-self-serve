@@ -128,7 +128,7 @@ The **Event Attendees** tab shows the people who registered for, attended or spo
 
 The **Trainees** tab shows the employees who enrolled in a course or earned a certificate in the time range.
 
-- **Filters:** a search box and the time range, and under **More filters**, **Foundation**, **Project**, **Course**, **Level** and **Format**. **Clear all** resets them. The filters change both the cards and the table. The search changes the table only.
+- **Filters:** a search box and the time range, and under **More filters**, **Foundation**, **Project**, **Course**, **Level** and **Format**. **Clear all** resets the five filters under **More filters**, and keeps the time range and the search. The filters change both the cards and the table. The search changes the table only.
 - **Cards:** **Training-program roster members**, **People with training activity**, **Courses taken**, **Certifications**, **Certified people**, **Trainings completed**, **Completion rate**, **Courses in progress** and **People in training**. Point at a card to see what it counts. **Training-program roster members** is today's count of the people on the organization's LF Education training program, and does not follow the time range or the filters.
 - **Columns:** **Name**, **Status** (**Certified** or **Enrolled**), **Courses**, **Certs**, **Trainings**, **In progress** and **Most Recent Course**.
 - **Former employees:** they can count in the cards, but the table lists current employees only. When they do, a note under the cards says how many.
