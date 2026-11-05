@@ -80,7 +80,7 @@ export class ProjectApplicationService {
     }
     return this.projectService
       .getProject(targetParentUid, false)
-      .pipe(map((project) => (project?.uid === targetParentUid && computeIsFoundation(project) ? project : null)));
+      .pipe(map((project) => (project && project.uid.toLowerCase() === targetParentUid.toLowerCase() && computeIsFoundation(project) ? project : null)));
   }
 
   /** `targetParentUid` is the foundation the applicant started from (#5187); omitted from the body when absent. */

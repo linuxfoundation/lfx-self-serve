@@ -259,13 +259,20 @@ export class ProjectApplicationDrawerComponent {
 
   private initStartedFrom(): Signal<Project | null> {
     const targetParentUid = computed(() => (this.isStaff() ? (this.application()?.target_parent_uid ?? null) : null));
-    return toSignal(
+    // The drawer is reused across proposals, so a lookup is tagged with the hint it answered. A result is exposed only
+    // while it still matches the current proposal's hint: until the next lookup lands, the previous proposal's foundation
+    // must neither show nor reach the accept dialog as a prefill.
+    const resolved = toSignal(
       toObservable(targetParentUid).pipe(
         distinctUntilChanged(),
-        switchMap((uid) => (uid ? this.projectApplicationService.getStartedFrom(uid) : of(null)))
+        switchMap((uid) => (uid ? this.projectApplicationService.getStartedFrom(uid).pipe(map((project) => ({ uid, project }))) : of(null)))
       ),
       { initialValue: null }
     );
+    return computed(() => {
+      const answer = resolved();
+      return answer && answer.uid === targetParentUid() ? answer.project : null;
+    });
   }
 
   private initSubmitterEmailLink(): Signal<ProjectApplicationAnswerLink | null> {

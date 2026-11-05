@@ -336,6 +336,29 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
       expect(config.data.suggestedParent).toEqual(FOUNDATION);
     });
 
+    it("never carries one proposal's foundation into the next while its lookup is pending", async () => {
+      const { fixture, component, service, dialog } = await setup('staff', withHint(), FOUNDATION);
+      await fixture.whenStable();
+      expect(component.startedFrom()).toEqual(FOUNDATION);
+
+      const nextUid = '11111111-2222-4333-8444-555555555555';
+      const pending = new Subject<Project | null>();
+      service.getStartedFrom.mockReturnValue(pending);
+      fixture.componentRef.setInput('application', buildApplication({ uid: 'other-proposal', target_parent_uid: nextUid }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(service.getStartedFrom).toHaveBeenLastCalledWith(nextUid);
+      expect(component.startedFrom()).toBeNull();
+      component.onAccept();
+      const [, config] = dialog.open.mock.calls[0] as unknown as [unknown, { data: object }];
+      expect(config.data).not.toHaveProperty('suggestedParent');
+
+      const next = { uid: nextUid, name: 'Second Foundation', slug: 'second' } as Project;
+      pending.next(next);
+      expect(component.startedFrom()).toEqual(next);
+    });
+
     it('opens the accept dialog with no suggested parent when nothing resolved', async () => {
       const { component, dialog } = await setup('staff', withHint(), null);
       component.onAccept();

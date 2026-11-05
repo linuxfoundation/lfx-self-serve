@@ -108,6 +108,14 @@ describe('ProjectApplicationService (#3037)', () => {
       expect(names).toEqual(['Example Foundation', 'Example Foundation']);
     });
 
+    it('matches the hint to the project case-insensitively, since a UUID is valid in either case', () => {
+      const upper = uid.toUpperCase();
+      let result: { uid: string } | null = null;
+      service.getStartedFrom(upper).subscribe((project) => (result = project));
+      http.expectOne(`/api/projects/${upper}`).flush(foundation);
+      expect(result).toEqual(expect.objectContaining({ uid }));
+    });
+
     it('resolves to null, with no request, without a usable uid', () => {
       expect(resolve(null)).toBeNull();
       expect(resolve(undefined)).toBeNull();
