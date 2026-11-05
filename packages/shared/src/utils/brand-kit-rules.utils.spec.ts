@@ -12,6 +12,7 @@ import type { BrandKitReport } from '../interfaces/brand-kit.interface';
 import type { MktgAssetReport } from '../interfaces/mktg-asset.interface';
 import { brandKitReportV2RulesFixture } from './__fixtures__/brand-kit-report-v2-rules.fixture';
 import {
+  brandKitApproveFindings,
   brandKitChapterBasisLabel,
   brandKitChapterRuleBases,
   brandKitColorConflictViews,
@@ -131,6 +132,50 @@ describe('brandKitColorConflictViews', () => {
     expect(brandKitReportColorConflicts(null)).toEqual([]);
     const withoutConflicts: BrandKitReport = { ...V1_REPORT, color_conflicts: undefined };
     expect(brandKitColorConflictViews(withoutConflicts)).toEqual([]);
+  });
+});
+
+describe('brandKitApproveFindings', () => {
+  it('lists the fixture’s failed sources with their plain reason and detail, and its missing assets by label with their fix', () => {
+    const findings = brandKitApproveFindings(brandKitReportV2RulesFixture());
+    expect(findings.failed).toEqual([
+      {
+        title: 'https://synthetic-foundation.example/brand-guidelines',
+        text: 'This page does not exist on the site (the server answered 404).',
+        detail: 'HTTP 404',
+      },
+      {
+        title: 'https://cdn.synthetic-foundation.example/files/synthetic/production/synthetic-logo-package.zip?dl=',
+        text: 'The logo package on synthetic-foundation.example/brand is a ZIP file, which the agent can’t download from a link. Upload it in the form to add the stacked, reversed, symbol and primary files.',
+        detail: 'linked ZIP, not readable from a link',
+      },
+    ]);
+    expect(findings.missing.map((item) => item.title)).toEqual(['Primary logo', 'Stacked logo', 'Symbol', 'Reversed logo']);
+    expect(findings.missing[0]).toEqual({
+      title: 'Primary logo',
+      text: 'The site’s header links a logo image (synthetic-logo-838x203.svg) that was not read in this run, so the kit shows placeholder marks.',
+      fix: 'Upload the logo package (the ZIP linked on synthetic-foundation.example/brand) or the primary file in the form.',
+    });
+  });
+
+  it('leaves the detail and the fix null when the agent gives none', () => {
+    const report: BrandKitReport = {
+      ...V1_REPORT,
+      findings: {
+        sources_failed: [{ source: 'https://synthetic-foundation.example/fonts', kind: 'site_css', reason: 'The stylesheet could not be read.' }],
+        missing_assets: [{ asset: 'font_weights', reason: 'No weights were found.' }],
+        warnings: [],
+      },
+    };
+    expect(brandKitApproveFindings(report)).toEqual({
+      failed: [{ title: 'https://synthetic-foundation.example/fonts', text: 'The stylesheet could not be read.', detail: null }],
+      missing: [{ title: 'Font weights', text: 'No weights were found.', fix: null }],
+    });
+  });
+
+  it('gives nothing for a v1 report, no report, or another agent’s', () => {
+    expect(brandKitApproveFindings(V1_REPORT)).toEqual({ failed: [], missing: [] });
+    expect(brandKitApproveFindings(null)).toEqual({ failed: [], missing: [] });
   });
 });
 

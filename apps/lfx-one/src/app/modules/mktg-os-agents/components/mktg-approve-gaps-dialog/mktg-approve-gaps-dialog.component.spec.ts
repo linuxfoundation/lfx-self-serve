@@ -35,7 +35,9 @@ describe('Approval with open gaps dialog', () => {
     expect(root.textContent).toContain('Docs — 404');
     expect(root.textContent).toContain('<b>Missing</b>');
     expect(root.querySelector('b')).toBeNull();
-    // A v1 report: only today's list, nothing about conflicts or rules.
+    // A v1 report: only today's list, nothing about failed-source or missing-asset groups, conflicts or rules.
+    expect(query(root, 'mktg-document-view-approve-failed')).toBeNull();
+    expect(query(root, 'mktg-document-view-approve-missing')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-conflicts')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-rules')).toBeNull();
     expect(close).not.toHaveBeenCalled();
@@ -43,7 +45,7 @@ describe('Approval with open gaps dialog', () => {
     expect(close).toHaveBeenCalledExactlyOnceWith(result);
   });
 
-  it('shows a v2 report’s colour conflicts, both values with their sources and the one kept, and the chapters the LF reference supplied rules to', async () => {
+  it('shows a v2 report’s failed sources and missing assets like the Sources tab, its colour conflicts with the one kept, and the chapters the LF reference supplied rules to', async () => {
     // The agent fixture carries one conflict; a second, hand-made one proves the per-conflict rendering (the kept value need not come first).
     const report = brandKitReportV2RulesFixture();
     report.color_conflicts = [
@@ -58,8 +60,29 @@ describe('Approval with open gaps dialog', () => {
       },
     ];
     const root = await render(report);
-    // Today's list stays.
-    expect(root.textContent).toContain('https://synthetic-foundation.example/brand-guidelines — HTTP 404');
+    // A v2 report: the top list is the Sources tab's two groups (source, plain reason, small detail; asset label, reason, fix), then the gaps.
+    expect(root.textContent).not.toContain('brand-guidelines — HTTP 404');
+    const failed = query(root, 'mktg-document-view-approve-failed');
+    expect(failed?.querySelector('h3')?.textContent).toBe('Failed sources');
+    const lines = (item: HTMLElement): string[] => Array.from(item.querySelectorAll('span')).map((span) => span.textContent?.trim() ?? '');
+    expect(queryAll(root, 'mktg-document-view-approve-failed-item').map(lines)).toEqual([
+      ['https://synthetic-foundation.example/brand-guidelines', 'This page does not exist on the site (the server answered 404).', 'HTTP 404'],
+      [
+        'https://cdn.synthetic-foundation.example/files/synthetic/production/synthetic-logo-package.zip?dl=',
+        'The logo package on synthetic-foundation.example/brand is a ZIP file, which the agent can’t download from a link. Upload it in the form to add the stacked, reversed, symbol and primary files.',
+        'linked ZIP, not readable from a link',
+      ],
+    ]);
+    const missing = query(root, 'mktg-document-view-approve-missing');
+    expect(missing?.querySelector('h3')?.textContent).toBe('Missing assets');
+    const missingItems = queryAll(root, 'mktg-document-view-approve-missing-item').map(lines);
+    expect(missingItems.map((item) => item[0])).toEqual(['Primary logo', 'Stacked logo', 'Symbol', 'Reversed logo']);
+    expect(missingItems[0]).toEqual([
+      'Primary logo',
+      'The site’s header links a logo image (synthetic-logo-838x203.svg) that was not read in this run, so the kit shows placeholder marks.',
+      'Fix: Upload the logo package (the ZIP linked on synthetic-foundation.example/brand) or the primary file in the form.',
+    ]);
+    // The gaps still follow, as before.
     expect(root.textContent).toContain('No logo files');
 
     const conflicts = query(root, 'mktg-document-view-approve-conflicts');
@@ -113,11 +136,14 @@ describe('Approval with open gaps dialog', () => {
       gaps: [],
       notes: '',
       version: 2,
+      findings: { sources_failed: [], missing_assets: [], warnings: [] },
       color_conflicts: [],
       rules: [{ path: 'chapters.voice', basis: 'project' }],
     };
     const root = await render(report);
     expect(root.querySelector('ul')).toBeNull();
+    expect(query(root, 'mktg-document-view-approve-failed')).toBeNull();
+    expect(query(root, 'mktg-document-view-approve-missing')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-conflicts')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-rules')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-anyway')).not.toBeNull();

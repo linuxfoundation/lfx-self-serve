@@ -3,7 +3,7 @@
 
 import type { BrandKitReport, BrandKitReportRule } from '../../interfaces/brand-kit.interface';
 
-/** The report's rule paths, bases and uses exactly as the agent lane's report-v2 QA fixture (2e923b3a) lists them: 56 rules over the six chapters. */
+/** The report's rule paths, bases and uses exactly as the agent lane's report-v2 QA fixture (cfe534f8) lists them: 56 rules over the six chapters. */
 const RULES: [string, BrandKitReportRule['basis'], string[]?][] = [
   ['chapters.logo.files', 'project'],
   ['chapters.logo.placeholder', 'lf-reference', ['chapters.logo.files']],
@@ -65,8 +65,8 @@ const RULES: [string, BrandKitReportRule['basis'], string[]?][] = [
 
 /**
  * A v2 Brand Kit report in the shape of the agent lane's report-v2 QA fixture
- * (brand-kit 2.2.0's computed envelope on a real site), with synthetic
- * sources: one colour conflict (Coral #FF702D on the brand page against
+ * (brand-kit 2.2.0's acceptance envelope on a real site, cfe534f8), with
+ * synthetic sources: one colour conflict (Coral #FF702D on the brand page against
  * #FF7D2D in the site's CSS, the brand page's kept) and 56 rules — logo 1 project + 20 LF reference, color 1 + 4, type 6 + 5,
  * visual 0 + 9, usage 0 + 2, voice 7 + 1. What the approve dialog and the
  * Kit page's basis pills are tested against. Fresh on every call.
@@ -74,12 +74,14 @@ const RULES: [string, BrandKitReportRule['basis'], string[]?][] = [
 export function brandKitReportV2RulesFixture(): BrandKitReport {
   const site = 'https://synthetic-foundation.example';
   const css = `${site}/_next/static/chunks/synthetic-chunk.css`;
+  const cdn = 'https://cdn.synthetic-foundation.example';
   return {
     sources_read: [`${site}/`, `${site}/brand`, 'LFX record: Synthetic Foundation'],
     sources_failed: [{ name: `${site}/brand-guidelines`, reason: 'HTTP 404' }],
     gaps: ['No logo files: the logo chapter uses placeholder marks until the horizontal lockup, the stacked lockup and the symbol are uploaded.'],
     notes: '',
     version: 2,
+    // The findings as the agent's acceptance fixture (cfe534f8) writes them, with the site's hosts and file names made synthetic.
     findings: {
       sources_failed: [
         {
@@ -88,16 +90,48 @@ export function brandKitReportV2RulesFixture(): BrandKitReport {
           reason: 'This page does not exist on the site (the server answered 404).',
           detail: 'HTTP 404',
         },
+        {
+          source: `${cdn}/files/synthetic/production/synthetic-logo-package.zip?dl=`,
+          kind: 'logo_package',
+          reason:
+            'The logo package on synthetic-foundation.example/brand is a ZIP file, which the agent can’t download from a link. Upload it in the form to add the stacked, reversed, symbol and primary files.',
+          detail: 'linked ZIP, not readable from a link',
+        },
       ],
       missing_assets: [
         {
           asset: 'logo_primary',
-          reason: 'No logo file was uploaded and the site sets its wordmark in live type, so the kit shows placeholder marks.',
-          fix: 'Upload the horizontal lockup as SVG, or share the logo package the brand page links.',
+          reason: 'The site’s header links a logo image (synthetic-logo-838x203.svg) that was not read in this run, so the kit shows placeholder marks.',
+          fix: 'Upload the logo package (the ZIP linked on synthetic-foundation.example/brand) or the primary file in the form.',
+        },
+        {
+          asset: 'logo_stacked',
+          reason: 'No stacked logo was uploaded and none was read from the site.',
+          fix: 'Upload the logo package (the ZIP linked on synthetic-foundation.example/brand) or the stacked file in the form.',
+        },
+        {
+          asset: 'logo_symbol',
+          reason: 'No symbol was uploaded and none could be cropped out of a lockup.',
+          fix: 'Upload the logo package (the ZIP linked on synthetic-foundation.example/brand) or the symbol file in the form.',
+        },
+        {
+          asset: 'logo_reversed',
+          reason: 'No white (reversed) logo was uploaded; dark grounds reuse the full-color lockup until one is.',
+          fix: 'Upload the logo package (the ZIP linked on synthetic-foundation.example/brand) or the reversed file in the form.',
         },
       ],
       warnings: [
         { code: 'color_conflict', text: 'Coral is #FF702D on the brand page but the site’s stylesheet also uses #FF7D2D; the kit keeps #FF702D.', source: css },
+        {
+          code: 'palette_from_page_text',
+          text: 'Coral and Lilac were read from the brand page’s printed values, not from a stylesheet token or a logo file.',
+          source: `${site}/brand`,
+        },
+        {
+          code: 'brand_page_guessed',
+          text: 'The brand page was found by its path on the site, not named on the form: check it is the project’s own brand page.',
+          source: `${site}/brand`,
+        },
       ],
     },
     color_conflicts: [

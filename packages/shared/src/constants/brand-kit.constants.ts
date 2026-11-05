@@ -16,6 +16,7 @@
 
 import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS } from './foundation-message.constants';
 import { MKTG_ARTIFACT_MAX_DOCUMENT_BYTES, MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX, MKTG_ARTIFACT_SPECS } from './mktg-artifact.constants';
+import { MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE } from './mktg-asset.constants';
 
 /** Contract discriminator the BFF accepts; unknown majors are rejected. */
 export const BRAND_KIT_CONTRACT_ID = 'brand-kit-output/v2';
@@ -494,3 +495,39 @@ export const BRAND_KIT_APPROVE_RULES_TITLE = 'Rules from the LF reference, not t
 export const BRAND_KIT_CHAPTER_BASIS_PROJECT = 'From the project';
 /** A chapter whose rules all come from the LF reference kit; mixed chapters read `LF reference default for {n} of {m} rules` (brandKitChapterBasisLabel). */
 export const BRAND_KIT_CHAPTER_BASIS_LF = 'LF reference default';
+
+// ---------------------------------------------------------------------------
+// The findings groups as the Sources tab names them (shared with the approve
+// dialog's top list): the same names and bytes as the Sources-tab layer, so the
+// two merge into one copy.
+// ---------------------------------------------------------------------------
+
+/** The Sources tab's groups, in reading order. */
+export const BRAND_KIT_SOURCES_GROUPS = ['failed', 'missing', 'warnings', 'conflicts'] as const;
+/** What each group is called on the tab. */
+export const BRAND_KIT_SOURCES_GROUP_TITLES = {
+  failed: 'Failed sources',
+  missing: 'Missing assets',
+  warnings: 'Warnings',
+  conflicts: 'Colour conflicts',
+} as const satisfies Record<(typeof BRAND_KIT_SOURCES_GROUPS)[number], string>;
+/** What each group says when it has nothing to list. */
+export const BRAND_KIT_SOURCES_EMPTY_LINES = {
+  failed: MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
+  missing: 'Nothing is missing.',
+  warnings: 'No warnings.',
+  conflicts: 'No colour conflicts.',
+} as const satisfies Record<(typeof BRAND_KIT_SOURCES_GROUPS)[number], string>;
+/** How the tab names each asset the agent may report missing. */
+export const BRAND_KIT_REPORT_ASSET_LABELS = {
+  logo_primary: 'Primary logo',
+  logo_stacked: 'Stacked logo',
+  logo_symbol: 'Symbol',
+  logo_reversed: 'Reversed logo',
+  brand_page: 'Brand page',
+  font_weights: 'Font weights',
+  palette_accent: 'Accent colour',
+  framework: 'Messaging framework',
+} as const satisfies Record<(typeof BRAND_KIT_REPORT_ASSETS)[number], string>;
+/** Before a missing asset's fix, when the agent names one. */
+export const BRAND_KIT_MISSING_FIX_PREFIX = 'Fix: ';

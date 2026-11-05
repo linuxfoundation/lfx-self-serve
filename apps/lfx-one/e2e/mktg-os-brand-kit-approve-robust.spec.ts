@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Structural contract of the Brand Kit approve dialog's conflict and rule sections and of the overview's basis pills: the
+// Structural contract of the Brand Kit approve dialog's findings groups, conflict and rule sections and of the overview's basis pills: the
 // test ids, the dialog fitting the viewport without sideways scroll at laptop, tablet and phone widths, and a v1 report
 // showing none of it. Every read and write is stubbed with synthetic data.
 
@@ -23,6 +23,10 @@ for (const width of [1440, 1024, 390]) {
     // Found by its test id, not its header: the words are the content spec's.
     const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('mktg-document-view-approve-confirm') });
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
+    await expect(dialog.getByTestId('mktg-document-view-approve-failed')).toBeVisible();
+    await expect(dialog.getByTestId('mktg-document-view-approve-failed-item')).toHaveCount(2);
+    await expect(dialog.getByTestId('mktg-document-view-approve-missing')).toBeVisible();
+    await expect(dialog.getByTestId('mktg-document-view-approve-missing-item')).toHaveCount(4);
     await expect(dialog.getByTestId('mktg-document-view-approve-conflicts')).toBeVisible();
     await expect(dialog.getByTestId('mktg-document-view-approve-conflict')).toHaveCount(1);
     await expect(dialog.getByTestId('mktg-document-view-approve-rules')).toBeVisible();
@@ -74,6 +78,8 @@ test.describe('at a laptop width', () => {
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
     // Today's list is there (one failed source); the two new sections are not.
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm').locator(':scope > ul > li')).toHaveCount(1);
+    await expect(dialog.getByTestId('mktg-document-view-approve-failed')).toHaveCount(0);
+    await expect(dialog.getByTestId('mktg-document-view-approve-missing')).toHaveCount(0);
     await expect(dialog.getByTestId('mktg-document-view-approve-conflicts')).toHaveCount(0);
     await expect(dialog.getByTestId('mktg-document-view-approve-rules')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('approve-dialog-v1.png'), fullPage: true });

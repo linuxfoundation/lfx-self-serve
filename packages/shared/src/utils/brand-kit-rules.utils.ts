@@ -8,8 +8,15 @@
 // source in words. One reading for every surface; a v1 report, or any other
 // agent's report, has none of it and renders as it always did.
 
-import { BRAND_KIT_CHAPTER_BASIS_LF, BRAND_KIT_CHAPTER_BASIS_PROJECT, BRAND_KIT_CHAPTERS, BRAND_KIT_FOUND_IN_KINDS } from '../constants/brand-kit.constants';
+import {
+  BRAND_KIT_CHAPTER_BASIS_LF,
+  BRAND_KIT_CHAPTER_BASIS_PROJECT,
+  BRAND_KIT_CHAPTERS,
+  BRAND_KIT_FOUND_IN_KINDS,
+  BRAND_KIT_REPORT_ASSET_LABELS,
+} from '../constants/brand-kit.constants';
 import type {
+  BrandKitApproveFindings,
   BrandKitChapterRuleBasis,
   BrandKitColorConflictView,
   BrandKitLfReferenceRuleLine,
@@ -31,7 +38,26 @@ const CONFLICT_SOURCE_REGEX = /^([a-z_]+):\s*(.*)$/s;
  * the type, so a v1 kit report passes too and simply has none of them.
  */
 function isBrandKitReport(report: MktgAssetReport): report is BrandKitReport {
-  return 'rules' in report || 'color_conflicts' in report;
+  return 'rules' in report || 'color_conflicts' in report || 'findings' in report;
+}
+
+/**
+ * What a v2 report's approve dialog lists first, in the Sources tab's words:
+ * each source the agent could not read with its plain reason and detail, and
+ * each asset it did not find with its label, reason and fix. Both empty for a
+ * v1 report or another agent's, whose dialog keeps its own list.
+ */
+export function brandKitApproveFindings(report: MktgAssetReport | null | undefined): BrandKitApproveFindings {
+  const findings = report && isBrandKitReport(report) ? report.findings : undefined;
+  if (!findings) return { failed: [], missing: [] };
+  return {
+    failed: findings.sources_failed.map((failed) => ({ title: failed.source, text: failed.reason, detail: failed.detail ?? null })),
+    missing: findings.missing_assets.map((missing) => ({
+      title: BRAND_KIT_REPORT_ASSET_LABELS[missing.asset],
+      text: missing.reason,
+      fix: missing.fix ?? null,
+    })),
+  };
 }
 
 /** The v2 rules of a report; empty for a v1 report or another agent's. */

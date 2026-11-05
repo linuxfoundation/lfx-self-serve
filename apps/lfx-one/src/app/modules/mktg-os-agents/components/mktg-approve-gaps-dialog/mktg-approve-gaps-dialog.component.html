@@ -3,7 +3,48 @@
 
 <div class="flex flex-col gap-4" data-testid="mktg-document-view-approve-confirm">
   @if (report; as data) {
-    @if (data.sources_failed.length || data.gaps.length) {
+    @if (hasFindings) {
+      <!-- A v2 report: what the agent could not read and did not find, in the Sources tab's words and shape; the open gaps follow as before. -->
+      @if (findings.failed.length) {
+        <section class="flex flex-col gap-2" data-testid="mktg-document-view-approve-failed">
+          <h3 class="text-sm font-semibold text-gray-900">{{ groupTitles.failed }}</h3>
+          <ul class="flex flex-col gap-1.5 text-sm">
+            @for (failed of findings.failed; track $index) {
+              <li class="flex flex-col" data-testid="mktg-document-view-approve-failed-item">
+                <span class="text-gray-800 [overflow-wrap:anywhere]">{{ failed.title }}</span>
+                <span class="text-xs text-amber-700">{{ failed.text }}</span>
+                @if (failed.detail) {
+                  <span class="text-xs text-gray-500">{{ failed.detail }}</span>
+                }
+              </li>
+            }
+          </ul>
+        </section>
+      }
+      @if (findings.missing.length) {
+        <section class="flex flex-col gap-2" data-testid="mktg-document-view-approve-missing">
+          <h3 class="text-sm font-semibold text-gray-900">{{ groupTitles.missing }}</h3>
+          <ul class="flex flex-col gap-1.5 text-sm">
+            @for (missing of findings.missing; track $index) {
+              <li class="flex flex-col" data-testid="mktg-document-view-approve-missing-item">
+                <span class="text-gray-800">{{ missing.title }}</span>
+                <span class="text-xs text-amber-700">{{ missing.text }}</span>
+                @if (missing.fix) {
+                  <span class="text-xs text-gray-700">{{ fixPrefix }}{{ missing.fix }}</span>
+                }
+              </li>
+            }
+          </ul>
+        </section>
+      }
+      @if (data.gaps.length) {
+        <ul class="flex list-disc flex-col gap-2 pl-5 text-sm text-gray-700">
+          @for (gap of data.gaps; track $index) {
+            <li>{{ gap }}</li>
+          }
+        </ul>
+      }
+    } @else if (data.sources_failed.length || data.gaps.length) {
       <ul class="flex list-disc flex-col gap-2 pl-5 text-sm text-gray-700">
         @for (source of data.sources_failed; track $index) {
           <li>{{ source.name }} — {{ source.reason }}</li>

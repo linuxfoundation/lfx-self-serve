@@ -17,7 +17,7 @@ test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 test.describe('Brand Kit approval with colour conflicts and LF-reference rules', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });
 
-  test('shows the colour conflict with both values, their sources and the one kept, and the rules per chapter; Cancel writes nothing', async ({
+  test('lists the failed sources and missing assets like the Sources tab, the colour conflict with the one kept, and the rules per chapter; Cancel writes nothing', async ({
     page,
   }, info) => {
     await openAssetDocument(page, 'brand-kit', 200, true, false, brandKitDraftRevisionResponse(brandKitReportV2RulesFixture()));
@@ -26,10 +26,30 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
       if (request.method() === 'POST' && request.url().includes('/approve?')) writes.push(request.url());
     });
     await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
-    // The fixture has a failed source and a gap too, so the header stays the open-gaps one and today's list comes first.
+    // The fixture has failed sources, missing assets and a gap too, so the header stays the open-gaps one and the top list comes
+    // first, in the Sources tab's words: each failed source with its plain reason and small detail, each missing asset by its label.
     const dialog = page.getByRole('dialog', { name: 'Approve with open gaps?' });
     await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
-    await expect(dialog).toContainText('https://synthetic-foundation.example/brand-guidelines — HTTP 404');
+    const failed = dialog.getByTestId('mktg-document-view-approve-failed');
+    await expect(failed.getByRole('heading')).toHaveText('Failed sources');
+    const firstFailed = dialog.getByTestId('mktg-document-view-approve-failed-item').first();
+    await expect(firstFailed.locator('span')).toHaveText([
+      'https://synthetic-foundation.example/brand-guidelines',
+      'This page does not exist on the site (the server answered 404).',
+      'HTTP 404',
+    ]);
+    await expect(dialog.getByTestId('mktg-document-view-approve-failed-item').nth(1)).toContainText('linked ZIP, not readable from a link');
+    const missing = dialog.getByTestId('mktg-document-view-approve-missing');
+    await expect(missing.getByRole('heading')).toHaveText('Missing assets');
+    await expect(dialog.getByTestId('mktg-document-view-approve-missing-item').locator('span:first-child')).toHaveText([
+      'Primary logo',
+      'Stacked logo',
+      'Symbol',
+      'Reversed logo',
+    ]);
+    await expect(dialog.getByTestId('mktg-document-view-approve-missing-item').first()).toContainText('Fix: Upload the logo package');
+    // Today's one-line form is gone for a v2 report; the gaps still follow.
+    await expect(dialog).not.toContainText('brand-guidelines — HTTP 404');
     await expect(dialog).toContainText('No logo files');
 
     const conflicts = dialog.getByTestId('mktg-document-view-approve-conflicts');
@@ -117,6 +137,8 @@ test.describe('Brand Kit approval with colour conflicts and LF-reference rules',
     await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
     const dialog = page.getByRole('dialog', { name: 'Approve with open gaps?' });
     await expect(dialog).toContainText('https://synthetic-foundation.example/brand — HTTP 404');
+    await expect(dialog).not.toContainText('Failed sources');
+    await expect(dialog).not.toContainText('Missing assets');
     await expect(dialog).not.toContainText('Colour conflicts');
     await expect(dialog).not.toContainText('Rules from the LF reference, not the project');
     await page.screenshot({ path: info.outputPath('approve-dialog-v1.png'), fullPage: true });

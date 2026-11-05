@@ -307,6 +307,26 @@ export interface BrandKitLfReferenceRuleLine {
   text: string;
 }
 
+/** A failed source as the approve dialog lists it: the source, the agent's plain reason and, when it gives one, the machine detail. */
+export interface BrandKitApproveFailedItem {
+  title: string;
+  text: string;
+  detail: string | null;
+}
+
+/** A missing asset as the approve dialog lists it: the asset's label, the agent's plain reason and, when it names one, the fix. */
+export interface BrandKitApproveMissingItem {
+  title: string;
+  text: string;
+  fix: string | null;
+}
+
+/** What a v2 report's approve dialog lists first, in the Sources tab's words; both empty for a v1 report. */
+export interface BrandKitApproveFindings {
+  failed: BrandKitApproveFailedItem[];
+  missing: BrandKitApproveMissingItem[];
+}
+
 /** The three findings groups of a v2 report, written by the agent in plain language; the UI never rewrites a reason. */
 export interface BrandKitReportFindings {
   sources_failed: BrandKitReportFailedSource[];
