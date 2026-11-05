@@ -66,6 +66,16 @@ describe('ItOsAgentsController', () => {
     delete process.env['GUILD_IT_OS_WORKSPACE_NAME'];
   });
 
+  it('reports live agents only when the IT OS workspace is set', () => {
+    const json = vi.fn();
+    const controller = new ItOsAgentsController();
+    controller.status({} as Request, { json } as unknown as Response);
+    delete process.env['GUILD_IT_OS_WORKSPACE_NAME'];
+    controller.status({} as Request, { json } as unknown as Response);
+
+    expect(json.mock.calls).toEqual([[{ agents: ['domains'] }], [{ agents: [] }]]);
+  });
+
   it('refuses every call when the IT OS workspace is not set', async () => {
     delete process.env['GUILD_IT_OS_WORKSPACE_NAME'];
     const { run, next } = call('chat', { agentId: 'domains', project: PROJECT, message: 'hi' });

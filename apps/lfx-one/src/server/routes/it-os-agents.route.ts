@@ -10,6 +10,9 @@ import { blockDuringImpersonation } from '../middleware/impersonation-readonly.m
 const router = Router();
 const controller = new ItOsAgentsController();
 
+// GET /api/it-os-agents/status - which agents are live here (none outside dev)
+router.get('/status', (req, res) => controller.status(req, res));
+
 // POST /api/it-os-agents/chat - start a session or post a follow-up. The agent can change DNS, so impersonation is blocked.
 router.post('/chat', blockDuringImpersonation, (req, res, next) => controller.chat(req, res, next));
 

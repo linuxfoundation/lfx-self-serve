@@ -38,3 +38,8 @@ export interface ItOsGuildHistoryRequest {
 export interface ItOsGuildHistoryResponse {
   messages: MktgChatMessage[];
 }
+
+/** GET /api/it-os-agents/status response: which IT OS agents can be reached live here. Empty outside dev. */
+export interface ItOsGuildStatusResponse {
+  agents: string[];
+}

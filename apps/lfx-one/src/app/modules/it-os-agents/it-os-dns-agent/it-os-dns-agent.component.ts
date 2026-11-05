@@ -9,25 +9,37 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { IT_OS_DNS_SUGGESTIONS, IT_OS_DOMAIN_FILTERS, IT_OS_DOMAIN_STATE_LABELS, IT_OS_LF_NAMESERVERS } from '@lfx-one/shared/constants';
+import {
+  IT_OS_CHAT_MODE_OPTIONS,
+  IT_OS_DNS_SUGGESTIONS,
+  IT_OS_DOMAIN_FILTERS,
+  IT_OS_DOMAIN_STATE_LABELS,
+  IT_OS_LF_NAMESERVERS,
+  IT_OS_LIVE_DNS_SUGGESTIONS,
+} from '@lfx-one/shared/constants';
 import { ItOsChatMessage, ItOsDnsRecord, ItOsDomain, ItOsPlan, ItOsPlanView, ItOsProposal } from '@lfx-one/shared/interfaces';
 
 import { formatDate, planView, scrollKeyOf } from '../services/it-os-dns-html';
+import { ItOsLiveChatComponent } from '../it-os-live-chat/it-os-live-chat.component';
 import { ItOsDnsAgentService } from '../services/it-os-dns-agent.service';
+import { ItOsLiveStatusService } from '../services/it-os-live-status.service';
 
 // Domains & DNS agent (#4257): a chat-first agent plus a Details tab listing every domain. Sample data only.
 @Component({
   selector: 'lfx-it-os-dns-agent',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectButtonComponent, TagComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectButtonComponent, TagComponent, ItOsLiveChatComponent],
   templateUrl: './it-os-dns-agent.component.html',
 })
 export class ItOsDnsAgentComponent {
   // === Injections ===
   protected readonly agent = inject(ItOsDnsAgentService);
+  private readonly liveStatus = inject(ItOsLiveStatusService);
   private readonly platformId = inject(PLATFORM_ID);
 
   // === Constants ===
   protected readonly suggestions = IT_OS_DNS_SUGGESTIONS;
+  protected readonly liveSuggestions = IT_OS_LIVE_DNS_SUGGESTIONS;
+  protected readonly modeOptions = IT_OS_CHAT_MODE_OPTIONS;
   protected readonly filters = IT_OS_DOMAIN_FILTERS;
   protected readonly stateLabels = IT_OS_DOMAIN_STATE_LABELS;
   protected readonly nameservers = IT_OS_LF_NAMESERVERS;
@@ -40,6 +52,8 @@ export class ItOsDnsAgentComponent {
   public readonly chatForm = new FormGroup({ message: new FormControl('', { nonNullable: true }) });
   public readonly viewForm = new FormGroup({ role: new FormControl('staff', { nonNullable: true }) });
   public readonly searchForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
+  /** Sample data or the live agent. Live is offered only where the server has the IT OS route on (dev). */
+  public readonly modeForm = new FormGroup({ mode: new FormControl('sample', { nonNullable: true }) });
 
   // === Simple WritableSignals ===
   public readonly tab = signal('agent');
@@ -48,6 +62,8 @@ export class ItOsDnsAgentComponent {
   public readonly copied = signal(false);
 
   // === Computed ===
+  public readonly liveAvailable: Signal<boolean> = computed(() => this.liveStatus.agents().includes('domains'));
+  public readonly liveMode: Signal<boolean> = this.initLiveMode();
   public readonly filteredDomains: Signal<ItOsDomain[]> = this.initFilteredDomains();
   public readonly filterCounts: Signal<Record<string, number>> = this.initFilterCounts();
   public readonly selected: Signal<ItOsDomain | undefined> = computed(() => {
@@ -160,6 +176,11 @@ export class ItOsDnsAgentComponent {
 
   protected checked(event: Event): boolean {
     return (event.target as HTMLInputElement).checked;
+  }
+
+  private initLiveMode(): Signal<boolean> {
+    const mode = toSignal(this.modeForm.controls.mode.valueChanges, { initialValue: this.modeForm.controls.mode.value });
+    return computed(() => this.liveAvailable() && mode() === 'live');
   }
 
   private initFilteredDomains(): Signal<ItOsDomain[]> {

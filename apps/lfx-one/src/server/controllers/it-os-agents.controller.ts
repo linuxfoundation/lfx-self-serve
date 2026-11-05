@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { IT_OS_CHAT_MESSAGE_MAX_CHARS, IT_OS_GUILD_AGENTS, IT_OS_PROJECT_UID_REGEX } from '@lfx-one/shared/constants';
-import { ItOsGuildChatRequest, ItOsGuildChatResponse, ItOsGuildHistoryRequest, ItOsGuildHistoryResponse } from '@lfx-one/shared/interfaces';
+import {
+  ItOsGuildChatRequest,
+  ItOsGuildChatResponse,
+  ItOsGuildHistoryRequest,
+  ItOsGuildHistoryResponse,
+  ItOsGuildStatusResponse,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
@@ -26,6 +32,18 @@ const PROJECT_LINE_RE = /^Project slug: [^\n]*\n\n/;
  */
 export class ItOsAgentsController {
   private readonly projectService = new ProjectService();
+
+  /**
+   * GET /api/it-os-agents/status
+   * Which agents the chat can reach live here, so the page only offers live mode where the route is on.
+   * Reveals nothing beyond that: no workspace name, no project data.
+   */
+  public status(req: Request, res: Response): void {
+    const startTime = logger.startOperation(req, 'it_os_agents_status', {});
+    const response: ItOsGuildStatusResponse = { agents: process.env['GUILD_IT_OS_WORKSPACE_NAME']?.trim() ? Object.keys(IT_OS_GUILD_AGENTS) : [] };
+    logger.success(req, 'it_os_agents_status', startTime, { live_agents: response.agents.length });
+    res.json(response);
+  }
 
   /**
    * POST /api/it-os-agents/chat

@@ -27,20 +27,33 @@
       </button>
     </div>
     <div class="ml-auto flex flex-wrap items-center gap-3">
-      <span class="text-xs text-gray-500" id="it-os-dns-role-label">Viewing as</span>
-      <lfx-select-button [form]="viewForm" control="role" [options]="roleOptions" [unselectable]="false" data-testid="it-os-dns-role" />
-      <lfx-button
-        label="Reset demo"
-        icon="fa-light fa-rotate-left"
-        severity="secondary"
-        [outlined]="true"
-        size="small"
-        (onClick)="reset()"
-        data-testid="it-os-dns-reset" />
+      @if (liveAvailable()) {
+        <lfx-select-button [form]="modeForm" control="mode" [options]="modeOptions" [unselectable]="false" data-testid="it-os-dns-mode" />
+      }
+      @if (!liveMode()) {
+        <span class="text-xs text-gray-500" id="it-os-dns-role-label">Viewing as</span>
+        <lfx-select-button [form]="viewForm" control="role" [options]="roleOptions" [unselectable]="false" data-testid="it-os-dns-role" />
+        <lfx-button
+          label="Reset demo"
+          icon="fa-light fa-rotate-left"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          (onClick)="reset()"
+          data-testid="it-os-dns-reset" />
+      }
     </div>
   </div>
 
-  @if (tab() === 'agent') {
+  @if (tab() === 'details' && liveMode()) {
+    <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="it-os-dns-details-sample-note">
+      Details still shows sample data. Ask the live agent for this project's real domains and records.
+    </p>
+  }
+
+  @if (tab() === 'agent' && liveMode()) {
+    <lfx-it-os-live-chat agentId="domains" icon="fa-light fa-globe" iconClass="bg-blue-50 text-blue-600" testId="it-os-dns" [suggestions]="liveSuggestions" />
+  } @else if (tab() === 'agent') {
     <!-- Chat -->
     <div class="flex flex-col rounded-lg border border-gray-200 bg-white" data-testid="it-os-dns-chat">
       <div #conversation class="flex max-h-[60vh] min-h-[360px] flex-col gap-4 overflow-y-auto p-4" aria-live="polite">
