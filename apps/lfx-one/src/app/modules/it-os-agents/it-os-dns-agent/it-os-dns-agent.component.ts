@@ -22,12 +22,15 @@ import { ItOsChatMessage, ItOsDnsRecord, ItOsDomain, ItOsPlan, ItOsPlanView, ItO
 import { formatDate, planView, scrollKeyOf } from '../services/it-os-dns-html';
 import { ItOsLiveChatComponent } from '../it-os-live-chat/it-os-live-chat.component';
 import { ItOsDnsAgentService } from '../services/it-os-dns-agent.service';
+import { ItOsLiveAgentService } from '../services/it-os-live-agent.service';
 import { ItOsLiveStatusService } from '../services/it-os-live-status.service';
 
 // Domains & DNS agent (#4257): a chat-first agent plus a Details tab listing every domain. Sample data only.
 @Component({
   selector: 'lfx-it-os-dns-agent',
   imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectButtonComponent, TagComponent, ItOsLiveChatComponent],
+  // The live conversation belongs to this page, so it survives switching between the Agent and Details tabs.
+  providers: [ItOsLiveAgentService],
   templateUrl: './it-os-dns-agent.component.html',
 })
 export class ItOsDnsAgentComponent {

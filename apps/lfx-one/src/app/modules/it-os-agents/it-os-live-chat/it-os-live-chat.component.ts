@@ -11,11 +11,11 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ItOsLiveAgentService } from '../services/it-os-live-agent.service';
 
 // Live chat with an IT OS agent on Guild (#4257). Dev only. The server checks write access and tells the
-// agent which project it is working on; this component only sends the project uid.
+// agent which project it is working on; this component only sends the project uid. The host page provides
+// ItOsLiveAgentService, so the conversation survives tab switches on that page.
 @Component({
   selector: 'lfx-it-os-live-chat',
   imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent],
-  providers: [ItOsLiveAgentService],
   templateUrl: './it-os-live-chat.component.html',
 })
 export class ItOsLiveChatComponent {

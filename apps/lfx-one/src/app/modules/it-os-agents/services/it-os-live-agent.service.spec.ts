@@ -17,9 +17,14 @@ describe('ItOsLiveAgentService', () => {
   const PROJECT = 'project-uid-1';
   const user = (id: string, text: string): MktgChatMessage => ({ id, sender: 'user', text, timestamp: '17:00' });
   const agent = (id: string, text: string): MktgChatMessage => ({ id, sender: 'agent', text, timestamp: '17:00' });
-  const answerHistory = (messages: MktgChatMessage[]): void => {
+  /** Moves to the next poll and answers it. */
+  const answerHistory = (messages: MktgChatMessage[], turnComplete: boolean): void => {
     vi.advanceTimersByTime(IT_OS_LIVE_POLL_MS);
-    http.expectOne('/api/it-os-agents/history').flush({ messages });
+    http.expectOne('/api/it-os-agents/history').flush({ messages, turnComplete });
+  };
+  const start = (): void => {
+    service.send('domains', PROJECT, 'hi');
+    http.expectOne('/api/it-os-agents/chat').flush({ sessionId: 's1', ownerToken: 't1' });
   };
 
   beforeEach(() => {
@@ -34,34 +39,66 @@ describe('ItOsLiveAgentService', () => {
     vi.useRealTimers();
   });
 
-  it('starts a session, then polls until the agent has replied and the history stops growing', () => {
+  it('starts a session with the project uid and stops once the turn is complete', () => {
     service.send('domains', PROJECT, 'What domains do we have?');
-    const start = http.expectOne('/api/it-os-agents/chat');
-    expect(start.request.body).toEqual({ agentId: 'domains', project: PROJECT, message: 'What domains do we have?' });
-    start.flush({ sessionId: 's1', ownerToken: 't1' });
+    const request = http.expectOne('/api/it-os-agents/chat');
+    expect(request.request.body).toEqual({ agentId: 'domains', project: PROJECT, message: 'What domains do we have?' });
+    request.flush({ sessionId: 's1', ownerToken: 't1' });
 
-    expect(service.waiting()).toBe(true);
-    answerHistory([user('e1', 'What domains do we have?')]);
-    answerHistory([user('e1', 'What domains do we have?'), agent('e2', 'hurrdurr.org')]);
-    expect(service.waiting()).toBe(true);
-    answerHistory([user('e1', 'What domains do we have?'), agent('e2', 'hurrdurr.org')]);
+    answerHistory([user('e1', 'What domains do we have?'), agent('e2', 'hurrdurr.org')], true);
 
     expect(service.waiting()).toBe(false);
     expect(service.messages().map((m) => m.text)).toEqual(['What domains do we have?', 'hurrdurr.org']);
   });
 
+  it('keeps polling past interim messages until the turn is complete', () => {
+    start();
+    const interim = [user('e1', 'hi'), agent('e2', 'Checking the records…')];
+    answerHistory(interim, false);
+    answerHistory(interim, false);
+    expect(service.waiting()).toBe(true);
+
+    answerHistory([...interim, agent('e3', 'Want me to go ahead?')], true);
+
+    expect(service.waiting()).toBe(false);
+    expect(service.messages()).toHaveLength(3);
+  });
+
+  it('waits for a slow history call instead of cancelling it', () => {
+    start();
+    vi.advanceTimersByTime(IT_OS_LIVE_POLL_MS);
+    const slow = http.expectOne('/api/it-os-agents/history');
+    vi.advanceTimersByTime(IT_OS_LIVE_POLL_MS * 2);
+    http.expectNone('/api/it-os-agents/history');
+
+    expect(slow.cancelled).toBe(false);
+    slow.flush({ messages: [user('e1', 'hi'), agent('e2', 'hello')], turnComplete: true });
+    expect(service.waiting()).toBe(false);
+  });
+
+  it('skips a poll that fails transiently and carries on', () => {
+    start();
+    vi.advanceTimersByTime(IT_OS_LIVE_POLL_MS);
+    http.expectOne('/api/it-os-agents/history').flush({}, { status: 502, statusText: 'Bad Gateway' });
+    expect(service.waiting()).toBe(true);
+
+    answerHistory([user('e1', 'hi'), agent('e2', 'hello')], true);
+    expect(service.waiting()).toBe(false);
+    expect(service.error()).toBeNull();
+  });
+
   it('sends follow-ups on the same session with its owner token', () => {
-    service.send('domains', PROJECT, 'hi');
-    http.expectOne('/api/it-os-agents/chat').flush({ sessionId: 's1', ownerToken: 't1' });
-    answerHistory([user('e1', 'hi'), agent('e2', 'hello')]);
-    answerHistory([user('e1', 'hi'), agent('e2', 'hello')]);
+    start();
+    answerHistory([user('e1', 'hi'), agent('e2', 'hello')], true);
 
     service.send('domains', PROJECT, 'Yes, go ahead.');
     const followUp = http.expectOne('/api/it-os-agents/chat');
     expect(followUp.request.body).toEqual({ agentId: 'domains', project: PROJECT, message: 'Yes, go ahead.', sessionId: 's1', ownerToken: 't1' });
     followUp.flush({ success: true });
-    answerHistory([user('e1', 'hi'), agent('e2', 'hello'), user('e3', 'Yes, go ahead.'), agent('e4', 'Done.')]);
-    answerHistory([user('e1', 'hi'), agent('e2', 'hello'), user('e3', 'Yes, go ahead.'), agent('e4', 'Done.')]);
+    // The previous turn still reads as complete until Guild records the new message; no new reply yet, so keep waiting.
+    answerHistory([user('e1', 'hi'), agent('e2', 'hello')], true);
+    expect(service.waiting()).toBe(true);
+    answerHistory([user('e1', 'hi'), agent('e2', 'hello'), user('e3', 'Yes, go ahead.'), agent('e4', 'Done.')], true);
 
     expect(service.waiting()).toBe(false);
   });
@@ -74,10 +111,10 @@ describe('ItOsLiveAgentService', () => {
     expect(service.error()).toBe('You need write access to this project to use the live agent.');
   });
 
-  it('gives up after the longest wait without a reply', () => {
-    service.send('domains', PROJECT, 'hi');
-    http.expectOne('/api/it-os-agents/chat').flush({ sessionId: 's1', ownerToken: 't1' });
-    for (let waited = 0; waited < IT_OS_LIVE_MAX_WAIT_MS; waited += IT_OS_LIVE_POLL_MS) answerHistory([user('e1', 'hi')]);
+  it('gives up after the longest wait without a finished turn', () => {
+    start();
+    for (let waited = IT_OS_LIVE_POLL_MS; waited < IT_OS_LIVE_MAX_WAIT_MS; waited += IT_OS_LIVE_POLL_MS) answerHistory([user('e1', 'hi')], false);
+    vi.advanceTimersByTime(IT_OS_LIVE_POLL_MS);
 
     expect(service.waiting()).toBe(false);
     expect(service.error()).toContain('taking longer than usual');

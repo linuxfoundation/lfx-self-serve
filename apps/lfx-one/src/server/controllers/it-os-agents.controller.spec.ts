@@ -9,18 +9,24 @@ const guildMocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   sendFollowUp: vi.fn(),
   getHistory: vi.fn(),
+  getRawEventPayloads: vi.fn(),
 }));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
 const authMocks = vi.hoisted(() => ({ getEffectiveSub: vi.fn((): string | null => 'auth0|user-1') }));
 const loggerMocks = vi.hoisted(() => ({ startOperation: vi.fn(() => 0), success: vi.fn(), debug: vi.fn(), warning: vi.fn(), info: vi.fn(), error: vi.fn() }));
 
-vi.mock('@lfx-one/shared/constants', () => vi.importActual('../../../../../packages/shared/src/constants/it-os-guild.constants'));
+vi.mock('@lfx-one/shared/constants', async () => ({
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/it-os-guild.constants')),
+  MKTG_SESSION_EVENTS_TRUNCATED: 'mktg_session_events_truncated',
+  MKTG_SESSION_TURN_STARTED: 'mktg_session_turn_started',
+}));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('../services/guild.service', () => ({
   GuildService: class {
     public createSession = guildMocks.createSession;
     public sendFollowUp = guildMocks.sendFollowUp;
     public getHistory = guildMocks.getHistory;
+    public getRawEventPayloads = guildMocks.getRawEventPayloads;
     public constructor(workspace?: string) {
       guildMocks.workspaces.push(workspace);
     }
@@ -155,6 +161,9 @@ describe('ItOsAgentsController', () => {
       { id: 'e1', sender: 'user', text: 'Project slug: test-project-group\n\nWhat domains do we have?', timestamp: '17:00' },
       { id: 'e2', sender: 'agent', text: 'hurrdurr.org', timestamp: '17:00' },
     ]);
+    guildMocks.getRawEventPayloads.mockResolvedValue(
+      ['mktg_session_turn_started', 'runtime_start', 'agent_notification_message', 'runtime_done'].map((type) => JSON.stringify({ type }))
+    );
     const { run, json } = call('history', { agentId: 'domains', project: PROJECT, sessionId: 'session-1', ownerToken: ownerToken('session-1') });
     await run();
 
@@ -164,6 +173,7 @@ describe('ItOsAgentsController', () => {
         { id: 'e1', sender: 'user', text: 'What domains do we have?', timestamp: '17:00' },
         { id: 'e2', sender: 'agent', text: 'hurrdurr.org', timestamp: '17:00' },
       ],
+      turnComplete: true,
     });
 
     const denied = call('history', { agentId: 'domains', project: PROJECT, sessionId: 'session-1', ownerToken: 'nope' });

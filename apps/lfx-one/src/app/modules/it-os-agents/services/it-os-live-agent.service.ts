@@ -6,14 +6,17 @@ import { DestroyRef, inject, Injectable, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { IT_OS_LIVE_MAX_WAIT_MS, IT_OS_LIVE_POLL_MS } from '@lfx-one/shared/constants';
 import { ItOsGuildChatResponse, ItOsGuildHistoryResponse, MktgChatMessage } from '@lfx-one/shared/interfaces';
-import { Subscription, switchMap, take, timer } from 'rxjs';
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { catchError, exhaustMap, Observable, of, Subscription, takeUntil, throwError, timer } from 'rxjs';
 
 /**
  * Live chat with an IT OS agent on Guild (#4257), through /api/it-os-agents. Dev only: the server
- * refuses every call elsewhere. Provided per page, so each visit starts a new conversation.
+ * refuses every call elsewhere. Provided by the agent's page (not the chat), so switching to the Details
+ * tab and back keeps the conversation and any poll in progress; leaving the page starts a new one.
  *
- * Sending posts the message, then polls the session history until the agent has replied and the
- * history stops growing (agents can answer in more than one message), or until the wait runs out.
+ * Sending posts the message, then polls the session history until the server reports the agent's turn
+ * finished (its runtime closed, not just a pause between messages) and the agent has replied, or until
+ * the wait runs out. Polls never overlap: a slow history call is waited for, not cancelled.
  */
 @Injectable()
 export class ItOsLiveAgentService {
@@ -65,31 +68,33 @@ export class ItOsLiveAgentService {
       this.fail(null);
       return;
     }
-    let lastCount = -1;
     this.poll?.unsubscribe();
     this.poll = timer(IT_OS_LIVE_POLL_MS, IT_OS_LIVE_POLL_MS)
       .pipe(
-        take(Math.ceil(IT_OS_LIVE_MAX_WAIT_MS / IT_OS_LIVE_POLL_MS)),
-        switchMap(() =>
-          this.http.post<ItOsGuildHistoryResponse>('/api/it-os-agents/history', { agentId, project, sessionId: session.id, ownerToken: session.ownerToken })
-        ),
+        exhaustMap(() => this.history(agentId, project, session)),
+        takeUntil(timer(IT_OS_LIVE_MAX_WAIT_MS)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
-        next: ({ messages }) => {
-          this.messages.set(messages);
-          // Done once the agent has replied and nothing new arrived since the last check.
-          if (this.agentReplies(messages) > agentRepliesBefore && messages.length === lastCount) this.settle();
-          lastCount = messages.length;
+        next: (response) => {
+          if (!response) return;
+          this.messages.set(response.messages);
+          if (response.turnComplete && this.agentReplies(response.messages) > agentRepliesBefore) this.settle();
         },
         error: (error: unknown) => this.fail(error),
         complete: () => {
           if (!this.waiting()) return;
           this.waiting.set(false);
-          if (this.agentReplies(this.messages()) <= agentRepliesBefore)
-            this.error.set('The agent is taking longer than usual. Send another message to check again.');
+          this.error.set('The agent is taking longer than usual. Send another message to check again.');
         },
       });
+  }
+
+  /** One history read. A transient failure (network, 5xx) skips this poll instead of ending the wait. */
+  private history(agentId: string, project: string, session: { id: string; ownerToken: string }): Observable<ItOsGuildHistoryResponse | null> {
+    return this.http
+      .post<ItOsGuildHistoryResponse>('/api/it-os-agents/history', { agentId, project, sessionId: session.id, ownerToken: session.ownerToken })
+      .pipe(catchError((error: unknown) => (isTransientHttpError(error) ? of(null) : throwError(() => error))));
   }
 
   private settle(): void {

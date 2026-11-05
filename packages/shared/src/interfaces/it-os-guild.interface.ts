@@ -37,6 +37,8 @@ export interface ItOsGuildHistoryRequest {
 /** POST /api/it-os-agents/history response. */
 export interface ItOsGuildHistoryResponse {
   messages: MktgChatMessage[];
+  /** True once the agent has finished its latest turn (its runtime has closed), not just paused between messages. */
+  turnComplete: boolean;
 }
 
 /** GET /api/it-os-agents/status response: which IT OS agents can be reached live here. Empty outside dev. */
