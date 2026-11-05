@@ -55,7 +55,11 @@ export function isLinkedinSetup(value: unknown): value is LinkedinSetup {
     Object.values(value).every((v) => typeof v === 'string' && v.length <= LINKEDIN_PROFILE_MAX_FIELD_CHARS)
   );
 }
-/** The same option-array gate used by live envelopes and stored option-card sidecars. */
+/**
+ * The same option-array gate used by live envelopes and stored option-card sidecars.
+ * Hashtags: zero to five per option. The persona's stated limits win over the agent's default
+ * count, so an option may carry none; the validator must accept whatever the agent may send.
+ */
 export function isLinkedinOptions(value: unknown): value is LinkedinOption[] {
   return (
     Array.isArray(value) &&
@@ -70,7 +74,7 @@ export function isLinkedinOptions(value: unknown): value is LinkedinOption[] {
         Number(o['word_count']) >= 1 &&
         Number(o['word_count']) <= 200 &&
         Array.isArray(o['hashtags']) &&
-        o['hashtags'].length >= 3 &&
+        o['hashtags'].length >= 0 &&
         o['hashtags'].length <= 5 &&
         o['hashtags'].every((h) => typeof h === 'string' && /^#[\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*$/u.test(h)) &&
         Array.isArray(o['tagging_suggestions']) &&

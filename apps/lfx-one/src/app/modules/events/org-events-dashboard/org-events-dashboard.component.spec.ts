@@ -28,8 +28,8 @@ async function render(
   {
     settled = true,
     query = {} as Record<string, string>,
-    summaryServed = 'company_email',
-    listServed = 'company_email',
+    summaryServed = 'all',
+    listServed = 'all',
     summaryFails = false,
     listMode = 'ok' as 'ok' | 'pending' | 'error',
     foundations = [{ id: 'foundation-a', name: 'Foundation A' }],
@@ -91,7 +91,7 @@ describe('OrgEventsDashboardComponent', () => {
     expect(el.querySelector('[data-testid="org-events-stat-strip"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-events-title"]')?.textContent).toContain('Acme Motors, Inc.');
     expect(eventsService.getOrgEventsSummary).toHaveBeenCalledWith('acc-1', {
-      attribution: 'company_email',
+      attribution: 'all',
       eventScope: 'activity',
       foundation: '',
       range: '730d',
@@ -123,13 +123,13 @@ describe('OrgEventsDashboardComponent', () => {
 
     expect(eventsService.getOrgEvents).toHaveBeenCalledTimes(1);
     const [, params] = eventsService.getOrgEvents.mock.calls[0] as unknown as [string, Record<string, unknown>];
-    expect(params).toMatchObject({ isPast: false, attribution: 'company_email', participation: 'registered', eventScope: 'activity', foundation: '' });
+    expect(params).toMatchObject({ isPast: false, attribution: 'all', participation: 'registered', eventScope: 'activity', foundation: '' });
     expect(params['range']).toBeUndefined();
   });
 
   it('restores the filters from the URL and sends them on the Past tab', async () => {
     const { eventsService } = await render(null, {
-      query: { tab: 'past', range: '90d', participation: 'attended', attribution: 'all', eventScope: 'all', foundation: 'foundation-a' },
+      query: { tab: 'past', range: '90d', participation: 'attended', attribution: 'company_email', eventScope: 'all', foundation: 'foundation-a' },
     });
 
     const [, params] = eventsService.getOrgEvents.mock.calls[0] as unknown as [string, Record<string, unknown>];
@@ -137,16 +137,26 @@ describe('OrgEventsDashboardComponent', () => {
       isPast: true,
       range: '90d',
       participation: 'attended',
-      attribution: 'all',
+      attribution: 'company_email',
       eventScope: 'all',
       foundation: 'foundation-a',
     });
     expect(eventsService.getOrgEventsSummary).toHaveBeenCalledWith('acc-1', {
-      attribution: 'all',
+      attribution: 'company_email',
       eventScope: 'all',
       foundation: 'foundation-a',
       range: '90d',
     });
+  });
+
+  it('defaults Count to All and Counted by to All relations, and sends a Count of All on the Past tab', async () => {
+    const { component, eventsService } = await render(null, { query: { tab: 'past' } });
+
+    expect(component.filterForm.controls.participation.value).toBe('all');
+    expect(component.filterForm.controls.attribution.value).toBe('all');
+    expect(component.participationOptions[0]).toEqual({ label: 'All', value: 'all' });
+    const [, params] = eventsService.getOrgEvents.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(params).toMatchObject({ isPast: true, participation: 'all', attribution: 'all' });
   });
 
   it('shows Range only on the Past tab', async () => {
@@ -179,43 +189,43 @@ describe('OrgEventsDashboardComponent', () => {
   });
 
   it('shows the unavailable note only when the list served an attribution other than the one picked', async () => {
-    const fellBack = await render(null, { listServed: 'account' });
+    const fellBack = await render(null, { query: { attribution: 'company_email' }, listServed: 'account' });
     expect(fellBack.el.querySelector('[data-testid="org-events-attribution-unavailable"]')?.textContent).toContain(ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE);
     TestBed.resetTestingModule();
 
-    const served = await render(null);
+    const served = await render(null, { query: { attribution: 'company_email' }, listServed: 'company_email' });
     expect(served.el.querySelector('[data-testid="org-events-attribution-unavailable"]')).toBeNull();
   });
 
   it('takes the caption and the notice from the list, not the summary, when the summary read fails', async () => {
-    const { el, component } = await render(null, { listServed: 'account', summaryFails: true });
+    const { el, component } = await render(null, { query: { attribution: 'company_email' }, listServed: 'account', summaryFails: true });
 
     expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')?.textContent).toContain(ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE);
     expect(component.upcomingAttendeesCaption()).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.account);
   });
 
   it('ignores a summary that says account when the list served the attribution picked', async () => {
-    const { el, component } = await render(null, { summaryServed: 'account' });
+    const { el, component } = await render(null, { query: { attribution: 'company_email' }, listServed: 'company_email', summaryServed: 'account' });
 
     expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')).toBeNull();
     expect(component.upcomingAttendeesCaption()).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.company_email);
   });
 
   it('shows no notice while the list read is pending, whatever the summary says', async () => {
-    const { el, component } = await render(null, { summaryServed: 'account', listMode: 'pending' });
+    const { el, component } = await render(null, { query: { attribution: 'company_email' }, summaryServed: 'account', listMode: 'pending' });
 
     expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')).toBeNull();
     expect(component.upcomingAttendeesCaption()).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.company_email);
   });
 
   it('shows no notice after a failed list read', async () => {
-    const { el } = await render(null, { listMode: 'error' });
+    const { el } = await render(null, { query: { attribution: 'company_email' }, listMode: 'error' });
 
     expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')).toBeNull();
   });
 
   it('drops a notice earned under another Counted by as soon as the pick changes', async () => {
-    const { el, component, fixture } = await render(null, { listServed: 'account' });
+    const { el, component, fixture } = await render(null, { query: { attribution: 'company_email' }, listServed: 'account' });
     expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')).not.toBeNull();
 
     // `all` was never answered by the list, so the held `account` response is stale for it.
@@ -232,6 +242,10 @@ describe('OrgEventsDashboardComponent', () => {
 
     const picked = await render(null, { query: { eventScope: 'all' } });
     expect(picked.el.querySelector('[data-testid="org-events-clear-filters"]')).not.toBeNull();
+    TestBed.resetTestingModule();
+
+    const registered = await render(null, { query: { participation: 'registered' } });
+    expect(registered.el.querySelector('[data-testid="org-events-clear-filters"]')).not.toBeNull();
   });
 
   it('clears a picked foundation the loaded options do not offer', async () => {

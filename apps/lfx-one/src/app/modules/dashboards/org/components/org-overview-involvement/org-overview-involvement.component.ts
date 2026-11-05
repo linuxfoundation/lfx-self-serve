@@ -10,6 +10,7 @@ import {
   BASE_BAR_CHART_OPTIONS,
   BASE_LINE_CHART_OPTIONS,
   DEFAULT_ORG_EVENTS_ATTRIBUTION,
+  DEFAULT_ORG_EVENTS_PARTICIPATION,
   lfxColors,
   ORG_INVOLVEMENT_METRICS,
   ORG_MAINTAINER_ROLES_LABEL,
@@ -321,7 +322,10 @@ export class OrgOverviewInvolvementComponent {
       value: data.totalAttended.toString(),
       subtitle: ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE,
       chartCaption: OrgOverviewInvolvementComponent.eventsWindowCaption(data.monthlyLabels),
-      tooltipText: OrgOverviewInvolvementComponent.eventsTooltip(ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered, data.servedAttribution),
+      tooltipText: OrgOverviewInvolvementComponent.eventsTooltip(
+        ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[DEFAULT_ORG_EVENTS_PARTICIPATION],
+        data.servedAttribution
+      ),
       chartOptions: this.createLineChartOptions('Event attendees'),
       chartData:
         data.attendeesMonthlyData.length > 0

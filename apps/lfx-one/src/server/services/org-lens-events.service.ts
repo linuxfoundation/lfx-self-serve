@@ -228,7 +228,7 @@ export class OrgLensEventsService {
 
       const header = await this.readDrawerHeader(accountId, eventId, servedAttribution);
       const servedParticipation = effectiveOrgEventsParticipation(options.participation, header?.IS_PAST_EVENT === true);
-      const optionCount = (servedParticipation === 'attended' ? header?.ATTENDED_COUNT : header?.REGISTERED_COUNT) ?? 0;
+      const optionCount = (header ? drawerHeaderCount(header, servedParticipation) : null) ?? 0;
 
       // The listed rows of the option, searched or not: one cache entry per event and option, and the search below
       // narrows only what is shown, never the count of listed people `notListedCount` subtracts.
@@ -468,6 +468,7 @@ export class OrgLensEventsService {
       SELECT
         oe.EVENT_NAME,
         oe.IS_PAST_EVENT,
+        oe.${orgEventsCountColumn(attribution, 'all')} AS ALL_COUNT,
         oe.${orgEventsCountColumn(attribution, 'registered')} AS REGISTERED_COUNT,
         oe.${orgEventsCountColumn(attribution, 'attended')} AS ATTENDED_COUNT
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
@@ -477,7 +478,7 @@ export class OrgLensEventsService {
     `;
     const rows = await withOrgCache(
       accountId,
-      `event-header:v1:${paramSignature([eventId, attribution])}`,
+      `event-header:v2:${paramSignature([eventId, attribution])}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => (await this.snowflakeService.execute<OrgEventDrawerHeaderRow>(sql, [accountId, eventId])).rows,
       isObjectRowArray
@@ -506,6 +507,12 @@ export class OrgLensEventsService {
       isOrgSponsor: !!row.IS_ORG_SPONSOR,
     };
   }
+}
+
+/** The header's distinct-people count for a participation. */
+function drawerHeaderCount(header: OrgEventDrawerHeaderRow, participation: OrgEventsParticipation): number | null {
+  if (participation === 'attended') return header.ATTENDED_COUNT;
+  return participation === 'all' ? header.ALL_COUNT : header.REGISTERED_COUNT;
 }
 
 /** A name or title for display: trimmed, `null` when empty or when it holds an address — no email reaches a drawer, whatever the warehouse sent. */

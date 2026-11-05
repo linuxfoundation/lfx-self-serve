@@ -144,6 +144,8 @@ interface EventFixture {
   account?: string;
   registered?: { companyEmail?: number; account?: number; all?: number };
   attended?: { companyEmail?: number; account?: number; all?: number };
+  /** Distinct people who registered or attended; defaults to the larger of the registered and attended counts. */
+  registeredOrAttended?: { companyEmail?: number; account?: number; all?: number };
   footprint?: { companyEmail?: boolean; account?: boolean; all?: boolean };
 }
 
@@ -176,6 +178,9 @@ function addEvent(fixture: EventFixture = {}): string {
     ATTENDED_COUNT_COMPANY_EMAIL: fixture.attended?.companyEmail ?? 0,
     ATTENDED_COUNT_ACCOUNT: fixture.attended?.account ?? 0,
     ATTENDED_COUNT_ALL: fixture.attended?.all ?? 0,
+    ALL_COUNT_COMPANY_EMAIL: fixture.registeredOrAttended?.companyEmail ?? Math.max(fixture.registered?.companyEmail ?? 0, fixture.attended?.companyEmail ?? 0),
+    ALL_COUNT_ACCOUNT: fixture.registeredOrAttended?.account ?? Math.max(fixture.registered?.account ?? 0, fixture.attended?.account ?? 0),
+    ALL_COUNT_ALL: fixture.registeredOrAttended?.all ?? Math.max(fixture.registered?.all ?? 0, fixture.attended?.all ?? 0),
     HAS_FOOTPRINT_COMPANY_EMAIL: fixture.footprint?.companyEmail === false ? 0 : 1,
     HAS_FOOTPRINT_ACCOUNT: fixture.footprint?.account === false ? 0 : 1,
     HAS_FOOTPRINT_ALL: fixture.footprint?.all === false ? 0 : 1,
@@ -201,7 +206,7 @@ interface ParticipantFixture {
   listable?: boolean;
 }
 
-/** The six row-level conjunction flags dbt computes: (registered | attended) AND (company email | account | any relation). */
+/** The nine row-level conjunction flags dbt computes: (registered | attended | registered or attended) AND (company email | account | any relation). */
 function countsFlags(fixture: {
   companyEmail?: boolean;
   accountCredited?: boolean;
@@ -220,6 +225,7 @@ function countsFlags(fixture: {
     Object.entries(credited).flatMap(([suffix, flag]) => [
       [`IS_COUNTED_REGISTERED_${suffix}`, registered && flag ? 1 : 0],
       [`IS_COUNTED_ATTENDED_${suffix}`, attended && flag ? 1 : 0],
+      [`IS_COUNTED_ALL_${suffix}`, (registered || attended) && flag ? 1 : 0],
     ])
   );
 }
@@ -273,6 +279,7 @@ beforeEach(() => {
       EVENT_REGISTRATIONS_GOAL INTEGER, ORG_SPEAKER_ACCEPTED_COUNT INTEGER, ORG_SPEAKER_SUBMITTED_COUNT INTEGER, IS_ORG_SPONSOR INTEGER,
       REGISTERED_COUNT_COMPANY_EMAIL INTEGER, REGISTERED_COUNT_ACCOUNT INTEGER, REGISTERED_COUNT_ALL INTEGER,
       ATTENDED_COUNT_COMPANY_EMAIL INTEGER, ATTENDED_COUNT_ACCOUNT INTEGER, ATTENDED_COUNT_ALL INTEGER,
+      ALL_COUNT_COMPANY_EMAIL INTEGER, ALL_COUNT_ACCOUNT INTEGER, ALL_COUNT_ALL INTEGER,
       HAS_FOOTPRINT_COMPANY_EMAIL INTEGER, HAS_FOOTPRINT_ACCOUNT INTEGER, HAS_FOOTPRINT_ALL INTEGER
     )`
   );
@@ -282,6 +289,7 @@ beforeEach(() => {
       ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
       IS_COUNTED_REGISTERED_COMPANY_EMAIL INTEGER, IS_COUNTED_REGISTERED_ACCOUNT INTEGER, IS_COUNTED_REGISTERED_ALL INTEGER,
       IS_COUNTED_ATTENDED_COMPANY_EMAIL INTEGER, IS_COUNTED_ATTENDED_ACCOUNT INTEGER, IS_COUNTED_ATTENDED_ALL INTEGER,
+      IS_COUNTED_ALL_COMPANY_EMAIL INTEGER, IS_COUNTED_ALL_ACCOUNT INTEGER, IS_COUNTED_ALL_ALL INTEGER,
       IS_LISTABLE INTEGER
     )`
   );
@@ -327,6 +335,7 @@ describe('OrgLensEventsService list — option columns', () => {
     addEvent({
       registered: { companyEmail: 3, account: 5, all: 8 },
       attended: { companyEmail: 1, account: 2, all: 4 },
+      registeredOrAttended: { companyEmail: 4, account: 6, all: 9 },
       isPast: true,
     });
   });
@@ -338,6 +347,9 @@ describe('OrgLensEventsService list — option columns', () => {
     ['company_email', 'attended', 1],
     ['account', 'attended', 2],
     ['all', 'attended', 4],
+    ['company_email', 'all', 4],
+    ['account', 'all', 6],
+    ['all', 'all', 9],
   ] as const)('serves the %s / %s count on the Past tab', async (attribution, participation, expected) => {
     const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, attribution, participation }));
 
@@ -373,6 +385,14 @@ describe('OrgLensEventsService list — upcoming and past', () => {
     addEvent({ registered: { companyEmail: 4 }, attended: { companyEmail: 0 } });
 
     const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: false, participation: 'attended' }));
+
+    expect(list.data.map((event) => event.orgAttendeeCount)).toEqual([4]);
+  });
+
+  it('counts registrations on the Upcoming tab when Count is All', async () => {
+    addEvent({ registered: { companyEmail: 4 }, registeredOrAttended: { companyEmail: 7 } });
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: false, participation: 'all' }));
 
     expect(list.data.map((event) => event.orgAttendeeCount)).toEqual([4]);
   });
@@ -448,6 +468,14 @@ describe('OrgLensEventsService list — upcoming and past', () => {
     const attendedView = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, status: 'registered', participation: 'attended' }));
 
     expect(attendedView.data.map((event) => event.eventId)).toEqual(['registered-only']);
+  });
+
+  it('keeps status=registered on registrations when Count is All', async () => {
+    addEvent({ eventId: 'attended-only', isPast: true, registered: { companyEmail: 0 }, registeredOrAttended: { companyEmail: 2 } });
+
+    const allView = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, status: 'registered', participation: 'all' }));
+
+    expect(allView.data).toEqual([]);
   });
 
   it("never reads another account's events", async () => {
@@ -619,6 +647,19 @@ describe('OrgLensEventsService attendees drawer', () => {
     expect(attended.data.map((attendee) => attendee.name)).toEqual(['Attended']);
     // The option count is the ORG_EVENTS column of the picked option: 2 attended minus 1 listed.
     expect(attended.notListedCount).toBe(1);
+  });
+
+  it('lists everyone who registered or attended when Count is All, and counts from the ALL_COUNT column', async () => {
+    addParticipant({ ref: 1, name: 'Attended', attended: true });
+    addParticipant({ ref: 2, name: 'Registered Only' });
+    addParticipant({ ref: 3, name: 'Attended Unregistered', registered: false, attended: true });
+    addParticipant({ ref: 4, name: 'Rejected', registered: false });
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, participation: 'all' });
+
+    expect(drawer.data.map((attendee) => attendee.name).sort()).toEqual(['Attended', 'Attended Unregistered', 'Registered Only']);
+    // The event's ALL_COUNT_COMPANY_EMAIL is 4 (the larger of its 4 registered and 2 attended): 4 minus 3 listed.
+    expect(drawer.notListedCount).toBe(1);
   });
 
   it('counts registrations for an event that has not ended, whatever participation is picked', async () => {

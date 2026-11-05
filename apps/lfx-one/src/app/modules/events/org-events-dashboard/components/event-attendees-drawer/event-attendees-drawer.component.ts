@@ -11,7 +11,7 @@ import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { catchError, combineLatest, finalize, of, skip, switchMap } from 'rxjs';
 
-import { DEFAULT_ORG_EVENTS_ATTRIBUTION, DEFAULT_ORG_EVENTS_PARTICIPATION, ORG_EVENTS_PARTICIPATION_OPTIONS } from '@lfx-one/shared/constants';
+import { DEFAULT_ORG_EVENTS_ATTRIBUTION, DEFAULT_ORG_EVENTS_PARTICIPATION, ORG_EVENTS_PARTICIPATION_BADGE_LABEL } from '@lfx-one/shared/constants';
 import type { OrgEventAttendeeVm, OrgEventsAttribution, OrgEventsParticipation } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
@@ -40,8 +40,8 @@ export class EventAttendeesDrawerComponent {
   protected readonly loadFailed = signal(false);
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
 
-  // The status badge on every row says what the drawer counts: Registered or Attended.
-  protected readonly participationLabel = computed(() => ORG_EVENTS_PARTICIPATION_OPTIONS.find((option) => option.value === this.participation())?.label ?? '');
+  // The status badge on every row says what the drawer counts: Registered, Attended, or Registered or attended.
+  protected readonly participationLabel = computed(() => ORG_EVENTS_PARTICIPATION_BADGE_LABEL[this.participation()]);
 
   private readonly attendeesData = this.initAttendeesData();
 

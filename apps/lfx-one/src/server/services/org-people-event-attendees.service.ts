@@ -111,8 +111,8 @@ export class OrgPeopleEventAttendeesService {
     return { accountId, details, summary, servedAttribution, foundationOptions, eventOptions };
   }
 
-  /** The dbt summary row for (range, attribution, participation); zeros when the account has none. */
-  private async readSummary(
+  /** The dbt summary row for (range, attribution, participation); zeros when the account has none. Read by the Event Attendees tab and the All Employees Event Attendees tile, so both show the same number. */
+  public async readSummary(
     accountId: string,
     range: OrgEventsFilters['range'],
     attribution: OrgEventsAttribution,

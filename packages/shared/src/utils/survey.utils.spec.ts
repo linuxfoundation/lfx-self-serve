@@ -3,14 +3,17 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { SURVEY_EMAIL_DRAFTS } from '../constants/survey.constants';
 import type { Survey, SurveyCommittee, SurveyResponseItem } from '../interfaces/survey.interface';
 import {
   buildSurveyEmailBodies,
   buildSurveyFollowUpMailto,
   buildSurveyResponsesCsvRows,
+  getSurveyEmailDraft,
   getSurveyEmailStages,
   getSurveyEngagementRates,
   getSurveyResyncScope,
+  isDefaultSurveyEmailField,
   renderSurveyEmailForRecipient,
   toSurveyTemplateVariables,
 } from './survey.utils';
@@ -207,5 +210,32 @@ describe('buildSurveyEmailBodies', () => {
     expect(html).toContain('<a href="{{.SurveyLink}}"');
     expect(html).not.toMatch(/\{\{[^.]/);
     expect(text).toBe('Dear {{.FirstName}}\n{{.SurveyLink}}');
+  });
+});
+
+describe('getSurveyEmailDraft', () => {
+  it('gives a title naming maintainers the maintainer draft, case-insensitively', () => {
+    expect(getSurveyEmailDraft('Maintainer Survey')).toBe(SURVEY_EMAIL_DRAFTS.maintainer);
+    expect(getSurveyEmailDraft('2026 MAINTAINER experience')).toBe(SURVEY_EMAIL_DRAFTS.maintainer);
+  });
+
+  it('gives every other title, and a missing one, the general draft', () => {
+    expect(getSurveyEmailDraft('Board Satisfaction Survey')).toBe(SURVEY_EMAIL_DRAFTS.general);
+    expect(getSurveyEmailDraft('')).toBe(SURVEY_EMAIL_DRAFTS.general);
+    expect(getSurveyEmailDraft(undefined)).toBe(SURVEY_EMAIL_DRAFTS.general);
+  });
+});
+
+describe('isDefaultSurveyEmailField', () => {
+  it('recognises either default draft for the matching field', () => {
+    expect(isDefaultSurveyEmailField('subject', SURVEY_EMAIL_DRAFTS.general.subject)).toBe(true);
+    expect(isDefaultSurveyEmailField('subject', SURVEY_EMAIL_DRAFTS.maintainer.subject)).toBe(true);
+    expect(isDefaultSurveyEmailField('body', SURVEY_EMAIL_DRAFTS.maintainer.body)).toBe(true);
+  });
+
+  it('treats edited text, a cross-field match, and non-strings as user content', () => {
+    expect(isDefaultSurveyEmailField('subject', `${SURVEY_EMAIL_DRAFTS.general.subject} (edited)`)).toBe(false);
+    expect(isDefaultSurveyEmailField('body', SURVEY_EMAIL_DRAFTS.general.subject)).toBe(false);
+    expect(isDefaultSurveyEmailField('subject', null)).toBe(false);
   });
 });

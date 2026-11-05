@@ -77,8 +77,8 @@ describe('OrgLensEventsController filters', () => {
     await controller.getOrgEvents(buildReq({}), buildRes(), vi.fn());
 
     expect(getOrgEvents.mock.calls[0][2]).toMatchObject({
-      attribution: 'company_email',
-      participation: 'registered',
+      attribution: 'all',
+      participation: 'all',
       eventScope: 'activity',
       foundation: '',
       range: '730d',
@@ -86,7 +86,7 @@ describe('OrgLensEventsController filters', () => {
   });
 
   it('passes each filter to the list, the summary, the foundations and the drawer', async () => {
-    const query = { attribution: 'all', participation: 'attended', eventScope: 'all', foundation: 'foundation-one', range: '90d' };
+    const query = { attribution: 'account', participation: 'attended', eventScope: 'all', foundation: 'foundation-one', range: '90d' };
 
     await controller.getOrgEvents(buildReq(query), buildRes(), vi.fn());
     await controller.getOrgEventsSummary(buildReq(query), buildRes(), vi.fn());
@@ -98,21 +98,21 @@ describe('OrgLensEventsController filters', () => {
     );
 
     expect(getOrgEvents.mock.calls[0][2]).toMatchObject({
-      attribution: 'all',
+      attribution: 'account',
       participation: 'attended',
       eventScope: 'all',
       foundation: 'foundation-one',
       range: '90d',
     });
     expect(getOrgEventsSummary.mock.calls[0][2]).toEqual({
-      attribution: 'all',
+      attribution: 'account',
       participation: 'attended',
       scope: 'all',
       foundation: 'foundation-one',
       range: '90d',
     });
-    expect(getOrgEventFoundations.mock.calls[0][2]).toEqual({ attribution: 'all', scope: 'all' });
-    expect(getEventAttendees.mock.calls[0][3]).toMatchObject({ attribution: 'all', participation: 'attended' });
+    expect(getOrgEventFoundations.mock.calls[0][2]).toEqual({ attribution: 'account', scope: 'all' });
+    expect(getEventAttendees.mock.calls[0][3]).toMatchObject({ attribution: 'account', participation: 'attended' });
   });
 
   it.each([{ attribution: 'everyone' }, { participation: 'maybe' }, { eventScope: 'some' }, { range: '5d' }])(

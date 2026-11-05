@@ -19,6 +19,12 @@ import {
   googleUpperCodeList,
 } from '@lfx-one/shared/utils/campaign-google-criteria.utils';
 import {
+  googleAdditionalSearchAdsRefusal,
+  googleCreateNegativeKeywordsRefusal,
+  googleSearchAdCopyWidthRefusal,
+  googleSearchAdPathsRefusal,
+} from '@lfx-one/shared/utils/campaign-google-search-ads.utils';
+import {
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
   googlePriceExtensionRefusal,
@@ -142,9 +148,11 @@ import {
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
+  GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
+  GOOGLE_SEARCH_AD_GROUP_NAME,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
@@ -1407,6 +1415,19 @@ export class CampaignController {
         const genderRefusal = googleExcludedGendersRefusal(body?.excludedGenders, googleChannel);
         if (genderRefusal) {
           next(ServiceValidationError.forField('excludedGenders', genderRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+          return;
+        }
+
+        // The Search ad group's further ads, every ad's display paths and the create-time negatives
+        // (#4991). Each is refused BY NAME off Search rather than withheld, as upstream refuses it
+        // (`preflightCampaignKind`); on Search each goes through the same shared judge the Implement
+        // tab holds Create on, so an entry Go would refuse after dispatch — as the orchestrator's
+        // opaque "platform campaign creation failed" — is named here first.
+        const searchAdsRefusal = this.googleSearchAdsRefusal(body, googleChannel);
+        if (searchAdsRefusal) {
+          next(
+            ServiceValidationError.forField(searchAdsRefusal.field, searchAdsRefusal.message, { operation: 'campaign_create', service: 'campaign_controller' })
+          );
           return;
         }
       }
@@ -5189,7 +5210,7 @@ export class CampaignController {
    *
    * The bidding plan and creative entries (`normalized`) count only when the cutover's own
    * normalizers would send them (see the constant). For every other entry, only a NON-EMPTY value
-   * counts: absent, `null` and an empty list ask for nothing, and the legacy creator serves those
+   * counts: absent, `null`, an empty string and an empty list ask for nothing, and the legacy creator serves those
    * requests exactly as asked, so refusing one would be over-refusal. Any other present value — a
    * malformed non-list included — is a request for something the legacy creator cannot do, and is
    * named rather than dropped, as `unservedGoogleGeoField` treats a radius target.
@@ -5213,7 +5234,8 @@ export class CampaignController {
       GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find((entry) => {
         if ('normalized' in entry) return entry.field in sent;
         const value = raw[entry.field];
-        return value !== undefined && value !== null && !(Array.isArray(value) && value.length === 0);
+        // An empty string asks for nothing too: the display paths are the only string fields here.
+        return value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0);
       }) ?? null
     );
   }
@@ -5725,6 +5747,8 @@ export class CampaignController {
       keywords: (body.keywords ?? [])
         .filter((k) => typeof k?.term === 'string' && k.term.trim() !== '')
         .map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
+      ...this.googleSearchAds(body),
+      ...this.googleCreateNegativeKeywords(body),
       // Omitted rather than sent empty, so the upstream default is reached by the same absent-key
       // route pre-LFXV2-3283 callers take. `geoTargets: []` and no key at all mean the same thing
       // to the dispatcher today; only one of them stays true if that default is ever tightened.
@@ -5748,6 +5772,108 @@ export class CampaignController {
       ...structuredSnippets,
       ...assetExtensions,
     };
+  }
+
+  /**
+   * The Search ad group's display paths, the first ad's copy width, the further ads and the
+   * create-time negatives, judged in that order, or `null`. Off Search a non-empty one is refused by name; on Search each
+   * goes through its shared judge. An empty path, list or absent key asks for nothing on any channel.
+   */
+  private googleSearchAdsRefusal(body: CampaignCreateRequest, googleChannel: unknown): { field: string; message: string } | null {
+    const raw = body as unknown as Record<string, unknown>;
+    const asked = (value: unknown): boolean => value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0);
+    const onSearch = typeof googleChannel === 'string' && (GOOGLE_CHANNELS_WITH_SEARCH_ADS as readonly string[]).includes(googleChannel);
+    const fields = [
+      ['path1', 'display paths'],
+      ['path2', 'display paths'],
+      ['additionalSearchAds', 'more than one responsive search ad'],
+      ['negativeKeywords', 'negative keywords at create'],
+    ] as const;
+    if (!onSearch) {
+      const offSearch = fields.find(([field]) => asked(raw[field]));
+      if (offSearch === undefined) return null;
+      const channelLabel =
+        typeof googleChannel === 'string' ? (GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel) : 'this';
+      return {
+        field: offSearch[0],
+        message: `Google Ads takes ${offSearch[1]} only on Search campaigns, not on ${channelLabel} campaigns. Remove them or pick Search, then create again.`,
+      };
+    }
+    // Path 1 judged alone first, so a refusal is filed under the field it is about.
+    const path1Refusal = googleSearchAdPathsRefusal(raw['path1'], undefined);
+    if (path1Refusal) return { field: 'path1', message: path1Refusal };
+    const path2Refusal = googleSearchAdPathsRefusal(raw['path1'], raw['path2']);
+    if (path2Refusal) return { field: 'path2', message: path2Refusal };
+    // The first ad's campaign-level copy, for display width: campaign-service's `callerCopy` refuses
+    // an over-wide line on every Search ad, with one ad or three, and the form's maxlength counts
+    // characters rather than Google's width. Filed under the field the line is in.
+    const headlineRefusal = googleSearchAdCopyWidthRefusal(raw['headlines'], [], 'ad 1');
+    if (headlineRefusal) return { field: 'headlines', message: headlineRefusal };
+    const descriptionRefusal = googleSearchAdCopyWidthRefusal([], raw['descriptions'], 'ad 1');
+    if (descriptionRefusal) return { field: 'descriptions', message: descriptionRefusal };
+    const adsRefusal = googleAdditionalSearchAdsRefusal(raw['additionalSearchAds']);
+    if (adsRefusal) return { field: 'additionalSearchAds', message: adsRefusal };
+    const negativesRefusal = googleCreateNegativeKeywordsRefusal(raw['negativeKeywords']);
+    if (negativesRefusal) return { field: 'negativeKeywords', message: negativesRefusal };
+    return null;
+  }
+
+  /**
+   * The Search campaign's ads as campaign-service takes them, spread-ready.
+   *
+   * The first ad's display paths go out as the campaign-level `path1`/`path2`, trimmed and omitted
+   * when blank. With no further ad that is all: `headlines`/`descriptions` build the one ad exactly as
+   * before. With one or two more, every ad goes into ONE named ad group, the first built from the
+   * campaign-level copy, so the campaign is one ad group of up to three ads; its keywords, bid and
+   * audiences are not repeated there because upstream inherits each from the campaign level. An ad
+   * that sets no path of its own inherits the campaign-level pair upstream.
+   *
+   * Normalized only — blank lines dropped, text trimmed — as `createCampaign` names every refusal first.
+   */
+  private googleSearchAds(body: CampaignCreateRequest): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    const path1 = typeof body.path1 === 'string' ? googleAdsTrimSpace(body.path1) : '';
+    const path2 = typeof body.path2 === 'string' ? googleAdsTrimSpace(body.path2) : '';
+    if (path1 !== '') out['path1'] = path1;
+    if (path2 !== '') out['path2'] = path2;
+    const extra = Array.isArray(body.additionalSearchAds) ? body.additionalSearchAds : [];
+    if (extra.length === 0) return out;
+    const lines = (list: unknown): string[] =>
+      Array.isArray(list)
+        ? list
+            .filter((line): line is string => typeof line === 'string')
+            .map((line) => googleAdsTrimSpace(line))
+            .filter((line) => line !== '')
+        : [];
+    const ad = (headlines: unknown, descriptions: unknown, adPath1: unknown, adPath2: unknown): Record<string, unknown> => {
+      const p1 = typeof adPath1 === 'string' ? googleAdsTrimSpace(adPath1) : '';
+      const p2 = typeof adPath2 === 'string' ? googleAdsTrimSpace(adPath2) : '';
+      return { headlines: lines(headlines), descriptions: lines(descriptions), ...(p1 !== '' ? { path1: p1 } : {}), ...(p2 !== '' ? { path2: p2 } : {}) };
+    };
+    out['adGroups'] = [
+      {
+        name: GOOGLE_SEARCH_AD_GROUP_NAME,
+        ads: [
+          ad(body.headlines, body.descriptions, body.path1, body.path2),
+          ...extra.map((entry) => ad(entry?.headlines, entry?.descriptions, entry?.path1, entry?.path2)),
+        ],
+      },
+    ];
+    return out;
+  }
+
+  /**
+   * The create-time negative keywords as campaign-service takes them — `{ text, matchType }` with the
+   * match type upper-cased, as `keywords` is — or `{}` when there are none. Each text has its
+   * whitespace collapsed and trimmed, as `parseNegativeKeywordInput` normalises it.
+   */
+  private googleCreateNegativeKeywords(body: CampaignCreateRequest): Record<string, unknown> {
+    const list = Array.isArray(body.negativeKeywords) ? body.negativeKeywords : [];
+    const negativeKeywords = list
+      .filter((kw) => typeof kw?.text === 'string' && typeof kw?.matchType === 'string')
+      .map((kw) => ({ text: kw.text.replace(/\s+/g, ' ').trim(), matchType: kw.matchType.toUpperCase() }))
+      .filter((kw) => kw.text !== '');
+    return negativeKeywords.length > 0 ? { negativeKeywords } : {};
   }
 
   /**
@@ -6160,7 +6286,7 @@ export class CampaignController {
    * before it is sent, and upstream trims again, so measuring the raw length would refuse a short
    * value padded with whitespace that upstream accepts. Shape-only, like everything else on this
    * road: a non-string entry is left for the normalisers to drop and is not counted — except for the
-   * four lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
+   * lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
    * objects, so the strings inside them are measured rather than skipped.
    *
    * Names the offending field in the refusal so an operator who somehow reaches it is told which one,
@@ -6185,6 +6311,14 @@ export class CampaignController {
     candidates.push(['deviceBidModifiers', raw['deviceBidModifiers']]);
     candidates.push(['excludedAgeRanges', raw['excludedAgeRanges']]);
     candidates.push(['excludedGenders', raw['excludedGenders']]);
+    // The first ad's display paths are bare strings, which `boundableEntries` yields nothing for, so
+    // they are measured here; the trim the Search branch applies runs over them during normalisation.
+    for (const key of ['path1', 'path2']) {
+      const value = raw[key];
+      if (typeof value === 'string' && this.boundedLength(value) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
+        return { field: key, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
+      }
+    }
 
     for (const [key, source] of candidates) {
       // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
@@ -6212,7 +6346,7 @@ export class CampaignController {
       }
     }
 
-    // Seven request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
+    // Nine request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
     // of a list — an object entry is left for the normalisers, so the strings nested inside it are
     // never reached by `boundableEntries`. They are bounded here instead, each at the limit upstream
     // already refuses it past: the sitelink URL at its byte limit, which no longer trimmed string can
@@ -6220,8 +6354,9 @@ export class CampaignController {
     // because `deviceBidModifiers` is the second list-of-objects to need this and a third bespoke
     // copy is how the two drift apart.
     //
-    // `sitelinks`, `structuredSnippets` and the three asset lists are the ones that are not already
-    // `candidates` keys, so their list lengths are checked here. For the other two the check above has already refused an
+    // `sitelinks`, `structuredSnippets`, the three asset lists, `additionalSearchAds` and
+    // `negativeKeywords` are the ones that are not already `candidates` keys, so their list lengths
+    // are checked here. For the other two (`adSchedules`, `deviceBidModifiers`) the check above has already refused an
     // over-long list with the same field and message, which is why this one re-states rather than
     // contradicts.
     //
@@ -6256,6 +6391,8 @@ export class CampaignController {
       ['prices', ['type', 'priceQualifier', 'languageCode', 'offerings']],
       ['adSchedules', ['dayOfWeek']],
       ['deviceBidModifiers', ['device']],
+      ['additionalSearchAds', ['headlines', 'descriptions', 'path1', 'path2']],
+      ['negativeKeywords', ['text', 'matchType']],
     ];
     for (const [key, names] of nestedStringFields) {
       const list = raw[key];
@@ -6273,13 +6410,15 @@ export class CampaignController {
           // its length first, then each string in it. Measured with the same `max` as a plain field,
           // so one named field cannot be bounded two different ways depending on how it is shaped.
           //
-          // Only `values` is bounded at the nested ceiling, because it is the only name here that
-          // upstream decodes as a LIST, and it has no raw-count cap upstream at all: blanks and
-          // case-folded repeats are collapsed before the 3..10 bound is counted, so a duplicate-heavy
-          // paste is a valid three-value snippet at any raw length, and the 100 above would refuse
-          // it. Every other name decodes as a plain `string`, so an array under one of them is a body
-          // upstream refuses outright — no over-refusal to relax, and raising its ceiling would only
-          // widen what this walk admits. See MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES.
+          // Only `values` is bounded at the nested ceiling, because it has no raw-count cap upstream
+          // at all: blanks and case-folded repeats are collapsed before the 3..10 bound is counted, so
+          // a duplicate-heavy paste is a valid three-value snippet at any raw length, and the 100
+          // above would refuse it. The only other names upstream decodes as a LIST are
+          // `additionalSearchAds`' `headlines` and `descriptions` (#4991), each a `[]string` that one
+          // ad caps at 15 and 4, so the 100 above refuses nothing upstream accepts. Every other name
+          // decodes as a plain `string`, so an array under one of them is a body upstream refuses
+          // outright — no over-refusal to relax, and raising its ceiling would only widen what this
+          // walk admits. See MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES.
           const listMax = name === 'values' ? MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES : MAX_GOOGLE_CREATIVE_LIST_ENTRIES;
           if (Array.isArray(value)) {
             if (value.length > listMax) {
