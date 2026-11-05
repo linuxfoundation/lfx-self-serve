@@ -139,6 +139,7 @@ import {
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
+  GOOGLE_CONVERSION_ACTION_PICKER_REASONS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_IMAGE_MAX_BYTES,
@@ -173,6 +174,8 @@ import {
   isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { UiMultiSelectComponent } from '@shared/uikit/multi-select/multi-select.component';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
@@ -250,6 +253,7 @@ import type {
   GoogleBudgetFlight,
   GoogleBudgetInputs,
   GoogleCampaignChannel,
+  GoogleConversionActionPickerState,
   GoogleCreativeChannel,
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
@@ -289,6 +293,8 @@ import {
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
   googleChannelOffersManualCpc,
+  googleConversionActionLabel,
+  googleConversionActionsTextWithPicked,
   googleCreateNegativeKeywords,
   googleCreateNegativeKeywordsRefusal,
   googleCreativeImageDrift,
@@ -299,6 +305,7 @@ import {
   googleExcludedAgeRangesRefusal,
   googleExcludedGendersRefusal,
   googleExcludedGeoListRefusal,
+  googlePickedConversionActionIds,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
   googleScheduleAdjustmentIgnoredSentence,
@@ -381,6 +388,8 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     CreativeLibraryUploadComponent,
     CreativeSlotGridComponent,
     GoogleCreativeImageLibraryComponent,
+    UiMultiSelectComponent,
+    UiOptionComponent,
   ],
   // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
   // also provides one at root, and this instance behaves the same.
@@ -1698,6 +1707,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleSearchPath1 = signal('');
   protected readonly googleSearchPath2 = signal('');
   protected readonly googleAdditionalSearchAds = signal<CampaignSearchAd[]>([]);
+  /** Whether the Search campaign also serves on Google's search partners; off is Google Search only, as before. */
+  protected readonly googleSearchPartners = signal(false);
   protected readonly googleNegativeKeywordsText = signal('');
   protected readonly googleNegativeKeywordMatchType = signal<CampaignNegativeKeywordMatchType>(
     CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'].defaultMatchType
@@ -3329,6 +3340,8 @@ export class ImplementationTabComponent implements OnInit {
       (this.googleSearchPathsError() !== null || this.googleAdditionalSearchAdsError() !== null || this.googleNegativeKeywordsError() !== null)
     )
       return false;
+    // The first ad's copy over Google's display width; the message is under Headlines or Descriptions.
+    if (googleSelected && (this.googleFirstAdHeadlinesError() !== null || this.googleFirstAdDescriptionsError() !== null)) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -3653,6 +3666,12 @@ export class ImplementationTabComponent implements OnInit {
   /** The shared refusals the BFF would answer the create with, or `null`; `canSubmit` blocks on each. */
   protected readonly googleSearchPathsError: Signal<string | null> = this.initGoogleSearchPathsError();
   protected readonly googleAdditionalSearchAdsError: Signal<string | null> = this.initGoogleAdditionalSearchAdsError();
+  /**
+   * The first ad's copy over Google's display width, shown under the tab's own Headlines and
+   * Descriptions sections rather than the panel's More ads, which holds only the further ads' errors.
+   */
+  protected readonly googleFirstAdHeadlinesError: Signal<string | null> = this.initGoogleFirstAdCopyWidthError('headlines');
+  protected readonly googleFirstAdDescriptionsError: Signal<string | null> = this.initGoogleFirstAdCopyWidthError('descriptions');
   protected readonly googleNegativeKeywordsError: Signal<string | null> = this.initGoogleNegativeKeywordsError();
   /** The held-targeting sentence, or `''`; one string feeds the visible notice and the live region, as for languages. */
   protected readonly googleTargetingWithheldMessage: Signal<string> = this.initGoogleTargetingWithheldMessage();
@@ -3682,6 +3701,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
+  /**
+   * The conversion-action picker's list (#4991), read only while the section is shown. Any failure —
+   * a non-root caller, the route off or denied on this deployment, Google failing — leaves the picker
+   * `unavailable` with a reason, and the free-text box is the way in, exactly as before.
+   */
+  protected readonly googleConversionActionPicker: Signal<GoogleConversionActionPickerState> = this.initGoogleConversionActionPicker();
+  /** The listed actions the free-text value names, which the picker shows as picked. */
+  protected readonly googlePickedConversionActions: Signal<string[]> = this.initGooglePickedConversionActions();
+  protected readonly googleConversionActionLabel = googleConversionActionLabel;
   protected readonly googleBiddingError: Signal<string | null> = this.initGoogleBiddingError();
   protected readonly googleCreativeError: Signal<string | null> = this.initGoogleCreativeError();
   protected readonly googleCreativeEmptyWarning: Signal<string | null> = this.initGoogleCreativeEmptyWarning();
@@ -4891,6 +4919,23 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  protected onGoogleSearchPartnersChange(searchPartners: boolean): void {
+    this.googleSearchPartners.set(searchPartners);
+    this.emitDraft();
+  }
+
+  /**
+   * The picker's choice written into the free-text value, which the request is still built from, so
+   * a picked action is sent exactly as its id typed into the box would be. Lines the list does not
+   * hold are kept as typed. The control's own `valueChanges` emits the draft.
+   */
+  protected onGooglePickedConversionActionsChange(pickedIds: string[]): void {
+    const picker = this.googleConversionActionPicker();
+    if (picker.status !== 'loaded') return;
+    const control = this.campaignForm.controls.googleConversionActions;
+    control.setValue(googleConversionActionsTextWithPicked(control.value, pickedIds, picker.actions));
+  }
+
   protected onGoogleNegativeKeywordsTextChange(text: string): void {
     this.googleNegativeKeywordsText.set(text);
     this.emitDraft();
@@ -5391,7 +5436,7 @@ export class ImplementationTabComponent implements OnInit {
       ...(platforms.includes('google-ads') ? this.googleLanguagesPayload() : {}),
       // Ad schedules and device adjustments, on the same Google gate, already withheld per channel.
       ...(platforms.includes('google-ads') ? this.googleTargetingPayload() : {}),
-      // The first ad's display paths, the further ads and the negatives, on the same gate, and
+      // The first ad's display paths, the further ads, the negatives and Search partners, on the same gate, and
       // already withheld unless the dispatched channel is Search.
       ...(platforms.includes('google-ads') ? this.googleSearchAdsPayload() : {}),
       // The audience segments, Google-gated for the same reason, and already withheld unless the
@@ -6879,6 +6924,7 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleAdditionalSearchAds !== undefined) {
       this.googleAdditionalSearchAds.set(draft.googleAdditionalSearchAds.map((ad) => this.copySearchAd(ad)));
     }
+    if (draft.googleSearchPartners !== undefined) this.googleSearchPartners.set(draft.googleSearchPartners);
     if (draft.googleNegativeKeywordsText !== undefined) this.googleNegativeKeywordsText.set(draft.googleNegativeKeywordsText);
     if (draft.googleNegativeKeywordMatchType !== undefined) this.googleNegativeKeywordMatchType.set(draft.googleNegativeKeywordMatchType);
     // Copied on the same rule, and restored whatever the channel selection is: the section and
@@ -7237,6 +7283,7 @@ export class ImplementationTabComponent implements OnInit {
       googleSearchPath1: this.googleSearchPath1(),
       googleSearchPath2: this.googleSearchPath2(),
       googleAdditionalSearchAds: this.googleAdditionalSearchAds().map((ad) => this.copySearchAd(ad)),
+      googleSearchPartners: this.googleSearchPartners(),
       googleNegativeKeywordsText: this.googleNegativeKeywordsText(),
       googleNegativeKeywordMatchType: this.googleNegativeKeywordMatchType(),
       googleAudienceSegments: [...this.googleAudienceSegments()],
@@ -7697,6 +7744,7 @@ export class ImplementationTabComponent implements OnInit {
     this.googleSearchPath1.set('');
     this.googleSearchPath2.set('');
     this.googleAdditionalSearchAds.set([]);
+    this.googleSearchPartners.set(false);
     this.googleNegativeKeywordsText.set('');
     this.googleNegativeKeywordMatchType.set(CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'].defaultMatchType);
     this.googleAudienceSegments.set([]);
@@ -8682,17 +8730,22 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => (this.googleSearchAdsAvailable() ? googleSearchAdPathsRefusal(this.googleSearchPath1(), this.googleSearchPath2()) : null));
   }
 
-  /**
-   * The first ad's copy judged for display width first — campaign-service refuses an over-wide line
-   * on every Search ad, the campaign-level copy included, with one ad or three — then the further ads.
-   * Read through `campaignFormRevision` because the copy controls are not signals.
-   */
   private initGoogleAdditionalSearchAdsError(): Signal<string | null> {
+    return computed(() => (this.googleSearchAdsAvailable() ? googleAdditionalSearchAdsRefusal(this.googleAdditionalSearchAds()) : null));
+  }
+
+  /**
+   * The first ad's headlines or descriptions judged for display width, each on its own so the message
+   * sits under the section it is about: campaign-service's `callerCopy` refuses an over-wide line on
+   * every Search ad, the campaign-level copy included, with one ad or three. Read through
+   * `campaignFormRevision` because the copy controls are not signals.
+   */
+  private initGoogleFirstAdCopyWidthError(field: 'headlines' | 'descriptions'): Signal<string | null> {
     return computed(() => {
       if (!this.googleSearchAdsAvailable()) return null;
       void this.campaignFormRevision();
-      const { headlines, descriptions } = this.campaignForm.getRawValue();
-      return googleSearchAdCopyWidthRefusal(headlines, descriptions, 'ad 1') ?? googleAdditionalSearchAdsRefusal(this.googleAdditionalSearchAds());
+      const lines = this.campaignForm.getRawValue()[field];
+      return field === 'headlines' ? googleSearchAdCopyWidthRefusal(lines, [], 'ad 1') : googleSearchAdCopyWidthRefusal([], lines, 'ad 1');
     });
   }
 
@@ -9371,6 +9424,45 @@ export class ImplementationTabComponent implements OnInit {
    * Performance Max select conversions through a resource that cannot be written until the
    * campaign exists, and campaign-service refuses the list there rather than dropping it.
    */
+  private initGoogleConversionActionPicker(): Signal<GoogleConversionActionPickerState> {
+    const state = (status: GoogleConversionActionPickerState['status'], reason: string | null = null): GoogleConversionActionPickerState => ({
+      status,
+      actions: [],
+      reason,
+    });
+    // The project and whether the section is shown are read INSIDE the trigger, so a foundation switch
+    // or the section going away drops the read rather than finishing it for what is no longer on screen.
+    const trigger = computed(() => ({ projectSlug: this.activeFoundationSlug(), shown: this.googleTakesConversionActions() }));
+    return toSignal(
+      toObservable(trigger).pipe(
+        switchMap(({ projectSlug, shown }) => {
+          if (!shown || projectSlug === '') return of(state('idle'));
+          return this.campaignService.getGoogleAdsConversionActions(projectSlug).pipe(
+            map((result): GoogleConversionActionPickerState => ({ status: 'loaded', actions: result.actions, reason: null })),
+            catchError((err: unknown) => {
+              const status = err instanceof HttpErrorResponse ? err.status : 0;
+              if (status === 403) return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.forbidden));
+              if (status === 404) return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.unavailable));
+              return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.failed));
+            }),
+            startWith(state('loading'))
+          );
+        })
+      ),
+      { initialValue: state('idle') }
+    );
+  }
+
+  /** Read through `campaignFormRevision`, because the free-text control is not a signal. */
+  private initGooglePickedConversionActions(): Signal<string[]> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const picker = this.googleConversionActionPicker();
+      if (picker.status !== 'loaded') return [];
+      return googlePickedConversionActionIds(this.campaignForm.getRawValue().googleConversionActions, picker.actions);
+    });
+  }
+
   private initGoogleTakesConversionActions(): Signal<boolean> {
     return computed(() => {
       const channel = this.googleBiddingChannel();
@@ -9711,8 +9803,9 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The first ad's display paths, the further ads and the negatives as the request carries them, each
-   * gated by `googleSearchAdsAvailable` — the computed the panel renders on — and omitted when empty.
+   * The first ad's display paths, the further ads, the negatives and the Search partners opt-in as the
+   * request carries them, each gated by `googleSearchAdsAvailable` — the computed the panel renders
+   * on — and omitted when empty or off.
    * Paths and ad lines are sent as typed; the BFF trims them and drops blank lines.
    */
   private googleSearchAdsPayload(): Partial<CampaignCreateRequest> {
@@ -9722,6 +9815,8 @@ export class ImplementationTabComponent implements OnInit {
     if (this.googleSearchPath2().trim() !== '') payload.path2 = this.googleSearchPath2();
     const ads = this.googleAdditionalSearchAds();
     if (ads.length > 0) payload.additionalSearchAds = ads.map((ad) => this.copySearchAd(ad));
+    // Only `true`: absent means Google Search only upstream, as every create before the toggle.
+    if (this.googleSearchPartners()) payload.searchPartners = true;
     const negatives = googleCreateNegativeKeywords(this.googleNegativeKeywordsText(), this.googleNegativeKeywordMatchType());
     if (negatives.length > 0) payload.negativeKeywords = negatives;
     return payload;

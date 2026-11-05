@@ -4394,12 +4394,15 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'callExtensions', label: 'call extensions' },
   { field: 'promotions', label: 'promotions' },
   { field: 'prices', label: 'price extensions' },
-  // The Search ad group's further ads, every ad's display paths and the create-time negatives
-  // (#4991): the legacy creator builds one ad from `headlines`/`descriptions` and nothing else.
+  // The Search ad group's further ads, every ad's display paths, the create-time negatives and the
+  // Search partners opt-in (#4991): the legacy creator builds one ad from `headlines`/`descriptions`
+  // on Google Search alone, and nothing else.
   { field: 'path1', label: 'display path 1' },
   { field: 'path2', label: 'display path 2' },
   { field: 'additionalSearchAds', label: 'additional search ads' },
   { field: 'negativeKeywords', label: 'negative keywords' },
+  // `false` asks for nothing (Google Search only), like an empty list: see `unservedGoogleCriteriaField`.
+  { field: 'searchPartners', label: 'Search partners' },
   // The bidding plan and the per-channel creative (#3568), judged by what the cutover's own
   // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
   // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
@@ -5091,6 +5094,22 @@ export const GOOGLE_ADS_MAX_CONVERSION_ACTIONS = 100;
  * upstream refuses a foreign one by name before any mutate.
  */
 export const GOOGLE_ADS_CONVERSION_ACTION_PATTERN = /^(?:\d+|customers\/\d+\/conversionActions\/\d+)$/;
+
+/**
+ * Why the Implement tab's conversion-action picker offers no list, keyed by how the read failed. Each
+ * ends by pointing at the free-text box, which works exactly as it did before the picker:
+ * - `forbidden` (403): the list names every foundation's actions on the shared account, so the BFF and
+ *   the gateway answer only a root principal — and the gateway refuses everyone until
+ *   `openfga.rootProjectUid` is set for the deployment.
+ * - `unavailable` (404): the route is off on this deployment.
+ * - `failed`: anything else, including campaign-service's 503 when Google fails or the account holds
+ *   more than 500 enabled actions.
+ */
+export const GOOGLE_CONVERSION_ACTION_PICKER_REASONS = {
+  forbidden: "Your account can't list this Google Ads account's conversion actions. Enter their ids below instead.",
+  unavailable: "The conversion action list isn't available here yet. Enter their ids below instead.",
+  failed: "Google Ads couldn't list the conversion actions just now. Enter their ids below instead.",
+} as const;
 
 /**
  * The numeric bounds campaign-service applies to the three money/ratio fields, in whole units of

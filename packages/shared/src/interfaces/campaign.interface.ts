@@ -1396,6 +1396,8 @@ export interface CampaignImplementationDraft {
   googleSearchPath1?: string;
   googleSearchPath2?: string;
   googleAdditionalSearchAds?: CampaignSearchAd[];
+  /** The Search partners toggle as the operator left it, held on the same rule as the ads above. */
+  googleSearchPartners?: boolean;
   /**
    * The create-time negative keywords as TYPED — the editor's raw text, one keyword per line — and
    * the one match type they are all sent with. Raw so a reopened draft shows the line a refusal
@@ -2311,6 +2313,38 @@ export interface GoogleAdsGeoTargetSearchState {
   truncated: boolean;
   failed: boolean;
   pending: boolean;
+}
+
+/**
+ * One enabled conversion action on the Google Ads account a create uses, as the Implement tab's
+ * picker offers it (campaign-service `list-google-ads-conversion-actions`, camel-cased). `id` is the
+ * short form `conversionActions` accepts and the one the picker writes; `name` and `category` are
+ * labels only.
+ */
+export interface GoogleAdsConversionActionOption {
+  id: string;
+  resourceName: string;
+  name: string;
+  category: string;
+  /** Counts toward the account's Conversions column and so drives bidding by default. */
+  primaryForGoal: boolean;
+}
+
+/** The conversion-action read: the account it came from and its enabled actions, sorted by name. */
+export interface GoogleAdsConversionActionsResult {
+  accountId: string;
+  actions: GoogleAdsConversionActionOption[];
+}
+
+/**
+ * Where the Implement tab's conversion-action picker stands. `unavailable` is a list that could not
+ * load — the caller is not root, the route is off or denied on this deployment, or Google failed —
+ * and `reason` says which in one sentence; the free-text box is the way in then, as it always was.
+ */
+export interface GoogleConversionActionPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  actions: GoogleAdsConversionActionOption[];
+  reason: string | null;
 }
 
 /** The optional narrowing a geo target search may carry beside its query text. */
@@ -3483,6 +3517,12 @@ export interface CampaignCreateRequest {
    */
   additionalSearchAds?: CampaignSearchAd[];
   /**
+   * Whether the Search campaign also serves on Google's Search partner network, beside Google Search
+   * (campaign-service's `searchPartners`, 1.0.24). Search only; sent only when `true`, so absent and
+   * `false` both mean Google Search only, as every create before this field.
+   */
+  searchPartners?: boolean;
+  /**
    * Campaign-level negative keywords created with the Search campaign (#4991): queries it must
    * never pay for. Search only, at most {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST}, each text on the
    * rules `parseNegativeKeywordInput` applies with Google's 80-character cap. The BFF sends the match
@@ -4308,6 +4348,24 @@ export interface CampaignServiceAccessibleAccount {
 }
 
 /** `GET /projects/{id}/connection-google-ads/accounts` (`list-google-ads-accounts`). */
+/** One entry of campaign-service's `google-ads-conversion-actions` result, as it is on the wire. */
+export interface CampaignServiceGoogleAdsConversionAction {
+  id: string;
+  resource_name: string;
+  name: string;
+  status: string;
+  type: string;
+  category: string;
+  primary_for_goal: boolean;
+}
+
+/** campaign-service `GET /projects/{project_id}/google-ads/conversion-actions` (root principals only). */
+export interface CampaignServiceGoogleAdsConversionActions {
+  account_id: string;
+  conversion_actions: CampaignServiceGoogleAdsConversionAction[];
+  conversion_action_count: number;
+}
+
 export interface CampaignServiceAccessibleAccounts {
   accounts: CampaignServiceAccessibleAccount[];
 }

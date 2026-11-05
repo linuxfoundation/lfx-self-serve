@@ -69,6 +69,7 @@ import type {
   CampaignToggleStatus,
   FlushableResponse,
   GoogleAdsAccountOption,
+  GoogleAdsConversionActionsResult,
   TwitterAdsAccountOption,
   TwitterAdsAccountsResult,
   TwitterCreateCapability,
@@ -3512,6 +3513,57 @@ export class CampaignController {
   }
 
   /**
+   * The enabled conversion actions on the Google Ads account a create for this project uses, for the
+   * Implement tab's picker (#4991), camel-cased. Root-only, as the account list is: the account is
+   * shared by every foundation, so the list names all of their actions. Answers 404, as if it were not
+   * mounted, while the campaign-service Google create road (`canCreateWithGoogleCriteria`) is off — the
+   * only road that sends `conversionActions`. Every refusal leaves the tab on its free-text box.
+   */
+  public async getGoogleAdsConversionActions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'google_ads_conversion_actions';
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, operation, 'Google Ads'))) {
+      return;
+    }
+    if (!canCreateWithGoogleCriteria()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const payload = await this.campaignServiceClient.listGoogleAdsConversionActions(req, projectSlug);
+      // `conversion_actions` is required upstream; reading its absence as an empty list would say the
+      // account has none, so an unreadable body fails the read and the tab falls back to typing.
+      if (!Array.isArray(payload?.conversion_actions)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Google Ads conversion action list.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: GoogleAdsConversionActionsResult = {
+        accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
+        actions: payload.conversion_actions
+          .filter((a) => typeof a?.id === 'string' && a.id !== '' && typeof a.resource_name === 'string')
+          .map((a) => ({
+            id: a.id,
+            resourceName: a.resource_name,
+            name: typeof a.name === 'string' && a.name.trim() !== '' ? a.name : a.id,
+            category: typeof a.category === 'string' ? a.category : '',
+            primaryForGoal: a.primary_for_goal === true,
+          })),
+      };
+      logger.success(req, operation, startTime, { count: result.actions.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Whether this deployment can create X campaigns at all (`canCreateTwitter`), with no brief.
    *
    * The Plan picker needs the answer BEFORE a brief exists: `CampaignListResult.twitterCreateEnabled`
@@ -5210,7 +5262,7 @@ export class CampaignController {
    *
    * The bidding plan and creative entries (`normalized`) count only when the cutover's own
    * normalizers would send them (see the constant). For every other entry, only a NON-EMPTY value
-   * counts: absent, `null`, an empty string and an empty list ask for nothing, and the legacy creator serves those
+   * counts: absent, `null`, an empty string, `false` and an empty list ask for nothing, and the legacy creator serves those
    * requests exactly as asked, so refusing one would be over-refusal. Any other present value — a
    * malformed non-list included — is a request for something the legacy creator cannot do, and is
    * named rather than dropped, as `unservedGoogleGeoField` treats a radius target.
@@ -5234,8 +5286,9 @@ export class CampaignController {
       GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find((entry) => {
         if ('normalized' in entry) return entry.field in sent;
         const value = raw[entry.field];
-        // An empty string asks for nothing too: the display paths are the only string fields here.
-        return value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0);
+        // An empty string asks for nothing too: the display paths are the only string fields here. So
+        // does `false`: `searchPartners` is the only boolean, and false is Google Search alone.
+        return value !== undefined && value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0);
       }) ?? null
     );
   }
@@ -5749,6 +5802,8 @@ export class CampaignController {
         .map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
       ...this.googleSearchAds(body),
       ...this.googleCreateNegativeKeywords(body),
+      // Only `true` is sent: absent and `false` both mean Google Search only upstream (#4991).
+      ...(body.searchPartners === true ? { searchPartners: true } : {}),
       // Omitted rather than sent empty, so the upstream default is reached by the same absent-key
       // route pre-LFXV2-3283 callers take. `geoTargets: []` and no key at all mean the same thing
       // to the dispatcher today; only one of them stays true if that default is ever tightened.
@@ -5775,19 +5830,25 @@ export class CampaignController {
   }
 
   /**
-   * The Search ad group's display paths, the first ad's copy width, the further ads and the
-   * create-time negatives, judged in that order, or `null`. Off Search a non-empty one is refused by name; on Search each
+   * The Search campaign's Search partners shape, display paths, the first ad's copy width, the
+   * further ads and the create-time negatives, judged in that order, or `null`. Off Search a non-empty one is refused by name; on Search each
    * goes through its shared judge. An empty path, list or absent key asks for nothing on any channel.
    */
   private googleSearchAdsRefusal(body: CampaignCreateRequest, googleChannel: unknown): { field: string; message: string } | null {
     const raw = body as unknown as Record<string, unknown>;
-    const asked = (value: unknown): boolean => value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0);
+    const asked = (value: unknown): boolean =>
+      value !== undefined && value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0);
+    // Go decodes `searchPartners` into a `bool`, so anything else fails the whole create there.
+    if (raw['searchPartners'] !== undefined && raw['searchPartners'] !== null && typeof raw['searchPartners'] !== 'boolean') {
+      return { field: 'searchPartners', message: 'Google Ads Search partners must be true or false.' };
+    }
     const onSearch = typeof googleChannel === 'string' && (GOOGLE_CHANNELS_WITH_SEARCH_ADS as readonly string[]).includes(googleChannel);
     const fields = [
       ['path1', 'display paths'],
       ['path2', 'display paths'],
       ['additionalSearchAds', 'more than one responsive search ad'],
       ['negativeKeywords', 'negative keywords at create'],
+      ['searchPartners', 'Search partners'],
     ] as const;
     if (!onSearch) {
       const offSearch = fields.find(([field]) => asked(raw[field]));

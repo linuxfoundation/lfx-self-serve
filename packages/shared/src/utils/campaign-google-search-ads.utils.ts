@@ -82,25 +82,24 @@ export function googleSearchAdPathsRefusal(path1: unknown, path2: unknown, adLab
 /**
  * Why upstream would refuse one responsive search ad's copy for its display width, or `null`
  * (`callerCopy`, which campaign-service runs on EVERY Search ad before the budget mutate — the first
- * ad's campaign-level copy included, with one ad or three). Each line is trimmed as Go trims it; a
- * blank line or a non-string is skipped, as upstream skips a blank one. Headlines first, then
- * descriptions, the first over-wide line named. Counts are not judged here: upstream drops a line
- * past the cap on the first ad, whose Add buttons have never been capped.
+ * ad's campaign-level copy included, with one ad or three). Headlines first, then descriptions, the
+ * first over-wide line named.
+ *
+ * Each list is walked exactly as `callerCopy` walks it, because only the lines it reaches are judged
+ * there: it stops once {@link GOOGLE_ADS_MAX_SEARCH_HEADLINES} headlines or
+ * {@link GOOGLE_ADS_MAX_SEARCH_DESCRIPTIONS} descriptions are KEPT (checked at the top of each step),
+ * trims each line as Go trims it, skips a blank one, refuses an over-wide one, and only then skips an
+ * exact repeat of a kept line — so a repeat does not count toward the cap, and a line past the cap is
+ * never width-checked. A non-string entry is skipped. Counts themselves are not refused here: upstream
+ * drops the rows past the cap on the first ad, whose Add buttons have never been capped.
  */
 export function googleSearchAdCopyWidthRefusal(headlines: unknown, descriptions: unknown, adLabel: string): string | null {
-  const lines = (list: unknown): string[] =>
-    Array.isArray(list)
-      ? list
-          .filter((line): line is string => typeof line === 'string')
-          .map((line) => googleAdsTrimSpace(line))
-          .filter((line) => line !== '')
-      : [];
-  const wideHeadline = lines(headlines).find((h) => googleAdsTextWeight(h) > CAMPAIGN_CHAR_LIMITS.searchHeadline);
-  if (wideHeadline !== undefined) {
+  const wideHeadline = firstOverWideLine(headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, GOOGLE_ADS_MAX_SEARCH_HEADLINES);
+  if (wideHeadline !== null) {
     return `A headline on ${adLabel} (${googleAdsEchoed(wideHeadline)}) is longer than the ${CAMPAIGN_CHAR_LIMITS.searchHeadline} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
   }
-  const wideDescription = lines(descriptions).find((d) => googleAdsTextWeight(d) > CAMPAIGN_CHAR_LIMITS.searchDescription);
-  if (wideDescription !== undefined) {
+  const wideDescription = firstOverWideLine(descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, GOOGLE_ADS_MAX_SEARCH_DESCRIPTIONS);
+  if (wideDescription !== null) {
     return `A description on ${adLabel} (${googleAdsEchoed(wideDescription)}) is longer than the ${CAMPAIGN_CHAR_LIMITS.searchDescription} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
   }
   return null;
@@ -199,6 +198,21 @@ export function googleSuggestedNegativeKeywordsText(suggestions: unknown): strin
   const rules = CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'];
   const text = suggestions.filter((entry): entry is string => typeof entry === 'string').join('\n');
   return parseNegativeKeywordInput(text, rules.maxTextLength).keywords.slice(0, rules.maxKeywords).join('\n');
+}
+
+/** `callerCopy`'s walk over one list, returning the first line it would refuse for width, or `null`. */
+function firstOverWideLine(list: unknown, maxWeight: number, maxCount: number): string | null {
+  if (!Array.isArray(list)) return null;
+  const kept = new Set<string>();
+  for (const raw of list) {
+    if (kept.size >= maxCount) return null;
+    if (typeof raw !== 'string') continue;
+    const line = googleAdsTrimSpace(raw);
+    if (line === '') continue;
+    if (googleAdsTextWeight(line) > maxWeight) return line;
+    kept.add(line);
+  }
+  return null;
 }
 
 function isSearchAdShape(ad: unknown): boolean {

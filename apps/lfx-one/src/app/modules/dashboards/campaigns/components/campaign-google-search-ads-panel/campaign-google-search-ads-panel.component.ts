@@ -13,14 +13,15 @@ import {
 } from '@lfx-one/shared/constants';
 import type { CampaignNegativeKeywordMatchType, CampaignSearchAd } from '@lfx-one/shared/interfaces';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils';
+import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiTextareaComponent } from '@shared/uikit/textarea/textarea.component';
 
 /**
- * The Google Search campaign's ads beyond the first ad's copy, and its create-time negative keywords,
- * on the Implement tab (#4991).
+ * The Google Search campaign's networks, its ads beyond the first ad's copy, and its create-time
+ * negative keywords, on the Implement tab (#4991).
  *
  * The first ad's headlines and descriptions stay in the tab's own copy sections; this panel adds that
  * ad's display paths, up to two more ads with their own copy and paths, and the campaign-level
@@ -31,7 +32,7 @@ import { UiTextareaComponent } from '@shared/uikit/textarea/textarea.component';
  */
 @Component({
   selector: 'lfx-campaign-google-search-ads-panel',
-  imports: [ButtonComponent, UiInputComponent, UiOptionComponent, UiSelectComponent, UiTextareaComponent],
+  imports: [ButtonComponent, UiCheckboxComponent, UiInputComponent, UiOptionComponent, UiSelectComponent, UiTextareaComponent],
   templateUrl: './campaign-google-search-ads-panel.component.html',
 })
 export class CampaignGoogleSearchAdsPanelComponent {
@@ -44,6 +45,7 @@ export class CampaignGoogleSearchAdsPanelComponent {
   public readonly additionalAds = model.required<CampaignSearchAd[]>();
   public readonly negativeKeywordsText = model.required<string>();
   public readonly negativeKeywordMatchType = model.required<CampaignNegativeKeywordMatchType>();
+  public readonly searchPartners = model.required<boolean>();
 
   protected readonly maxPathWidth = GOOGLE_ADS_MAX_SEARCH_AD_PATH_WIDTH;
   protected readonly maxAds = GOOGLE_ADS_MAX_SEARCH_ADS_PER_AD_GROUP;

@@ -59,6 +59,7 @@ import type {
   CampaignPlatformResult,
   CampaignSitelink,
   CampaignStructuredSnippet,
+  GoogleAdsConversionActionsResult,
   GoogleAdsGeoTargetSearchResult,
   GoogleAdsGeoTargetSuggestion,
   GoogleCreativeChannel,
@@ -8645,14 +8646,54 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
     expect(c['canSubmit']()).toBe(true);
   });
 
-  it("holds Create on a first-ad headline wider than Google's 30, counting CJK double", () => {
+  it("holds Create on a first-ad headline wider than Google's 30, counting CJK double, and says so under Headlines", () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['campaignForm'].patchValue({ headlines: ['日'.repeat(16)] });
     fixture.detectChanges();
 
-    expect(c['googleAdditionalSearchAdsError']()).toContain('A headline on ad 1');
+    expect(c['googleFirstAdHeadlinesError']()).toContain('A headline on ad 1');
+    expect(c['googleAdditionalSearchAdsError']()).toBeNull();
     expect(c['canSubmit']()).toBe(false);
-    expect(query('implementation-google-search-ads-error')?.textContent).toContain('A headline on ad 1');
+    expect(query('implementation-headlines-width-error')?.textContent).toContain('A headline on ad 1');
+    expect(query('implementation-google-search-ads-error')).toBeNull();
+    expect(query('implementation-headline-0')?.getAttribute('aria-describedby')).toBe('implementation-headlines-width-error');
+    expect(query('implementation-first-ad-copy-live')?.textContent).toContain('A headline on ad 1');
+  });
+
+  it('says a first-ad description over the width under Descriptions, and judges no row past the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].patchValue({ descriptions: ['ｄ'.repeat(46)] });
+    fixture.detectChanges();
+
+    expect(c['googleFirstAdDescriptionsError']()).toContain('A description on ad 1');
+    expect(query('implementation-descriptions-width-error')?.textContent).toContain('A description on ad 1');
+    expect(query('implementation-description-0')?.getAttribute('aria-describedby')).toBe('implementation-descriptions-width-error');
+
+    c['campaignForm'].patchValue({ descriptions: ['Register today for KubeCon EU 2026.'] });
+    fixture.detectChanges();
+    expect(c['googleFirstAdDescriptionsError']()).toBeNull();
+    expect(query('implementation-description-0')?.getAttribute('aria-describedby')).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('sends searchPartners only when ticked, and round-trips and resets it', () => {
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const c = seedChannel(fixture, { includeSearch: true });
+    expect(c['googleSearchAdsPayload']()).not.toHaveProperty('searchPartners');
+
+    c['onGoogleSearchPartnersChange'](true);
+    expect(c['googleSearchAdsPayload']()['searchPartners']).toBe(true);
+    expect(emitted?.googleSearchPartners).toBe(true);
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
+    fixture.detectChanges();
+    expect(c['googleSearchAdsPayload']()).toEqual({});
+
+    c['resetGoogleFields']();
+    expect(c['googleSearchPartners']()).toBe(false);
+    restoreGoogleDraft(fixture, c, { googleSearchPartners: true });
+    expect(c['googleSearchPartners']()).toBe(true);
   });
 
   it('round-trips everything through a draft and empties it for a new brief', () => {
@@ -8684,6 +8725,81 @@ describe('ImplementationTabComponent google search ads and negatives', () => {
     expect(c['googleAdditionalSearchAds']()).toHaveLength(2);
     expect(c['googleNegativeKeywordsText']()).toBe('jobs');
     expect(c['googleNegativeKeywordMatchType']()).toBe('Broad');
+  });
+});
+
+/**
+ * The conversion-action picker (#4991): a list over the free-text value when the read succeeds, and
+ * the free-text box alone, with the reason, whenever it cannot.
+ */
+describe('ImplementationTabComponent google conversion action picker', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  const ACTIONS: GoogleAdsConversionActionsResult = {
+    accountId: '1234567890',
+    actions: [
+      { id: '111', resourceName: 'customers/1234567890/conversionActions/111', name: 'Event Registrations', category: 'SIGNUP', primaryForGoal: true },
+      { id: '222', resourceName: 'customers/1234567890/conversionActions/222', name: 'Lead form', category: 'SUBMIT_LEAD_FORM', primaryForGoal: false },
+    ],
+  };
+  let read: ReturnType<typeof vi.fn>;
+
+  async function setup(answer: () => unknown): Promise<void> {
+    await configureGoogleTab();
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
+    read = vi.fn(answer);
+    vi.spyOn(TestBed.inject(CampaignService), 'getGoogleAdsConversionActions').mockImplementation(read as never);
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it('reads nothing while the conversion section is not shown', async () => {
+    await setup(() => of(ACTIONS));
+    seedChannel(fixture, { includePerformanceMax: true });
+    fixture.detectChanges();
+
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('offers the list on Search and writes picks into the free-text value, so the request is what typing would send', async () => {
+    await setup(() => of(ACTIONS));
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions', googleConversionActions: '999' });
+    fixture.detectChanges();
+
+    expect(read).toHaveBeenCalledWith('tlf');
+    expect(query('implementation-google-conversion-action-picker')).not.toBeNull();
+    expect(query('implementation-google-conversion-actions')).not.toBeNull();
+    expect(c['googlePickedConversionActions']()).toEqual([]);
+
+    c['onGooglePickedConversionActionsChange'](['222', '111']);
+    fixture.detectChanges();
+    expect(c['campaignForm'].getRawValue().googleConversionActions).toBe('111\n222\n999');
+    expect(c['googlePickedConversionActions']()).toEqual(['111', '222']);
+
+    c['submit']();
+    await fixture.whenStable();
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['conversionActions']).toEqual(['111', '222', '999']);
+  });
+
+  it.each([
+    ['a non-root caller (403)', 403, "Your account can't list"],
+    ['a route off on this deployment (404)', 404, "isn't available here yet"],
+    ['a Google failure (503)', 503, "couldn't list the conversion actions"],
+  ])('falls back to the free-text box with the reason for %s', async (_label, status, reason) => {
+    await setup(() => throwError(() => new HttpErrorResponse({ status })));
+    const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'maximize-conversions' });
+    fixture.detectChanges();
+
+    expect(query('implementation-google-conversion-action-picker')).toBeNull();
+    expect(query('implementation-google-conversion-action-picker-unavailable')?.textContent).toContain(reason);
+    expect(query('implementation-google-conversion-actions')).not.toBeNull();
+    c['campaignForm'].patchValue({ googleConversionActions: '987654321' });
+    expect(c['googleBiddingPayload']()['conversionActions']).toEqual(['987654321']);
   });
 });
 
@@ -13296,6 +13412,8 @@ describe('ImplementationTabComponent google stored images', () => {
             listCreativeAssets,
             getLinkedInAccounts: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
+            // The conversion-action picker's read (#4991): this suite is about images, so the list is empty.
+            getGoogleAdsConversionActions: () => of({ accountId: '', actions: [] }),
           },
         },
       ],

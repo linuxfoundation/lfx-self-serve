@@ -2250,6 +2250,30 @@
 
           @if (googleTakesConversionActions()) {
             <div class="flex flex-col gap-2">
+              @switch (googleConversionActionPicker().status) {
+                @case ('loaded') {
+                  <lfx-ui-multi-select
+                    label="Pick conversion actions"
+                    size="small"
+                    [values]="googlePickedConversionActions()"
+                    (valuesChange)="onGooglePickedConversionActionsChange($event)"
+                    data-testid="implementation-google-conversion-action-picker">
+                    @for (action of googleConversionActionPicker().actions; track action.id) {
+                      <lfx-ui-option [value]="action.id" [label]="googleConversionActionLabel(action)" />
+                    }
+                  </lfx-ui-multi-select>
+                }
+                @case ('loading') {
+                  <p class="text-xs text-gray-500" data-testid="implementation-google-conversion-action-picker-loading">
+                    Loading this account's conversion actions…
+                  </p>
+                }
+                @case ('unavailable') {
+                  <p class="text-xs text-gray-500" data-testid="implementation-google-conversion-action-picker-unavailable">
+                    {{ googleConversionActionPicker().reason }}
+                  </p>
+                }
+              }
               <label class="block text-xs font-medium text-gray-700" for="google-conversion-actions">Conversion Actions (one per line)</label>
               <textarea
                 id="google-conversion-actions"
@@ -2260,6 +2284,9 @@
               <span class="text-xs text-gray-400">
                 An id such as 987654321, or a full customers/&lt;id&gt;/conversionActions/&lt;id&gt; name. Leave blank to use the account's own conversion
                 goals.
+                @if (googleConversionActionPicker().status === 'loaded') {
+                  Picking from the list above fills this box; ids it doesn't hold stay as typed.
+                }
               </span>
             </div>
           }
@@ -2280,6 +2307,13 @@
            required validator blocked the create until it was filled in. See
            `initSearchCopyApplies`. -->
       @if (searchCopyApplies()) {
+        <!--
+          The first ad's width errors, announced. Always mounted with the copy sections and only its text
+          changes: a live region inserted with its text already present is not reliably announced.
+        -->
+        <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
+          {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
+        </div>
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-headlines-section">
           <div class="mb-3 flex items-center justify-between">
             <h3 class="text-sm font-semibold text-gray-900">Headlines</h3>
@@ -2299,6 +2333,7 @@
                   type="text"
                   [formControlName]="i"
                   [maxlength]="charLimits.searchHeadline"
+                  [attr.aria-describedby]="googleFirstAdHeadlinesError() === null ? null : 'implementation-headlines-width-error'"
                   placeholder="Headline (max {{ charLimits.searchHeadline }} chars)"
                   class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   [attr.data-testid]="'implementation-headline-' + i" />
@@ -2311,6 +2346,9 @@
               </div>
             }
           </div>
+          @if (googleFirstAdHeadlinesError(); as message) {
+            <p id="implementation-headlines-width-error" class="mt-2 text-xs text-red-600" data-testid="implementation-headlines-width-error">{{ message }}</p>
+          }
         </div>
 
         <!-- Google Ads: Descriptions -->
@@ -2332,6 +2370,7 @@
                 <textarea
                   [formControlName]="i"
                   [maxlength]="charLimits.searchDescription"
+                  [attr.aria-describedby]="googleFirstAdDescriptionsError() === null ? null : 'implementation-descriptions-width-error'"
                   placeholder="Description (max {{ charLimits.searchDescription }} chars)"
                   rows="2"
                   class="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -2349,6 +2388,11 @@
               </div>
             }
           </div>
+          @if (googleFirstAdDescriptionsError(); as message) {
+            <p id="implementation-descriptions-width-error" class="mt-2 text-xs text-red-600" data-testid="implementation-descriptions-width-error">
+              {{ message }}
+            </p>
+          }
         </div>
       }
 
@@ -2365,6 +2409,8 @@
           (path2Change)="onGoogleSearchPath2Change($event)"
           [additionalAds]="googleAdditionalSearchAds()"
           (additionalAdsChange)="onGoogleAdditionalSearchAdsChange($event)"
+          [searchPartners]="googleSearchPartners()"
+          (searchPartnersChange)="onGoogleSearchPartnersChange($event)"
           [negativeKeywordsText]="googleNegativeKeywordsText()"
           (negativeKeywordsTextChange)="onGoogleNegativeKeywordsTextChange($event)"
           [negativeKeywordMatchType]="googleNegativeKeywordMatchType()"
