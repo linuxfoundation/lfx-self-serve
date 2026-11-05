@@ -388,8 +388,13 @@ describe('MktgFaqViewComponent', () => {
       expect(answer(1).textContent).not.toContain('- ');
     });
 
+    // The blank-line variant opens an empty line between the lead-in and the first item only: a blank line between
+    // every item would be a loose list, a different shape.
+    const [leadIn, ...items] = FAQ_LIST_ANSWER.split('\n');
+    const blankLineBeforeList = [leadIn, '', ...items].join('\n');
+
     it.each([
-      ['a blank line before the first item', FAQ_LIST_ANSWER.replace('\n', '\n\n')],
+      ['a blank line before the first item', blankLineBeforeList],
       ['CRLF line ends', FAQ_LIST_ANSWER.replace(/\n/g, '\r\n')],
     ])('renders the same paragraph and list with %s', async (_shape, stored) => {
       const content = faqAnswersContent();
