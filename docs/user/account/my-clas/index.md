@@ -4,7 +4,7 @@ description: View your signed Individual CLAs and your Corporate CLA coverage in
 audience: [all]
 product_area: Account
 tags: [account, cla, easycla, icla, ccla, identities, signing]
-last_updated: 2026-09-11
+last_updated: 2026-11-05
 intercom_collection: Account
 ---
 
@@ -112,8 +112,8 @@ You will not see a **⋮** on:
 You start signing from the CLAs tab and finish in the EasyCLA Contributor Console:
 
 1. Select **Sign CLA** at the top right of the CLAs tab.
-2. In the **Sign a CLA** dialog, type at least three characters. You can search by project name, CLA group name, a linked GitHub, GitLab, or Gerrit organization, or by pasting a repository link.
-3. Each result shows why it matched — project name, CLA group name, linked organization, or repository link — so you can tell near-identical names apart.
+2. In the **Sign a CLA** dialog, type at least three characters. You can search by project name, CLA group name, a linked GitHub, GitLab, or Gerrit company, or by pasting a repository link.
+3. Each result shows why it matched — project name, CLA group name, linked company, or repository link — so you can tell near-identical names apart.
 4. Select the right result and choose **Continue to sign**.
 5. Choose which of your linked GitHub accounts to sign under, then select **Continue to sign** again. Nothing is selected for you, and the step appears even when you have only one account linked — its job is to tell you which identity the agreement will be recorded against. If you have no GitHub account linked, the step says so and offers a link to [Identities](/profile/identities); you cannot continue past it until you link one.
 6. Self Serve hands you off to the EasyCLA Contributor Console, which presents and records the agreement. When you finish there, you are returned to the CLAs tab.

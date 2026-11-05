@@ -3,8 +3,8 @@ title: Dashboard FAQ
 description: Frequently asked questions about navigating the LFX Self Serve dashboard.
 audience: [all]
 product_area: Dashboards
-tags: [dashboard, faq, lens, access, organization, company, employer]
-last_updated: 2026-11-02
+tags: [dashboard, faq, lens, access, company, employer]
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
@@ -12,19 +12,19 @@ intercom_collection: Dashboards
 
 If you can use both Foundation and Projects, you see three tabs instead of four: Foundation and Projects share a single **Projects** tab in the sidebar. This is expected. Open **Projects** and select a foundation from the list to open the Foundation lens.
 
-Otherwise, the lenses you see depend on your roles on Linux Foundation projects. Everyone sees **Me** and **Organization**, and almost everyone sees **Projects**. **Foundation** is for board members, executive directors, foundation admins, Linux Foundation staff and a few other Linux Foundation admin, auditor and marketing roles. See [Who can see each lens](../#who-can-see-each-lens) for the full list. If you believe you should have access to a lens that is not listed in either place, contact your foundation or project administrator.
+Otherwise, the lenses you see depend on your roles on Linux Foundation projects. Everyone sees **Me** and **Company**, and almost everyone sees **Projects**. **Foundation** is for board members, executive directors, foundation admins, Linux Foundation staff and a few other Linux Foundation admin, auditor and marketing roles. See [Who can see each lens](../#who-can-see-each-lens) for the full list. If you believe you should have access to a lens that is not listed in either place, contact your foundation or project administrator.
 
-## Why can't I see my organization's dashboard?
+## Why can't I see my company's dashboard?
 
-Everyone can open the **Organization** lens, but your company's pages show only if your organization has given you access. Access is granted by your organization's own Organization Lens administrators, not by the Linux Foundation. Ask them to grant you access. If you are not sure who they are, your company's open source program office (OSPO) is a good place to start.
+Everyone can open the **Company** lens, but your company's pages show only if your company has given you access. Access is granted by your company's own Company Lens administrators, not by the Linux Foundation. Ask them to grant you access. If you are not sure who they are, your company's open source program office (OSPO) is a good place to start.
 
-Holding another role, such as committee member, board member or executive director, does not by itself give you access to your company's pages. See [Who can access this](../#who-can-access-this) for the messages you may see and what each one means. If you are a CLA Manager, see the [Organization FAQ](../../organization/faq/#why-can-t-i-see-my-company-in-the-organization-lens).
+Holding another role, such as committee member, board member or executive director, does not by itself give you access to your company's pages. See [Who can access this](../#who-can-access-this) for the messages you may see and what each one means. If you are a CLA Manager, see the [Company FAQ](../../company/faq/#why-can-t-i-see-my-company-in-the-company-lens).
 
-## I added my company as an affiliation. Why can't I see my organization?
+## I added my company as an affiliation. Why can't I see my company?
 
-Adding an affiliation links your profile to your employer, but it does not give you access to your company's pages in the **Organization** lens. After you add it, you may see **You do not have access to the Organization Lens** instead of **No organization linked to your account**. Both mean the same thing: you have not been granted access yet.
+Adding an affiliation links your profile to your employer, but it does not give you access to your company's pages in the **Company** lens. After you add it, you may see **You do not have access to the Company Lens** instead of **No company linked to your account**. Both mean the same thing: you have not been granted access yet.
 
-Access comes only from your organization's Organization Lens administrators. Ask them to grant you access. If you are not sure who they are, your company's open source program office (OSPO) is a good place to start.
+Access comes only from your company's Company Lens administrators. Ask them to grant you access. If you are not sure who they are, your company's open source program office (OSPO) is a good place to start.
 
 ## Why does my dashboard show different content from a colleague's?
 

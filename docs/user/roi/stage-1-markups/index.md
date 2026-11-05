@@ -1,19 +1,19 @@
 ---
 title: 'Stage 1: markups'
-description: How the ROI model turns monthly participation histories into a markup for each organization-project pair — the participation model, the two scoring methods, and calibration to a target distribution.
+description: How the ROI model turns monthly participation histories into a markup for each company-project pair — the participation model, the two scoring methods, and calibration to a target distribution.
 audience: [all]
 product_area: Dashboards
 display_order: 9
 tags: [roi, markup, logit, participation, calibration, gamma, technical]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
-Stage 1 takes each organization-project pair's participation history and produces one markup `μ(i,j) ≥ 1` for each of two methods, **logistic** and **direct**. Both are shown on the ROI page under **Model assumptions**.
+Stage 1 takes each company-project pair's participation history and produces one markup `μ(i,j) ≥ 1` for each of two methods, **logistic** and **direct**. Both are shown on the ROI page under **Model assumptions**.
 
 ## Input
 
-A monthly binary panel per organization-project pair, built as described in [Data overview](../data-overview/#contribution-frequency-stage-1-input):
+A monthly binary panel per company-project pair, built as described in [Data overview](../data-overview/#contribution-frequency-stage-1-input):
 
 - `d(i,j,t) = 1` if the pair had any code or community activity in month `t`, else 0.
 - `d(i,j,t−1)` is the previous month's value. The first month's missing lag is set to 0.
@@ -21,7 +21,7 @@ A monthly binary panel per organization-project pair, built as described in [Dat
 
 A pair that does not meet this entry rule is not estimated and has no markup or ROI. That includes pairs with no code or community activity, such as a membership-only pair.
 
-This entry rule works on a single pair and decides whether it gets a markup at all. It is separate from the organization-level display gate, which decides whether an organization's results are shown and uses spending and active months summed over its projects. Pairs below the gate still take part in stage 1, because a pair's markup is its rank among all estimated pairs. See [Which organizations are shown](../interpreting-results/#which-organizations-are-shown) and the [display gate settings](../model-settings/#display-gate).
+This entry rule works on a single pair and decides whether it gets a markup at all. It is separate from the company-level display gate, which decides whether a company's results are shown and uses spending and active months summed over its projects. Pairs below the gate still take part in stage 1, because a pair's markup is its rank among all estimated pairs. See [Which companies are shown](../interpreting-results/#which-companies-are-shown) and the [display gate settings](../model-settings/#display-gate).
 
 Only code and community activity define participation. Memberships, events, meetings, and courses do not enter the participation indicator.
 
@@ -48,9 +48,9 @@ d(i,j,t) = 1 if u(i,j,t) > 0
 u(i,j,t) = δ(i) + π(j) + β · d(i,j,t−1) + λ · z(i,j) + ε(i,j,t)
 ```
 
-with an organization effect `δ(i)`, a project effect `π(j)`, a persistence coefficient `β`, a scale coefficient `λ`, and a logistic shock `ε`. This makes the participation probability a binary logit. It is estimated by maximum likelihood on:
+with a company effect `δ(i)`, a project effect `π(j)`, a persistence coefficient `β`, a scale coefficient `λ`, and a logistic shock `ε`. This makes the participation probability a binary logit. It is estimated by maximum likelihood on:
 
-- a full set of organization indicators and project indicators,
+- a full set of company indicators and project indicators,
 - the lagged activity indicator and the scale measure, plus an intercept.
 
 A very weak L2 penalty (inverse regularization strength `C = 1000`) is included for numerical stability, since a full set of indicators is collinear with the intercept. It has a negligible effect on fitted values.
@@ -88,10 +88,10 @@ For each method, the pair scores are regressed by ordinary least squares, with a
 v(i,j) = c0 + c1 · z(i,j) + c2 · log( months observed(i,j) ) + residual(i,j)
 ```
 
-- **Scale `z(i,j)`.** In the logistic method the scale term in the model removes most of the effect of team size. Big projects also attract more of an organization's spending and near-constant activity, so scale can still leak back in through the project effects. The residualization removes what is left. In the direct method it is the only scale control.
+- **Scale `z(i,j)`.** In the logistic method the scale term in the model removes most of the effect of team size. Big projects also attract more of a company's spending and near-constant activity, so scale can still leak back in through the project effects. The residualization removes what is left. In the direct method it is the only scale control.
 - **Window length.** The panel starts at the project's start date, so pairs on young projects are observed over a short, launch-heavy window with high activity rates. Persistence over 6 months and over 10 years is not comparable evidence, and a project's age should not change ROI per dollar.
 
-What is kept is persistence relative to scale and window length and, in the logistic method, organization and project effects unrelated to scale.
+What is kept is persistence relative to scale and window length and, in the logistic method, company and project effects unrelated to scale.
 
 ### Quantile mapping (both methods)
 

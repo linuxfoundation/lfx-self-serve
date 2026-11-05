@@ -4,7 +4,7 @@ description: How to add subscribers to a mailing list, set their delivery mode a
 audience: [maintainer, board-member, executive-director]
 product_area: Mailing Lists
 tags: [mailing-lists, subscribers, members, moderator, delivery mode, add, remove]
-last_updated: 2026-11-03
+last_updated: 2026-11-05
 intercom_collection: Mailing Lists
 ---
 
@@ -28,7 +28,7 @@ The table has these columns:
 
 - **Name**
 - **Title**
-- **Organization**
+- **Company**
 - **Email**: select an address to write to the person
 - **Delivery Mode**: **Individual**, **Digest**, or **None**
 - **Role**: **Member** or **Moderator**
@@ -40,7 +40,7 @@ If the subscriber list cannot be loaded completely, an error message appears ins
 
 ### Search and filter
 
-- **Search members…**: matches names, email addresses, organizations, and titles as you type
+- **Search members…**: matches names, email addresses, companies, and titles as you type
 - **Filter by Delivery Mode**: **All Delivery Modes**, **Individual**, **Digest**, or **None**
 - **Filter by Role**: **All Roles**, **Member**, or **Moderator**
 
@@ -51,7 +51,7 @@ If the subscriber list cannot be loaded completely, an error message appears ins
    - **First Name** (required)
    - **Last Name** (required)
    - **Title**
-   - **Organization**
+   - **Company**
    - **Email** (required, and it must be a valid address)
    - **Delivery Mode**: choose how the person receives email (see below)
    - **Role**: **Member** or **Moderator**
@@ -77,7 +77,7 @@ Select the **Delivery Mode** or **Role** in a subscriber's row and choose a new 
 ## Edit a subscriber's details
 
 1. Select the edit (pencil) icon in the subscriber's row.
-2. Change the **Title** or **Organization**.
+2. Change the **Title** or **Company**.
 3. Select **Update Member**. You see "Subscriber updated successfully".
 
 The subscriber's name and email address can't be changed after they are added. The form says so: "Name and email cannot be changed after member is added". To fix a wrong email or name, remove the subscriber and add them again.

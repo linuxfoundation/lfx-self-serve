@@ -5,13 +5,13 @@ audience: [all]
 product_area: Dashboards
 display_order: 13
 tags: [roi, methodology, rationale, participation floor, scale control]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
 The other technical pages say **what** the model does. This page says **why**: the choices that most affect the numbers, what went wrong before each was made, and what each means for how you read a result. It does not repeat the mechanics, so each section links to the page that describes them. It is meant for readers who want to judge the model, not only use it.
 
-For which organization-project pairs are modelled, see [Which pairs are modelled](../data-overview/#which-pairs-are-modelled).
+For which company-project pairs are modelled, see [Which pairs are modelled](../data-overview/#which-pairs-are-modelled).
 
 ## Count each resource once
 
@@ -27,7 +27,7 @@ Value is computed for each year from that year's quantities and prices, and then
 
 An earlier version built value from per-year _averages_, which is one year of value, and compared it with spending summed over all years. As a result the benefit-cost ratio shrank roughly in proportion to the number of years a pair was active, and about half of all rows showed a negative ROI.
 
-The yearly view on the ROI page then **apportions** the total across years by each year's share of spending ([Annualization](../inference/#annualization)). This is deliberate. Measuring value separately for each year gave a negative profit in a small share of project-years. That is noise from a single year's mix, not information an organization can act on. Apportioning keeps the years adding up to the totals and keeps any year from turning negative when the total is not. The final year is usually partial and is labelled as such.
+The yearly view on the ROI page then **apportions** the total across years by each year's share of spending ([Annualization](../inference/#annualization)). This is deliberate. Measuring value separately for each year gave a negative profit in a small share of project-years. That is noise from a single year's mix, not information a company can act on. Apportioning keeps the years adding up to the totals and keeps any year from turning negative when the total is not. The final year is usually partial and is labelled as such.
 
 ## Stage 2 weighting choices
 
@@ -50,14 +50,14 @@ Before the control, markups correlated strongly with log scale: the median marku
 
 - Its markups are least related to scale and window length.
 - It produces few ties, while the direct method's raw rate takes few distinct values and bunches many pairs onto the same markup.
-- It pools information across an organization's projects and a project's organizations, which steadies short or sparse histories.
+- It pools information across a company's projects and a project's companies, which steadies short or sparse histories.
 - It gives a nearly flat spending gradient, so spend-weighted return sits close to the survey-anchored level.
 
 The direct method's rate saturates at 1 for always-active pairs, which a linear control cannot fully remove, so it keeps a heavier top tail. Use it as a robustness check. The two methods rank pairs alike for most of the range, and a minority of pairs differ by more than a factor of two.
 
 ### Known residual
 
-The logistic method's most extreme markups go to very small pairs, such as those with only a few hundred dollars of total spending. They are immaterial in dollars but stand out in pair-level rankings, which is part of why the ROI page only shows organizations that pass the [display gate](../interpreting-results/#which-organizations-are-shown).
+The logistic method's most extreme markups go to very small pairs, such as those with only a few hundred dollars of total spending. They are immaterial in dollars but stand out in pair-level rankings, which is part of why the ROI page only shows companies that pass the [display gate](../interpreting-results/#which-companies-are-shown).
 
 ## Why there is no minimum-data threshold on the model
 
@@ -67,7 +67,7 @@ Raising the minimum history for a pair (for example to two years) was considered
 - **Wrong target.** Those negatives came from the share-clipping issue above, not from thin data. Negatives from edge elasticities had a long history, so a threshold would not reach them.
 - **It shifts calibration.** Markups are calibrated by rank across all valid pairs. Removing a slice of pairs changes the population, and with it every other pair's markup.
 
-Thin data is handled where it should be, at display time: see the [display gate](../interpreting-results/#which-organizations-are-shown).
+Thin data is handled where it should be, at display time: see the [display gate](../interpreting-results/#which-companies-are-shown).
 
 ## Related reading
 

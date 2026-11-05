@@ -4,7 +4,7 @@ description: Frequently asked questions about meetings in LFX Self Serve.
 audience: [all]
 product_area: Meetings
 tags: [meetings, faq, schedule, join, host key, attendance]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 
@@ -16,9 +16,9 @@ Users with **maintainer**, **board-member**, or **executive-director** personas 
 
 Zoom. Meetings run on Zoom, and the join page takes you into the Zoom meeting.
 
-## What's the difference between an organizer and a meeting host?
+## What's the difference between a organizer and a meeting host?
 
-An **organizer** manages the meeting: they can edit, cancel, or delete it, manage its guests and materials, and reconcile attendance. An organizer is always a host too. A **Meeting Host** is a guest the organizer marked as a host. They can see the Zoom host key and run the meeting, but they can't edit it. See [Host Controls and the Host Key](../host-controls/).
+An **organizer** manages the meeting: they can edit, cancel, or delete it, manage its guests and materials, and reconcile attendance. A organizer is always a host too. A **Meeting Host** is a guest the organizer marked as a host. They can see the Zoom host key and run the meeting, but they can't edit it. See [Host Controls and the Host Key](../host-controls/).
 
 ## Does an attendee need an LFX account to join a meeting?
 
@@ -56,7 +56,7 @@ Make sure you're in the right lens. Your personal **Meetings** view (Me lens) sh
 
 ## Can I register myself for a meeting I wasn't invited to?
 
-Yes, if the meeting is **public and not restricted**, and you're **signed in**. Its join page shows a **Register for Meeting** button with a short form for your name, email, and optionally your job title and organization. This button isn't available for **Restricted** meetings. For those, ask the organizer to add you as a guest. See [Join a Meeting](../join-meeting/).
+Yes, if the meeting is **public and not restricted**, and you're **signed in**. Its join page shows a **Register for Meeting** button with a short form for your name, email, and optionally your job title and company. This button isn't available for **Restricted** meetings. For those, ask the organizer to add you as a guest. See [Join a Meeting](../join-meeting/).
 
 ## Can I RSVP to a meeting I'm invited to?
 
@@ -72,7 +72,7 @@ On the meeting's join page and its **Past** details page, once the meeting has e
 
 ## Why can't I see the AI summary?
 
-The organizer may have turned on **Requires host approval before sharing with guests**. Until an organizer approves the summary, only organizers can see it. See [Past Meetings](../past-meetings/).
+The organizer may have turned on **Requires host approval before sharing with guests**. Until a organizer approves the summary, only organizers can see it. See [Past Meetings](../past-meetings/).
 
 ## Where can I find meeting materials?
 

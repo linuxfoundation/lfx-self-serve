@@ -4,12 +4,12 @@ description: How to read the Value drivers chart on the ROI Metrics page — wha
 audience: [all]
 product_area: Dashboards
 display_order: 7
-tags: [roi, value drivers, decomposition, proxies, controls, org lens, categories, interpretation]
-last_updated: 2026-11-04
+tags: [roi, value drivers, decomposition, proxies, controls, company lens, categories, interpretation]
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
-The ROI model estimates **how much** value your organization gets from a project. The **Value drivers** chart asks the next question: **where does that value come from?** It compares your portfolio with a typical organization-project pair and shows which kinds of value make your return higher or lower than typical.
+The ROI model estimates **how much** value your company gets from a project. The **Value drivers** chart asks the next question: **where does that value come from?** It compares your portfolio with a typical company-project pair and shows which kinds of value make your return higher or lower than typical.
 
 This page is for anyone reading the chart. Its last section lists the measurements the chart is built from. For the method behind it, see [Value driver decomposition](../value-driver-decomposition/).
 
@@ -17,13 +17,13 @@ This page is for anyone reading the chart. Its last section lists the measuremen
 
 The **Projects** panel on the ROI Metrics page has a **Value drivers** tab. It covers your whole portfolio, so it ignores the project picker. It follows the estimation method you choose in **Model assumptions**.
 
-The tab appears only for organizations with at least 5 projects that also pass the [ROI display gate](../interpreting-results/#which-organizations-are-shown). Others see an empty state, because the figures are too noisy to read for small portfolios.
+The tab appears only for companies with at least 5 projects that also pass the [ROI display gate](../interpreting-results/#which-companies-are-shown). Others see an empty state, because the figures are too noisy to read for small portfolios.
 
 ## What a bar means
 
 Each row is one **value driver category**. The bar shows how much that category pushes your portfolio's return **above or below** the typical pair.
 
-- The middle line, labelled **Typical**, is the typical organization-project pair: the average across all pairs LFX models.
+- The middle line, labelled **Typical**, is the typical company-project pair: the average across all pairs LFX models.
 - A bar to the right (green) means that category contributes **more return** to your portfolio than it does for a typical pair. A bar to the left (amber) means it contributes **less**.
 - A bar of +14% means 14% more return than typical from that category. A bar of −5% means 5% less.
 - A bar at 0 means your portfolio is typical for that category. It does **not** mean the category provides no value.
@@ -31,7 +31,7 @@ Each row is one **value driver category**. The bar shows how much that category 
 
 ### A worked example
 
-Suppose the chart shows these bars for an organization:
+Suppose the chart shows these bars for a company:
 
 | Category            | Bar | How to read it                                                                                                   |
 | ------------------- | --- | ---------------------------------------------------------------------------------------------------------------- |
@@ -39,11 +39,11 @@ Suppose the chart shows these bars for an organization:
 | Risk mitigation     | +3% | A little more than typical from patch upstreaming, reviewing, and mature projects                                |
 | Strategic           | −4% | A little less than typical from talent flow and governance engagement                                            |
 
-This does not say the organization gets "9% of its return" from cost savings. It says that cost-savings-type activity moves this portfolio's return 9% **above** where a typical pair sits.
+This does not say the company gets "9% of its return" from cost savings. It says that cost-savings-type activity moves this portfolio's return 9% **above** where a typical pair sits.
 
 ## The five categories
 
-Each category groups one or more **value drivers**: reasons an organization may contribute to open source. LFX tracks 17 drivers in all. Eight of them can be measured from public LFX data, and those make up the chart. The other nine have no usable measurement, so they are not in it.
+Each category groups one or more **value drivers**: reasons a company may contribute to open source. LFX tracks 17 drivers in all. Eight of them can be measured from public LFX data, and those make up the chart. The other nine have no usable measurement, so they are not in it.
 
 | Category            | Drivers that are measured                                    | What it is about                                                                        |
 | ------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
@@ -57,16 +57,16 @@ A category's bar adds up only its **measured** drivers. Drivers with no measurem
 
 ### How each driver is measured
 
-A driver cannot be observed directly, so each one is represented by **proxies**: signals in public LFX data that should go up when that kind of value goes up. For example, talent acquisition is represented by people who contributed to the project before joining your organization, and by certificates held by your staff. Every proxy, with what it measures, its source and its direction, is listed in [The measurements behind the chart](#the-measurements-behind-the-chart).
+A driver cannot be observed directly, so each one is represented by **proxies**: signals in public LFX data that should go up when that kind of value goes up. For example, talent acquisition is represented by people who contributed to the project before joining your company, and by certificates held by your staff. Every proxy, with what it measures, its source and its direction, is listed in [The measurements behind the chart](#the-measurements-behind-the-chart).
 
 The chart also accounts for some context that is not a motive, such as whether the project is a foundation and what share of the project's funding you provide. That context is held out of the bars so it does not get credited to a driver.
 
 ## How far to trust it
 
-- **Association, not cause.** The bars show activity that tends to go with higher or lower return. They do not show that the activity causes it, and they are not based on anything your organization reported.
+- **Association, not cause.** The bars show activity that tends to go with higher or lower return. They do not show that the activity causes it, and they are not based on anything your company reported.
 - **Part of the picture.** The model explains only part of the variation in return. The bars show that explained part. What it cannot explain is not assigned to any driver.
 - **Small portfolios.** The decomposition can be sensitive to small portfolios. Treat these results as directional.
-- **Risk mitigation** partly reflects project maturity. Mature projects carry a longevity premium that applies to every organization contributing to them, so it says more about your projects than about your motives.
+- **Risk mitigation** partly reflects project maturity. Mature projects carry a longevity premium that applies to every company contributing to them, so it says more about your projects than about your motives.
 - **Direct cost savings** is measured by a single driver, shared R&D, and can differ noticeably between the two estimation methods. The other categories mostly agree.
 - **Extremes are understated.** The model pulls its estimates toward the middle, so the very highest and lowest returns have more behind them than the bars show.
 
@@ -83,7 +83,7 @@ This section lists every proxy the chart is built from, what it measures, where 
 
 ### How to read these tables
 
-Each organization-project pair has 19 proxies. They come in two roles:
+Each company-project pair has 19 proxies. They come in two roles:
 
 - **Value proxy** (12). More of it should mean more benefit. Value proxies build the index of their driver and earn that driver's bar.
 - **Control** (7). Kept in the model so that confounding is not credited to a driver, but not attributed to any driver. Their combined effect is the **context** component.
@@ -92,36 +92,36 @@ The rule that decides a proxy's role is in [How a proxy gets its role](../value-
 
 The markup is scale-free, so no proxy measures spending or size directly. Every proxy is a rate, a share, a yes/no flag, a breadth, or a count that is not a spend level. Total activity volume is deliberately not used: it is what the markup itself is built from.
 
-Some proxies describe the pair. Two kinds repeat across rows and partly describe the organization or the project as a whole:
+Some proxies describe the pair. Two kinds repeat across rows and partly describe the company or the project as a whole:
 
-- **Project-level**: the project maturity flag and the foundation flag are the same for every organization on a project.
-- **Organization-level**: project breadth is the same for every project of an organization.
+- **Project-level**: the project maturity flag and the foundation flag are the same for every company on a project.
+- **Company-level**: project breadth is the same for every project of a company.
 
 Missing data counts as 0, except where noted: event attendance rate and review share are left blank when there is nothing to take a rate of. A blank value proxy is scored as no activity.
 
 ### The 19 proxies at a glance
 
-| Proxy                        | Driver                             | Role    | Source                                          | Window                                | Level        | Direction |
-| ---------------------------- | ---------------------------------- | ------- | ----------------------------------------------- | ------------------------------------- | ------------ | --------- |
-| Active contributor count     | Developer productivity             | Value   | Contribution activity                           | Since 2010                            | Pair         | +         |
-| Active maintainer count      | Standardization leadership         | Value   | Maintainer roster                               | Current snapshot                      | Pair         | +         |
-| Patch upstream rate          | Technical debt reduction           | Value   | Contribution activity                           | Since 2010                            | Pair         | + (weak)  |
-| Review share                 | Technical debt reduction           | Value   | Contribution activity                           | Since 2010                            | Pair         | + (weak)  |
-| Project maturity flag        | Project longevity                  | Value   | Project directory                               | Current snapshot                      | Project      | +         |
-| Collaboration share          | Shared R&D                         | Value   | Contribution activity                           | Since 2010                            | Pair         | + (loose) |
-| Foundation activity share    | Shared R&D                         | Value   | Contribution activity, project directory        | Since 2010                            | Pair         | +         |
-| Talent flow count            | Talent acquisition and development | Value   | Contribution activity, contributor affiliations | Since 2010                            | Pair         | +         |
-| Certificate count (log)      | Talent acquisition and development | Value   | Certificates                                    | All history                           | Pair         | +         |
-| Governance engagement score  | Competitive intelligence           | Value   | Meeting attendance, mailing lists               | Last 24 months (meetings), since 2010 | Pair         | + (weak)  |
-| Non-code contribution rate   | Ecosystem goodwill                 | Value   | Contribution activity                           | Since 2010                            | Pair         | + (weak)  |
-| Platform count               | Ecosystem goodwill                 | Value   | Contribution activity                           | Since 2010                            | Pair         | + (weak)  |
-| Organization project breadth | Shared R&D                         | Control | Contribution activity                           | Since 2010                            | Organization | +         |
-| Foundation project flag      | Shared R&D                         | Control | Project directory                               | Current snapshot                      | Project      | −         |
-| Fork count                   | Technical debt reduction           | Control | Contribution activity                           | Since 2010                            | Pair         | −         |
-| Project funding share        | Project longevity                  | Control | Memberships                                     | Current snapshot                      | Pair         | −         |
-| Star count                   | Competitive intelligence           | Control | Contribution activity                           | Since 2010                            | Pair         | −         |
-| Maintenance offload rate     | Maintenance offloading             | Control | Contribution activity                           | Since 2010                            | Pair         | −         |
-| Event attendance rate        | Brand authority                    | Control | Event registrations                             | All history                           | Pair         | −         |
+| Proxy                       | Driver                             | Role    | Source                                          | Window                                | Level   | Direction |
+| --------------------------- | ---------------------------------- | ------- | ----------------------------------------------- | ------------------------------------- | ------- | --------- |
+| Active contributor count    | Developer productivity             | Value   | Contribution activity                           | Since 2010                            | Pair    | +         |
+| Active maintainer count     | Standardization leadership         | Value   | Maintainer roster                               | Current snapshot                      | Pair    | +         |
+| Patch upstream rate         | Technical debt reduction           | Value   | Contribution activity                           | Since 2010                            | Pair    | + (weak)  |
+| Review share                | Technical debt reduction           | Value   | Contribution activity                           | Since 2010                            | Pair    | + (weak)  |
+| Project maturity flag       | Project longevity                  | Value   | Project directory                               | Current snapshot                      | Project | +         |
+| Collaboration share         | Shared R&D                         | Value   | Contribution activity                           | Since 2010                            | Pair    | + (loose) |
+| Foundation activity share   | Shared R&D                         | Value   | Contribution activity, project directory        | Since 2010                            | Pair    | +         |
+| Talent flow count           | Talent acquisition and development | Value   | Contribution activity, contributor affiliations | Since 2010                            | Pair    | +         |
+| Certificate count (log)     | Talent acquisition and development | Value   | Certificates                                    | All history                           | Pair    | +         |
+| Governance engagement score | Competitive intelligence           | Value   | Meeting attendance, mailing lists               | Last 24 months (meetings), since 2010 | Pair    | + (weak)  |
+| Non-code contribution rate  | Ecosystem goodwill                 | Value   | Contribution activity                           | Since 2010                            | Pair    | + (weak)  |
+| Platform count              | Ecosystem goodwill                 | Value   | Contribution activity                           | Since 2010                            | Pair    | + (weak)  |
+| Company project breadth     | Shared R&D                         | Control | Contribution activity                           | Since 2010                            | Company | +         |
+| Foundation project flag     | Shared R&D                         | Control | Project directory                               | Current snapshot                      | Project | −         |
+| Fork count                  | Technical debt reduction           | Control | Contribution activity                           | Since 2010                            | Pair    | −         |
+| Project funding share       | Project longevity                  | Control | Memberships                                     | Current snapshot                      | Pair    | −         |
+| Star count                  | Competitive intelligence           | Control | Contribution activity                           | Since 2010                            | Pair    | −         |
+| Maintenance offload rate    | Maintenance offloading             | Control | Contribution activity                           | Since 2010                            | Pair    | −         |
+| Event attendance rate       | Brand authority                    | Control | Event registrations                             | All history                           | Pair    | −         |
 
 "Since 2010" is the ROI observation window, the same one the markup uses. Contribution activity is the deduplicated activity feed: one row per contribution, not per fork, mirror, or integration copy, with bots excluded. See [Counting each resource once](../data-overview/#counting-each-resource-once).
 
@@ -131,7 +131,7 @@ Missing data counts as 0, except where noted: event attendance rate and review s
 
 #### Developer productivity
 
-- **Active contributor count.** Developers who work on a project gain tooling and skills that speed up your own products. Measures how many of your people engage with the project: distinct people with any contribution to it. It is a headcount, so it grows with organization size.
+- **Active contributor count.** Developers who work on a project gain tooling and skills that speed up your own products. Measures how many of your people engage with the project: distinct people with any contribution to it. It is a headcount, so it grows with company size.
 
 #### Standardization leadership
 
@@ -144,16 +144,16 @@ Missing data counts as 0, except where noted: event attendance rate and review s
 
 #### Project longevity
 
-- **Project maturity flag.** Mature projects are the ones where continued maintenance, not creation, is at stake. Measures whether the project is in a late lifecycle stage (graduated, mature, adopted, or standards). It is project-level, so its bar says "mature projects carry a longevity premium", not that a particular organization is motivated by longevity.
+- **Project maturity flag.** Mature projects are the ones where continued maintenance, not creation, is at stake. Measures whether the project is in a late lifecycle stage (graduated, mature, adopted, or standards). It is project-level, so its bar says "mature projects carry a longevity premium", not that a particular company is motivated by longevity.
 
 #### Shared R&D
 
-- **Collaboration share.** Shared R&D happens through open collaboration. Measures the share of your contributions that are open conversation with the project community: issues, discussions, mailing-list messages, and wiki edits. Code review and pull-request comments are not counted. It is a loose proxy: it measures conversation, not co-development with other organizations, and overlaps with the non-code contribution rate.
+- **Collaboration share.** Shared R&D happens through open collaboration. Measures the share of your contributions that are open conversation with the project community: issues, discussions, mailing-list messages, and wiki edits. Code review and pull-request comments are not counted. It is a loose proxy: it measures conversation, not co-development with other companies, and overlaps with the non-code contribution rate.
 - **Foundation activity share.** Collaborating across the sibling projects of a foundation is how the cost of shared infrastructure is split. Measures how much of your work within the project's foundation goes to this project. Low means you spread effort across many sibling projects, and 1 means this is your only project in the foundation. It shows how concentrated your effort is, not whether peers collaborate.
 
 #### Talent acquisition and development
 
-- **Talent flow count.** Open source is a talent pipeline. Measures people who first contributed to the project at least 180 days before they started at your organization. Their first contribution counts whether or not they were affiliated with an organization, because a person usually contributes unaffiliated before being hired. It relies on contributor affiliation dates, which are noisy.
+- **Talent flow count.** Open source is a talent pipeline. Measures people who first contributed to the project at least 180 days before they started at your company. Their first contribution counts whether or not they were affiliated with a company, because a person usually contributes unaffiliated before being hired. It relies on contributor affiliation dates, which are noisy.
 - **Certificate count (log).** Measures certificates earned by your staff for the project, as the natural log of one plus the count, so a few certificates do not dominate. It covers few pairs.
 
 #### Competitive intelligence
@@ -169,17 +169,17 @@ Missing data counts as 0, except where noted: event attendance rate and review s
 
 Controls stay in the model so that the factors below do not leak into the drivers. Their effect appears in the context component, not in any driver's bar.
 
-| Control                      | Driver it sits next to   | Why it is a control                                                                                                                                                                                                                                             |
-| ---------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Organization project breadth | Shared R&D               | The number of projects you contribute to. It is the same for every project of an organization, so it describes who the organization is, not what a pair does. Counted as a driver it would carry a large part of shared R&D's effect, but at a cost to accuracy |
-| Foundation project flag      | Shared R&D               | Whether the "project" is itself a foundation. Says nothing about how much R&D is shared, and the same for every organization on it                                                                                                                              |
-| Fork count                   | Technical debt reduction | Forks of the project by your staff. A fork may be a private fork (debt) or simple adoption. Its effect is negative once other proxies are included                                                                                                              |
-| Project funding share        | Project longevity        | Your share of the project's paid membership fees. Membership fees are part of the cost the markup is net of, so paying members have lower markups for their scale                                                                                               |
-| Star count                   | Competitive intelligence | Stars by your staff. Reflects exposure and crowding more than benefit                                                                                                                                                                                           |
-| Maintenance offload rate     | Maintenance offloading   | How much of the project's work you do _not_ do (1 minus your share of all contributions). It has no coherent direction, and an organization that leads development has a low rate even if it benefits a lot                                                     |
-| Event attendance rate        | Brand authority          | Attended divided by registered, for paid registrations on the project itself. Blank when you have no registration. Its effect is negative once other proxies are included                                                                                       |
+| Control                  | Driver it sits next to   | Why it is a control                                                                                                                                                                                                                                  |
+| ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Company project breadth  | Shared R&D               | The number of projects you contribute to. It is the same for every project of a company, so it describes who the company is, not what a pair does. Counted as a driver it would carry a large part of shared R&D's effect, but at a cost to accuracy |
+| Foundation project flag  | Shared R&D               | Whether the "project" is itself a foundation. Says nothing about how much R&D is shared, and the same for every company on it                                                                                                                        |
+| Fork count               | Technical debt reduction | Forks of the project by your staff. A fork may be a private fork (debt) or simple adoption. Its effect is negative once other proxies are included                                                                                                   |
+| Project funding share    | Project longevity        | Your share of the project's paid membership fees. Membership fees are part of the cost the markup is net of, so paying members have lower markups for their scale                                                                                    |
+| Star count               | Competitive intelligence | Stars by your staff. Reflects exposure and crowding more than benefit                                                                                                                                                                                |
+| Maintenance offload rate | Maintenance offloading   | How much of the project's work you do _not_ do (1 minus your share of all contributions). It has no coherent direction, and a company that leads development has a low rate even if it benefits a lot                                                |
+| Event attendance rate    | Brand authority          | Attended divided by registered, for paid registrations on the project itself. Blank when you have no registration. Its effect is negative once other proxies are included                                                                            |
 
-The foundation flag, fork count, funding share, star count, and event attendance rate each have a negative effect once the other proxies are in the model. Forced to behave as value proxies they would get about zero weight and lower the model's fit. Project breadth is an organization label, and maintenance offload has no consistent direction at all.
+The foundation flag, fork count, funding share, star count, and event attendance rate each have a negative effect once the other proxies are in the model. Forced to behave as value proxies they would get about zero weight and lower the model's fit. Project breadth is a company label, and maintenance offload has no consistent direction at all.
 
 ### Drivers not in the chart
 
@@ -198,11 +198,11 @@ Nine of the 17 drivers are not in the chart. Brand authority and maintenance off
 
 These three drivers are in the chart, but their measurement has a known gap.
 
-| Driver                             | Gap                                                                                                                                                                                |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Talent acquisition and development | There is no job-postings data, and the two proxies rest on noisy affiliation dates and few pairs                                                                                   |
-| Shared R&D                         | No proxy observes co-contribution with _other organizations_, because counts of co-contributing organizations identify the organization or project rather than describing the pair |
-| Project longevity                  | The "full-time maintainers" dimension is not used. Only project maturity and funding share are                                                                                     |
+| Driver                             | Gap                                                                                                                                                                   |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Talent acquisition and development | There is no job-postings data, and the two proxies rest on noisy affiliation dates and few pairs                                                                      |
+| Shared R&D                         | No proxy observes co-contribution with _other companies_, because counts of co-contributing companies identify the company or project rather than describing the pair |
+| Project longevity                  | The "full-time maintainers" dimension is not used. Only project maturity and funding share are                                                                        |
 
 ### Why some candidates were left out
 
@@ -210,7 +210,7 @@ Many candidate proxies were tested and removed. The reasons are worth knowing, b
 
 - **No signal.** The candidate did not relate to the markup. Examples: board and committee seat counts, security working-group membership, contributor growth rate, licence flags, industry flags, poll votes.
 - **Spend-like levels.** Sponsorship dollars and speaker counts point against a scale-free markup, because heavy investors have lower markups for their scale.
-- **Identity proxies.** Counts that are nearly unique to an organization or project (the number of co-contributing organizations, the number of peers on a project, project health score, estimated cost, project age) let a flexible model memorize _which_ organization or project a row is, so a driver's bar would really mean "which project this is". They help on projects the model has seen and hurt on ones it has not.
+- **Identity proxies.** Counts that are nearly unique to a company or project (the number of co-contributing companies, the number of peers on a project, project health score, estimated cost, project age) let a flexible model memorize _which_ company or project a row is, so a driver's bar would really mean "which project this is". They help on projects the model has seen and hurt on ones it has not.
 - **Stand-ins for raw activity volume.** Percentiles of activity, activity relative to peers, and growth rates restate the markup's own input.
 - **Overlap.** Several membership measures were highly correlated with the funding share, which is the one kept. Programme memberships, mentorship, and course and sponsorship flags overlap with the markup's own participation record or had no signal.
 

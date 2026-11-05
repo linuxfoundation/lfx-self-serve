@@ -4,7 +4,7 @@ description: Find your groups, join or leave them, and create and manage project
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, governance, membership, management]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Committees
 ---
 
@@ -37,7 +37,7 @@ If your inventory is empty, there is no filter panel or reset action; invitation
 
 ## Navigation
 
-Go to **app.lfx.dev** and select **Groups** from the left navigation. What you see depends on your lens (the Org lens also has a Groups page, at `/org/groups`, for groups your organization's employees take part in):
+Go to **app.lfx.dev** and select **Groups** from the left navigation. What you see depends on your lens (the Company Lens also has a Groups page, at `/company/groups`, for groups your company's employees take part in):
 
 | Lens           | Route                | What it lists                                                                 |
 | -------------- | -------------------- | ----------------------------------------------------------------------------- |

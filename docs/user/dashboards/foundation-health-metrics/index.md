@@ -3,8 +3,8 @@ title: Foundation Health Metrics
 description: Foundation-level health metrics — the health cards on the Foundation overview and the dedicated Health Metrics page.
 audience: [all]
 product_area: Dashboards
-tags: [dashboard, foundation, health-metrics, organization-dependency]
-last_updated: 2026-10-29
+tags: [dashboard, foundation, health-metrics, company-dependency]
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
@@ -27,11 +27,11 @@ Some analytics responses fill missing periods with zeros without identifying whe
 
 If a headline metric is available but its supporting data is missing, fails to load, or cannot be accessed, the measured value remains visible with **Additional details are unavailable**. The drawer stays unavailable until its required data loads successfully. Retry is offered only for failed requests or temporarily unverifiable access, and only reloads those supporting requests.
 
-### Organization Dependency
+### Company Dependency
 
-The Foundation overview includes an **Organization Dependency** card among its health metrics. It shows how concentrated contributions are across organizations: the group of organizations whose contributors performed 51% or more of all contributions, compared with all other organizations.
+The Foundation overview includes a **Company Dependency** card among its health metrics. It shows how concentrated contributions are across companies: the group of companies whose contributors performed 51% or more of all contributions, compared with all other companies.
 
-Select the card to open a drawer with the top-organization count, a chart comparing that group's contribution share against all other organizations, and a link to detailed contribution metrics in LFX Insights.
+Select the card to open a drawer with the top-company count, a chart comparing that group's contribution share against all other companies, and a link to detailed contribution metrics in LFX Insights.
 
 The card is visible to board members, executive directors, LF Staff, users with a writer role on the foundation (including root writers), and users with tenant-wide auditor access.
 
@@ -39,7 +39,7 @@ The card is visible to board members, executive directors, LF Staff, users with 
 
 The **Health Metrics** page (`/foundation/health-metrics`) is available to executive directors and LF Staff from **Metrics → Health Metrics** in the left navigation. Use the year filter at the top of the page to switch between **year to date (YTD)** and completed calendar years. The page includes:
 
-- **Participating Organizations** — active and new member organizations by engagement level
+- **Participating Companies** — active and new member companies by engagement level
 - **Net Promoter Score** — member satisfaction from NPS surveys
 - **Membership Churn Per Tier** — churn rate, members lost, and value lost by membership tier
 - **Outstanding Balance** — unpaid membership invoices

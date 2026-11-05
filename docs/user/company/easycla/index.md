@@ -1,16 +1,16 @@
 ---
 title: EasyCLA
-description: View and manage an organization's corporate CLAs in the Organization lens — the list, signing, CLA Managers, the Approved List, contributor acknowledgments, the activity log, and Auto Acknowledge.
+description: View and manage a company's corporate CLAs in the Company Lens — the list, signing, CLA Managers, the Approved List, contributor acknowledgments, the activity log, and Auto Acknowledge.
 audience: [all]
-product_area: Organization
-tags: [organization, easycla, cla, ccla, cla-manager, approval-list, signing]
-last_updated: 2026-11-03
-intercom_collection: Organization
+product_area: Company
+tags: [company, easycla, cla, ccla, cla-manager, approval-list, signing]
+last_updated: 2026-11-05
+intercom_collection: Company
 ---
 
-These steps apply to anyone who can open **EasyCLA** for an organization in the Organization lens: an organization admin, a viewer, Linux Foundation staff with access to that organization, or a CLA (Contributor License Agreement) Manager or initial CLA Manager designee whose only Organization lens page is EasyCLA.
+These steps apply to anyone who can open **EasyCLA** for a company in the Company Lens: a company admin, a viewer, Linux Foundation staff with access to that company, or a CLA (Contributor License Agreement) Manager or initial CLA Manager designee whose only Company Lens page is EasyCLA.
 
-**EasyCLA** lists the corporate CLAs (Contributor License Agreements) the selected organization holds. A CLA is the agreement that covers contributions to a Linux Foundation project that requires one. A **CCLA** (Corporate CLA) is the agreement a company signs so its people can contribute under the company's name. EasyCLA answers: which corporate CLAs does this organization hold, who can change each one, and what still needs a signature?
+**EasyCLA** lists the corporate CLAs (Contributor License Agreements) the selected company holds. A CLA is the agreement that covers contributions to a Linux Foundation project that requires one. A **CCLA** (Corporate CLA) is the agreement a company signs so its people can contribute under the company's name. EasyCLA answers: which corporate CLAs does this company hold, who can change each one, and what still needs a signature?
 
 Signing hands off to DocuSign. Self Serve prepares the agreement and does not run the DocuSign ceremony. See [What does Self Serve leave to DocuSign?](#what-does-self-serve-leave-to-docusign).
 
@@ -18,27 +18,27 @@ For what a CLA is, and for the project and corporate consoles outside Self Serve
 
 ## Where do I find EasyCLA?
 
-EasyCLA is in the Organization lens sidebar, just above **Organization Profile**.
+EasyCLA is in the Company Lens sidebar, just above **Company Profile**.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Switch to the **Organization** lens and select the organization.
-3. Open **EasyCLA**, or go directly to `/org/<organization>/easycla`.
+2. Switch to the **Company** lens and select the company.
+3. Open **EasyCLA**, or go directly to `/company/<company>/easycla`.
 
-A CLA Manager, or an initial CLA Manager designee, who has no other Organization lens role on that organization sees **EasyCLA** and nothing else in the sidebar. The rest of the Organization lens stays closed to them.
+A CLA Manager, or an initial CLA Manager designee, who has no other Company Lens role on that company sees **EasyCLA** and nothing else in the sidebar. The rest of the Company Lens stays closed to them.
 
-If no organization is selected, the page says **No org selected** and asks you to select one. The detail page says **Select an organization**.
+If no company is selected, the page says **No company selected** and asks you to select one. The detail page says **Select a company**.
 
 ## Who can see EasyCLA, and who can change a corporate CLA?
 
-You can open EasyCLA when you have an Organization lens role on that organization, or when you are a CLA Manager or initial CLA Manager designee for that organization. You can change a corporate CLA only when you are a CLA Manager named on that agreement. An initial CLA Manager designee can sign the corporate CLA they were nominated for and change nothing else. A role added or removed in the last 30 minutes may not have taken effect yet.
+You can open EasyCLA when you have a Company Lens role on that company, or when you are a CLA Manager or initial CLA Manager designee for that company. You can change a corporate CLA only when you are a CLA Manager named on that agreement. An initial CLA Manager designee can sign the corporate CLA they were nominated for and change nothing else. A role added or removed in the last 30 minutes may not have taken effect yet.
 
-| Who you are                                                       | What you can see                                                                                                                                            | What you can change                                                                                        |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Organization admin or viewer                                      | Every corporate CLA of the company                                                                                                                          | Only a corporate CLA you are named on as a CLA Manager. The company's other corporate CLAs stay read-only. |
-| Linux Foundation staff with access to the organization            | That organization's EasyCLA page                                                                                                                            | Only a corporate CLA you are named on as a CLA Manager                                                     |
-| CLA Manager with no other Organization lens role                  | EasyCLA only. The rest of the Organization lens stays closed.                                                                                               | Only the corporate CLAs you are named on                                                                   |
-| Initial CLA Manager designee with no other Organization lens role | EasyCLA only. Once the corporate CLA you were nominated for is signed, you keep EasyCLA as its CLA Manager. The rest of the Organization lens stays closed. | Nothing, except signing the corporate CLA you were nominated for                                           |
-| Someone with no EasyCLA role at the organization                  | The page title **We couldn't load your CLAs**, with the reason in the text under the title                                                                  | Nothing on this page                                                                                       |
+| Who you are                                                  | What you can see                                                                                                                                       | What you can change                                                                                        |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Company admin or viewer                                      | Every corporate CLA of the company                                                                                                                     | Only a corporate CLA you are named on as a CLA Manager. The company's other corporate CLAs stay read-only. |
+| Linux Foundation staff with access to the company            | That company's EasyCLA page                                                                                                                            | Only a corporate CLA you are named on as a CLA Manager                                                     |
+| CLA Manager with no other Company Lens role                  | EasyCLA only. The rest of the Company Lens stays closed.                                                                                               | Only the corporate CLAs you are named on                                                                   |
+| Initial CLA Manager designee with no other Company Lens role | EasyCLA only. Once the corporate CLA you were nominated for is signed, you keep EasyCLA as its CLA Manager. The rest of the Company Lens stays closed. | Nothing, except signing the corporate CLA you were nominated for                                           |
+| Someone with no EasyCLA role at the company                  | The page title **We couldn't load your CLAs**, with the reason in the text under the title                                                             | Nothing on this page                                                                                       |
 
 A signed corporate CLA that does not name you as a CLA Manager is marked **View only**, both on its card in the list and next to its name at the top of its page. The page also says **Only the CLA Managers named on this CLA can change it.** and **See who manages it** opens the **CLA Managers** tab. The label depends only on the CLA Manager list: a corporate CLA that names you has no label, and neither does the preview you reach from **Sign CLA** before an agreement is signed.
 
@@ -48,25 +48,25 @@ A CLA Manager role that was just added or just removed can take about 30 minutes
 
 **We couldn't load your CLAs** is two different failures, and the text under the title says which one:
 
-- **You don't have an EasyCLA role at this organization.** The page then offers **contact support** if you need EasyCLA assistance. That button opens support. It is not the reason the page is empty.
-- **Something went wrong fetching this organization's corporate CLAs.** Refresh the page to try again. That failure is not a statement about your role.
+- **You don't have an EasyCLA role at this company.** The page then offers **contact support** if you need EasyCLA assistance. That button opens support. It is not the reason the page is empty.
+- **Something went wrong fetching this company's corporate CLAs.** Refresh the page to try again. That failure is not a statement about your role.
 
-Companies you cannot open in the Organization lens are still managed in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself decide who appears in the organization selector: Linux Foundation staff can open organizations that are not members.
+Companies you cannot open in the Company Lens are still managed in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself decide who appears in the company selector: Linux Foundation staff can open companies that are not members.
 
 ## What does the EasyCLA list show?
 
-The EasyCLA list is one card per corporate CLA the organization has signed. Search those cards by project, foundation, or CLA name.
+The EasyCLA list is one card per corporate CLA the company has signed. Search those cards by project, foundation, or CLA name.
 
 Each card shows:
 
 - The CLA Group name
-- **Signed by** the signing entity, when that entity differs from the organization and the agreement is signed. Two cards can share a CLA Group name when the organization signed under more than one entity.
+- **Signed by** the signing entity, when that entity differs from the company and the agreement is signed. Two cards can share a CLA Group name when the company signed under more than one entity.
 - A coverage chip. One project is named on its own and opens nothing. Several projects show the foundation name, when there is one, and a **Covers N projects** chip that opens the project list.
 - A **View only** label at the top right when the agreement is signed and you are not named on its CLA Manager list. A corporate CLA that names you has no label.
-- A **Signed** pill when the agreement is signed. A sanctioned organization has no status pill on the card. See [What does a sanctioned organization look like on EasyCLA?](#what-does-a-sanctioned-organization-look-like-on-easycla).
+- A **Signed** pill when the agreement is signed. A sanctioned company has no status pill on the card. See [What does a sanctioned company look like on EasyCLA?](#what-does-a-sanctioned-company-look-like-on-easycla).
 - A count of **approval entries** (the rules on the Approved List) and a count of **CLA Managers**. An approval-entry count the page could not read shows as an em dash, not as zero, so a zero approval-entry count means the page read it and it is zero. A CLA Manager count the page could not read shows as zero, so zero CLA Managers on the card is not proof there are none. The **CLA Managers** tab lists the managers themselves. There is no separate "needs a CLA Manager" flag on the card.
 
-Search uses the box labeled **Search CLAs…**. **Previous** and **Next** move between pages of cards. A search with no hits says **No CLAs match your search**. An organization with no signed corporate CLAs shows a title made of the organization name plus **hasn't signed any CLAs yet**, and points you at **Sign CLA**.
+Search uses the box labeled **Search CLAs…**. **Previous** and **Next** move between pages of cards. A search with no hits says **No CLAs match your search**. A company with no signed corporate CLAs shows a title made of the company name plus **hasn't signed any CLAs yet**, and points you at **Sign CLA**.
 
 **Not started** is not a pill on this list. The list is signed agreements. **Not yet signed** is the heading on the preview you reach by starting **Sign CLA**, before a signature exists.
 
@@ -78,7 +78,7 @@ Signing a corporate CLA starts on EasyCLA and finishes in DocuSign. Self Serve p
 
 1. On EasyCLA, select **Sign CLA**.
 2. In **Sign a CLA**, search for the project, CLA Group, or repository, then select **Continue to sign**.
-3. On the agreement, select **Start the CLA process**. If you are not already the initial CLA Manager, the page asks **Are you authorized to be a CLA Manager for your organization?**
+3. On the agreement, select **Start the CLA process**. If you are not already the initial CLA Manager, the page asks **Are you authorized to be a CLA Manager for your company?**
    - **Yes** shows **Configuring CLA Manager Settings…** while you are made the initial CLA Manager designee, then closes. Overview then says **You've been identified as the initial CLA Manager from your company for this project.** and offers **Proceed with signing**. Select it to continue to step 4.
    - **No** asks you to **Identify CLA Manager** — a name and email for the person at your company who will be the CLA Manager. That person needs an LF Login before they can become the designee. Answering **No** ends your part: Overview shows a notice, and no confirmation screen follows.
 
@@ -94,14 +94,14 @@ Some rows in the picker stay visible and still cannot be signed from here:
 
 - **This CLA group covers several projects and cannot be signed from here.**
 - **This CLA group does not offer a corporate CLA.**
-- **Your organization has already signed a corporate CLA for this CLA group.**
+- **Your company has already signed a corporate CLA for this CLA group.**
 - **Signing CLA using GitLab is not supported from Self Serve.**
 
 Before a signature exists, Overview explains the three steps: identify the initial CLA Manager, that person signs or sends the agreement to someone else, then the CLA Manager approves contributors and adds other CLA Managers. If you are already the initial CLA Manager designee, Overview says so instead and offers **Proceed with signing**. You can **Download a copy of the CCLA for review (non-executable)** from that preview. Approval List, Contributor Acknowledgments, and Activity Log stay empty until the agreement is signed, and each tab says so. CLA Managers says **CLA Managers become available once this CLA is signed**.
 
-If you are not designated to sign, attestation **Continue** shows **Can't start signing** with **You aren't designated to sign this corporate CLA for your organization.** A grant made in the last half hour may not have arrived yet. Wait, then try again.
+If you are not designated to sign, attestation **Continue** shows **Can't start signing** with **You aren't designated to sign this corporate CLA for your company.** A grant made in the last half hour may not have arrived yet. Wait, then try again.
 
-A direct link to a CLA Group this organization has not signed says **This CLA Group can't be previewed here yet** and sends you back to EasyCLA, where **Sign CLA** lives. A link that does not match an agreement says **This CLA was not found**.
+A direct link to a CLA Group this company has not signed says **This CLA Group can't be previewed here yet** and sends you back to EasyCLA, where **Sign CLA** lives. A link that does not match an agreement says **This CLA was not found**.
 
 ## What does each tab on a corporate CLA show?
 
@@ -109,7 +109,7 @@ A corporate CLA has five tabs: **Overview**, **CLA Managers**, **Approval List**
 
 ### What does Overview show?
 
-Overview states whether this organization has signed the agreement, who signed it, when, and whether **Auto Acknowledge** is on.
+Overview states whether this company has signed the agreement, who signed it, when, and whether **Auto Acknowledge** is on.
 
 The card heading is the CLA Group name followed by **Signed**, **Not yet signed**, or **Unavailable**. **Unavailable** is the sanctioned state. It is not a second word for "not signed." A sanctioned agreement may already be signed. The heading uses **Unavailable** either way, and the signed date is what tells you a signature exists.
 
@@ -137,7 +137,7 @@ On an agreement that is already signed and lists no CLA Managers, **Add CLA Mana
 
 ### What is on the Approval List?
 
-The **Approval List** tab is the company's **Approved List**: the rules that decide who is covered under this corporate CLA. The heading on the tab is **Approved List of Contributors from My Organization**. The count beside it counts rules, not people.
+The **Approval List** tab is the company's **Approved List**: the rules that decide who is covered under this corporate CLA. The heading on the tab is **Approved List of Contributors from My Company**. The count beside it counts rules, not people.
 
 You can add, edit, and delete entries when you are a CLA Manager named on this agreement. The types, in the order the picker offers them, are:
 
@@ -145,7 +145,7 @@ You can add, edit, and delete entries when you are a CLA Manager named on this a
 | ------------------- | ---------------------------------------------- |
 | **Email domain**    | A domain, such as `example.com`                |
 | **Email**           | One address, such as `contributor@example.com` |
-| **GitHub org**      | A GitHub organization login                    |
+| **GitHub org**      | A GitHub org login                             |
 | **GitHub username** | One GitHub username                            |
 | **GitLab group**    | A GitLab group URL                             |
 | **GitLab username** | One GitLab username                            |
@@ -158,7 +158,7 @@ Until the agreement is signed, the tab says **The approval list becomes availabl
 
 ### What are contributor acknowledgments?
 
-Contributor acknowledgments are the records of people who have acknowledged they are covered by this corporate CLA. The tab heading is **Contributor Acknowledgments from My Organization**.
+Contributor acknowledgments are the records of people who have acknowledged they are covered by this corporate CLA. The tab heading is **Contributor Acknowledgments from My Company**.
 
 Search uses **Search contributors…**. Each row shows **Name**, **LF Login/GitHub or GitLab ID**, **Acknowledged On**, and **Status**:
 
@@ -193,11 +193,11 @@ The switch is on every signed corporate CLA you can open, so you can see whether
 
 The switch is labelled **Auto Acknowledge** on Overview.
 
-## What does a sanctioned organization look like on EasyCLA?
+## What does a sanctioned company look like on EasyCLA?
 
-A sanctioned organization is shown as unavailable: the card has no status pill, and the Overview heading ends with **Unavailable**. EasyCLA does not show a standing banner on the page.
+A sanctioned company is shown as unavailable: the card has no status pill, and the Overview heading ends with **Unavailable**. EasyCLA does not show a standing banner on the page.
 
-Signing that organization, and changing its corporate CLA, is refused. If you answer **Are you authorized to be a CLA Manager for your organization?** while signing for that organization, the error says **Your organization cannot sign this CLA at this time. Contact support for more information.** A refusal at any other step is an error shown when you try that step. Neither is a banner above the page.
+Signing that company, and changing its corporate CLA, is refused. If you answer **Are you authorized to be a CLA Manager for your company?** while signing for that company, the error says **Your company cannot sign this CLA at this time. Contact support for more information.** A refusal at any other step is an error shown when you try that step. Neither is a banner above the page.
 
 **Unavailable** does not tell you whether a signature already exists. A sanctioned agreement that was signed still shows its signed date, its CLA Managers, and **Download signed CCLA PDF**, which works when you are a CLA Manager named on that agreement. An agreement that was never signed does not offer the download, and Overview does not walk you through how to start signing.
 
@@ -223,7 +223,7 @@ Sending the agreement by email also leaves the signature to the signatory. Self 
 
 ## Related sections
 
-- [Organization FAQ](../faq/) — short answers about switching organizations and, for EasyCLA, editing, missing companies, access after removal, and a first CLA Manager
+- [Company FAQ](../faq/) — short answers about switching companies and, for EasyCLA, editing, missing companies, access after removal, and a first CLA Manager
 - [CLAs](../../account/my-clas/) — your own Individual CLA (ICLA) and your coverage under an employer's corporate CLA
 - [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) — CLA concepts, consoles, and troubleshooting outside Self Serve
-- [Corporate CLA Console](https://corporate.lfcla.com) — corporate CLAs for a company you cannot open in the Organization lens
+- [Corporate CLA Console](https://corporate.lfcla.com) — corporate CLAs for a company you cannot open in the Company Lens

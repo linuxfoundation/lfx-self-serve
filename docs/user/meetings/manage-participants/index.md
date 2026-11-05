@@ -4,7 +4,7 @@ description: How to invite guests, add a group, resend invitations, remove peopl
 audience: [all]
 product_area: Meetings
 tags: [meetings, participants, guests, invite, registrants, groups, resend invite]
-last_updated: 2026-11-03
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 
@@ -28,7 +28,7 @@ You can invite people one at a time, or invite a whole group.
 1. In **Search and add guests**, start typing a name or email address.
 2. Select the person from the results to add them to the **Invited** list.
 
-If you can't find the person, select **Add manually** and fill in the guest's details: name and email, and optionally a job title and organization. Select **Add guest** to add them.
+If you can't find the person, select **Add manually** and fill in the guest's details: name and email, and optionally a job title and company. Select **Add guest** to add them.
 
 If the person is already on the list, you'll see an **Already invited** message instead of a duplicate.
 
@@ -58,7 +58,7 @@ For a public meeting, **Registration on group removal** controls what happens to
 
 To let a guest run the meeting, mark them as a **Meeting Host** in the **Add guest** form, or select **Make host** on their row later. Select **Remove host** to take it away. They show a **Host** label in the list. A Meeting Host can see the host key on the meeting's join page, but can't edit the meeting. See [Host Controls and the Host Key](../host-controls/).
 
-Marking a guest as a host is separate from being an organizer. Only organizers can edit, cancel, or delete a meeting, and change who is invited.
+Marking a guest as a host is separate from being a organizer. Only organizers can edit, cancel, or delete a meeting, and change who is invited.
 
 ## Review the invited list
 

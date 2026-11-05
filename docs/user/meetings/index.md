@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings in LFX Self Serve, with
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 
@@ -28,12 +28,12 @@ The Meetings section lets you schedule, manage, and join meetings for your Linux
 ## Who can do what
 
 - **Everyone who is signed in** can see the meetings they're invited to and their projects' meetings. Contributors have view-only access.
-- **Organizers** create and manage meetings. You're an organizer of a particular meeting when you have organizer access to it, for example because you created it. The **maintainer**, **board-member**, and **executive-director** personas, and **Meeting Coordinator** access, let you create and manage meetings for a project. Organizers manage a meeting's guests and materials, and can reconcile attendance after it runs. An organizer is always a host too.
-- **Meeting Hosts** are guests an organizer marked as a host. They can see the host key and run the meeting in Zoom, but they can't edit the meeting.
+- **Organizers** create and manage meetings. You're a organizer of a particular meeting when you have organizer access to it, for example because you created it. The **maintainer**, **board-member**, and **executive-director** personas, and **Meeting Coordinator** access, let you create and manage meetings for a project. Organizers manage a meeting's guests and materials, and can reconcile attendance after it runs. A organizer is always a host too.
+- **Meeting Hosts** are guests a organizer marked as a host. They can see the host key and run the meeting in Zoom, but they can't edit the meeting.
 
 ## Who can see and join a meeting
 
-An organizer sets two things when scheduling a meeting. **Visibility** is **Public** or **Private**. **Join Restriction** is **Anyone with the link** or **Invited guests only**, which makes the meeting **Restricted**. Together they decide who can open the meeting, and what they see.
+A organizer sets two things when scheduling a meeting. **Visibility** is **Public** or **Private**. **Join Restriction** is **Anyone with the link** or **Invited guests only**, which makes the meeting **Restricted**. Together they decide who can open the meeting, and what they see.
 
 - **Public, with no join restriction**: anyone can open the join page and see the meeting's details and how to join. You need to sign in to see materials, the organizer's contact link, and recordings.
 - **Private**: hidden from the public calendar and from calendar feeds. Anyone with the meeting link can join, because the link carries the meeting's password, and they don't need an LFX account. People who aren't invited see only the title and what they need to join. They don't see the agenda, materials, or the date and time.

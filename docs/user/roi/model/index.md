@@ -5,13 +5,13 @@ audience: [all]
 product_area: Dashboards
 display_order: 8
 tags: [roi, model, markup, ces, revealed preference, assumptions, technical]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
 This section describes the ROI model as a mathematical and economic model, in enough detail to follow and reproduce the estimates from the text alone. It is not written as a publication, but each step is stated precisely: what is observed, what is assumed, what is estimated, and how. For an introduction without formulas, start with [How the model works](../how-it-works/).
 
-The model takes contribution behavior and recovers the value an organization must perceive for that behavior to be rational.
+The model takes contribution behavior and recovers the value a company must perceive for that behavior to be rational.
 
 ```text
 Data  ──►  Stage 1: participation  ──►  markup μ(i,j)          ┐
@@ -25,10 +25,10 @@ Equations are written in plain text. Subscripts are written in parentheses, `x(i
 
 | Symbol                 | Meaning                                                                      |
 | ---------------------- | ---------------------------------------------------------------------------- |
-| `i`, `j`               | Organization, project                                                        |
+| `i`, `j`               | Company, project                                                             |
 | `t`                    | Time period: month in stage 1, calendar year in stage 2                      |
 | `k`, `K`               | Contribution type, number of contribution types                              |
-| `d(i,j,t)`             | 1 if organization `i` contributes to project `j` in period `t`, else 0       |
+| `d(i,j,t)`             | 1 if company `i` contributes to project `j` in period `t`, else 0            |
 | `x(i,j,k,t)`           | Quantity of contribution type `k` (code in FTE, attendees, units, and so on) |
 | `p(i,j,k,t)`           | Unit price of type `k`, in USD                                               |
 | `μ(i,j)`               | Markup: perceived value per dollar of direct cost                            |
@@ -39,7 +39,7 @@ The contribution types are code, community, meetings, event attendance, event sp
 
 ## Setup
 
-An organization makes two linked decisions about a project:
+A company makes two linked decisions about a project:
 
 - **Extensive margin:** whether to contribute at all.
 - **Intensive margin:** how to allocate investment across contribution types once it contributes.
@@ -52,11 +52,11 @@ The central object is the **markup**:
 μ = (perceived strategic value) / (direct contribution cost)
 ```
 
-`μ > 1` means perceived value exceeds the direct cost of an efficiently allocated portfolio, and `μ = 1` means it equals it. Because an organization's actual mix of contributions can cost more than the efficient mix, the markup at which value exactly equals investment is the **break-even markup** `I / (P · Y)`, which is at least 1 (see [Inference](../inference/)). The framing is mechanism agnostic: the model does not specify why value arises, only how large it must be.
+`μ > 1` means perceived value exceeds the direct cost of an efficiently allocated portfolio, and `μ = 1` means it equals it. Because a company's actual mix of contributions can cost more than the efficient mix, the markup at which value exactly equals investment is the **break-even markup** `I / (P · Y)`, which is at least 1 (see [Inference](../inference/)). The framing is mechanism agnostic: the model does not specify why value arises, only how large it must be.
 
 ## Two-stage structure
 
-1. **Stage 1 (participation)** identifies which organization-project pairs have higher latent value, and produces `μ(i,j)`. See [Stage 1: markups](../stage-1-markups/).
+1. **Stage 1 (participation)** identifies which company-project pairs have higher latent value, and produces `μ(i,j)`. See [Stage 1: markups](../stage-1-markups/).
 2. **Stage 2 (allocation)** identifies how contribution types combine into output, producing `α(k)` and `σ` for each pair. See [Stage 2: CES allocation](../stage-2-ces/).
 3. **Inference** combines both with observed quantities and prices to compute value and ROI. See [Inference](../inference/).
 
@@ -69,7 +69,7 @@ u(i,j,t) = δ(i) + π(j) + β · d(i,j,t−1) + λ · z(i,j) + ε(i,j,t)
 d(i,j,t) = 1  if u(i,j,t) > 0,  else 0
 ```
 
-with an organization effect `δ(i)`, a project effect `π(j)`, a persistence coefficient `β` on last period's participation, a coefficient `λ` on the pair's investment scale `z(i,j)` (a control, so that team size is not mistaken for perceived value), and a logistic shock `ε`. A higher markup raises the utility of participating, so higher-markup pairs participate more consistently. This implies the participation probability
+with a company effect `δ(i)`, a project effect `π(j)`, a persistence coefficient `β` on last period's participation, a coefficient `λ` on the pair's investment scale `z(i,j)` (a control, so that team size is not mistaken for perceived value), and a logistic shock `ε`. A higher markup raises the utility of participating, so higher-markup pairs participate more consistently. This implies the participation probability
 
 ```text
 Pr[ d(i,j,t) = 1 ]  =  1 / (1 + exp( −(δ(i) + π(j) + β · d(i,j,t−1) + λ · z(i,j)) ))
@@ -77,7 +77,7 @@ Pr[ d(i,j,t) = 1 ]  =  1 / (1 + exp( −(δ(i) + π(j) + β · d(i,j,t−1) + λ
 
 ### Stage 2: CES allocation
 
-Conditional on participating, the organization combines contribution types into a composite output with a constant-elasticity-of-substitution (CES) technology:
+Conditional on participating, the company combines contribution types into a composite output with a constant-elasticity-of-substitution (CES) technology:
 
 ```text
 Y(i,j,t) = A · [ Σ_k  α(k)^(1/σ) · x(i,j,k,t)^((σ−1)/σ) ] ^ (σ/(σ−1))
@@ -117,7 +117,7 @@ Substituting (★) back into `Y` and into the cost `Σ p(k) x(k)` shows that the
 Π(i,j,t) = μ(i,j) · P(i,j,t) · Y(i,j,t)  −  Σ_k p(i,j,k,t) · x(i,j,k,t)
 ```
 
-Because the technology has constant returns, the first-order conditions pin down the **mix** of contribution types (condition ★) but not the **scale** of spending. The model therefore takes the level of investment as observed and uses the mix condition to learn the technology. This is a deliberate simplification. It is why the model describes how an organization allocates, and not how much it should contribute.
+Because the technology has constant returns, the first-order conditions pin down the **mix** of contribution types (condition ★) but not the **scale** of spending. The model therefore takes the level of investment as observed and uses the mix condition to learn the technology. This is a deliberate simplification. It is why the model describes how a company allocates, and not how much it should contribute.
 
 ## Inference in one paragraph
 
@@ -127,17 +127,17 @@ With `μ`, `α`, and `σ` estimated, the value of a pair's contribution portfoli
 
 The estimates rest on these assumptions. They are listed so a reader can judge where the model fits their case and where it does not.
 
-1. **Revealed preference.** Sustained, costly contribution implies perceived value at least equal to its cost. Organizations are assumed to be rational, to have preferences that are stable over time, and to be reasonably well informed.
+1. **Revealed preference.** Sustained, costly contribution implies perceived value at least equal to its cost. Companies are assumed to be rational, to have preferences that are stable over time, and to be reasonably well informed.
 2. **Participation reveals ranking, not level.** Behavior orders pairs by perceived value. The overall level of markups is not estimated. It is set by calibration to the LF Research Open Source ROI Survey (a shifted gamma distribution whose mean and standard deviation are listed in [Model settings and defaults](../model-settings/#markup-estimation-stage-1)). A different target distribution would rescale all value estimates.
-3. **Participation is binary and persistent.** A pair is active in a month if there is any code or community activity. Persistence is captured by a one-month lag and organization and project effects, net of the pair's investment scale and observation window. Other contribution types do not enter the participation signal.
+3. **Participation is binary and persistent.** A pair is active in a month if there is any code or community activity. Persistence is captured by a one-month lag and company and project effects, net of the pair's investment scale and observation window. Other contribution types do not enter the participation signal.
 4. **Participation shocks are logistic.** The idiosyncratic component of each month's decision follows a logistic distribution, independent across periods given the lag.
 5. **CES technology with constant returns.** Contribution types combine into a composite output through a CES function with a single elasticity per pair and type shares that sum to one. `A` is normalized to 1.
-6. **Prices are exogenous.** Prices are administratively set benchmarks (salary benchmarks, posted membership fees, event prices), so the estimator treats them as given rather than as responses to the organization's choices.
-7. **Labor is valued at opportunity cost.** Staff time is converted from estimated hours per activity into FTEs and valued at flat, organization-independent salaries and overheads. Hours per activity are domain-knowledge estimates.
+6. **Prices are exogenous.** Prices are administratively set benchmarks (salary benchmarks, posted membership fees, event prices), so the estimator treats them as given rather than as responses to the company's choices.
+7. **Labor is valued at opportunity cost.** Staff time is converted from estimated hours per activity into FTEs and valued at flat, company-independent salaries and overheads. Hours per activity are domain-knowledge estimates.
 8. **The mix is cost-minimizing.** Observed allocations are treated as noisy realizations of the cost-minimizing mix. Deviations are residuals.
 9. **Pairs are independent.** Each pair is evaluated on its own, so complementarities between projects are not modeled. The sum of pair-level values can understate the value of a portfolio.
 10. **Value of contributing only.** The model values perceived value from contributing. It does not value the use of the software, which is generally larger.
-11. **Observed activity only.** Work not recorded in LFX data, or not attributable to an organization, is outside the model.
+11. **Observed activity only.** Work not recorded in LFX data, or not attributable to a company, is outside the model.
 
 ## What the product implements
 

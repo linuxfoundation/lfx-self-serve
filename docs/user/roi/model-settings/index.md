@@ -5,11 +5,11 @@ audience: [all]
 product_area: Dashboards
 display_order: 14
 tags: [roi, parameters, defaults, settings, assumptions]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
-These are the fixed settings the ROI model currently runs with. They apply identically to every organization, and the ROI page cannot recalculate figures with different values. They are listed so you can see exactly what each assumption is.
+These are the fixed settings the ROI model currently runs with. They apply identically to every company, and the ROI page cannot recalculate figures with different values. They are listed so you can see exactly what each assumption is.
 
 ## Observation window
 
@@ -59,13 +59,13 @@ With this mean and standard deviation, the shifted gamma distribution that [stag
 
 ## Display gate
 
-| Setting                              | Default | Effect                                                                            |
-| ------------------------------------ | ------- | --------------------------------------------------------------------------------- |
-| Minimum total spending               | $5,000  | Total spending, summed over an organization's projects, needed for it to be shown |
-| Minimum total active months          | 12      | Active months, summed over an organization's projects, needed for it to be shown  |
-| Minimum active months in one project | 6       | Active months needed in at least one project for the organization to be shown     |
+| Setting                              | Default | Effect                                                                      |
+| ------------------------------------ | ------- | --------------------------------------------------------------------------- |
+| Minimum total spending               | $5,000  | Total spending, summed over a company's projects, needed for it to be shown |
+| Minimum total active months          | 12      | Active months, summed over a company's projects, needed for it to be shown  |
+| Minimum active months in one project | 6       | Active months needed in at least one project for the company to be shown    |
 
-All three must hold. See [Which organizations are shown](../interpreting-results/#which-organizations-are-shown).
+All three must hold. See [Which companies are shown](../interpreting-results/#which-companies-are-shown).
 
 ## Related reading
 

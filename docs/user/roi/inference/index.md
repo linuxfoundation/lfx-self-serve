@@ -5,11 +5,11 @@ audience: [all]
 product_area: Dashboards
 display_order: 11
 tags: [roi, inference, bcr, break-even, annualization, technical]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
 
-The inference layer combines the stage 1 markups, the stage 2 CES parameters, and observed quantities and prices into ROI metrics. Results are produced for each organization-project pair and each markup method, with a yearly breakdown.
+The inference layer combines the stage 1 markups, the stage 2 CES parameters, and observed quantities and prices into ROI metrics. Results are produced for each company-project pair and each markup method, with a yearly breakdown.
 
 ## Metrics
 
@@ -82,7 +82,7 @@ Value and investment are therefore both sums over the same years, so ROI is comp
 
 ## Participation floor
 
-An organization that keeps contributing values participation at least at its cost: `μ(i,j) · PY(i,j) ≥ I(i,j)`. The calibrated markup `μ_raw` comes from ranking pairs by participation and does not condition on allocative efficiency, so it can fall below the break-even markup `I / PY`. Inference enforces the constraint:
+A company that keeps contributing values participation at least at its cost: `μ(i,j) · PY(i,j) ≥ I(i,j)`. The calibrated markup `μ_raw` comes from ranking pairs by participation and does not condition on allocative efficiency, so it can fall below the break-even markup `I / PY`. Inference enforces the constraint:
 
 ```text
 μ(i,j)  = max( μ_raw(i,j),  I(i,j) / PY(i,j) )
@@ -129,7 +129,7 @@ The following appear in the research methodology and are **not** in the product,
 
 ### Mechanism analysis
 
-Once ROI is computed, associations with external characteristics (industry, project category and maturity, organization size, geography) can be explored with a model of the form `ROI = f(drivers)`, for example with a Shapley decomposition. This is correlational: organizations select into projects, and some mechanisms are unobserved. The product implements one part of this: it decomposes the stage 1 markup, not ROI itself, across the LFX value drivers with Shapley values. See [Value driver decomposition](../value-driver-decomposition/).
+Once ROI is computed, associations with external characteristics (industry, project category and maturity, company size, geography) can be explored with a model of the form `ROI = f(drivers)`, for example with a Shapley decomposition. This is correlational: companies select into projects, and some mechanisms are unobserved. The product implements one part of this: it decomposes the stage 1 markup, not ROI itself, across the LFX value drivers with Shapley values. See [Value driver decomposition](../value-driver-decomposition/).
 
 ### Counterfactual analysis
 

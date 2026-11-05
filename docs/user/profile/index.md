@@ -4,7 +4,7 @@ description: Manage your personal identity in LFX Self Serve — name, photo, Ab
 audience: [all]
 product_area: Profile
 tags: [profile, edit, about-me, photo, public-profile, visibility]
-last_updated: 2026-08-11
+last_updated: 2026-11-05
 intercom_collection: Profile
 ---
 
@@ -18,7 +18,7 @@ The information below covers **your individual** LFX identity — the profile ti
 
 ### What you can do
 
-- Update your name, photo, About Me, job title, and organization
+- Update your name, photo, About Me, job title, and company
 - Set your primary email address and location details
 - Choose your t-shirt size for event swag
 - Publish a public profile and choose which sections it shows
@@ -40,23 +40,23 @@ Separate from your private details, you can publish a **public profile** — a p
 
 ## Your company's activity
 
-The **Profile** page in Org Lens (route: `/org/profile`) shows your organization's profile within the Linux Foundation — separate from your personal account. This is your company's public-facing identity across Linux Foundation projects and programs.
+The **Profile** page in Company Lens (route: `/company/profile`) shows your company's profile within the Linux Foundation — separate from your personal account. This is your company's public-facing identity across Linux Foundation projects and programs.
 
 ### What you can see
 
-- Your organization's name and logo
+- Your company's name and logo
 - Website link and Crunchbase profile (if provided)
-- Organization description, industry/sector, and number of employees
+- Company description, industry/sector, and number of employees
 - Primary and billing addresses
 - Last updated date
 
 ### Navigation
 
-Switch to the **Org** lens using the lens selector at the top of LFX Self Serve, then select **Profile** from the left navigation sidebar (route: `/org/profile`).
+Switch to the **Company** lens using the lens selector at the top of LFX Self Serve, then select **Profile** from the left navigation sidebar (route: `/company/profile`).
 
 ### Who can access this
 
-Viewing your organization's profile in Org Lens requires **admin access** to your organization in LFX. If you are not yet an admin, another admin at your organization can invite you to accept an admin role. Once you accept, you will be able to view and, depending on your role, edit your organization's profile information.
+Viewing your company's profile in Company Lens requires **admin access** to your company in LFX. If you are not yet an admin, another admin at your company can invite you to accept an admin role. Once you accept, you will be able to view and, depending on your role, edit your company's profile information.
 
 ## Related sections
 

@@ -4,7 +4,7 @@ description: How to update your personal information, photo, location, and conta
 audience: [all]
 product_area: Profile
 tags: [profile, edit, about-me, bio, photo, location]
-last_updated: 2026-10-20
+last_updated: 2026-11-05
 intercom_collection: Profile
 ---
 
@@ -35,14 +35,14 @@ Select the pencil button on your avatar to upload a new image. The upload happen
 
 ### Personal information
 
-| Field            | Required | Limit / notes                                                           |
-| ---------------- | -------- | ----------------------------------------------------------------------- |
-| **About Me**     | Optional | Up to **2,000 characters** (see below)                                  |
-| **First Name**   | Optional | Up to 50 characters                                                     |
-| **Last Name**    | Optional | Up to 50 characters                                                     |
-| **Username**     | —        | Read-only — you cannot change it here                                   |
-| **Job Title**    | Optional | Up to 100 characters                                                    |
-| **Organization** | Optional | Chosen from your work experience; add a work experience first to set it |
+| Field          | Required | Limit / notes                                                           |
+| -------------- | -------- | ----------------------------------------------------------------------- |
+| **About Me**   | Optional | Up to **2,000 characters** (see below)                                  |
+| **First Name** | Optional | Up to 50 characters                                                     |
+| **Last Name**  | Optional | Up to 50 characters                                                     |
+| **Username**   | —        | Read-only — you cannot change it here                                   |
+| **Job Title**  | Optional | Up to 100 characters                                                    |
+| **Company**    | Optional | Chosen from your work experience; add a work experience first to set it |
 
 ### Primary email address
 
@@ -69,9 +69,9 @@ The **About Me** field holds up to **2,000 characters**. A live counter below th
 
 Most characters — including a simple emoji — count as one, even though an emoji takes more space to store. A few elaborate emoji (such as flags or combined "family" glyphs) are built from several joined characters and count as more than one. This matches the limit the Linux Foundation applies when your profile is saved.
 
-## Set your organization
+## Set your company
 
-The **Organization** field in the drawer is chosen from your work experience. To add or change a work experience entry, open the **Work history & Affiliations** tab (`/profile/attributions`) in the [Account](../../account/) section — your work experience populates the **Organization** choices here.
+The **Company** field in the drawer is chosen from your work experience. To add or change a work experience entry, open the **Work history & Affiliations** tab (`/profile/attributions`) in the [Account](../../account/) section — your work experience populates the **Company** choices here.
 
 ## Email, password, and API token
 

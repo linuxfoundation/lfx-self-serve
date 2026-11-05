@@ -4,7 +4,7 @@ description: Browse LFX events and manage your attendance in LFX Self Serve.
 audience: [all]
 product_area: Events
 tags: [events, attendance, conferences, browse]
-last_updated: 2026-06-22
+last_updated: 2026-11-05
 intercom_collection: Events
 ---
 
@@ -34,21 +34,21 @@ Go to **app.lfx.dev** and select **Events** from the left navigation sidebar. Th
 
 ## Your company's activity
 
-The **Events** page in Org Lens (route: `/org/events`) shows Linux Foundation events in the context of your organization — including events your company is sponsoring, events where your organization has a significant presence, and events attended by members of your organization.
+The **Events** page in Company Lens (route: `/company/events`) shows Linux Foundation events in the context of your company — including events your company is sponsoring, events where your company has a significant presence, and events attended by members of your company.
 
 ### What you can see
 
-- Events your organization is sponsoring or participating in at an organizational level
+- Events your company is sponsoring or participating in at a company level
 - Attendance data for members affiliated with your company
-- Upcoming events relevant to your organization's areas of interest
+- Upcoming events relevant to your company's areas of interest
 
 ### Navigation
 
-Switch to the **Org** lens using the lens selector at the top of LFX Self Serve, then select **Events** from the left navigation sidebar (route: `/org/events`).
+Switch to the **Company** lens using the lens selector at the top of LFX Self Serve, then select **Events** from the left navigation sidebar (route: `/company/events`).
 
 ### Who can access this
 
-Viewing your organization's events in Org Lens requires **admin access** to your organization in LFX. If you are not yet an admin, another admin at your organization can invite you to accept an admin role. Once you accept, you will be able to access the Org lens events page for your company.
+Viewing your company's events in Company Lens requires **admin access** to your company in LFX. If you are not yet an admin, another admin at your company can invite you to accept an admin role. Once you accept, you will be able to access the Company Lens events page for your company.
 
 ## Related sections
 
