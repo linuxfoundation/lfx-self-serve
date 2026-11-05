@@ -9,6 +9,7 @@ import type { FilterOption } from './filter.interface';
 import type {
   Meeting,
   MeetingOccurrence,
+  MeetingRegistrant,
   MeetingResponseFilter,
   MeetingRsvp,
   OccurrenceNavItem,
@@ -394,10 +395,29 @@ export interface MeetingGuestRow {
   invited: boolean;
   /** Meeting committee uids the person belongs to; empty for a direct invite. */
   groups: string[];
-  /** The signed-in viewer, whose row takes no organizer actions. */
+  /** The signed-in viewer. */
   you: boolean;
   /** Lowercased name, meta and email, for search. */
   searchText: string;
+  /** The registrant behind an upcoming row, which organizer actions send back; absent on participant rows. */
+  registrant?: MeetingRegistrant;
+}
+
+/** Confirmation an organizer action on a guest row asks for. */
+export interface MeetingGuestConfirm {
+  heading: string;
+  message: string;
+  confirmLabel: string;
+  icon: string;
+  danger?: boolean;
+}
+
+/** Organizer actions one guest row offers. */
+export interface MeetingGuestRowActions {
+  resend: boolean;
+  /** Make or remove host. */
+  host: boolean;
+  remove: boolean;
 }
 
 /** Applied guest list filters; null means all. `group` is a committee uid or `direct`. */

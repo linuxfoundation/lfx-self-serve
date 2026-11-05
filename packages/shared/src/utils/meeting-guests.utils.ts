@@ -10,6 +10,7 @@ import type {
   MeetingGuestFilters,
   MeetingGuestRoleKey,
   MeetingGuestRow,
+  MeetingGuestRowActions,
   MeetingGuestStatusKey,
   MeetingGuestSummary,
   MeetingGuestViewer,
@@ -46,14 +47,25 @@ export function buildRegistrantGuestRows(
   return sortMeetingGuestRows(registrants, (registrant) => {
     const status = rsvpEnabled ? RSVP_TO_STATUS[getRegistrantAttendanceStatus(registrant)] : null;
     const inGroup = registrant.type === 'committee' && !!registrant.committee_uid && known.has(registrant.committee_uid);
-    return toRow(registrant, organizerKeys, viewer, {
-      status,
-      invited: true,
-      groups: inGroup ? [registrant.committee_uid as string] : [],
-      votingStatus: registrant.committee_voting_status ?? null,
-      linkedin: registrant.linkedin_profile,
-    });
+    return {
+      ...toRow(registrant, organizerKeys, viewer, {
+        status,
+        invited: true,
+        groups: inGroup ? [registrant.committee_uid as string] : [],
+        votingStatus: registrant.committee_voting_status ?? null,
+        linkedin: registrant.linkedin_profile,
+      }),
+      registrant,
+    };
   });
+}
+
+/** Organizer actions on an upcoming registrant row; null for participants, invitees and once the meeting has ended. */
+export function getMeetingGuestRowActions(row: MeetingGuestRow, organizer: boolean, ended: boolean): MeetingGuestRowActions | null {
+  const registrant = row.registrant;
+  if (!registrant || !organizer || ended) return null;
+  // The viewer leaves through Remove Myself, which also clears their own registration state.
+  return { resend: true, host: row.role !== 'organizer', remove: registrant.type !== 'committee' && !row.you };
 }
 
 /** Participant rows of an ended meeting; groups are every meeting committee the email belongs to, and a Voting Rep status wins. */
@@ -172,10 +184,19 @@ export function getMeetingGuestSummary(rows: MeetingGuestRow[], ended: boolean, 
   return committeeMeeting ? { title: 'Meeting Members', subtitle: count('member') } : { title: 'Meeting Guests', subtitle: count('guest') };
 }
 
-/** Builds each row, then orders them: the viewer, role, status, named before unnamed, then name A–Z. */
+/** Re-orders registrant rows after a local change, such as a host toggle, with the order the list was built in. */
+export function resortMeetingGuestRows(rows: MeetingGuestRow[]): MeetingGuestRow[] {
+  return orderMeetingGuestRows(rows.map((row) => ({ row, unnamed: isUnresolvableParticipantName(row.registrant?.first_name, row.registrant?.last_name) })));
+}
+
+/** Builds each row, then orders them. */
 function sortMeetingGuestRows<T extends MeetingHostCandidate>(people: T[], build: (person: T) => MeetingGuestRow): MeetingGuestRow[] {
-  return people
-    .map((person) => ({ row: build(person), unnamed: isUnresolvableParticipantName(person.first_name, person.last_name) }))
+  return orderMeetingGuestRows(people.map((person) => ({ row: build(person), unnamed: isUnresolvableParticipantName(person.first_name, person.last_name) })));
+}
+
+/** The viewer, role, status, named before unnamed, then name A–Z. */
+function orderMeetingGuestRows(entries: { row: MeetingGuestRow; unnamed: boolean }[]): MeetingGuestRow[] {
+  return [...entries]
     .sort(
       (a, b) =>
         Number(b.row.you) - Number(a.row.you) ||
