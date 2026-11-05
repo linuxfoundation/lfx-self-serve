@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_LENS_TIME_RANGE_OPTIONS } from '../constants/org-lens-time-range.constants';
-import { ORG_TRAINING_NO_ROSTER_NOTE, ORG_TRAINING_STAT_DEFINITIONS, ORG_TRAINING_STAT_TILES } from '../constants/org-training-stats.constants';
+import {
+  ORG_TRAINING_NO_ROSTER_NOTE,
+  ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE,
+  ORG_TRAINING_STAT_DEFINITIONS,
+  ORG_TRAINING_STAT_TILES,
+} from '../constants/org-training-stats.constants';
 import type { OrgLensTimeRange } from '../interfaces/org-lens-time-range.interface';
 import type { OrgTrainingStatDefinition, OrgTrainingStatKey, OrgTrainingStats, OrgTrainingStatTileVm } from '../interfaces/org-training-view.interface';
 
@@ -58,6 +63,8 @@ function statReading(key: OrgTrainingStatKey, stats: OrgTrainingStats): { value:
       return { value: stats.rosterMembers, asOf: stats.rosterMembersAsOf };
     case 'peopleWithTrainingActivity':
       return { value: stats.peopleWithTrainingActivity, asOf: stats.asOf };
+    case 'learnersOutsidePeopleList':
+      return { value: stats.learnersOutsidePeopleList, asOf: stats.asOf };
     case 'coursesTaken':
       return { value: stats.coursesTaken, asOf: stats.asOf };
     case 'certifications':
@@ -75,15 +82,15 @@ function statReading(key: OrgTrainingStatKey, stats: OrgTrainingStats): { value:
   }
 }
 
-/** A tile's tooltip: the no-roster note, the bare definition while `stats` is absent, or the definition with as-of date. */
+/** A tile's tooltip: the definition with its note, the bare definition while `stats` is absent, or the definition with as-of date. */
 function tileTooltip(
   definition: OrgTrainingStatDefinition,
   range: OrgLensTimeRange,
   stats: OrgTrainingStats | null,
   asOf: string | null,
-  noRoster: boolean
+  note: string | null
 ): string {
-  if (noRoster) return `${definition.definition} ${ORG_TRAINING_NO_ROSTER_NOTE}.`;
+  if (note !== null) return `${definition.definition} ${note}.`;
   if (stats === null) return orgTrainingStatDefinitionText(definition, range);
   return orgTrainingStatTooltip(definition, range, asOf);
 }
@@ -97,7 +104,8 @@ function tileDisplay(key: OrgTrainingStatKey, value: number | null): string {
 
 /**
  * The shared stat tiles, in display order, for `range`. `stats` null (loading or failed) yields null values with the
- * definitions still stated and no as-of sentence. A roster of exactly null means the org has no training program.
+ * definitions still stated and no as-of sentence. A roster of exactly null means the org has no training program, and an
+ * outside-learners count of exactly null means a filter leaves it uncounted.
  */
 export function buildOrgTrainingStatTiles(stats: OrgTrainingStats | null, range: OrgLensTimeRange): OrgTrainingStatTileVm[] {
   return ORG_TRAINING_STAT_TILES.map((layout) => {
@@ -107,15 +115,19 @@ export function buildOrgTrainingStatTiles(stats: OrgTrainingStats | null, range:
     const asOf = reading.asOf ?? null;
     // Only an explicit null roster means "no program"; a field a legacy payload lacks (undefined) is just unavailable.
     const noRoster = stats !== null && layout.key === 'rosterMembers' && reading.value === null;
+    const notCounted = stats !== null && layout.key === 'learnersOutsidePeopleList' && reading.value === null;
+    let note: string | null = null;
+    if (noRoster) note = ORG_TRAINING_NO_ROSTER_NOTE;
+    else if (notCounted) note = ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE;
     const value = typeof reading.value === 'number' && Number.isFinite(reading.value) ? reading.value : null;
-    const tooltip = tileTooltip(definition, range, stats, asOf, noRoster);
+    const tooltip = tileTooltip(definition, range, stats, asOf, note);
     const display = tileDisplay(layout.key, value);
     return {
       ...layout,
       label: definition.label,
       value,
       display,
-      caption: noRoster ? ORG_TRAINING_NO_ROSTER_NOTE : orgTrainingStatCaption(definition, range, stats ? asOf : undefined),
+      caption: note ?? orgTrainingStatCaption(definition, range, stats ? asOf : undefined),
       tooltip,
       ariaLabel: `${definition.label}: ${display}. ${tooltip}`,
     };

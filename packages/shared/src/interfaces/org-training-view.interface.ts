@@ -40,10 +40,10 @@ export interface OrgTrainingStats {
   /** Live roster (ORG_TRAINING_ROSTER_MEMBERS), not filtered by range or filters; null when the org has no training program. */
   rosterMembers: number | null;
   rosterMembersAsOf: string | null;
-  /** Distinct people in the filtered pairs plus learners outside the people list (only while no course-level filter is set). */
+  /** Distinct people-list people in the filtered pairs; learners outside the people list are not included. */
   peopleWithTrainingActivity: number;
-  /** Learners outside the people list in range; 0 while a course-level filter is set. */
-  learnersOutsidePeopleList: number;
+  /** Distinct learners outside the people list in range (their own tile, never added to the people-list numbers); null (not counted) while a course-level filter is set. */
+  learnersOutsidePeopleList: number | null;
   coursesTaken: number;
   /** Certified pairs of `Certification` products. */
   certifications: number;
@@ -136,6 +136,7 @@ export interface OrgTrainingGroupEmployeesResponse {
 export type OrgTrainingStatKey =
   | 'rosterMembers'
   | 'peopleWithTrainingActivity'
+  | 'learnersOutsidePeopleList'
   | 'coursesTaken'
   | 'certifications'
   | 'certifiedPeople'

@@ -10,6 +10,9 @@ import type { OrgTrainingStatDefinition, OrgTrainingStatKey, OrgTrainingStatTile
 /** Caption and tooltip suffix of the roster stat for an organization with no LF Education training program (no roster row). */
 export const ORG_TRAINING_NO_ROSTER_NOTE = 'No LF Education training program on record for this organization';
 
+/** Caption and tooltip suffix of the outside-learners stat while a filter leaves it uncounted (a null count). */
+export const ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE = 'Not counted while a foundation, project, course, level or format is selected';
+
 /** The rule behind "in progress", stated on its tiles and tooltips: no hidden snapshot. */
 export const ORG_TRAINING_IN_PROGRESS_RULE = 'Enrolled in the selected range, no certificate in the range';
 
@@ -28,7 +31,13 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
     label: 'People with training activity',
     unit: 'people',
     definition:
-      'Distinct people with at least one training or certification enrollment, or a certificate, dated in the selected range and matching the filters. Includes learners linked to this organization who are not on its people list while no foundation, project, course, level or format is selected. Not a subset of the roster members.',
+      "Distinct people on this organization's people list with at least one training or certification enrollment, or a certificate, dated in the selected range and matching the filters. Learners not on the people list are not counted here. Not a subset of the roster members.",
+  },
+  learnersOutsidePeopleList: {
+    label: 'Learners not on the people list',
+    unit: 'people',
+    definition:
+      'Distinct people with a training or certification enrollment or certificate dated in the selected range who are linked to this organization but not on its people list. Shown as — and not counted while a foundation, project, course, level or format is selected, like their list. Not part of the people-list numbers.',
   },
   coursesTaken: {
     label: 'Courses taken',
@@ -77,6 +86,12 @@ export const ORG_TRAINING_STAT_TILES: readonly OrgTrainingStatTileLayout[] = [
     icon: 'fa-light fa-user-graduate',
     iconClass: 'bg-sky-100 text-sky-600',
     testId: 'org-training-stat-people-with-training-activity',
+  },
+  {
+    key: 'learnersOutsidePeopleList',
+    icon: 'fa-light fa-user-slash',
+    iconClass: 'bg-orange-100 text-orange-600',
+    testId: 'org-training-stat-learners-outside-people-list',
   },
   { key: 'coursesTaken', icon: 'fa-light fa-book', iconClass: 'bg-indigo-100 text-indigo-600', testId: 'org-training-stat-courses-taken' },
   { key: 'certifications', icon: 'fa-light fa-award', iconClass: 'bg-amber-100 text-amber-600', testId: 'org-training-stat-certifications' },
