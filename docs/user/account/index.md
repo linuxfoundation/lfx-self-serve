@@ -4,7 +4,7 @@ description: Manage your LFX account — work history and affiliations, identiti
 audience: [all]
 product_area: Account
 tags: [account, settings, affiliations, identities, individual-enrollment, cla, transactions]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Account
 ---
 
@@ -19,7 +19,7 @@ Your personal identity details (name, photo, About Me, primary email, and locati
 - Enroll in the Linux Foundation Individual Supporter plan
 - View your Individual CLAs (ICLAs) and your coverage under a Corporate CLA (CCLA)
 - View your Linux Foundation purchase history
-- Manage your email addresses, password, and developer API token
+- Manage your email addresses, password, developer API token, and LFX Insights API tokens
 
 ## Who this applies to
 
@@ -36,7 +36,7 @@ Account areas live under the **Profile & Account** hub. Go to **app.lfx.dev**, s
 | Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan         | [Individual Enrollment](./individual-enrollment/) |
 | CLAs                        | `/profile/clas`                  | Your signed ICLAs and your coverage under a Corporate CLA (CCLA) | [CLAs](./my-clas/)                                |
 | Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                           | [Transactions](./transactions/)                   |
-| Settings                    | `/profile/settings`              | Email addresses, password, and developer API token               | [Settings](./settings/)                           |
+| Settings                    | `/profile/settings`              | Email addresses, password, developer API token, and LFX Insights API tokens               | [Settings](./settings/)                           |
 
 `/profile` opens the **Work history & Affiliations** tab by default.
 
@@ -48,4 +48,4 @@ Account areas live under the **Profile & Account** hub. Go to **app.lfx.dev**, s
 - [Individual Enrollment](./individual-enrollment/) — enroll in an Individual Supporter membership and manage auto-renew
 - [CLAs](./my-clas/) — view your signed ICLAs and your coverage under a Corporate CLA (CCLA)
 - [Transactions](./transactions/) — your Linux Foundation purchase history
-- [Settings](./settings/) — email, password, and developer API token
+- [Settings](./settings/) — email, password, developer API token, and LFX Insights API tokens

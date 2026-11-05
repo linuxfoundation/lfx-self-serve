@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github]
-last_updated: 2026-11-04
+last_updated: 2026-11-05
 intercom_collection: Account
 ---
 
@@ -121,6 +121,10 @@ You can only see your own transactions. Other users and project administrators c
 ## I was charged incorrectly. Who do I contact?
 
 For a training course, certification exam, bundle, or subscription, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). For other purchases, contact LFX support. Either way, include the transaction date, amount, item name, and order ID so the team can investigate.
+
+## How do I get an LFX Insights API token?
+
+Go to [**Profile & Account**](/profile) → **Settings** and find **LFX Insights API Tokens** under **Developer Settings**. Select **New token**, name it, choose an expiration, then **Create token** and copy the token straight away — it isn't shown again. If the card says _LFX Insights API tokens aren't enabled for your account yet_, contact LFX Support. See [LFX Insights API Tokens](../settings/#lfx-insights-api-tokens).
 
 ## How do I delete my account or personal data?
 

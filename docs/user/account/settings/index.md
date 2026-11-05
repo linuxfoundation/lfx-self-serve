@@ -1,10 +1,10 @@
 ---
 title: Settings
-description: Manage your email addresses, password, two-factor authentication, and developer API token in LFX Self Serve.
+description: Manage your email addresses, password, two-factor authentication, developer API token, and LFX Insights API tokens in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, settings, email, password, developer, api-token, security, meeting-invitations]
-last_updated: 2026-11-04
+tags: [account, settings, email, password, developer, api-token, insights, insights-api, security, meeting-invitations]
+last_updated: 2026-11-05
 intercom_collection: Account
 ---
 
@@ -17,6 +17,7 @@ The Settings tab manages your account security and access credentials — email 
 - Change your password or send a reset link
 - Set up two-factor authentication (when available)
 - View and copy your Personal Access Token (API token)
+- Create and revoke LFX Insights API tokens
 
 ## Open Settings
 
@@ -73,9 +74,42 @@ The **Security Guidelines** box beside it explains how to handle the token:
 - Never share it publicly. Keep this token secure.
 - Never commit this token to version control.
 
+### LFX Insights API Tokens
+
+The **LFX Insights API Tokens** card appears under **Developer Settings**, below the **API Token** card, and the Developer Settings subtitle reads _Your API tokens provide programmatic access to LFX services._
+
+_Tokens for accessing the LFX Insights API. Pull project health and contribution data into your own dashboards, reports, and tools._ The **LFX Insights docs** link opens the API documentation.
+
+**Create a token:**
+
+1. Select **New token**. It's at the top of the card once you have tokens; before then, it's under _No LFX Insights API tokens yet._
+2. In the **New LFX Insights API token** dialog, enter a **Token name** (for example, _Weekly health report_). Use 100 characters or fewer, with no tabs or line breaks, and a name you haven't used for another token.
+3. Choose an **Expiration**: **30 days**, **60 days**, **90 days** (the default), **1 year**, or **No expiration**. The dialog shows the date it will expire, or _This token stays valid until you revoke it._
+4. Select **Create token**.
+5. In **Token successfully created**, select **Copy**. **Copy this token now.** For your security, the token is never shown again.
+
+The **Using it** section of that dialog explains how to call the API: _Send this token as a bearer token. There's no separate token endpoint to call._
+
+If you've reached the maximum number of tokens, the dialog asks you to remove an expired token or revoke one you no longer use, then try again.
+
+**Your tokens:** each token in the list shows its name, a masked value, and a line such as _Created \<date\> · Last used \<time\> · Expires \<date\>_ (or _Never used_, or _Expires never_). An expired token shows _Expired_ and its date instead.
+
+**Revoke or remove a token:**
+
+- **Revoke** — on an active token. Confirm in the **Revoke "\<name\>"?** dialog — _Anything using this token will stop working within 10 minutes. This can't be undone._ — by selecting **Revoke token**.
+- **Remove** — on an expired token. It's removed straight away, with no confirmation, because it already no longer works.
+
+The Security Guidelines box adds: _Give each integration its own LFX Insights API token, so you can revoke one without affecting the others._
+
+**If the card shows a message instead:**
+
+- **LFX Insights API tokens aren't enabled for your account yet** — your account doesn't have access. If you'd like access, select **LFX Support** in the message.
+- **We couldn't check if you are eligible** — _LFX Insights API tokens are unavailable right now. Please try again in a few minutes._ Select **Retry**.
+- _We couldn't load your LFX Insights API tokens._ — select **Retry**.
+
 ## Save changes
 
-Settings are NOT auto-saved. Each section has its own action button: **Send Code** / **Verify** for a new email, the **⋮** menu actions for an existing email, **Change Password** or **Send Reset Link** for your password, and **Show** / **Copy** for the API token.
+Settings are NOT auto-saved. Each section has its own action button: **Send Code** / **Verify** for a new email, the **⋮** menu actions for an existing email, **Change Password** or **Send Reset Link** for your password, **Show** / **Copy** for the API token, and **New token** / **Revoke** for LFX Insights API tokens.
 
 ## Related
 
