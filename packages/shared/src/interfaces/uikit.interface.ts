@@ -80,11 +80,16 @@ export interface UiModalConfig<D = unknown> {
 /** Edge of the window a uikit drawer is anchored to. */
 export type UiDrawerSide = 'left' | 'right';
 
+/** Width preset of a uikit drawer: `default` is 560px (or `width`), `wide` is 75vw and at least 560px. */
+export type UiDrawerSize = 'default' | 'wide';
+
 /** Options for `UiDrawerService.open`. Every field is optional. Takes the modal options, except `role`: a drawer is always a `dialog`. */
 export interface UiDrawerConfig<D = unknown> extends Omit<UiModalConfig<D>, 'role'> {
   /** Edge the drawer slides in from. Defaults to `right`. */
   side?: UiDrawerSide;
-  /** Width in px. Defaults to 600; it never exceeds the window and fills it at 640px and narrower. */
+  /** Width preset. Defaults to `default`. */
+  size?: UiDrawerSize;
+  /** Custom width in px for the `default` size, in place of 560. It never exceeds the window less its 8px insets. */
   width?: number;
   /**
    * Asked before the user dismisses the drawer with Escape, a backdrop click or the close button; return `false` to keep it open,
