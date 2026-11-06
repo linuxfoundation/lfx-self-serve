@@ -30,6 +30,28 @@
     padding: 0 0 10pt;
     vertical-align: top;
   }
+
+  /* The page's room, as lfx-mktg-print-sheet gives the other prints (the page prints with no margin): 0.55in at
+     the top of every page from the head's padding, which keeps the running head where the margin put it; 0.55in
+     under the chapter's last row, once per chapter. Not a footer group: Chromium emits one extra, empty page per
+     table for any repeating footer (QA round 1: 10 kit pages for 5). */
+  > thead > tr > td {
+    padding-top: 0.55in;
+  }
+  > tbody > tr:last-child > td {
+    padding-bottom: calc(10pt + 0.55in);
+  }
+}
+
+/* On the page margins (WebKit, which prints a table's head once: MKTG_PRINT_PAGE_MARGINS_CLASS on the frame's
+   body) the margin gives the room again, and the chapters give none. */
+:host-context(.lfx-print-page-margins) .kit-chapter {
+  > thead > tr > td {
+    padding-top: 0;
+  }
+  > tbody > tr:last-child > td {
+    padding-bottom: 10pt;
+  }
 }
 
 .kit-block,

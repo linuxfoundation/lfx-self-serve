@@ -168,12 +168,38 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(root?.classList.contains('flex')).toBe(false);
     expect(cover?.classList.contains('grid')).toBe(true);
     expect(root?.querySelector('.h-screen, .min-h-screen, .flex-1')).toBeNull();
-    expect(Array.from(root?.children ?? []).map((child) => child.getAttribute('data-testid'))).toEqual([
-      'mktg-framework-print-cover',
-      'mktg-framework-print-framework',
-      'mktg-framework-print-numbers',
+    // Each section is one sheet (a table whose head repeats the page's top room; its last row carries the bottom room), one row per block, so a page
+    // breaks only between blocks: the cover's sheet breaks after, the others' before.
+    const sheets = Array.from(root?.children ?? []);
+    expect(sheets.map((sheet) => sheet.tagName.toLowerCase())).toEqual(['lfx-mktg-print-sheet', 'lfx-mktg-print-sheet', 'lfx-mktg-print-sheet']);
+    expect(sheets.map((sheet) => sheet.getAttribute('data-testid'))).toEqual([null, 'mktg-framework-print-framework', 'mktg-framework-print-numbers']);
+    // The three named regions stay (the cover's section, and the two sheets that replaced sections); a sheet carries no presentation role.
+    expect(sheets.map((sheet) => sheet.getAttribute('role'))).toEqual([null, 'region', 'region']);
+    expect(Array.from(root?.querySelectorAll('section[aria-label], [role="region"][aria-label]') ?? [], (region) => region.getAttribute('aria-label'))).toEqual(
+      ['Cover', 'Framework', 'Key numbers']
+    );
+    expect(sheets[0].querySelector('lfx-mktg-print-sheet-row > * > section')?.getAttribute('data-testid')).toBe('mktg-framework-print-cover');
+    expect(sheets.map((sheet) => sheet.classList.contains('break-after-page'))).toEqual([true, false, false]);
+    expect(sheets.map((sheet) => sheet.classList.contains('break-before-page'))).toEqual([false, true, true]);
+    expect(cover?.classList.contains('break-after-page')).toBe(false);
+    const rows = (sheet: Element): Element[] => Array.from(sheet.querySelectorAll('[data-testid="mktg-print-sheet-body"] > lfx-mktg-print-sheet-row'));
+    expect(sheets.map((sheet) => rows(sheet).length)).toEqual([1, 5, 3]);
+    // Only the goals row flows: its table breaks between its own row pairs when it outruns a page.
+    expect(sheets.flatMap((sheet) => rows(sheet).map((row) => row.classList.contains('lfx-print-sheet-row-flows')))).toEqual([
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
     ]);
-    expect(root?.lastElementChild?.classList.contains('break-after-page')).toBe(false);
+    expect(rows(sheets[1])[2].querySelector('[data-testid="mktg-framework-print-goals"]')).not.toBeNull();
+    // No footer group anywhere (Chromium would print an empty page per sheet for one); the head's room repeats.
+    expect(root?.querySelectorAll('[data-testid="mktg-print-sheet-foot"], tfoot')).toHaveLength(0);
+    expect(root?.querySelectorAll('[data-testid="mktg-print-sheet-head"]')).toHaveLength(3);
   });
 
   it('sets its body text in the brand’s ink, not its dark: a kit whose "dark" is white still prints readable text', async () => {

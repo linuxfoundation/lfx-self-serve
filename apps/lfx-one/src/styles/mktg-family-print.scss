@@ -53,15 +53,26 @@
     page: mktg-framework;
 
     .lfx-family-print-cover {
-      /* Leave room for the named page margins. Grid without a viewport-height
-         flex-growing child keeps title/contents together on either paper size. */
-      min-height: calc(100vh - 1.1in);
+      /* The sheet's head and foot take 1.1in of the page; 0.1in of slack under that keeps a fraction of
+         rounding off a blank sheet. Grid without a viewport-height flex-growing child keeps
+         title/contents together on either paper size. */
+      min-height: calc(100vh - 1.2in);
       align-content: space-between;
       print-color-adjust: exact;
       -webkit-print-color-adjust: exact;
     }
 
-    /* One cover and one contents list for the family, not a second per asset. */
+    /* On the page margins (WebKit: MKTG_PRINT_PAGE_MARGINS_CLASS on the frame's body) the cover is the page
+       area under the 0.55in margins, and the 0.6in at its sides is the margin's, not its own. */
+    &.lfx-print-page-margins .lfx-family-print-cover {
+      min-height: calc(100vh - 1.1in);
+      margin-left: 0;
+      margin-right: 0;
+    }
+
+    /* One cover and one contents list for the family, not a second per asset. The framework's cover goes with
+       its whole sheet: a sheet left behind would print its 1.1in of head and foot room alone on a blank page. */
+    lfx-mktg-print-sheet:has([data-testid='mktg-framework-print-cover']),
     [data-testid='mktg-framework-print-cover'],
     [data-testid='brand-kit-page-cover'],
     [data-testid='brand-kit-page-contents'],
@@ -114,6 +125,8 @@
       page: mktg-framework;
       width: 100%;
       break-before: page;
+      /* The whole ancestor chain of a print root paints white: the screen's canvas never shows through a page. */
+      background: white;
     }
 
     /* The legacy standalone book uses hidden visibility on the shell. Its

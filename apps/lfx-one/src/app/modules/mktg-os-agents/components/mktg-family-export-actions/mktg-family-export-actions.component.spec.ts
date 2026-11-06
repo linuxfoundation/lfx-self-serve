@@ -434,13 +434,18 @@ describe('Family export slot', () => {
     await fixture.whenStable();
     const document = root.querySelector('[data-testid="family-export-print-document"]');
     expect(Array.from(document?.children ?? []).map((child) => child.tagName.toLowerCase())).toEqual([
-      'section',
+      'lfx-mktg-print-sheet',
       'lfx-mktg-framework-print',
       'lfx-mktg-brand-kit-print',
       'lfx-mktg-boilerplates-print',
       'lfx-mktg-faq-print',
     ]);
     const cover = document?.querySelector<HTMLElement>('[data-testid="family-export-print-cover"]');
+    // The cover prints in a sheet whose head gives the page's top room, as its one row (the bottom room is that row's); its sides are its own margin.
+    expect(cover?.closest('lfx-mktg-print-sheet')?.classList.contains('break-after-page')).toBe(true);
+    expect(cover?.closest('lfx-mktg-print-sheet')?.querySelectorAll('lfx-mktg-print-sheet-row')).toHaveLength(1);
+    expect(cover?.parentElement?.getAttribute('data-testid')).toBe('mktg-print-sheet-cell');
+    expect(cover?.classList.contains('mx-[0.6in]')).toBe(true);
     expect(cover?.textContent).toContain('Synthetic project');
     expect(cover?.textContent).toContain('28 Oct 2026');
     expect(Array.from(cover?.querySelectorAll('dd') ?? []).map((entry) => entry.textContent?.trim())).toEqual([

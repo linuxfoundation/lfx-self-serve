@@ -5,13 +5,13 @@
 <!--
   The print's utility sets, declared once and reused on every section. Sizes
   are arbitrary pt and in values on purpose: this is a portrait page printed
-  at size, on the paper the print dialog has (A4 or US Letter; styles.scss
-  sets the margins: 0.55 in top and bottom, 0.6 in at the sides, and makes the
-  document as wide as the page area), which no rem-based spacing step
-  expresses. Colours and the typeface are the brand's custom properties (the
+  at size, on the paper the print dialog has (A4 or US Letter; the page has no
+  margin, so the browser's header and footer stay off it, and the document
+  carries the room itself: 0.6 in at the sides as the root's padding, 0.55 in
+  top and bottom repeated per page by each section's sheet), which no
+  rem-based spacing step expresses. Colours and the typeface are the brand's custom properties (the
   component's SCSS), never the app's palette.
 -->
-@let section = 'flex flex-col gap-[14pt] break-before-page';
 @let subTitle = 'text-[11pt] font-semibold';
 @let eyebrow = 'text-[7pt] font-semibold uppercase tracking-[0.16em] opacity-60';
 @let card = 'flex flex-col gap-[6pt] rounded-[6pt] border border-black/10 p-[10pt] break-inside-avoid';
@@ -34,10 +34,24 @@
   [style.--mfp-font]="v.brand.fontStack"
   [attr.data-brand]="v.brand.source"
   data-testid="mktg-framework-print">
+  <!-- Every section prints on its own sheet, the page's room repeated on each of its pages (lfx-mktg-print-sheet),
+       one row per block, so a page breaks only between blocks; the sections follow as templates. -->
+  <lfx-mktg-print-sheet class="break-after-page">
+    <lfx-mktg-print-sheet-row><ng-container *ngTemplateOutlet="cover" /></lfx-mktg-print-sheet-row>
+  </lfx-mktg-print-sheet>
+  <lfx-mktg-print-sheet class="break-before-page" role="region" aria-label="Framework" data-testid="mktg-framework-print-framework">
+    <ng-container *ngTemplateOutlet="framework" />
+  </lfx-mktg-print-sheet>
+  <lfx-mktg-print-sheet class="break-before-page" role="region" aria-label="Key numbers" data-testid="mktg-framework-print-numbers">
+    <ng-container *ngTemplateOutlet="numbers" />
+  </lfx-mktg-print-sheet>
+</div>
+
+<ng-template #cover>
   <!-- A bounded cover grid, not a viewport-height flexbox: native pagination
        keeps the title and contents on one sheet without a growing child. -->
   <section
-    class="mfp-cover grid content-between gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] text-[color:var(--mfp-on-dark)] break-after-page"
+    class="mfp-cover grid content-between gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] text-[color:var(--mfp-on-dark)]"
     aria-label="Cover"
     data-testid="mktg-framework-print-cover">
     <div class="flex items-baseline justify-between gap-[12pt] text-[7.5pt] uppercase tracking-[0.2em] opacity-80">
@@ -67,13 +81,19 @@
       }
     </dl>
   </section>
+</ng-template>
 
-  <!-- 01 · FRAMEWORK: the statements, the goal columns, say and avoid, the anchor questions -->
-  <section [class]="section" aria-label="Framework" data-testid="mktg-framework-print-framework">
-    <ng-container *ngTemplateOutlet="runningHead" />
-    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.1' : v.sections[0].number" [title]="v.sections[0].title" [accent]="v.brand.accent" />
-    <!-- The framework as one table (Jim's definitions): the four statements across the top, then one column per goal -->
-    <div class="grid grid-cols-4 gap-[8pt]" data-testid="mktg-framework-print-statements">
+<!-- 01 · FRAMEWORK: the statements, the goal columns, say and avoid, the anchor questions -->
+<ng-template #framework>
+  <lfx-mktg-print-sheet-row>
+    <div class="flex flex-col gap-[14pt] pb-[14pt]">
+      <ng-container *ngTemplateOutlet="runningHead" />
+      <lfx-mktg-print-chapter-header [number]="number() ? number() + '.1' : v.sections[0].number" [title]="v.sections[0].title" [accent]="v.brand.accent" />
+    </div>
+  </lfx-mktg-print-sheet-row>
+  <!-- The framework as one table (Jim's definitions): the four statements across the top, then one column per goal -->
+  <lfx-mktg-print-sheet-row>
+    <div class="grid grid-cols-4 gap-[8pt] pb-[14pt]" data-testid="mktg-framework-print-statements">
       <div [class]="card">
         <span [class]="eyebrow">Vision</span>
         <p class="text-[9pt]">{{ v.mf.vision }}</p>
@@ -98,8 +118,11 @@
         }
       </div>
     </div>
+  </lfx-mktg-print-sheet-row>
 
-    <div class="flex flex-col gap-[8pt]">
+  <!-- The goals table may outrun a page and breaks between its own row pairs: this row flows. -->
+  <lfx-mktg-print-sheet-row [flows]="true">
+    <div class="flex flex-col gap-[8pt] pb-[14pt]">
       <table class="w-full table-fixed border-collapse text-[8.5pt] break-inside-avoid" data-testid="mktg-framework-print-goals">
         <thead>
           <tr class="bg-[color:var(--mfp-tint)] text-left align-bottom">
@@ -158,8 +181,10 @@
         <p class="text-[8.5pt] opacity-75">{{ v.mf.crosscut }}</p>
       }
     </div>
+  </lfx-mktg-print-sheet-row>
 
-    <div class="grid grid-cols-2 gap-[10pt]">
+  <lfx-mktg-print-sheet-row>
+    <div class="grid grid-cols-2 gap-[10pt] pb-[14pt]">
       <div [class]="card">
         <h3 [class]="subTitle">Say</h3>
         <ul class="flex flex-wrap gap-[4pt]" data-testid="mktg-framework-print-say">
@@ -192,7 +217,9 @@
         }
       </div>
     </div>
+  </lfx-mktg-print-sheet-row>
 
+  <lfx-mktg-print-sheet-row>
     <div [class]="card">
       <h3 [class]="subTitle">Every piece of content answers</h3>
       <ol class="flex list-decimal flex-col gap-[2pt] pl-[14pt]" data-testid="mktg-framework-print-anchor">
@@ -201,13 +228,19 @@
         }
       </ol>
     </div>
-  </section>
+  </lfx-mktg-print-sheet-row>
+</ng-template>
 
-  <!-- 02 · KEY NUMBERS -->
-  <section [class]="section" aria-label="Key numbers" data-testid="mktg-framework-print-numbers">
-    <ng-container *ngTemplateOutlet="runningHead" />
-    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.2' : v.sections[1].number" [title]="v.sections[1].title" [accent]="v.brand.accent" />
-    <div class="grid grid-cols-3 gap-[10pt]">
+<!-- 02 · KEY NUMBERS -->
+<ng-template #numbers>
+  <lfx-mktg-print-sheet-row>
+    <div class="flex flex-col gap-[14pt] pb-[14pt]">
+      <ng-container *ngTemplateOutlet="runningHead" />
+      <lfx-mktg-print-chapter-header [number]="number() ? number() + '.2' : v.sections[1].number" [title]="v.sections[1].title" [accent]="v.brand.accent" />
+    </div>
+  </lfx-mktg-print-sheet-row>
+  <lfx-mktg-print-sheet-row>
+    <div class="grid grid-cols-3 gap-[10pt] pb-[14pt]">
       @for (row of v.numbers; track $index) {
         <div class="items-center text-center" [class]="tinted">
           <span class="text-[24pt] font-medium leading-[1.1] text-[color:var(--mfp-accent)]">{{ row.number }}</span>
@@ -215,9 +248,11 @@
         </div>
       }
     </div>
+  </lfx-mktg-print-sheet-row>
+  <lfx-mktg-print-sheet-row>
     <p class="mt-[6pt] text-[7.5pt] opacity-60">{{ v.eyebrow }}</p>
-  </section>
-</div>
+  </lfx-mktg-print-sheet-row>
+</ng-template>
 
 <!-- The running head of every section: what the document is, and the brand's logo on white. -->
 <ng-template #runningHead>
