@@ -29,6 +29,7 @@ import {
   GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS,
   googlePerformanceMaxShortDescriptionMissing,
 } from '@lfx-one/shared/utils/campaign-google-creative.utils';
+import { googleDemandGenAdGroupsRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-ad-groups.utils';
 import { googleDemandGenVideoCreativeRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-video.utils';
 import {
   googleAdsToUpperCode,
@@ -172,6 +173,7 @@ import {
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
@@ -1501,6 +1503,19 @@ export class CampaignController {
         if (googleChannel === 'performance-max' && googlePerformanceMaxShortDescriptionMissing(performanceMaxCreative?.descriptions)) {
           next(
             ServiceValidationError.forField('performanceMaxCreative.descriptions', GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+
+        // The named Demand Gen ad groups (#5226), first because upstream judges the list before any
+        // creative: through the same shared judge the Implement tab holds Create on.
+        const adGroupsRefusal = this.googleDemandGenAdGroupsRefusal(body, googleChannel);
+        if (adGroupsRefusal) {
+          next(
+            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, adGroupsRefusal, {
               operation: 'campaign_create',
               service: 'campaign_controller',
             })
@@ -5452,14 +5467,33 @@ export class CampaignController {
     if (canUseGoogleCreativeAssets()) return null;
     const raw = body as unknown as Record<string, unknown>;
     for (const spec of [...Object.values(GOOGLE_CREATIVE_WIRE_FIELDS), GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS]) {
-      const creative = raw?.[spec.key];
-      if (creative === null || typeof creative !== 'object' || Array.isArray(creative)) continue;
-      for (const field of spec.images) {
-        const value = (creative as Record<string, unknown>)[field];
-        if (!Array.isArray(value)) continue;
-        const index = value.findIndex((entry: unknown) => entry !== null && typeof entry === 'object' && 'imageAssetId' in entry);
-        if (index !== -1) return `${spec.key}.${field}[${index}].imageAssetId`;
+      const found = this.storedImageIn(raw?.[spec.key], spec);
+      if (found !== null) return `${spec.key}.${found}`;
+    }
+    // Each named Demand Gen ad group's two creatives (#5226), on the same terms.
+    const groups = raw?.[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
+    if (!Array.isArray(groups)) return null;
+    for (const [index, group] of groups.entries()) {
+      if (group === null || typeof group !== 'object') continue;
+      for (const [key, spec] of [
+        ['creative', GOOGLE_CREATIVE_WIRE_FIELDS['demand-gen']],
+        ['videoCreative', GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS],
+      ] as const) {
+        const found = this.storedImageIn((group as Record<string, unknown>)[key], spec);
+        if (found !== null) return `${GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY}[${index}].${key}.${found}`;
       }
+    }
+    return null;
+  }
+
+  /** The first stored-image entry in one creative's image fields, as `<field>[i].imageAssetId`, or `null`. */
+  private storedImageIn(creative: unknown, spec: GoogleCreativeWireFields): string | null {
+    if (creative === null || typeof creative !== 'object' || Array.isArray(creative)) return null;
+    for (const field of spec.images) {
+      const value = (creative as Record<string, unknown>)[field];
+      if (!Array.isArray(value)) continue;
+      const index = value.findIndex((entry: unknown) => entry !== null && typeof entry === 'object' && 'imageAssetId' in entry);
+      if (index !== -1) return `${field}[${index}].imageAssetId`;
     }
     return null;
   }
@@ -6243,6 +6277,27 @@ export class CampaignController {
   }
 
   /**
+   * Why campaign-service would refuse this create's named Demand Gen ad groups (#5226), or `null`.
+   *
+   * Judged, like the video ad, only on a Demand Gen create and only on what {@link googleCreative}
+   * would SEND. First the campaign-level refusal `validateDemandGenAdGroups` opens with: the list
+   * replaces the single ad, so it is refused beside either creative. Then every rule of the list itself
+   * through `googleDemandGenAdGroupsRefusal`: the cap of 5, a blank, over-long or repeated name, and
+   * each group's one ad. `demandGenAds` and `demandGenAudience`, which upstream refuses beside the list
+   * too, are fields this application does not send.
+   */
+  private googleDemandGenAdGroupsRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
+    if (googleChannel !== 'demand-gen') return null;
+    const sent = this.googleCreative(body, 'demand-gen');
+    const groups = sent[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
+    if (groups === undefined) return null;
+    if (sent[GOOGLE_CREATIVE_REQUEST_KEYS['demand-gen']] !== undefined || sent[GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY] !== undefined) {
+      return 'Demand Gen ad groups replace the single Demand Gen ad, so the campaign-level image ad and video ad must be empty. Set the ad on each ad group instead.';
+    }
+    return googleDemandGenAdGroupsRefusal(typeof body?.eventName === 'string' ? body.eventName : '', groups);
+  }
+
+  /**
    * The Search campaign's ads as campaign-service takes them, spread-ready.
    *
    * The first ad's display paths go out as the campaign-level `path1`/`path2`, trimmed and omitted
@@ -6746,28 +6801,30 @@ export class CampaignController {
     }
 
     for (const [key, source] of candidates) {
-      // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
-      const entries: [string, unknown][] = this.boundableEntries(key, source);
+      const found = this.oversizedBoundableField(key, source);
+      if (found !== null) return found;
+    }
 
-      for (const [field, value] of entries) {
-        if (Array.isArray(value)) {
-          if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
-            return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
-          }
-          // A stored-image ref is an object entry, so its id is measured here too: the normalizer
-          // trims and forwards it, and an unbounded id is the same unbounded string a URL would be.
-          const long = value.find((entry) => {
-            const text = typeof entry === 'string' ? entry : this.imageAssetIdOf(entry);
-            return text !== null && this.boundedLength(text) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
-          });
-          if (long !== undefined) {
-            return { field, message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
-          }
-          continue;
+    // The named Demand Gen ad groups (#5226): the list, each name, and each group's two creatives on
+    // the creative keys' own terms, because `googleDemandGenAdGroups` normalizes them all.
+    const adGroups = raw[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
+    if (Array.isArray(adGroups)) {
+      if (adGroups.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
+        return { field: GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+      }
+      for (const group of adGroups) {
+        if (!group || typeof group !== 'object') continue;
+        const { name, creative, videoCreative } = group as Record<string, unknown>;
+        if (typeof name === 'string' && this.boundedLength(name) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
+          return {
+            field: `${GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY}.name`,
+            message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}`,
+          };
         }
-        if (typeof value === 'string' && this.boundedLength(value) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
-          return { field, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
-        }
+        const found =
+          this.oversizedBoundableField(`${GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY}.creative`, creative) ??
+          this.oversizedBoundableField(`${GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY}.videoCreative`, videoCreative);
+        if (found !== null) return found;
       }
     }
 
@@ -6911,6 +6968,36 @@ export class CampaignController {
   }
 
   /**
+   * The first field of one bounded source that breaks a resource bound, or null: a creative key's
+   * object of fields, or a bare list such as `conversionActions`. {@link oversizedGoogleCreativeField}'s
+   * per-key walk, shared with each named Demand Gen ad group's two creatives (#5226).
+   */
+  private oversizedBoundableField(key: string, source: unknown): { field: string; message: string } | null {
+    // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
+    for (const [field, value] of this.boundableEntries(key, source)) {
+      if (Array.isArray(value)) {
+        if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
+          return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+        }
+        // A stored-image ref is an object entry, so its id is measured here too: the normalizer
+        // trims and forwards it, and an unbounded id is the same unbounded string a URL would be.
+        const long = value.find((entry) => {
+          const text = typeof entry === 'string' ? entry : this.imageAssetIdOf(entry);
+          return text !== null && this.boundedLength(text) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+        });
+        if (long !== undefined) {
+          return { field, message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
+        }
+        continue;
+      }
+      if (typeof value === 'string' && this.boundedLength(value) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
+        return { field, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
+      }
+    }
+    return null;
+  }
+
+  /**
    * The one source above, flattened into the `[label, value]` pairs the bound is applied to.
    *
    * A creative key holds an object whose fields are each bounded under their own `key.field` label;
@@ -6954,19 +7041,55 @@ export class CampaignController {
     // Demand Gen carries one of two creatives: the image ad, or the video ad (#5226). Both are
     // normalized and emitted when present, so a request carrying both reaches `createCampaign`'s
     // refusal (`googleDemandGenVideoRefusal`) rather than having one silently dropped here.
+    // The named ad groups (#5226) ride beside them on the same terms, for the same refusal
+    // (`googleDemandGenAdGroupsRefusal`).
     if (channel === 'demand-gen') {
-      return { ...this.googleCreativeFrom(body, spec), ...this.googleCreativeFrom(body, GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS) };
+      return {
+        ...this.googleCreativeFrom(body, spec),
+        ...this.googleCreativeFrom(body, GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS),
+        ...this.googleDemandGenAdGroups(body),
+      };
     }
     return this.googleCreativeFrom(body, spec);
   }
 
+  /**
+   * `demandGenAdGroups` normalized and spread-ready (#5226), or `{}` when the list is absent or empty,
+   * so a create without it is byte-identical to one made before it existed.
+   *
+   * Each group keeps its position, so a refusal names the group the operator sees: an entry that is
+   * not an object, or a name that is not a string, becomes a blank name the refusal then names. The
+   * name is trimmed as Go trims; campaign-service sanitizes it further. Each creative is normalized
+   * exactly as the campaign-level one is, and omitted when it empties out.
+   */
+  private googleDemandGenAdGroups(body: CampaignCreateRequest): Record<string, unknown> {
+    const list: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
+    if (!Array.isArray(list) || list.length === 0) return {};
+    const groups = list.map((entry: unknown) => {
+      const group: Record<string, unknown> = entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>) : {};
+      const creative = this.googleCreativeFields(group['creative'], GOOGLE_CREATIVE_WIRE_FIELDS['demand-gen']);
+      const videoCreative = this.googleCreativeFields(group['videoCreative'], GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS);
+      return {
+        name: typeof group['name'] === 'string' ? googleAdsTrimSpace(group['name']) : '',
+        ...(creative === null ? {} : { creative }),
+        ...(videoCreative === null ? {} : { videoCreative }),
+      };
+    });
+    return { [GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY]: groups };
+  }
+
   /** {@link googleCreative} for one catalogue: that creative's key, normalized, or `{}`. */
   private googleCreativeFrom(body: CampaignCreateRequest, spec: GoogleCreativeWireFields): Record<string, unknown> {
+    const creative = this.googleCreativeFields((body as unknown as Record<string, unknown>)[spec.key], spec);
+    return creative === null ? {} : { [spec.key]: creative };
+  }
+
+  /** One creative object normalized against its catalogue, or `null` when nothing in it survives. */
+  private googleCreativeFields(source: unknown, spec: GoogleCreativeWireFields): Record<string, unknown> | null {
     // `as Record<string, unknown>` rather than the typed interface: the value arrives off an
     // unvalidated request body, so every field has to be re-tested at runtime anyway and the
     // declared type would only make the tests look redundant.
-    const source = (body as unknown as Record<string, unknown>)[spec.key];
-    if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
     const raw = source as Record<string, unknown>;
 
     const creative: Record<string, unknown> = {};
@@ -6983,7 +7106,7 @@ export class CampaignController {
       if (clean !== '') creative[field] = clean;
     }
 
-    return Object.keys(creative).length > 0 ? { [spec.key]: creative } : {};
+    return Object.keys(creative).length > 0 ? creative : null;
   }
 
   /**

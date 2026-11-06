@@ -171,6 +171,13 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-format-held-live">
   {{ demandGenFormatHeldMessage() }}
 </div>
+<!-- The named Demand Gen ad groups' refusal and what the split leaves unsent (#5226); empty off Demand Gen. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-error-live">
+  {{ demandGenAdGroupsError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-held-live">
+  {{ demandGenAdGroupsHeldMessage() }}
+</div>
 <!-- The first ad's display-width errors, announced on the same terms; empty off Search. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
   {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
@@ -2524,11 +2531,145 @@
             <p class="mt-1 text-xs text-gray-500" data-testid="implementation-creative-prefill-notice-performance-max">{{ performanceMaxPrefillNotice }}</p>
           }
           <!--
+            Demand Gen split into named ad groups (#5226), each with its own image or video ad. On, the
+            groups replace the single ad below, which is kept but not sent; off, the groups are kept
+            but not sent. The note under the checkbox says which.
+          -->
+          @if (section.channel === 'demand-gen') {
+            <label class="mt-4 flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                formControlName="demandGenAdGroupsSplit"
+                (change)="onDemandGenAdGroupsSplitChange()"
+                [attr.aria-describedby]="demandGenAdGroupsHeldMessage() ? 'implementation-demand-gen-ad-groups-held' : null"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                data-testid="implementation-demand-gen-ad-groups-split" />
+              Split into named ad groups
+            </label>
+            @if (demandGenAdGroupsHeldMessage()) {
+              <p id="implementation-demand-gen-ad-groups-held" class="mt-1 text-xs text-gray-500" data-testid="implementation-demand-gen-ad-groups-held">
+                {{ demandGenAdGroupsHeldMessage() }}
+              </p>
+            }
+          }
+          @if (section.channel === 'demand-gen' && demandGenAdGroupsActive()) {
+            <div class="mt-4 flex flex-col gap-4" formArrayName="demandGenAdGroups" data-testid="implementation-demand-gen-ad-groups">
+              <p class="text-xs text-gray-500">
+                Up to {{ demandGenMaxAdGroups }} ad groups, such as Retargeting and Prospecting, each with its own ad. Google Ads names each one after the
+                event, then " - Display | " and its name.
+              </p>
+              @for (group of campaignForm.controls.demandGenAdGroups.controls; track group; let i = $index) {
+                <fieldset
+                  class="flex flex-col gap-3 rounded-md border border-gray-200 p-4"
+                  [formGroupName]="i"
+                  [attr.data-testid]="'implementation-demand-gen-ad-group-' + i">
+                  <legend class="px-1 text-xs font-medium text-gray-700">Ad group {{ i + 1 }}</legend>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-700" [attr.for]="'demand-gen-ad-group-' + i + '-name'">Name</label>
+                    <input
+                      type="text"
+                      [id]="'demand-gen-ad-group-' + i + '-name'"
+                      formControlName="name"
+                      class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-name-' + i" />
+                  </div>
+                  <div class="flex flex-wrap gap-4" [attr.data-testid]="'implementation-demand-gen-ad-group-format-' + i">
+                    <lfx-radio-button
+                      [form]="group"
+                      control="format"
+                      [name]="'demand-gen-ad-group-' + i + '-format'"
+                      value="image"
+                      label="Image ad"
+                      [inputId]="'demand-gen-ad-group-' + i + '-format-image'"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-format-image-' + i" />
+                    <lfx-radio-button
+                      [form]="group"
+                      control="format"
+                      [name]="'demand-gen-ad-group-' + i + '-format'"
+                      value="video"
+                      label="Video ad (YouTube)"
+                      [inputId]="'demand-gen-ad-group-' + i + '-format-video'"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-format-video-' + i" />
+                  </div>
+                  <!-- One-item loop tracked by the format, so the fields re-mount on the other group when it changes. -->
+                  @for (format of [group.controls.format.value]; track format) {
+                    <div class="flex flex-col gap-4" [formGroupName]="format === 'video' ? 'videoCreative' : 'creative'">
+                      @for (field of demandGenAdGroupFields[format]; track field.control) {
+                        @let fieldId = 'demand-gen-ad-group-' + i + '-' + field.control;
+                        @let fieldError = demandGenAdGroupFieldErrors()[i + '.' + format + '.' + field.control];
+                        <div class="flex flex-col gap-1">
+                          <label class="text-xs font-medium text-gray-700" [attr.for]="fieldId">{{ field.label }}</label>
+                          @if (field.kind === 'list') {
+                            <textarea
+                              [id]="fieldId"
+                              [formControlName]="field.control"
+                              [attr.aria-describedby]="fieldError ? fieldId + '-error' : null"
+                              rows="3"
+                              class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control"></textarea>
+                          } @else if (field.options) {
+                            <lfx-select
+                              [form]="format === 'video' ? group.controls.videoCreative : group.controls.creative"
+                              [control]="field.control"
+                              [options]="field.selectOptions ?? []"
+                              [inputId]="fieldId"
+                              size="small"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
+                          } @else {
+                            <input
+                              type="text"
+                              [id]="fieldId"
+                              [formControlName]="field.control"
+                              [attr.aria-describedby]="fieldError ? fieldId + '-error' : null"
+                              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
+                          }
+                          <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                          @if (fieldError) {
+                            <span
+                              class="text-xs text-red-600"
+                              [id]="fieldId + '-error'"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-error-' + i + '-' + field.control"
+                              >{{ fieldError }}</span
+                            >
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+                  <div>
+                    <lfx-button
+                      label="Remove ad group"
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="removeDemandGenAdGroup(i)"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-remove-' + i" />
+                  </div>
+                </fieldset>
+              }
+              @if (campaignForm.controls.demandGenAdGroups.length < demandGenMaxAdGroups) {
+                <div>
+                  <lfx-button
+                    label="Add ad group"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="addDemandGenAdGroup()"
+                    data-testid="implementation-demand-gen-ad-group-add" />
+                </div>
+              }
+              @if (demandGenAdGroupsError(); as error) {
+                <p class="text-xs text-red-600" data-testid="implementation-demand-gen-ad-groups-error">{{ error }}</p>
+              }
+            </div>
+          }
+          <!--
             Demand Gen builds ONE ad, an image ad or a video ad (#5226). The choice decides which of the
             two creative groups this section renders and the create sends; the other keeps what was
             typed into it, and the note below says it will not be sent.
           -->
-          @if (section.channel === 'demand-gen') {
+          @if (section.channel === 'demand-gen' && !demandGenAdGroupsActive()) {
             <fieldset
               class="mt-4 flex flex-col gap-2"
               [attr.aria-describedby]="demandGenFormatHeldMessage() ? 'implementation-demand-gen-format-held' : null"

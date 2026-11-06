@@ -1400,6 +1400,20 @@ describe('CampaignController.createCampaign cutover', () => {
       { demandGenVideoCreative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } },
     ],
     ['an oversized video ad scalar', { demandGenVideoCreative: { businessName: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
+    // The named Demand Gen ad groups (#5226): the list, a name, and each group's creatives.
+    [
+      'an ad group list above the entry cap',
+      { demandGenAdGroups: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ({ name: `g${i}` })) },
+    ],
+    ['an oversized ad group name', { demandGenAdGroups: [{ name: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) }] }],
+    [
+      "an oversized list in an ad group's image ad",
+      { demandGenAdGroups: [{ name: 'a', creative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } }] },
+    ],
+    [
+      "an oversized scalar in an ad group's video ad",
+      { demandGenAdGroups: [{ name: 'a', videoCreative: { businessName: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }] },
+    ],
     ['an oversized conversion-action list', { conversionActions: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `a-${i}`) }],
     ['an oversized callout list', { callouts: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `c-${i}`) }],
     ['an oversized callout, which would otherwise reach the trim', { callouts: [`x${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}x`] }],
@@ -3719,6 +3733,7 @@ describe('CampaignController.createCampaign cutover', () => {
       conversionActions: ['customers/1234567890/conversionActions/111'],
       demandGenCreative: { headlines: ['Build with open source'] },
       demandGenVideoCreative: { youtubeVideoIds: ['dQw4w9WgXcQ'] },
+      demandGenAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Build with open source'] } }],
       performanceMaxCreative: { businessName: 'Example Foundation' },
       displayCreative: { headlines: ['Join us this spring'] },
       path1: 'kubecon',
@@ -3767,6 +3782,24 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(legacyCreate).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenVideoCreative' });
+    });
+
+    it('refuses a Demand Gen create split into ad groups by name while the cutover is dark (#5226)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us'] } }] }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAdGroups' });
     });
 
     // Over-refusal is the failure mode to avoid: an empty or null list asks for nothing, and the
@@ -5172,6 +5205,107 @@ describe('CampaignController.createCampaign cutover', () => {
 
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(refusalFrom().field).toBe('additionalSearchAds.headlines');
+    });
+  });
+
+  describe('Demand Gen ad groups (#5226)', () => {
+    const VIDEO = {
+      youtubeVideoIds: ['dQw4w9WgXcQ'],
+      logoImages: ['https://cdn.example/logo.png'],
+      headlines: ['Join us'],
+      longHeadlines: ['Four days of cloud native talks'],
+      descriptions: ['Register today'],
+      businessName: 'Example Foundation',
+    };
+    const create = async (fields: Record<string, unknown>, campaignTypes = ['demand-gen']): Promise<void> => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes, ...fields }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    };
+
+    it('forwards the groups under demandGenAdGroups, normalized, with no campaign-level creative', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000522b', error: null });
+
+      await create({
+        demandGenAdGroups: [
+          { name: ' Retargeting ', creative: { headlines: [' Join us ', ' '], businessName: '' } },
+          { name: 'Prospecting', videoCreative: { ...VIDEO, descriptions: [' Register today '] }, creative: { headlines: ['  '] } },
+        ],
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config).not.toHaveProperty('demandGenCreative');
+      expect(config).not.toHaveProperty('demandGenVideoCreative');
+      expect(config['demandGenAdGroups']).toEqual([
+        { name: 'Retargeting', creative: { headlines: ['Join us'] } },
+        { name: 'Prospecting', videoCreative: VIDEO },
+      ]);
+    });
+
+    it('leaves the request byte-identical when no list, or an empty list, is sent', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000522c', error: null });
+      await create({ demandGenCreative: { headlines: ['Join us'] } });
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create({ demandGenCreative: { headlines: ['Join us'] }, demandGenAdGroups: [] });
+
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+      expect(without).not.toContain('demandGenAdGroups');
+    });
+
+    it.each([
+      [
+        'six groups',
+        { demandGenAdGroups: ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => ({ name, creative: { headlines: ['Join us'] } })) },
+        'at most 5 ad groups',
+      ],
+      ['a blank name', { demandGenAdGroups: [{ name: ' | ', creative: { headlines: ['Join us'] } }] }, 'ad group 1 needs a name'],
+      [
+        'a name repeated ignoring case',
+        {
+          demandGenAdGroups: [
+            { name: 'Retargeting', creative: { headlines: ['Join us'] } },
+            { name: 'RETARGETING', creative: { headlines: ['Join us'] } },
+          ],
+        },
+        'same name as ad group 1',
+      ],
+      [
+        'a full name over 255',
+        { eventName: 'E'.repeat(250), demandGenAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us'] } }] },
+        'over Google',
+      ],
+      [
+        'two creatives in one group',
+        { demandGenAdGroups: [{ name: 'a', creative: { headlines: ['Join us'] }, videoCreative: VIDEO }] },
+        'image ad and a video ad',
+      ],
+      ['a group with no ad', { demandGenAdGroups: [{ name: 'a', creative: { headlines: [' '] } }] }, 'has no ad'],
+      ["a group's video ad that fails its rules", { demandGenAdGroups: [{ name: 'a', videoCreative: { ...VIDEO, logoImages: [] } }] }, 'exactly one logo'],
+      [
+        'the list beside a campaign-level image ad',
+        { demandGenCreative: { headlines: ['Join us'] }, demandGenAdGroups: [{ name: 'a', creative: { headlines: ['Join us'] } }] },
+        'must be empty',
+      ],
+      [
+        'the list beside a campaign-level video ad',
+        { demandGenVideoCreative: VIDEO, demandGenAdGroups: [{ name: 'a', videoCreative: VIDEO }] },
+        'must be empty',
+      ],
+    ])('refuses %s by name before any upstream call', async (_label, fields, fragment) => {
+      await create(fields);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAdGroups', message: expect.stringContaining(fragment) });
+    });
+
+    it('neither sends nor judges groups left under another channel', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000522d', error: null });
+
+      await create({ demandGenAdGroups: [{ name: ' ' }] }, ['display']);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(envelopeFor(createCampaigns)['googleAdsConfig']).not.toHaveProperty('demandGenAdGroups');
     });
   });
 
@@ -10109,6 +10243,34 @@ describe('CampaignController.createCampaign Google stored images', () => {
         code: 'FIELD_VALIDATION_ERROR',
       },
     ]);
+  });
+
+  it.each([
+    ['creative', 'marketingImages'],
+    ['videoCreative', 'logoImages'],
+  ])("refuses a stored image in a Demand Gen ad group's %s when the Google-assets flag is off (#5226)", async (key, field) => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          ...body('demand-gen', 'demandGenCreative', {}),
+          demandGenAdGroups: [{ name: 'a' }, { name: 'b', [key]: { [field]: ['https://cdn.example/a.png', { imageAssetId: ASSET }] } }],
+        },
+        {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([expect.objectContaining({ field: `demandGenAdGroups[1].${key}.${field}[1].imageAssetId` })]);
   });
 
   it('refuses a stored image in the Demand Gen video logo when the Google-assets flag is off (#5226)', async () => {

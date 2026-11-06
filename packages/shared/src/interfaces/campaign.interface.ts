@@ -1447,6 +1447,16 @@ export interface CampaignImplementationDraft {
    */
   demandGenAdFormat?: GoogleDemandGenAdFormat;
   /**
+   * Whether the Demand Gen campaign is split into named ad groups (#5226). Absent restores the
+   * default, off, which sends the single ad exactly as before.
+   */
+  demandGenAdGroupsSplit?: boolean;
+  /**
+   * The named Demand Gen ad groups as typed, both formats of each, kept whether or not the split is
+   * on, so turning it off and on again restores them. Absent leaves the form's groups alone.
+   */
+  demandGenAdGroups?: GoogleDemandGenAdGroupDraft[];
+  /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
    * {@link googleCreatives}. Each records the brief it was stored for, so a brief switch blocks
@@ -3057,6 +3067,38 @@ export interface GoogleDemandGenVideoCreative {
 }
 
 /**
+ * One named Demand Gen ad group (#5226), typed to an entry of `googleAdsConfig.demandGenAdGroups`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenAdGroupConfig`, #460). campaign-service names
+ * the group `<event name> - Display | <name>` and gives it exactly one of the two creatives.
+ *
+ * Upstream also takes `audience` (one Audience per group) and `ads` (several ads per group). Neither is
+ * sent yet; each is a field added here, beside the two creatives, when the Implement tab collects it.
+ */
+export interface GoogleDemandGenAdGroup {
+  name: string;
+  /** The group's image ad, the same shape as {@link CampaignCreateRequest.demandGenCreative}. */
+  creative?: GoogleDemandGenCreative;
+  /** The group's video ad, the same shape as {@link CampaignCreateRequest.demandGenVideoCreative}. */
+  videoCreative?: GoogleDemandGenVideoCreative;
+}
+
+/** One Demand Gen ad group as the Implement tab's draft keeps it: the raw text of both formats, and which is chosen. */
+export interface GoogleDemandGenAdGroupDraft {
+  name: string;
+  format: GoogleDemandGenAdFormat;
+  creative: Record<string, string>;
+  videoCreative: Record<string, string>;
+}
+
+/** The form controls of one Demand Gen ad group on the Implement tab: {@link GoogleDemandGenAdGroupDraft}, live. */
+export interface GoogleDemandGenAdGroupControls {
+  name: import('@angular/forms').FormControl<string>;
+  format: import('@angular/forms').FormControl<GoogleDemandGenAdFormat>;
+  creative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+  videoCreative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+}
+
+/**
  * The Performance Max ASSET GROUP, typed to `googleAdsConfig.performanceMaxCreative`.
  *
  * A Performance Max campaign has no ad groups and no ads — its creative lives in a named asset
@@ -3655,6 +3697,11 @@ export interface CampaignCreateRequest {
    * video format. The BFF refuses a Demand Gen create carrying both, as campaign-service would.
    */
   demandGenVideoCreative?: GoogleDemandGenVideoCreative;
+  /**
+   * The Demand Gen campaign split into named ad groups (#5226), sent INSTEAD of both creatives above:
+   * campaign-service refuses the list beside either of them. At most `GOOGLE_DEMAND_GEN_MAX_AD_GROUPS`.
+   */
+  demandGenAdGroups?: GoogleDemandGenAdGroup[];
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
   /**
