@@ -5518,15 +5518,20 @@ export const GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES = [
 ] as const satisfies readonly (typeof GOOGLE_BIDDING_STRATEGIES)[number][];
 
 /**
- * The channels that accept a conversion-action list at create time.
+ * The channels LFX One sends a conversion-action list on at create time.
  *
- * Not a Search-versus-the-rest split: `campaign.selective_optimization` is defined for SEARCH,
- * DISPLAY and VIDEO, and campaign-service admits all three. Demand Gen has no such field, and
- * Performance Max selects conversions through a campaign-conversion-goal resource that cannot be
- * addressed until the campaign exists — so both REFUSE the list rather than dropping it, and the
- * section is withheld there rather than offered and discarded.
+ * campaign-service v1.0.31 applies the list as a campaign-level custom conversion goal after the
+ * campaign exists (`applyCampaignConversionGoal`, `internal/platform/googleads/conversion_goal.go`),
+ * on every channel, under any strategy: under a conversion strategy the campaign bids toward it,
+ * and under Manual CPC or Maximize Clicks it decides what the campaign counts as a conversion
+ * (`biddingOptimizesConversions`). With no list the campaign uses the account's own conversion
+ * goals.
+ *
+ * Performance Max is left out by choice, not by an upstream refusal: its live reference campaign
+ * uses the account's goals, and offering the list there is a separate decision. The section is
+ * withheld on it, and a list entered on another channel is held with a notice rather than sent.
  */
-export const GOOGLE_CONVERSION_ACTION_CHANNELS = ['search', 'video', 'display'] as const;
+export const GOOGLE_CONVERSION_ACTION_CHANNELS = ['search', 'demand-gen', 'video', 'display'] as const;
 
 /** `maxConversionActions` in `internal/platform/googleads/bidding.go`. */
 export const GOOGLE_ADS_MAX_CONVERSION_ACTIONS = 100;

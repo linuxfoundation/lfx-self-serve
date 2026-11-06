@@ -9490,6 +9490,21 @@ describe('ImplementationTabComponent google conversion action picker', () => {
     expect(request['conversionActions']).toEqual(['111', '222', '999']);
   });
 
+  it('offers the list on Demand Gen and sends the picks', async () => {
+    await setup(() => of(ACTIONS));
+    const c = seedChannel(fixture, { includeDemandGen: true, googleBiddingStrategy: 'maximize-conversions' });
+    fixture.componentRef.setInput('googleConversionActionsEnabled', true);
+    fixture.detectChanges();
+
+    expect(read).toHaveBeenCalledWith('tlf');
+    expect(query('implementation-google-conversion-action-picker')).not.toBeNull();
+    expect(query('implementation-google-conversion-actions')).not.toBeNull();
+
+    c['onGooglePickedConversionActionsChange'](['111']);
+    fixture.detectChanges();
+    expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'maximize-conversions', conversionActions: ['111'] });
+  });
+
   it.each([
     ['the gateway denying an allowed caller (403)', 403, "isn't available here yet"],
     ['a route off on this deployment (404)', 404, "isn't available here yet"],
@@ -9594,7 +9609,8 @@ describe('ImplementationTabComponent google conversion action picker', () => {
     c['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
     fixture.detectChanges();
 
-    const held = 'Performance Max campaigns do not take conversion actions, so the 2 you entered will not be sent.';
+    const held =
+      "LFX One creates Performance Max campaigns on the Google Ads account's own conversion goals, so the 2 conversion actions you entered will not be sent.";
     expect(query('implementation-google-conversion-actions-withheld')?.textContent).toContain(held);
     expect(query('implementation-google-conversion-actions-withheld-live')?.textContent).toContain(held);
     expect(c['googleBiddingPayload']()).not.toHaveProperty('conversionActions');
@@ -12051,14 +12067,15 @@ describe('ImplementationTabComponent google bidding', () => {
   });
 
   /**
-   * A CHANNEL question, not a strategy one: `campaign.selective_optimization` is defined for
-   * Search, Display and Video, so those accept the list under any strategy, and campaign-service
-   * REFUSES it on Demand Gen and Performance Max rather than dropping it.
+   * A CHANNEL question, not a strategy one: campaign-service v1.0.31 applies the list as a
+   * campaign-level custom conversion goal (`applyCampaignConversionGoal`) on every channel and under
+   * any strategy. LFX One offers it everywhere but Performance Max, which it leaves on the account's
+   * goals by choice (#5262).
    */
   it.each([
     ['includeSearch', true],
     ['includeDisplay', true],
-    ['includeDemandGen', false],
+    ['includeDemandGen', true],
     ['includePerformanceMax', false],
   ])('gates the conversion-action list on the channel (%s)', (control, allowed) => {
     const c = seedChannel(fixture, { [control]: true });
@@ -12075,6 +12092,60 @@ describe('ImplementationTabComponent google bidding', () => {
     c['campaignForm'].controls.includePerformanceMax.setValue(true);
 
     expect(c['googleBiddingPayload']().conversionActions).toBeUndefined();
+  });
+
+  /**
+   * Demand Gen takes the list under every strategy it offers (#5262): campaign-service bids toward
+   * the goal under a conversion strategy and counts by it under Maximize Clicks
+   * (`biddingOptimizesConversions`), refusing neither.
+   */
+  it.each([['maximize-clicks'], ['maximize-conversions'], ['target-cpa'], ['maximize-conversion-value']])(
+    'sends demand gen conversion actions under %s',
+    (strategy) => {
+      const c = seedChannel(fixture, { includeDemandGen: true, googleBiddingStrategy: strategy, googleConversionActions: ' 111 \n\n222' });
+      expect(c['googleBiddingPayload']().conversionActions).toEqual(['111', '222']);
+      expect(c['googleConversionActionsWithheldMessage']()).toBe('');
+    }
+  );
+
+  it('checks demand gen conversion actions as it checks every other channel', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true, googleConversionActions: '12345\nnot-an-id' });
+    expect(c['googleBiddingError']()).toBe('"not-an-id" is not a conversion action id or resource name.');
+  });
+
+  /**
+   * A blank box adds nothing, so a Demand Gen request without conversion actions is the request it
+   * was before #5262; and the other channels send exactly what they did.
+   */
+  it.each([
+    ['demand gen, blank, default strategy', { includeDemandGen: true }, {}],
+    [
+      'demand gen, blank, maximize conversions',
+      { includeDemandGen: true, googleBiddingStrategy: 'maximize-conversions' },
+      { biddingStrategy: 'maximize-conversions' },
+    ],
+    ['demand gen, whitespace only', { includeDemandGen: true, googleConversionActions: '  \n \n' }, {}],
+    ['search', { includeSearch: true, googleConversionActions: '111' }, { conversionActions: ['111'] }],
+    ['display', { includeDisplay: true, googleConversionActions: '111' }, { conversionActions: ['111'] }],
+    ['performance max', { includePerformanceMax: true, googleConversionActions: '111' }, {}],
+  ])('sends the same bidding plan as before on %s', (_label, patch, expected) => {
+    const c = seedChannel(fixture, patch);
+    expect(c['googleBiddingPayload']()).toEqual(expected);
+  });
+
+  it('holds demand gen conversion actions on a switch to performance max, and sends them again on a switch back', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true, googleConversionActions: '111' });
+    expect(c['googleBiddingPayload']().conversionActions).toEqual(['111']);
+
+    c['campaignForm'].patchValue({ includeDemandGen: false, includePerformanceMax: true });
+    expect(c['googleBiddingPayload']().conversionActions).toBeUndefined();
+    expect(c['googleConversionActionsWithheldMessage']()).toBe(
+      "LFX One creates Performance Max campaigns on the Google Ads account's own conversion goals, so the 1 conversion action you entered will not be sent. Switch the channel back to keep them."
+    );
+
+    c['campaignForm'].patchValue({ includePerformanceMax: false, includeDemandGen: true });
+    expect(c['googleBiddingPayload']().conversionActions).toEqual(['111']);
+    expect(c['googleConversionActionsWithheldMessage']()).toBe('');
   });
 
   it('accepts a bare id and a full resource name, deduplicating nothing client-side', () => {

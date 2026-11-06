@@ -1622,8 +1622,10 @@ describe('CampaignController.createCampaign cutover', () => {
    *
    * Search and the non-Search channels build their config in two separate return statements, and a
    * plan spread into only one of them would silently drop every bid an operator set on the other.
+   * Demand Gen carries `conversionActions` too (#5262): campaign-service v1.0.31 applies them on every
+   * channel (`applyCampaignConversionGoal`), so the BFF refuses them on none.
    */
-  it.each([['search' as const], ['display' as const]])('carries the bidding plan on a %s create', async (channel) => {
+  it.each([['search' as const], ['display' as const], ['demand-gen' as const]])('carries the bidding plan on a %s create', async (channel) => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 

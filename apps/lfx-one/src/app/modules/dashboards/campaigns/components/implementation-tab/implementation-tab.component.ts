@@ -9821,10 +9821,9 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Whether this channel can name its conversion actions at create time.
    *
-   * A CHANNEL question, not a strategy one: `campaign.selective_optimization` is defined for
-   * Search, Display and Video, so those three accept the list under any strategy. Demand Gen and
-   * Performance Max select conversions through a resource that cannot be written until the
-   * campaign exists, and campaign-service refuses the list there rather than dropping it.
+   * A CHANNEL question, not a strategy one: campaign-service applies the list as a campaign-level
+   * custom conversion goal (`applyCampaignConversionGoal`) under any strategy. Read from
+   * {@link GOOGLE_CONVERSION_ACTION_CHANNELS}, which leaves out Performance Max by choice.
    */
   private initGoogleTakesConversionActions(): Signal<boolean> {
     return computed(() => {
@@ -9892,8 +9891,9 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Ids entered under a channel that takes conversion actions, held when the dispatched channel takes
-   * none: `googleBiddingPayload` sends them only while `googleTakesConversionActions`. Counted as the
+   * Ids entered under a channel that takes conversion actions, held when the dispatched channel is one
+   * LFX One sends none on (Performance Max, see {@link GOOGLE_CONVERSION_ACTION_CHANNELS}):
+   * `googleBiddingPayload` sends them only while `googleTakesConversionActions`. Counted as the
    * request would count them — trimmed, blank lines dropped. Read through `campaignFormRevision`.
    */
   private initGoogleConversionActionsWithheldMessage(): Signal<string> {
@@ -9903,7 +9903,7 @@ export class ImplementationTabComponent implements OnInit {
       void this.campaignFormRevision();
       const count = this.splitCreativeLines(this.campaignForm.getRawValue().googleConversionActions).length;
       if (count === 0) return '';
-      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take conversion actions, so the ${count} you entered will not be sent. Switch the channel back to keep them.`;
+      return `LFX One creates ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns on the Google Ads account's own conversion goals, so the ${count} conversion ${count === 1 ? 'action' : 'actions'} you entered will not be sent. Switch the channel back to keep them.`;
     });
   }
 
