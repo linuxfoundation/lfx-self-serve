@@ -138,7 +138,7 @@ describe('MeetingHomeRowComponent', () => {
       expect(texts(fixture, 'meetings-home-row-when').join(' · ')).toBe(formatMeetingWhen(START, 60));
       expect(texts(fixture, 'meetings-home-row-when')).toEqual([
         expect.stringMatching(/^\w{3}, \w{3} \d{1,2}$/),
-        expect.stringMatching(/^\d{1,2}:\d{2} [AP]M \S+$/),
+        expect.stringMatching(/^\d{1,2}:\d{2} [AP]M$/),
         '60 min',
       ]);
       expect(text(fixture, 'meetings-home-row-type').replace('·', '').trim()).toBe('Technical');
