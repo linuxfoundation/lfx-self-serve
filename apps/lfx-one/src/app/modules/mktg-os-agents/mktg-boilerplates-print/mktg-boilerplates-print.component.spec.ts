@@ -12,7 +12,9 @@ import { MktgBoilerplatesPrintComponent } from './mktg-boilerplates-print.compon
 async function mount(lengths?: BoilerplatesLengthRow[], firstPage = 1) {
   const asset = boilerplatesAssetOfRevision(JSON.stringify(envelope.content), envelope);
   if (!asset) throw new Error('Invalid synthetic boilerplates');
-  const brand = mktgPrintBrand(null);
+  // A brand whose dark is too light to read as body text, so the body ink is not the dark: the cards must take the ink.
+  const brand = { ...mktgPrintBrand(null), dark: '#cfd8e3' };
+  expect(brand.ink).not.toBe(brand.dark);
   const view = buildBoilerplatesPrintView(asset, brand);
   if (lengths) view.lengths = lengths;
   const fixture = TestBed.createComponent(MktgBoilerplatesPrintComponent);
@@ -47,7 +49,7 @@ it('prints the four lengths as two rows of bordered cards on one landscape page,
   // Two columns, the rows at the heights the pagination measured.
   const grid = pages[0].querySelector<HTMLElement>('[data-testid="mktg-boilerplates-print-grid"]');
   expect(grid?.style.gridTemplateRows.split(' minmax(')).toHaveLength(2);
-  expect(grid?.style.getPropertyValue('--mbp-ink')).toBe(brand.dark);
+  expect(grid?.style.getPropertyValue('--mbp-ink')).toBe(brand.ink);
   // The label's tracking the stylesheet draws is the layout's (the measure's).
   expect(grid?.style.getPropertyValue('--mbp-head-tracking')).toBe(`${MKTG_PRINT_APPENDIX_LAYOUT.cardLabelTracking}em`);
   const cards = pages[0].querySelectorAll('[data-testid="mktg-boilerplates-print-card"]');

@@ -46,11 +46,16 @@ test('Family PDF structure: the landscape pages carry their data-testid contract
   await expectMktgPrintFrame(page, MKTG_FAMILY_PRINT_BODY_CLASS, '[data-testid="family-export-print-document"]');
   const printFrame = await layoutMktgPrintFrame(page, PRINT_FRAME_LANDSCAPE);
   const printDocument = printFrame.getByTestId('family-export-print-document');
-  // The cover, two dividers, one page each of cards and of the grid, and the back cover: six landscape frames, each a page.
-  await expect(printDocument.getByTestId('mktg-print-page')).toHaveCount(6);
-  await expect(printDocument.getByTestId('mktg-print-page-slide')).toHaveCount(6);
-  await expect(printDocument.getByTestId('mktg-print-page-area')).toHaveCount(6);
-  await expect(printDocument.getByTestId('mktg-print-page-title')).toHaveCount(6);
+  // The cover, the kit's fifteen pages (its cover and fourteen content pages, no back cover of its own), two dividers, one
+  // page each of cards and of the grid, and the back cover: twenty-one landscape frames, each a page.
+  await expect(printDocument.getByTestId('mktg-print-page')).toHaveCount(21);
+  await expect(printDocument.getByTestId('mktg-print-page-slide')).toHaveCount(21);
+  await expect(printDocument.getByTestId('mktg-print-page-area')).toHaveCount(21);
+  await expect(printDocument.getByTestId('mktg-print-page-title')).toHaveCount(21);
+  const kit = printDocument.getByTestId('mktg-brand-kit-print');
+  await expect(kit.getByTestId('kit-print-cover')).toHaveCount(1);
+  await expect(kit.getByTestId('kit-print-page')).toHaveCount(14);
+  await expect(kit.getByTestId('kit-print-back-cover')).toHaveCount(0);
   // The cover: the mounted generic cover, its five elements (the eyebrow, the month, the footer pair, the lockup) and the subtitle.
   const cover = printDocument.getByTestId('family-export-print-cover');
   await expect(cover.getByTestId('mktg-print-cover')).toHaveCount(1);
@@ -69,10 +74,11 @@ test('Family PDF structure: the landscape pages carry their data-testid contract
   await expect(printDocument.getByTestId('mktg-faq-print-pair')).toHaveCount(4);
   await expect(printDocument.getByTestId('mktg-faq-print-answer')).toHaveCount(3);
   await expect(printDocument.getByTestId('mktg-faq-print-source')).toHaveCount(3);
-  // The content pages' chrome: two head lines, two footer boxes and a logo on each of the two; the covers and dividers carry none.
-  await expect(printDocument.getByTestId('mktg-print-page-head')).toHaveCount(4);
-  await expect(printDocument.getByTestId('mktg-print-page-footer')).toHaveCount(4);
-  await expect(printDocument.getByTestId('mktg-print-page-logo')).toHaveCount(2);
+  // The content pages' chrome: two head lines, two footer boxes and a logo on each of the sixteen (the kit's fourteen,
+  // the cards, the grid); the covers and dividers carry none.
+  await expect(printDocument.getByTestId('mktg-print-page-head')).toHaveCount(32);
+  await expect(printDocument.getByTestId('mktg-print-page-footer')).toHaveCount(32);
+  await expect(printDocument.getByTestId('mktg-print-page-logo')).toHaveCount(16);
   // The back cover: the mounted generic back cover, its host and notice lines.
   const back = printDocument.getByTestId('family-export-print-back-cover');
   await expect(back.getByTestId('mktg-print-page')).toHaveCount(1);

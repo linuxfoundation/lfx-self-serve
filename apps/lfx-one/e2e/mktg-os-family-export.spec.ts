@@ -268,10 +268,23 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(back.getByTestId('mktg-print-page')).toHaveAttribute('data-layout', 'back');
   await expect(back.getByTestId('mktg-print-page-title')).not.toBeEmpty();
   await expect(back).toContainText('trademarks of the Linux Foundation');
+  // The kit inside the family is the deck's landscape kit numbered from the family's plan: its cover at 2, its fourteen
+  // content pages 3–16 (the contents list the family's numbers), no back cover of its own (the family's closes the file).
+  const kitPrint = printDocument.getByTestId('mktg-brand-kit-print');
+  await expect(kitPrint).toHaveAttribute('data-pages', '15');
+  await expect(kitPrint.getByTestId('kit-print-cover')).toHaveCount(1);
+  await expect(kitPrint.getByTestId('kit-print-back-cover')).toHaveCount(0);
+  const kitPages = kitPrint.getByTestId('kit-print-page');
+  await expect(kitPages).toHaveCount(14);
+  await expect(kitPages.first()).toHaveAttribute('data-page', '03');
+  await expect(kitPages.first()).toContainText('04   Logo system');
+  await expect(kitPages.nth(1).getByTestId('mktg-print-page-head')).toHaveText(['01 Logo', / Brand Kit$/]);
+  await expect(kitPages.last().getByTestId('mktg-print-page-footer').last()).toHaveText('16');
   // Every landscape page is one fixed frame holding one 16:9 slide that breaks after itself, numbered deck-wide on the
-  // content pages only (the cover 1, the dividers 2 and 4, the back cover last; the framework and the kit print in their own flow for now).
+  // content pages only (the family cover 1, the kit 2–16, the dividers 17 and 19, the back cover 21; the framework
+  // prints in its own flow for now).
   const landscapePages = printDocument.getByTestId('mktg-print-page');
-  await expect(landscapePages).toHaveCount(6);
+  await expect(landscapePages).toHaveCount(21);
   for (const frame of await landscapePages.all()) {
     await expect(frame).toHaveCSS('position', 'relative');
     await expect(frame).toHaveCSS('overflow', 'hidden');
@@ -280,11 +293,13 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
     if (!box) throw new Error('Missing synthetic landscape slide');
     expect(box.width / box.height).toBeCloseTo(16 / 9, 1);
   }
+  const footerLine = / · a Linux Foundation project$/;
   await expect(printDocument.getByTestId('mktg-print-page-footer')).toHaveText([
-    / · a Linux Foundation project$/,
-    '03',
-    / · a Linux Foundation project$/,
-    '05',
+    ...Array.from({ length: 14 }, (_, i) => [footerLine, String(3 + i).padStart(2, '0')]).flat(),
+    footerLine,
+    '18',
+    footerLine,
+    '20',
   ]);
   // Nothing leaves its page: every card and every pair sits inside its page's body area.
   for (const pageTestId of ['mktg-boilerplates-print-page', 'mktg-faq-print-page']) {
@@ -321,15 +336,12 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printFrame.getByTestId('mktg-framework-print-cover')).toBeHidden();
   // The cover's whole sheet goes with it: its head and foot room alone would print as a blank page.
   await expect(printDocument.locator('lfx-mktg-print-sheet:has([data-testid="mktg-framework-print-cover"])')).toBeHidden();
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
-  // The page's room is in the document, not the @page margin (none, so no browser header or footer): every kit chapter
-  // repeats its head's 0.55in per page and pads its last row, and the other sections print in sheets that repeat a head
-  // and pad their last row, one row per block — no footer group anywhere, for which Chromium prints an empty page per
-  // table: the family cover 1; the framework 1 + 5 + 3 (its cover sheet is in the DOM, hidden above, and counted here);
-  // the boilerplates 4 lengths; the FAQ its header + 4 pairs. toHaveCount counts hidden elements: 6 sheets, 5 shown.
+  // None of the portrait kit's chapters print: the kit is its landscape pages (above).
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter, lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveCount(0);
+  // The framework's room is in the document, not the @page margin (none, so no browser header or footer): its sections
+  // print in sheets that repeat a head and pad their last row, one row per block — no footer group anywhere, for which
+  // Chromium prints an empty page per table. Its cover sheet is in the DOM, hidden above, and counted by toHaveCount.
   await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
   // Visible sheets, not heads: the framework's cover sheet is hidden with its cover.
   await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(3);
@@ -342,59 +354,14 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   );
   await expect(printFrame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
   await expect(printDocument.locator('lfx-mktg-framework-print .lfx-framework-print')).toHaveCSS('padding-left', '57.6px');
-  // The last rows' bottom room, to a tenth (mktgPrintComputedPx): the kit's calc(10pt + 0.55in) = 66.13px; a sheet's
-  // 0.55in = 52.8px.
-  expect(
-    await mktgPrintComputedPx(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tbody > tr:last-child > td').first(), 'padding-bottom')
-  ).toBeCloseTo(66.133, 1);
+  // The framework's last rows' bottom room, to a tenth (mktgPrintComputedPx): a sheet's 0.55in = 52.8px.
   expect(
     await mktgPrintComputedPx(
       printDocument.locator('lfx-mktg-framework-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').last(),
       'padding-bottom'
     )
   ).toBeCloseTo(52.8, 1);
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
-  const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
-  // This fixture's short contrast table stays whole: no one/two-row Letter tail.
-  expect(await kitPrint.getByTestId('kit-print-contrast').locator('tbody > tr').count()).toBeLessThanOrEqual(12);
-  await expect(kitPrint.locator('.kit-contrast-block')).toHaveCSS('break-inside', 'avoid');
-  await expect(kitPrint.getByTestId('kit-print-contrast')).toHaveCSS('break-inside', 'avoid');
-  await expect(kitPrint.getByTestId('kit-print-contrast').locator('thead')).toHaveCSS('display', 'table-header-group');
-  await expect(kitPrint.getByTestId('kit-print-type')).toContainText('Source: one.example.org site CSS');
-  await expect(kitPrint.getByTestId('kit-print-type')).not.toContainText('https://');
-  await expect(kitPrint.getByTestId('kit-print-voice').locator('.kit-eyebrow')).toHaveText(['Umbrella message', 'Brand line']);
-  await expect(kitPrint.getByTestId('kit-print-voice').locator('.kit-voice-source')).toHaveText('From the messaging framework');
-  await expect(kitPrint.getByTestId('kit-print-watchouts').locator('ul')).toHaveCSS('column-count', '3');
-  for (const tail of ['kit-print-partnership', 'kit-print-watchouts']) {
-    await expect(kitPrint.getByTestId(tail)).toHaveCSS('break-inside', 'avoid');
-  }
-  for (const frame of await kitPrint.locator('.kit-usage-frame').all()) {
-    await expect(frame).toHaveCSS('position', 'relative');
-    await expect(frame).toHaveCSS('overflow', 'hidden');
-    await expect(frame).toHaveCSS('break-inside', 'avoid');
-    await expect(frame.locator('.kit-usage-inner')).toHaveCSS('position', 'absolute');
-    for (const child of await frame.locator('.kit-usage-inner > img, .kit-usage-inner > p').all()) {
-      await expect(child).toHaveCSS('position', 'absolute');
-    }
-    const contained = await frame.evaluate((element) => {
-      const box = element.getBoundingClientRect();
-      return Array.from(element.querySelectorAll('img, p')).every((child) => {
-        const content = child.getBoundingClientRect();
-        return content.left >= box.left - 0.5 && content.top >= box.top - 0.5 && content.right <= box.right + 0.5 && content.bottom <= box.bottom + 0.5;
-      });
-    });
-    expect(contained, 'Family print logo/line must remain inside its own bounded frame').toBe(true);
-  }
-  const firstUsageFrame = printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame').first();
-  await expect(firstUsageFrame).toHaveCSS('aspect-ratio', 'auto');
-  const usageBox = await firstUsageFrame.boundingBox();
-  if (!usageBox) throw new Error('Missing synthetic usage frame');
-  expect(usageBox.height).toBeCloseTo((36 * 96) / 25.4, 0);
-  await expect(printDocument.getByTestId('kit-print-usage-pair')).toHaveCount(2);
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print')).not.toContainText('SVG supplied');
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print')).not.toContainText('V1.0');
   await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print')).toContainText('02.5 Voice in brief');
   await page.screenshot({ path: info.outputPath('four-assets-print-document.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);

@@ -2,14 +2,16 @@
 /* SPDX-License-Identifier: MIT */
 
 /* The deck's FAQ grid (its appendix spec §2), in deck points inside the
-   shell's body AREA: two open columns 16.5 pt apart, each pair a text box
-   of the deck's (the shell's insets on every side), rows 7.5 pt apart at the
-   heights the pagination measured, no boxes or rules; the question bold in
-   the dark, the answer 3 pt under it at the shell's line height, a list's
-   items indented 18 pt with real bullet glyphs in the ink, the gaps between
-   an answer's paragraphs the deck's (the layout's shares of the answer size,
-   none between two plain ones), the source line in the muted ink 3 pt under
-   the answer. Every length here is one the pagination measured with. */
+   shell's body AREA: two open columns 16.5 pt apart, each pair the text of
+   a text box of the deck's (the shell's insets at its sides, its height the
+   text's), rows 7.5 pt apart at the heights the pagination measured, no
+   boxes or rules; the question bold in the body ink, the answer under it by
+   the entry's gap at the shell's line height, a list's items indented 18 pt
+   with real bullet glyphs in the ink, the gaps between an answer's
+   paragraphs the deck's (the entry's between items, the layout's shares of
+   the answer size after a list and before one, none between two plain
+   ones), the source line in the muted ink under the answer by the entry's
+   gap. Every length here is one the pagination measured with. */
 
 @use '../../../../styles/mktg-print-pt' as *;
 
@@ -26,7 +28,7 @@
 .mfq-pair {
   box-sizing: border-box;
   min-width: 0;
-  padding: var(--pp-inset);
+  padding: 0 var(--pp-inset);
   overflow: hidden;
   break-inside: avoid;
   overflow-wrap: anywhere;
@@ -41,13 +43,13 @@
 
 .mfq-answer {
   display: block;
-  margin: pt(3) 0 0;
+  margin: var(--mfq-answer-gap) 0 0;
   line-height: var(--pp-line);
   color: var(--mfq-ink);
 }
 
 .mfq-source {
-  margin: pt(3) 0 0;
+  margin: var(--mfq-source-gap) 0 0;
   font-size: var(--mfq-source-size);
   line-height: var(--pp-line);
   color: var(--mfq-muted);
@@ -91,7 +93,7 @@
 
   li + li,
   :is(ul, ol) + :is(ul, ol) {
-    margin-top: var(--mfq-bullet-gap);
+    margin-top: var(--mfq-item-gap);
   }
 
   :is(ul, ol) + p {

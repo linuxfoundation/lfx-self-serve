@@ -31,7 +31,7 @@ import {
   MktgSlidesExportMode,
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
-import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle, mktgPrintFamilyPlan, mktgPrintPageLook } from '@lfx-one/shared/utils';
+import { mktgBrandKitBookPageCount, mktgFamilyExportAgentKeys, mktgPrintDocumentTitle, mktgPrintFamilyPlan, mktgPrintPageLook } from '@lfx-one/shared/utils';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -294,7 +294,7 @@ export class MktgFamilyExportActionsComponent {
   private initPrintPlan(): Signal<MktgPrintFamilyPlan | null> {
     return computed(() => {
       const view = this.printView();
-      return view ? mktgPrintFamilyPlan(view, this.frameworkPageCount(), this.kitPageCount()) : null;
+      return view ? mktgPrintFamilyPlan(view, this.frameworkPageCount(), this.kitPageCount(view)) : null;
     });
   }
 
@@ -418,8 +418,8 @@ export class MktgFamilyExportActionsComponent {
     return 0;
   }
 
-  /** How many deck pages the kit prints, its back cover not counted: none while it prints in its own portrait flow (the one place to switch to the kit's count helper). */
-  private kitPageCount(): number {
-    return 0;
+  /** How many deck pages the kit prints inside the family: its cover and content pages, its own back cover left out (the family's closes the file). */
+  private kitPageCount(view: MktgFamilyPrintView): number {
+    return view.kit ? mktgBrandKitBookPageCount(view.kit, view.brand, view.projectName, { backCover: false }) : 0;
   }
 }

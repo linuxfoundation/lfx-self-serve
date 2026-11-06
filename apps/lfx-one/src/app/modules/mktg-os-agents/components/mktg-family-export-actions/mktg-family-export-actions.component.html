@@ -103,7 +103,14 @@
         <lfx-mktg-framework-print [view]="framework" [number]="plan.numbers.framework ?? ''" />
       }
       @if (document.kit; as kit) {
-        <lfx-mktg-brand-kit-print [view]="kit" [brand]="document.brand" [projectName]="document.projectName" [number]="plan.numbers.kit ?? ''" />
+        <!-- The kit's landscape pages numbered from the plan, its own back cover left out: the family's closes the file. -->
+        <lfx-mktg-brand-kit-print
+          [view]="kit"
+          [brand]="document.brand"
+          [projectName]="document.projectName"
+          [number]="plan.numbers.kit ?? ''"
+          [firstPage]="plan.kitFirstPage"
+          [backCover]="false" />
       }
       @if (document.boilerplates; as boilerplates) {
         @let boilerplatesNumber = plan.numbers.boilerplates ?? '';
@@ -132,7 +139,8 @@
       }
       @if (document.kit; as kit) {
         @if (printLook(); as look) {
-          <!-- The kit's back cover closes the whole file (D1 §5): the brand line, the site's host and the trademark notice on the dark ground. -->
+          <!-- The kit's back cover closes the whole file (D1 §5), the very page the kit prints last on its own: the brand
+               line (else the project name), the site's host and the trademark notice on the dark ground. -->
           <lfx-mktg-print-back-cover
             [look]="look"
             [title]="kit.voice.line || document.projectName"

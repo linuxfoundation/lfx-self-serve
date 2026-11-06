@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_FAQ_PRINT_UNANSWERED, MKTG_PRINT_APPENDIX_LAYOUT } from '@lfx-one/shared/constants';
+import { MKTG_FAQ_PRINT_UNANSWERED, MKTG_PRINT_APPENDIX_LAYOUT, MKTG_PRINT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { FaqGroupView, FaqPrintView } from '@lfx-one/shared/interfaces';
 import { buildFaqPrintView, faqAssetOfRevision, mktgPagePt, mktgPrintBrand, mktgFaqPageCount } from '@lfx-one/shared/utils';
 import envelope from '@lfx-one/shared/utils/__fixtures__/faq-envelope.json';
@@ -31,7 +31,10 @@ async function mount(view: FaqPrintView, firstPage = 1) {
 function fixtureView(content: object = envelope.content): FaqPrintView {
   const asset = faqAssetOfRevision(JSON.stringify(content), envelope);
   if (!asset) throw new Error('Invalid synthetic FAQ');
-  return buildFaqPrintView(asset, mktgPrintBrand(null));
+  // A brand whose dark is too light to read as body text, so the body ink is not the dark: the grid must take the ink.
+  const brand = { ...mktgPrintBrand(null), dark: '#cfd8e3' };
+  expect(brand.ink).not.toBe(brand.dark);
+  return buildFaqPrintView(asset, brand);
 }
 
 it('prints the pairs as a two-column grid on one landscape page, question over answer, the unanswered one labelled, sources where present', async () => {
@@ -54,9 +57,9 @@ it('prints the pairs as a two-column grid on one landscape page, question over a
   expect(pages[0].querySelector('[data-testid="mktg-print-page-logo"] img')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
   const grid = pages[0].querySelector<HTMLElement>('[data-testid="mktg-faq-print-grid"]');
   expect(grid?.style.gridTemplateRows.split(' minmax(')).toHaveLength(2);
-  expect(grid?.style.getPropertyValue('--mfq-ink')).toBe(brand.dark);
-  // The paragraph gaps the stylesheet draws are the layout's (the measure's), as shares of the answer size.
-  expect(grid?.style.getPropertyValue('--mfq-bullet-gap')).toBe(`${MKTG_PRINT_APPENDIX_LAYOUT.faqBulletGapEm}em`);
+  expect(grid?.style.getPropertyValue('--mfq-ink')).toBe(brand.ink);
+  // The paragraph gaps the stylesheet draws are the measure's: the layout's shares of the answer size after a list and
+  // before one on the grid, and each entry's own gaps (under the question, between items, over the source) in page points.
   expect(grid?.style.getPropertyValue('--mfq-plain-after-bullet-gap')).toBe(`${MKTG_PRINT_APPENDIX_LAYOUT.faqPlainAfterBulletEm}em`);
   expect(grid?.style.getPropertyValue('--mfq-bullet-after-plain-gap')).toBe(`${MKTG_PRINT_APPENDIX_LAYOUT.faqBulletAfterPlainEm}em`);
   // The pairs flow row by row in group order, with no group heading of their own on the grid.
@@ -66,6 +69,11 @@ it('prints the pairs as a two-column grid on one landscape page, question over a
     view.groups.flatMap((group) => group.questions.map((row) => row.question))
   );
   expect(root.querySelector('[data-testid="mktg-faq-print-group"]')).toBeNull();
+  const first = pairs[0] as HTMLElement;
+  expect(first.style.getPropertyValue('--mfq-answer-gap')).toBe(mktgPagePt(MKTG_PRINT_APPENDIX_LAYOUT.faqAnswerGap));
+  expect(first.style.getPropertyValue('--mfq-item-gap')).toBe(mktgPagePt(MKTG_PRINT_APPENDIX_LAYOUT.faqListItemGap));
+  expect(first.style.getPropertyValue('--mfq-source-gap')).toBe(mktgPagePt(MKTG_PRINT_APPENDIX_LAYOUT.faqSourceGap));
+  expect(first.style.getPropertyValue('--mfq-source-size')).toBe(mktgPagePt(MKTG_PRINT_PAGE_SIZE.eyebrow));
   expect(pairs[0].querySelector<HTMLElement>('h3')?.style.fontSize).toBe(mktgPagePt(MKTG_PRINT_APPENDIX_LAYOUT.faqQuestionSize));
   expect(pairs[0].querySelector<HTMLElement>('[data-testid="mktg-faq-print-answer"]')?.style.fontSize).toBe(
     mktgPagePt(MKTG_PRINT_APPENDIX_LAYOUT.faqAnswerSize)

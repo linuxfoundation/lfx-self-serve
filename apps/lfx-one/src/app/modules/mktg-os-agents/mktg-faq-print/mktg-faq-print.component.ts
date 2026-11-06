@@ -18,9 +18,11 @@ import { MktgPrintPageComponent } from '../components/mktg-print-page/mktg-print
  * The FAQ as the family deck prints it: pages of a two-column grid, the
  * question bold over its answer (the agent's restricted Markdown through the
  * shared renderer, so a list prints real bullets), the pairs flowing row by
- * row, paginated in TypeScript from the data by the shell's measure (as many
- * rows to a page as fit at 100, 95 or 90 % of the sizes, as the Slides
- * exporter paginates), one landscape page per page of the grid.
+ * row, paginated in TypeScript from the data by the deck's measure (each
+ * column a text box of the deck's, as many rows to a page as fit at 100, 95
+ * or 90 % of the sizes and gaps, as the Slides exporter paginates), one
+ * landscape page per page of the grid; every size and gap the template
+ * draws is the one the pagination measured with.
  */
 @Component({
   selector: 'lfx-mktg-faq-print',
@@ -39,8 +41,7 @@ export class MktgFaqPrintComponent {
   public readonly firstPage = input(1);
   protected readonly unansweredLabel = MKTG_FAQ_PRINT_UNANSWERED;
   protected readonly sourceLead = MKTG_PRINT_SOURCE_LEAD;
-  /** The deck's gaps between an answer's paragraphs, as shares of the answer size (em), as the pagination measured them. */
-  protected readonly bulletGap = `${MKTG_PRINT_APPENDIX_LAYOUT.faqBulletGapEm}em`;
+  /** The deck's gaps after a list and before one, as shares of the answer size (em), as the pagination measured them. */
   protected readonly plainAfterBulletGap = `${MKTG_PRINT_APPENDIX_LAYOUT.faqPlainAfterBulletEm}em`;
   protected readonly bulletAfterPlainGap = `${MKTG_PRINT_APPENDIX_LAYOUT.faqBulletAfterPlainEm}em`;
   protected readonly chrome = computed(() => mktgPrintPageChrome(this.projectName(), this.familyName(), this.number(), MKTG_PRINT_SECTION_TITLES.faq));
@@ -50,9 +51,16 @@ export class MktgFaqPrintComponent {
       ...page,
       number: mktgPrintPageNumber(this.firstPage() + index),
       rowsTemplate: page.rows.map((row) => `minmax(${mktgPagePt(row.height)}, auto)`).join(' '),
-      sourceSizePt: mktgPagePt(page.sourceSize),
       rows: page.rows.map((row) => ({
-        entries: row.entries.map((entry) => ({ ...entry, questionSizePt: mktgPagePt(entry.questionSize), answerSizePt: mktgPagePt(entry.answerSize) })),
+        entries: row.entries.map((entry) => ({
+          ...entry,
+          questionSizePt: mktgPagePt(entry.questionSize),
+          answerSizePt: mktgPagePt(entry.answerSize),
+          sourceSizePt: mktgPagePt(entry.sourceSize),
+          answerGapPt: mktgPagePt(entry.answerGap),
+          listItemGapPt: mktgPagePt(entry.listItemGap),
+          sourceGapPt: mktgPagePt(entry.sourceGap),
+        })),
       })),
     }))
   );
