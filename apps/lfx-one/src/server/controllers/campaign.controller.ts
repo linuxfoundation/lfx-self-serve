@@ -202,6 +202,7 @@ import {
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
   MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES,
   MAX_GOOGLE_CREATIVE_NESTED_LIST_TOTAL,
+  MAX_GOOGLE_GEO_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
   MAX_KEYWORD_TARGETING_REVISION_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
@@ -7009,7 +7010,11 @@ export class CampaignController {
   private oversizedGoogleCreativeField(body: CampaignCreateRequest): { field: string; message: string } | null {
     const raw = body as unknown as Record<string, unknown>;
     // Every creative key the normalizer reads: each channel's image creative and Demand Gen's video ad.
-    const candidates: [string, unknown][] = [...Object.values(GOOGLE_CREATIVE_REQUEST_KEYS), GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY].map((key) => [key, raw[key]]);
+    // Each entry may name its own list-length bound; without one it takes the shared one.
+    const candidates: [string, unknown, number?][] = [...Object.values(GOOGLE_CREATIVE_REQUEST_KEYS), GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY].map((key) => [
+      key,
+      raw[key],
+    ]);
     candidates.push(['conversionActions', raw['conversionActions']]);
     candidates.push(['callouts', raw['callouts']]);
     candidates.push(['audienceSegments', raw['audienceSegments']]);
@@ -7018,10 +7023,12 @@ export class CampaignController {
     // their own caps further down, because `createConfigEnvelope` runs BEFORE those caps and
     // normalizes whatever it is handed — `googleProximityList`, `googleAdScheduleList` and
     // `googleDeviceBidModifierList` each allocating a fresh object per entry as they go. The named
-    // caps (60 exclusions, 20 radius targets, 42 schedules, 3 devices, 20 per demographic list)
+    // caps (500 exclusions, 20 radius targets, 42 schedules, 3 devices, 20 per demographic list)
     // still make the refusal an operator can act on; this one only stops a 15mb body from being
-    // walked before they are reached.
-    candidates.push(['excludedGeoTargets', raw['excludedGeoTargets']]);
+    // walked before they are reached. The exclusions take their own, wider bound
+    // (MAX_GOOGLE_GEO_LIST_ENTRIES): at the shared 100 a legitimate 500-entry list would be refused
+    // here, generically, before its named cap was ever reached.
+    candidates.push(['excludedGeoTargets', raw['excludedGeoTargets'], MAX_GOOGLE_GEO_LIST_ENTRIES]);
     candidates.push(['proximityTargets', raw['proximityTargets']]);
     candidates.push(['adSchedules', raw['adSchedules']]);
     candidates.push(['deviceBidModifiers', raw['deviceBidModifiers']]);
@@ -7036,8 +7043,8 @@ export class CampaignController {
       }
     }
 
-    for (const [key, source] of candidates) {
-      const found = this.oversizedBoundableField(key, source);
+    for (const [key, source, listMax] of candidates) {
+      const found = this.oversizedBoundableField(key, source, listMax);
       if (found !== null) return found;
     }
 
@@ -7191,14 +7198,16 @@ export class CampaignController {
   /**
    * The first field of one bounded source that breaks a resource bound, or null: a creative key's
    * object of fields, or a bare list such as `conversionActions`. {@link oversizedGoogleCreativeField}'s
-   * per-key walk, shared with each named Demand Gen ad group's two creatives (#5226).
+   * per-key walk, shared with each named Demand Gen ad group's two creatives (#5226). `listMax` is
+   * the list-length bound, the shared one unless the caller names a wider one (the excluded geo
+   * list's MAX_GOOGLE_GEO_LIST_ENTRIES).
    */
-  private oversizedBoundableField(key: string, source: unknown): { field: string; message: string } | null {
+  private oversizedBoundableField(key: string, source: unknown, listMax: number = MAX_GOOGLE_CREATIVE_LIST_ENTRIES): { field: string; message: string } | null {
     // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
     for (const [field, value] of this.boundableEntries(key, source)) {
       if (Array.isArray(value)) {
-        if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
-          return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+        if (value.length > listMax) {
+          return { field, message: `the list exceeds the maximum of ${listMax} entries` };
         }
         // A stored-image ref is an object entry, so its id is measured here too: the normalizer
         // trims and forwards it, and an unbounded id is the same unbounded string a URL would be.

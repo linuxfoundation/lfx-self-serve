@@ -3449,7 +3449,7 @@ export class ImplementationTabComponent implements OnInit {
     // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
     // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
-    // Countries and postal ids together over upstream's 60 — see `googleGeoTargetsOverCap`.
+    // Countries and postal ids together over upstream's 500 — see `googleGeoTargetsOverCap`.
     if (googleSelected && this.googleGeoTargetsOverCap()) return false;
     // An end date before the start, which Google refuses (#4848); the message is under End Date.
     if (googleSelected && this.googleFlightError() !== null) return false;
