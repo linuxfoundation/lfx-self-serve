@@ -42,11 +42,19 @@ export type UiTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | '
 /** Colour role of a uikit badge and its status dot. `neutral` is the default. */
 export type UiBadgeTone = UiTone;
 
-/** Look of a uikit badge: the role's `subtle` fill, its `solid` fill, or the neutral `outline` ring. */
-export type UiBadgeVariant = 'subtle' | 'solid' | 'outline';
+/** Look of a uikit badge: the role's `subtle` fill, its `solid` fill, the neutral `outline` ring, or the `line` form: the role's solid colour as text and a ring on a transparent fill. */
+export type UiBadgeVariant = 'subtle' | 'solid' | 'outline' | 'line';
 
 /** Height of a uikit badge and chip: `sm` is 20px with 11px text, `md` is 24px with 12px text. */
 export type UiBadgeSize = 'sm' | 'md';
+
+/** A uikit gauge ring's geometry in its 100-unit viewBox: radius, stroke width, circumference and arc ends. */
+export interface UiGaugeGeometry {
+  radius: number;
+  stroke: number;
+  circumference: number;
+  linecap: 'round' | 'butt';
+}
 
 /** Look of a uikit chip: the badge's `subtle` role fill, or the neutral `outline` ring. */
 export type UiChipVariant = 'subtle' | 'outline';
@@ -62,6 +70,16 @@ export interface UiAvatarItem {
   src?: string;
   /** Colour role that tints the initials circle, to tell people apart in dense lists. */
   tone?: UiAvatarTone;
+}
+
+/** A status pinned to the top right of a uikit avatar, such as an RSVP answer or attendance. */
+export interface UiAvatarStatus {
+  /** Font Awesome class string for the glyph, such as `fa-solid fa-check`. */
+  icon: string;
+  /** Colour role of the circle. The glyph is white, or neutral-900 on `warning` for contrast. */
+  tone: UiTone;
+  /** What the status means, such as `RSVP: Yes`. It is the tooltip and is added to the avatar's accessible name. */
+  label: string;
 }
 
 /** Options for `UiModalService.open`. Every field is optional. */
@@ -94,6 +112,8 @@ export interface UiDrawerConfig<D = unknown> extends Omit<UiModalConfig<D>, 'rol
   size?: UiDrawerSize;
   /** Custom width in px for the `default` size, in place of 560. It never exceeds the window less its 8px insets. */
   width?: number;
+  /** Same as the layout's `bare` input: no header or footer, and the content fills an unpadded scrolling body. Don't project the header or footer slots. Defaults to `false`. */
+  bare?: boolean;
   /**
    * Asked before the user dismisses the drawer with Escape, a backdrop click or the close button; return `false` to keep it open,
    * for example while a form has unsaved changes. It may return a promise, such as the answer of a confirm modal. A promise that
@@ -230,6 +250,9 @@ export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'te
 
 /** Size of a uikit button: `tiny` 24px, `small` 28px, `default` 32px or `large` 40px tall. */
 export type UiButtonSize = 'tiny' | 'small' | 'default' | 'large';
+
+/** Which trigger edge a uikit menu lines up with: `start` extends toward the end, `end` extends back toward the start. */
+export type UiMenuAlign = 'start' | 'end';
 
 /** Size of a uikit switch (segmented control): `tiny` 24px, `small` 32px or `medium` 40px tall. */
 export type UiSwitchSize = UiControlSize;

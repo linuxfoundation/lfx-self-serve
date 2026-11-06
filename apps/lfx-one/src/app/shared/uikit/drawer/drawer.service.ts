@@ -27,7 +27,7 @@ export class UiDrawerService {
 
   /** Opens the drawer and returns its `DialogRef`; `ref.closed` emits the result once the exit animation ends. */
   public open<R = unknown, D = unknown, C = unknown>(content: ComponentType<C> | TemplateRef<C>, config: UiDrawerConfig<D> = {}): DialogRef<R, C> {
-    const context = new UiDrawerContext(config.side, config.width, config.size);
+    const context = new UiDrawerContext(config.side, config.width, config.size, config.bare);
     // Floats 8px from the top, bottom and anchored edge of the window.
     const edge = this.overlay.position().global().top('8px');
     let leaving = false;

@@ -3,35 +3,35 @@ title: People
 description: How to read the People page for the selected company — its All Employees, Board, Committee, Key Contacts, Contributors, Event Attendees, Trainees and Company Lens Access tabs — filter each tab, change board, committee and key contact seats as an Admin, and how the time range carries to Code Contributions.
 audience: [all]
 product_area: Company
-tags: [company, company-lens, people, employees, contributors, maintainers, board, committee, key-contacts, events, training, time-range, team-members]
-last_updated: 2026-11-05
+tags: [company, org, org-lens, people, employees, contributors, maintainers, board, committee, key-contacts, events, training, time-range, team-members]
+last_updated: 2026-11-06
 intercom_collection: Company
 ---
 
-These steps apply to anyone who can open a company in the Company Lens, such as a company admin (editor or viewer) or Linux Foundation staff. Changing board, committee and key contact seats also needs edit access to the company, which its Admins have. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **People**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
+These steps apply to anyone who can open a company in the Company lens, such as a company admin (editor or viewer). Changing board, committee and key contact seats also needs edit access to the company, which its Admins have. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **People**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
 
 ## What is the People page?
 
-The People page lists the selected company's employees and how each one takes part in the Linux Foundation: board and committee seats, key contact roles, code contributions and maintainer roles, events, and training. Its address is `/company/<company>/people`.
+The People page lists the selected company's employees and how each one takes part in the Linux Foundation: board and committee seats, key contact roles, code contributions and maintainer roles, events, and training. Its address is `/org/<company>/people`.
 
 The page heading is **People —** followed by the company's name. The line under it is **All employee involvement with the Linux Foundation — board, committees, maintainership, code, training, and events.** The page has eight tabs:
 
-| Tab                     | What it lists                                                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **All Employees**       | Everyone with recorded activity, a seat, a contact role or Company Lens access, with all of it in one row (the default) |
-| **Board**               | Employees who hold a seat on a foundation's governing board                                                             |
-| **Committee**           | Employees who sit on foundation committees                                                                              |
-| **Key Contacts**        | Employees named as contacts on the company's foundation memberships                                                     |
-| **Contributors**        | Employees who contributed code, and whether they are maintainers                                                        |
-| **Event Attendees**     | People who registered for, attended or spoke at events                                                                  |
-| **Trainees**            | Employees who enrolled in courses or earned certifications                                                              |
-| **Company Lens Access** | Who can open the company, covered in [Manage Company Lens Access](../manage-company-lens-access/)                       |
+| Tab                 | What it lists                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **All Employees**   | Everyone with recorded activity, a seat, a contact role or Company Lens access, with all of it in one row (the default) |
+| **Board**           | Employees who hold a seat on a foundation's governing board                                                         |
+| **Committee**       | Employees who sit on foundation committees                                                                          |
+| **Key Contacts**    | Employees named as contacts on the company's foundation memberships                                            |
+| **Contributors**    | Employees who contributed code, and whether they are maintainers                                                    |
+| **Event Attendees** | People who registered for, attended or spoke at events                                                              |
+| **Trainees**        | Employees who enrolled in courses or earned certifications                                                          |
+| **Company Lens Access** | Who can open the company, covered in [Manage Company Lens Access](../manage-company-lens-access/)                      |
 
 Select a person's name on any tab to open their details. On **Event Attendees**, only people with a roster profile have a selectable name; for anyone else, select the row to see their events.
 
 ## How do I open People?
 
-You open **People** from the Company Lens sidebar, under **Company Engagement**, once a company is selected. A CLA Manager or initial CLA Manager designee with no other role on that company is sent to **EasyCLA** instead.
+You open **People** from the Company lens sidebar, under **Company Engagement**, once a company is selected. A CLA Manager or initial CLA Manager designee with no other role on that company is sent to **EasyCLA** instead.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Company** in the lens switcher.
@@ -40,7 +40,7 @@ You open **People** from the Company Lens sidebar, under **Company Engagement**,
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, People is replaced by the same access message as the other Company Lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
+When you cannot open the company, People is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
 
 ## What does the All Employees tab show?
 
@@ -48,14 +48,14 @@ The **All Employees** tab shows the company's people in one table, one row per p
 
 Five cards at the top count **Employees Active in Open Source**, **In Governance**, **Code Contributors**, **Event Attendees** and **Trainees**. The table has these columns:
 
-| Column                  | What it shows                                                                                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Employee**            | The person's name and job title. **Former** marks someone who no longer works at the company                                                     |
-| **Board & Committee**   | How many board and committee seats they hold, such as **2 seats**                                                                                |
-| **Code contributions**  | Their code count under the chosen code count. The heading changes to **Commits** when you count commits. Hover it for what it counts             |
-| **Events**              | How many events they attended                                                                                                                    |
-| **Training**            | How many courses they took                                                                                                                       |
-| **Company Lens Access** | **Admin** or **Viewer** when they can open the company in the Company Lens, or **Invited** when they have been invited and have not accepted yet |
+| Column                 | What it shows                                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Employee**           | The person's name and job title. **Former** marks someone who no longer works at the company                                                          |
+| **Board & Committee**  | How many board and committee seats they hold, such as **2 seats**                                                                                          |
+| **Code contributions** | Their code count under the chosen code count. The heading changes to **Commits** when you count commits. Hover it for what it counts                       |
+| **Events**             | How many events they attended                                                                                                                              |
+| **Training**           | How many courses they took                                                                                                                                 |
+| **Company Lens Access**    | **Admin** or **Viewer** when they can open the company in the Company lens, or **Invited** when they have been invited and have not accepted yet |
 
 A dash (**—**) means none. Select a row with a chevron to expand it. Rows without one, such as a person listed only for a seat or Company Lens access, have no detail to show. The expanded row lists the person's **Governance — Board Seats**, **Meetings — Committee Seats**, **Code Contributions**, **Events**, and **Training & Certifications**. When a person has nothing recorded there, it says **No LF activity detail recorded for this employee.**
 
@@ -129,12 +129,12 @@ The **Event Attendees** tab shows the people who registered for, attended or spo
 The **Trainees** tab shows the employees who enrolled in a course or earned a certificate in the time range.
 
 - **Filters:** a search box and the time range, and under **More filters**, **Foundation**, **Project**, **Course**, **Level** and **Format**. **Clear all** resets the five filters under **More filters**, and keeps the time range and the search. The filters change both the cards and the table. The search changes the table only.
-- **Cards:** **Training-program roster members**, **People with training activity**, **Courses taken**, **Certifications**, **Certified people**, **Trainings completed**, **Completion rate**, **Courses in progress** and **People in training**. Point at a card to see what it counts. **Training-program roster members** is today's count of the people on the company's LF Education training program, and does not follow the time range or the filters.
+- **Cards:** **Training-program roster members**, **People with training activity**, **Learners not on the people list**, **Courses taken**, **Certifications**, **Certified people**, **Trainings completed**, **Completion rate**, **Courses in progress** and **People in training**. Point at a card to see what it counts. **Training-program roster members** is today's count of the people on the company's LF Education training program, and does not follow the time range or the filters.
 - **Columns:** **Name**, **Status** (**Certified** or **Enrolled**), **Courses**, **Certs**, **Trainings**, **In progress** and **Most Recent Course**.
 - **Former employees:** former employees on the people list can count in the cards, but the table lists current employees only. A note under the cards says how many, except while a foundation, project, course, level or format is selected: the note is then hidden, though they can still be counted.
 - **Learners not on the people list:** learners linked to the company who are not on its people list are listed under the table by name and status. They are hidden while a foundation, project, course, level or format is selected.
 
-Select a row on either tab to expand it and see each event, course or certification. Both tabs show 30 people at first. Select **Show All** at the bottom to see the rest.
+Select a row on either tab to expand it and see each event, course or certification. **Event Attendees** shows 30 people at first: select **Show All** at the bottom to see the rest. On **Trainees**, the table and the **Learners not on the people list** list each have their own pages of 10 rows, with page numbers and **Showing 1 to 10 of N** at the bottom. When a list has more than 10 people, the menu next to the page numbers shows 25 or 50 rows per page. A new search, filter, time range or sort goes back to the first page.
 
 ## How do I filter a People tab?
 
@@ -162,7 +162,7 @@ Your choice carries to **Code Contributions** and **Projects** when you move bet
 
 ## What does Company scope change on People?
 
-**Company scope** chooses which of the company's related companies count toward code contributions on **All Employees** and **Contributors**. **Insights company**, the default, counts only the company shown on the company's LFX Insights page, in the repositories LFX Insights counts. **All related companies** counts every company linked to the company account, in every repository.
+**Company scope** chooses which of the companies count toward code contributions on **All Employees** and **Contributors**. **Insights company**, the default, counts only the company shown on the company's LFX Insights page, in the repositories LFX Insights counts. **All related companies** counts every company linked to the company account, in every repository.
 
 On **All Employees** the choice **Applies to code contributions only.** Seats, events and training are counted the same way under both choices. See [Company scope](../../dashboards/#company-scope).
 
@@ -180,23 +180,23 @@ See [Code Contributions](../code-contributions/) for that page.
 
 A tab that finds nobody says so in its table, and a tab that fails to load names what failed and offers **Retry**. An empty tab is not the same as a failed load.
 
-| What you see                                                                                     | Where                                      | What to do                                             |
-| ------------------------------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------------------------------ |
-| **No employees match the current filters.**, and the same for other tabs                         | Any tab, with filters set                  | Clear the search or change the menus                   |
-| **No employees found for this company.**                                                         | **All Employees**                          | The company has no recorded activity in the time range |
-| **No contributors found for this company in the** time range                                     | **Contributors**                           | **Choose All time to include older contributions.**    |
+| What you see                                                                                     | Where                                      | What to do                                                  |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------- |
+| **No employees match the current filters.**, and the same for other tabs                         | Any tab, with filters set                  | Clear the search or change the menus                        |
+| **No employees found for this company.**                                                    | **All Employees**                          | The company has no recorded activity in the time range |
+| **No contributors found for this company in the** time range                                | **Contributors**                           | **Choose All time to include older contributions.**         |
 | **No board members found.**, **No committee members found.**, **No key contact data available.** | **Board**, **Committee**, **Key Contacts** | The company has no seats or contacts on record         |
-| **Former employees couldn't be loaded, so only current employees are shown.**                    | **All Employees**                          | The list is incomplete. Reload the page later          |
-| **Failed to load employees**, **Failed to load contributors**, and so on                         | Any tab                                    | Select **Retry**                                       |
-| **Failed to load activity detail.**                                                              | An expanded **All Employees** row          | Select **Retry** in the row                            |
+| **Former employees couldn't be loaded, so only current employees are shown.**                    | **All Employees**                          | The list is incomplete. Reload the page later               |
+| **Failed to load employees**, **Failed to load contributors**, and so on                         | Any tab                                    | Select **Retry**                                            |
+| **Failed to load activity detail.**                                                              | An expanded **All Employees** row          | Select **Retry** in the row                                 |
 
 ## Related sections
 
 - [Code Contributions](../code-contributions/) — the company's repositories and commits, with the same time range
 - [Choose and switch a company](../choose-a-company/) — pick the company these people belong to
-- [Company Overview dashboard](../company-overview/) — the **Dashboard**, with the company's involvement at a glance
+- [Org Overview dashboard](../company-overview/) — the **Dashboard**, with the company's involvement at a glance
 - [Memberships](../memberships/) — the foundation memberships behind the board, committee and key contact seats, and the steps for editing a single key contact
 - [Events and Event Attendees](../company-events/) — the **Event Attendees** filters, defaults and what each option counts
 - [Manage Company Lens Access](../manage-company-lens-access/) — the **Company Lens Access** tab
 - [Training & Certification](../training/) — the company's courses and certifications by course, with the same cards and filters as **Trainees**
-- [Company FAQ](../faq/) — short answers about the Company Lens
+- [Company FAQ](../faq/) — short answers about the Company lens

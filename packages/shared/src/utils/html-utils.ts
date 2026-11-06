@@ -313,6 +313,49 @@ export function stripHtml(html: string | null | undefined): string {
 }
 
 /**
+ * A plain-text opening of an HTML document (e.g. a sent newsletter body), at most `maxLength`
+ * characters, cut at a word boundary with a trailing ellipsis when shortened. `<style>`, `<script>`
+ * and other non-text elements are dropped with their contents, block boundaries become spaces, and
+ * whitespace collapses — so the result is safe to show as text, never as HTML.
+ */
+export function htmlTextExcerpt(html: string | null | undefined, maxLength: number): string {
+  if (!html || maxLength <= 0) return '';
+  const text = sanitizeHtml(html.replace(/<(\/?)(p|div|br|h[1-6]|li|tr|td|th|table|section|article|blockquote)\b/gi, ' <$1$2'), {
+    allowedTags: [],
+    allowedAttributes: {},
+    nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript', 'title', 'head'],
+  });
+  const collapsed = decodeHtmlEntities(text).replace(/\s+/g, ' ').trim();
+  if (collapsed.length <= maxLength) return collapsed;
+
+  const cut = collapsed.slice(0, maxLength - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > maxLength / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
+/**
+ * The `src` of the first image in an HTML document that is a public `https:` URL, skipping
+ * tracking-pixel-sized images (an explicit width or height of 2px or less), or null when there is none.
+ */
+export function firstHtmlImageUrl(html: string | null | undefined): string | null {
+  if (!html) return null;
+  let found: string | null = null;
+  sanitizeHtml(html, {
+    allowedTags: ['img'],
+    allowedAttributes: { img: ['src', 'width', 'height'] },
+    exclusiveFilter: (frame) => {
+      if (found || frame.tag !== 'img') return false;
+      const { src, width, height } = frame.attribs;
+      const tiny = [width, height].some((size) => size !== undefined && Number.parseInt(size, 10) <= 2);
+      const url = canonicalHttpUrl(src);
+      if (!tiny && url.startsWith('https:')) found = url;
+      return false;
+    },
+  });
+  return found;
+}
+
+/**
  * Converts clipboard HTML to plain text while preserving hyperlinks.
  *
  * A `<textarea>` strips HTML on paste, so anchor `href` URLs are lost — only

@@ -84,6 +84,7 @@ import {
   mktgAssetHeaderMetadata,
   mktgKitAssetLabel,
   mktgKitRootPath,
+  mktgPrintDocumentTitle,
   mktgReportHasOpenGaps,
   mktgReportNeedsApprovalReview,
   mktgRunRouteFor,
@@ -153,6 +154,8 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
+import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/mktg-print-sheet-row.component';
+import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -186,6 +189,8 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
     RouterLink,
     BrandKitWebViewComponent,
     MarkdownRendererComponent,
+    MktgPrintSheetComponent,
+    MktgPrintSheetRowComponent,
     MessageComponent,
     MktgSkeletonComponent,
     MktgBoilerplatesViewComponent,
@@ -281,7 +286,6 @@ export class MktgDocumentViewComponent {
   protected readonly progressRefreshKey = signal('0');
   protected readonly remoteRevisionId = signal('');
   private pinnedRouteRevision = '';
-  private pendingTitleFocus: { scopeKey: string; revisionId: string } | null = null;
   private readonly refreshedFailures = new Set<string>();
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
@@ -313,12 +317,8 @@ export class MktgDocumentViewComponent {
   });
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly memberResult = viewChild(Member360ResultComponent);
-  private readonly documentTitle = viewChild<ElementRef<HTMLElement>>('documentTitle');
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
-  protected readonly bannerKey = this.initBannerKey();
-  protected readonly bannerDismissed = linkedSignal({ source: this.bannerKey, computation: () => false });
-  protected readonly currentBanner = this.initCurrentBanner();
   protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
   protected readonly revisionPreviewCount = MKTG_DOCUMENT_REVISION_PREVIEW_COUNT;
   protected readonly savingStatus = computed(() => {
@@ -401,6 +401,8 @@ export class MktgDocumentViewComponent {
   }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();
   protected readonly approvedVersion = computed(() => this.approvedView().revision?.revision.number ?? null);
+  /** When the approved revision was stored, as the page shows it; it dates the PDF's name. */
+  protected readonly approvedCreatedAt = computed(() => this.approvedView().revision?.revision.createdAt ?? null);
   protected readonly approvedFramework = computed(() => {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'foundation-message' ? foundationMessageAssetOfRevision(approved.markdown, approved.sidecar) : null;
@@ -660,15 +662,6 @@ export class MktgDocumentViewComponent {
             return equal || firstResolution || handoffOnly;
           }),
           tap((request) => {
-            const focus = this.pendingTitleFocus;
-            if (
-              focus &&
-              (focus.scopeKey !== JSON.stringify([request.project, request.agentKey, request.documentId]) ||
-                focus.revisionId !== request.revisionId ||
-                request.runId ||
-                request.generation)
-            )
-              this.pendingTitleFocus = null;
             if (request.revisionId !== this.pinnedRouteRevision || request.generation) this.remoteRevisionId.set('');
             const key = JSON.stringify({ ...request, reload: 0 });
             selectionChanged = key !== readerSelectionKey;
@@ -694,7 +687,6 @@ export class MktgDocumentViewComponent {
             }
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
-              this.pendingTitleFocus = null;
               this.loadedScope = scope;
               this.remoteRevisionId.set('');
               this.redirectedRun = '';
@@ -1028,54 +1020,16 @@ export class MktgDocumentViewComponent {
           takeUntilDestroyed()
         )
         .subscribe((view) => {
-          const focus = this.pendingTitleFocus;
-          this.pendingTitleFocus = null;
           this.view.set(view);
           if (view) this.selectionReadPending.set(false);
           if (!this.editingLink() && !this.savingLink())
             this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
-          if (
-            focus &&
-            view &&
-            focus.scopeKey === JSON.stringify([view.project, view.type.agentKey, view.documentId]) &&
-            focus.revisionId === view.revision.id
-          ) {
-            const focusScope = this.loadedScope;
-            afterNextRender(
-              () => {
-                if (focusScope !== this.loadedScope) return;
-                const current = this.view();
-                if (!current) return;
-                if (
-                  this.revisionParam() === focus.revisionId &&
-                  current.revision.id === focus.revisionId &&
-                  JSON.stringify([current.project, current.type.agentKey, current.documentId]) === focus.scopeKey
-                )
-                  this.focusDocumentTitle();
-              },
-              { injector: this.injector }
-            );
-          }
         });
     }
   }
 
   // === Protected methods ===
-  protected dismissCurrentBanner(): void {
-    if (!this.currentBanner()) return;
-    this.bannerDismissed.set(true);
-    this.focusDocumentTitle();
-  }
-
-  protected onBannerOpen(event: MouseEvent): void {
-    this.pendingTitleFocus = null;
-    const banner = this.currentBanner();
-    const viewed = this.view();
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !banner || !viewed || this.submittingGeneration()) return;
-    this.pendingTitleFocus = { scopeKey: JSON.stringify([viewed.project, viewed.type.agentKey, viewed.documentId]), revisionId: banner.id };
-  }
-
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
     if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
     const viewed = this.view();
@@ -1150,7 +1104,6 @@ export class MktgDocumentViewComponent {
   }
 
   protected onPublicProgressError(error: HttpErrorResponse): void {
-    this.pendingTitleFocus = null;
     this.runDetail.set(null);
     this.localProgress.set(null);
     this.view.set(null);
@@ -1319,9 +1272,12 @@ export class MktgDocumentViewComponent {
   }
 
   protected onDownload(): void {
-    if (!isPlatformBrowser(this.platformId) || !this.view()?.aeoGeoReport) return;
+    const view = this.view();
+    if (!isPlatformBrowser(this.platformId) || !view?.aeoGeoReport) return;
     this.aeoPrintRequested = true;
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    // The saved PDF's name, like the deck's title: the project, the label the page shows, the revision on the page and its date.
+    const title = mktgPrintDocumentTitle(this.projectName(), view.type.itemLabel, view.revision.number, view.revision.createdAt);
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, title);
   }
 
   protected onToggleAllRevisions(): void {
@@ -1520,29 +1476,6 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private initializers ===
-  private initBannerKey() {
-    return computed(() => {
-      const view = this.view();
-      return view ? [view.project, view.type.agentKey, view.documentId, view.revision.id, view.approvedCurrent?.revisionId ?? ''].join(':') : '';
-    });
-  }
-
-  private initCurrentBanner() {
-    return computed(() => {
-      const dismissed = this.bannerDismissed();
-      const view = this.view();
-      const approved = view?.approvedCurrent;
-      if (!view || !approved || approved.revisionId === view.revision.id || dismissed) return null;
-      const row = view.revisions.find((revision) => revision.id === approved.revisionId);
-      const number = row?.number ?? approved.number;
-      if (!Number.isFinite(number) || number <= 0) return null;
-      // A missing row provides no approver evidence, so omit the clause rather than guessing one.
-      const approverClause = row ? `, approved by ${row.approval?.approvedBy?.name?.trim() || 'a project writer'}` : '';
-      const sentence = `v${number} is now the current version${approverClause}. You are reading v${view.revision.number}.`;
-      return { id: approved.revisionId, number, viewedNumber: view.revision.number, approverClause, sentence };
-    });
-  }
-
   private mergeDocumentMetadata(view: MktgRevisionResponse, detail: MktgDocumentDetailResponse): MktgRevisionResponse {
     if (
       JSON.stringify({ revisions: view.revisions, current: view.current, approvedCurrent: view.approvedCurrent }) ===
@@ -1830,10 +1763,6 @@ export class MktgDocumentViewComponent {
         replaceUrl: true,
       });
     }
-  }
-
-  private focusDocumentTitle(): void {
-    if (isPlatformBrowser(this.platformId)) this.documentTitle()?.nativeElement.focus({ preventScroll: true });
   }
 
   // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===

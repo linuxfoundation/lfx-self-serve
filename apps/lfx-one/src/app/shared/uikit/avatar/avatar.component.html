@@ -31,4 +31,9 @@
       <i class="ui-icon" [class]="badgeIcon()"></i>
     </span>
   }
+  @if (status(); as current) {
+    <span [class]="statusClasses()" [lfxUiTooltip]="current.label" title="" aria-hidden="true" data-testid="ui-avatar-status">
+      <i class="ui-icon" [class]="current.icon"></i>
+    </span>
+  }
 }

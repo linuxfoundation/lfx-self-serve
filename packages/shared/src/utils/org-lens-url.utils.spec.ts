@@ -191,6 +191,7 @@ describe('legacyDocsRedirectTarget', () => {
     ['/docs/organization/easycla', '/docs/company/easycla'],
     ['/docs/organization/manage-org-lens-access', '/docs/company/manage-company-lens-access'],
     ['/docs/organization/org-events', '/docs/company/company-events'],
+    ['/docs/organization/org-profile', '/docs/company/company-profile'],
     ['/docs/organization/people', '/docs/company/people'],
     ['/docs/organization/faq', '/docs/company/faq'],
     ['/docs/organization/projects', '/docs/company/projects'],

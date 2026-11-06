@@ -79,7 +79,7 @@ describe('MeetingsHomeDeleteService', () => {
     confirmResult.next(true);
 
     expect(store.removeMeeting).toHaveBeenCalledWith('synthetic-meeting');
-    expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Success', description: 'Meeting deleted successfully.' });
+    expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting deleted' });
     expect(userService.refreshUserMeetings).toHaveBeenCalledWith();
     expect(userService.refreshUserPastMeetings).toHaveBeenCalledWith();
   });
@@ -118,11 +118,7 @@ describe('MeetingsHomeDeleteService', () => {
 
       expect(store.removeOccurrence).toHaveBeenCalledWith('synthetic-meeting', FIRST.occurrence_id);
       expect(store.removeMeeting).not.toHaveBeenCalled();
-      expect(toastShow).toHaveBeenCalledWith({
-        variant: 'dark',
-        message: 'Occurrence cancelled',
-        description: 'This occurrence was cancelled. The rest of the series is unchanged.',
-      });
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting occurrence cancelled' });
     });
 
     it.each([

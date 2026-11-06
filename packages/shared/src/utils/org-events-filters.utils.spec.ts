@@ -24,6 +24,7 @@ import {
 describe('Events filter parsing', () => {
   it('reads each allowed value and rejects anything else', () => {
     expect(parseOrgEventsAttribution('account')).toBe('account');
+    expect(parseOrgEventsAttribution('verified')).toBe('verified');
     expect(parseOrgEventsParticipation('attended')).toBe('attended');
     expect(parseOrgEventsParticipation('all')).toBe('all');
     expect(parseOrgEventsScope('all')).toBe('all');
@@ -34,17 +35,19 @@ describe('Events filter parsing', () => {
 });
 
 describe('Events filter defaults', () => {
-  it('count everyone related to the company who registered or attended', () => {
+  it('count people credited by company email or as employees who registered or attended', () => {
     expect(DEFAULT_ORG_EVENTS_PARTICIPATION).toBe('all');
-    expect(DEFAULT_ORG_EVENTS_ATTRIBUTION).toBe('all');
+    expect(DEFAULT_ORG_EVENTS_ATTRIBUTION).toBe('verified');
     expect(ORG_EVENTS_PARTICIPATION_OPTIONS[0]).toEqual({ label: 'All', value: 'all' });
-    expect(ORG_EVENTS_ATTRIBUTION_OPTIONS[0]).toEqual({ label: 'All relations', value: 'all' });
+    expect(ORG_EVENTS_ATTRIBUTION_OPTIONS[0]).toEqual({ label: 'Company email or employee', value: 'verified' });
+    expect(ORG_EVENTS_ATTRIBUTION_OPTIONS[1]).toEqual({ label: 'All relations', value: 'all' });
   });
 });
 
 describe('Events filter URL params', () => {
   it('drops each default and keeps every other value', () => {
-    expect(orgEventsAttributionUrlParam('all')).toBeNull();
+    expect(orgEventsAttributionUrlParam('verified')).toBeNull();
+    expect(orgEventsAttributionUrlParam('all')).toBe('all');
     expect(orgEventsAttributionUrlParam('company_email')).toBe('company_email');
     expect(orgEventsAttributionUrlParam('account')).toBe('account');
     expect(orgEventsParticipationUrlParam('all')).toBeNull();
@@ -64,6 +67,7 @@ describe('effectiveOrgEventsAttribution', () => {
   it('leaves the other picks alone whatever the coverage', () => {
     expect(effectiveOrgEventsAttribution('account', false)).toBe('account');
     expect(effectiveOrgEventsAttribution('all', false)).toBe('all');
+    expect(effectiveOrgEventsAttribution('verified', false)).toBe('verified');
   });
 });
 

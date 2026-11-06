@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, FrameLocator, Locator, Page } from '@playwright/test';
-import { MKTG_PRINT_FRAME_PAPER_IN } from '@lfx-one/shared/constants';
+import { MKTG_PRINT_FRAME_PAPER_IN, MKTG_PRINT_PAGE_MARGINS_CLASS, MKTG_PRINT_PAGE_SETUPS } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './account-settings-email.helper';
 
 /** The frame prints once its own stylesheets, faces and images settle, or at the service's cap. */
@@ -11,7 +11,7 @@ const PRINT_FRAME_TIMEOUT_MS = 10_000;
 /** The production frame's viewport at CSS pixels (Letter's width, a hair under its height): the initial containing block the print geometry is measured against. */
 export const PRINT_FRAME_LETTER = { width: Math.round(MKTG_PRINT_FRAME_PAPER_IN.width * 96), height: Math.round(MKTG_PRINT_FRAME_PAPER_IN.height * 96) };
 
-/** What a cover sized `calc(100vh - 1.1in)` must at least measure in that frame: the collapse this guards against left it at its content's height. */
+/** What a cover sized `calc(100vh - 1.2in)` must at least measure in that frame: the collapse this guards against left it at its content's height. */
 export const PRINT_COVER_MIN_HEIGHT = 900;
 
 export function mktgPrintFrame(page: Page): FrameLocator {
@@ -90,18 +90,42 @@ export async function layoutMktgPrintFrame(page: Page): Promise<FrameLocator> {
   return mktgPrintFrame(page);
 }
 
+/**
+ * The portrait page setup the frame wrote, per engine: Chromium prints with no margin (no browser header or footer)
+ * and the document's own room, 0.6in of it at the root's sides; WebKit, which prints a table's head and foot once,
+ * prints on the page margins it had before, the named rule restated with them, the room collapsed under the body
+ * class. Playwright's webkit project is the proof of the split.
+ */
+export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locator, browserName: string): Promise<void> {
+  const webkit = browserName === 'webkit';
+  const setup = webkit ? MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'] : MKTG_PRINT_PAGE_SETUPS['mktg-framework'];
+  expect(await frame.locator('head style').last().textContent()).toBe(webkit ? `@page { ${setup} }\n@page mktg-framework { ${setup} }` : `@page { ${setup} }`);
+  expect(setup).toBe(webkit ? 'size: portrait; margin: 0.55in 0.6in;' : 'size: portrait; margin: 0;');
+  const marked = frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`);
+  await expect(marked).toHaveCount(webkit ? 1 : 0);
+  await expect(root).toHaveCSS('padding-left', webkit ? '0px' : '57.6px');
+}
+
 /** A viewport-height cover in the laid-out frame fills the page: the 1px frame left it at its content's height. */
+/**
+ * A table box's computed length in px, to compare to a tenth: Chromium reports a table row's laid-out height snapped to
+ * 1/64 px (52.7969px for 0.55in) and WebKit serialises 10pt with six decimals (13.333333px), so an exact string fails.
+ */
+export async function mktgPrintComputedPx(box: Locator, property: string): Promise<number> {
+  return parseFloat(await box.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property));
+}
+
 export async function expectMktgPrintCover(cover: Locator): Promise<void> {
   await expect(cover).toBeVisible();
   const box = await cover.boundingBox();
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(PRINT_COVER_MIN_HEIGHT);
 }
 
+/** Dispatched from the page, not from inside the frame: the service's afterprint cleanup removes the frame at once, and a
+ *  call evaluated in the frame's own world would have no frame to return to (locator.evaluate: Frame was detached). */
 export async function finishMktgPrintFrame(page: Page): Promise<void> {
-  await mktgPrintFrame(page)
-    .locator('html')
-    .evaluate((root) => {
-      root.ownerDocument.defaultView?.dispatchEvent(new Event('afterprint'));
-    });
+  await page.getByTestId('lfx-print-frame').evaluate((frame) => {
+    (frame as HTMLIFrameElement).contentWindow?.dispatchEvent(new Event('afterprint'));
+  });
   await expect(page.getByTestId('lfx-print-frame')).toHaveCount(0);
 }

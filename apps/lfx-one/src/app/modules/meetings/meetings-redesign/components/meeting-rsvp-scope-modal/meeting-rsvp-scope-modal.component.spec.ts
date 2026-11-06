@@ -5,6 +5,7 @@ import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow, MeetingRsvpScopeDialogData } from '@lfx-one/shared/interfaces';
+import { formatMeetingWhenFull } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingRsvpScopeModalComponent } from './meeting-rsvp-scope-modal.component';
@@ -69,15 +70,21 @@ describe('MeetingRsvpScopeModalComponent', () => {
     expect(close).toHaveBeenCalledWith('this_and_following');
   });
 
-  it('picks an option from a click on its description', async () => {
-    const fixture = await render({ row: buildRow('1790845200'), response: 'declined' });
+  it('shows the meeting as a band with the full date line and the options without descriptions', async () => {
+    const row = buildRow('1790845200');
+    const fixture = await render({ row, response: 'declined' });
 
-    query(fixture, 'meetings-home-rsvp-scope-all-description')?.click();
-    await fixture.whenStable();
+    expect(query(fixture, 'meeting-dialog-context-block')?.className).toContain('border-y');
+    expect(query(fixture, 'meeting-dialog-context-when')?.textContent?.trim()).toBe(formatMeetingWhenFull(row));
+    expect(query(fixture, 'meeting-dialog-context-when')?.textContent).toMatch(/^Thu, Oct 1 · 9:00 AM · 60 min/);
+    expect(fixture.nativeElement.querySelector('[data-testid$="-description"]')).toBeNull();
+  });
 
-    expect(radio(fixture, 'all').checked).toBe(true);
-    click(fixture, 'meetings-home-rsvp-scope-ok');
-    expect(close).toHaveBeenCalledWith('all');
+  it('swaps the meeting band for a single divider when opened from the drawer', async () => {
+    const fixture = await render({ row: buildRow('1790845200'), response: 'accepted', origin: 'drawer' });
+
+    expect(query(fixture, 'meeting-dialog-context-divider')).not.toBeNull();
+    expect(query(fixture, 'meeting-dialog-context-block')).toBeNull();
   });
 
   it('closes with nothing on Cancel', async () => {

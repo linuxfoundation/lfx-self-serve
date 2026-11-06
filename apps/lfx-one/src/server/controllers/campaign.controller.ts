@@ -7,10 +7,11 @@
 // Verified by switching to the barrel and watching the suite fail.
 import { emailLinkDestinations, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
-import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import {
   googleAdScheduleRefusal,
+  googleAdsDevicesOn,
   googleDeviceBidModifierRefusal,
   googleEffectiveBiddingStrategy,
   googleExcludedAgeRangesRefusal,
@@ -24,6 +25,13 @@ import {
   googleSearchAdCopyWidthRefusal,
   googleSearchAdPathsRefusal,
 } from '@lfx-one/shared/utils/campaign-google-search-ads.utils';
+import {
+  GOOGLE_CREATIVE_WIRE_FIELDS,
+  GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS,
+  googlePerformanceMaxShortDescriptionMissing,
+} from '@lfx-one/shared/utils/campaign-google-creative.utils';
+import { googleDemandGenAdGroupsRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-ad-groups.utils';
+import { googleDemandGenVideoCreativeRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-video.utils';
 import {
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
@@ -55,6 +63,7 @@ import type {
   CampaignNegativeKeywordsRequest,
   CampaignPlatform,
   CampaignProximityTarget,
+  CampaignSendWorkflowRequest,
   CampaignCallExtension,
   CampaignPriceExtension,
   CampaignPromotion,
@@ -70,6 +79,7 @@ import type {
   FlushableResponse,
   GoogleAdsAccountOption,
   GoogleAdsConversionActionsResult,
+  GoogleAdsUserListsResult,
   TwitterAdsAccountOption,
   TwitterAdsAccountsResult,
   TwitterCreateCapability,
@@ -77,8 +87,8 @@ import type {
   GoogleAdsGeoTargetSuggestion,
   GoogleAdsRadiusUnit,
   GoogleCampaignChannel,
-  GoogleCreativeFieldSpec,
   GoogleCreativeImageRef,
+  GoogleCreativeWireFields,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
   TwitterCampaignCreateRequest,
@@ -96,6 +106,12 @@ import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SEND_STAGES,
+  CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN,
+  CAMPAIGN_SEND_WORKFLOW_MAX_SENDS,
+  CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS,
+  CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
+  CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
@@ -118,7 +134,6 @@ import {
   GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
-  GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
@@ -138,24 +153,36 @@ import {
   GOOGLE_ADS_MIN_SNIPPET_VALUES,
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN,
+  GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_MESSAGE,
   GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
   GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE,
+  GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_MESSAGE,
+  GOOGLE_CONVERSION_ACTIONS_RESTRICTED_CODE,
+  GOOGLE_CONVERSION_ACTIONS_RESTRICTED_MESSAGE,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
-  GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
-  GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY,
+  GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
+  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_SEARCH_AD_GROUP_NAME,
+  GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_MESSAGE,
+  GOOGLE_USER_LISTS_RESTRICTED_CODE,
+  GOOGLE_USER_LISTS_RESTRICTED_MESSAGE,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
@@ -294,41 +321,6 @@ const NUMERIC_ID_RE = /^\d+$/;
  */
 type NormalizedProximityTarget = Omit<CampaignProximityTarget, 'radiusUnit'> & { radiusUnit: string };
 
-/**
- * Which `googleAdsConfig` creative key each Google channel uses, and which of its fields are lists
- * rather than scalars — derived from the shared catalogue, never restated here.
- *
- * The normalizer below needs exactly two things per field: its name, and whether an array or a
- * string is the valid shape. Both are already stated in `GOOGLE_CREATIVE_FIELD_SPECS`, which the
- * Implementation tab reads to build the form that produces these bodies. Restating them here —
- * which this table used to do — meant the form and the normalizer could disagree about a field's
- * shape, and the disagreement would surface as a body Google rejects after the campaign already
- * exists. `display.longHeadline` is the live example: a **scalar** where Performance Max's
- * `longHeadlines` is a list.
- *
- * `images` is the subset of `lists` whose entries may also be a stored-asset ref
- * (`{ imageAssetId }`) — the fields the catalogue gives an image shape. `youtubeVideoIds` is a list
- * but not an image slot, so an object there is dropped as before.
- *
- * `video` has no entry on purpose — see `GOOGLE_VIDEO_CREATE_SUPPORTED`. `search` has none either:
- * its copy rides as top-level `headlines`/`descriptions`/`keywords`, not under a creative key.
- */
-const GOOGLE_CREATIVE_FIELDS: Record<string, { key: string; lists: readonly string[]; images: readonly string[]; scalars: readonly string[] }> =
-  Object.fromEntries(
-    GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => {
-      const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
-      return [
-        channel,
-        {
-          key: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
-          lists: fields.filter((f) => f.kind === 'list').map((f) => f.control),
-          images: fields.filter((f) => f.image !== undefined).map((f) => f.control),
-          scalars: fields.filter((f) => f.kind === 'text').map((f) => f.control),
-        },
-      ];
-    })
-  );
-
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
   private readonly campaignServiceClient = new CampaignServiceClient();
@@ -377,16 +369,70 @@ export class CampaignController {
       return;
     }
 
-    try {
-      await validateScrapeUrl(body.url);
-    } catch (error) {
-      const validationError = ServiceValidationError.forField('url', error instanceof Error ? error.message : 'Invalid URL', {
-        operation: 'campaign_generate_brief',
-        service: 'campaign_controller',
-        path: req.path,
-      });
-      _next(validationError);
-      return;
+    // The SSRF guard protects a SERVER-SIDE FETCH: it resolves the host and refuses one that
+    // points at a private address, because this service would otherwise retrieve that page.
+    //
+    // The survey surface fetches nothing. Its brief is written from the document the operator
+    // pasted, and the URL is only the destination the call-to-action opens in the reader's own
+    // browser. Running the guard there made a DNS lookup a precondition for writing an email --
+    // and a resolver that could not answer for a perfectly ordinary public host ("DNS resolution
+    // failed — cannot verify host safety") blocked the whole flow for a page nobody was going to
+    // request. The link is still checked for shape below, so a malformed one cannot reach a draft.
+    if (body.deliveryType === 'survey') {
+      // Parsed here rather than run through `validateAndSanitizeUrl`, which prefixes a
+      // protocol-less value with the PCC base URL and so accepts `surveys.example.com/x` or a
+      // relative path as a link on the PCC host. The link becomes the brief's slug and the email's
+      // button, so it has to be a real absolute http(s) URL as typed.
+      let surveyUrl: URL | null = null;
+      try {
+        surveyUrl = new URL(body.url.trim());
+      } catch {
+        surveyUrl = null;
+      }
+      // And the ONE policy the button is built under (`canonicalHttpUrl`: no private host, no
+      // non-default port), so a link the email would silently drop is refused here instead.
+      if (
+        surveyUrl === null ||
+        (surveyUrl.protocol !== 'http:' && surveyUrl.protocol !== 'https:') ||
+        surveyUrl.hostname === '' ||
+        canonicalHttpUrl(surveyUrl.href) === ''
+      ) {
+        _next(
+          ServiceValidationError.forField('url', 'url must be a valid public http(s) link on the standard port', {
+            operation: 'campaign_generate_brief',
+            service: 'campaign_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+      body.url = surveyUrl.href;
+      // The 3,000-character limit campaign-service enforces at save and at copy generation, checked
+      // before anything is streamed so the operator reads it as a field error.
+      // The raw length is checked first (inside the helper), so an oversized body is refused
+      // without being copied or counted.
+      if (typeof body.sourceText === 'string' && campaignSurveySourceTextTooLong(body.sourceText)) {
+        _next(
+          ServiceValidationError.forField('sourceText', `sourceText is longer than the ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}-character limit`, {
+            operation: 'campaign_generate_brief',
+            service: 'campaign_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+    } else {
+      try {
+        await validateScrapeUrl(body.url);
+      } catch (error) {
+        const validationError = ServiceValidationError.forField('url', error instanceof Error ? error.message : 'Invalid URL', {
+          operation: 'campaign_generate_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        });
+        _next(validationError);
+        return;
+      }
     }
 
     const startTime = logger.startOperation(req, 'campaign_generate_brief', {});
@@ -508,7 +554,10 @@ export class CampaignController {
     // The service refuses email refines too — that guard stays, since this controller is not its
     // only caller — but only this path is reached over HTTP, so only this one decides what the
     // user reads.
-    if (body.deliveryType === 'email') {
+    // Every SEND surface, not just email: neither generates ad copy, so there is nothing for the
+    // refine path to re-write. Checked as "not paid" so a later send surface is refused by default
+    // rather than reaching a generator that has no copy to refine.
+    if (body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing') {
       // `ServiceValidationError`, not a manual `res.status().json()` — the sibling checks below
       // all use it, and `docs/reviews/backend-checklist.md` §8 forbids the manual form. Going
       // around the error middleware would have skipped the standard error shape and its
@@ -646,31 +695,44 @@ export class CampaignController {
       const body = req.body as CampaignCreateRequest;
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
 
-      // Google audience segments are ROOT-ONLY until a user list can be mapped to a project. Every
-      // foundation's Google Ads connection points at one shared LF customer, so a segment is a
-      // resource name on THAT account, and a non-root operator could name another foundation's list
-      // (campaign-service refuses to list user lists on the shared account for the same reason,
-      // linuxfoundation/lfx-v2-campaign-service#411). First of every guard, so nothing is
-      // normalised, judged or created for a caller who may not send the field at all, and on either
-      // path: the legacy creator drops the list, but the request still asked for it.
+      // Google audience segments need `global_marketing_ops` on the project the request names — the
+      // LF marketing team, not every campaign manager. `campaign_manager` is `executive_director or
+      // global_marketing_ops`, so it admits foundation EDs, but every foundation's Google Ads
+      // connection points at one shared LF customer, where a segment is a resource name on THAT
+      // account and an ED could name another foundation's list (paid-marketing owner decision,
+      // 2026-11-05). campaign-service enforces the same relation on the same project
+      // (linuxfoundation/lfx-v2-campaign-service#501, #505): this is the early, named refusal, so
+      // the request is never built or sent. A ROOT writer without the relation is refused too, as
+      // campaign-service would refuse it. First of every guard, so nothing is normalised, judged or
+      // created for a caller who may not send the field at all, and on either path: the legacy
+      // creator drops the list, but the request still asked for it.
       //
       // A 403 with a code, not a 400 naming the field: the body is well formed and the refusal is
-      // about WHO is asking, which is how `requireSharedAccountMonitorAccess` answers the same
-      // shared-account question for reads. Any present value other than an empty list counts as
-      // carrying segments, so a malformed one cannot slip past to a shape refusal a non-root caller
-      // could probe with.
+      // about WHO is asking. A check that cannot be made is a 503, never an admission. Any present
+      // value other than an empty list counts as carrying segments, so a malformed one cannot slip
+      // past to a shape refusal an unauthorised caller could probe with.
       const rawSegments = body?.audienceSegments as unknown;
       const carriesSegments = rawSegments !== undefined && rawSegments !== null && !(Array.isArray(rawSegments) && rawSegments.length === 0);
-      if (platforms.includes('google-ads') && carriesSegments && !(await this.isRootCampaignPrincipal(req))) {
-        next(
-          new AuthorizationError(GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE, {
-            operation: 'campaign_create',
-            service: 'campaign_controller',
-            path: req.path,
-            code: GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
-          })
-        );
-        return;
+      if (platforms.includes('google-ads') && carriesSegments) {
+        const access = await this.googleMarketingOpsAccess(req, projectSlug, 'check_google_audience_segments_access', 'audience segments');
+        if (access !== 'granted') {
+          next(
+            access === 'denied'
+              ? new AuthorizationError(GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE, {
+                  operation: 'campaign_create',
+                  service: 'campaign_controller',
+                  path: req.path,
+                  code: GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
+                })
+              : new MicroserviceError(GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_MESSAGE, 503, GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_CODE, {
+                  operation: 'campaign_create',
+                  service: 'campaign_controller',
+                  path: req.path,
+                  clientMessage: GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_MESSAGE,
+                })
+          );
+          return;
+        }
       }
       // Then, for a caller who MAY send them, refused rather than dropped when the serving create
       // path cannot carry them — the `bidding` reasoning below. Only campaign-service reads the key;
@@ -1221,9 +1283,10 @@ export class CampaignController {
 
           const languages = googleUpperCodeList(rawLanguages);
           if (languages.length > 0 && typeof googleChannel === 'string') {
-            // REFUSED by name, not dropped: upstream's contract for the field is "refused, never
-            // silently dropped", and `validateCriteriaPlan` fails the whole Demand Gen create on it.
-            // The UI never sends this — its control and payload gate on the same channel list.
+            // REFUSED by name, not dropped, for a channel the list leaves out: upstream's contract for
+            // the field is "refused, never silently dropped". None is left out since campaign-service
+            // v1.0.31 (Demand Gen takes them on its ad group, #459), so this arm is dormant; it stays so
+            // a channel fenced again needs only the constant changed, as the ad schedule arm does.
             if (!(GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(googleChannel)) {
               next(
                 ServiceValidationError.forField(
@@ -1285,10 +1348,10 @@ export class CampaignController {
           }
 
           if (rawAdSchedules.length > 0 && typeof googleChannel === 'string') {
-            // REFUSED by name, not withheld: `validateCriteriaPlan` fails the whole Demand Gen
-            // create on any non-location criterion, ad schedules included. Performance Max is NOT
-            // fenced out — Google documents ad schedules as a Performance Max campaign criterion,
-            // and upstream keeps them there alongside languages.
+            // REFUSED by name, not withheld, for a channel the list leaves out — none since
+            // campaign-service v1.0.31, which takes ad schedules on Demand Gen too (#474). A Demand
+            // Gen window carrying a bid modifier is refused by `googleAdScheduleRefusal` below, as
+            // `validateCriteriaPlan` refuses it there under every strategy.
             if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(googleChannel)) {
               refuseAdSchedules(
                 `Google Ads does not accept ad schedules on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the ad schedules or pick a different channel, then create again.`
@@ -1359,11 +1422,10 @@ export class CampaignController {
           }
 
           if (devices.length > 0 && typeof googleChannel === 'string') {
-            // REFUSED by name, not withheld, and on one channel FEWER than ad schedules.
-            // `validateCriteriaPlan` fails the whole Demand Gen create on any of these criteria, then
-            // SPLITS Performance Max in two: it keeps the languages and ad schedules Google documents
-            // as Performance Max campaign criteria, and refuses device bid modifiers, because that
-            // channel's automated bidding owns the bid and sets no device adjustment.
+            // REFUSED by name, not withheld, on Performance Max: campaign-service v1.0.31 takes a
+            // Performance Max device exclusion (#500), but this client does not offer one yet. Demand
+            // Gen is inside the fence, and `googleDeviceBidModifierRefusal` below refuses any modifier
+            // but 0 there, as `validateCriteriaPlan` does.
             if (!(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS as readonly string[]).includes(googleChannel)) {
               refuseDevices(
                 `Google Ads does not accept device bid modifiers on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove them or pick a different channel, then create again.`
@@ -1372,12 +1434,14 @@ export class CampaignController {
             }
 
             // Upstream's cap, checked against the SUBMITTED count exactly where
-            // `validateDeviceBidModifiers` checks its own. It is one entry per device this client
-            // accepts, so a longer list necessarily repeats one — the per-entry pass would refuse it
-            // anyway, but upstream names the cap first and so does this.
-            if (devices.length > GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS) {
+            // `validateDeviceBidModifiers` checks its own: the size of the channel's device
+            // vocabulary (`deviceTypesFor`), four on Demand Gen and three elsewhere. A longer list
+            // necessarily repeats a device — the per-entry pass would refuse it anyway, but upstream
+            // names the cap first and so does this.
+            const maxDevices = googleAdsDevicesOn(criteriaChannel as GoogleCampaignChannel).length;
+            if (devices.length > maxDevices) {
               refuseDevices(
-                `Google Ads accepts at most ${GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS} device bid modifiers on one campaign, one per device, and this one has ${devices.length}. Remove some and create again.`
+                `Google Ads accepts at most ${maxDevices} device bid modifiers on one ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[criteriaChannel as GoogleCampaignChannel]} campaign, one per device, and this one has ${devices.length}. Remove some and create again.`
               );
               return;
             }
@@ -1433,6 +1497,44 @@ export class CampaignController {
           );
           return;
         }
+
+        // Performance Max's short description (#5219), judged on the descriptions the built config will
+        // carry. campaign-service refuses a started creative with none of 60 or less before the budget,
+        // but the job reports that only as "platform campaign creation failed", so it is named here.
+        const performanceMaxCreative = (configEnvelope['googleAdsConfig'] as { performanceMaxCreative?: { descriptions?: unknown } } | undefined)
+          ?.performanceMaxCreative;
+        if (googleChannel === 'performance-max' && googlePerformanceMaxShortDescriptionMissing(performanceMaxCreative?.descriptions)) {
+          next(
+            ServiceValidationError.forField('performanceMaxCreative.descriptions', GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+
+        // The named Demand Gen ad groups (#5226), first because upstream judges the list before any
+        // creative: through the same shared judge the Implement tab holds Create on.
+        const adGroupsRefusal = this.googleDemandGenAdGroupsRefusal(body, googleChannel);
+        if (adGroupsRefusal) {
+          next(
+            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, adGroupsRefusal, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+
+        // The Demand Gen video ad (#5226), through the same shared judge the Implement tab holds
+        // Create on, so a video ad Go would refuse after dispatch is named here first.
+        const videoRefusal = this.googleDemandGenVideoRefusal(body, googleChannel);
+        if (videoRefusal) {
+          next(
+            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY, videoRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
+          );
+          return;
+        }
       }
 
       // Audience segments, in `validateAudienceSegments`' own order: JSON decode, the cap on the RAW
@@ -1477,8 +1579,13 @@ export class CampaignController {
       }
 
       // Sitelinks next, BEFORE callouts, as `validateAssetPlan` runs `validateSitelinks` first: JSON
-      // decode, the Search-only fence, the cap, then each entry in `validateSitelinks`' order, first
-      // bad one wins. Each would otherwise fail in Go as the opaque "platform campaign creation failed".
+      // decode, the Search-and-Demand-Gen fence, the cap, then each entry in `validateSitelinks`'
+      // order, first bad one wins. Each would otherwise fail in Go as the opaque "platform campaign
+      // creation failed". On Demand Gen the entries are judged exactly as on Search: upstream runs the
+      // same `validateSitelinks` on both. One order difference: on Demand Gen upstream refuses any
+      // other extension list BEFORE it judges a sitelink, so a request carrying both a bad sitelink
+      // and a callout is refused here for the sitelink and upstream for the callout. Either way it is
+      // refused before any upstream call, and the UI never sends a callout on Demand Gen.
       const rawSitelinks = body?.sitelinks;
       if (cutoverOn && platforms.includes('google-ads') && rawSitelinks !== undefined && rawSitelinks !== null) {
         const refuse = (message: string): void =>
@@ -1490,11 +1597,12 @@ export class CampaignController {
           return;
         }
         if (rawSitelinks.length > 0 && typeof googleChannel === 'string') {
-          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
-          // but Search, counting every entry. The UI never sends this.
-          if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on Display and
+          // Video, counting every entry, and this application does not send sitelinks on
+          // Performance Max. The UI never sends this — its section and payload gate on the same list.
+          if (!(GOOGLE_CHANNELS_WITH_SITELINKS as readonly string[]).includes(googleChannel)) {
             refuse(
-              `Google Ads only accepts sitelinks on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the sitelinks or pick Search, then create again.`
+              `Google Ads sitelinks are only sent on Search and Demand Gen campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the sitelinks or pick Search or Demand Gen, then create again.`
             );
             return;
           }
@@ -1531,8 +1639,9 @@ export class CampaignController {
         }
         const callouts = this.googleCalloutList(rawCallouts);
         if (callouts.length > 0 && typeof googleChannel === 'string') {
-          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
-          // but Search. The UI never sends this — its section and payload gate on the same list.
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on Demand Gen,
+          // Display and Video, and this application does not send callouts on Performance Max. The
+          // UI never sends this — its section and payload gate on the same list.
           if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
             refuse(
               `Google Ads only accepts callouts on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the callouts or pick Search, then create again.`
@@ -1573,8 +1682,9 @@ export class CampaignController {
           return;
         }
         if (rawSnippets.length > 0 && typeof googleChannel === 'string') {
-          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
-          // but Search, counting every entry. The UI never sends this.
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on Demand Gen,
+          // Display and Video, counting every entry, and this application does not send snippets on
+          // Performance Max. The UI never sends this.
           if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
             refuse(
               `Google Ads only accepts structured snippets on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the snippets or pick Search, then create again.`
@@ -2392,15 +2502,19 @@ export class CampaignController {
       }
     }
     // PRESENCE, not emptiness. `?delivery_type=` is a parameter the caller SENT, and an empty
-    // string is not one of the two values upstream accepts -- treating it as "omitted" answered a
-    // malformed request with the paid brief. Absence is `undefined`; anything present must be one
-    // of the two. Same rule as `stage` below, where `''` IS a legal value (the paid brief's stage)
-    // and so is checked differently -- the asymmetry is in the contract, not in the handling.
+    // string is not one of the values upstream accepts -- treating it as "omitted" answered a
+    // malformed request with the paid brief. Absence is `undefined`; anything present must be a
+    // known surface. Same rule as `stage` below, where `''` IS a legal value (the paid brief's
+    // stage) and so is checked differently -- the asymmetry is in the contract, not the handling.
+    //
+    // Derived from `CAMPAIGN_DELIVERY_TYPES` like its sibling checks, not spelled out again: the
+    // hand-written pair here kept rejecting `survey` after the constant had grown, so the surface
+    // existed everywhere except the one lookup that opens its brief.
     const deliveryTypeRaw = req.query['delivery_type'];
     const deliveryTypeParam = typeof deliveryTypeRaw === 'string' ? deliveryTypeRaw : '';
-    if (deliveryTypeRaw !== undefined && deliveryTypeParam !== 'email' && deliveryTypeParam !== 'paid-marketing') {
+    if (deliveryTypeRaw !== undefined && !SUPPORTED_DELIVERY_TYPES.has(deliveryTypeParam)) {
       next(
-        ServiceValidationError.forField('delivery_type', 'delivery_type must be one of: paid-marketing, email', {
+        ServiceValidationError.forField('delivery_type', `delivery_type must be one of: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}`, {
           operation: 'campaign_load_brief',
           service: 'campaign_controller',
           path: req.path,
@@ -2424,9 +2538,9 @@ export class CampaignController {
     // The EMPTY string stays valid and means the paid brief's stage — that is an omitted `stage`,
     // not a malformed one.
     const stageParam = typeof req.query['stage'] === 'string' ? req.query['stage'] : '';
-    if (stageParam !== '' && !(CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stageParam)) {
+    if (stageParam !== '' && !(CAMPAIGN_SEND_STAGES as readonly string[]).includes(stageParam)) {
       next(
-        ServiceValidationError.forField('stage', `stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`, {
+        ServiceValidationError.forField('stage', `stage must be one of: ${CAMPAIGN_SEND_STAGES.join(', ')}`, {
           operation: 'campaign_load_brief',
           service: 'campaign_controller',
           path: req.path,
@@ -2436,20 +2550,24 @@ export class CampaignController {
     }
     const stage = stageParam;
 
-    const deliveryType: CampaignDeliveryType = deliveryTypeParam === 'email' ? 'email' : 'paid-marketing';
+    // Narrowed by lookup, so the survey surface keeps its own identity rather than collapsing to
+    // paid -- which would answer a survey caller with the event's paid brief.
+    const deliveryType: CampaignDeliveryType = CAMPAIGN_DELIVERY_TYPES.find((d) => d.id === deliveryTypeParam)?.id ?? 'paid-marketing';
+    // Each send surface has its OWN stage vocabulary, and upstream refuses a cross-surface pair.
+    const surfaceStages: readonly string[] = deliveryType === 'survey' ? CAMPAIGN_SURVEY_STAGES : CAMPAIGN_EMAIL_STAGES;
     // The PAIR, matching campaign-service exactly. Each value is valid alone and the COMBINATION
     // is not: paid has no series, so its stage must be empty, and an email send is always some
     // stage. Upstream refuses both with a 400 (`campaign_briefs_delivery_stage_pair_valid` and the
     // service guard above it), so without this check the BFF forwards a request that cannot
     // succeed and relays an upstream error for something it could have named here.
-    const pairIsValid = deliveryType === 'paid-marketing' ? stage === '' : (CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stage);
+    const pairIsValid = deliveryType === 'paid-marketing' ? stage === '' : surfaceStages.includes(stage);
     if (!pairIsValid) {
       next(
         ServiceValidationError.forField(
           'stage',
           deliveryType === 'paid-marketing'
             ? 'a paid-marketing brief has no series, so stage must be empty'
-            : `an email brief names one send in the series, so stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`,
+            : `a ${deliveryType} brief names one send, so stage must be one of: ${surfaceStages.join(', ')}`,
           { operation: 'campaign_load_brief', service: 'campaign_controller', path: req.path }
         )
       );
@@ -2988,16 +3106,27 @@ export class CampaignController {
 
     try {
       const listed = await this.campaignServiceClient.listBriefCampaigns(req, projectSlug, briefId);
-      // The one PER-CALLER capability, so it is decided here where the caller is known rather than
-      // in the service. Only on the campaign-service create path (`canCreateWithAudienceSegments`, the
-      // same test the create route refuses on), and that test runs first so a deployment that cannot
-      // send segments asks no persona question at all.
-      // The conversion-action picker's read (#4991) is answered on the same two checks its route makes:
-      // the create road, then a root principal. The persona question is asked once, and only when
-      // either capability could be granted.
-      const rootOnCreatePath = (canCreateWithAudienceSegments() || canCreateWithGoogleCriteria()) && (await this.isRootCampaignPrincipal(req));
-      const googleAudienceSegmentsEnabled = canCreateWithAudienceSegments() && rootOnCreatePath;
-      const googleConversionActionsEnabled = canCreateWithGoogleCriteria() && rootOnCreatePath;
+      // The PER-CALLER capabilities, decided here where the caller is known rather than in the
+      // service. Each runs its deployment test first, so a deployment that cannot serve it asks no
+      // persona question at all.
+      // Both answer on `global_marketing_ops` on THIS project, the relation campaign-service checks:
+      // audience segments at create (the create route's own test) and the conversion-action picker's
+      // read (#4991, linuxfoundation/lfx-v2-campaign-service#486). Asked once, and only when a
+      // deployment test passes. A check that cannot be made is not a denial for audience segments: it
+      // answers `null`, so the tab holds Create with a Retry (its `failed` block) rather than the
+      // `restricted` one (#5240). The picker answers no on it and keeps its free-text box; its route
+      // would answer 503.
+      const segmentsDeployed = canCreateWithAudienceSegments();
+      const conversionsDeployed = canCreateWithGoogleCriteria();
+      const marketingOps =
+        segmentsDeployed || conversionsDeployed
+          ? await this.googleMarketingOpsAccess(req, projectSlug, 'list_brief_campaigns', 'Google marketing-ops capabilities')
+          : 'denied';
+      let googleAudienceSegmentsEnabled: boolean | null = false;
+      if (segmentsDeployed) {
+        googleAudienceSegmentsEnabled = marketingOps === 'unverified' ? null : marketingOps === 'granted';
+      }
+      const googleConversionActionsEnabled = conversionsDeployed && marketingOps === 'granted';
       const result: CampaignListResult = { ...listed, googleAudienceSegmentsEnabled, googleConversionActionsEnabled };
       logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
       res.json(result);
@@ -3097,6 +3226,97 @@ export class CampaignController {
       const result = await this.proxyService.lookupHubSpotUtm(req, eventName, clientUnderstandsTokenlessFound);
       logger.success(req, 'hubspot_utm_lookup', startTime, { viaCampaignService: false, found: result.found });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Build the HubSpot workflow that sends a staged series.
+   *
+   * Only the two things this layer can judge are checked here -- that a project was named and that
+   * the body is shaped like a request. Everything else (each brief staged, the surface, repeats,
+   * the source workflow's step counts) needs the briefs and the workflow, which only
+   * campaign-service can see; re-deciding any of it here would create a second opinion about what
+   * is buildable, and the layers would drift.
+   */
+  public async createSendWorkflow(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(
+        ServiceValidationError.forField('project', 'A project is required to build a send workflow', {
+          operation: 'send_workflow_create',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const body = req.body as Partial<CampaignSendWorkflowRequest> | undefined;
+    // REFUSED, not filtered. Both arrays are matched to the workflow's steps BY POSITION -- brief
+    // n to send step n, date n to wait step n -- so dropping a malformed entry from the middle
+    // would shift every later one onto the wrong step of a schedule that sends real email.
+    const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
+    const refuse = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'send_workflow_create', service: 'campaign_controller', path: req.path }));
+    if (body?.briefIds !== undefined && (!Array.isArray(body.briefIds) || !body.briefIds.every(isNonEmptyString))) {
+      refuse('briefIds', 'briefIds must be a list of brief ids');
+      return;
+    }
+    if (
+      body?.sendDates !== undefined &&
+      (!Array.isArray(body.sendDates) || !body.sendDates.every((date) => isNonEmptyString(date) && CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN.test(date.trim())))
+    ) {
+      refuse('sendDates', 'sendDates must be a list of YYYY-MM-DD dates');
+      return;
+    }
+    // Bounded here as campaign-service bounds them (`MaxLength(10)`), so an oversized body is a
+    // field error at this hop rather than a list proxied upstream to be refused there.
+    if ((body?.briefIds?.length ?? 0) > CAMPAIGN_SEND_WORKFLOW_MAX_SENDS) {
+      refuse('briefIds', `a send workflow carries at most ${CAMPAIGN_SEND_WORKFLOW_MAX_SENDS} sends`);
+      return;
+    }
+    // Capped on its own, not against the brief count: campaign-service matches dates to the
+    // workflow's DATED wait steps, which can outnumber its send steps.
+    if ((body?.sendDates?.length ?? 0) > CAMPAIGN_SEND_WORKFLOW_MAX_SENDS) {
+      refuse('sendDates', `a send workflow carries at most ${CAMPAIGN_SEND_WORKFLOW_MAX_SENDS} dates`);
+      return;
+    }
+    const briefIds = (body?.briefIds ?? []).map((id) => id.trim());
+    const name = typeof body?.name === 'string' ? body.name.trim() : '';
+
+    // The source workflow is NOT required here. It is optional upstream -- a series is normally
+    // built from the deployment's configured workflow, and the UI therefore sends none -- so
+    // requiring it at this hop refused every ordinary request before it reached the service that
+    // knows the default.
+    if (name.length > CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS) {
+      refuse('name', `name must be at most ${CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS} characters`);
+      return;
+    }
+    if (name === '' || briefIds.length === 0) {
+      next(
+        ServiceValidationError.forField('body', 'A send workflow needs a name and the briefs it sends', {
+          operation: 'send_workflow_create',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'send_workflow_create', { projectSlug, sends: briefIds.length });
+    try {
+      // No `sourceWorkflowUrl` from the caller: the UI never sends one, and campaign-service then
+      // copies the deployment's own survey workflow. Forwarding a client-chosen one only widens
+      // what a request can ask for.
+      const created = await this.campaignServiceClient.createSendWorkflow(req, projectSlug, {
+        name,
+        briefIds,
+        sendDates: body?.sendDates?.map((date) => date.trim()),
+      });
+      logger.success(req, 'send_workflow_create', startTime, { flowId: created.flowId, sends: created.sendEmailSteps });
+      res.json(created);
     } catch (error) {
       next(error);
     }
@@ -3521,22 +3741,47 @@ export class CampaignController {
 
   /**
    * The enabled conversion actions on the Google Ads account a create for this project uses, for the
-   * Implement tab's picker (#4991), camel-cased. Root-only, as the account list is: the account is
-   * shared by every foundation, so the list names all of their actions. Answers 404, as if it were not
-   * mounted, while the campaign-service Google create road (`canCreateWithGoogleCriteria`) is off — the
-   * only road that sends `conversionActions`. Every refusal leaves the tab on its free-text box.
+   * Implement tab's picker (#4991), camel-cased. The account is shared by every foundation, so the list
+   * names all of their actions: it is answered only to a caller holding `global_marketing_ops` on the
+   * project the request names (the LF marketing team), the relation campaign-service checks on the same
+   * project before it answers (linuxfoundation/lfx-v2-campaign-service#486). Not `campaign_manager`,
+   * which also admits the project's `executive_director`, and not a ROOT writer without the relation,
+   * whom campaign-service would refuse. A denied caller gets a 403 with a code and a check that cannot be
+   * made a 503, both before any upstream call. With marketing FGA on, this check is the route's whole gate:
+   * the route is registered ahead of the blanket `requireCampaignManager`, behind its own
+   * `requireGoogleConversionActionsAccess`, because the blanket guard's non-strict check would otherwise
+   * answer an outage with an uncoded 403 first (#5239). Answers 404, as if it were not mounted, while the
+   * campaign-service Google create road (`canCreateWithGoogleCriteria`) is off — the only road that sends
+   * `conversionActions` — which says nothing about the caller. Every refusal leaves the tab on its
+   * free-text box.
    */
   public async getGoogleAdsConversionActions(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'google_ads_conversion_actions';
-    if (!(await this.requireSharedAccountMonitorAccess(req, next, operation, 'Google Ads'))) {
-      return;
-    }
     if (!canCreateWithGoogleCriteria()) {
       next(this.monitorDisabledError(operation));
       return;
     }
     const projectSlug = this.requireMonitorProject(req, next, operation);
     if (projectSlug === null) {
+      return;
+    }
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the conversion action list');
+    if (access !== 'granted') {
+      next(
+        access === 'denied'
+          ? new AuthorizationError(GOOGLE_CONVERSION_ACTIONS_RESTRICTED_MESSAGE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              code: GOOGLE_CONVERSION_ACTIONS_RESTRICTED_CODE,
+            })
+          : new MicroserviceError(GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_MESSAGE, 503, GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              clientMessage: GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_MESSAGE,
+            })
+      );
       return;
     }
     const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
@@ -3575,6 +3820,88 @@ export class CampaignController {
           })),
       };
       logger.success(req, operation, startTime, { count: result.actions.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The user lists on the Google Ads account a create for this project uses, for the Implement tab's
+   * audience segment picker (#5244), camel-cased. The list names every foundation's audiences on the
+   * shared LF account, so it is answered on the relation campaign-service checks before it serves it
+   * and before it sends the segments a create carries: `global_marketing_ops` on the project the request
+   * names (linuxfoundation/lfx-v2-campaign-service#486, #508). A refusal is a coded 403; a check that
+   * cannot be made is a coded 503, never an admission; both come before any upstream call. With marketing
+   * FGA on, this check is the route's whole gate: the route is registered ahead of the blanket
+   * `requireCampaignManager`, behind its own `requireGoogleUserListsAccess`, for the same reason as the
+   * conversion-action list's (#5239). Answers 404, as if it were not mounted, while the create road that
+   * sends `audienceSegments` (`canCreateWithAudienceSegments`) is off. Every refusal leaves the tab on its
+   * typed box.
+   */
+  public async getGoogleAdsUserLists(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'google_ads_user_lists';
+    if (!canCreateWithAudienceSegments()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the user list read');
+    if (access !== 'granted') {
+      next(
+        access === 'denied'
+          ? new AuthorizationError(GOOGLE_USER_LISTS_RESTRICTED_MESSAGE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              code: GOOGLE_USER_LISTS_RESTRICTED_CODE,
+            })
+          : new MicroserviceError(GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_MESSAGE, 503, GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              clientMessage: GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_MESSAGE,
+            })
+      );
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const payload = await this.campaignServiceClient.listGoogleAdsUserLists(req, projectSlug);
+      // `user_lists` is required upstream; reading its absence as an empty list would say the account
+      // has none, so an unreadable body fails the read and the tab falls back to typing.
+      if (!Array.isArray(payload?.user_lists)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Google Ads user list read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: GoogleAdsUserListsResult = {
+        accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
+        // A row whose resource name is not the `customers/<id>/userLists/<id>` form `audienceSegments`
+        // accepts cannot be trusted to send, so it is dropped rather than offered; a repeated resource
+        // name is offered once, since the picker keys its rows by it.
+        userLists: payload.user_lists
+          .filter(
+            (l, i, all) =>
+              typeof l?.resource_name === 'string' &&
+              GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(l.resource_name) &&
+              all.findIndex((other) => other?.resource_name === l.resource_name) === i
+          )
+          .map((l) => ({
+            resourceName: l.resource_name,
+            id: typeof l.id === 'string' ? l.id : '',
+            name: typeof l.name === 'string' && l.name.trim() !== '' ? l.name : l.resource_name,
+            type: typeof l.type === 'string' ? l.type : '',
+            eligibleForSearch: typeof l.eligible_for_search === 'boolean' ? l.eligible_for_search : null,
+          })),
+        truncated: payload.truncated === true,
+      };
+      logger.success(req, operation, startTime, { count: result.userLists.length, truncated: result.truncated });
       res.json(result);
     } catch (error) {
       next(error);
@@ -4856,10 +5183,31 @@ export class CampaignController {
   }
 
   /**
+   * Whether the caller holds `global_marketing_ops` on `projectSlug`: the relation campaign-service
+   * checks on the same project before it lets a request name or read resources on the shared LF
+   * Google Ads account — audience segments at create (linuxfoundation/lfx-v2-campaign-service#501,
+   * #505) and the conversion action list (#486). Not `campaign_manager`, which also admits the
+   * project's `executive_director`, and not a ROOT writer. `unverified` when the slug lookup or access
+   * check fails: callers refuse on it, never admit. `subject` names the guarded input in the log.
+   */
+  private async googleMarketingOpsAccess(req: Request, projectSlug: string, operation: string, subject: string): Promise<'granted' | 'denied' | 'unverified'> {
+    try {
+      return (await personaDetectionService.checkProjectGlobalMarketingOpsStrict(req, projectSlug)) ? 'granted' : 'denied';
+    } catch (error) {
+      logger.warning(req, operation, `Project global_marketing_ops check failed; refusing ${subject}`, {
+        err: error,
+        projectSlug,
+      });
+      return 'unverified';
+    }
+  }
+
+  /**
    * Whether the caller is a cross-foundation principal: a ROOT writer, or a holder of ROOT
-   * `global_marketing_ops`. The one test for every shared-account question — monitor reads and the
-   * root-only Google audience segments. Both checks are request-cached and fail closed, and a ROOT
-   * writer returns without a second lookup.
+   * `global_marketing_ops`. The test for the shared-account monitor reads (the conversion-action
+   * picker answers on the project's own `global_marketing_ops` instead, as campaign-service does). Both
+   * checks are request-cached and fail closed, and a ROOT writer
+   * returns without a second lookup.
    */
   private async isRootCampaignPrincipal(req: Request): Promise<boolean> {
     return (await personaDetectionService.checkRootWriter(req)) || (await personaDetectionService.checkRootCampaignManager(req));
@@ -5129,15 +5477,34 @@ export class CampaignController {
   private unservedGoogleAssetField(body: CampaignCreateRequest): string | null {
     if (canUseGoogleCreativeAssets()) return null;
     const raw = body as unknown as Record<string, unknown>;
-    for (const spec of Object.values(GOOGLE_CREATIVE_FIELDS)) {
-      const creative = raw?.[spec.key];
-      if (creative === null || typeof creative !== 'object' || Array.isArray(creative)) continue;
-      for (const field of spec.images) {
-        const value = (creative as Record<string, unknown>)[field];
-        if (!Array.isArray(value)) continue;
-        const index = value.findIndex((entry: unknown) => entry !== null && typeof entry === 'object' && 'imageAssetId' in entry);
-        if (index !== -1) return `${spec.key}.${field}[${index}].imageAssetId`;
+    for (const spec of [...Object.values(GOOGLE_CREATIVE_WIRE_FIELDS), GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS]) {
+      const found = this.storedImageIn(raw?.[spec.key], spec);
+      if (found !== null) return `${spec.key}.${found}`;
+    }
+    // Each named Demand Gen ad group's two creatives (#5226), on the same terms.
+    const groups = raw?.[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
+    if (!Array.isArray(groups)) return null;
+    for (const [index, group] of groups.entries()) {
+      if (group === null || typeof group !== 'object') continue;
+      for (const [key, spec] of [
+        ['creative', GOOGLE_CREATIVE_WIRE_FIELDS['demand-gen']],
+        ['videoCreative', GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS],
+      ] as const) {
+        const found = this.storedImageIn((group as Record<string, unknown>)[key], spec);
+        if (found !== null) return `${GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY}[${index}].${key}.${found}`;
       }
+    }
+    return null;
+  }
+
+  /** The first stored-image entry in one creative's image fields, as `<field>[i].imageAssetId`, or `null`. */
+  private storedImageIn(creative: unknown, spec: GoogleCreativeWireFields): string | null {
+    if (creative === null || typeof creative !== 'object' || Array.isArray(creative)) return null;
+    for (const field of spec.images) {
+      const value = (creative as Record<string, unknown>)[field];
+      if (!Array.isArray(value)) continue;
+      const index = value.findIndex((entry: unknown) => entry !== null && typeof entry === 'object' && 'imageAssetId' in entry);
+      if (index !== -1) return `${field}[${index}].imageAssetId`;
     }
     return null;
   }
@@ -5759,6 +6126,10 @@ export class CampaignController {
         ...this.googleDeviceBidModifiers(body, selectedChannels[0]),
         ...this.googleDemographicExclusions(body, selectedChannels[0]),
         ...languages,
+        // Sitelinks reach Demand Gen as well as Search (campaign-service v1.0.31); the gate inside the
+        // helper withholds them on every other channel. Normalized only — `createCampaign` names every
+        // sitelink refusal first.
+        ...this.googleSitelinks(body, selectedChannels[0]),
         ...creative,
       };
     }
@@ -5792,7 +6163,7 @@ export class CampaignController {
     // Normalized only — `createCampaign` names every callout refusal before this is dispatched.
     const callouts = this.googleCallouts(body);
     // Normalized only, as the callouts are — `createCampaign` names every sitelink refusal first.
-    const sitelinks = this.googleSitelinks(body);
+    const sitelinks = this.googleSitelinks(body, 'search');
     // Normalized only, as the extensions are — `createCampaign` names every segment refusal first.
     const audienceSegments = this.googleAudienceSegments(body);
     // Normalized only, as the two above are — `createCampaign` names every snippet refusal first.
@@ -5898,6 +6269,52 @@ export class CampaignController {
     const negativesRefusal = googleCreateNegativeKeywordsRefusal(raw['negativeKeywords']);
     if (negativesRefusal) return { field: 'negativeKeywords', message: negativesRefusal };
     return null;
+  }
+
+  /**
+   * Why campaign-service would refuse this create's Demand Gen video ad (#5226), or `null`.
+   *
+   * Judged only on a Demand Gen create, and only on what {@link googleCreative} would SEND: on any
+   * other channel the video ad is not put on the wire, as an image creative left under an unselected
+   * channel is not. Two refusals: an image ad beside the video ad — upstream builds ONE ad from the
+   * pair and refuses both (`errDemandGenTwoCreatives`) — and every rule of the ad itself, through
+   * `googleDemandGenVideoCreativeRefusal`, which mirrors `validateDemandGenVideoSpec`.
+   */
+  private googleDemandGenVideoRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
+    if (googleChannel !== 'demand-gen') return null;
+    const sent = this.googleCreative(body, 'demand-gen');
+    const video = sent[GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY];
+    if (video === undefined) return null;
+    if (sent[GOOGLE_CREATIVE_REQUEST_KEYS['demand-gen']] !== undefined) {
+      return 'A Demand Gen campaign takes an image ad or a video ad, not both. Clear one of them and create again.';
+    }
+    return googleDemandGenVideoCreativeRefusal(video);
+  }
+
+  /**
+   * Why campaign-service would refuse this create's named Demand Gen ad groups (#5226), or `null`.
+   *
+   * Judged, like the video ad, only on a Demand Gen create and only on what {@link googleCreative}
+   * would SEND. First the campaign-level refusal `validateDemandGenAdGroups` opens with: the list
+   * replaces the single ad, so it is refused beside either creative. Then every rule of the list itself
+   * through `googleDemandGenAdGroupsRefusal`: the cap of 5, a blank, over-long or repeated name, and
+   * each group's one ad. `demandGenAds` and `demandGenAudience`, which upstream refuses beside the list
+   * too, are fields this application does not send.
+   */
+  private googleDemandGenAdGroupsRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
+    if (googleChannel !== 'demand-gen') return null;
+    const eventName = typeof body?.eventName === 'string' ? body.eventName : '';
+    // Judged on the RAW value first: normalization drops anything that is not a list, which would read
+    // a malformed `demandGenAdGroups` as no split rather than refusing it as campaign-service does.
+    const raw: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
+    if (raw !== undefined && raw !== null && !Array.isArray(raw)) return googleDemandGenAdGroupsRefusal(eventName, raw);
+    const sent = this.googleCreative(body, 'demand-gen');
+    const groups = sent[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
+    if (groups === undefined) return null;
+    if (sent[GOOGLE_CREATIVE_REQUEST_KEYS['demand-gen']] !== undefined || sent[GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY] !== undefined) {
+      return 'Demand Gen ad groups replace the single Demand Gen ad, so the campaign-level image ad and video ad must be empty. Set the ad on each ad group instead.';
+    }
+    return googleDemandGenAdGroupsRefusal(eventName, groups);
   }
 
   /**
@@ -6042,13 +6459,19 @@ export class CampaignController {
   }
 
   /**
-   * The Search campaign's sitelink extensions, spread-ready, or `{}` when the request names none.
+   * The campaign's sitelink extensions, spread-ready, or `{}` when the request names none or the
+   * channel cannot take them.
    *
-   * Search only, as {@link googleCallouts}: `createCampaign` refuses sitelinks on any other channel
-   * by name, and every per-entry refusal, before this is dispatched. An empty description pair is
-   * omitted rather than sent as two empty strings; both absent is one of upstream's two legal states.
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_SITELINKS}: Search and Demand Gen, where
+   * `validateAssetPlan` accepts them (Demand Gen since campaign-service v1.0.31, sitelinks alone).
+   * For a channel outside it the `{}` is never dispatched either: `createCampaign` refuses sitelinks
+   * there by name, and every per-entry refusal, before this is dispatched. An empty description pair
+   * is omitted rather than sent as two empty strings; both absent is one of upstream's two legal
+   * states. The final URL is sent untagged on both channels; upstream tags it with the channel's own
+   * `utm_medium`.
    */
-  private googleSitelinks(body: CampaignCreateRequest): { sitelinks?: CampaignSitelink[] } {
+  private googleSitelinks(body: CampaignCreateRequest, channel: GoogleCampaignChannel): { sitelinks?: CampaignSitelink[] } {
+    if (!(GOOGLE_CHANNELS_WITH_SITELINKS as readonly string[]).includes(channel)) return {};
     const clean = this.googleSitelinkList(body?.sitelinks).map(({ text, description1 = '', description2 = '', finalUrl }) => ({
       text,
       ...(description1 !== '' ? { description1, description2 } : {}),
@@ -6163,9 +6586,11 @@ export class CampaignController {
    *
    * The four steps the sitelink, callout and snippet guards each spell out, in their order: an
    * absent or null list is "none asked for"; anything the Go decode refuses is refused by shape; a
-   * non-empty list on a channel but Search is refused by name, because `validateAssetPlan` fails the
-   * whole create there; then the raw-slice cap, and only then the entries. `entryRefusal` returns the
-   * first bad entry's sentence already numbered.
+   * non-empty list on a channel outside the guard's list is refused by name, because
+   * `validateAssetPlan` fails the whole create there (Search for these three, callouts and snippets;
+   * Search and Demand Gen for sitelinks, the one extension Demand Gen takes); then the raw-slice cap,
+   * and only then the entries. `entryRefusal` returns the first bad entry's sentence already
+   * numbered.
    */
   private googleAssetListRefusal(
     raw: unknown,
@@ -6376,7 +6801,8 @@ export class CampaignController {
    */
   private oversizedGoogleCreativeField(body: CampaignCreateRequest): { field: string; message: string } | null {
     const raw = body as unknown as Record<string, unknown>;
-    const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
+    // Every creative key the normalizer reads: each channel's image creative and Demand Gen's video ad.
+    const candidates: [string, unknown][] = [...Object.values(GOOGLE_CREATIVE_REQUEST_KEYS), GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY].map((key) => [key, raw[key]]);
     candidates.push(['conversionActions', raw['conversionActions']]);
     candidates.push(['callouts', raw['callouts']]);
     candidates.push(['audienceSegments', raw['audienceSegments']]);
@@ -6403,28 +6829,30 @@ export class CampaignController {
     }
 
     for (const [key, source] of candidates) {
-      // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
-      const entries: [string, unknown][] = this.boundableEntries(key, source);
+      const found = this.oversizedBoundableField(key, source);
+      if (found !== null) return found;
+    }
 
-      for (const [field, value] of entries) {
-        if (Array.isArray(value)) {
-          if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
-            return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
-          }
-          // A stored-image ref is an object entry, so its id is measured here too: the normalizer
-          // trims and forwards it, and an unbounded id is the same unbounded string a URL would be.
-          const long = value.find((entry) => {
-            const text = typeof entry === 'string' ? entry : this.imageAssetIdOf(entry);
-            return text !== null && this.boundedLength(text) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
-          });
-          if (long !== undefined) {
-            return { field, message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
-          }
-          continue;
+    // The named Demand Gen ad groups (#5226): the list, each name, and each group's two creatives on
+    // the creative keys' own terms, because `googleDemandGenAdGroups` normalizes them all.
+    const adGroups = raw[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
+    if (Array.isArray(adGroups)) {
+      if (adGroups.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
+        return { field: GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+      }
+      for (const group of adGroups) {
+        if (!group || typeof group !== 'object') continue;
+        const { name, creative, videoCreative } = group as Record<string, unknown>;
+        if (typeof name === 'string' && this.boundedLength(name) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
+          return {
+            field: `${GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY}.name`,
+            message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}`,
+          };
         }
-        if (typeof value === 'string' && this.boundedLength(value) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
-          return { field, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
-        }
+        const found =
+          this.oversizedBoundableField(`${GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY}.creative`, creative) ??
+          this.oversizedBoundableField(`${GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY}.videoCreative`, videoCreative);
+        if (found !== null) return found;
       }
     }
 
@@ -6568,6 +6996,36 @@ export class CampaignController {
   }
 
   /**
+   * The first field of one bounded source that breaks a resource bound, or null: a creative key's
+   * object of fields, or a bare list such as `conversionActions`. {@link oversizedGoogleCreativeField}'s
+   * per-key walk, shared with each named Demand Gen ad group's two creatives (#5226).
+   */
+  private oversizedBoundableField(key: string, source: unknown): { field: string; message: string } | null {
+    // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
+    for (const [field, value] of this.boundableEntries(key, source)) {
+      if (Array.isArray(value)) {
+        if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
+          return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+        }
+        // A stored-image ref is an object entry, so its id is measured here too: the normalizer
+        // trims and forwards it, and an unbounded id is the same unbounded string a URL would be.
+        const long = value.find((entry) => {
+          const text = typeof entry === 'string' ? entry : this.imageAssetIdOf(entry);
+          return text !== null && this.boundedLength(text) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+        });
+        if (long !== undefined) {
+          return { field, message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
+        }
+        continue;
+      }
+      if (typeof value === 'string' && this.boundedLength(value) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
+        return { field, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
+      }
+    }
+    return null;
+  }
+
+  /**
    * The one source above, flattened into the `[label, value]` pairs the bound is applied to.
    *
    * A creative key holds an object whose fields are each bounded under their own `key.field` label;
@@ -6606,14 +7064,60 @@ export class CampaignController {
    * crash in the meantime.
    */
   private googleCreative(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
-    const spec = GOOGLE_CREATIVE_FIELDS[channel];
+    const spec = GOOGLE_CREATIVE_WIRE_FIELDS[channel];
     if (!spec) return {};
+    // Demand Gen carries one of two creatives: the image ad, or the video ad (#5226). Both are
+    // normalized and emitted when present, so a request carrying both reaches `createCampaign`'s
+    // refusal (`googleDemandGenVideoRefusal`) rather than having one silently dropped here.
+    // The named ad groups (#5226) ride beside them on the same terms, for the same refusal
+    // (`googleDemandGenAdGroupsRefusal`).
+    if (channel === 'demand-gen') {
+      return {
+        ...this.googleCreativeFrom(body, spec),
+        ...this.googleCreativeFrom(body, GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS),
+        ...this.googleDemandGenAdGroups(body),
+      };
+    }
+    return this.googleCreativeFrom(body, spec);
+  }
 
+  /**
+   * `demandGenAdGroups` normalized and spread-ready (#5226), or `{}` when the list is absent or empty,
+   * so a create without it is byte-identical to one made before it existed.
+   *
+   * Each group keeps its position, so a refusal names the group the operator sees: an entry that is
+   * not an object, or a name that is not a string, becomes a blank name the refusal then names. The
+   * name is trimmed as Go trims; campaign-service sanitizes it further. Each creative is normalized
+   * exactly as the campaign-level one is, and omitted when it empties out.
+   */
+  private googleDemandGenAdGroups(body: CampaignCreateRequest): Record<string, unknown> {
+    const list: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
+    if (!Array.isArray(list) || list.length === 0) return {};
+    const groups = list.map((entry: unknown) => {
+      const group: Record<string, unknown> = entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>) : {};
+      const creative = this.googleCreativeFields(group['creative'], GOOGLE_CREATIVE_WIRE_FIELDS['demand-gen']);
+      const videoCreative = this.googleCreativeFields(group['videoCreative'], GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS);
+      return {
+        name: typeof group['name'] === 'string' ? googleAdsTrimSpace(group['name']) : '',
+        ...(creative === null ? {} : { creative }),
+        ...(videoCreative === null ? {} : { videoCreative }),
+      };
+    });
+    return { [GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY]: groups };
+  }
+
+  /** {@link googleCreative} for one catalogue: that creative's key, normalized, or `{}`. */
+  private googleCreativeFrom(body: CampaignCreateRequest, spec: GoogleCreativeWireFields): Record<string, unknown> {
+    const creative = this.googleCreativeFields((body as unknown as Record<string, unknown>)[spec.key], spec);
+    return creative === null ? {} : { [spec.key]: creative };
+  }
+
+  /** One creative object normalized against its catalogue, or `null` when nothing in it survives. */
+  private googleCreativeFields(source: unknown, spec: GoogleCreativeWireFields): Record<string, unknown> | null {
     // `as Record<string, unknown>` rather than the typed interface: the value arrives off an
     // unvalidated request body, so every field has to be re-tested at runtime anyway and the
     // declared type would only make the tests look redundant.
-    const source = (body as unknown as Record<string, unknown>)[spec.key];
-    if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
     const raw = source as Record<string, unknown>;
 
     const creative: Record<string, unknown> = {};
@@ -6626,16 +7130,26 @@ export class CampaignController {
     for (const field of spec.scalars) {
       const value = raw[field];
       if (typeof value !== 'string') continue;
-      const clean = value.trim();
+      const clean = googleAdsTrimSpace(value);
       if (clean !== '') creative[field] = clean;
     }
 
-    return Object.keys(creative).length > 0 ? { [spec.key]: creative } : {};
+    return Object.keys(creative).length > 0 ? creative : null;
   }
 
-  /** A creative list's non-blank strings, trimmed, in order. */
+  /**
+   * A creative list's non-blank strings, trimmed, in order.
+   *
+   * Trimmed as Go's `strings.TrimSpace` trims (`googleAdsTrimSpace`), not `String.prototype.trim`:
+   * the shared creative judges trim that way, and campaign-service does too, so an entry such as a
+   * lone U+0085 is dropped here exactly as it is dropped when judged, instead of reaching the wire
+   * and being refused upstream as blank.
+   */
   private googleStringList(value: unknown[]): string[] {
-    return value.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+    return value
+      .filter((v): v is string => typeof v === 'string')
+      .map((v) => googleAdsTrimSpace(v))
+      .filter((v) => v !== '');
   }
 
   /**
@@ -6654,11 +7168,13 @@ export class CampaignController {
     const clean: GoogleCreativeImageRef[] = [];
     for (const entry of value) {
       if (typeof entry === 'string') {
-        if (entry.trim() !== '') clean.push(entry.trim());
+        const url = googleAdsTrimSpace(entry);
+        if (url !== '') clean.push(url);
         continue;
       }
       const id = this.imageAssetIdOf(entry);
-      if (id !== null && id.trim() !== '') clean.push({ imageAssetId: id.trim() });
+      const trimmedId = id === null ? '' : googleAdsTrimSpace(id);
+      if (trimmedId !== '') clean.push({ imageAssetId: trimmedId });
     }
     return clean;
   }
@@ -6713,11 +7229,11 @@ export class CampaignController {
    * leaving it out leaves the campaign exactly as wide as it is today. That is why an empty result
    * omits rather than refuses, as `geoTargets` does.
    *
-   * CHANNEL-GATED, which `geoTargets` is not. `validateCriteriaPlan`
-   * (`internal/platform/googleads/campaign_criteria.go`) refuses the whole non-location criteria
-   * set on the Demand Gen path — that channel attaches targeting at the ad group level — so a
-   * Demand Gen create carrying languages fails upstream with nothing created. So this helper never
-   * forwards a list for a channel outside {@link GOOGLE_CHANNELS_WITH_LANGUAGES}, and the `{}` it
+   * CHANNEL-GATED, which `geoTargets` is not, on {@link GOOGLE_CHANNELS_WITH_LANGUAGES}. That list
+   * names every channel since campaign-service v1.0.31, whose `validateCriteriaPlan` takes Demand Gen
+   * languages and attaches them to the ad group (#459). The gate stays so a channel fenced again
+   * upstream needs only the constant changed. This helper never forwards a list for a channel
+   * outside the list, and the `{}` it
    * returns there is never dispatched either: `createCampaign` reads the request's own list and
    * refuses such a create by name before anything is sent, on upstream's "refused, never silently
    * dropped" rule for this field.
@@ -6891,8 +7407,9 @@ export class CampaignController {
    * The campaign's ad schedules, normalized and spread-ready, or `{}` when the request names none or
    * the channel cannot take them.
    *
-   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}, which is every channel but Demand
-   * Gen. The `{}` returned there is never dispatched either: `createCampaign` reads the request's
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}, which is every channel since
+   * campaign-service v1.0.31 (Demand Gen without a bid modifier, #474). For a channel outside it the
+   * `{}` returned is never dispatched either: `createCampaign` reads the request's
    * own list and refuses such a create by name first, on upstream's "refused, never silently
    * dropped" rule — a campaign that serves around the clock when the operator asked for weekday
    * evenings spends the whole budget in the hours they excluded.
@@ -6911,9 +7428,9 @@ export class CampaignController {
    * channel cannot take them.
    *
    * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which is one channel fewer
-   * than the ad-schedule and language gates: `validateCriteriaPlan` refuses the whole criteria set
-   * on Demand Gen and then refuses THIS half of it again on Performance Max, whose automated bidding
-   * owns the bid and sets no device adjustment. The `{}` returned there is never dispatched either —
+   * than the ad-schedule and language gates: Performance Max, where campaign-service v1.0.31 takes a
+   * device exclusion (#500) that this client does not offer yet. Demand Gen is inside it, exclusions
+   * only. The `{}` returned on Performance Max is never dispatched either —
    * `createCampaign` reads the request's own list and refuses such a create by name first, on
    * upstream's "refused, never silently dropped" rule.
    *

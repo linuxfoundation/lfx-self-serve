@@ -5,6 +5,7 @@ import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDeleteDialogData, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { formatMeetingWhenFull } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDeleteScopeModalComponent } from './meeting-delete-scope-modal.component';
@@ -51,11 +52,15 @@ describe('MeetingDeleteScopeModalComponent', () => {
   beforeEach(() => TestBed.resetTestingModule());
 
   it("opens on cancelling the row's date and closes with it", async () => {
-    await render(buildData(MEETING, SECOND));
+    const data = buildData(MEETING, SECOND);
+    await render(data);
 
     expect(radio('occurrence').checked).toBe(true);
     expect(query('meetings-home-delete-scope-info')?.textContent).toContain('Synthetic Project');
+    expect(query('meeting-dialog-context-when')?.textContent?.trim()).toBe(formatMeetingWhenFull(data.row));
     expect(query('meetings-home-delete-scope-note')?.textContent).toContain('applies to all registrants of this meeting');
+    expect(query('meetings-home-delete-scope-note')?.className).toContain('text-ui-danger-700');
+    expect(query('meetings-home-delete-scope-note')?.className).not.toContain('ring-1');
     button('meetings-home-delete-scope-continue').click();
 
     expect(close).toHaveBeenCalledWith({ deleteType: 'occurrence', occurrenceId: SECOND.occurrence_id });

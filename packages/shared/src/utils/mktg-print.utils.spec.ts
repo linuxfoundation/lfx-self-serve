@@ -17,6 +17,8 @@ import {
   buildFoundationMessagePrintView,
   foundationMessagePrintSections,
   mktgPrintBrand,
+  mktgPrintDocumentTitle,
+  mktgPrintIsWebKit,
 } from './mktg-print.utils';
 import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
 import faqEnvelope from './__fixtures__/faq-envelope.json';
@@ -139,6 +141,34 @@ const CONTENT: FoundationMessageContent = {
   nums: [['1,200', 'members']],
 };
 
+describe('the print engine', () => {
+  it.each([
+    ['Safari 18 on macOS', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15'],
+    [
+      'Safari on iOS',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1',
+    ],
+    [
+      'Chrome on iOS, a WebKit engine too',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1',
+    ],
+    ['Playwright webkit on Linux', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'],
+  ])('reads %s as WebKit, where a table head and foot print once', (_name, userAgent) => {
+    expect(mktgPrintIsWebKit(userAgent)).toBe(true);
+  });
+
+  it.each([
+    ['Chrome 131 on macOS', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'],
+    ['Edge on Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.2903.70'],
+    ['Opera on Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 OPR/116.0.0.0'],
+    ['Firefox on macOS', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:132.0) Gecko/20100101 Firefox/132.0'],
+    ['Playwright chromium headless', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/131.0.6778.33 Safari/537.36'],
+    ['no user agent', ''],
+  ])('reads %s as not WebKit, where the sheets repeat their room per page', (_name, userAgent) => {
+    expect(mktgPrintIsWebKit(userAgent)).toBe(false);
+  });
+});
+
 describe('the print’s brand', () => {
   it('is the LF look without a kit: the LF navy and blue, Inter, and the Linux Foundation logo', () => {
     const brand = mktgPrintBrand(null);
@@ -238,5 +268,24 @@ describe('the framework’s print', () => {
       ['Adoption', 'Docs · Slack'],
       ['', ''],
     ]);
+  });
+});
+
+describe('the printed document’s title, the saved PDF’s file name', () => {
+  it('names the PDF like the deck: the project, the asset, the revision on the page and that revision’s own UTC date', () => {
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Brand kit', 3, '2026-11-05T23:30:00Z')).toBe('Synthetic Foundation · Brand kit · v3 · 2026-11-05');
+    // The revision's date, not the download's, and the UTC day (a local evening is the next UTC day).
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Messaging framework', 1, '2026-10-20T22:15:00-05:00')).toBe(
+      'Synthetic Foundation · Messaging framework · v1 · 2026-10-21'
+    );
+  });
+
+  it('leaves out what the document lacks: the version of the family PDF, a date the revision does not carry, a project it does not know', () => {
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Positioning & brand', null, '2026-10-28T09:00:00Z')).toBe(
+      'Synthetic Foundation · Positioning & brand · 2026-10-28'
+    );
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Brand kit', 2, null)).toBe('Synthetic Foundation · Brand kit · v2');
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Brand kit', 2, 'not-a-date')).toBe('Synthetic Foundation · Brand kit · v2');
+    expect(mktgPrintDocumentTitle('', 'AEO/GEO report', 2, '2026-10-13T12:02:00.000Z')).toBe('AEO/GEO report · v2 · 2026-10-13');
   });
 });

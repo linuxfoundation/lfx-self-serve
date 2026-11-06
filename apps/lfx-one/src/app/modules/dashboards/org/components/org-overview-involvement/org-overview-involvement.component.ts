@@ -102,6 +102,7 @@ export class OrgOverviewInvolvementComponent {
   private readonly maintainersCard = this.initializeMaintainersCard();
   private readonly eventAttendeesCard = this.initializeEventAttendeesCard();
   private readonly eventSpeakersCard = this.initializeEventSpeakersCard();
+  private readonly peopleWithTrainingActivityCard = this.initializePeopleWithTrainingActivityCard();
   private readonly certifiedEmployeesCard = this.initializeCertifiedEmployeesCard();
   private readonly trainingEnrollmentsCard = this.initializeTrainingEnrollmentsCard();
 
@@ -200,6 +201,12 @@ export class OrgOverviewInvolvementComponent {
     return computed(() => this.transformEventSpeakers(this.eventAttendanceMonthlyData(), this.getMetricConfig('Event Speakers')));
   }
 
+  private initializePeopleWithTrainingActivityCard(): Signal<DashboardMetricCard> {
+    return computed(() =>
+      this.transformPeopleWithTrainingActivity(this.trainingStats(), this.getMetricConfig(ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity.label))
+    );
+  }
+
   private initializeCertifiedEmployeesCard(): Signal<DashboardMetricCard> {
     return computed(() => this.transformCertifiedEmployees(this.trainingStats(), this.getMetricConfig(ORG_TRAINING_STAT_DEFINITIONS.certifiedPeople.label)));
   }
@@ -227,6 +234,7 @@ export class OrgOverviewInvolvementComponent {
       { card: this.maintainersCard(), category: 'contributors' },
       { card: this.eventAttendeesCard(), category: 'events' },
       { card: this.eventSpeakersCard(), category: 'events' },
+      { card: this.peopleWithTrainingActivityCard(), category: 'education' },
       { card: this.certifiedEmployeesCard(), category: 'education' },
       { card: this.trainingEnrollmentsCard(), category: 'education' },
     ];
@@ -373,6 +381,19 @@ export class OrgOverviewInvolvementComponent {
               ],
             }
           : metric.chartData,
+    };
+  }
+
+  /** Headline: people on the people list with training activity for the Training page's default range (unit, window and as-of in the subtitle). Stat-only: no chart. */
+  private transformPeopleWithTrainingActivity(stats: OrgTrainingStats | null, metric: DashboardMetricCard): DashboardMetricCard {
+    // A failed or pending stats read shows a dash, never a zero that reads as "nobody trained", and no as-of date.
+    const people = buildOrgTrainingStatTiles(stats, OVERVIEW_TRAINING_STATS_QUERY.range).find((tile) => tile.key === 'peopleWithTrainingActivity')!;
+    return {
+      ...metric,
+      loading: this.trainingStatsLoading(),
+      value: people.display,
+      subtitle: people.caption,
+      tooltipText: people.tooltip,
     };
   }
 

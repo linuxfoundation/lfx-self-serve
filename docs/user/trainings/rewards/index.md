@@ -4,7 +4,7 @@ description: View your reward points, claim incentives, and redeem coupons for L
 audience: [all]
 product_area: Trainings
 tags: [trainings, rewards, coupons, points, certifications]
-last_updated: 2026-11-02
+last_updated: 2026-11-05
 intercom_collection: Trainings
 ---
 
@@ -20,7 +20,7 @@ The **Rewards** tab shows the reward points, incentives, and coupons you have ea
 
 ### Total reward points
 
-The top of the tab shows your **Total Reward Points** and a progress bar toward your next reward. You earn points on eligible Linux Foundation training and certification purchases. If a program year applies, the tab also shows when it ends.
+The top of the tab shows your **Total Reward Points** and a progress bar toward your next reward. You earn points on eligible Linux Foundation training and certification purchases. If a program year applies, the tab also shows when it ends. Select **View transactions** in the bottom-right corner of the card to open your purchase history on the **Transactions** tab (`/profile/transactions`).
 
 > **Note:** Points are earned based on your training and certification purchases and take some time to appear after a purchase. For details on how points are earned and how long they last, see the [Rewards FAQ](https://training.linuxfoundation.org/tux-rewards/).
 

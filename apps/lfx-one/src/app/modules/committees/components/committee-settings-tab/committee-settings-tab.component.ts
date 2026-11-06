@@ -17,10 +17,9 @@ import {
   ValidationError,
 } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import { SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
+import { MAILING_LIST_ACCESS_DENIED_MESSAGE, SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -52,7 +51,6 @@ import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
 export class CommitteeSettingsTabComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly featureFlagService = inject(FeatureFlagService);
-  private readonly lensService = inject(LensService);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -120,6 +118,14 @@ export class CommitteeSettingsTabComponent {
 
   // Associated mailing lists (queried directly by committee_uid tag)
   public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
+
+  // Linking or unlinking updates the mailing list itself, so it needs write access on that list.
+  // Only block once lists have loaded and none are writable — an empty list is the picker's own
+  // "no mailing lists" state, which still offers Create New List.
+  public mailingListLinkBlocked: Signal<boolean> = computed(() => {
+    const lists = this.projectMailingLists();
+    return lists.length > 0 && !lists.some((ml) => ml.writer === true);
+  });
 
   // Derived loading state: true until first emission from associatedMailingLists
   public mlLoading = computed(() => this.mlLoadingInternal() && !!this.committee()?.uid);
@@ -231,10 +237,6 @@ export class CommitteeSettingsTabComponent {
     const committee = this.committee();
     const committeeUid = committee.uid;
     const projectUid = committee.project_uid;
-    const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
-    const denyParams: Record<string, string> = { _notice: 'mailing-lists' };
-    if (committee.project_slug) denyParams['project'] = committee.project_slug;
-    const deny = () => void this.router.navigate([overviewPath], { queryParams: denyParams });
 
     this.committeeService
       .getCommittee(committeeUid)
@@ -242,13 +244,13 @@ export class CommitteeSettingsTabComponent {
       .subscribe({
         next: (fresh) => {
           if (fresh?.writer !== true) {
-            if (fresh?.project_slug) denyParams['project'] = fresh.project_slug;
-            deny();
+            // Stay on the Settings tab rather than redirecting away from it.
+            this.messageService.add({ severity: 'warn', summary: 'Access Denied', detail: MAILING_LIST_ACCESS_DENIED_MESSAGE });
             return;
           }
           this.openPickerDialog(committeeUid, projectUid, fresh?.project_slug ?? committee.project_slug);
         },
-        error: () => deny(),
+        error: () => this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Unable to verify your access. Please try again.' }),
       });
   }
 
@@ -468,7 +470,7 @@ export class CommitteeSettingsTabComponent {
       return;
     }
 
-    const updates$: Observable<{ uid: string; success: boolean }>[] = [];
+    const updates$: Observable<{ uid: string; success: boolean; status?: number }>[] = [];
 
     // Associate: set committee_uid on newly selected MLs
     for (const uid of added) {
@@ -477,7 +479,7 @@ export class CommitteeSettingsTabComponent {
         updates$.push(
           this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid)).pipe(
             map(() => ({ uid, success: true })),
-            catchError(() => of({ uid, success: false }))
+            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
           )
         );
       }
@@ -490,7 +492,7 @@ export class CommitteeSettingsTabComponent {
         updates$.push(
           this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, null)).pipe(
             map(() => ({ uid, success: true })),
-            catchError(() => of({ uid, success: false }))
+            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
           )
         );
       }
@@ -511,6 +513,12 @@ export class CommitteeSettingsTabComponent {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Mailing list associations updated' });
           } else if (succeeded > 0) {
             this.messageService.add({ severity: 'warn', summary: 'Partial Success', detail: `${succeeded} updated, ${failed} failed` });
+          } else if (results.every((r) => r.success || r.status === 403)) {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Permission denied',
+              detail: 'You need Manage access to these mailing lists to link or unlink them. No changes were saved.',
+            });
           } else {
             this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update mailing list associations' });
           }
@@ -520,6 +528,9 @@ export class CommitteeSettingsTabComponent {
   }
 
   private getMlErrorDetail(err: any, fallback: string): string {
+    if (err?.status === 403) {
+      return 'You need Manage access to this mailing list to link or unlink it.';
+    }
     const body = err?.error;
     if (body?.error?.includes?.('subgroup not found') || body?.code === 'NOT_FOUND') {
       return 'Mailing list sync failed — the Groups.io subgroup may not exist for this list';

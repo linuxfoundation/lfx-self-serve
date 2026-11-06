@@ -1,18 +1,18 @@
 ---
 title: Projects and project detail
-description: How to read the Projects table for the selected company, filter and export it, manage shared workspaces, and open a project's detail page to see the company's influence, its leaderboard standing, and the influence trend.
+description: How to read the Projects table for the selected company, filter and export it, manage shared workspaces, and open a project's detail page to see the company's influence, its leaderboard standing, how each company's leaderboard score breaks down, and the influence trend.
 audience: [all]
 product_area: Company
-tags: [company, company-lens, projects, project-detail, workspaces, influence, leaderboard, health, contributors, participants]
-last_updated: 2026-11-05
+tags: [company, org, org-lens, projects, project-detail, workspaces, influence, leaderboard, score-breakdown, health, contributors, participants]
+last_updated: 2026-11-06
 intercom_collection: Company
 ---
 
-These steps apply to anyone who can open a company in the Company Lens, such as a company admin (editor or viewer) or Linux Foundation staff. Adding projects and managing workspaces also needs edit access to the company, which its Admins have. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Projects**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
+These steps apply to anyone who can open a company in the Company lens, such as a company admin (editor or viewer). Adding projects and managing workspaces also needs edit access to the company, which its Admins have. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Projects**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
 
 ## What is the Projects page?
 
-The Projects page lists the open source projects in one of the selected company's workspaces, with each project's health, the company's influence on it, and how many of its people contribute and participate. Most are projects the company is involved in. Someone who can edit the company, such as an Admin, can also add projects it has no activity in yet. Its address is `/company/<company>/projects`.
+The Projects page lists the open source projects in one of the selected company's workspaces, with each project's health, the company's influence on it, and how many of its people contribute and participate. Most are projects the company is involved in. Someone who can edit the company, such as an Admin, can also add projects it has no activity in yet. Its address is `/org/<company>/projects`.
 
 The page heading is **Projects —** followed by the company's name. The line under it is **The open source projects your company influences, contributes to, and depends on.** The sidebar item that opens it is **Projects**.
 
@@ -20,7 +20,7 @@ The table shows one workspace at a time. A workspace is a saved list of projects
 
 ## How do I open Projects?
 
-You open **Projects** from the Company Lens sidebar once a company is selected. A CLA Manager or initial CLA Manager designee with no other role on that company is sent to **EasyCLA** instead.
+You open **Projects** from the Company lens sidebar once a company is selected. A CLA Manager or initial CLA Manager designee with no other role on that company is sent to **EasyCLA** instead.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Company** in the lens switcher.
@@ -28,21 +28,21 @@ You open **Projects** from the Company Lens sidebar once a company is selected. 
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, Projects is replaced by the same access message as the other Company Lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
+When you cannot open the company, Projects is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
 
 ## What does each column in the Projects table show?
 
 Each row of the Projects table shows one project's health, the company's technical and ecosystem influence on it, its influence trend over the past year, and how many of the company's employees contribute and participate. Select a project name to open its detail page. Hover a column heading to read what it measures.
 
-| Column                   | What it shows                                                                                                                                                                                                                                    |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Project**              | The project logo and name. The name opens the project's detail page                                                                                                                                                                              |
-| **Health**               | The project's LFX Insights health label: **Excellent**, **Healthy**, **Fair**, **Concerning**, **Critical**, or **Unavailable**                                                                                                                  |
-| **Technical influence**  | The company's influence on the project's code activity (commits and pull requests), as a band: **Leading**, **Contributing**, **Participating**, or **Silent**                                                                                   |
-| **Ecosystem influence**  | The company's influence on the project's non-code collaboration (documentation, committees, meetings, events), as the same bands. A project outside the Linux Foundation (LF) shows **Non-LF Project**                                           |
-| **Influence Trend (1y)** | A line showing how the company's combined influence changed over the rolling 12 months, and the change as a percentage                                                                                                                           |
+| Column                   | What it shows                                                                                                                                                                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Project**              | The project logo and name. The name opens the project's detail page                                                                                                                                                                                        |
+| **Health**               | The project's LFX Insights health label: **Excellent**, **Healthy**, **Fair**, **Concerning**, **Critical**, or **Unavailable**                                                                                                                            |
+| **Technical influence**  | The company's influence on the project's code activity (commits and pull requests), as a band: **Leading**, **Contributing**, **Participating**, or **Silent**                                                                                        |
+| **Ecosystem influence**  | The company's influence on the project's non-code collaboration (documentation, committees, meetings, events), as the same bands. A project outside the Linux Foundation (LF) shows **Non-LF Project**                                                |
+| **Influence Trend (1y)** | A line showing how the company's combined influence changed over the rolling 12 months, and the change as a percentage                                                                                                                                |
 | **Contributors**         | How many of the company's employees contributed code to the project in the past 2 years, counted under the chosen **Company scope** and **Team members** choices. The number opens the project's detail page with its **Contributors** card open |
-| **Participants**         | How many of the company's employees were involved in the project in any way in the past 2 years, including code contributions, documentation collaboration, events, and training. The number opens the project's detail page                     |
+| **Participants**         | How many of the company's employees were involved in the project in any way in the past 2 years, including code contributions, documentation collaboration, events, and training. The number opens the project's detail page                          |
 
 The hover text on both influence columns says **Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).** and **Comparing our company's share of these activities to the project total indicates greater influence in the project.** Each band also shows signal bars: four filled for **Leading**, down to one for **Silent**.
 
@@ -87,7 +87,7 @@ When the filters match no projects, the table says **No results for filters** an
 
 ## What does Company scope change?
 
-**Company scope** chooses which of the company's related companies count toward contributors. On the Projects page it **Applies to the Contributors column only.**
+**Company scope** chooses which of the companies count toward contributors. On the Projects page it **Applies to the Contributors column only.**
 
 - **Insights company**, the default, counts only the company on the company's LFX Insights page, in the repositories LFX Insights counts. Maintainer roles are not affected.
 - **All related companies** counts every company linked to the company account, such as subsidiaries, acquisitions, and duplicate records, in every repository. The number in parentheses is how many of those related companies have code activity in the past two years.
@@ -169,9 +169,9 @@ A blank name shows **Workspace name is required.** A save or delete that did not
 
 ## What is a project detail page?
 
-A project detail page shows how the selected company takes part in one project and how it compares with other companies there. You open it by selecting a project name on Projects. Its address is `/company/<company>/projects/<project>`.
+A project detail page shows how the selected company takes part in one project and how it compares with other companies there. You open it by selecting a project name on Projects. Its address is `/org/<company>/projects/<project>`.
 
-You can also open it from a project in the [Company Overview dashboard](../company-overview/) and from the **Company Projects** panel on [Memberships](../memberships/#what-does-the-company-projects-panel-show).
+You can also open it from a project in the [Org Overview dashboard](../company-overview/) and from the **Org Projects** panel on [Memberships](../memberships/#what-does-the-org-projects-panel-show).
 
 The trail at the top reads **Projects** followed by the project name. Select **Projects** to go back to the list.
 
@@ -203,22 +203,22 @@ The **Our Influence** tab shows the company's share of the project's activity, i
 
 Each card shows a chart of the company's activity over the time range, a headline figure, and a short sentence. For example, the **Commits** card can say **Employees made** a percentage **of all commits.** A card whose chart has no data points for the time range shows **No data** in place of its chart. A recorded zero is still data, so a period with no activity draws a chart at zero.
 
-| Card                       | Group     | What it counts                                                                                                              |
-| -------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Maintainer roles**       | Technical | People named as maintainers in the project's governance files, counted once per project, credited to their current employer |
-| **Contributors**           | Technical | Individuals who made at least one contribution (commit, PR, review, or comment) in the selected time range                  |
-| **Commits**                | Technical | Code contributions committed directly to the project's repositories                                                         |
-| **Pull Requests Opened**   | Technical | Pull requests opened against the project's repositories in the selected time range                                          |
+| Card                       | Group     | What it counts                                                                                                                   |
+| -------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **Maintainer roles**       | Technical | People named as maintainers in the project's governance files, counted once per project, credited to their current employer      |
+| **Contributors**           | Technical | Individuals who made at least one contribution (commit, PR, review, or comment) in the selected time range                       |
+| **Commits**                | Technical | Code contributions committed directly to the project's repositories                                                              |
+| **Pull Requests Opened**   | Technical | Pull requests opened against the project's repositories in the selected time range                                               |
 | **Avg Time to Merge PRs**  | Technical | Average time from when a pull request is opened to when it is merged, for the company's contributors, compared with average |
-| **Collaboration Activity** | Ecosystem | Interactions across collaboration platforms including Slack, mailing lists, GitHub Issues, Jira, and community forums       |
-| **Meeting Attendance**     | Ecosystem | Attendance at project committee, working group, and community meetings                                                      |
-| **Board Members**          | Ecosystem | Seats on the governing board of the project's foundation                                                                    |
-| **Committee Members**      | Ecosystem | People on a foundation committee, such as advisory groups, steering committees, and marketing committees                    |
-| **Event Attendance**       | Ecosystem | Registration and attendance at events hosted or co-located with the project's foundation                                    |
-| **Event Speakers**         | Ecosystem | Employees who presented talks, workshops, or keynotes at foundation-hosted events                                           |
+| **Collaboration Activity** | Ecosystem | Interactions across collaboration platforms including Slack, mailing lists, GitHub Issues, Jira, and community forums            |
+| **Meeting Attendance**     | Ecosystem | Attendance at project committee, working group, and community meetings                                                           |
+| **Board Members**          | Ecosystem | Seats on the governing board of the project's foundation                                                                         |
+| **Committee Members**      | Ecosystem | People on a foundation committee, such as advisory groups, steering committees, and marketing committees                         |
+| **Event Attendance**       | Ecosystem | Registration and attendance at events hosted or co-located with the project's foundation                                         |
+| **Event Speakers**         | Ecosystem | Employees who presented talks, workshops, or keynotes at foundation-hosted events                                                |
 | **Event Sponsorships**     | Ecosystem | Events where the company sponsored, co-sponsored, or provided in-kind support                                               |
-| **Meetup Attendance**      | Ecosystem | Attendance at community meetups organized under the project's foundation                                                    |
-| **Certified Individuals**  | Ecosystem | Employees who hold active certifications issued or recognized by the project's foundation                                   |
+| **Meetup Attendance**      | Ecosystem | Attendance at community meetups organized under the project's foundation                                                         |
+| **Certified Individuals**  | Ecosystem | Employees who hold active certifications issued or recognized by the project's foundation                                        |
 
 A project outside the Linux Foundation has no ecosystem cards. Its ecosystem chip says **Non-LF**, and the row says **No ecosystem influence data for this project yet.**
 
@@ -243,7 +243,7 @@ What the leaderboards rank depends on the metric you choose:
 
 Each board has the columns **#**, **Company**, and the score. Type in **Search** above a board to find a company by name. The boards show 10, 25, or 50 rows per page.
 
-With **Calculated Influence**, select a row to open that company's score breakdown, with its **Total score** and **How this score is calculated**. **Activity Count** rows do not open a breakdown.
+With **Calculated Influence**, select a row to open that company's score breakdown, with its **Total score** and **How this score is calculated**. **Activity Count** rows do not open a breakdown. See [What does a leaderboard score breakdown show?](#what-does-a-leaderboard-score-breakdown-show).
 
 When a board has no rows, it says **No ranked companies for this project yet.** When a search matches nothing, it says **No companies match your search.** For a project outside the Linux Foundation, the ecosystem board is marked **Non-LF**.
 
@@ -251,28 +251,74 @@ When a board has no rows, it says **No ranked companies for this project yet.** 
 
 **Influence Trend** shows how the project's combined influence is shared among companies over the time range. Each band is one of the 10 companies with the most influence, and **All others** adds up the rest, so the bands always total 100%. When there is no trend to show, it says **No data available.**
 
+## What does a leaderboard score breakdown show?
+
+A score breakdown shows how one company earned its influence score on the project, category by category. It opens when you select a row on the **Technical Influence Leaderboard** or the **Ecosystem Influence Leaderboard**, which are the boards shown with **Calculated Influence**. On a keyboard, move to a row and press Enter or Space. It follows the page's time range and **Company scope**.
+
+1. The panel's title is the company's name. The line under it names the project and **Technical Influence** or **Ecosystem Influence**.
+2. A summary sentence gives the company's band and score, such as **Acme has a Contributing technical influence in Kubernetes and a score of 6.25**. When they are known, it also gives the company's share of the project's contribution activity (technical) or collaboration activity (ecosystem), and its rank, such as **#3 out of 120 companies participating in the project**.
+3. A list of categories, introduced by **The % of** the company's **score that each category contributes, and the points it earned**. Each category shows its points and a bar for its share of the total score, highest points first. Most also show the company's count, or its count against the project's or the foundation's total, depending on the category, such as **(12 of 340)**.
+4. **Total score**: the sum of the points. It is the same score as the leaderboard row.
+5. **How this score is calculated**: how each category earns points, and how the score maps to a band.
+
+The technical score has four categories: **Maintainer roles**, **Contributors**, **Commits** and **PRs Opened**. The ecosystem score has ten: **Collaboration Activities**, **Meeting Attendance**, **Event Attendance**, **Committee Members**, **Board Members**, **Event Speakers**, **Meetup Attendance**, **Event sponsorship - attendees reached**, **Certified Individuals** and **Membership Tier**. A category marked **(not tracked for this project)** has no activity recorded for the project at all. **Membership Tier** has no count: its points come from the company's Linux Foundation membership tier.
+
+### Why are some categories locked?
+
+Four ecosystem categories, **Meeting Attendance**, **Event Attendance**, **Meetup Attendance** and **Certified Individuals**, come from individual participation records that LFX does not publish. You see their figures only in your own company's breakdown, the row highlighted and marked **You**. In any other company's breakdown they are listed last with a lock in place of their points, and the panel says **Locked categories are based on individual participation records that LFX does not publish.** Their points are still part of that company's **Total score**. Technical categories are never locked.
+
+### How are the points calculated?
+
+Each category earns points on its own, with no preset weights, and the points are added up to the total score.
+
+| Score     | Categories                                                                                                        | Points                                                                                                                                                                                                                      |
+| --------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Technical | **Maintainer roles**                                                                                              | 10 points when the company has maintainers on the project in the time range. Only companies with code contributions in that range are scored, so a company can hold maintainer roles and still earn 0 points |
+| Technical | **Contributors**, **PRs Opened**                                                                                  | 0.1 point for each 0.1% share of the project's total, plus 1 point for any share above 0%                                                                                                                                   |
+| Technical | **Commits**                                                                                                       | Scored like Contributors, but from all commit credit, including co-authored commits. The count and share shown are authored commits only, so a company can show 0 authored commits and still earn points              |
+| Ecosystem | **Collaboration Activities**, **Meeting Attendance**, **Committee Members**, **Event Speakers**                   | 0.1 point for each 0.1% share of the project's or foundation's total, plus 1 point for any share above 0%                                                                                                                   |
+| Ecosystem | **Board Members**                                                                                                 | 1 point when the company has at least one board member on the project's foundation                                                                                                                                     |
+| Ecosystem | **Event Attendance**, **Meetup Attendance**, **Certified Individuals**, **Event sponsorship - attendees reached** | 0, 0.33, 0.66 or 1 point for no share, a share up to 25%, up to 50%, or over 50%                                                                                                                                            |
+| Ecosystem | **Membership Tier**                                                                                               | 1 point for Premier, 0.66 point for Strategic, otherwise 0                                                                                                                                                                  |
+
+The count next to **Maintainer roles** is the maintainer roles the company holds on the project against every company's roles, with people marked as team members in LFX left out. It is counted separately from the points.
+
+The total score maps to a band:
+
+| Band              | Technical score | Ecosystem score |
+| ----------------- | --------------- | --------------- |
+| **Silent**        | 0               | 0–2             |
+| **Participating** | 1–4             | 3–10            |
+| **Contributing**  | 5–14            | 11–19           |
+| **Leading**       | 15 or more      | 20 or more      |
+
+### What if the breakdown does not load?
+
+- **This breakdown could not be loaded. Close the panel and try again.** The request failed. Close the panel and select the row again.
+- **A detailed breakdown is not available for this company.** There is no breakdown on record for that company on this project.
+
 ## Why did Projects or a project detail page fail to load?
 
 When Projects or a project detail page fails to load, it shows a message naming what failed, usually with **Retry**. A failed load is not the same as an empty list.
 
-| What you see                                    | Where             | What to do                                                           |
-| ----------------------------------------------- | ----------------- | -------------------------------------------------------------------- |
-| **Could not load your saved workspaces.**       | Projects          | Select **Retry** to restore the workspaces                           |
-| **Something went wrong loading your projects.** | Projects          | Select **Retry**. Your workspaces are still available                |
-| **Could not load projects for this workspace**  | Projects          | Select **Retry**, or add the projects to the workspace again         |
+| What you see                                    | Where             | What to do                                                                |
+| ----------------------------------------------- | ----------------- | ------------------------------------------------------------------------- |
+| **Could not load your saved workspaces.**       | Projects          | Select **Retry** to restore the workspaces                                |
+| **Something went wrong loading your projects.** | Projects          | Select **Retry**. Your workspaces are still available                     |
+| **Could not load projects for this workspace**  | Projects          | Select **Retry**, or add the projects to the workspace again              |
 | **Project not found**                           | Project detail    | The project is not one of the company's. Select **Back to Projects** |
-| **Failed to load project detail**               | Project detail    | Select **Retry**                                                     |
-| **Failed to load influence cards**              | **Our Influence** | Select **Retry**                                                     |
-| **Failed to load leaderboard**                  | **Leaderboards**  | Select **Retry** on that board                                       |
-| **Failed to load influence trend**              | **Leaderboards**  | Select **Retry** under **Influence Trend**                           |
+| **Failed to load project detail**               | Project detail    | Select **Retry**                                                          |
+| **Failed to load influence cards**              | **Our Influence** | Select **Retry**                                                          |
+| **Failed to load leaderboard**                  | **Leaderboards**  | Select **Retry** on that board                                            |
+| **Failed to load influence trend**              | **Leaderboards**  | Select **Retry** under **Influence Trend**                                |
 
 **Project not found** comes with **We couldn't find that project for your company.** The other project detail failures come with **Please try again.**
 
 ## Related sections
 
 - [Choose and switch a company](../choose-a-company/) — pick the company these projects belong to
-- [Company Overview dashboard](../company-overview/) — the **Dashboard**, whose project links open a project detail page
-- [Memberships](../memberships/) — the company's foundation memberships, and the **Company Projects** panel for each one
+- [Org Overview dashboard](../company-overview/) — the **Dashboard**, whose project links open a project detail page
+- [Memberships](../memberships/) — the company's foundation memberships, and the **Org Projects** panel for each one
 - [Manage Company Lens Access](../manage-company-lens-access/) — who is an Admin, and who can manage workspaces
 - [EasyCLA](../easycla/) — corporate CLAs (Contributor License Agreements) for the selected company
-- [Company FAQ](../faq/) — short answers about the Company Lens
+- [Company FAQ](../faq/) — short answers about the Company lens

@@ -126,7 +126,7 @@ function orgLensPageRoutes(): Routes {
       path: 'overview',
       data: {
         lens: 'org',
-        title: 'Org Overview',
+        title: 'Company Overview',
         description: 'A summary of your company across the Linux Foundation.',
         icon: 'fa-light fa-grid-2',
         showDevelopmentNotice: true,
@@ -270,9 +270,18 @@ export const routes: Routes = [
     canMatch: [voteAnonymousSsrMatchGuard],
     loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
   },
-  // Anonymous SSR of the newsletter permalink (#4940): a chrome-less share preview whose Open Graph tags
-  // carry the issue subject, so a link-preview crawler (LinkedIn, X) never unfurls the login page. The
-  // guard matches only on the server for a signed-out request; browsers fall through to the shell below.
+  // Newsletter invite / subscription-confirmation landing (#5235): chrome-less, no authGuard. Signed out,
+  // the guest modal reads the signed token from the URL fragment; signed in, the page hands over to the
+  // `/newsletters/my/:foundationSlug?invite=` confirm card. Declared ahead of the shell.
+  {
+    path: 'newsletters/invite',
+    pathMatch: 'full',
+    loadComponent: () =>
+      import('./modules/newsletters/newsletter-invite-guest/newsletter-invite-guest.component').then((m) => m.NewsletterInviteGuestComponent),
+  },
+  // Signed-out newsletter permalink: a chrome-less page. On the server its Open Graph tags carry the issue
+  // subject, so a link-preview crawler (LinkedIn, X) never unfurls the login page (#4940); in the browser a
+  // signed-out reader gets the member-benefit email prompt (#5235). Signed-in visitors fall through to the shell.
   {
     path: 'newsletters/:projectSlug/:id',
     pathMatch: 'full',

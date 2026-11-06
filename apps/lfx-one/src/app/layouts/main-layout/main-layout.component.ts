@@ -46,6 +46,7 @@ export class MainLayoutComponent {
 
   // Expose mobile sidebar state from service
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
+  protected readonly pageOwnsFooter = this.appService.pageOwnsFooter;
 
   // The drawer's navbar mounts on the first open and then stays, so it is never torn down mid-slide and below `lg`
   // only — a desktop session never opens the drawer and never builds a second navbar.

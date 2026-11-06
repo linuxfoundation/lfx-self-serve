@@ -2,17 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, model, output, Signal } from '@angular/core';
-import { VOTE_COMMENT_ANONYMOUS_NOTICES, VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
-import { CommentResultPageView, PollCommentResult, VoteCommentAnonymityReason } from '@lfx-one/shared/interfaces';
+import { VOTE_COMMENT_ANONYMOUS_NOTICES } from '@lfx-one/shared/constants';
+import { CommentResultView, PollCommentResult, VoteCommentAnonymityReason } from '@lfx-one/shared/interfaces';
 import { splitIntoParagraphs } from '@lfx-one/shared/utils';
-import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 
 import { VoteCommentItemComponent } from '../vote-comment-item/vote-comment-item.component';
 
-/** Paginated comment-results list, one block per prompt. Page state is a model so the host can keep it when this component is destroyed and recreated (e.g. a drawer swapping in its loading skeleton on reopen). */
+/** Independent comment-question panels. The host retains expansion choices across tab switches and resets them for another vote. */
 @Component({
   selector: 'lfx-vote-comment-results',
-  imports: [PaginatorModule, VoteCommentItemComponent],
+  imports: [VoteCommentItemComponent],
   templateUrl: './vote-comment-results.component.html',
   host: { class: 'contents' },
 })
@@ -30,49 +29,43 @@ export class VoteCommentResultsComponent {
   /** The response's `vote_id` — the vote response (ballot) uid the Voters tab opens. */
   public readonly viewBallot = output<string>();
 
-  // === Constants ===
-  protected readonly commentRowsPerPageOptions = VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS;
-
   // === Model Signals (two-way binding) ===
-  /** Per-prompt paginator state ({ first, rows }), keyed by prompt_id. */
-  public readonly pageState = model<Map<string, PaginatorState>>(new Map());
+  /** Per-prompt expansion choices for multi-question votes; a single question is always visible. */
+  public readonly expansionState = model<Map<string, boolean>>(new Map());
 
   // === Computed Signals ===
   protected readonly anonymousNotice: Signal<string> = computed(() => VOTE_COMMENT_ANONYMOUS_NOTICES[this.anonymousReason()]);
-  protected readonly paginatedCommentResults: Signal<CommentResultPageView[]> = this.initPaginatedCommentResults();
+  protected readonly hasMultipleQuestions: Signal<boolean> = computed(() => this.commentResults().length > 1);
+  protected readonly displayCommentResults: Signal<CommentResultView[]> = this.initDisplayCommentResults();
+  protected readonly expandedPrompts: Signal<ReadonlySet<string>> = this.initExpandedPrompts();
 
   // === Protected Methods ===
-  protected onCommentPageChange(promptId: string, event: PaginatorState): void {
-    this.pageState.update((prev) => new Map(prev).set(promptId, { first: event.first ?? 0, rows: event.rows ?? VOTE_COMMENT_RESULTS_PAGE_SIZE }));
+  protected togglePrompt(promptId: string): void {
+    const expanded = this.expandedPrompts().has(promptId);
+    this.expansionState.update((state) => new Map(state).set(promptId, !expanded));
   }
 
   // === Private Initializers ===
-  /** Slices each prompt's responses to its current page. The offset is clamped to the last valid
-   *  page so a stale Map entry (e.g. from a previously opened vote with more comments, or after a
-   *  rows-per-page change) can never render an empty page. */
-  private initPaginatedCommentResults(): Signal<CommentResultPageView[]> {
+  /** Render every response returned by the endpoint; the existing BFF cap is unchanged. */
+  private initDisplayCommentResults(): Signal<CommentResultView[]> {
+    return computed(() =>
+      this.commentResults().map((result) => ({
+        ...result,
+        responses: result.responses.map((response, position) => ({
+          ...response,
+          paragraphs: splitIntoParagraphs(response.comment_text),
+          position,
+        })),
+        totalResponses: result.responses.length,
+      }))
+    );
+  }
+
+  private initExpandedPrompts(): Signal<ReadonlySet<string>> {
     return computed(() => {
-      const stateByPrompt = this.pageState();
-
-      return this.commentResults().map((cr) => {
-        const totalResponses = cr.responses.length;
-        const state = stateByPrompt.get(cr.prompt.prompt_id);
-        const rows = state?.rows ?? VOTE_COMMENT_RESULTS_PAGE_SIZE;
-        const lastPageFirst = Math.max(0, Math.ceil(totalResponses / rows) - 1) * rows;
-        const first = Math.min(state?.first ?? 0, lastPageFirst);
-
-        return {
-          ...cr,
-          responses: cr.responses.slice(first, first + rows).map((response, index) => ({
-            ...response,
-            paragraphs: splitIntoParagraphs(response.comment_text),
-            position: first + index,
-          })),
-          totalResponses,
-          first,
-          rows,
-        };
-      });
+      const results = this.commentResults();
+      const state = this.expansionState();
+      return new Set(results.filter((result) => results.length === 1 || state.get(result.prompt.prompt_id) === true).map((result) => result.prompt.prompt_id));
     });
   }
 }

@@ -4,7 +4,7 @@ description: Manage your crowdfunding initiatives and track your donations in LF
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, donations, funding, sponsors]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Crowdfunding
 ---
 
@@ -30,7 +30,7 @@ Users with write access to a project, foundation, or company also see that entit
 
 Go to **app.lfx.dev** and select **Crowdfunding** from the left navigation sidebar under the **Me** lens. The section expands to show **Initiatives** ([app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/initiatives)) and **Donations** ([app.lfx.dev/crowdfunding/donations](https://app.lfx.dev/crowdfunding/donations)).
 
-Under the **Project**, **Foundation**, and **Company** lenses, select **Crowdfunding Initiatives** from the left navigation sidebar to see the initiatives run on behalf of the selected project, foundation, or company. This item appears only if you can write to that project or foundation, or have a writer role granted directly on that company.
+Under the **Projects**, **Foundation**, and **Company** lenses, select **Crowdfunding Initiatives** from the left navigation sidebar to see the initiatives run on behalf of the selected project, foundation, or company. This item appears only if you can write to that project or foundation, or are an **Admin** granted directly on that company.
 
 Under the **Company** lens, select **Crowdfunding Donations** to see the donations made on behalf of the selected company. Anyone who can view the company can open it — see [Company Donations](./lens-donations/).
 

@@ -38,25 +38,9 @@ Separate from your private details, you can publish a **public profile** — a p
 - [Your public profile](./public-profile/) — what visitors can see
 - [Public profile settings](./public-profile-settings/) — make it public and control its sections
 
-## Your company's activity
+## Your company's profile
 
-The **Profile** page in Company Lens (route: `/company/profile`) shows your company's profile within the Linux Foundation — separate from your personal account. This is your company's public-facing identity across Linux Foundation projects and programs.
-
-### What you can see
-
-- Your company's name and logo
-- Website link and Crunchbase profile (if provided)
-- Company description, industry/sector, and number of employees
-- Primary and billing addresses
-- Last updated date
-
-### Navigation
-
-Switch to the **Company** lens using the lens selector at the top of LFX Self Serve, then select **Profile** from the left navigation sidebar (route: `/company/profile`).
-
-### Who can access this
-
-Viewing your company's profile in Company Lens requires **admin access** to your company in LFX. If you are not yet an admin, another admin at your company can invite you to accept an admin role. Once you accept, you will be able to view and, depending on your role, edit your company's profile information.
+Your company's logo, description, website and addresses are on a separate page in the Company lens. See [Company Profile](../company/company-profile/).
 
 ## Related sections
 

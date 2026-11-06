@@ -7,7 +7,7 @@ import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
-import { formatMeetingDateTime } from '@lfx-one/shared/utils';
+import { formatMeetingWhen } from '@lfx-one/shared/utils';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
@@ -135,16 +135,20 @@ describe('MeetingHomeRowComponent', () => {
       expect(text(fixture, 'meetings-home-row-date-day')).toBe(String(START.getDate()));
       expect(text(fixture, 'meetings-home-row-project-name')).toBe('Kubernetes');
       expect(text(fixture, 'meetings-home-row-title')).toBe('Series title');
-      expect(texts(fixture, 'meetings-home-row-when')).toEqual([formatMeetingDateTime(START), '1h']);
-      expect(texts(fixture, 'meetings-home-row-when')[0]).toMatch(/^\w{3}, \w{3} \d{1,2} · \d{1,2}:\d{2} [AP]M \S+$/);
+      expect(texts(fixture, 'meetings-home-row-when').join(' · ')).toBe(formatMeetingWhen(START, 60));
+      expect(texts(fixture, 'meetings-home-row-when')).toEqual([
+        expect.stringMatching(/^\w{3}, \w{3} \d{1,2}$/),
+        expect.stringMatching(/^\d{1,2}:\d{2} [AP]M$/),
+        '60 min',
+      ]);
       expect(text(fixture, 'meetings-home-row-type').replace('·', '').trim()).toBe('Technical');
       expect(query(fixture, 'meetings-home-row-recurring')).toBeNull();
       expect(query(fixture, 'meetings-home-row-attended')).toBeNull();
     });
 
     it.each<[number, string]>([
-      [30, '30m'],
-      [90, '1h 30m'],
+      [30, '30 min'],
+      [90, '90 min'],
     ])("shows the occurrence's own title and a %i minute duration as %s", async (minutes, label) => {
       const fixture = await render(buildRow(buildMeeting(), { title: 'Occurrence title', durationMinutes: minutes }));
 
@@ -426,12 +430,14 @@ describe('MeetingHomeRowComponent', () => {
   });
 
   describe('organizer attendance', () => {
-    it("shows the date's RSVP counts with a tooltip on the bar, and widens the actions over 860px", async () => {
+    it("shows the date's RSVP counts in a 220px popup trigger, and widens the actions over 860px", async () => {
       const fixture = await render(buildRow(buildMeeting({ rsvp_summary: { invited: 16, yes: 12, maybe: 2, no: 1, no_response: 1 } })));
 
       expect(text(fixture, 'meetings-home-attendance-label')).toBe('12 of 16 attending · 75%');
       expect(query(fixture, 'meetings-home-attendance-bar')?.getAttribute('aria-label')).toBe('Yes 12, Maybe 2, No 1, No response 1');
       expect(query(fixture, 'meetings-home-attendance-legend')).toBeNull();
+      expect(query(fixture, 'meetings-home-attendance-trigger')?.getAttribute('role')).toBe('button');
+      expect(fixture.nativeElement.querySelector('lfx-meeting-home-attendance-popup')?.classList).toContain('max-w-[220px]');
       expect(classes(fixture, 'meetings-home-row-actions')).toContain('@[861px]:min-w-[330px]');
       expect(classes(fixture, 'meetings-home-row')).toContain('@[601px]:grid-cols-[auto_minmax(0,1fr)_minmax(240px,auto)_auto]');
     });

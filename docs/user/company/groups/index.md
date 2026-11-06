@@ -1,18 +1,18 @@
 ---
 title: Groups
-description: How to read the Company Lens Groups page — the working groups, committees and other groups where the company's employees hold seats, the type tiles, how to search and filter the list, see who holds the seats, and export it to CSV.
+description: How to read the Company lens Groups page — the working groups, committees and other groups where the company's employees hold seats, the type tiles, how to search and filter the list, see who holds the seats, and export it to CSV.
 audience: [all]
 product_area: Company
-tags: [company, company-lens, groups, committees, working-groups, seats, seat-holders, export, csv]
-last_updated: 2026-11-05
+tags: [company, org, org-lens, groups, committees, working-groups, seats, seat-holders, export, csv]
+last_updated: 2026-11-06
 intercom_collection: Company
 ---
 
-These steps apply to anyone who can open a company in the Company Lens, such as a company admin (editor or viewer) or Linux Foundation staff. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Groups**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
+These steps apply to anyone who can open a company in the Company lens, such as a company admin (editor or viewer). A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Groups**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
 
 ## What is the Groups page?
 
-The Groups page lists the groups across Linux Foundation projects where the selected company's employees hold seats, such as working groups, committees and special interest groups (SIGs), with how many of its people sit on each one. Its address is `/company/<company>/groups`.
+The Groups page lists the groups across Linux Foundation projects where the selected company's employees hold seats, such as working groups, committees and special interest groups (SIGs), with how many of its people sit on each one. Its address is `/org/<company>/groups`.
 
 The page heading is **Groups —** followed by the company's name, and the line under it is **Where your employees hold seats across Linux Foundation projects.** Groups in the **Board** category, a foundation's governing board, are not listed here: those seats are on the company's [Memberships](../memberships/) page.
 
@@ -26,7 +26,7 @@ Select anywhere else on a row to open the group's own page. The list starts with
 
 ## How do I open Groups?
 
-You open **Groups** from the Company Lens sidebar, under **Company Engagement**, once a company is selected.
+You open **Groups** from the Company lens sidebar, under **Company Engagement**, once a company is selected.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Company** in the lens switcher.
@@ -34,16 +34,16 @@ You open **Groups** from the Company Lens sidebar, under **Company Engagement**,
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, the page is replaced by the same access message as the other Company Lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
+When you cannot open the company, the page is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
 
 ## What do the tiles on Groups count?
 
 The tiles count the groups in the list and the seats the company's people hold in them. Groups has no time range: it shows the seats the company's people hold now.
 
-| Tile             | What it counts                                               |
-| ---------------- | ------------------------------------------------------------ |
+| Tile             | What it counts                                                    |
+| ---------------- | ----------------------------------------------------------------- |
 | **Total Groups** | The groups where the company's people hold at least one seat |
-| **Total Seats**  | The seats they hold across all of those groups               |
+| **Total Seats**  | The seats they hold across all of those groups                    |
 
 A tile follows for each group type that has at least one group, largest first: **Boards**, **Oversight**, **Working Groups**, **SIGs** and **Ambassadors**, with **Other** always last. **Other** covers groups that fit none of those types. **Boards** covers board-like groups outside the **Board** category, such as an advisory council.
 
@@ -79,12 +79,12 @@ The file has the columns **Group**, **Foundation**, **Type**, **Our Seats** and 
 
 An empty list says why, and a failed load says so. An empty list is not the same as a failed load.
 
-| What you see                                                                                              | What it means                                                     | What to do                         |
-| --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------- |
-| **No group participation found.** — **Your company's employees are not listed as members of any groups.** | The company's people hold no seats outside the **Board** category | Board seats are on **Memberships** |
-| **No groups match the current filters**                                                                   | The search or menus match no group                                | Select **Clear filters**           |
-| **Unable to load group participation**                                                                    | The list did not load                                             | Refresh the page                   |
-| **Select a company to view group participation.**                                                         | No company is selected                                            | Select a company in the switcher   |
+| What you see                                                                                                   | What it means                                                          | What to do                             |
+| -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------- |
+| **No group participation found.** — **Your company's employees are not listed as members of any groups.** | The company's people hold no seats outside the **Board** category | Board seats are on **Memberships**     |
+| **No groups match the current filters**                                                                        | The search or menus match no group                                     | Select **Clear filters**               |
+| **Unable to load group participation**                                                                         | The list did not load                                                  | Refresh the page                       |
+| **Select a company to view group participation.**                                                        | No company is selected                                            | Select a company in the switcher |
 
 ## Related sections
 
@@ -92,4 +92,4 @@ An empty list says why, and a failed load says so. An empty list is not the same
 - [People](../people/) — the **Board** and **Committee** tabs list the people who hold seats
 - [Company Meetings](../meetings/) — how the company's employees take part in project meetings
 - [Choose and switch a company](../choose-a-company/) — pick the company the page shows
-- [Company FAQ](../faq/) — short answers about the Company Lens
+- [Company FAQ](../faq/) — short answers about the Company lens

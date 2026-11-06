@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
-import { toPastMeetingHomeRow } from '@lfx-one/shared/utils';
+import { formatMeetingWhen, toPastMeetingHomeRow } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
@@ -133,9 +133,7 @@ describe('LastMeetingCardComponent', () => {
     expect(text(fixture, 'meetings-home-last-card-date')).toContain(String(START.getDate()));
     expect(query(fixture, 'meetings-home-last-card-project')?.getAttribute('aria-label')).toBe('Jump to project: Kubernetes');
     expect(text(fixture, 'meetings-home-last-card-title')).toBe('Steering sync');
-    const day = START.toLocaleString('en-US', { weekday: 'short' });
-    const time = START.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    expect(text(fixture, 'meetings-home-last-card-when')).toBe(`${day}, ${time} · 60m`);
+    expect(text(fixture, 'meetings-home-last-card-when')).toBe(formatMeetingWhen(START, 60));
     expect(text(fixture, 'meetings-home-last-card-type')).toBe('Technical');
     expect(text(fixture, 'meetings-home-last-card-recurring')).toBe('Recurring');
     expect(query(fixture, 'meetings-home-last-card-recurring')?.querySelector('i')?.classList).toContain('fa-arrows-repeat');

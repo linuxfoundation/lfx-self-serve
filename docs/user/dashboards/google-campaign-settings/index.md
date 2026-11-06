@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, demographic exclusions, excluded locations, conversion actions, Search partners, display paths, more ads and negative keywords for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad and named Demand Gen ad groups for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -18,9 +18,18 @@ tags:
     negative keywords,
     search partners,
     conversion actions,
+    audience segments,
+    demand gen,
+    bidding,
+    languages,
+    sitelinks,
+    ad extensions,
+    youtube,
+    video ads,
+    ad groups,
     implement,
   ]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Dashboards
 ---
 
@@ -32,12 +41,12 @@ When you create a Google Ads campaign from the **Campaigns** page in the Foundat
 2. Open the **Implement** tab for a brief that includes Google Ads.
 3. Tick a campaign type, such as **Search Campaign**. The **Ad schedule** and **Devices** sections appear below the language settings when the type supports them, followed by **Demographic exclusions** and **Excluded locations**. On Search, **Networks**, **Display path**, **More ads** and **Negative keywords** appear below **Headlines** and **Descriptions**.
 
-| Campaign type   | Ad schedule                                    | Devices                     | Demographic exclusions | Excluded locations |
-| --------------- | ---------------------------------------------- | --------------------------- | ---------------------- | ------------------ |
-| Search          | Yes, adjust with Manual CPC or Maximize Clicks | Yes, adjust with Manual CPC | Yes                    | Yes                |
-| Display         | Yes, adjust with Maximize Clicks               | Exclude only                | Yes                    | Yes                |
-| Performance Max | Windows only                                   | No                          | No                     | Yes                |
-| Demand Gen      | No                                             | No                          | No                     | Yes                |
+| Campaign type   | Ad schedule                                    | Devices                       | Demographic exclusions | Excluded locations |
+| --------------- | ---------------------------------------------- | ----------------------------- | ---------------------- | ------------------ |
+| Search          | Yes, adjust with Manual CPC or Maximize Clicks | Yes, adjust with Manual CPC   | Yes                    | Yes                |
+| Display         | Yes, adjust with Maximize Clicks               | Exclude only                  | Yes                    | Yes                |
+| Performance Max | Windows only                                   | No                            | No                     | Yes                |
+| Demand Gen      | Windows only                                   | Exclude only, with TV screens | No                     | Yes                |
 
 ## Ad schedule
 
@@ -49,13 +58,13 @@ Add a window for each day and time range the campaign should run. Each window ha
 - You can add up to 42 windows, and at most 6 on any one day.
 - Windows on the same day cannot overlap. Windows that only touch are fine, so 09:00–12:00 and 12:00–17:00 can both be listed.
 
-Google Ads uses ad schedule bid adjustments only with **Manual CPC** or **Maximize Clicks**, where the campaign type offers them. Under Maximize Conversions, Target CPA, Maximize Conversion Value or Target ROAS, Google ignores them, so LFX One won't create the campaign with one, even at 0%. Your windows still decide when the campaign serves under every strategy; only the **Bid adjustment (%)** box goes away, and the **Ad schedule** section says which strategy is in force. Display campaigns can adjust windows with Maximize Clicks. Performance Max campaigns cannot use either strategy here, so they take windows without adjustments.
+Google Ads uses ad schedule bid adjustments only with **Manual CPC** or **Maximize Clicks**, where the campaign type offers them. Under Maximize Conversions, Target CPA, Maximize Conversion Value or Target ROAS, Google ignores them, so LFX One won't create the campaign with one, even at 0%. Your windows still decide when the campaign serves under every strategy; only the **Bid adjustment (%)** box goes away, and the **Ad schedule** section says which strategy is in force. Display campaigns can adjust windows with Maximize Clicks. Performance Max campaigns cannot use either strategy here, so they take windows without adjustments. Demand Gen campaigns take windows without adjustments under every strategy, Maximize Clicks included, and the **Ad schedule** section says so.
 
-If you set an adjustment and then switch to a strategy that ignores it, the adjustment is kept for a switch back, shown read-only, and a notice says so. **Create Campaign** stays unavailable until you select **Clear adjustment** on that window, or choose Manual CPC or Maximize Clicks.
+If you set an adjustment and then switch to a strategy that ignores it, the adjustment is kept for a switch back, shown read-only, and a notice says so. **Create Campaign** stays unavailable until you select **Clear adjustment** on that window, or choose Manual CPC or Maximize Clicks. If you switch to Demand Gen instead, the same happens, and only **Clear adjustment** lets you create the campaign there.
 
 ## Devices
 
-For **Mobile phones**, **Computers** and **Tablets**, choose one of:
+For **Mobile phones**, **Computers** and **Tablets**, and **TV screens** on Demand Gen, choose one of:
 
 - **Default bid**: no change.
 - **Adjust bid**: enter a percentage from -90% to +900%. Only offered when the bidding strategy is **Manual CPC**.
@@ -63,7 +72,9 @@ For **Mobile phones**, **Computers** and **Tablets**, choose one of:
 
 LFX One sends device bid adjustments only with **Manual CPC**, and won't create the campaign with one under any other strategy, even at 0%. Under Maximize Conversions, Maximize Conversion Value or Target ROAS, Google Ads doesn't apply device bid adjustments, except excluding a device. Under Target CPA, Google Ads would apply one as an adjustment to that device's target CPA, and under Maximize Clicks it would apply one to the bid, but LFX One doesn't send them there. Search campaigns use Manual CPC unless you pick another strategy. Display campaigns cannot use Manual CPC here, so on Display you can only keep the default bid or exclude a device. The **Devices** section says which strategy is in force when **Adjust bid** is not offered.
 
-If you set an adjustment under Manual CPC and then switch to another strategy, the adjustment is kept for a switch back and a notice says so. **Create Campaign** stays unavailable until you set that device to **Default bid** or **Exclude**, or choose Manual CPC again.
+Demand Gen campaigns take a device only as an exclusion, under every strategy, so on Demand Gen you can only keep the default bid or exclude a device. Demand Gen is also the only campaign type that offers **TV screens**. If you exclude TV screens and then switch to another campaign type, the exclusion is kept for a switch back and a notice says it will not be sent.
+
+If you set an adjustment under Manual CPC and then switch to another strategy, the adjustment is kept for a switch back and a notice says so. **Create Campaign** stays unavailable until you set that device to **Default bid** or **Exclude**, or choose Manual CPC again. If you switch to Demand Gen instead, the same happens, and only **Default bid** or **Exclude** lets you create the campaign there.
 
 ## Demographic exclusions
 
@@ -79,14 +90,55 @@ The campaign does not serve in the places listed here.
 - You can exclude up to 60 places. This limit is separate from the 60 places you can target.
 - A place cannot be both targeted and excluded, even when the two are written differently, such as `US` and its id `2840`. If you have added no target country, postal code or radius, the campaign targets the event country, so you cannot exclude that country either.
 
+## Demand Gen bidding and languages
+
+A Demand Gen campaign can bid with **Maximize Clicks**, the default, or with **Maximize Conversions**, **Target CPA** or **Maximize Conversion Value**. Target CPA needs a **Target CPA** in the account currency, and Maximize Conversions takes one optionally. Target ROAS is not offered on Demand Gen, and neither is the **Target ROAS** box under Maximize Conversion Value: LFX One's campaign service does not send a target ROAS on Demand Gen. A target ROAS you entered on another campaign type is kept but not sent.
+
+Under a conversion strategy, a Demand Gen campaign bids toward the [conversion actions](#conversion-actions) you pick, or toward the account's own conversion goals if you leave them blank.
+
+You can also pick the languages a Demand Gen campaign serves in, as on the other campaign types. With none picked, it serves in every language.
+
+## Sitelinks and other ad extensions
+
+Ad extensions add links and details to your ads. Which ones a campaign takes depends on its type:
+
+| Campaign type            | Sitelinks | Callouts, structured snippets, call extensions, promotions and prices |
+| ------------------------ | --------- | --------------------------------------------------------------------- |
+| Search                   | Yes       | Yes                                                                   |
+| Demand Gen               | Yes       | No                                                                    |
+| Display, Performance Max | No        | No                                                                    |
+
+**Google Sitelinks** add extra links to the ad. For each sitelink, enter the **Link text** and the **Destination URL**, and optionally two description lines, then select **+ Add sitelink**.
+
+- You can add up to 20 sitelinks.
+- Link text can be up to 25 characters. Two sitelinks cannot have the same link text, even in different capitals.
+- Fill in both description lines or neither. Each can be up to 35 characters.
+- The destination must be a full `http://` or `https://` address with no embedded user name or password, up to 2,084 bytes.
+
+When it creates the campaign, LFX One's campaign service adds the campaign's tracking parameters to each sitelink destination, as it does to the ad's own link, so you don't need to add them yourself.
+
+On a Demand Gen campaign, **Google Sitelinks** is the only ad extension section that appears. If you entered callouts, structured snippets, call extensions, promotions or prices on a Search campaign and then switch to Demand Gen, they are kept but not sent, and a notice says so. On Display and Performance Max, sitelinks are kept but not sent too, and a notice says to switch to Search or Demand Gen to keep them.
+
 ## Conversion actions
 
-On Search and Display campaigns, the bidding settings include **Conversion Actions**: the conversions the campaign counts. Leave it blank to use the Google Ads account's own conversion goals.
+On Search, Display and Demand Gen campaigns, the bidding settings include **Conversion Actions**: the conversions the campaign counts. Under a conversion bidding strategy, such as **Maximize Conversions**, the campaign also bids toward them. Leave it blank to use the Google Ads account's own conversion goals.
+
+Performance Max campaigns do not offer **Conversion Actions** here, and use the account's own conversion goals.
 
 - **Pick conversion actions** lists the account's enabled conversion actions, each with its category. **Primary** marks one that counts toward the account's conversions by default. Picking one adds its id to the **Conversion Actions** box.
+- Only the LF marketing team sees the list. Every foundation shares one Google Ads account, so the list names every foundation's conversion actions. Everyone else types ids into the box.
 - You can still type ids into the box, one per line, as an id such as 987654321 or a full `customers/<id>/conversionActions/<id>` name. Picking keeps the ids you typed.
 - If the list cannot be shown, a note above the **Conversion Actions** box says why: your account cannot read it, it is not available here yet, or it could not be read for this project's Google Ads account. Type the ids instead.
 - If the account has no enabled conversion actions, a note says so. Type ids, or leave the box blank to use the account's own goals.
+
+## Audience segments (Search only)
+
+Search campaigns can watch how existing Google Ads audiences perform, such as your customer lists and website visitor lists. The **Google Audience Segments** section appears only for the LF marketing team, because every foundation shares one Google Ads account.
+
+- **Pick a user list** lists the account's user lists. Type part of a name to narrow the list, then choose one to add it. Each entry shows the list's type, such as **Customer list** or **Website visitors**, and says when Google reports that it is not eligible for Search.
+- A list you have added is not offered again. You can still type a list's full name, such as `customers/<id>/userLists/<id>`, into the box below the picker, for a list the picker does not show.
+- If the list cannot be shown, a note in the section says why: it is not available here, or it could not be read for this project's Google Ads account. Type the list names instead.
+- If the account has more user lists than the picker shows, a note says so. Type the name of any list that is not listed.
 
 ## Networks, display path, more ads and negative keywords (Search only)
 
@@ -113,8 +165,45 @@ On Search and Display campaigns, the bidding settings include **Conversion Actio
 - **Match type** (Exact, Phrase or Broad) applies to every keyword in the box. Exact is the default.
 - You can add more negative keywords from **Optimize** once the campaign is live.
 
+## Performance Max descriptions
+
+Google Ads shows a short description on small placements, so a Performance Max campaign needs at least one description of **60 characters or fewer**. Chinese, Japanese, Korean and full-width characters count double.
+
+The descriptions filled in from the brief are often longer than that. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
+
+## Demand Gen video ads
+
+A Demand Gen campaign builds one ad: an image ad or a YouTube video ad. Choose one under **Ad format** in the **Demand Gen Creative** section. **Image ad** is the default.
+
+When you choose **Video ad (YouTube)**, the section shows the video ad's fields:
+
+- **YouTube video IDs**: 1 to 5 videos, one per line. Enter the bare video ID, such as dQw4w9WgXcQ, not a link. An ID uses only letters, digits, - and \_.
+- **Headlines**: 1 to 5, up to 40 characters each.
+- **Long headlines**: 1 to 5, up to 90 characters each.
+- **Descriptions**: 1 to 5, up to 90 characters each.
+- **Business name**: required once you fill in any field, up to 25 characters.
+- **Call to action**: optional. Choose Sign up, Learn more, Book now, Visit site or Watch now, or leave it on None.
+- **Logo image (1:1)**: exactly one square logo of at least 128 x 128 pixels, as an `https://` link or from the brief's image library.
+
+In headlines, long headlines, descriptions and the business name, Chinese, Japanese, Korean and other full-width characters count as two, and a line can't repeat another in the same list, even in different capitals.
+
+If you entered an image ad and then choose the video ad, or the other way round, what you entered is kept but not sent, and a note under **Ad format** says so. Choose the other format again to send it instead. If you leave every video field empty, the campaign is created without an ad, as it is with an empty image ad.
+
+## Demand Gen ad groups
+
+A Demand Gen campaign can be split into named ad groups, such as Retargeting and Prospecting, each with its own ad. Tick **Split into named ad groups** in the **Demand Gen Creative** section. The first ad group appears, and **Add ad group** adds more, up to 5. **Remove ad group** removes one.
+
+For each ad group:
+
+- **Name**: required. Google Ads names the ad group after the event, then " - Display | " and this name, such as "KubeCon NA - Display | Retargeting". That full name can be up to 255 characters, or 244 for an ad group with a video ad, because Google Ads names the video ad after the ad group plus " - Video ad". Each ad group needs a different name, and names that differ only in capitals count as the same.
+- **Image ad** or **Video ad (YouTube)**: choose one. The ad group shows that ad's fields, with the same rules as the campaign's single ad above. Paste image links; the brief's image library is not offered for ad groups.
+
+Every ad group needs a complete ad. Until every ad group has a name and a complete ad, a message under the ad groups explains what to fix and **Create Campaign** stays unavailable. The same happens if you remove every ad group while the checkbox is ticked: add one, or untick the checkbox.
+
+While the campaign is split, the single image ad or video ad you entered is kept but not sent, and a note under the checkbox says so. Untick the checkbox to send the single ad instead. Your ad groups are then kept but not sent, and the note says that too.
+
 ## If something is wrong
 
-If a window, adjustment, exclusion, excluded place, display path, ad or negative keyword would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
+If a window, adjustment, exclusion, excluded place, display path, ad, video ad, ad group, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
-If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to a campaign type that does not take them, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type.
+If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Sitelinks are sent on Search and Demand Gen, and the other ad extensions on Search only; each is kept the same way on the other campaign types, with a notice.

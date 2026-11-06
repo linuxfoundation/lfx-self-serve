@@ -3,7 +3,6 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, model, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -20,7 +19,7 @@ import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 @Component({
   selector: 'lfx-event-attendees-drawer',
-  imports: [DecimalPipe, FormsModule, DrawerModule, InputTextModule],
+  imports: [FormsModule, DrawerModule, InputTextModule],
   templateUrl: './event-attendees-drawer.component.html',
 })
 export class EventAttendeesDrawerComponent {
@@ -45,15 +44,8 @@ export class EventAttendeesDrawerComponent {
 
   private readonly attendeesData = this.initAttendeesData();
 
-  // People the option counts but the list may not name ("N more counted, not listed").
-  protected readonly notListedCount = computed(() => this.attendeesData()?.notListedCount ?? 0);
-
-  // The counted total for the current selection: listed people plus the people counted but not listed, taken from the same response as the rows.
-  // Until the first response lands, the count the opener passed in.
-  protected readonly countedTotal = computed(() => {
-    const data = this.attendeesData();
-    return data ? data.data.length + data.notListedCount : this.attendeeCount();
-  });
+  // The counted total for the current selection: everyone the response lists. Until the first response lands, the count the opener passed in.
+  protected readonly countedTotal = computed(() => this.attendeesData()?.data.length ?? this.attendeeCount());
 
   protected readonly filteredAttendees = computed<OrgEventAttendeeVm[]>(() => {
     const term = this.searchTerm().toLowerCase().trim();

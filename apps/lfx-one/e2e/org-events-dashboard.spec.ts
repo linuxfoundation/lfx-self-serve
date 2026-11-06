@@ -115,7 +115,7 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ totalEvents: 12, pastEvents: 3, upcomingEvents: 9, servedAttribution: 'all' }),
+      body: JSON.stringify({ totalEvents: 12, pastEvents: 3, upcomingEvents: 9, servedAttribution: 'verified' }),
     })
   );
 
@@ -182,7 +182,7 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         total: 12,
         pageSize: 10,
         offset,
-        servedAttribution: 'all',
+        servedAttribution: 'verified',
       }),
     });
   });
@@ -194,11 +194,14 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
       body: JSON.stringify({
         eventId: 'event-1',
         eventName: 'Open Source Summit',
-        total: 1,
-        notListedCount: 2,
-        servedAttribution: 'all',
-        // Opaque positional id, as the server now sends it — the address never reaches the client.
-        data: [{ contactId: '0', name: 'Jane Doe', jobTitle: 'Engineer' }],
+        total: 3,
+        servedAttribution: 'verified',
+        // Opaque positional ids, as the server sends them — the address never reaches the client. Everyone credited is listed.
+        data: [
+          { contactId: '0', name: 'Jane Doe', jobTitle: null },
+          { contactId: '1', name: 'Roster Employee', jobTitle: 'Analyst' },
+          { contactId: '2', name: 'Registered attendee', jobTitle: null },
+        ],
       }),
     })
   );
@@ -354,8 +357,10 @@ test.describe('Org Events Dashboard', () => {
     await page.getByTestId('org-event-attendees-event-1').getByRole('button').click();
     await expect(page.getByTestId('event-attendees-drawer-title')).toBeVisible();
     await expect(page.getByTestId('event-attendee-0')).toBeVisible();
-    // People the option counts but the drawer may not name are counted, never listed.
-    await expect(page.getByTestId('event-attendees-not-listed')).toHaveText('2 more counted, not listed');
+    // Everyone the option counts is listed by name and title (lfx-self-serve#5158); there is no "counted, not listed" note.
+    await expect(page.getByTestId('event-attendee-2')).toBeVisible();
+    await expect(page.getByTestId('event-attendees-drawer-subtitle')).toContainText('3 counted');
+    await expect(page.locator('body')).not.toContainText('not listed');
 
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('event-attendees-drawer-title')).not.toBeVisible();

@@ -4,11 +4,13 @@
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 
 /**
- * Who an Events number is credited to ("Counted by", lfx-self-serve#4598): `company_email` — people who registered with
- * one of the company's own addresses; `account` — registrations Salesforce credits to the account; `all` — everyone
- * related to the company by either of those or as a current employee (the widest view).
+ * Who an Events number is credited to ("Counted by", lfx-self-serve#4598, #5158): `verified` (the default) — people who
+ * registered or spoke with one of the company's own addresses, or current employees on the roster; `company_email` —
+ * people who registered with one of the company's own addresses; `account` — registrations Salesforce credits to the
+ * account; `all` — everyone related to the company by any of those, including people who only named the company on
+ * their registration (the widest view).
  */
-export type OrgEventsAttribution = 'company_email' | 'account' | 'all';
+export type OrgEventsAttribution = 'verified' | 'company_email' | 'account' | 'all';
 
 /**
  * What an Events attendee count counts ("Count"): `all` — everyone who registered or attended; `registered` — everyone who
@@ -20,7 +22,7 @@ export type OrgEventsParticipation = 'registered' | 'attended' | 'all';
 export type OrgEventsScope = 'activity' | 'all';
 
 /** Column-name suffix of an attribution in the Events warehouse tables (`REGISTERED_COUNT_<SUFFIX>`, `HAS_FOOTPRINT_<SUFFIX>`, `IS_COUNTED_REGISTERED_<SUFFIX>`, `ALL_COUNT_<SUFFIX>`, ...). */
-export type OrgEventsAttributionColumnSuffix = 'COMPANY_EMAIL' | 'ACCOUNT' | 'ALL';
+export type OrgEventsAttributionColumnSuffix = 'VERIFIED' | 'COMPANY_EMAIL' | 'ACCOUNT' | 'ALL';
 
 /** "Counted by" dropdown option — label rendered as-is. */
 export interface OrgEventsAttributionOption {

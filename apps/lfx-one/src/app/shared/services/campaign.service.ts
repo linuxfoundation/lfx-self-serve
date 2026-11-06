@@ -62,7 +62,9 @@ import {
   CampaignCreateResponse,
   CampaignDeliveryType,
   CampaignEmailSegment,
-  CampaignEmailStage,
+  CampaignSendWorkflowRequest,
+  CampaignSendWorkflowResult,
+  CampaignSendStage,
   CampaignEmailVariant,
   CampaignJobOutcome,
   CampaignJobStatus,
@@ -87,6 +89,7 @@ import {
   GoogleAdsConversionActionsResult,
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
+  GoogleAdsUserListsResult,
   HubSpotEmailMonitorResponse,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
@@ -307,8 +310,9 @@ export class CampaignService {
     eventSlug: string,
     projectSlug: string,
     deliveryType: CampaignDeliveryType = 'paid-marketing',
-    // Which send in an email series to open. Empty addresses the paid brief, which has no series.
-    stage: CampaignEmailStage | '' = ''
+    // Which send to open: one of the event series on email, or the promoted asset on survey.
+    // Empty addresses the paid brief, which has no series.
+    stage: CampaignSendStage | '' = ''
   ): Observable<CampaignBriefLoadResult> {
     return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', {
       // `delivery_type` and `stage` are two of the four parts of a brief's identity upstream, which
@@ -347,7 +351,7 @@ export class CampaignService {
   public generateEmailCopy(
     projectSlug: string,
     briefId: string,
-    stage?: CampaignEmailStage,
+    stage?: CampaignSendStage,
     variant?: CampaignEmailVariant,
     segment?: CampaignEmailSegment
   ): Observable<GenerateEmailCopyResult> {
@@ -371,6 +375,22 @@ export class CampaignService {
     const body = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}), ...(segment ? { segment } : {}) };
     return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', body, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
+  }
+
+  /**
+   * Build ONE HubSpot workflow that sends an already-staged series.
+   *
+   * The briefs travel in SEND ORDER, which is the order the workflow's steps are pointed at their
+   * drafts. Nothing here re-checks that each one is staged: only campaign-service can see the
+   * briefs and the workflow, and it names the send that is not ready in its refusal.
+   *
+   * The created workflow is always DISABLED, so this call sends nothing -- it leaves a workflow a
+   * human then reviews and turns on.
+   */
+  public createSendWorkflow(projectSlug: string, body: CampaignSendWorkflowRequest): Observable<CampaignSendWorkflowResult> {
+    return this.http.post<CampaignSendWorkflowResult>('/api/campaigns/send-workflow', body, {
+      params: new HttpParams().set('project', projectSlug),
     });
   }
 
@@ -662,12 +682,22 @@ export class CampaignService {
 
   /**
    * The enabled conversion actions on the Google Ads account a create uses, for the Implement tab's
-   * picker (#4991). A 403 for a non-root caller (and for everyone until the deployment opens the
-   * upstream route), a 404 while the campaign-service create road is off; the tab falls back to its
-   * free-text box on any failure.
+   * picker (#4991). A coded 403 for a caller without `global_marketing_ops` on the project, a coded
+   * 503 when that access check could not be made, and a 404 while the campaign-service create road is
+   * off; the tab falls back to its free-text box on any failure.
    */
   public getGoogleAdsConversionActions(projectSlug: string): Observable<GoogleAdsConversionActionsResult> {
     return this.http.get<GoogleAdsConversionActionsResult>('/api/campaigns/google/conversion-actions', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The user lists on the Google Ads account a create for this project uses, for the Implement tab's
+   * audience segment picker (#5244). A coded 403 for a caller without `global_marketing_ops` on the
+   * project, a coded 503 when that check cannot be made, and a 404 while audience segments cannot be
+   * created on this deployment.
+   */
+  public getGoogleAdsUserLists(projectSlug: string): Observable<GoogleAdsUserListsResult> {
+    return this.http.get<GoogleAdsUserListsResult>('/api/campaigns/google/user-lists', { params: { project: projectSlug } });
   }
 
   /**

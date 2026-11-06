@@ -7,6 +7,8 @@ import {
   EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX,
   IMPERSONATION_SEARCH_RATE_LIMIT_MAX,
   IMPERSONATION_SEARCH_RATE_LIMIT_WINDOW_MS,
+  NEWSLETTER_GUEST_RATE_LIMIT_MAX,
+  NEWSLETTER_GUEST_RATE_LIMIT_WINDOW_MS,
   NEWSLETTER_INVITE_COUNTED_LOCALS_KEY,
   NEWSLETTER_INVITE_RATE_LIMIT_MAX,
   NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS,
@@ -233,4 +235,19 @@ export const authRateLimiter = rateLimit({
   max: 20, // limit each IP to 20 auth requests per window
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+/**
+ * Rate limiter for signed-out newsletter guest writes (#5235): the invite inspect/accept and the
+ * shared-link email check. These run the member-domain check and may send a confirmation email, so
+ * they are metered per (/56-masked) IP on top of the public API limiter. Per-pod MemoryStore.
+ */
+export const newsletterGuestRateLimiter = rateLimit({
+  windowMs: NEWSLETTER_GUEST_RATE_LIMIT_WINDOW_MS,
+  max: NEWSLETTER_GUEST_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.', code: 'RATE_LIMITED' },
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? ''),
 });

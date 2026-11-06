@@ -3,9 +3,22 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GOOGLE_CHANNELS_WITH_CREATIVE, GOOGLE_CREATIVE_FIELD_SPECS } from '../constants/campaign.constants';
+import {
+  GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+} from '../constants/campaign.constants';
 import type { GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
-import { googleCreativeImageFit, googleCreativeImageRequirement, storedCreativeAssetLabel } from './campaign-google-creative.utils';
+import {
+  GOOGLE_CREATIVE_WIRE_FIELDS,
+  GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS,
+  googleCreativeFieldWidth,
+  googleCreativeImageFit,
+  googleCreativeImageRequirement,
+  googlePerformanceMaxShortDescriptionMissing,
+  storedCreativeAssetLabel,
+} from './campaign-google-creative.utils';
 
 const LANDSCAPE = { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 };
 const SQUARE_LOGO = { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 };
@@ -79,5 +92,83 @@ describe('GOOGLE_CREATIVE_FIELD_SPECS image shapes', () => {
     expect(shapes('demand-gen')['logoImages']).toEqual(SQUARE_LOGO);
     expect(shapes('performance-max')['logoImages']).toEqual(SQUARE_LOGO);
     expect(shapes('demand-gen')['tallPortraitImages']).toEqual({ ratioW: 9, ratioH: 16, minWidth: 600, minHeight: 1067 });
+  });
+});
+
+describe('googlePerformanceMaxShortDescriptionMissing', () => {
+  const long = 'Join KeycloakCon on March 15, 2027 in Barcelona. Half-day conference for IAM professionals';
+
+  it('holds a list whose every description is wider than 60, and releases it at exactly 60', () => {
+    expect(googlePerformanceMaxShortDescriptionMissing([long, 'x'.repeat(61)])).toBe(true);
+    expect(googlePerformanceMaxShortDescriptionMissing([long, 'x'.repeat(60)])).toBe(false);
+  });
+
+  it('counts CJK and full-width characters double, as campaign-service does', () => {
+    // 31 ideographs are 31 code points but a display width of 62.
+    expect(googlePerformanceMaxShortDescriptionMissing([long, '会'.repeat(31)])).toBe(true);
+    expect(googlePerformanceMaxShortDescriptionMissing([long, '会'.repeat(30)])).toBe(false);
+  });
+
+  it('measures the trimmed line and skips blank lines and non-strings', () => {
+    expect(googlePerformanceMaxShortDescriptionMissing([long, `  ${'x'.repeat(60)}  `])).toBe(false);
+    expect(googlePerformanceMaxShortDescriptionMissing([long, '   ', 42])).toBe(true);
+  });
+
+  it('judges nothing when no description is present', () => {
+    expect(googlePerformanceMaxShortDescriptionMissing([])).toBe(false);
+    expect(googlePerformanceMaxShortDescriptionMissing(['', '  '])).toBe(false);
+    expect(googlePerformanceMaxShortDescriptionMissing(undefined)).toBe(false);
+    expect(googlePerformanceMaxShortDescriptionMissing('short')).toBe(false);
+  });
+});
+
+describe('googleCreativeFieldWidth', () => {
+  it('counts a CJK ideograph twice on the fields campaign-service bounds by display width', () => {
+    for (const control of ['headlines', 'longHeadlines', 'longHeadline', 'descriptions', 'businessName']) {
+      expect(googleCreativeFieldWidth(control, '会会a')).toBe(5);
+    }
+  });
+
+  it('counts runes on the call to action, asset group name and display paths', () => {
+    for (const control of ['callToActionText', 'assetGroupName', 'path1', 'path2']) {
+      expect(googleCreativeFieldWidth(control, '会会a')).toBe(3);
+    }
+  });
+
+  it('counts an emoji once in both regimes, as campaign-service does', () => {
+    expect(googleCreativeFieldWidth('headlines', '\u{1F600}\u{1F600}')).toBe(2);
+    expect(googleCreativeFieldWidth('callToActionText', '\u{1F600}\u{1F600}')).toBe(2);
+  });
+
+  /** Every catalogue field with a width is measured by one of the two regimes upstream uses for it. */
+  it('treats every rune-counted catalogue control as a real catalogue field', () => {
+    const controls = new Set<string>(
+      Object.values(GOOGLE_CREATIVE_FIELD_SPECS).flatMap((specs) => (specs as readonly GoogleCreativeFieldSpec[]).map((spec) => spec.control))
+    );
+    for (const control of ['callToActionText', 'assetGroupName', 'path1', 'path2']) {
+      expect(controls.has(control)).toBe(true);
+    }
+  });
+});
+
+describe('the creative wire tables', () => {
+  it("give each creative channel its request key and the catalogue's list, image and scalar fields", () => {
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const wire = GOOGLE_CREATIVE_WIRE_FIELDS[channel];
+      const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+      expect(wire.key).toBe(GOOGLE_CREATIVE_REQUEST_KEYS[channel]);
+      expect(wire.lists).toEqual(fields.filter((f) => f.kind === 'list').map((f) => f.control));
+      expect(wire.scalars).toEqual(fields.filter((f) => f.kind === 'text').map((f) => f.control));
+    }
+    // Display's long headline is a scalar where Performance Max's long headlines are a list.
+    expect(GOOGLE_CREATIVE_WIRE_FIELDS['display'].scalars).toContain('longHeadline');
+    expect(GOOGLE_CREATIVE_WIRE_FIELDS['performance-max'].lists).toContain('longHeadlines');
+  });
+
+  it('keep the Demand Gen video ad under its own key, with its logo the only image slot', () => {
+    expect(GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS.key).toBe(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY);
+    expect(GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS.images).toEqual(['logoImages']);
+    expect(GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS.lists).toContain('youtubeVideoIds');
+    expect(Object.values(GOOGLE_CREATIVE_WIRE_FIELDS).map((w) => w.key)).not.toContain(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY);
   });
 });

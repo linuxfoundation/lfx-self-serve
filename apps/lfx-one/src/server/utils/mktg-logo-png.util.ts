@@ -301,6 +301,8 @@ function startRenderChild(request: MktgLogoRenderRequest): Promise<MktgLogoRende
  * the child. The variants ask for it, so a crop of empty space or a logo
  * drawn off its canvas is dropped rather than published as a transparent
  * image; the primary does not, and keeps its failure values as they were.
+ * With `sidePx`, the longest side is drawn at that size instead of the
+ * logo's (the kit's iconography samples, drawn small for a slide).
  */
 export async function rasterizeLogoSvg(svg: string, options: MktgLogoPngOptions = {}): Promise<MktgLogoPngResult> {
   if (!isRasterizableLogoSvg(svg)) {
@@ -317,7 +319,7 @@ export async function rasterizeLogoSvg(svg: string, options: MktgLogoPngOptions 
     resvgPath: resvg,
     svg,
     requireInk: options.requireInk === true,
-    sidePx: MKTG_SLIDES_EXPORT_LOGO_SIDE_PX,
+    sidePx: options.sidePx ?? MKTG_SLIDES_EXPORT_LOGO_SIDE_PX,
     maxBytes: MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES,
   });
   if ('png' in reply) {

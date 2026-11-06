@@ -3,7 +3,7 @@ title: Navigate Your Dashboard
 description: How to switch lenses and use the LFX Self Serve dashboard effectively.
 audience: [all]
 product_area: Dashboards
-tags: [dashboard, lens, navigation, company, employer]
+tags: [dashboard, lens, navigation, company, company, employer]
 last_updated: 2026-11-05
 intercom_collection: Dashboards
 ---
@@ -39,13 +39,15 @@ The **Foundation** lens (`/foundation/overview`) is available to board members, 
 
 The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics.
 
-## Company Lens
+## Company lens
 
-The **Company** lens (also called the Company Lens) shows your company's membership status and participation across Linux Foundation projects. "Company" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your company has granted you access. See [Who can access this](../#who-can-access-this).
+The **Company** lens (also called the Company lens) shows your company's membership status and participation across Linux Foundation projects. "Company" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your company has granted you access. See [Who can access this](../#who-can-access-this).
 
 ## Switch project context
 
 When you are in the **Foundation** or **Projects** lens, you can switch between different projects or foundations using the context picker in the top navigation. Select a different foundation or project to update the entire page to that scope.
+
+The picker can show a role label, such as **Contributor**, **Maintainer**, **Board Member**, or **Executive Director**, next to a project or foundation. The label reflects your detected involvement and can change which dashboard and cards you see, but it doesn't grant access. What you can create, edit, or manage on a project is set on the project's **Permissions** page. See [Permissions](../../permissions/).
 
 ## Drawers and detail panels
 

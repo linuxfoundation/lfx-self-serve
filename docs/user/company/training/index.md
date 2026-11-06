@@ -1,22 +1,22 @@
 ---
 title: Training & Certification
-description: How to read the Company Lens Training & Certification page — its nine cards, the Certifications and Trainings tabs, the time range, Group by and More filters, what Clear all resets, and the people behind each number.
+description: How to read the Company lens Training & Certification page — its ten cards, the Certifications and Trainings tabs, the time range, Group by and More filters, what Clear all resets, and the people behind each number.
 audience: [all]
 product_area: Company
-tags: [company, company-lens, training, certification, certifications, trainings, courses, group-by, filters, time-range]
-last_updated: 2026-11-05
+tags: [company, org, org-lens, training, certification, certifications, trainings, courses, group-by, filters, time-range]
+last_updated: 2026-11-06
 intercom_collection: Company
 ---
 
-These steps apply to anyone who can open a company in the Company Lens, such as a company admin (editor or viewer) or Linux Foundation staff. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Training & Certification**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
+These steps apply to anyone who can open a company in the Company lens, such as a company admin (editor or viewer). A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Training & Certification**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
 
 ## What is the Training & Certification page?
 
-The Training & Certification page shows the Linux Foundation training courses and certifications that the selected company's people enrolled in or completed over a time range, grouped by course, foundation, project, level or format. Its address is `/company/<company>/training`.
+The Training & Certification page shows the Linux Foundation training courses and certifications that the selected company's people enrolled in or completed over a time range, grouped by course, foundation, project, level or format. Its address is `/org/<company>/training`.
 
 The sidebar item is **Training & Certification**. The page heading is **Training & Certifications —** followed by the company's name, and the line under it is **Training enrollments and certifications across your company.** The page has, from top to bottom:
 
-1. Nine cards that count the company's learners and courses.
+1. Ten cards that count the company's learners and courses.
 2. Two tabs, **Certifications** (the default) and **Trainings**, over one table.
 3. A filter bar above the table: a name search, the time range, **Group by** and **More filters**.
 4. A note under the table that says what its numbers count.
@@ -25,7 +25,7 @@ The cards and their definitions are the same as on the **Trainees** tab of [Peop
 
 ## How do I open Training & Certification?
 
-You open **Training & Certification** from the Company Lens sidebar, under **Company Engagement**, once a company is selected.
+You open **Training & Certification** from the Company lens sidebar, under **Company Engagement**, once a company is selected.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Company** in the lens switcher.
@@ -34,25 +34,26 @@ You open **Training & Certification** from the Company Lens sidebar, under **Com
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, the page is replaced by the same access message as the other Company Lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
+When you cannot open the company, the page is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
 
 ## What do the cards on Training & Certification count?
 
-The nine cards count the company's learners and their courses for the selected time range and filters, except **Training-program roster members**, which is today's count and follows neither. Courses are counted as person-course pairs: one person in one course, counted once even when they retook it. Point at or select a card to see its full definition, unit and the date its data is as of.
+The ten cards count the company's learners and their courses for the selected time range and filters, except **Training-program roster members**, which is today's count and follows neither. Courses are counted as person-course pairs: one person in one course, counted once even when they retook it. Point at or select a card to see its full definition, unit and the date its data is as of.
 
-| Card                                | What it counts                                                                                                                                                                                                                                |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Training-program roster members** | Today's count of the people the company's LF Education (Linux Foundation training) program lists, including people who never enrolled in a course. It says **No LF Education training program on record for this company** when there is none |
-| **People with training activity**   | People with an enrollment or a certificate in the time range. It also counts learners linked to the company who are not on its people list, while no foundation, project, course, level or format is selected                                 |
-| **Courses taken**                   | Person-course pairs with an enrollment or a certificate in the time range. It equals **Certifications** plus **Trainings completed** plus **Courses in progress**                                                                             |
-| **Certifications**                  | Courses taken of certification products that ended in a certificate in the time range                                                                                                                                                         |
-| **Certified people**                | People on the company's people list holding a certification certificate dated in the time range                                                                                                                                               |
-| **Trainings completed**             | Courses taken of training products that ended in a certificate in the time range                                                                                                                                                              |
-| **Completion rate**                 | **Certifications** plus **Trainings completed**, divided by **Courses taken**                                                                                                                                                                 |
-| **Courses in progress**             | Courses enrolled in the time range with no certificate in the time range                                                                                                                                                                      |
-| **People in training**              | People with at least one course in progress                                                                                                                                                                                                   |
+| Card                                | What it counts                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Training-program roster members** | Today's count of the people the company's LF Education (Linux Foundation training) program lists, including people who never enrolled in a course. It says **No LF Education training program on record for this company** when there is none                                                                                      |
+| **People with training activity**   | People on the company's people list with an enrollment or a certificate in the time range. With the default time range and no filters, it equals the **Trainees** card on People › All Employees for the same time range, which counts current employees, plus any former employees still on the people list with training in the range |
+| **Learners not on the people list** | People linked to the company who are not on its people list, with an enrollment or a certificate in the time range. Shown as a dash (**—**) and not counted while a foundation, project, course, level or format is selected. Not part of the other cards                                                                               |
+| **Courses taken**                   | Person-course pairs with an enrollment or a certificate in the time range. It equals **Certifications** plus **Trainings completed** plus **Courses in progress**                                                                                                                                                                            |
+| **Certifications**                  | Courses taken of certification products that ended in a certificate in the time range                                                                                                                                                                                                                                                        |
+| **Certified people**                | People on the company's people list holding a certification certificate dated in the time range                                                                                                                                                                                                                                         |
+| **Trainings completed**             | Courses taken of training products that ended in a certificate in the time range                                                                                                                                                                                                                                                             |
+| **Completion rate**                 | **Certifications** plus **Trainings completed**, divided by **Courses taken**                                                                                                                                                                                                                                                                |
+| **Courses in progress**             | Courses enrolled in the time range with no certificate in the time range                                                                                                                                                                                                                                                                     |
+| **People in training**              | People with at least one course in progress                                                                                                                                                                                                                                                                                                  |
 
-Except for **Training-program roster members** and **People with training activity**, the cards count people on the company's people list only. **Courses in progress** and **People in training** are not a snapshot of today: they are judged by the time range alone. An enrollment in the range with no certificate in the range counts as in progress, even if it has since been abandoned. An enrollment from before the range does not.
+Except for **Training-program roster members** and **Learners not on the people list**, the cards count people on the company's people list only. **Courses in progress** and **People in training** are not a snapshot of today: they are judged by the time range alone. An enrollment in the range with no certificate in the range counts as in progress, even if it has since been abandoned. An enrollment from before the range does not.
 
 If the cards cannot load, they are replaced by **Couldn't load training stats** and a **Retry** button. The table is not affected.
 
@@ -116,6 +117,6 @@ An empty table also shows **Browse courses**, which opens the Linux Foundation t
 ## Related sections
 
 - [People](../people/) — the **Trainees** tab lists each trainee, with the same cards and filters
-- [Company Overview dashboard](../company-overview/) — the **Certified Employees** and **Training Enrollments** cards
+- [Org Overview dashboard](../company-overview/) — the **People with training activity**, **Certified people** and **Courses taken** Education tiles, which open this page
 - [Choose and switch a company](../choose-a-company/) — pick the company the page shows
-- [Company FAQ](../faq/) — short answers about the Company Lens
+- [Company FAQ](../faq/) — short answers about the Company lens

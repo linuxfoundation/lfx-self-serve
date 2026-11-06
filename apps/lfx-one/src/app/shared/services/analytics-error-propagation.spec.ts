@@ -102,6 +102,11 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getEventsRegistrationHistory({ foundationSlug: 'aaif', eventId: 'evt-1' }),
     },
     {
+      name: 'getEventsSnapshot',
+      url: '/api/analytics/events-snapshot',
+      call: () => service.getEventsSnapshot({ foundationSlug: 'aaif', eventId: 'evt-1' }),
+    },
+    {
       name: 'getEventsPast',
       url: '/api/analytics/events-past',
       // Its empty list renders "no past events in this period", which a swallowed failure would fake.
@@ -154,18 +159,6 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/members-tiers',
       // A swallowed failure would read as a foundation with no members in any tier.
       call: () => service.getMembersTiers({ foundationSlug: 'aaif' }),
-    },
-    {
-      name: 'getMembersBridge',
-      url: '/api/analytics/members-bridge',
-      // A swallowed failure would read as a year in which no member joined, moved or left.
-      call: () => service.getMembersBridge({ foundationSlug: 'aaif' }),
-    },
-    {
-      name: 'getMembersMovements',
-      url: '/api/analytics/members-movements',
-      // A swallowed failure would read as a bar with no organizations behind it.
-      call: () => service.getMembersMovements({ foundationSlug: 'aaif', year: 2026, movementType: 'new', offset: 0, pageSize: 25 }),
     },
     {
       name: 'getMembersDirectory',

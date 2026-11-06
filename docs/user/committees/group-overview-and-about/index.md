@@ -14,7 +14,7 @@ Every group's page opens on the **Overview** tab, next to the **About** tab. Bot
 
 ### Counts
 
-The Overview lists quick counts: **Members**, **Meetings**, **Active Votes**, and **Open Surveys**. People who can see the member list also see **Organizations** and **Voting Reps**.
+The Overview lists quick counts: **Members**, **Meetings**, **Active Votes**, and **Open Surveys**. People who can see the member list also see **Companies** and **Voting Reps**.
 
 ### Chairs
 

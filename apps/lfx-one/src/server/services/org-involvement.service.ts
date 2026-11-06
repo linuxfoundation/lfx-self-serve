@@ -127,7 +127,8 @@ export class OrgInvolvementService {
   public async getEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     return withOrgCache(
       accountId,
-      'events:v3',
+      // `v4` (lfx-self-serve#5158): the pinned default became Company email or employee (`verified`); a `v3` entry counts all relations.
+      'events:v4',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchEventAttendanceMonthly(accountId),
       OrgInvolvementService.hasAccountId
@@ -300,10 +301,10 @@ export class OrgInvolvementService {
   }
 
   /**
-   * Overview Event Attendees / Event Speakers: pinned to the defaults (all relations, registered or attended, 2 years). dbt
-   * computes every number; this reads the columns of the served attribution (`ATTENDEES_ALL_*` for attendees: people who
-   * registered or attended). The served attribution is `account` only if the pinned default is ever Company email and the
-   * company has no company-email data. The headline is the distinct-people total, not the sum of the monthly points.
+   * Overview Event Attendees / Event Speakers: pinned to the defaults (company email or employee, registered or attended,
+   * 2 years). dbt computes every number; this reads the columns of the served attribution (`ATTENDEES_ALL_VERIFIED` for
+   * attendees: people who registered or attended). The served attribution is `account` only if the pinned default is ever
+   * Company email and the company has no company-email data. The headline is the distinct-people total, not the sum of the monthly points.
    */
   private async fetchEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     const query = `

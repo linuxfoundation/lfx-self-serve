@@ -197,8 +197,11 @@ export const ORG_SCOPE_CAPTION_PHRASE: Readonly<Record<OrgScopeFilter, string>> 
 
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 
-/** Initial visible-row cap on the Trainees table before "Show All" is clicked. */
-export const ORG_TRAINEES_INITIAL_LIMIT = 30;
+/** Rows-per-page options of the Trainees table and of its learners-not-on-the-people-list section. */
+export const ORG_TRAINEES_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
+
+/** Default rows per page of the Trainees table and of its learners-not-on-the-people-list section. */
+export const ORG_TRAINEES_DEFAULT_PAGE_SIZE = 10;
 
 /**
  * Prefix of the per-response key the BFF gives a Trainees learner not on the people list (`outside:1`, `outside:2`, …)
@@ -227,7 +230,7 @@ export const ORG_EVENT_ATTENDEES_INITIAL_LIMIT = 30;
 export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   accountId: '',
   details: [],
-  summary: { attendeesCount: 0, listedAttendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 },
+  summary: { attendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 },
   servedAttribution: DEFAULT_ORG_EVENTS_ATTRIBUTION,
   foundationOptions: [],
   eventOptions: [],

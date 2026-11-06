@@ -92,3 +92,19 @@ export interface HealthMetricsL2SubNavItem {
   /** e.g. `3 dormant`; empty when nothing qualifies. */
   note: string;
 }
+
+/** A row of the shared chart popup: a label on the left, its value on the right. */
+export interface HealthMetricsChartTipRowView {
+  label: string;
+  value: string;
+  /** The row's dot; `transparent` keeps its space so the label lines up with the coloured rows, `null` drops it. */
+  color: string | null;
+  /** A rule above the row. */
+  separated: boolean;
+}
+
+/** The shared chart popup: a title over label–value rows. */
+export interface HealthMetricsChartTipView {
+  title: string;
+  rows: HealthMetricsChartTipRowView[];
+}

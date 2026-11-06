@@ -1,6 +1,6 @@
 ---
 title: Company FAQ
-description: Short answers about the Company Lens — how to switch companies, what the Company Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, adding and removing Company Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Company lens — how to switch companies, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Company Profile page shows and who can edit it, where to see the company's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Company Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Company
 tags:
@@ -17,6 +17,7 @@ tags:
     training,
     meetings,
     groups,
+    profile,
     easycla,
     cla,
     ccla,
@@ -24,18 +25,25 @@ tags:
     access,
     remove,
     invite,
+    involvement,
+    leaderboard,
+    crowdfunding,
   ]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Company
 ---
 
 ## How do I switch to a different company?
 
-You switch companies from the company switcher at the top of the sidebar in the Company Lens. Select it, then select another company from the list. You stay on the same page, now showing the company you picked, unless your only role on that company is CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), in which case you land on its **EasyCLA** page. The browser's Back button usually returns you to the previous one. If you can open only one company, the switcher has no list to open. See [How do I switch to a different company?](../choose-a-company/#how-do-i-switch-to-a-different-company).
+You switch companies from the company switcher at the top of the sidebar in the Company lens. Select it, then select another company from the list. You stay on the same page, now showing the company you picked, unless your only role on that company is CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), in which case you land on its **EasyCLA** page. The browser's Back button usually returns you to the previous one. If you can open only one company, the switcher has no list to open. See [How do I switch to a different company?](../choose-a-company/#how-do-i-switch-to-a-different-company).
 
-## What does the Company Overview dashboard show?
+## What does the Org Overview dashboard show?
 
-The Company Overview, the **Dashboard** of the Company Lens, summarizes how the selected company takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the company's active contributors, maintainer roles, event attendees (registered or attended, all relations) and speakers, certified employees and training enrollments. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the company's role, voting status and meeting participation. Selecting a foundation row, other than **Outside LF**, opens **Memberships**, and selecting an LF project opens that project's page. Return on investment (ROI) figures are on a separate page for Linux Foundation staff. See [What is the Company Overview?](../company-overview/#what-is-the-company-overview).
+The Org Overview, the **Dashboard** of the Company lens, summarizes how the selected company takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the company's active contributors, maintainer roles, event attendees (registered or attended, by company email or as employees) and speakers, and its people's training: people with training activity, certified people and courses taken. Selecting one of the three **Education** cards opens **Training & Certification**. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the company's role, voting status and meeting participation. Selecting a foundation row, other than **Outside LF**, opens **Memberships**, and selecting an LF project opens that project's page. See [What is the Org Overview?](../company-overview/#what-is-the-company-overview).
+
+## Where do I see my company's involvement in one foundation?
+
+You see a company's involvement in one foundation on the Foundation overview, in the **Foundation** lens. Board members and executive directors see a section headed with the company's name, such as **Acme's Involvement**, for the foundation they selected. It has a **Membership Tier** card and six cards for **Active Contributors**, **Maintainers**, **Event Attendees**, **Event Speakers**, **Certified Employees** and **Training Enrollments**. Selecting one of those six opens a panel with a chart over time and, for most, a breakdown by project or program. The Org Overview in the Company lens totals the same kinds of figures across all foundations instead. See [Company involvement in a foundation](../../dashboards/company-involvement/).
 
 ## What does the Memberships page show?
 
@@ -49,9 +57,13 @@ The Projects page lists the open source projects in the selected company's works
 
 Add it to a workspace with **Add Project**. You must be able to edit the company, for example as an Admin. In the **Company** lens, open **Projects**, pick the workspace in the workspace menu, select **Add Project**, search in **Search and select projects**, select one or more projects, then select **Add project(s)**. Workspaces are shared, so everyone who can open the company sees the change. If you can only view the company, **Add Project** is unavailable and says **You have view-only access to this company**. See [How do I add a project to a workspace?](../projects/#how-do-i-add-a-project-to-a-workspace).
 
+## What does a leaderboard score breakdown show?
+
+A leaderboard score breakdown shows how one company earned its influence score on a project. On a project's detail page, open **Leaderboards**, keep **Calculated Influence** selected, and select a row. The panel gives the company's band, score and rank, then each category's points and share of the score, the **Total score**, and **How this score is calculated**. In another company's breakdown, **Meeting Attendance**, **Event Attendance**, **Meetup Attendance** and **Certified Individuals** are locked, because they come from participation records LFX does not publish; they still count in its total score. **Activity Count** rows do not open a breakdown. See [What does a leaderboard score breakdown show?](../projects/#what-does-a-leaderboard-score-breakdown-show).
+
 ## What do the People and Code Contributions pages show?
 
-The People page lists the selected company's employees and how each one takes part in the Linux Foundation, and the Code Contributions page shows their code contributions to open source projects. People has the tabs **All Employees**, **Board**, **Committee**, **Key Contacts**, **Contributors**, **Event Attendees**, **Trainees** and **Company Lens Access**. Code Contributions counts the company's **Projects with Activity**, **Repositories** and code contributions, and lists them on a **Repositories** tab and a **Commits** tab. Both pages are under **Company Engagement** in the Company Lens sidebar. A CLA Manager or initial CLA Manager designee with no other role on the company sees **EasyCLA** instead. See [What is the People page?](../people/#what-is-the-people-page) and [What is the Code Contributions page?](../code-contributions/#what-is-the-code-contributions-page).
+The People page lists the selected company's employees and how each one takes part in the Linux Foundation, and the Code Contributions page shows their code contributions to open source projects. People has the tabs **All Employees**, **Board**, **Committee**, **Key Contacts**, **Contributors**, **Event Attendees**, **Trainees** and **Company Lens Access**. Code Contributions counts the company's **Projects with Activity**, **Repositories** and code contributions, and lists them on a **Repositories** tab and a **Commits** tab. Both pages are under **Company Engagement** in the Company lens sidebar. A CLA Manager or initial CLA Manager designee with no other role on the company sees **EasyCLA** instead. See [What is the People page?](../people/#what-is-the-people-page) and [What is the Code Contributions page?](../code-contributions/#what-is-the-code-contributions-page).
 
 ## Does the time range carry between People and Code Contributions?
 
@@ -59,27 +71,35 @@ Yes. The time range you pick on People or Code Contributions carries to the othe
 
 ## What does the Events page show?
 
-The Events page in the Company Lens lists the foundation events where the selected company has registrants, a submitted speaker or a sponsorship, on an **Upcoming** tab and a **Past** tab. Three tiles count **Upcoming Events**, **Past Events** and **Total Events**. By default the page counts everyone who registered or attended (**All**), credits people by **All relations**, and on the **Past** tab covers the last 2 years. **Show** set to **All foundation events** also lists events with no activity from the company. Select an attendee count to open the people behind it. The page is under **Company Engagement** in the Company Lens sidebar. See [Events page](../company-events/#events-page).
+The Events page in the Company lens lists the foundation events where the selected company has registrants, a submitted speaker or a sponsorship, on an **Upcoming** tab and a **Past** tab. Three tiles count **Upcoming Events**, **Past Events** and **Total Events**. By default the page counts everyone who registered or attended (**All**), credits people by **Company email or employee** (a company email address on record, or a current employee on the roster), and on the **Past** tab covers the last 2 years. **Show** set to **All foundation events** also lists events with no activity from the company. Select an attendee or speaker count to open the people behind it. The page is under **Company Engagement** in the Company lens sidebar. See [Events page](../company-events/#events-page).
 
 ## What does the Training & Certification page show?
 
-The Training & Certification page shows the Linux Foundation training courses and certifications the selected company's people enrolled in or completed over a time range. Nine cards count its learners and courses, such as **Courses taken**, **Certifications** and **Completion rate**, and a table on the **Certifications** and **Trainings** tabs groups them by course, foundation, project, level or format. The time range defaults to **Past 2 years**. **Clear all** resets only the five filters under **More filters**, and keeps the time range, **Group by** and the search. Select a **Certified**, **Completed** or **In progress** number to see the current employees behind it. The sidebar item is **Training & Certification**, under **Company Engagement**, and the page heading reads **Training & Certifications —** followed by the company's name. See [What is the Training & Certification page?](../training/#what-is-the-training-amp-certification-page).
+The Training & Certification page shows the Linux Foundation training courses and certifications the selected company's people enrolled in or completed over a time range. Ten cards count its learners and courses, such as **Courses taken**, **Certifications** and **Completion rate**, and a table on the **Certifications** and **Trainings** tabs groups them by course, foundation, project, level or format. The time range defaults to **Past 2 years**. **Clear all** resets only the five filters under **More filters**, and keeps the time range, **Group by** and the search. Select a **Certified**, **Completed** or **In progress** number to see the current employees behind it. The sidebar item is **Training & Certification**, under **Company Engagement**, and the page heading reads **Training & Certifications —** followed by the company's name. See [What is the Training & Certification page?](../training/#what-is-the-training-amp-certification-page).
 
-## What does the Company Lens Meetings page show?
+## What does the Company lens Meetings page show?
 
-The Company Lens Meetings page shows how the selected company's employees take part in Linux Foundation project meetings over a time range, as totals for the company, without listing people or individual meetings. Four cards count **Employees Active**, **Meetings Attended**, **Projects Supported** and **Foundations Supported**, each compared with the prior period. **Where your people spend time** splits the company's attendance by foundation, project, meeting type and role, and **How attendance impacts project influence** shows, for each project with a published Ecosystem Influence Score, how much of the influence shown for it comes from meeting attendance, leaving out the membership-tier part of the score. The time range defaults to **Past 365 days**. Only meetings scheduled in LFX are counted. Your own meetings are a different page. See [What is the Company Lens Meetings page?](../meetings/#what-is-the-company-lens-meetings-page).
+The Company lens Meetings page shows how the selected company's employees take part in Linux Foundation project meetings over a time range, as totals for the company, without listing people or individual meetings. Four cards count **Employees Active**, **Meetings Attended**, **Projects Supported** and **Foundations Supported**, each compared with the prior period. **Where your people spend time** splits the company's attendance by foundation, project, meeting type and role, and **How attendance impacts project influence** shows, for each project with a published Ecosystem Influence Score, how much of the influence shown for it comes from meeting attendance, leaving out the membership-tier part of the score. The time range defaults to **Past 365 days**. Only meetings scheduled in LFX are counted. Your own meetings are a different page. See [What is the Company lens Meetings page?](../meetings/#what-is-the-company-lens-meetings-page).
 
 ## What does the Groups page show?
 
 The Groups page lists the working groups, committees and other groups across Linux Foundation projects where the selected company's employees hold seats, with how many of its people sit on each one. Tiles count **Total Groups**, **Total Seats** and each group type. Groups in the **Board** category are not listed: those seats are on **Memberships**. You can search the list, filter it by foundation and type, select a seat count to see who holds the seats, and select **Export to CSV** to download it. The page has no time range: it shows the seats held now. See [What is the Groups page?](../groups/#what-is-the-groups-page).
 
+## What does the Company Profile page show, and who can edit it?
+
+The Company Profile page shows the selected company's logo, name, description, website, number of employees, industry, sector, and its **Primary Address** and **Billing Address**. Anyone who can open the company in the Company lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Only someone who can edit the company, such as an **Org Admin Editor**, sees **Edit Profile**. In the edit form you can change the website, number of employees, Crunchbase profile, industry, technology sector and description, then select **Save Changes**. A new logo must be an SVG (Scalable Vector Graphics) image file of 2MB or less, and it saves as soon as it uploads, separately from **Save Changes**. The company name and the addresses cannot be changed on this page. Changes save to the company's record, so everyone who can open the company sees them. See [Who can edit the company profile?](../company-profile/#who-can-edit-the-company-profile).
+
+## Why don't I see Crowdfunding Initiatives in the Company lens?
+
+You see **Crowdfunding Initiatives** in the Company lens only if you are an Admin granted directly on that company. It appears in the sidebar, below **Projects**, only for an **Admin** (Org Admin – Editor) added on the company's own **Company Lens Access** tab. A **Viewer** role does not show it, and neither does Admin access to a parent or other related company. To get it, ask one of the company's Admins to make you an Admin. See [Lens-scoped Initiatives](../../crowdfunding/lens-initiatives/#who-sees-it).
+
 ## Why can't I edit this corporate CLA?
 
 You can change a corporate CLA (CCLA) only when you are a CLA Manager named on that agreement, and a role added or removed in the last 30 minutes may not have taken effect yet. A company admin or a viewer can read every corporate CLA of the company and still be unable to edit one they are not named on. A signed corporate CLA that does not name you is marked **View only** on its card and at the top of its page. The name on the list has to match your LF username exactly, including capitalization. See [Who can see EasyCLA, and who can change a corporate CLA?](../easycla/#who-can-see-easycla-and-who-can-change-a-corporate-cla).
 
-## Why can't I see my company in the Company Lens?
+## Why can't I see my company in the Company lens?
 
-You see EasyCLA for a company you can open in the Company Lens. If you are a CLA Manager for a company that does not appear there, manage that company's agreements in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself hide a company: Linux Foundation staff can open companies that are not members. A CLA Manager, or an initial CLA Manager designee, with no other Company Lens role sees **EasyCLA** and nothing else in the sidebar. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+Your company appears in the Company lens only when you have a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. If you have an admin or viewer role on any company, the company switcher lists only the companies where you have that role, and leaves out companies where your only role is CLA Manager or initial CLA Manager designee. Whether a company is a Linux Foundation member does not by itself decide whether it appears. A CLA Manager, or an initial CLA Manager designee, with no other Company lens role sees **EasyCLA** and nothing else in the sidebar. See [Why is a company missing from the switcher?](../choose-a-company/#why-is-an-company-missing-from-the-switcher) and [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
 ## What does "View only" mean on a corporate CLA?
 

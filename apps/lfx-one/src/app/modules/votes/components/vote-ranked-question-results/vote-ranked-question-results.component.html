@@ -5,7 +5,12 @@
 <div
   class="rounded-lg border border-slate-200 p-4 flex flex-col gap-4"
   [attr.data-testid]="isCreator() ? 'vote-results-ranked-question-' + q.questionId : null">
-  <h4 class="text-base font-semibold text-gray-900 break-words">{{ q.prompt }}</h4>
+  <h4 class="text-base font-semibold text-gray-900 break-words">
+    @if (questionNumber(); as number) {
+      Q{{ number }}.
+    }
+    {{ q.prompt }}
+  </h4>
 
   <div class="flex flex-col gap-3">
     @for (row of q.choiceDistributions; track row.choiceId) {

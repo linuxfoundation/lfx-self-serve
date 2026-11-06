@@ -11,6 +11,7 @@
         type="button"
         class="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:cursor-wait"
         [cdkMenuTriggerFor]="busy() ? null : rsvpMenu"
+        [cdkMenuPosition]="menuPositions"
         [disabled]="busy()"
         [attr.aria-label]="'Your RSVP: ' + answer.label + '. Change'"
         data-testid="meetings-home-rsvp-status">
@@ -30,7 +31,7 @@
         <lfx-ui-button
           variant="secondary"
           [size]="size()"
-          [icon]="choice.icon + ' ' + iconColor[choice.response]"
+          [icon]="choice.buttonIcon + ' ' + iconColor[choice.response]"
           [ariaLabel]="'RSVP ' + choice.action + ' to ' + row().title"
           [loading]="saving() === choice.response"
           [disabled]="busy() && saving() !== choice.response"

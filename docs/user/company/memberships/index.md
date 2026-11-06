@@ -3,24 +3,24 @@ title: Memberships and membership detail
 description: How to read the Memberships list for the selected company, open a foundation membership, and review or update its key contacts, board and committee seats, and membership agreements.
 audience: [all]
 product_area: Company
-tags: [company, company-lens, memberships, membership, key-contacts, board, committee, agreements]
-last_updated: 2026-11-05
+tags: [company, org, org-lens, memberships, membership, key-contacts, board, committee, agreements]
+last_updated: 2026-11-06
 intercom_collection: Company
 ---
 
-These steps apply to anyone who can open a company in the Company Lens, such as a company admin (editor or viewer) or Linux Foundation staff. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Memberships**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
+These steps apply to anyone who can open a company in the Company lens, such as a company admin (editor or viewer). A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Memberships**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
 
 ## What is the Memberships page?
 
-The Memberships page lists the selected company's foundation memberships: which are active, which have expired, and which foundations it can join. Its address is `/company/<company>/memberships`.
+The Memberships page lists the selected company's foundation memberships: which are active, which have expired, and which foundations it can join. Its address is `/org/<company>/memberships`.
 
 The page heading is **Membership —** followed by the company's name. The sidebar item that opens it is **Memberships**. The page has three tabs: **Active**, **Expired**, and **Discover**.
 
-From the [Company Overview dashboard](../company-overview/), **View all on Memberships page ›** also opens this list.
+From the [Org Overview dashboard](../company-overview/), **View all on Memberships page ›** also opens this list.
 
 ## How do I open Memberships?
 
-You open **Memberships** from the Company Lens sidebar once a company is selected. A CLA Manager or initial CLA Manager designee with no other role on that company is sent to **EasyCLA** instead.
+You open **Memberships** from the Company lens sidebar once a company is selected. A CLA Manager or initial CLA Manager designee with no other role on that company is sent to **EasyCLA** instead.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Company** in the lens switcher.
@@ -28,7 +28,7 @@ You open **Memberships** from the Company Lens sidebar once a company is selecte
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, Memberships is replaced by the same access message as the other Company Lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
+When you cannot open the company, Memberships is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
 
 ## What do the summary cards count?
 
@@ -36,7 +36,7 @@ The three cards on **Active** summarize the company's active memberships, and th
 
 | Card                        | What it counts                                                                                                                                  |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Active Memberships**      | How many active foundation memberships the company has                                                                                          |
+| **Active Memberships**      | How many active foundation memberships the company has                                                                                     |
 | **Renewing Within 90 Days** | How many of those memberships have a tier end date between today and 90 days from today. A tier end date that has already passed is not counted |
 | **Governance Roles**        | The board seats and committee seats on those memberships, added together                                                                        |
 
@@ -63,17 +63,17 @@ Each row is one foundation membership. Select the foundation name to open its me
 | **Member Since**      | The month and year the membership started, or a dash (**—**) when that date is missing                                                                                                          |
 | **Board Members**     | How many board seats this membership has                                                                                                                                                        |
 | **Committee Members** | How many committee seats this membership has                                                                                                                                                    |
-| **Company Projects**  | How many projects your company is involved in at that foundation. A number above 0 opens the **Company Projects** panel. **0** is text and does not open the panel                              |
+| **Org Projects**      | How many projects your company is involved in at that foundation. A number above 0 opens the **Org Projects** panel. **0** is text and does not open the panel                             |
 
-The line under the foundation name is not the **Company Projects** count. **Company Projects** is the last column.
+The line under the foundation name is not the **Org Projects** count. **Org Projects** is the last column.
 
-## What does the Company Projects panel show?
+## What does the Org Projects panel show?
 
-The **Company Projects** panel lists the projects your company is involved in at that foundation. It opens from a number in the **Company Projects** column.
+The **Org Projects** panel lists the projects your company is involved in at that foundation. It opens from a number in the **Org Projects** column.
 
-The panel title is **Company Projects**. Under it is the foundation name, a middle dot, the count, and the word **project** or **projects**.
+The panel title is **Org Projects**. Under it is the foundation name, a middle dot, the count, and the word **project** or **projects**.
 
-1. Select the number in **Company Projects**.
+1. Select the number in **Org Projects**.
 2. To narrow the list, use **Search projects...**.
 3. Select a Linux Foundation (LF) project name to open that project's detail page. The panel closes. See [What is a project detail page?](../projects/#what-is-a-project-detail-page). A project that is not an LF project is shown as text and is not a link.
 
@@ -110,15 +110,15 @@ The **Discover** tab lists foundations where the company's people contribute to 
 | ----------------- | ------------------------------------------------------------------------------------------------------------ |
 | **Foundation**    | The foundation name, and under it the category, a middle dot, the count, and the words **relevant projects** |
 | **Category**      | The suggested tier, with **Suggested tier** under it                                                         |
-| **Contributors**  | How many of the company's people contributed to that foundation's LF projects in the last 12 months          |
-| **Contributions** | How many commits the company's people made to those projects                                                 |
+| **Contributors**  | How many of the company's people contributed to that foundation's LF projects in the last 12 months     |
+| **Contributions** | How many commits the company's people made to those projects                                            |
 | **Actions**       | **Join**                                                                                                     |
 
 When there are no rows, the tab says **No new opportunities available right now** and **Check back later for new membership opportunities.** When the list fails to load, it says **Failed to load discover opportunities** and **Please try again.** Select **Retry**.
 
 ## What does a membership detail page show?
 
-A membership detail page is one foundation membership for the selected company. You open it by selecting the foundation name on the **Active** tab. Its address is `/company/<company>/memberships/<foundation>`.
+A membership detail page is one foundation membership for the selected company. You open it by selecting the foundation name on the **Active** tab. Its address is `/org/<company>/memberships/<foundation>`.
 
 **Back to Memberships** returns to the list. The heading is the foundation name. The line under it is the membership tier, the status **Active** or **Expired**, and **Member since** followed by the month and year.
 
@@ -138,16 +138,16 @@ You change a key contact from the pencil on the **Key Contacts** tab, when that 
 
 The tab lists nine contact types, in this order. Hover a type to read what it is for. An empty type says **No** followed by the type name and **assigned**, such as **No Billing Contact assigned**.
 
-| Contact type                      | What the hover text says                                            | How many this membership can have |
-| --------------------------------- | ------------------------------------------------------------------- | --------------------------------- |
+| Contact type                      | What the hover text says                                                 | How many this membership can have |
+| --------------------------------- | ------------------------------------------------------------------------ | --------------------------------- |
 | **Representative/Voting Contact** | Primary voting representative for your company on this membership.  | One, and one is required          |
-| **Billing Contact**               | Receives invoices and billing communications for this membership.   | At least 1, and up to 3           |
-| **Technical Contact**             | Primary technical point of contact for this membership.             | At least 1, and up to 10          |
-| **PO Contact**                    | Receives purchase-order communications.                             | Up to 3. None is allowed          |
-| **Marketing Contact**             | Coordinates marketing and co-branding activities.                   | At least 1, and up to 10          |
-| **PR Contact**                    | Handles press and public-relations communications.                  | Up to 3. None is allowed          |
-| **Legal Contact**                 | Receives legal and contractual communications.                      | Up to 3. None is allowed          |
-| **Event Sponsorship Contact**     | Coordinates event sponsorship for this membership.                  | Up to 3. None is allowed          |
+| **Billing Contact**               | Receives invoices and billing communications for this membership.        | At least 1, and up to 3           |
+| **Technical Contact**             | Primary technical point of contact for this membership.                  | At least 1, and up to 10          |
+| **PO Contact**                    | Receives purchase-order communications.                                  | Up to 3. None is allowed          |
+| **Marketing Contact**             | Coordinates marketing and co-branding activities.                        | At least 1, and up to 10          |
+| **PR Contact**                    | Handles press and public-relations communications.                       | Up to 3. None is allowed          |
+| **Legal Contact**                 | Receives legal and contractual communications.                           | Up to 3. None is allowed          |
+| **Event Sponsorship Contact**     | Coordinates event sponsorship for this membership.                       | Up to 3. None is allowed          |
 | **Authorized Signatory**          | Authorized to sign membership agreements on behalf of your company. | One, and one is required          |
 
 A blue note in the dialog repeats that limit. **Representative/Voting Contact** and **Authorized Signatory** say **Your company must have one key contact of this type.** **Billing Contact** says **Your company must have at least 1, and can have up to 3 contacts of this type.** **Technical Contact** and **Marketing Contact** say **Your company must have at least 1, and can have up to 10 contacts of this type.** **PO Contact**, **PR Contact**, **Legal Contact**, and **Event Sponsorship Contact** say **Your company can have up to 3 contacts of this type.**
@@ -223,23 +223,23 @@ When there are no agreements, the tab says **No membership agreements found.** W
 
 A failed load keeps you on the same tab and tells you to retry. It is not the same as an empty list.
 
-| What you see                                                       | What to do                                         |
-| ------------------------------------------------------------------ | -------------------------------------------------- |
-| **Failed to load memberships**                                     | Select **Retry** on **Active**                     |
-| **Failed to load expired memberships**                             | Select **Retry** on **Expired**                    |
-| **Failed to load discover opportunities**                          | Select **Retry** on **Discover**                   |
-| **Failed to load membership detail**                               | Select **Retry** on the detail page                |
-| **Failed to load documents**                                       | Select **Retry** on **Documentation**              |
-| **Couldn't load Board Seats** or **Couldn't load Committee Seats** | Select **Retry** in that section                   |
-| **Failed to load projects.**                                       | Select **Retry** in the **Company Projects** panel |
+| What you see                                                       | What to do                                     |
+| ------------------------------------------------------------------ | ---------------------------------------------- |
+| **Failed to load memberships**                                     | Select **Retry** on **Active**                 |
+| **Failed to load expired memberships**                             | Select **Retry** on **Expired**                |
+| **Failed to load discover opportunities**                          | Select **Retry** on **Discover**               |
+| **Failed to load membership detail**                               | Select **Retry** on the detail page            |
+| **Failed to load documents**                                       | Select **Retry** on **Documentation**          |
+| **Couldn't load Board Seats** or **Couldn't load Committee Seats** | Select **Retry** in that section               |
+| **Failed to load projects.**                                       | Select **Retry** in the **Org Projects** panel |
 
 A dash (**—**) on the three **Active** cards, while the table says **Failed to load memberships**, means the counts did not load either.
 
 ## Related sections
 
 - [Choose and switch a company](../choose-a-company/) — pick the company these memberships belong to
-- [Company Overview dashboard](../company-overview/) — the **Dashboard**, including **View all on Memberships page ›**
+- [Org Overview dashboard](../company-overview/) — the **Dashboard**, including **View all on Memberships page ›**
 - [Projects and project detail](../projects/) — the company's projects, and each project's influence and leaderboards
 - [Manage Company Lens Access](../manage-company-lens-access/) — who is an Admin, and who can edit the company
 - [EasyCLA](../easycla/) — corporate CLAs (Contributor License Agreements) for the selected company
-- [Company FAQ](../faq/) — short answers about the Company Lens
+- [Company FAQ](../faq/) — short answers about the Company lens

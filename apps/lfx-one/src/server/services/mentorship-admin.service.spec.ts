@@ -317,7 +317,7 @@ describe('MentorshipAdminService.getProgramPage', () => {
   });
 
   it.each(['management-summary', 'applications', 'member-management'])(
-    'passes a 403 on the manager-only %s read on, since any viewer may read the header',
+    'passes a 403 on the %s management read on, since any viewer may read the header',
     async (route) => {
       stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/${route}`]: new MicroserviceError('Forbidden', 403, 'FORBIDDEN') }));
 
@@ -325,7 +325,7 @@ describe('MentorshipAdminService.getProgramPage', () => {
     }
   );
 
-  it('keeps the page when a manager-only read fails with anything but a 403', async () => {
+  it('keeps the page when a management read fails with anything but a 403', async () => {
     stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/management-summary`]: new MicroserviceError('Bad gateway', 502, 'UPSTREAM') }));
 
     const page = await service.getProgramPage(buildReq(), PROGRAM_ID);

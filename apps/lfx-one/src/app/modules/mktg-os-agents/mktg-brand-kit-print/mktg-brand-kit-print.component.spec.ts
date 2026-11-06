@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { MKTG_PRINT_PAGE_MARGINS_CLASS, MKTG_PRINT_REVERSED_FILTER } from '@lfx-one/shared/constants';
 import { buildBrandKitBookView, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -43,6 +44,23 @@ it('prints five native portrait chapters with branded heads, real SVG logo asset
   expect(root.textContent).not.toContain('V3.0');
   expect(root.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V3.0');
   expect(root.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
+  // The page's room: the top repeated per page by the chapter's head (its padding), the bottom once per chapter on its
+  // last row — never a footer group, for which Chromium prints an empty page per table. No @page margin remains.
+  expect(root.querySelectorAll('.kit-chapter > tfoot')).toHaveLength(0);
+  const lastCells = root.querySelectorAll<HTMLElement>('.kit-chapter > tbody > tr:last-child > td');
+  const headCell = root.querySelector<HTMLElement>('.kit-chapter > thead > tr > td');
+  if (lastCells.length !== 5 || !headCell) throw new Error('Missing synthetic kit chapter room');
+  // 0.55in (52.8px at 96dpi, jsdom's computed value); the last row keeps its 10pt (13.33px) under it.
+  expect(getComputedStyle(headCell).paddingTop).toBe('52.8px');
+  lastCells.forEach((cell) => expect(getComputedStyle(cell).paddingBottom).toBe('66.1333px'));
+  // On the page margins (WebKit prints a table's head once) the margin is the room and the chapters give none.
+  document.body.classList.add(MKTG_PRINT_PAGE_MARGINS_CLASS);
+  try {
+    expect(getComputedStyle(headCell).paddingTop).toBe('0px');
+    expect(getComputedStyle(lastCells[0]).paddingBottom).toBe('13.3333px');
+  } finally {
+    document.body.classList.remove(MKTG_PRINT_PAGE_MARGINS_CLASS);
+  }
   expect(root.querySelectorAll('lfx-mktg-print-chapter-header')).toHaveLength(5);
   root.querySelectorAll<HTMLElement>('lfx-mktg-print-chapter-header').forEach((header) => {
     expect(header.style.getPropertyValue('--mfp-chapter-accent')).toBe(view.accent);
@@ -70,6 +88,59 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(root.querySelector('[data-testid="kit-print-type"]')?.textContent).toContain('500 · 64/72 px');
   expect(root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print"]')?.style.getPropertyValue('--mfp-font')).toBe(brand.fontStack);
   expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(kit.chapters.visual.icons.recommended);
+  // The board's print layout for Iconography, on the Visual chapter's first page by itself: the block ends its page
+  // (break-after, never break-before, which would leave a page holding only the title); under the title, the rules
+  // across the sheet, then the sample icons (the print variant, the kit's colours) across the full content width.
+  const iconBlock = root.querySelector<HTMLElement>('[data-testid="kit-print-visual"] [data-testid="kit-print-icon-block"]');
+  if (!iconBlock) throw new Error('Missing synthetic icon block');
+  expect(iconBlock.tagName).toBe('TR');
+  expect(iconBlock.classList.contains('kit-block')).toBe(true);
+  expect(getComputedStyle(iconBlock).breakAfter).toBe('page');
+  expect(getComputedStyle(iconBlock).breakBefore).not.toBe('page');
+  expect(getComputedStyle(iconBlock).breakInside).toBe('avoid');
+  const rulesBlock = iconBlock.querySelector<HTMLElement>('[data-testid="kit-print-icon-rules"]');
+  const samplesBlock = iconBlock.querySelector<HTMLElement>('[data-testid="kit-print-icon-samples"]');
+  if (!rulesBlock || !samplesBlock) throw new Error('Missing synthetic icon rules or samples block');
+  expect(rulesBlock.previousElementSibling?.tagName).toBe('H3');
+  expect(rulesBlock.nextElementSibling).toBe(samplesBlock);
+  expect(iconBlock.querySelector('.kit-icon-row')).toBeNull();
+  for (const block of [rulesBlock, samplesBlock]) {
+    expect(getComputedStyle(block).display).toBe('block');
+    // Full content width: the e2e spec measures it in the browser; here the scss sets it.
+    expect(getComputedStyle(block).width).not.toBe('auto');
+  }
+  expect(Array.from(rulesBlock.querySelectorAll('li'), (li) => li.textContent)).toEqual(kit.chapters.visual.icons.rules);
+  const samples = samplesBlock.querySelector<HTMLElement>('.kit-icon-samples');
+  if (!samples) throw new Error('Missing synthetic icon samples');
+  expect(samples.getAttribute('data-testid')).toBe('brand-kit-icon-samples');
+  expect(samples.classList.contains('block')).toBe(true);
+  expect(getComputedStyle(samples).display).toBe('block');
+  expect(getComputedStyle(samples).breakInside).toBe('avoid');
+  expect(samples.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
+  // The board's sizes in table boxes: a 2 × 4 table of 110 px tiles (32 px icons, 11 px labels), a 110 px strip of eight cells (30 px icons).
+  // These boxes are Tailwind utilities, which the unit environment does not load (only the component's scss), so they are
+  // asserted by class; the e2e spec measures them in the browser.
+  const tiles = samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tiles"]');
+  expect(tiles?.classList.contains('table')).toBe(true);
+  expect(tiles?.querySelectorAll(':scope > .table-row')).toHaveLength(2);
+  expect(tiles?.querySelectorAll(':scope > .table-row > .table-cell')).toHaveLength(8);
+  const tile = samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]');
+  expect(tile?.classList.contains('table')).toBe(true);
+  expect(tile?.classList.contains('h-[110px]')).toBe(true);
+  expect(tile?.querySelector('svg')?.getAttribute('width')).toBe('32');
+  expect(tile?.querySelector('span')?.classList.contains('text-[11px]')).toBe(true);
+  const strip = samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]');
+  expect(strip?.classList.contains('table')).toBe(true);
+  expect(strip?.classList.contains('h-[110px]')).toBe(true);
+  expect(strip?.classList.contains('px-[30px]')).toBe(true);
+  expect(strip?.querySelectorAll(':scope > .table-row > .table-cell')).toHaveLength(8);
+  expect(strip?.querySelector('svg')?.getAttribute('width')).toBe('30');
+  expect(samples.querySelector<HTMLElement>('[data-highlight="true"]')?.getAttribute('data-testid')).toBe('brand-kit-icon-strip-global');
+  // No grid or flex box in the samples: inside the paginated table they fragment their contents away from their boxes.
+  expect(samples.querySelectorAll('.grid, .flex, .inline-flex, .flex-wrap')).toHaveLength(0);
+  const probe = document.createElement('span');
+  probe.style.color = kit.kit.dark;
+  expect(samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.style.backgroundColor).toBe(probe.style.color);
   expect(root.querySelectorAll('[data-testid="kit-print-usage"]')).toHaveLength(kit.chapters.usage.examples.length);
   expect(root.querySelector('[data-testid="kit-print-voice"]')?.textContent).toContain(kit.chapters.voice.umbrella);
   kit.chapters.voice.attributes.forEach((attribute) => expect(root.textContent).toContain(attribute.line));
@@ -237,6 +308,37 @@ it('renders two-up usage samples with ground, logo and the current server-suppli
   fixture.componentRef.setInput('projectName', 'Updated project context');
   await fixture.whenStable();
   expect(root.querySelector('.kit-chapter > thead')?.textContent).toContain('Updated project context Brand kit');
+});
+
+it('inks a sample on the accent as the deck does: the kit’s dark and the full-colour lockup when white fails AA there, white and the reversed lockup when it passes', async () => {
+  const { root, kit, view, brand, fixture } = await setup();
+  const examples = kit.chapters.usage.examples.map((example, index) => (index === 1 ? { ...example, ground: 'accent' } : example));
+  fixture.componentRef.setInput('view', { ...view, usage: { ...view.usage, examples } });
+  await fixture.whenStable();
+  const social = root.querySelectorAll<HTMLElement>('.kit-usage-frame')[1];
+  const colour = (value: string): string => {
+    const probe = document.createElement('span');
+    probe.style.color = value;
+    return probe.style.color;
+  };
+  // The fixture's orange accent reads 2.7:1 against white, as its own contrast table would grade it.
+  expect(social.getAttribute('data-layout')).toBe('social');
+  expect(social.style.backgroundColor).toBe(colour(brand.accent));
+  expect(social.style.color).toBe(colour(brand.dark));
+  expect(social.style.color).not.toBe(colour('white'));
+  // The fixture supplies no reversed artwork, so the reversed lockup is the primary one filtered white; the full-colour one is unfiltered.
+  expect(brand.logoOnDark?.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+  expect(social.querySelector('img')?.style.filter).toBe('');
+  // A dark accent that passes AA against white: white ink and the reversed lockup.
+  fixture.componentRef.setInput('brand', { ...brand, accent: '#1F4E79' });
+  await fixture.whenStable();
+  expect(social.style.backgroundColor).toBe(colour('#1F4E79'));
+  expect(social.style.color).toBe(colour('white'));
+  expect(social.querySelector('img')?.style.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+  // The samples on the dark and on white are inked as before.
+  const frames = root.querySelectorAll<HTMLElement>('.kit-usage-frame');
+  expect(frames[0].style.color).toBe(colour('white'));
+  expect(frames[2].style.color).toBe(colour(brand.ink));
 });
 
 it('keeps captioned pairs indivisible with explicit frame heights and the intro inside the first pair', async () => {

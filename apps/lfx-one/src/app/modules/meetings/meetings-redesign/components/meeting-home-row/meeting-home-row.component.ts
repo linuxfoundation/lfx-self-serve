@@ -17,8 +17,6 @@ import {
   PastMeeting,
 } from '@lfx-one/shared/interfaces';
 import {
-  formatDuration,
-  formatMeetingDateTime,
   getMeetingGroupNames,
   getMeetingHomeAttendance,
   getMeetingHomeRowLink,
@@ -28,6 +26,7 @@ import {
   getMeetingRecurrenceLabel,
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
+  getMeetingWhenParts,
 } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
@@ -40,7 +39,7 @@ import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.s
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDateTileComponent } from '../meeting-date-tile/meeting-date-tile.component';
 import { MeetingHomeActionsComponent } from '../meeting-home-actions/meeting-home-actions.component';
-import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
+import { MeetingHomeAttendancePopupComponent } from '../meeting-home-attendance-popup/meeting-home-attendance-popup.component';
 import { MeetingHomeArtifactsComponent } from '../meeting-home-artifacts/meeting-home-artifacts.component';
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
@@ -55,7 +54,7 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
     MeetingDateTileComponent,
     MeetingHomeActionsComponent,
     MeetingHomeArtifactsComponent,
-    MeetingHomeAttendanceComponent,
+    MeetingHomeAttendancePopupComponent,
     MeetingProjectLogoComponent,
     MeetingRsvpControlsComponent,
     UiAvatarComponent,
@@ -149,7 +148,7 @@ export class MeetingHomeRowComponent {
   private initWhen(): Signal<string[]> {
     return computed(() => {
       const { startTime, durationMinutes } = this.row();
-      return [formatMeetingDateTime(startTime), formatDuration(durationMinutes * 60)];
+      return getMeetingWhenParts(startTime, durationMinutes);
     });
   }
 }

@@ -363,12 +363,12 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
 ];
 
 // ============================================
-// Org Overview Involvement Metrics (cross-foundation, non-clickable)
+// Org Overview Involvement Metrics (cross-foundation)
 // ============================================
 
 /**
  * Engagement card configuration for the /org/overview involvement section.
- * 6 cards aggregated across all LF foundations. Cards are NOT clickable — no drawerType.
+ * 7 cards aggregated across all LF foundations. No drawerType: only the 3 Education cards are clickable, opening the Training page.
  */
 export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
   {
@@ -402,6 +402,15 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     category: 'events',
     testId: 'org-overview-involvement-card-event-speakers',
     chartData: EMPTY_CHART_DATA,
+  },
+  {
+    // Same number and label as the Training page's "People with training activity" tile at its default range: people on the people list. Stat-only: no chart.
+    title: ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity.label,
+    icon: 'fa-light fa-user-graduate',
+    chartType: 'line',
+    hideChart: true,
+    category: 'education',
+    testId: 'org-overview-involvement-card-people-with-training-activity',
   },
   {
     // Same number and label as the Training page's "Certified people" tile at its default range (lfx-self-serve#4290). Stat-only: no chart.

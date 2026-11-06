@@ -232,11 +232,7 @@ describe('MeetingHomeActionsComponent', () => {
       await choose('meetings-home-row-actions-copy-link');
 
       expect(copy).toHaveBeenCalledWith(`${environment.urls.home}/meetings/synthetic-meeting?password=synthetic-pass`);
-      expect(toastShow).toHaveBeenCalledWith({
-        variant: 'dark',
-        message: 'Meeting Link Copied',
-        description: 'The meeting link has been copied to your clipboard',
-      });
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting link copied to clipboard' });
     });
 
     it('copies the past meeting page for a past row, without the passcode', async () => {
@@ -262,7 +258,7 @@ describe('MeetingHomeActionsComponent', () => {
       await choose('meetings-home-row-actions-resend');
 
       expect(resendOwn$).toHaveBeenCalledWith('synthetic-meeting', 'synthetic-occurrence');
-      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Invitation Sent', description: 'We sent the meeting invitation to your email.' });
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting invitation sent' });
     });
 
     it('reports a failed resend', async () => {
@@ -291,14 +287,19 @@ describe('MeetingHomeActionsComponent', () => {
 
       expect(overlay.querySelector('[role="alertdialog"]')).not.toBeNull();
       expect(find('meetings-home-row-actions-remove-info')?.textContent).toContain('Synthetic sync');
-      expect(find('meetings-home-row-actions-remove-project')?.lastElementChild?.textContent?.trim()).toBe('Synthetic Project');
+      expect(find('meeting-dialog-context-project')?.lastElementChild?.textContent?.trim()).toBe('Synthetic Project');
       const message = find('meetings-home-row-actions-remove-message');
       expect(find('meetings-home-row-actions-remove-info')?.compareDocumentPosition(message as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-      expect(overlay.querySelector('[role="alertdialog"]')?.getAttribute('aria-describedby')).toBe(message?.id);
+      const description = find('meetings-home-row-actions-remove-description');
+      expect(overlay.querySelector('[role="alertdialog"]')?.getAttribute('aria-describedby')).toBe(description?.id);
+      expect(description?.textContent).toContain("it won't invite you to this meeting again");
       expect(message?.textContent?.trim()).toBe(
-        'Remove yourself from "Synthetic sync"? You will no longer be invited to any occurrence and will lose your RSVP. ' +
-          "You stay in the committee, but it won't invite you to this meeting again."
+        'Remove yourself from “Synthetic sync”? You will no longer be invited to any occurrence and will lose your RSVP.'
       );
+      const notes = find('meetings-home-row-actions-remove-notes');
+      expect(Array.from(notes?.querySelectorAll('li') ?? [], (item) => item.textContent?.trim())).toEqual([
+        "You stay in the committee, but it won't invite you to this meeting again.",
+      ]);
       expect(remove$).not.toHaveBeenCalled();
     });
 
@@ -318,7 +319,7 @@ describe('MeetingHomeActionsComponent', () => {
 
       expect(remove$).toHaveBeenCalledWith('synthetic-meeting', 'meetings-home');
       expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
-      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Removed', description: 'You have been removed from this meeting.' });
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Removed from meeting' });
       expect(refreshUserMeetings).not.toHaveBeenCalled();
     });
 

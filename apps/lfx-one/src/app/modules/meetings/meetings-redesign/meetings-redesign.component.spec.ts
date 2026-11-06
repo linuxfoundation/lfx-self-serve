@@ -9,6 +9,7 @@ import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
+import { AppService } from '@services/app.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
@@ -430,28 +431,40 @@ describe('MeetingsRedesignComponent', () => {
     expect(fade()).not.toContain('mt-[24px]');
   });
 
-  it("counts the layout wrapper's bottom padding, not main's own, in the desktop column height", async () => {
+  it("sizes the desktop column from its own top alone, the layout's bottom padding being cancelled by the host", async () => {
     vi.stubGlobal('innerHeight', 900);
-    // The real shape: main (own padding) > content wrapper (21px) > route-entry host stand-in > the page.
-    const main = document.createElement('main');
-    main.style.paddingBottom = '40px';
-    const wrapper = document.createElement('div');
-    wrapper.style.paddingBottom = '21px';
-    const entryHost = document.createElement('div');
-    main.append(wrapper);
-    wrapper.append(entryHost);
-    document.body.append(main);
+    const fixture = render();
+    vi.spyOn(fixture.nativeElement as HTMLElement, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 60, 100, 100));
+    window.dispatchEvent(new Event('resize'));
+    await fixture.whenStable();
 
-    try {
-      const fixture = TestBed.createComponent(MeetingsRedesignComponent);
-      entryHost.append(fixture.nativeElement);
-      fixture.detectChanges();
-      await fixture.whenStable();
+    expect(fixture.nativeElement.className).toContain('-my-6');
+    expect(query(fixture, 'meetings-redesign')?.style.height).toBe('840px');
+    expect(query(fixture, 'meetings-redesign')?.style.minHeight).toBe('');
+  });
 
-      expect(query(fixture, 'meetings-redesign')?.style.height).toBe('879px');
-    } finally {
-      main.remove();
-    }
+  it('renders the app footer at the end of the centre column and hides the layout footer while shown', async () => {
+    const appService = TestBed.inject(AppService);
+    const fixture = render();
+    await fixture.whenStable();
+
+    const centre = query(fixture, 'meetings-redesign-centre');
+    expect(centre?.lastElementChild?.getAttribute('data-testid')).toBe('meetings-redesign-footer');
+    expect(appService.pageOwnsFooter()).toBe(true);
+
+    fixture.destroy();
+    expect(appService.pageOwnsFooter()).toBe(false);
+  });
+
+  it('uses the available height as the minimum page height when the window scrolls', async () => {
+    desktop = false;
+    vi.stubGlobal('innerHeight', 700);
+    const fixture = render();
+    await fixture.whenStable();
+
+    const root = query(fixture, 'meetings-redesign');
+    expect(root?.style.height).toBe('');
+    expect(root?.style.minHeight).toBe('700px');
   });
 
   it('keeps the measured column height on a short viewport, with no minimum height', async () => {
@@ -826,7 +839,7 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-home-no-results')).toBeNull();
     });
 
-    it('says the filters match nothing when no row matches them', async () => {
+    it('asks to adjust the filters when only filters match nothing', async () => {
       const fixture = render();
       await fixture.whenStable();
       await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1)]);
@@ -834,7 +847,7 @@ describe('MeetingsRedesignComponent', () => {
 
       expect(rowTitles(fixture)).toEqual([]);
       expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No results found');
-      expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No meetings match your filters');
+      expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('Try adjusting your filter criteria');
     });
 
     it('clears the filters and the search from the No results reset', async () => {

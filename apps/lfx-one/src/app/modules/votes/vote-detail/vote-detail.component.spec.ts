@@ -44,6 +44,8 @@ import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-c
 import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
+import { VoteParticipationCardComponent } from '../components/vote-participation-card/vote-participation-card.component';
+import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
 import { VoteVotersComponent } from '../components/vote-voters/vote-voters.component';
 import { VoteDetailComponent } from './vote-detail.component';
@@ -404,6 +406,47 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-results-ranked-method')).not.toBeNull();
       expect(element(fixture, 'lfx-vote-ranked-question-results')).not.toBeNull();
       expect(element(fixture, 'lfx-vote-option-results')).toBeNull();
+    });
+  });
+
+  describe.each([true, false])('ranked Results question positions (manager: %s)', (manager) => {
+    it.each([1, 2])('renders %i full question headings and keeps vote-level totals separate', async (questionCount) => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
+      voteService.fetchVote.mockReturnValue(
+        of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED, allow_abstain: true, pseudo_anonymity: false }))
+      );
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const results = makeMethodResults();
+      results.num_abstained = 1;
+      results.poll_results = Array.from({ length: questionCount }, (_, index) => ({
+        ...results.poll_results[0],
+        question: { ...results.poll_results[0].question, question_id: `question-${index + 1}`, prompt: `Rank the synthetic proposals for group ${index + 1}` },
+      }));
+      voteService.getVoteResults.mockReturnValue(of(results));
+      const fixture = await setup('browser', [VoteRankedQuestionResultsComponent, VoteParticipationCardComponent, VoteAbstainResultComponent]);
+      await fixture.whenStable();
+
+      const questions = fixture.debugElement.queryAll(By.directive(VoteRankedQuestionResultsComponent));
+      expect(questions).toHaveLength(questionCount);
+      questions.forEach((question, index) => {
+        const prompt = results.poll_results[index].question.prompt;
+        const heading = question.nativeElement.querySelector('h4') as HTMLElement;
+        expect(heading.textContent?.replace(/\s+/g, ' ').trim()).toBe(`${questionCount > 1 ? `Q${index + 1}. ` : ''}${prompt}`);
+        expect((question.componentInstance as VoteRankedQuestionResultsComponent).question().prompt).toBe(prompt);
+        expect(question.nativeElement.querySelector('lfx-vote-abstain-result')).toBeNull();
+        expect(question.nativeElement.querySelector('lfx-vote-participation-card')).toBeNull();
+      });
+      const abstain = testId(fixture, 'vote-detail-option-abstain')!;
+      expect(fixture.debugElement.queryAll(By.directive(VoteAbstainResultComponent))).toHaveLength(1);
+      expect(abstain.textContent).toContain('1');
+      expect(questions.at(-1)!.nativeElement.compareDocumentPosition(abstain) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const participation = fixture.debugElement.queryAll(By.directive(VoteParticipationCardComponent));
+      expect(participation).toHaveLength(manager ? 1 : 0);
+      if (manager) {
+        expect(participation[0].nativeElement.compareDocumentPosition(questions[0].nativeElement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+      expect(read(fixture, 'participationStats')).toMatchObject({ totalResponses: 3, abstainedVoters: 1 });
     });
   });
 
@@ -1361,40 +1404,41 @@ describe('VoteDetailComponent', () => {
       expect(read(fixture, 'myResponse')).toBeNull();
     });
 
-    it('starts a new vote on the first comments page even when its prompt ID matches', async () => {
+    it('resets comment expansion for a new vote even when its prompt ID matches', async () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id })));
       queryParamMap.next(convertToParamMap({ tab: 'comments' }));
       const fixture = await setup();
       const commentList = fixture.debugElement.query(By.css('lfx-vote-comment-results'));
-      commentList.triggerEventHandler('pageStateChange', new Map([['prompt-1', { first: 20, rows: 20 }]]));
+      commentList.triggerEventHandler('expansionStateChange', new Map([['prompt-1', false]]));
       TestBed.tick();
-      expect(read<Map<string, unknown>>(fixture, 'commentPaginatorState').size).toBe(1);
+      expect(read<Map<string, boolean>>(fixture, 'commentExpansionState').size).toBe(1);
 
       paramMap.next(convertToParamMap({ id: 'vote-2' }));
       TestBed.tick();
 
-      expect(read<Map<string, unknown>>(fixture, 'commentPaginatorState').size).toBe(0);
-      expect(fixture.debugElement.query(By.css('lfx-vote-comment-results')).properties['pageState']).toEqual(new Map());
+      expect(read<Map<string, boolean>>(fixture, 'commentExpansionState').size).toBe(0);
+      expect(fixture.debugElement.query(By.css('lfx-vote-comment-results')).properties['expansionState']).toEqual(new Map());
     });
 
-    it('preserves the comments page across tab switches and a same-vote refresh', async () => {
+    it('preserves comment expansion across tab switches and a same-vote refresh', async () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       queryParamMap.next(convertToParamMap({ tab: 'comments' }));
       const fixture = await setup();
-      const page = new Map([['prompt-1', { first: 20, rows: 20 }]]);
-      fixture.debugElement.query(By.css('lfx-vote-comment-results')).triggerEventHandler('pageStateChange', page);
+      const expansion = new Map([['prompt-1', false]]);
+      fixture.debugElement.query(By.css('lfx-vote-comment-results')).triggerEventHandler('expansionStateChange', expansion);
       TestBed.tick();
 
       queryParamMap.next(convertToParamMap({ tab: 'results' }));
       TestBed.tick();
       queryParamMap.next(convertToParamMap({ tab: 'comments' }));
       TestBed.tick();
-      expect(read(fixture, 'commentPaginatorState')).toEqual(page);
+      expect(read(fixture, 'commentExpansionState')).toEqual(expansion);
+      expect(fixture.debugElement.query(By.css('lfx-vote-comment-results')).properties['expansionState']).toEqual(expansion);
 
       call(fixture, 'onVoteSubmitted', 'vote-1');
       TestBed.tick();
-      expect(read(fixture, 'commentPaginatorState')).toEqual(page);
+      expect(read(fixture, 'commentExpansionState')).toEqual(expansion);
     });
 
     it('discards retained results after visiting a vote without results access', async () => {
@@ -1600,6 +1644,7 @@ describe('VoteDetailComponent', () => {
         'Synthetic comment r-2',
       ]);
       expect(questionLabels(fixture)).toEqual(['Anything else?', 'Any concerns?', 'Anything else?']);
+      expect(testId(fixture, 'vote-detail-overview-comment-prompt')).toBeNull();
       expect(rendered[0].querySelector('[data-testid="vote-results-comment-meta"]')?.textContent).toContain('Synthetic Voter r-4');
       expect(testId(fixture, 'vote-detail-overview-all-comments')).not.toBeNull();
 
@@ -1610,13 +1655,24 @@ describe('VoteDetailComponent', () => {
       );
     });
 
-    it('omits redundant question labels when the vote has one comment question', async () => {
-      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
-      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: false, poll_comment_prompts: [prompts[0]] })));
-      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), comment_results: [{ prompt: prompts[0], responses: [named('r-1', 22)] }] }));
+    it.each([
+      { viewer: 'manager', anonymous: false },
+      { viewer: 'manager', anonymous: true },
+      { viewer: 'voter', anonymous: false },
+    ])('shows the single comment question once below the heading for a $viewer (anonymous: $anonymous)', async ({ viewer, anonymous }) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: viewer === 'manager' } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: anonymous, poll_comment_prompts: [prompts[0]] })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getVoteResults.mockReturnValue(
+        of({ ...makeResults(), comment_results: [{ prompt: prompts[0], responses: [named('r-1', 22), named('r-2', 21)] }] })
+      );
       const fixture = await setup('browser', [VoteCommentItemComponent]);
 
-      expect(items(fixture)).toHaveLength(1);
+      const prompt = testId(fixture, 'vote-detail-overview-comment-prompt');
+      expect(prompt?.textContent?.trim()).toBe('Any concerns?');
+      expect(prompt?.previousElementSibling?.querySelector('h2')?.textContent).toBe('What voters are saying');
+      expect(prompt?.nextElementSibling?.querySelectorAll('lfx-vote-comment-item')).toHaveLength(2);
+      expect(items(fixture)).toHaveLength(2);
       expect(questionLabels(fixture)).toEqual([]);
     });
 

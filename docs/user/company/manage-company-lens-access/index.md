@@ -1,14 +1,14 @@
 ---
 title: Manage Company Lens Access
-description: See who can open your company in the Company Lens, and add people, change their role, or remove their access from the Company Lens Access tab.
+description: See who can open your company in the Company lens, and add people, change their role, or remove their access from the Company Lens Access tab.
 audience: [all]
 product_area: Company
-tags: [company, company-lens, access, admin, viewer, invite, remove, people]
-last_updated: 2026-11-05
+tags: [company, org-lens, access, admin, viewer, invite, remove, people, company]
+last_updated: 2026-11-06
 intercom_collection: Company
 ---
 
-The **Company Lens Access** tab lists the people who have been granted Admin or Viewer access directly on your company, plus anyone who has been invited and has not yet accepted. An Admin can add people, change their role, and remove their access there. Some people can open your company in other ways, for example through access to a related company or as Linux Foundation staff. They are not listed on this tab, and you cannot change or remove their access here. Company Lens access is separate from committee or group membership: removing someone from a committee does not change their Company Lens access, and removing their Company Lens access does not change their committees.
+The **Company Lens Access** tab lists the people who have been granted Admin or Viewer access directly on your company, plus anyone who has been invited and has not yet accepted. An Admin can add people, change their role, and remove their access there. Some people can open your company in other ways, for example through access to a related company. They are not listed on this tab, and you cannot change or remove their access here. Company Lens access is separate from committee or group membership: removing someone from a committee does not change their Company Lens access, and removing their Company Lens access does not change their committees.
 
 These steps apply to Admins and Viewers of the company. Only an Admin can make changes; a Viewer can see the list but not change it. A CLA Manager with no other role on the company sees only **EasyCLA** and cannot open **People**.
 
@@ -16,8 +16,8 @@ These steps apply to Admins and Viewers of the company. Only an Admin can make c
 
 | Role                             | Shown as    | What they can do                                                                                                 |
 | -------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| **Company Admin – Editor**       | **Admin**   | Full access to the company's Company Lens, including adding, changing and removing other people's access.        |
-| **Company Admin – Viewer**       | **Viewer**  | Read-only access. They can view all data and reports, but cannot make changes or manage access for other people. |
+| **Org Admin – Editor**           | **Admin**   | Full access to the company's Company Lens, including adding, changing and removing other people's access.       |
+| **Org Admin – Viewer**           | **Viewer**  | Read-only access. They can view all data and reports, but cannot make changes or manage access for other people. |
 | Someone who has not yet accepted | **Invited** | Nothing yet. They appear as **Invited** next to their name until they accept the invite.                         |
 
 A company must always keep at least one Admin.
@@ -31,7 +31,7 @@ A company must always keep at least one Admin.
 
 The tab shows **Total Users**, **Administrators** and **Viewers**, then a table with each person's name and type. If no one has been granted access yet, the table says "No one has elevated Company Lens access for this company yet."
 
-To find someone, type in **Search by name, title, or email...**, or filter by type (**All types**, **Company Admin - Editor**, **Company Admin - Viewer** or **Invited**) or by **Employment**. Select **Clear filters** to reset them. Select a person's name to open their details.
+To find someone, type in **Search by name, title, or email...**, or filter by type (**All types**, **Org Admin - Editor**, **Org Admin - Viewer** or **Invited**) or by **Employment**. Select **Clear filters** to reset them. Select a person's name to open their details.
 
 ## Add someone
 
@@ -67,5 +67,5 @@ You cannot remove the company's only Admin. Make someone else an Admin first, th
 
 ## Related
 
-- [Who can see each lens](../../dashboards/#who-can-see-each-lens): how the Company Lens and its pages are shown
+- [Who can see each lens](../../dashboards/#who-can-see-each-lens): how the Company lens and its pages are shown
 - [Company FAQ](../faq/): short answers about Company Lens access and EasyCLA

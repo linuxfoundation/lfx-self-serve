@@ -3,22 +3,22 @@ title: Code Contributions
 description: How to read the Code Contributions page for the selected company — its repositories and commits, what All code contributions, All commits and Only main branch commits count, how to filter it, and how the time range carries to People.
 audience: [all]
 product_area: Company
-tags: [company, company-lens, code-contributions, contributions, commits, repositories, time-range, team-members, company-scope]
-last_updated: 2026-11-05
+tags: [company, org, org-lens, code-contributions, contributions, commits, repositories, time-range, team-members, company-scope]
+last_updated: 2026-11-06
 intercom_collection: Company
 ---
 
-These steps apply to anyone who can open a company in the Company Lens, such as a company admin (editor or viewer) or Linux Foundation staff. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Code Contributions**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
+These steps apply to anyone who can open a company in the Company lens, such as a company admin (editor or viewer). A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Code Contributions**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
 
 ## What is the Code Contributions page?
 
-The Code Contributions page shows the selected company's code contributions to open source projects over a time range: which repositories its contributors worked in, how much they contributed, and each of their commits. Its address is `/company/<company>/contributions`.
+The Code Contributions page shows the selected company's code contributions to open source projects over a time range: which repositories its contributors worked in, how much they contributed, and each of their commits. Its address is `/org/<company>/contributions`.
 
 The page heading is **Code Contributions**. The line under it is **Commits, contributors, and collaborators across your projects.** Three cards at the top count:
 
 | Card                       | What it counts                                                                                                                                                             |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Projects with Activity** | Projects the company's contributors contributed code to in the time range                                                                                                  |
+| **Projects with Activity** | Projects the company's contributors contributed code to in the time range                                                                                             |
 | **Repositories**           | Repositories they contributed code to                                                                                                                                      |
 | **Code contributions**     | Their code count. It says **Commits** when you count commits. See [the code count options](#what-do-all-code-contributions-all-commits-and-only-main-branch-commits-count) |
 
@@ -26,7 +26,7 @@ The sentence under the cards states exactly what is counted, for whom, and over 
 
 ## How do I open Code Contributions?
 
-You open **Code Contributions** from the Company Lens sidebar, under **Company Engagement**, once a company is selected. A CLA Manager or initial CLA Manager designee with no other role on that company is sent to **EasyCLA** instead.
+You open **Code Contributions** from the Company lens sidebar, under **Company Engagement**, once a company is selected. A CLA Manager or initial CLA Manager designee with no other role on that company is sent to **EasyCLA** instead.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Company** in the lens switcher.
@@ -34,7 +34,7 @@ You open **Code Contributions** from the Company Lens sidebar, under **Company E
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, Code Contributions is replaced by the same access message as the other Company Lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
+When you cannot open the company, Code Contributions is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
 
 ## What do the Repositories and Commits tabs show?
 
@@ -42,14 +42,14 @@ The **Repositories** tab lists each repository the company's contributors contri
 
 The **Repositories** tab has these columns:
 
-| Column                 | What it shows                                                                                       |
-| ---------------------- | --------------------------------------------------------------------------------------------------- |
-| **Project**            | The project the repository belongs to                                                               |
-| **Repository**         | The repository's path. When it is a link, it opens the repository on its source site                |
-| **Source**             | Where the repository is hosted: **GitHub**, **GitLab**, **Gerrit** or **Git**                       |
+| Column                 | What it shows                                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Project**            | The project the repository belongs to                                                                    |
+| **Repository**         | The repository's path. When it is a link, it opens the repository on its source site                     |
+| **Source**             | Where the repository is hosted: **GitHub**, **GitLab**, **Gerrit** or **Git**                            |
 | **Code contributions** | The company's code count in that repository. It says **Commits** when you count commits             |
 | **First contribution** | The date of the company's first contribution there. It says **First Commit** when you count commits |
-| **Last contribution**  | The date of the most recent one. It says **Last Commit** when you count commits                     |
+| **Last contribution**  | The date of the most recent one. It says **Last Commit** when you count commits                          |
 
 It starts sorted by the code count, most first. Select the count or a date heading to sort by it, and select it again to reverse the order.
 
@@ -89,7 +89,7 @@ When you switch to another company, the people you picked under **All Employees*
 **Team members** and **Company scope**, under **More filters**, change whose code is counted, so they change the cards and the rows on both tabs.
 
 - **Team members** chooses whether people marked as team members in LFX are counted. They are left out by default, as LFX Insights does. Choose **Include team members** to count them. When that data cannot be read, the page says **Team-member data is unavailable; counts include team members.**
-- **Company scope** chooses which of the company's related companies count. **Insights company**, the default, counts only the company shown on the company's LFX Insights page, in the repositories LFX Insights counts. **All related companies** counts every company linked to the company account, in every repository.
+- **Company scope** chooses which of the companies count. **Insights company**, the default, counts only the company shown on the company's LFX Insights page, in the repositories LFX Insights counts. **All related companies** counts every company linked to the company account, in every repository.
 
 See [Company scope](../../dashboards/#company-scope) on the Dashboard page, which also covers **Team members**.
 
@@ -107,17 +107,17 @@ See [People](../people/) for that page.
 
 When the filters match nothing, the table says so. When the page fails to load, it says **Failed to load code contributions** and **Please try again.** Select **Retry**. An empty table is not the same as a failed load.
 
-| What you see                                     | What it means                            | What to do                                                        |
-| ------------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------- |
-| **No repositories match your filters**           | No repository has code for these filters | Select **Clear filters**, or choose a longer time range           |
-| **No commits match your filters**                | No commit matches these filters          | Clear the search, or choose a longer time range                   |
-| **Failed to load code contributions**            | The page could not load                  | Select **Retry**                                                  |
-| **Select a company to view code contributions.** | No company is selected                   | Pick one; see [Choose and switch a company](../choose-a-company/) |
+| What you see                                           | What it means                            | What to do                                                                    |
+| ------------------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------- |
+| **No repositories match your filters**                 | No repository has code for these filters | Select **Clear filters**, or choose a longer time range                       |
+| **No commits match your filters**                      | No commit matches these filters          | Clear the search, or choose a longer time range                               |
+| **Failed to load code contributions**                  | The page could not load                  | Select **Retry**                                                              |
+| **Select a company to view code contributions.** | No company is selected              | Pick one; see [Choose and switch a company](../choose-a-company/) |
 
 ## Related sections
 
 - [People](../people/) — the company's employees, contributors and maintainers, with the same time range
 - [Projects and project detail](../projects/) — each project's contributors and the company's influence on it
 - [Choose and switch a company](../choose-a-company/) — pick the company this page shows
-- [Company Overview dashboard](../company-overview/) — the **Dashboard**, with the company's **Active Contributors**
-- [Company FAQ](../faq/) — short answers about the Company Lens
+- [Org Overview dashboard](../company-overview/) — the **Dashboard**, with the company's **Active Contributors**
+- [Company FAQ](../faq/) — short answers about the Company lens

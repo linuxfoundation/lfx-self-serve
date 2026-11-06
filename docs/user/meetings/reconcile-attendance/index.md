@@ -8,9 +8,9 @@ last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 
-Zoom records attendees by the name they joined with, such as "Sam's iPhone" or "Guest 2". **Reconcile Attendance** lets a organizer match those names to the real people who were in the meeting, so the **Participants** table and the attendance totals on a past meeting are accurate.
+Zoom records attendees by the name they joined with, such as "Sam's iPhone" or "Guest 2". **Reconcile Attendance** lets an organizer match those names to the real people who were in the meeting, so the **Participants** table and the attendance totals on a past meeting are accurate.
 
-This is for **organizers** of the meeting. If you don't see the button, you're not a organizer of that meeting.
+This is for **organizers** of the meeting. If you don't see the button, you're not an organizer of that meeting.
 
 ## Open Reconcile Attendance
 

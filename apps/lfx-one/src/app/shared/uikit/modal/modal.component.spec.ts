@@ -7,7 +7,7 @@ import { ScrollDispatcher } from '@angular/cdk/scrolling';
 import { Component, inject, TemplateRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiModalConfig } from '@lfx-one/shared/interfaces';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from '../button/button.component';
 import { UiModalComponent } from './modal.component';
@@ -297,5 +297,172 @@ describe('UiModalComponent and UiModalService', () => {
     await settle();
     expect(result).toBe('done');
     expect(dialog()).toBeNull();
+  });
+});
+
+const LAYOUT_TEMPLATE = `
+  <button id="opener" (click)="open(tpl)">Open</button>
+  <ng-template #tpl>
+    <lfx-ui-modal heading="AI Summary" [width]="720" [height]="800" sticky closable [scrollFade]="fade">
+      <span modalTitleSuffix id="badge">Approved</span>
+      <button modalHeaderActions id="copy" type="button">Copy</button>
+      <div modalHeaderExtra id="tabs">Tabs</div>
+      <p id="content">Summary</p>
+    </lfx-ui-modal>
+  </ng-template>
+`;
+
+@Component({ selector: 'lfx-ui-layout-test-host', template: '' })
+class LayoutHostComponent {
+  public fade = true;
+
+  private readonly modal = inject(UiModalService);
+
+  public open(template: TemplateRef<unknown>): void {
+    this.modal.open(template);
+  }
+}
+
+class ResizeObserverStub {
+  public static last: ResizeObserverStub | undefined;
+  public observed: Element[] = [];
+
+  public constructor(public readonly callback: ResizeObserverCallback) {
+    ResizeObserverStub.last = this;
+  }
+
+  public observe(target: Element): void {
+    this.observed.push(target);
+  }
+
+  public disconnect(): void {
+    this.observed = [];
+  }
+}
+
+describe('UiModalComponent dialog layout', () => {
+  let fixture: ComponentFixture<LayoutHostComponent>;
+  let container: HTMLElement;
+
+  const q = (selector: string) => container.querySelector(selector) as HTMLElement | null;
+  const body = () => q('[data-testid="ui-modal-body"]') as HTMLElement;
+  const settle = async () => {
+    await fixture.whenStable();
+    await new Promise<void>((resolve) => setTimeout(resolve, 30));
+  };
+  const open = async (fade = true) => {
+    fixture.componentInstance.fade = fade;
+    (fixture.nativeElement.querySelector('#opener') as HTMLButtonElement).click();
+    await settle();
+  };
+  // jsdom has no layout, so give the body its scroll metrics and fire a scroll.
+  const scrollTo = async (scrollTop: number) => {
+    Object.entries({ scrollTop, scrollHeight: 1000, clientHeight: 400 }).forEach(([key, value]) =>
+      Object.defineProperty(body(), key, { value, configurable: true, writable: true })
+    );
+    body().dispatchEvent(new Event('scroll'));
+    await settle();
+  };
+
+  beforeEach(async () => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+    TestBed.configureTestingModule({ imports: [LayoutHostComponent] });
+    TestBed.overrideComponent(LayoutHostComponent, { set: { imports: [UiModalComponent], template: LAYOUT_TEMPLATE } });
+    fixture = TestBed.createComponent(LayoutHostComponent);
+    document.body.appendChild(fixture.nativeElement);
+    container = TestBed.inject(OverlayContainer).getContainerElement();
+    await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fixture.destroy();
+    TestBed.inject(OverlayContainer).ngOnDestroy();
+  });
+
+  it('takes a px width and a fixed height that fit the window', async () => {
+    await open();
+    const modal = q('[data-testid="ui-modal"]') as HTMLElement;
+
+    expect(modal.className).toContain('w-[min(var(--modal-w),calc(100vw-32px))]');
+    expect(modal.className).toContain('h-[min(var(--modal-h),calc(100vh-32px))]');
+    expect(modal.className).not.toContain('w-[540px]');
+    expect(modal.className).not.toContain('max-h-[calc(100vh-64px)]');
+    expect(modal.style.getPropertyValue('--modal-w')).toBe('720px');
+    expect(modal.style.getPropertyValue('--modal-h')).toBe('800px');
+  });
+
+  it('projects the title suffix, header actions and header extra into the fixed header', async () => {
+    await open();
+
+    expect(q('[data-testid="ui-modal-title-suffix"] #badge')).not.toBeNull();
+    expect(q('[data-testid="ui-modal-header-extra"] #tabs')).not.toBeNull();
+    expect(q('[data-testid="ui-modal-body"] #tabs')).toBeNull();
+    expect(q('[data-testid="ui-modal-body"] #content')).not.toBeNull();
+    // The suffix stays out of the title, so it does not change the dialog's name.
+    expect(q('[data-testid="ui-modal-title"]')?.textContent).toBe('AI Summary');
+    const actions = Array.from(q('[data-testid="ui-modal-header-actions"]')?.children ?? []);
+    expect(actions.map((el) => el.id || el.getAttribute('data-testid'))).toEqual(['copy', 'ui-modal-close']);
+  });
+
+  it('closes the dialog from the close button', async () => {
+    await open();
+    (q('[data-testid="ui-modal-close"] button') as HTMLButtonElement).click();
+    await settle();
+
+    expect(q('.cdk-dialog-container')).toBeNull();
+  });
+
+  it('fades the bottom edge while more follows and the top edge once scrolled', async () => {
+    await open();
+    expect(body().className).toContain('modal-fade');
+
+    await scrollTo(0);
+    expect(body().style.getPropertyValue('--fade-top')).toBe('0px');
+    expect(body().style.getPropertyValue('--fade-bottom')).toBe('32px');
+
+    await scrollTo(300);
+    expect(body().style.getPropertyValue('--fade-top')).toBe('32px');
+    expect(body().style.getPropertyValue('--fade-bottom')).toBe('32px');
+
+    await scrollTo(600);
+    expect(body().style.getPropertyValue('--fade-top')).toBe('32px');
+    expect(body().style.getPropertyValue('--fade-bottom')).toBe('0px');
+  });
+
+  it('watches the body and its children, so content that grows without scrolling updates the fade', async () => {
+    await open();
+    const observer = ResizeObserverStub.last as ResizeObserverStub;
+    expect(observer.observed).toContain(body());
+    expect(observer.observed).toContain(q('#content'));
+
+    Object.entries({ scrollTop: 0, scrollHeight: 1000, clientHeight: 400 }).forEach(([key, value]) =>
+      Object.defineProperty(body(), key, { value, configurable: true, writable: true })
+    );
+    observer.callback([], observer as unknown as ResizeObserver);
+    await settle();
+    expect(body().style.getPropertyValue('--fade-bottom')).toBe('32px');
+  });
+
+  it('has no fade unless scrollFade is set', async () => {
+    await open(false);
+    await scrollTo(300);
+
+    expect(body().className).not.toContain('modal-fade');
+    expect(body().style.getPropertyValue('--fade-top')).toBe('0px');
+  });
+
+  it('shows no close button or header slots by default', async () => {
+    const bare = TestBed.createComponent(UiModalComponent);
+    bare.componentRef.setInput('heading', 'Bare');
+    await bare.whenStable();
+    const el = bare.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="ui-modal-close"]')).toBeNull();
+    expect(el.querySelector('[data-testid="ui-modal-header-actions"]')?.matches(':empty')).toBe(true);
+    expect(el.querySelector('[data-testid="ui-modal-title-suffix"]')?.matches(':empty')).toBe(true);
+    expect(el.querySelector('[data-testid="ui-modal-header-extra"]')?.matches(':empty')).toBe(true);
+    expect(el.className).toContain('w-[540px]');
+    expect(el.className).toContain('max-h-[calc(100vh-64px)]');
   });
 });

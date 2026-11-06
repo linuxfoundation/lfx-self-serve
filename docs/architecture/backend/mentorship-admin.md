@@ -59,7 +59,7 @@ The Projects and Foundation lenses reuse the admin pages at `/project/mentorship
 | `GET /programs/{id}/member-management?limit=1`         | `mentors` (`meta.total`)                                     |
 | `GET /programs/{id}/terms`, every page at `limit=100`  | The term options (open and closed, minus deleted)            |
 
-- Upstream lets any program viewer read the header and the terms. The other three reads need a manager, so a 403 on any of them is rethrown and the page shows no-access.
+- Upstream lets any program viewer read the header and the terms. The summary and the applications need a program manager (writer or mentor), and the members a program writer, since they carry every mentor's email and LFID ([lfx-mentorship#422](https://github.com/linuxfoundation/lfx-mentorship/pull/422)). A 403 on any of the three is rethrown and the page shows no-access.
 - Any other failed count read gives `null`, which the header shows as `–`. A failed terms read gives `terms: []`.
 - The header has no `admin_status`, so the page status is derived from the header `status` plus the summary's `has_open_term` and `has_closed_term`.
 - `getProgramMentees` makes one upstream read of `GET /programs/{id}/applications` per call, sending `type`, `status`, `term` (the term id), `search`, `offset` and `limit` (at most 50). It never walks every page, and returns upstream's `meta.total` as `total`. `search` is escaped here (trimmed, cut to 100 characters, `\`, `%` and `_` escaped). An unprovisioned caller gets an empty page.

@@ -4,7 +4,7 @@ description: View your billing and purchase history in LFX Self Serve.
 audience: [all]
 product_area: Account
 tags: [account, transactions, billing, purchases, history, receipts]
-last_updated: 2026-11-05
+last_updated: 2026-11-04
 intercom_collection: Account
 ---
 
@@ -16,7 +16,8 @@ The Transactions tab shows your Linux Foundation purchase history — payments f
 
 - View your complete purchase history
 - See each purchase's name, order ID, date, type, and amount
-- Filter by transaction type using tabs: All Transactions, Event Tickets, Training, Certifications, Bundles, Subscriptions, Individual Support
+- Filter by transaction type using the filter pills above the table: All Transactions, Event Tickets, Training, Certifications, Bundles, Subscriptions, Individual Support
+- Page through longer histories — when the selected filter shows more than 10 transactions, the table shows 10 per page, and you can switch to 25 or 50
 
 ### Who this applies to
 
@@ -56,7 +57,7 @@ If you have no transactions, the page shows the message "No transactions found. 
 
 ## Your company's activity
 
-Company-level financial commitments — including annual membership dues — are separate from your personal transaction history. To view your company's membership status and fees, go to the **Memberships** section in Company Lens (route: `/company/memberships`).
+Company-level financial commitments — including annual membership dues — are separate from your personal transaction history. To view your company's membership status and fees, go to the **Memberships** section in Company Lens (route: `/org/memberships`).
 
 ### What you can see in Memberships
 
@@ -66,8 +67,8 @@ Company-level financial commitments — including annual membership dues — are
 
 For other company-level financial activity, see the related Company Lens pages:
 
-- **Event sponsorships** — visible on the [Events](../../events/) page in Company Lens (`/company/events`)
-- **Corporate training packages** — visible on the [Training & Certification](../../trainings/) page in Company Lens (`/company/training`)
+- **Event sponsorships** — visible on the [Events](../../events/) page in Company Lens (`/org/events`)
+- **Corporate training packages** — visible on the [Training & Certification](../../trainings/) page in Company Lens (`/org/training`)
 
 ### Who can access this
 

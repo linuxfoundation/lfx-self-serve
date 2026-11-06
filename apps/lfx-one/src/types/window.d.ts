@@ -8,7 +8,7 @@
 // global. `tsconfig.app.json` registers `src/types/` as a typeRoot, so this
 // file is picked up automatically.
 
-import type { IntercomFunction, IntercomSettings, LfxSegmentAnalyticsClass, PlausibleFunction, TranscendApi } from '@lfx-one/shared/interfaces';
+import type { AirgapApi, IntercomFunction, IntercomSettings, LfxSegmentAnalyticsClass, PlausibleFunction, TranscendApi } from '@lfx-one/shared/interfaces';
 
 declare global {
   interface Window {
@@ -17,6 +17,7 @@ declare global {
     Intercom?: IntercomFunction;
     intercomSettings?: IntercomSettings;
     transcend?: TranscendApi;
+    airgap?: AirgapApi;
   }
 }
 

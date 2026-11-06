@@ -82,7 +82,7 @@ If you can't find your invitation email, select **Resend Invite** on the join pa
 If you're registered for an upcoming meeting and can't attend, select **Remove Myself** on the meeting's card or join page. You need to be signed in.
 
 - Your registration ends, and your saved response is discarded. If you register again, you start with no response.
-- If you were added through a group or a mailing list, you stay a member of it. Its syncs won't add you back to this meeting unless you leave and rejoin the group or list. A organizer, or you registering yourself, can still add you.
+- If you were added through a group or a mailing list, you stay a member of it. Its syncs won't add you back to this meeting unless you leave and rejoin the group or list. An organizer, or you registering yourself, can still add you.
 - Organizers who are also registered can remove their registration and stay organizers.
 - If only some of your registrations can be removed, you see **Removal incomplete**. You stay invited, and you can try again.
 

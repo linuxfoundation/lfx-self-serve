@@ -1,18 +1,52 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<main class="flex min-h-screen items-center justify-center bg-gray-50 px-4" data-testid="newsletter-share-preview">
-  <div class="flex w-full max-w-lg flex-col items-center gap-4 rounded-xl border border-gray-200 bg-white p-8 text-center">
-    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Newsletter</p>
-    @if (!state().loading) {
-      <h1 class="font-display text-2xl font-light text-gray-900" data-testid="newsletter-share-preview-title">{{ heading() }}</h1>
+@if (guest().status === 'unavailable' || guest().status === 'error') {
+  <main class="flex min-h-screen items-center justify-center bg-gray-50 px-4" data-testid="newsletter-share-preview">
+    <div class="flex w-full max-w-lg flex-col items-center gap-4 rounded-xl border border-gray-200 bg-white p-8 text-center">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Newsletter</p>
+      @if (!state().loading) {
+        <h1 class="font-display text-2xl font-light text-gray-900" data-testid="newsletter-share-preview-title">{{ heading() }}</h1>
+      }
+      @if (guest().status === 'error') {
+        <p class="text-sm text-gray-600" role="alert" data-testid="newsletter-share-preview-error">
+          We couldn't load this newsletter. Try again, or sign in to LFX to read it.
+        </p>
+        <button
+          type="button"
+          class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100"
+          (click)="onRetry()"
+          data-testid="newsletter-share-preview-retry">
+          Try again
+        </button>
+      } @else {
+        <p class="text-sm text-gray-600">Sign in to LFX to read this newsletter.</p>
+      }
+      <a
+        [attr.href]="loginHref"
+        class="rounded-md bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+        data-testid="newsletter-share-preview-sign-in">
+        Sign in
+      </a>
+    </div>
+  </main>
+} @else {
+  <div data-testid="newsletter-share-guest">
+    <lfx-newsletter-guest-reader
+      [issue]="guest().issue ?? null"
+      [teaser]="prompt()?.teaser ?? null"
+      [foundation]="prompt()?.foundation ?? null"
+      [signInHref]="loginHref" />
+
+    @if (guest().status === 'prompt') {
+      <lfx-newsletter-guest-modal
+        mode="shared"
+        [foundation]="prompt()?.foundation ?? null"
+        [membershipName]="prompt()?.membership_name ?? ''"
+        [loading]="submitting()"
+        [errorMessage]="errorMessage()"
+        [signInHref]="loginHref"
+        (continued)="onContinue($event)" />
     }
-    <p class="text-sm text-gray-600">Sign in to LFX to read this newsletter.</p>
-    <a
-      [attr.href]="loginHref"
-      class="rounded-md bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
-      data-testid="newsletter-share-preview-sign-in">
-      Sign in
-    </a>
   </div>
-</main>
+}
