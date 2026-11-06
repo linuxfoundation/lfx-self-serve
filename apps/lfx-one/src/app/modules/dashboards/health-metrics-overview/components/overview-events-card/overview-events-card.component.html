@@ -107,7 +107,7 @@
                   @if (narrow()) {
                     <button
                       type="button"
-                      class="m-0 border-0 bg-transparent p-0 text-left text-[13px] font-semibold leading-[1.35] text-gray-900 outline-none after:absolute after:inset-0 after:rounded-[4px] focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:outline-blue-500"
+                      class="m-0 border-0 bg-transparent p-0 text-left text-[13px] font-semibold leading-[1.35] text-gray-900 outline-none after:absolute after:inset-0 after:z-[1] after:rounded-[4px] focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:outline-blue-500"
                       aria-haspopup="dialog"
                       [attr.data-testid]="'overview-events-row-' + row.eventId + '-open'"
                       (click)="openEvent(row, 'trend')">
@@ -129,6 +129,7 @@
                       weight="thin"
                       [size]="52"
                       [value]="row.registrations.widthPct"
+                      [attr.aria-hidden]="row.registrations.gauge.unmeasured || null"
                       [tone]="row.registrations.gauge.tone"
                       [level]="row.registrations.gauge.level"
                       [empty]="row.registrations.gauge.empty" />

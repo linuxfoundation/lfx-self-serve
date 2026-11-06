@@ -411,6 +411,8 @@ export interface HealthMetricsOverviewEventGaugeView {
   tone: 'level' | 'accent';
   level: 'high' | 'mid' | 'low' | null;
   empty: boolean;
+  /** The count is unknown, so the ring, which would read as a measured 0%, stays out of the accessibility tree. */
+  unmeasured: boolean;
 }
 
 /**

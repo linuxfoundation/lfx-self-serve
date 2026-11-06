@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, effect, ElementRef, inject, linkedSignal, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { Component, computed, ElementRef, inject, linkedSignal, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
   HEALTH_METRICS_OVERVIEW_CARDS,
   HEALTH_METRICS_OVERVIEW_EMPTY_COPY,
@@ -20,7 +21,7 @@ import { UiGaugeComponent } from '@shared/uikit/gauge/gauge.component';
 import { UiSplitButtonComponent } from '@shared/uikit/split-button/split-button.component';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { forkJoin } from 'rxjs';
+import { EMPTY, forkJoin, Observable, switchMap } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { injectOverviewCardRead } from '../../overview-card-read';
@@ -94,15 +95,13 @@ export class OverviewEventsCardComponent {
   });
 
   public constructor() {
-    // The table only renders once the card has read, after the first render, so `afterNextRender` would miss it.
-    effect((onCleanup) => {
-      const element = this.table()?.nativeElement;
-      if (!element || !isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
-
-      const observer = new ResizeObserver(([entry]) => this.tableWidth.set(entry.contentRect.width));
-      observer.observe(element);
-      onCleanup(() => observer.disconnect());
-    });
+    // The table only renders once the card has read, after the first render, so its query is followed rather than read once.
+    toObservable(this.table)
+      .pipe(
+        switchMap((table) => (table ? observeWidth(table.nativeElement, this.platformId) : EMPTY)),
+        takeUntilDestroyed()
+      )
+      .subscribe((width) => this.tableWidth.set(width));
   }
 
   /** The design's event dialog on the given tab: no PrimeNG header, as the body draws its own; anchored to the top so switching tabs never moves it. */
@@ -130,4 +129,15 @@ export class OverviewEventsCardComponent {
     }) as DynamicDialogRef;
     nameDynamicDialog(this.dialogService, ref, OverviewEventDialogComponent.headingId);
   }
+}
+
+/** A content-box width each time it changes; nothing on the server, which has no `ResizeObserver`. */
+function observeWidth(element: HTMLElement, platformId: object): Observable<number> {
+  if (!isPlatformBrowser(platformId) || typeof ResizeObserver === 'undefined') return EMPTY;
+
+  return new Observable<number>((subscriber) => {
+    const observer = new ResizeObserver(([entry]) => subscriber.next(entry.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  });
 }

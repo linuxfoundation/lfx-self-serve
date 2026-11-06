@@ -194,6 +194,18 @@ describe('OverviewEventsCardComponent', () => {
     expect(query('overview-events-row-u0-registrations-bar')?.style.width).toBe('0%');
   });
 
+  it('keeps the ring of an unknown count out of the accessibility tree, so it never reads as a measured 0%', async () => {
+    EVENTS.upcoming[0] = event('u0', { registrations: null });
+    try {
+      await render();
+    } finally {
+      EVENTS.upcoming[0] = event('u0');
+    }
+
+    expect(query('overview-events-row-u0-registrations-ring')?.querySelector('lfx-ui-gauge')?.getAttribute('aria-hidden')).toBe('true');
+    expect(query('overview-events-row-u1-registrations-ring')?.querySelector('lfx-ui-gauge')?.hasAttribute('aria-hidden')).toBe(false);
+  });
+
   it('lays the table out by its own width with no sideways scroll, and shortens the first action below 961px', async () => {
     await render();
 
