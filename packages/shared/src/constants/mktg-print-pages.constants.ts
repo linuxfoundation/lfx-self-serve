@@ -5,6 +5,7 @@
 // spec's numbers (v1.3), pt on the deck's 720 × 405 pt slide, in one place.
 // The page frame, its scale and the fit thresholds are the shell's.
 
+import type { MktgPrintPageBox } from '../interfaces/mktg-print-page.interface';
 import type { MktgPrintAppendixLayout, MktgPrintDividerLayout } from '../interfaces/mktg-print-pages.interface';
 
 /** The family's sections, as the deck's cover, section dividers and page titles name them (the exporter's SECTION_TITLES). */
@@ -27,8 +28,8 @@ export const MKTG_PRINT_SOURCE_LEAD = 'Source';
 /**
  * The appendix spec §1 (two bordered card columns, a "LABEL · N WORDS" line tracked +0.08em, the body at the card
  * size) and §2 (two open Q/A columns, the page set at 100, 95 or 90 % before it is full, the deck's gaps between an
- * answer's paragraphs as shares of the answer size: bullet after bullet, plain after bullet, bullet after plain; plain
- * after plain none).
+ * answer's paragraphs: the answer's under the question, 2 pt between items, shares of the answer size after a list
+ * and before one, none between two plain paragraphs).
  */
 export const MKTG_PRINT_APPENDIX_LAYOUT: MktgPrintAppendixLayout = {
   cardColumnGap: 9,
@@ -48,7 +49,7 @@ export const MKTG_PRINT_APPENDIX_LAYOUT: MktgPrintAppendixLayout = {
   faqQuestionWeight: 700,
   faqAnswerSize: 9,
   faqAnswerGap: 3,
-  faqBulletGapEm: 0.45,
+  faqListItemGap: 2,
   faqPlainAfterBulletEm: 0.5,
   faqBulletAfterPlainEm: 0.4,
   faqSourceGap: 3,
@@ -70,3 +71,9 @@ export const MKTG_PRINT_DIVIDER_EYEBROW_MIN_CONTRAST = 3;
 
 /** The family cover's title size, pt (the appendix spec §4). */
 export const MKTG_PRINT_FAMILY_COVER_TITLE_SIZE = 40;
+
+/** The family cover's title and subtitle boxes (the appendix spec §4), passed to the shell's cover in place of the kit's. */
+export const MKTG_PRINT_FAMILY_COVER_BOXES: { title: MktgPrintPageBox; subtitle: MktgPrintPageBox } = {
+  title: { x: 38, y: 126, w: 624, h: 139 },
+  subtitle: { x: 38, y: 265, w: 624, h: 66 },
+};
