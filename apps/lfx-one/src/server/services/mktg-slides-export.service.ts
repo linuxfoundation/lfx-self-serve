@@ -710,7 +710,7 @@ export class MktgSlidesExportService {
     // per image is read back in order; a rejection could only be unexpected, and counts as a failure too.
     const settled = await Promise.allSettled(images.map(({ image, shapes, stroke }) => this.publishIcon(req, project, image, shapes, stroke)));
     const outcomes: MktgSlidesExportIconOutcome[] = settled.map((outcome, index) =>
-      outcome.status === 'fulfilled' ? outcome.value : { image: images[index].image, reason: 'unexpected', detail: String(outcome.reason) }
+      outcome.status === 'fulfilled' ? outcome.value : { image: images[index].image, reason: 'unexpected', detail: String(outcome.reason), err: outcome.reason }
     );
     const failed = outcomes.filter((outcome): outcome is MktgSlidesExportIconFailure => !('url' in outcome));
     if (failed.length > 0) {
@@ -718,6 +718,7 @@ export class MktgSlidesExportService {
         image: failed[0].image,
         reason: failed[0].reason,
         detail: failed[0].detail,
+        err: failed[0].err,
         failed: failed.length,
       });
       return {};
