@@ -21,6 +21,7 @@ function buildForm(): FormGroup {
     public: new FormControl(false),
     sso_group_enabled: new FormControl(false),
     show_meeting_attendees: new FormControl(false),
+    members_can_view_social_listening: new FormControl(false),
     chat_channel: new FormControl<string | null>(null),
     website: new FormControl<string | null>(null),
     chat_webhook_url: new FormControl<string | null>(null, [Validators.pattern(SLACK_INCOMING_WEBHOOK_URL_PATTERN)]),

@@ -2,18 +2,18 @@
 title: Mentions Feed
 description: How to search, filter, and manage individual brand mentions in the Social Listening feed in LFX Self Serve.
 display_order: 1
-audience: [executive-director]
+audience: [contributor, maintainer, board-member, executive-director]
 product_area: Social Listening
 tags: [social listening, mentions, feed, filters, search, bookmarks, read state]
-last_updated: 2026-10-13
+last_updated: 2026-10-19
 intercom_collection: Social Listening
 ---
 
-This article applies to users with the **executive-director** persona and to **LF Staff**. The **Feed** tab is the default view of the Social Listening page — a running list of individual mentions that match your current scope and filters.
+This article applies to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's groups can use it too when that group's **Members Can View Social Listening** setting is on. The **Feed** tab is the default view of the Social Listening page — a running list of individual mentions that match your current scope and filters.
 
 ## Search mentions
 
-1. Open **Social Listening** from the **Metrics** section of the left navigation in the **Foundation** lens.
+1. Open **Social Listening** from the **Metrics** section of the left navigation in the **Foundation** lens. If your group gives you access but you don't have the Foundation lens, open `/foundation/social-listening?project=<foundation-slug>` directly.
 2. Type at least 3 characters into the **Search mentions...** box.
 3. The feed updates automatically, about half a second after you stop typing.
 

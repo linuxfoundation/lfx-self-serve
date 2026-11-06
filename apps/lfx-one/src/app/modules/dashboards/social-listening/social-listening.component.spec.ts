@@ -195,6 +195,7 @@ describe('SocialListeningComponent', () => {
         {
           provide: SocialListeningService,
           useValue: {
+            foundationSfid,
             getMentionsFeed,
             getMentionsCount,
             getMentionsProjects: vi.fn(() => of([])),

@@ -5,6 +5,7 @@
 
 import type { SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES } from '../constants/social-listening.constants';
 import type { TagSeverity } from './components.interface';
+import type { ProjectContext } from './project.interface';
 import type { StatCardDelta } from './stat-card.interface';
 
 // ---------------------------------------------------------------------------
@@ -528,3 +529,26 @@ export type SocialListeningQueryParamValue = string | string[] | null | undefine
 
 /** Local stand-in for Angular's `Params` — keeps `@angular/router` out of the server-consumed shared package. */
 export type SocialListeningQueryParams = Record<string, SocialListeningQueryParamValue>;
+
+// ---------------------------------------------------------------------------
+// Access
+// ---------------------------------------------------------------------------
+
+/** Why the caller can (or cannot) view Social Listening for a foundation. */
+export type SocialListeningAccessReason = 'lf-staff' | 'executive-director' | 'group-member' | 'none';
+
+/** `GET /api/social-listening/access` — whether the caller can view Social Listening for `foundationSlug`. */
+export interface SocialListeningAccessResponse {
+  canView: boolean;
+  reason: SocialListeningAccessReason;
+  /**
+   * The foundation's context, set only for a `group-member` grant: those members may lack project
+   * viewer access, so the page can't load the foundation through the viewer-gated project lookup.
+   */
+  foundation?: ProjectContext;
+  /** The foundation's Salesforce ID, set alongside `foundation`; keys the page's per-user preferences. */
+  foundationSfid?: string | null;
+}
+
+/** What a `group-member` grant hands the page: the foundation it may not otherwise be able to load. */
+export type SocialListeningGroupGrant = Required<Pick<SocialListeningAccessResponse, 'foundation' | 'foundationSfid'>>;

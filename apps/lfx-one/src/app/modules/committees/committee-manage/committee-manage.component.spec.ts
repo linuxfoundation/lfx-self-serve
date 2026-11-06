@@ -214,6 +214,13 @@ describe('CommitteeManageComponent', () => {
     expect(navigate).toHaveBeenCalledWith([], { queryParams: { step: 1 }, queryParamsHandling: 'merge' });
   });
 
+  it('loads the group’s stored Social Listening setting', async () => {
+    getCommittee.mockReturnValue(of({ ...enrichedCommittee(), members_can_view_social_listening: true }));
+    const fixture = await createComponent();
+
+    expect(fixture.componentInstance.form.get('members_can_view_social_listening')?.value).toBe(true);
+  });
+
   describe('category preselection from ?category=', () => {
     const useRoute = (params: Record<string, string>, query: Record<string, string>) =>
       TestBed.overrideProvider(ActivatedRoute, {
