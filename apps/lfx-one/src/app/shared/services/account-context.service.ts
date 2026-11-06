@@ -301,6 +301,14 @@ export class AccountContextService {
         const fallback = this.rollUpFallbackOrganization();
         if (fallback) {
           this.setAccount(fallback);
+          // A grant with no seed behind it is a uid-only stub, so the trigger would render a blank
+          // name until the canonical record lands (#4415, Cursor). Not `applyDemotionFallback`:
+          // that also pins the selection as an ADDRESS one, and no address names this — a cookie
+          // restore deliberately keeps the legacy link form until the organization is confirmed,
+          // which `orgLensLandingLink` reads off `isAddressedSelection`.
+          if (!fallback.accountName) {
+            void this.refreshCanonicalRecord(fallback);
+          }
           return;
         }
         this.clearStorage();

@@ -945,6 +945,8 @@ describe('AccountContextService — All Organizations roll-up', () => {
 
     expect(service.selectedAccount().uid).toBe(UID_B);
     expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_B });
+    // The stub has no display fields, so the canonical fetch has to be the thing that fills them.
+    expect(httpGet).toHaveBeenCalled();
   });
 
   it('clears an ineligible roll-up cookie when there is nothing to fall back to', () => {
