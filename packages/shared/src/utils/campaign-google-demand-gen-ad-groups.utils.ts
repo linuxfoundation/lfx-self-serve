@@ -155,8 +155,8 @@ export function googleDemandGenAdsRefusal(
  * single video ad's own name (`validateDemandGenVideoAdName`: the full name plus " - Video ad", also held
  * to 255). A group with `ads` has each of its ads judged by {@link googleDemandGenAdsRefusal} instead.
  *
- * `eventName` is the event name the request carries, which campaign-service composes each full name
- * from. The video ad is judged by `googleDemandGenVideoCreativeRefusal`. The image ad is judged by
+ * `eventName` is the event name campaign-service composes each full name from: the stored brief's
+ * (`decodeBriefFields`) where the caller knows it, as the BFF does, else the request's. The video ad is judged by `googleDemandGenVideoCreativeRefusal`. The image ad is judged by
  * `imageCreativeRefusal` when the caller passes one: the Implement tab does, with the minimums it
  * already holds a single image ad to; the BFF does not, as it does not judge the single image ad.
  *

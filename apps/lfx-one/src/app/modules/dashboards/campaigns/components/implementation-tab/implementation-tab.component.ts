@@ -11029,7 +11029,15 @@ export class ImplementationTabComponent implements OnInit {
     return { ...payload, ...ads };
   }
 
-  /** {@link demandGenAdsError}: the shared judge the BFF refuses `demandGenAds` on, over what the create sends. */
+  /**
+   * {@link demandGenAdsError}: the shared judge the BFF refuses `demandGenAds` on, over what the create sends.
+   *
+   * Judged on the editable Event Name, not the stored brief's event name the names are composed from
+   * upstream (`decodeBriefFields`), which the BFF judges on: this tab cannot know that name reliably.
+   * `briefData` is the brief handed over from Planning, which may not be saved yet, and
+   * `fromBriefResponse` keeps only `event_details.name` of it, not the `eventName` key upstream
+   * prefers. Where the two names differ, the BFF's refusal is the one that decides.
+   */
   private initDemandGenAdsError(): Signal<string | null> {
     return computed(() => {
       void this.campaignFormRevision();
@@ -11049,7 +11057,8 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * {@link demandGenAdGroupsError}: the shared judge the BFF refuses the create on, over exactly what
    * {@link googleDemandGenAdGroupsPayload} sends, with a group's image ad held to the minimums a single
-   * Demand Gen image ad is held to ({@link googleCreativeShortfall}).
+   * Demand Gen image ad is held to ({@link googleCreativeShortfall}). Judged on the editable Event Name,
+   * for the reason {@link initDemandGenAdsError} gives.
    */
   private initDemandGenAdGroupsError(): Signal<string | null> {
     return computed(() => {

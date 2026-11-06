@@ -1695,6 +1695,12 @@ export interface CampaignBriefLoadResult {
    * to assume approval.
    */
   approved: boolean;
+  /**
+   * The event name campaign-service will compose this brief's create names from, read off the stored
+   * row the way its dispatcher reads it (`briefDispatchEventName`). Set on `loaded` only; the server's
+   * pre-dispatch name checks read it, and the UI does not.
+   */
+  storedEventName?: string;
 }
 
 /**

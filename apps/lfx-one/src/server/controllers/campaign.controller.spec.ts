@@ -5543,6 +5543,54 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAds', message: expect.stringContaining(fragment) });
     });
 
+    describe("judged on the stored brief's event name", () => {
+      const stored = (storedEventName: string) => ({
+        status: 'loaded',
+        briefId: 'b-1',
+        brief: { eventDetails: { registrationUrl: 'https://events.example.org/register' } },
+        etag: 'W/"1"',
+        approved: true,
+        storedEventName,
+      });
+      const ADS = { demandGenAds: [{ name: 'abc', videoCreative: VIDEO }] };
+      const LONG = 'E'.repeat(255 - ' - Display - ab'.length);
+
+      it('refuses on a stored name that makes 256, though the request names a short event, reading the brief once', async () => {
+        loadBriefById.mockResolvedValue(stored(LONG));
+
+        await create({ eventName: 'Short', ...ADS });
+
+        expect(createCampaigns).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({ field: 'demandGenAds', message: expect.stringContaining('which makes 256 characters') });
+        expect(loadBriefById).toHaveBeenCalledTimes(1);
+      });
+
+      it('accepts on a short stored name, though the request names a long event, reading the brief once', async () => {
+        createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005233', error: null });
+        loadBriefById.mockResolvedValue(stored('Short'));
+
+        await create({ eventName: LONG, ...ADS });
+
+        expect(next).not.toHaveBeenCalled();
+        expect(loadBriefById).toHaveBeenCalledTimes(1);
+      });
+
+      it("judges a named group's names on the stored name too", async () => {
+        loadBriefById.mockResolvedValue(stored('E'.repeat(250)));
+
+        await create({ eventName: 'Short', demandGenAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us'] } }] });
+
+        expect(refusalFrom()).toMatchObject({ field: 'demandGenAdGroups', message: expect.stringContaining('over Google') });
+      });
+
+      it("keeps the request's name when the brief cannot be read", async () => {
+        await create({ eventName: LONG, ...ADS });
+
+        expect(loadBriefById).toHaveBeenCalledTimes(1);
+        expect(refusalFrom()).toMatchObject({ field: 'demandGenAds', message: expect.stringContaining('which makes 256 characters') });
+      });
+    });
+
     it("accepts a video ad's name of exactly 255", async () => {
       createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005231', error: null });
 

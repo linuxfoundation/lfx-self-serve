@@ -1028,6 +1028,11 @@ export class CampaignController {
         isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) &&
         isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
         isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+      // The stored brief, read at most once per create and only when first needed: by the Demand Gen
+      // name checks (`googleDemandGenEventName`) or the destination check further down.
+      let storedBrief: Promise<{ read: boolean; url: string; eventName: string }> | undefined;
+      const readStoredBrief = (): Promise<{ read: boolean; url: string; eventName: string }> =>
+        (storedBrief ??= this.readBriefDestinationUrl(req, typeof body?.eventSlug === 'string' ? body.eventSlug : '', projectSlug, briefId));
       if (cutoverOn && projectSlug === '') {
         next(
           ServiceValidationError.forField('project', 'creating through campaign-service requires the project the brief was saved under', {
@@ -1520,7 +1525,8 @@ export class CampaignController {
 
         // The named Demand Gen ad groups (#5226), first because upstream judges the list before any
         // creative: through the same shared judge the Implement tab holds Create on.
-        const adGroupsRefusal = this.googleDemandGenAdGroupsRefusal(body, googleChannel);
+        const demandGenEventName = await this.googleDemandGenEventName(body, googleChannel, readStoredBrief);
+        const adGroupsRefusal = this.googleDemandGenAdGroupsRefusal(body, googleChannel, demandGenEventName);
         if (adGroupsRefusal) {
           next(
             ServiceValidationError.forField(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, adGroupsRefusal, {
@@ -1534,7 +1540,7 @@ export class CampaignController {
         // Several ads for the single Demand Gen ad group (#5226), which upstream judges inside the same
         // ad group step, after the list above: through the same shared judge the Implement tab holds
         // Create on.
-        const adsRefusal = this.googleDemandGenAdsRefusal(body, googleChannel);
+        const adsRefusal = this.googleDemandGenAdsRefusal(body, googleChannel, demandGenEventName);
         if (adsRefusal) {
           next(
             ServiceValidationError.forField(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, adsRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
@@ -1911,7 +1917,7 @@ export class CampaignController {
       // have looked at — refusing a create the platform would have accepted, which is the one
       // failure mode these guards must not have.
       if (cutoverOn && platforms.some((p) => p !== 'hubspot')) {
-        const briefDestination = await this.readBriefDestinationUrl(req, typeof body?.eventSlug === 'string' ? body.eventSlug : '', projectSlug, briefId);
+        const briefDestination = await readStoredBrief();
         // `read: false` means the brief lookup could not be ESTABLISHED, which is explicitly not a
         // refusal — this guard exists to name a knowable input error, never to add a new way for a
         // create to fail. Only a brief that was read and judged is acted on.
@@ -5812,12 +5818,20 @@ export class CampaignController {
    * opaque `event_details` blob (`fromBriefResponse`), which is the same precedence the dispatcher
    * applies upstream — so what this returns is what google-ads' preflight will see.
    *
+   * Also returns the event name campaign-service will compose the create's names from
+   * (`CampaignBriefLoadResult.storedEventName`), for the Demand Gen name checks, so one read serves both.
+   *
    * `read: false` means "could not be established", NOT "empty": nothing to look the brief up by,
    * no brief stored, a brief this build cannot open, or an upstream failure. The caller acts only
    * on `read: true`, so this guard can never invent a new failure for a create that would
    * otherwise have been dispatched.
    */
-  private async readBriefDestinationUrl(req: Request, eventSlug: string, projectSlug: string, briefId = ''): Promise<{ read: boolean; url: string }> {
+  private async readBriefDestinationUrl(
+    req: Request,
+    eventSlug: string,
+    projectSlug: string,
+    briefId = ''
+  ): Promise<{ read: boolean; url: string; eventName: string }> {
     const slug = eventSlug.trim();
     const id = briefId.trim();
     if ((slug === '' && id === '') || projectSlug === '') {
@@ -5829,7 +5843,7 @@ export class CampaignController {
         hasEventSlug: slug !== '',
         hasProjectSlug: projectSlug !== '',
       });
-      return { read: false, url: '' };
+      return { read: false, url: '', eventName: '' };
     }
 
     try {
@@ -5846,10 +5860,10 @@ export class CampaignController {
           // open what is stored) — each points somewhere different.
           loadStatus: stored.status,
         });
-        return { read: false, url: '' };
+        return { read: false, url: '', eventName: '' };
       }
 
-      return { read: true, url: (stored.brief.eventDetails?.registrationUrl ?? '').trim() };
+      return { read: true, url: (stored.brief.eventDetails?.registrationUrl ?? '').trim(), eventName: stored.storedEventName ?? '' };
     } catch (error) {
       logger.warning(req, 'campaign_create', 'could not read the saved brief to check its registration URL; dispatching anyway', {
         briefId: id,
@@ -5857,7 +5871,7 @@ export class CampaignController {
         projectSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return { read: false, url: '' };
+      return { read: false, url: '', eventName: '' };
     }
   }
 
@@ -6342,13 +6356,31 @@ export class CampaignController {
   }
 
   /**
+   * The event name the Demand Gen ad group and ad names are judged on (#5226): the one campaign-service
+   * composes them from, which is the STORED brief's (`decodeBriefFields`), not the request's
+   * `eventName`. Read on a Demand Gen create only, through the one read the destination check below
+   * makes on every cutover create anyway. When the brief cannot be read, the request's name is used, as
+   * before, so this never adds a refusal of its own.
+   */
+  private async googleDemandGenEventName(
+    body: CampaignCreateRequest,
+    googleChannel: unknown,
+    readStoredBrief: () => Promise<{ read: boolean; eventName: string }>
+  ): Promise<string> {
+    const requested = typeof body?.eventName === 'string' ? body.eventName : '';
+    if (googleChannel !== 'demand-gen') return requested;
+    const stored = await readStoredBrief();
+    return stored.read ? stored.eventName : requested;
+  }
+
+  /**
    * Why campaign-service would refuse this create's `demandGenAds` (#5226), several named ads for the
    * single Demand Gen ad group, or `null`. Judged on the RAW value first, as the ad groups are, then on
    * what {@link googleCreative} would SEND: the list replaces the single ad, so it is refused beside
    * either creative (beside `demandGenAdGroups`, {@link googleDemandGenAdGroupsRefusal} has refused it
    * already), then every rule of the list through `googleDemandGenAdsRefusal`.
    */
-  private googleDemandGenAdsRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
+  private googleDemandGenAdsRefusal(body: CampaignCreateRequest, googleChannel: unknown, eventName: string): string | null {
     if (googleChannel !== 'demand-gen') return null;
     const owner = 'the Demand Gen ad group';
     const raw: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY];
@@ -6359,7 +6391,6 @@ export class CampaignController {
     if (sent[GOOGLE_CREATIVE_REQUEST_KEYS['demand-gen']] !== undefined || sent[GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY] !== undefined) {
       return "Demand Gen ads replace the single Demand Gen ad, so the campaign-level image ad and video ad must be empty. Set each ad's creative instead.";
     }
-    const eventName = typeof body?.eventName === 'string' ? body.eventName : '';
     return googleDemandGenAdsRefusal(owner, googleDemandGenSingleAdGroupName(eventName), ads);
   }
 
@@ -6372,10 +6403,11 @@ export class CampaignController {
    * Then every rule of the list itself through `googleDemandGenAdGroupsRefusal`: the cap of 5, a blank,
    * over-long or repeated name, and each group's one ad or several `ads`. `demandGenAudience`, which
    * upstream refuses beside the list too, is a field this application does not send.
+   *
+   * `eventName` is {@link googleDemandGenEventName}'s, which the full names are measured on.
    */
-  private googleDemandGenAdGroupsRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
+  private googleDemandGenAdGroupsRefusal(body: CampaignCreateRequest, googleChannel: unknown, eventName: string): string | null {
     if (googleChannel !== 'demand-gen') return null;
-    const eventName = typeof body?.eventName === 'string' ? body.eventName : '';
     // Judged on the RAW value first: normalization drops anything that is not a list, which would read
     // a malformed `demandGenAdGroups` as no split rather than refusing it as campaign-service does.
     const raw: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
