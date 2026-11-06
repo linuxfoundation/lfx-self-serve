@@ -502,3 +502,47 @@ describe('GuildService — workspace defaults and configuration guard', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('GuildService workspace override', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('creates sessions in the workspace passed to the constructor, under the same owner', async () => {
+    vi.stubEnv('GUILD_API_KEY', 'test-key');
+    vi.stubEnv('GUILD_API_URL', 'https://guild.test');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'session-1' }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new GuildService('it-os-sandbox').createSession(req, { message: 'hi', handle: 'it-os-domains' });
+
+    expect(fetchMock.mock.calls[0][0]).toBe('https://guild.test/api/workspaces/linux-foundation/it-os-sandbox/sessions');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ agent_id: 'linux-foundation~it-os-domains' });
+  });
+
+  it('authenticates with the key from the env var passed to the constructor', async () => {
+    vi.stubEnv('GUILD_API_KEY', 'marketing-key');
+    vi.stubEnv('GUILD_IT_OS_API_KEY', 'it-os-key');
+    vi.stubEnv('GUILD_API_URL', 'https://guild.test');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'session-1' }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new GuildService('it-os-sandbox', 'GUILD_IT_OS_API_KEY').createSession(req, { message: 'hi', handle: 'it-os-domains' });
+
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe(`Basic ${Buffer.from('it-os-key').toString('base64')}`);
+  });
+
+  it('names the overriding env var when that key is unset', async () => {
+    vi.stubEnv('GUILD_API_KEY', 'marketing-key');
+    vi.stubEnv('GUILD_IT_OS_API_KEY', '');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(new GuildService('it-os-sandbox', 'GUILD_IT_OS_API_KEY').createSession(req, { message: 'hi', handle: 'it-os-domains' })).rejects.toMatchObject({
+      code: 'guild_not_configured',
+      message: 'Guild API is not configured. Missing environment variable: GUILD_IT_OS_API_KEY.',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

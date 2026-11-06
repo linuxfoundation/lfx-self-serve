@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FEATURE_FLAG_READY_TIMEOUT_MS, IT_OS_AGENTS_ENABLED_FLAG } from '@lfx-one/shared';
 import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
 import { OpenFeature, Provider, ProviderStatus } from '@openfeature/web-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -393,5 +393,37 @@ describe('FeatureFlagService', () => {
     expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
     const result = await service.waitForReady(context, 5000);
     expect(result).toBe(true);
+  });
+
+  describe('non-production default-on flags', () => {
+    let stored: Record<string, string>;
+
+    beforeEach(() => {
+      stored = {};
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) => stored[key] ?? null,
+        setItem: (key: string, value: string) => (stored[key] = value),
+        removeItem: (key: string) => delete stored[key],
+      });
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('reads IT OS as on when nothing is pinned', () => {
+      expect(service.getFlagOverride(IT_OS_AGENTS_ENABLED_FLAG)).toBe(true);
+      expect(service.getBooleanFlag(IT_OS_AGENTS_ENABLED_FLAG, false)()).toBe(true);
+    });
+
+    it('lets a pinned false turn IT OS off', () => {
+      stored[FEATURE_FLAG_OVERRIDE_STORAGE_KEY] = JSON.stringify({ [IT_OS_AGENTS_ENABLED_FLAG]: false });
+
+      expect(service.getFlagOverride(IT_OS_AGENTS_ENABLED_FLAG)).toBe(false);
+    });
+
+    it('leaves other flags without an override', () => {
+      expect(service.getFlagOverride('mktg-os-agents-enabled')).toBeUndefined();
+    });
   });
 });

@@ -1,0 +1,207 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col rounded-lg border border-gray-200 bg-white" [attr.data-testid]="testId() + '-chat'">
+  <div #conversation class="flex max-h-[60vh] min-h-[360px] flex-col gap-4 overflow-y-auto p-4" aria-live="polite">
+    @for (message of engine().messages(); track $index; let i = $index) {
+      @if (message.fromUser) {
+        <div class="max-w-[80%] self-end rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" [attr.data-testid]="testId() + '-user-message'">
+          {{ message.text }}
+        </div>
+      } @else {
+        <div class="flex max-w-[92%] gap-3" [attr.data-testid]="testId() + '-bot-message'">
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" [class]="iconClass()" aria-hidden="true">
+            <i [class]="icon()"></i>
+          </span>
+          <div class="flex min-w-0 flex-1 flex-col gap-3 text-sm text-gray-800">
+            @if (message.typing) {
+              <span class="text-gray-400" aria-label="Agent is working">…</span>
+            } @else {
+              @if (message.html) {
+                <div class="flex flex-col gap-2 [&_li]:ml-5 [&_li]:list-disc [&_ol>li]:list-decimal" [innerHTML]="message.html"></div>
+              }
+
+              <!-- Progress steps -->
+              @if (message.steps; as steps) {
+                <ol class="flex flex-col gap-1">
+                  @for (step of steps; track step; let s = $index) {
+                    @if (s < (message.shown ?? 0)) {
+                      <li class="flex items-center gap-2 text-gray-600">
+                        @if (s === (message.shown ?? 0) - 1 && (message.shown ?? 0) <= steps.length) {
+                          <i class="fa-light fa-spinner-third animate-spin text-blue-600" aria-hidden="true"></i>
+                        } @else {
+                          <i class="fa-solid fa-check text-emerald-600" aria-hidden="true"></i>
+                        }
+                        {{ step }}
+                      </li>
+                    }
+                  }
+                </ol>
+              }
+
+              <!-- Inline form -->
+              @if (message.form; as form) {
+                <div class="flex flex-col gap-3 rounded-md border border-gray-200 p-3" [attr.data-testid]="testId() + '-form'">
+                  @for (field of form.fields; track field.id) {
+                    @if (field.kind === 'checkbox') {
+                      <label class="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          class="mt-1"
+                          [checked]="form.values[field.id] === true"
+                          [disabled]="i !== engine().activeIndex()"
+                          (change)="setChecked(form, field, $event)" />
+                        <span class="flex flex-col">
+                          <span>{{ field.label }}</span>
+                          @if (field.hint) {
+                            <span class="text-xs text-gray-500">{{ field.hint }}</span>
+                          }
+                        </span>
+                      </label>
+                    } @else {
+                      <label class="flex flex-col gap-1" [class.pl-6]="field.indent">
+                        <span class="text-xs text-gray-600">{{ field.label }}</span>
+                        @if (field.kind === 'textarea') {
+                          <textarea
+                            rows="7"
+                            class="rounded-md border border-gray-300 px-2 py-1 font-mono text-xs"
+                            [placeholder]="field.placeholder ?? ''"
+                            [disabled]="i !== engine().activeIndex()"
+                            [value]="textValue(form, field)"
+                            (input)="setText(form, field, $event)"></textarea>
+                        } @else {
+                          <input
+                            class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                            autocomplete="off"
+                            [placeholder]="field.placeholder ?? ''"
+                            [disabled]="i !== engine().activeIndex()"
+                            [value]="textValue(form, field)"
+                            (input)="setText(form, field, $event)" />
+                        }
+                        @if (field.hint) {
+                          <span class="text-xs text-gray-500">{{ field.hint }}</span>
+                        }
+                      </label>
+                      @if (field.sample && i === engine().activeIndex()) {
+                        <button type="button" class="w-fit text-xs font-medium text-blue-600 hover:underline" (click)="fillSample(form, field)">
+                          Use sample addresses
+                        </button>
+                      }
+                    }
+                  }
+                </div>
+              }
+
+              <!-- Proposed changes -->
+              @if (message.plan; as plan) {
+                @if (plan.state === 'open') {
+                  @let view = planViews().get(plan);
+                  @let live = i === engine().activeIndex();
+                  <div class="flex flex-col gap-2 rounded-md border border-gray-200 p-3" [attr.data-testid]="testId() + '-plan'">
+                    @for (change of plan.changes; track $index; let c = $index) {
+                      @let row = view?.rows?.[c];
+                      <label class="flex items-start gap-3">
+                        <input type="checkbox" class="mt-1" [checked]="change.on" [disabled]="!live" (change)="toggle(change, $event)" />
+                        <span class="flex flex-1 flex-col gap-2">
+                          <span class="font-medium">{{ row?.title }}</span>
+                          <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+                            @for (detail of row?.details ?? []; track detail.label) {
+                              <dt class="text-gray-500">{{ detail.label }}</dt>
+                              <dd class="whitespace-pre-line break-all font-mono">{{ detail.value }}</dd>
+                            }
+                          </dl>
+                          <span
+                            class="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs"
+                            [class]="row?.needsApproval ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'">
+                            <i [class]="row?.needsApproval ? 'fa-light fa-shield-check' : 'fa-light fa-bolt'" aria-hidden="true"></i>
+                            <span>
+                              <b>{{ row?.needsApproval ? 'Needs LF IT approval' : 'Applies immediately' }}.</b>
+                              {{ row?.reason }}
+                            </span>
+                          </span>
+                        </span>
+                      </label>
+                    }
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2">
+                      @if (live) {
+                        <span class="text-xs text-gray-500"
+                          >{{ (view?.on ?? 0) - (view?.approval ?? 0) }} apply now · {{ view?.approval ?? 0 }} go to LF IT</span
+                        >
+                        <div class="flex gap-2">
+                          <lfx-button label="Cancel" size="small" severity="secondary" [outlined]="true" (onClick)="engine().cancelPlan(message)" />
+                          <lfx-button
+                            [label]="view?.confirmLabel ?? ''"
+                            size="small"
+                            [disabled]="!view?.on || engine().busy()"
+                            (onClick)="engine().confirmPlan(message)"
+                            [attr.data-testid]="testId() + '-plan-confirm'" />
+                        </div>
+                      } @else {
+                        <span class="text-xs text-gray-500" [attr.data-testid]="testId() + '-plan-replaced'"
+                          >Replaced by a newer request. Nothing here was applied.</span
+                        >
+                      }
+                    </div>
+                  </div>
+                } @else if (plan.state === 'done') {
+                  <ul class="flex flex-col gap-1">
+                    @for (result of plan.results ?? []; track $index) {
+                      <li class="flex items-center gap-2">
+                        <lfx-tag [value]="result.requestId ? 'Sent for approval' : 'Applied'" [severity]="result.requestId ? 'warn' : 'success'" />
+                        {{ result.title }}
+                      </li>
+                    }
+                  </ul>
+                }
+              }
+
+              <!-- Next steps -->
+              @if (message.actions?.length && i === engine().activeIndex()) {
+                <div class="flex flex-wrap gap-2">
+                  @for (chatAction of message.actions; track chatAction.label) {
+                    <lfx-button
+                      [label]="chatAction.label"
+                      size="small"
+                      [severity]="chatAction.primary ? undefined : 'secondary'"
+                      [outlined]="!chatAction.primary"
+                      [disabled]="engine().busy()"
+                      (onClick)="engine().runAction(message, chatAction)"
+                      [attr.data-testid]="testId() + '-action'" />
+                  }
+                </div>
+              }
+            }
+          </div>
+        </div>
+      }
+    }
+  </div>
+
+  <!-- Composer -->
+  <div class="flex flex-col gap-3 border-t border-gray-200 p-4">
+    <div class="flex flex-wrap gap-2">
+      @for (suggestion of engine().suggestions(); track suggestion) {
+        <button
+          type="button"
+          class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:border-blue-300 hover:text-blue-700"
+          [disabled]="engine().busy()"
+          (click)="engine().send(suggestion)"
+          [attr.data-testid]="testId() + '-suggestion'">
+          {{ suggestion }}
+        </button>
+      }
+    </div>
+    <form class="flex gap-2" [formGroup]="chatForm" (ngSubmit)="send()">
+      <div class="flex-1">
+        <lfx-input-text
+          [form]="chatForm"
+          control="message"
+          placeholder="Tell the agent what you need, or ask a question"
+          autocomplete="off"
+          [inputId]="testId() + '-message'"
+          [dataTest]="testId() + '-message'" />
+      </div>
+      <lfx-button type="submit" icon="fa-light fa-paper-plane" [disabled]="engine().busy()" ariaLabel="Send" [attr.data-testid]="testId() + '-send'" />
+    </form>
+  </div>
+</div>

@@ -1,0 +1,91 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col rounded-lg border border-gray-200 bg-white" [attr.data-testid]="testId() + '-live-chat'">
+  <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-2 text-xs text-gray-600">
+    <span class="flex items-center gap-2">
+      <i class="fa-light fa-flask text-amber-600" aria-hidden="true"></i>
+      Live agent for {{ projectName() || 'this project' }}. Changes are made in the dev sandbox.
+    </span>
+    <lfx-button
+      label="New conversation"
+      size="small"
+      severity="secondary"
+      [text]="true"
+      [disabled]="live.waiting()"
+      (onClick)="live.reset()"
+      [attr.data-testid]="testId() + '-live-reset'" />
+  </div>
+
+  <div #conversation class="flex max-h-[60vh] min-h-[360px] flex-col gap-4 overflow-y-auto p-4" aria-live="polite">
+    @if (!canWrite()) {
+      <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" [attr.data-testid]="testId() + '-live-no-access'">
+        You need write access to this project to use the live agent.
+      </p>
+    } @else if (live.messages().length === 0) {
+      <p class="text-sm text-gray-500">
+        Ask about this project's domains and DNS. The agent looks up real data in the dev sandbox and asks before it changes anything.
+      </p>
+    }
+
+    @for (message of live.messages(); track message.id) {
+      @if (message.sender === 'user') {
+        <div class="max-w-[80%] self-end rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" [attr.data-testid]="testId() + '-live-user-message'">
+          <span class="whitespace-pre-line">{{ message.text }}</span>
+        </div>
+      } @else {
+        <div class="flex max-w-[92%] gap-3" [attr.data-testid]="testId() + '-live-agent-message'">
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" [class]="iconClass()" aria-hidden="true">
+            <i [class]="icon()"></i>
+          </span>
+          <div class="min-w-0 flex-1 whitespace-pre-line break-words text-sm text-gray-800">{{ message.text }}</div>
+        </div>
+      }
+    }
+
+    @if (live.waiting()) {
+      <span class="flex items-center gap-2 text-sm text-gray-400" [attr.data-testid]="testId() + '-live-waiting'">
+        <span class="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" aria-hidden="true"></span>
+        The agent is working…
+      </span>
+    }
+    @if (live.error(); as error) {
+      <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" [attr.data-testid]="testId() + '-live-error'">{{ error }}</p>
+    }
+  </div>
+
+  <!-- Composer -->
+  <div class="flex flex-col gap-3 border-t border-gray-200 p-4">
+    @if (suggestions().length && live.messages().length === 0) {
+      <div class="flex flex-wrap gap-2">
+        @for (suggestion of suggestions(); track suggestion) {
+          <button
+            type="button"
+            class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:border-blue-300 hover:text-blue-700"
+            [disabled]="live.waiting() || !canWrite()"
+            (click)="send(suggestion)"
+            [attr.data-testid]="testId() + '-live-suggestion'">
+            {{ suggestion }}
+          </button>
+        }
+      </div>
+    }
+    <form class="flex gap-2" [formGroup]="chatForm" (ngSubmit)="send()">
+      <div class="flex-1">
+        <lfx-input-text
+          [form]="chatForm"
+          control="message"
+          placeholder="Ask the agent about this project's domains"
+          autocomplete="off"
+          [inputId]="testId() + '-live-message'"
+          [dataTest]="testId() + '-live-message'" />
+      </div>
+      <lfx-button
+        type="submit"
+        icon="fa-light fa-paper-plane"
+        [disabled]="live.waiting() || !canWrite()"
+        ariaLabel="Send"
+        [attr.data-testid]="testId() + '-live-send'" />
+    </form>
+  </div>
+</div>

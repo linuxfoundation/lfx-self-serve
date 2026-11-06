@@ -79,6 +79,7 @@ import userRouter from './routes/user.route';
 import userNewslettersRouter from './routes/user-newsletters.route';
 import votesRouter from './routes/votes.route';
 import akritesRouter from './routes/akrites.route';
+import itOsAgentsRouter from './routes/it-os-agents.route';
 import mktgAgentsRouter from './routes/mktg-agents.route';
 import weeklyBriefRouter from './routes/weekly-brief.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
@@ -479,6 +480,8 @@ app.use('/api/ossprey', (req, res) => {
 });
 // Marketing OS Agents: Guild proxy, gated to authenticated users (LD flag controls UI visibility).
 app.use('/api/mktg-agents', mktgAgentsRouter);
+// IT OS live agents: Guild proxy, dev only (refuses every call unless the GUILD_IT_OS_* vars are set).
+app.use('/api/it-os-agents', itOsAgentsRouter);
 // Gatewaze host-session mode, the embed's only server surface: its session check and sign-out, and
 // its Supabase and API proxies (the latter forwards to GW_API_URL), answered with the session LFX
 // One holds for the user (gw-host-session.md). A uniform 404 unless LFX_GATEWAZE_HOST_SESSION,

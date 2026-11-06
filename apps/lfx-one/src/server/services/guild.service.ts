@@ -52,13 +52,24 @@ export class GuildService {
   // request. Never cache sessions across users or polls.
   private static readonly resultPayloads = new WeakMap<Request, { sessionId: string; payloads: string[] }>();
 
+  /**
+   * @param workspaceName Targets a workspace other than the Marketing OS one, under the same owner.
+   * IT OS passes its own dev workspace here (see it-os-agents.controller.ts).
+   * @param apiKeyEnvVar The env var holding the API key. A Guild trigger API key is scoped to the one
+   * API trigger it was created for, so another workspace's trigger needs its own key.
+   */
+  public constructor(
+    private readonly workspaceName?: string,
+    private readonly apiKeyEnvVar = 'GUILD_API_KEY'
+  ) {}
+
   private get apiUrl(): string {
     // Strip trailing slashes so a configured `https://host/` doesn't produce `https://host//api/...`.
     return (process.env['GUILD_API_URL'] || GUILD_DEFAULT_API_URL).replace(/\/+$/, '');
   }
 
   private get apiKey(): string {
-    return process.env['GUILD_API_KEY'] || '';
+    return process.env[this.apiKeyEnvVar] || '';
   }
 
   private get owner(): string {
@@ -66,7 +77,7 @@ export class GuildService {
   }
 
   private get workspace(): string {
-    return process.env['GUILD_WORKSPACE_NAME'] || GUILD_DEFAULT_WORKSPACE_NAME;
+    return this.workspaceName || process.env['GUILD_WORKSPACE_NAME'] || GUILD_DEFAULT_WORKSPACE_NAME;
   }
 
   /**
@@ -435,7 +446,7 @@ export class GuildService {
    */
   private assertConfigured(operation: string): void {
     if (!this.apiKey) {
-      throw new MicroserviceError('Guild API is not configured. Missing environment variable: GUILD_API_KEY.', 500, 'guild_not_configured', {
+      throw new MicroserviceError(`Guild API is not configured. Missing environment variable: ${this.apiKeyEnvVar}.`, 500, 'guild_not_configured', {
         service: 'guild',
         operation,
       });

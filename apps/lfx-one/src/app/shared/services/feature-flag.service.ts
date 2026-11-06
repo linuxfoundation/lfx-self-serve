@@ -4,7 +4,7 @@
 import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { environment } from '@environments/environment';
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FEATURE_FLAG_READY_TIMEOUT_MS, User } from '@lfx-one/shared';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FEATURE_FLAG_READY_TIMEOUT_MS, IT_OS_AGENTS_ENABLED_FLAG, User } from '@lfx-one/shared';
 import { FeatureFlagGuardContext } from '@lfx-one/shared/interfaces';
 import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
 import { Client, EvaluationContext, GeneralError, JsonValue, OpenFeature, ProviderEvents, ProviderStatus } from '@openfeature/web-sdk';
@@ -28,16 +28,27 @@ import { DataDogRumService } from './datadog-rum.service';
 function readFlagOverride(key: string): boolean | undefined {
   if (environment.production || typeof window === 'undefined') return undefined;
 
+  const defaultValue = NON_PRODUCTION_DEFAULT_ON_FLAGS.has(key) ? true : undefined;
+
   try {
     const raw = window.localStorage.getItem(FEATURE_FLAG_OVERRIDE_STORAGE_KEY);
-    if (raw === null) return undefined;
+    if (raw === null) return defaultValue;
     const value = (JSON.parse(raw) as Record<string, unknown>)[key];
-    return typeof value === 'boolean' ? value : undefined;
+    return typeof value === 'boolean' ? value : defaultValue;
   } catch {
     // Unreadable or malformed storage must never take a flag decision with it.
-    return undefined;
+    return defaultValue;
   }
 }
+
+/**
+ * Flags that read as on in every non-production build unless a local override pins them off.
+ *
+ * IT OS (#4257) is a dev-only demo that lives on a feature branch and is not meant for main, so
+ * its preview shows without a LaunchDarkly flag or the console override. Production builds return
+ * before this is consulted.
+ */
+const NON_PRODUCTION_DEFAULT_ON_FLAGS: ReadonlySet<string> = new Set([IT_OS_AGENTS_ENABLED_FLAG]);
 
 @Injectable({
   providedIn: 'root',
