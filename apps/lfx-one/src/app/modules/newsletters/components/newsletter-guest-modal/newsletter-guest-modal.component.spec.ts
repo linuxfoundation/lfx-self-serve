@@ -85,6 +85,10 @@ describe('NewsletterGuestModalComponent', () => {
 
     fixture.componentRef.setInput('blocked', true);
     expect(el().querySelector('[data-testid="newsletter-guest-modal-consent"]')).toBeNull();
+    // Blocked pages still hide Transcend's prompt, so cookie preferences must stay reachable.
+    el().querySelector<HTMLButtonElement>('[data-testid="newsletter-guest-modal-cookie-settings"]')!.click();
+    expect(showPreferences).toHaveBeenCalledTimes(2);
+    expect(text('newsletter-guest-modal-legal')).toContain('Privacy Policy');
   });
 
   it('shows the logo when there is one, else the first letter', () => {

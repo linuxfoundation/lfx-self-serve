@@ -96,6 +96,8 @@ test.describe('Newsletter invite link (signed out)', () => {
     });
     await expect(page.getByTestId('newsletter-guest-modal-continue')).toHaveCount(0);
     await expect(page.getByTestId('newsletter-guest-modal-sign-in')).toBeVisible();
+    // The consent prompt stays hidden here, so cookie preferences must remain reachable from the modal.
+    await expect(page.getByTestId('newsletter-guest-modal-cookie-settings')).toBeVisible();
   });
 });
 

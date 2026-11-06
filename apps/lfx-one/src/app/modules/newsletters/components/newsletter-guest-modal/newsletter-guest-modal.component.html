@@ -93,6 +93,21 @@
           Cookie settings
         </button>
       </p>
+    } @else {
+      <!-- Nothing to agree to without Continue, but the page hides Transcend's prompt, so cookie preferences stay reachable. -->
+      <p class="flex flex-wrap justify-center gap-x-3 text-xs text-gray-500" data-testid="newsletter-guest-modal-legal">
+        <a [href]="legalLinks.privacyPolicy" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-blue-600"
+          >Privacy Policy</a
+        >
+        <a [href]="legalLinks.termsOfUse" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-blue-600">Terms of Use</a>
+        <button
+          type="button"
+          class="underline underline-offset-2 hover:text-blue-600"
+          (click)="onCookieSettings()"
+          data-testid="newsletter-guest-modal-cookie-settings">
+          Cookie settings
+        </button>
+      </p>
     }
 
     <p class="text-sm text-gray-600">

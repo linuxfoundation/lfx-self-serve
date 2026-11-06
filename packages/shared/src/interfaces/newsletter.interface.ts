@@ -902,7 +902,7 @@ export interface NewsletterGuestInviteInfo {
   membership_name?: string;
   /** The newsletter group the invite adds to — also where the signed-in confirm card is opened. */
   committee_uid?: string;
-  /** The invited address, masked for display (`np***@linu***.org`) — the link may have been forwarded. */
+  /** The invited address, masked for display (`ja***@exam***.org`) — the link may have been forwarded. */
   masked_email?: string;
   /** `valid` only: the member company the address matched. */
   company_name?: string;
@@ -940,7 +940,7 @@ export interface NewsletterGuestNewsletter {
 /** A newsletter issue shown to a signed-out member-company reader. */
 export interface NewsletterGuestIssue {
   foundation: NewsletterFoundationSummary;
-  /** The address the reader is reading as, masked for display (`np***@linu***.org`). */
+  /** The address the reader is reading as, masked for display (`ja***@exam***.org`). */
   masked_email: string;
   /** Null when the newsletter group has not sent an issue yet. */
   newsletter: NewsletterGuestNewsletter | null;

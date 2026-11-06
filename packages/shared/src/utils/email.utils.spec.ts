@@ -177,7 +177,7 @@ describe('maskEmailForLogs', () => {
 
 describe('maskEmailForDisplay', () => {
   it('keeps the start of the mailbox and host and the top-level domain', () => {
-    expect(maskEmailForDisplay('npatel+12@linuxfoundation.org')).toBe('np***@linu***.org');
+    expect(maskEmailForDisplay('jane.doe+news@example.org')).toBe('ja***@exam***.org');
   });
 
   it('shows less of a short mailbox or host', () => {

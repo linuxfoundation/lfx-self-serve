@@ -84,7 +84,7 @@ export function maskEmailForLogs(email: string | null | undefined): string {
 /**
  * Mask an address for display to someone who may not own it, e.g. on a page opened from a forwarded
  * invite link: enough to recognise your own address, not enough to read someone else's
- * (`npatel+12@linuxfoundation.org` → `np***@linu***.org`). The local part keeps two characters (one
+ * (`jane.doe+news@example.org` → `ja***@exam***.org`). The local part keeps two characters (one
  * when it is three or shorter); the host before the last dot keeps four (one when it is six or
  * shorter); the top-level domain stays. Anything that is not a single-`@` address with a dotted
  * domain collapses to `***`.
