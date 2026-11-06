@@ -27,6 +27,7 @@ import {
   buildHealthMetricsMembersDirectoryRows,
   buildHealthMetricsMembersDirectorySearchPlaceholder,
   buildHealthMetricsMembersDirectorySummary,
+  buildHealthMetricsMembersGrowthView,
   buildHealthMetricsMembersNpsAudienceOptions,
   buildHealthMetricsMembersNpsSegments,
   buildHealthMetricsMembersNpsSummary,
@@ -48,6 +49,7 @@ import type {
   HealthMetricsMembersChurnTier,
   HealthMetricsMembersChurnYear,
   HealthMetricsMembersDirectoryMember,
+  HealthMetricsMembersGrowthMonth,
   HealthMetricsMembersNpsAudience,
   HealthMetricsMembersNpsQuarter,
   HealthMetricsMembersTierYear,
@@ -369,9 +371,99 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
   });
 });
 
+describe('buildHealthMetricsMembersGrowthView', () => {
+  // Nov 6, 2026: this year runs through November, so the projection is the pace of 11 months over 12.
+  const TODAY = new Date(2026, 10, 6);
+  const YEARS: Record<number, number[]> = {
+    2017: [3, 12, 21, 38, 89, 105, 124, 132, 153, 175, 209, 232],
+    2018: [40, 82, 125, 163, 189, 215, 252, 301, 344, 376, 404, 433],
+    2019: [30, 60, 100, 130, 160, 192, 217, 249, 275, 305, 335, 359],
+    2024: [45, 85, 120, 160, 190, 225, 262, 300, 350, 385, 420, 453],
+    2025: [38, 70, 105, 150, 175, 215, 287, 306, 340, 375, 410, 480],
+    2026: [74, 123, 184, 244, 293, 350, 408, 458, 523, 725, 801],
+  };
+
+  function months(years: Record<number, (number | null)[]> = YEARS): HealthMetricsMembersGrowthMonth[] {
+    return Object.entries(years).flatMap(([year, values]) => values.map((cumulative, index) => ({ year: Number(year), month: index + 1, cumulative })));
+  }
+
+  const build = (mode: 'highlights' | 'all' = 'highlights', years?: Record<number, (number | null)[]>, today = TODAY) =>
+    buildHealthMetricsMembersGrowthView({ months: months(years) }, mode, today);
+
+  it('leads with this year so far, the change on last year and 2019 at the same month, and the run-rate projection', () => {
+    const kpis = build().kpis;
+
+    expect(kpis.map((kpi) => [kpi.label, kpi.value])).toEqual([
+      ['New members in 2026 so far', '801'],
+      ['vs 2025', '+391'],
+      ['Since 2019', '+139%'],
+      ['Projected year-end', '~874'],
+    ]);
+    expect(kpis[1].delta).toEqual({ label: '+95%', direction: 'up', good: true });
+    expect(kpis[3].tip).toBe(
+      'An estimate based on this year’s pace. 801 new members joined in the first 11 months, about 73 a month. If December follows the same pace, the year ends at about 874.'
+    );
+  });
+
+  it('draws this year, its projection and last year over the earlier years as one range in Highlights', () => {
+    const view = build();
+
+    expect(view.paths.map((line) => line.key)).toEqual(['projected', '2025', '2026']);
+    expect(view.paths.find((line) => line.key === 'projected')).toMatchObject({ dashed: true, d: 'M545.5 55.7 L600 35.3' });
+    expect(view.bandPath).toMatch(/^M0 267\.4 .* Z$/);
+    expect(view.yTicks).toEqual(['1,000', '750', '500', '250', '0']);
+    expect(view.labels.map((label) => label.text)).toEqual(['2026: 801', '~874 projected', '2025: 480']);
+    expect(view.legend.map((item) => item.label)).toEqual(['2026', '2026 projected', '2025', '2018–2024 range']);
+    expect(view.ariaLabel).toBe('Cumulative new members by month, 2026 versus 2025 and the 2018 to 2024 range');
+    expect(view.todayPct).toBeCloseTo(90.91, 2);
+  });
+
+  it('draws each earlier year as a light line in All years, on the same scale', () => {
+    const view = build('all');
+
+    expect(view.paths.map((line) => line.key)).toEqual(['2017', '2018', '2019', '2024', 'projected', '2025', '2026']);
+    expect(view.paths[0]).toMatchObject({ width: 1.5, dashed: false });
+    expect(view.bandPath).toBe('');
+    expect(view.yTicks).toEqual(build().yTicks);
+    expect(view.legend.at(-1)?.label).toBe('2017–2024');
+  });
+
+  it('lists this year, last year and then each earlier year, newest first, in a month’s popup', () => {
+    const rows = (month: number): string[] => build().columns[month].tip.rows.map((row) => `${row.label} ${row.value}${row.separated ? ' |' : ''}`);
+
+    expect(build().columns[10].tip.title).toBe('Nov · cumulative new members');
+    expect(rows(10)).toEqual(['2026 801', '2025 410', '2024 420 |', '2019 335', '2018 404', '2017 209']);
+    expect(rows(11)).toEqual(['2026 projected ~874', '2025 480', '2024 453 |', '2019 359', '2018 433', '2017 232']);
+  });
+
+  it('carries a missing month forward, and keeps this year to the months so far', () => {
+    const view = build('highlights', { ...YEARS, 2026: [74, null, 184, 244, 293, 350, 408, 458, 523, 725, 801, 900] });
+
+    expect(view.columns[1].tip.rows[0]).toMatchObject({ label: '2026', value: '74' });
+    expect(view.columns[11].tip.rows[0]).toMatchObject({ label: '2026 projected', value: '~874' });
+  });
+
+  it('shows no comparison, range or projection it has no year for', () => {
+    const newFoundation = build('highlights', { 2026: YEARS[2026] });
+    const december = build('highlights', YEARS, new Date(2026, 11, 2));
+
+    expect(newFoundation.kpis.map((kpi) => kpi.value)).toEqual(['801', '—', '—', '~874']);
+    expect(newFoundation.kpis[1].delta).toBeNull();
+    expect(newFoundation.legend.map((item) => item.label)).toEqual(['2026', '2026 projected']);
+    expect(newFoundation.ariaLabel).toBe('Cumulative new members by month, 2026');
+    expect(december.paths.map((line) => line.key)).toEqual(['2025', '2026']);
+    expect(december.labels.map((label) => label.key)).toEqual(['current', 'prior']);
+  });
+
+  it('is unmeasured with no month rows, or only rows before the first year drawn', () => {
+    expect(build('highlights', {}).measured).toBe(false);
+    expect(build('highlights', { 2015: [1, 2, 3] }).measured).toBe(false);
+  });
+});
+
 describe('buildHealthMetricsMembersSections', () => {
   it('names the running year in the breakdown description', () => {
-    const [breakdown] = buildHealthMetricsMembersSections(2026);
+    const breakdown = buildHealthMetricsMembersSections(2026).find((section) => section.key === 'breakdown')!;
 
     expect(breakdown.description).toBe('Members per tier at the end of each year, with totals and annual revenue. 2026 is year to date.');
   });
