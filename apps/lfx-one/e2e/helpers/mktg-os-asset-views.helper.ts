@@ -11,6 +11,7 @@ import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slid
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants/persona.constants';
 import { SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants/project-context.constants';
 import type { BoilerplatesEnvelope } from '@lfx-one/shared/interfaces/boilerplates.interface';
+import type { BrandKitReport } from '@lfx-one/shared/interfaces';
 import type { FaqEnvelope } from '@lfx-one/shared/interfaces/faq.interface';
 import type { FoundationMessageGoal } from '@lfx-one/shared/interfaces/foundation-message.interface';
 import type { MktgFrameworkAsset, MktgRunResultResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
@@ -129,6 +130,17 @@ export function columnAssetRevisionResponse(key: 'faq' | 'boilerplates' | 'found
   const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: null };
   const revision = { ...response.revision, approval };
   return { ...response, revision, revisions: [revision], approval, approvedCurrent: { revisionId: revision.id, number: revision.number } };
+}
+
+/**
+ * An unapproved Brand Kit revision whose report is the one given (a v2 report with colour conflicts and rule bases, or a
+ * v1 one): what the approve dialog and the overview's basis pills are tested against. Approve stays available on it.
+ */
+export function brandKitDraftRevisionResponse(report: BrandKitReport): MktgRevisionResponse {
+  const base = columnAssetRevisionResponse('brand-kit');
+  const revision = { ...base.revision, approval: null };
+  const sidecar = { ...base.sidecar, report };
+  return { ...base, sidecar, revision, revisions: [revision], approval: null, approvedCurrent: null };
 }
 
 /** Synthetic preview: no live generation, credentials or customer data. */

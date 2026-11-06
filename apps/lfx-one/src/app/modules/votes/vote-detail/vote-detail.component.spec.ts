@@ -45,6 +45,7 @@ import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-d
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
+import { VoteVotersComponent } from '../components/vote-voters/vote-voters.component';
 import { VoteDetailComponent } from './vote-detail.component';
 
 function makeVote(overrides: Partial<Vote> = {}): Vote {
@@ -105,6 +106,7 @@ describe('VoteDetailComponent', () => {
     getMyVoteBallot: ReturnType<typeof vi.fn>;
     getVoteResults: ReturnType<typeof vi.fn>;
     getReminderRecipients: ReturnType<typeof vi.fn>;
+    getVoteVoters: ReturnType<typeof vi.fn>;
   };
   let projectService: { getProjectStrict: ReturnType<typeof vi.fn> };
   let committeeService: { fetchCommittee: ReturnType<typeof vi.fn> };
@@ -168,6 +170,7 @@ describe('VoteDetailComponent', () => {
       getMyVoteBallot: vi.fn().mockReturnValue(of(null)),
       getVoteResults: vi.fn().mockReturnValue(of(makeResults())),
       getReminderRecipients: vi.fn().mockReturnValue(of([])),
+      getVoteVoters: vi.fn().mockReturnValue(of([])),
     };
     projectService = { getProjectStrict: vi.fn().mockReturnValue(of({ writer: false } as Project)) };
     committeeService = { fetchCommittee: vi.fn().mockReturnValue(of({ writer: false })) };
@@ -700,6 +703,75 @@ describe('VoteDetailComponent', () => {
       fixture.debugElement.query(By.css('lfx-vote-detail-header')).triggerEventHandler('sendReminder');
 
       expect(dialogService.open).toHaveBeenCalledWith(VoteReminderDialogComponent, expect.objectContaining({ data: { vote: makeVote() } }));
+    });
+
+    it.each([false, true])('refreshes the voter list after a successful header reminder (pseudo-anonymous: %s)', async (pseudoAnonymity) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: pseudoAnonymity })));
+      queryParamMap.next(convertToParamMap({ tab: 'voters' }));
+      const closed = new Subject<unknown>();
+      dialogService.open.mockReturnValue({ onClose: closed });
+      const fixture = await setup('browser', [VoteVotersComponent]);
+      expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
+
+      fixture.debugElement.query(By.css('lfx-vote-detail-header')).triggerEventHandler('sendReminder');
+      closed.next(true);
+      TestBed.tick();
+
+      expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
+      expect(voteService.getVoteVoters).toHaveBeenLastCalledWith('vote-1');
+      closed.next(true);
+      TestBed.tick();
+      expect(voteService.getVoteVoters).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([false, undefined, 'true'])('does not refresh the voter list when the reminder closes with %s', async (result) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      queryParamMap.next(convertToParamMap({ tab: 'voters' }));
+      const closed = new Subject<unknown>();
+      dialogService.open.mockReturnValue({ onClose: closed });
+      const fixture = await setup('browser', [VoteVotersComponent]);
+
+      call(fixture, 'onSendReminder');
+      closed.next(result);
+      TestBed.tick();
+
+      expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
+      closed.next(true);
+      TestBed.tick();
+      expect(voteService.getVoteVoters).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a reminder completion after navigating to a different vote', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockImplementation((uid: string) => of(makeVote({ uid })));
+      queryParamMap.next(convertToParamMap({ tab: 'voters' }));
+      const closed = new Subject<unknown>();
+      dialogService.open.mockReturnValue({ onClose: closed });
+      const fixture = await setup('browser', [VoteVotersComponent]);
+
+      call(fixture, 'onSendReminder');
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+      expect(voteService.getVoteVoters).toHaveBeenLastCalledWith('vote-2');
+      const requestCount = voteService.getVoteVoters.mock.calls.length;
+      closed.next(true);
+      TestBed.tick();
+
+      expect(voteService.getVoteVoters).toHaveBeenCalledTimes(requestCount);
+    });
+
+    it('unsubscribes from reminder completion when the page is destroyed', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      const closed = new Subject<unknown>();
+      dialogService.open.mockReturnValue({ onClose: closed });
+      const fixture = await setup();
+
+      call(fixture, 'onSendReminder');
+      expect(closed.observed).toBe(true);
+      fixture.destroy();
+
+      expect(closed.observed).toBe(false);
     });
 
     it('reloads my response and results after a ballot is submitted', async () => {

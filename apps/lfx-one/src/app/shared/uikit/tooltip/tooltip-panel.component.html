@@ -5,6 +5,21 @@
   <span data-testid="ui-tooltip-title">{{ heading() }}</span>
   <!-- shortcut: raw var() in a class, as colour utilities cannot take alpha on a CSS variable. revisit: when the library ships a background-alpha token. -->
   <span class="font-normal text-[color:color-mix(in_srgb,var(--ui-background-100)_65%,transparent)]" data-testid="ui-tooltip-text">{{ text() }}</span>
+} @else if (items().length) {
+  <span class="inline-flex flex-wrap items-center gap-x-[8px] gap-y-[2px]" data-testid="ui-tooltip-items">
+    @for (item of items(); track $index) {
+      @if (!$first) {
+        <span class="opacity-50" aria-hidden="true">·</span>
+      }
+      <span class="inline-flex items-center gap-[5px] whitespace-nowrap">
+        @if (item.dotClass) {
+          <span class="h-[8px] w-[8px] rounded-full" [class]="item.dotClass" aria-hidden="true"></span>
+        }
+        <span class="font-semibold">{{ item.label }}</span
+        ><span class="font-normal">{{ item.value }}</span>
+      </span>
+    }
+  </span>
 } @else {
   <span data-testid="ui-tooltip-text">{{ text() }}</span>
 }

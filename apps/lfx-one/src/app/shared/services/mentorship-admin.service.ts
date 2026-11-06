@@ -22,6 +22,7 @@ import {
   MentorshipAdminMenteesResponse,
   MentorshipAdminMentorsQuery,
   MentorshipAdminMentorsResponse,
+  MentorshipAdminProgramListOptions,
   MentorshipAdminProgramPage,
   MentorshipAdminTermInput,
   MentorshipAdminTermsQuery,
@@ -33,7 +34,6 @@ import {
   MentorshipEnrollUpdateRequest,
   MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
-  MentorshipProgramStatus,
   MentorshipProgramTermRow,
   MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
@@ -51,15 +51,21 @@ import { strictHttpParams } from '../utils/http-params.utils';
 export class MentorshipAdminService {
   private readonly http = inject(HttpClient);
 
-  public getPrograms(params?: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number }): Observable<MentorshipProgramsResponse> {
-    // The strict codec keeps a `+` in the search text a `+`.
-    let httpParams = strictHttpParams();
-    if (params?.search) httpParams = httpParams.set('search', params.search);
-    if (params?.status) httpParams = httpParams.set('status', params.status);
-    if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
-    if (params?.limit !== undefined) httpParams = httpParams.set('limit', String(params.limit));
+  public getPrograms(params?: Partial<MentorshipAdminProgramListOptions>): Observable<MentorshipProgramsResponse> {
+    return this.http
+      .get<MentorshipProgramsResponse>('/api/mentorship/admin/programs', { params: this.programListParams(params) })
+      .pipe(this.logFailure('getPrograms'));
+  }
 
-    return this.http.get<MentorshipProgramsResponse>('/api/mentorship/admin/programs', { params: httpParams }).pipe(this.logFailure('getPrograms'));
+  /**
+   * Every program of one project, in any status, for the Project lens (lfx-mentorship#398), with the Admin list's filters;
+   * with `includeSubprojects`, also its sub-projects' programs (the Foundation lens). A caller without
+   * `mentorship_program_creator` on the project (its writers, or its mentorship program admins) gets a 403.
+   */
+  public getProjectPrograms(projectUid: string, params?: Partial<MentorshipAdminProgramListOptions>): Observable<MentorshipProgramsResponse> {
+    return this.http
+      .get<MentorshipProgramsResponse>(`/api/mentorship/admin/projects/${encodeURIComponent(projectUid)}/programs`, { params: this.programListParams(params) })
+      .pipe(this.logFailure('getProjectPrograms'));
   }
 
   /** The program page: the header, the tab counts and the term options. `programId` is the program's UUID. */
@@ -287,6 +293,17 @@ export class MentorshipAdminService {
 
   private termUrl(programId: string, termId: string): string {
     return `/api/mentorship/admin/programs/${encodeURIComponent(programId)}/terms/${encodeURIComponent(termId)}`;
+  }
+
+  /** The query an admin program list shares; unset filters stay off it. The strict codec keeps a `+` in the search text a `+`. */
+  private programListParams(params?: Partial<MentorshipAdminProgramListOptions>) {
+    let httpParams = strictHttpParams();
+    if (params?.search) httpParams = httpParams.set('search', params.search);
+    if (params?.status) httpParams = httpParams.set('status', params.status);
+    if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
+    if (params?.limit !== undefined) httpParams = httpParams.set('limit', String(params.limit));
+    if (params?.includeSubprojects) httpParams = httpParams.set('includeSubprojects', 'true');
+    return httpParams;
   }
 
   /** Logs the status only, since the error's URL carries the search text, then passes the error on. */

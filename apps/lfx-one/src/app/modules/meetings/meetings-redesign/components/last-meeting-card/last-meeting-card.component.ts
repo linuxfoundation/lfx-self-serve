@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
+import { DatePipe, isPlatformBrowser } from '@angular/common';
 import {
   afterNextRender,
   ChangeDetectionStrategy,
@@ -21,6 +21,7 @@ import { Router } from '@angular/router';
 import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingVisibilityKind } from '@lfx-one/shared/enums';
 import {
+  MeetingHomeAttendance,
   MeetingHomeRow,
   MeetingHomeRowLink,
   MeetingHomeRowProject,
@@ -29,6 +30,9 @@ import {
   PastMeetingSummary,
 } from '@lfx-one/shared/interfaces';
 import {
+  formatMeetingWhen,
+  getMeetingGroupNames,
+  getMeetingHomeAttendance,
   getMeetingHomeRowLink,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
@@ -37,23 +41,35 @@ import {
   getPastMeetingSummaryContent,
   isPastMeetingSummaryAwaitingApproval,
 } from '@lfx-one/shared/utils';
-import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
+import { UiSplitButtonComponent } from '@shared/uikit/split-button/split-button.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
+import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
+import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
 /**
  * Last meeting card of the meetings home right column: the viewer's most recent past meeting with its recording and AI summary.
- * @description Each button shows only once its artifact has loaded and exists; a failed lookup hides it. Both open the
- * meetings home dialogs.
+ * @description Each button shows only once its artifact has loaded and exists; a failed lookup hides it. Recording opens
+ * in a new tab and its split half copies the link; AI Summary opens the meetings home dialog.
  */
 @Component({
   selector: 'lfx-last-meeting-card',
-  imports: [DatePipe, UiAvatarComponent, UiBadgeComponent, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent, UiTooltipDirective],
+  imports: [
+    DatePipe,
+    MeetingHomeAttendanceComponent,
+    MeetingProjectLogoComponent,
+    UiBadgeComponent,
+    UiButtonComponent,
+    UiEmptyStateComponent,
+    UiSkeletonComponent,
+    UiSplitButtonComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './last-meeting-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
@@ -94,9 +110,17 @@ export class LastMeetingCardComponent {
     const row = this.row();
     return row ? getMeetingRecurrenceTooltip(row.meeting, row.occurrence) : null;
   });
+  protected readonly groups: Signal<string[]> = computed(() => {
+    const row = this.row();
+    return row ? getMeetingGroupNames(row.meeting) : [];
+  });
   protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => {
     const row = this.row();
     return row ? getMeetingHomeRowType(row.meeting) : null;
+  });
+  protected readonly attendance: Signal<MeetingHomeAttendance | null> = computed(() => {
+    const row = this.row();
+    return row ? getMeetingHomeAttendance(row, true) : null;
   });
   /** Raw summary text the viewer may read; organizers also see one awaiting their approval. */
   protected readonly summaryContent: Signal<string | null> = this.initSummaryContent();
@@ -139,18 +163,18 @@ export class LastMeetingCardComponent {
     this.dialogs.openSummary(row, summary, (change) => this.summaryChange.emit(change));
   }
 
-  protected openRecording(event: Event): void {
-    event.stopPropagation();
-    const row = this.row();
-    const shareUrl = this.recordingUrl();
-    if (row && shareUrl) this.dialogs.openRecording(row, shareUrl);
+  protected openRecording(shareUrl: string): void {
+    this.dialogs.openRecording(shareUrl);
   }
 
-  /** "Wed, 8:00 AM · 60m" in the viewer's zone, per the design. */
+  protected copyRecordingLink(shareUrl: string): void {
+    this.dialogs.copyRecordingLink(shareUrl);
+  }
+
   private initWhen(): Signal<string> {
     return computed(() => {
       const row = this.row();
-      return row ? `${formatDate(row.startTime, 'EEE, h:mm a', 'en-US')} · ${row.durationMinutes}m` : '';
+      return row ? formatMeetingWhen(row.startTime, row.durationMinutes) : '';
     });
   }
 

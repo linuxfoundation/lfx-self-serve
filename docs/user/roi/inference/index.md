@@ -3,8 +3,9 @@ title: Inference
 description: How the ROI model combines markups, CES parameters, and observed spending into contribution value, ROI, BCR, and annual figures — with the research constructs that are not in the product.
 audience: [all]
 product_area: Dashboards
+display_order: 11
 tags: [roi, inference, bcr, break-even, annualization, technical]
-last_updated: 2026-10-30
+last_updated: 2026-11-04
 intercom_collection: Dashboards
 ---
 
@@ -124,11 +125,11 @@ so the ROI in every year of a pair equals the pair's overall ROI. Annual figures
 
 ## Research methodology: additional constructs
 
-The following appear in the research methodology and are **not** in the product. The participation floor and allocative efficiency, which the research methodology also describes, are implemented and covered above.
+The following appear in the research methodology and are **not** in the product, apart from the value driver decomposition noted under mechanism analysis. The participation floor and allocative efficiency, which the research methodology also describes, are implemented and covered above.
 
 ### Mechanism analysis
 
-Once ROI is computed, associations with external characteristics (industry, project category and maturity, organization size, geography) can be explored with a model of the form `ROI = f(drivers)`, for example with a Shapley decomposition. This is correlational: organizations select into projects, and some mechanisms are unobserved.
+Once ROI is computed, associations with external characteristics (industry, project category and maturity, organization size, geography) can be explored with a model of the form `ROI = f(drivers)`, for example with a Shapley decomposition. This is correlational: organizations select into projects, and some mechanisms are unobserved. The product implements one part of this: it decomposes the stage 1 markup, not ROI itself, across the LFX value drivers with Shapley values. See [Value driver decomposition](../value-driver-decomposition/).
 
 ### Counterfactual analysis
 
@@ -139,3 +140,5 @@ Given `α`, `σ`, and `μ`, the methodology evaluates alternative portfolios (fo
 - [Interpreting results](../interpreting-results/)
 - [The model](../model/)
 - [Stage 2: CES allocation](../stage-2-ces/)
+- [Methodology decisions](../methodology-decisions/) — why the model makes these choices
+- [ROI documentation](../)

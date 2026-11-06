@@ -112,6 +112,7 @@ router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(r
 router.get('/hubspot/emails', (req, res, next) => campaignController.searchHubSpotEmails(req, res, next));
 router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
 router.post('/hubspot/utm/create', (req, res, next) => campaignController.createHubSpotUtm(req, res, next));
+router.post('/send-workflow', (req, res, next) => campaignController.createSendWorkflow(req, res, next));
 // Which account each LinkedIn/Reddit/Meta/Microsoft/X Monitor panel offers: the project's OWN
 // connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
 router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));
@@ -124,6 +125,10 @@ router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonito
 // campaign-service account discovery for the project's Google Ads connection, behind
 // LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only, as the Google Ads monitor is.
 router.get('/google/accounts', (req, res, next) => campaignController.getGoogleAdsAccounts(req, res, next));
+// The enabled conversion actions on the Google Ads account a create uses, for the Implement tab's
+// picker (#4991). Root-only, as above: the account is shared, so the list names every foundation's
+// actions. 404 while the campaign-service Google create road is off.
+router.get('/google/conversion-actions', (req, res, next) => campaignController.getGoogleAdsConversionActions(req, res, next));
 // Which X ad account an X create will use, and the accounts the credential reaches (LFXV2-3319),
 // behind LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE — 404 while it is off. Root-only, as above.
 router.get('/twitter/accounts', (req, res, next) => campaignController.getTwitterAdsAccounts(req, res, next));

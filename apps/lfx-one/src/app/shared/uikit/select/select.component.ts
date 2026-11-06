@@ -95,7 +95,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   public readonly error = input<string>('');
   /** Text shown while nothing is picked. */
   public readonly placeholder = input<string>('');
-  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `small`, `default` or `large` button. */
+  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `tiny`, `default` or `large` button. */
   public readonly size = input<UiInputSize>('medium');
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
@@ -335,9 +335,9 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
       // Library recipe (same as Input): 1px ring at rest, stronger ring plus a 4px halo when focused or open (accent) or invalid (danger).
       const dangerHalo = 'shadow-[0_0_0_1px_theme(colors.ui.danger.700),0_0_0_4px_theme(colors.ui.danger.200)]';
       const interactive =
-        'cursor-pointer hover:edge-hover focus-visible:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)] aria-expanded:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
+        'cursor-pointer hover:edge-control-hover focus-visible:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)] aria-expanded:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
       // A disabled field keeps the resting ring only, so it does not look interactive on hover.
-      const rest = this.isDisabled() ? 'edge cursor-not-allowed' : `edge ${interactive}`;
+      const rest = this.isDisabled() ? 'edge-control cursor-not-allowed' : `edge-control ${interactive}`;
       const ring = this.error() ? dangerHalo : rest;
       const fill = this.isDisabled() ? 'bg-ui-neutral-50 text-ui-neutral-500' : 'bg-ui-background-100 text-ui-neutral-900';
       // forced-colors: shadows vanish, so a real border keeps the field visible and an outline marks focus.

@@ -18,6 +18,8 @@ import {
   MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES,
   MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE,
   MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE,
+  MENTORSHIP_ADMIN_DECISION_REFUSALS,
+  MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS,
   MENTORSHIP_ADMIN_DECLINE_BY_TERM_CONFIRM_TEMPLATE,
   MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_SINGULAR_TEMPLATE,
   MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_TEMPLATE,
@@ -29,11 +31,8 @@ import {
   MENTORSHIP_ADMIN_MENTEES_SEARCH_DEBOUNCE_MS,
   MENTORSHIP_ADMIN_REOPEN_CONFIRM_MESSAGE,
   MENTORSHIP_ADMIN_REOPEN_CONFLICT_MESSAGE,
-  MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE,
   MENTORSHIP_ADMIN_TASKS_LOAD_ERROR_MESSAGE,
-  MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE,
   MENTORSHIP_ADMIN_UNDO_GRADUATION_CONFIRM_MESSAGE,
-  MENTORSHIP_ADMIN_UNDO_GRADUATION_REFUSED_MESSAGE,
   MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE,
   MENTORSHIP_ALL_OPEN_TERMS_OPTION_LABEL,
   MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
@@ -52,6 +51,7 @@ import {
 import {
   FilterOption,
   MentorshipAdminApplicationStatusUpdate,
+  MentorshipAdminDecisionOutcome,
   MentorshipAdminTasksState,
   MentorshipAdminTermOption,
   MentorshipApplicantDisplayStatus,
@@ -76,6 +76,7 @@ import {
   mentorshipPersonInitials,
   mentorshipRowActions,
   mentorshipTaskSubmittedCount,
+  mentorshipUpstreamReasonMessage,
 } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
@@ -448,20 +449,22 @@ export class CurrentMenteesTabComponent {
   }
 
   /**
-   * Runs one decision write; on success reloads the page and has the parent refresh the counts. An accept, an undone
-   * graduation and a re-open give a 422 their own message; any other decision shows the generic copy. A re-open also
-   * gives a 409 its own message, since it may mean the mentee has applied to the term again.
+   * Runs one decision write; on success reloads the page and has the parent refresh the counts. A decision upstream can
+   * refuse with a 422 (see `MENTORSHIP_ADMIN_DECISION_REFUSALS`) names the reason upstream gave; any other decision
+   * shows the generic copy. A re-open also gives a 409 its own message, since it may mean the mentee has applied to the
+   * term again.
    */
-  private decide(write: Observable<void>, outcome: keyof typeof MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES): void {
+  private decide(write: Observable<void>, outcome: MentorshipAdminDecisionOutcome): void {
     const conflictMessage = outcome === 'reopened' ? MENTORSHIP_ADMIN_REOPEN_CONFLICT_MESSAGE : undefined;
-    this.runWrite(write, () => this.showSuccess(MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES[outcome]), this.unprocessableMessage(outcome), conflictMessage);
+    const refusal = MENTORSHIP_ADMIN_DECISION_REFUSALS[outcome];
+    const unprocessableMessage = refusal ? (err: unknown) => this.refusedMessage(refusal.lead, refusal.fallback, err) : undefined;
+    this.runWrite(write, () => this.showSuccess(MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES[outcome]), unprocessableMessage, conflictMessage);
   }
 
-  private unprocessableMessage(outcome: keyof typeof MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES): string | undefined {
-    if (outcome === 'accepted') return MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE;
-    if (outcome === 'ungraduated') return MENTORSHIP_ADMIN_UNDO_GRADUATION_REFUSED_MESSAGE;
-    if (outcome === 'reopened') return MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE;
-    return undefined;
+  /** The decision's lead followed by the copy for the reason upstream gave, or the decision's fallback when none matches. */
+  private refusedMessage(lead: string, fallback: string, err: unknown): string {
+    const reason = mentorshipUpstreamReasonMessage(MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS, serverAuthoredMessage(err, ''));
+    return reason ? `${lead} ${reason}` : fallback;
   }
 
   private declinePendingForTerm(termId: string): void {
@@ -480,7 +483,7 @@ export class CurrentMenteesTabComponent {
    * A write that lands after the tab is gone still toasts and refreshes the parent's counts, but skips the table
    * reload; the next tab render reads the page afresh.
    */
-  private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, unprocessableMessage?: string, conflictMessage?: string): void {
+  private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, unprocessableMessage?: (err: unknown) => string, conflictMessage?: string): void {
     if (this.decisionInFlight()) {
       this.showPleaseWait();
       return;
@@ -502,10 +505,10 @@ export class CurrentMenteesTabComponent {
 
   /**
    * 409 means the application moved on, so the page reloads, with the decision's own message when it has one; a 422
-   * shows the decision's own message when it has one (any other 422 gets the generic copy); an impersonation 403 shows
-   * the server's text.
+   * shows the message the decision builds from the error when it has one (any other 422 gets the generic copy); an
+   * impersonation 403 shows the server's text.
    */
-  private onDecisionError(err: unknown, unprocessableMessage?: string, conflictMessage?: string): void {
+  private onDecisionError(err: unknown, unprocessableMessage?: (err: unknown) => string, conflictMessage?: string): void {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
     if (status === 409) {
       if (!this.destroyed) this.reloadCount.update((count) => count + 1);
@@ -513,7 +516,7 @@ export class CurrentMenteesTabComponent {
       return;
     }
     if (status === 422 && unprocessableMessage) {
-      this.showFailure(unprocessableMessage);
+      this.showFailure(unprocessableMessage(err));
       return;
     }
     if (status === 403 && (err as HttpErrorResponse).error?.code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {

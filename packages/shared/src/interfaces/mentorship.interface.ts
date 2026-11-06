@@ -107,6 +107,15 @@ export interface MentorshipLfProject {
 /** One lazy-load page of LF projects; `page_token` is the cursor for the next page and is left out once the list is exhausted. */
 export type MentorshipLfProjectsResponse = PaginatedResponse<MentorshipLfProject>;
 
+/** Query of `GET /api/mentorship/lf-projects`, the enroll wizard's project picker. */
+export interface MentorshipLfProjectsQuery {
+  search?: string;
+  pageToken?: string;
+  limit?: number;
+  /** Only this project's direct sub-projects: the Foundation lens wizard offers its foundation's sub-projects (lfx-mentorship#398). */
+  parentUid?: string;
+}
+
 /** Result of the program-name availability lookup. */
 export interface MentorshipNameAvailability {
   available: boolean;
@@ -370,8 +379,8 @@ export type MentorshipProgramDecisionStatus = Extract<MentorshipUpstreamProgramS
 export type MentorshipProgramReviewDecision = (typeof MENTORSHIP_PROGRAM_REVIEW_DECISIONS)[number];
 
 /**
- * The upstream program fields the BFF reads: program review reads the id, name and status, and the
- * mentee apply page reads the name and project name.
+ * The upstream program fields the BFF reads: a program-review decision reads the id, name and
+ * status, and the mentee apply page reads the name and project name.
  */
 export interface MentorshipUpstreamProgram {
   id: string;
@@ -387,32 +396,54 @@ export interface MentorshipUpstreamProgramDecisionRequest {
 }
 
 /**
- * Response body from `GET /api/mentorship/program-review/:programId` and
- * `POST /api/mentorship/program-review/:programId/decision`: the subset of
- * `MentorshipUpstreamProgram` the page receives. Status values and their lifecycle are documented
- * on `MENTORSHIP_UPSTREAM_PROGRAM_STATUSES`.
+ * Upstream `GET /mentorship/v1/programs/{id}/catalog`: the program as its public page shows it.
+ * Only the fields the review page reads are listed; upstream omits an unset optional field.
  */
-export type MentorshipProgramReview = Pick<MentorshipUpstreamProgram, 'id' | 'name' | 'status'>;
+export interface MentorshipUpstreamProgramCatalog extends MentorshipUpstreamProgram {
+  description?: string;
+  logo_url?: string;
+  repo_link?: string;
+  code_of_conduct?: string;
+  cii_project_id?: string;
+  skills?: string[] | null;
+}
+
+/**
+ * Response body from `GET /api/mentorship/program-review/:programId`: the program as the reviewer
+ * sees it, whatever its status. `hasDetails` is `false` when only its status, name and project are
+ * known. Status values and their lifecycle are documented on `MENTORSHIP_UPSTREAM_PROGRAM_STATUSES`.
+ * Links are `null` unless they are http(s) URLs, and the CII id is `null` unless it is numeric, so
+ * the page can bind them as they are.
+ */
+export interface MentorshipProgramReview {
+  id: string;
+  name: string;
+  status: MentorshipUpstreamProgramStatus;
+  projectName: string | null;
+  /** Rich-editor HTML; the page sanitizes it before rendering. */
+  description: string | null;
+  logoUrl: string | null;
+  repoUrl: string | null;
+  codeOfConductUrl: string | null;
+  ciiProjectId: string | null;
+  skills: string[];
+  /**
+   * `false` when upstream's catalog does not serve the program (it serves only pending and published
+   * ones), so only its status, name and project are known; the page then leaves out the details.
+   */
+  hasDetails: boolean;
+}
+
+/** Response body from `POST /api/mentorship/program-review/:programId/decision`: the status the decision recorded. */
+export type MentorshipProgramDecisionResult = Pick<MentorshipUpstreamProgram, 'id' | 'name' | 'status'>;
 
 /** Request body for `POST /api/mentorship/program-review/:programId/decision`. */
 export interface MentorshipProgramDecisionRequest {
   decision: MentorshipProgramReviewDecision;
 }
 
-/**
- * What the program-review page shows. `already-decided` covers a program that is no
- * longer `pending`, whether the page found it that way or the POST got a 409.
- */
-export type MentorshipProgramReviewState =
-  | 'loading'
-  | 'confirm'
-  | 'submitting'
-  | 'success'
-  | 'already-decided'
-  | 'forbidden'
-  | 'not-found'
-  | 'invalid-link'
-  | 'error';
+/** What the program-review page shows. `ready` renders the program, whatever its status. */
+export type MentorshipProgramReviewState = 'loading' | 'ready' | 'forbidden' | 'not-found' | 'invalid-link' | 'error';
 
 /** The program-review page's current state and the program it is showing, when known. */
 export interface MentorshipProgramReviewView {
@@ -420,16 +451,27 @@ export interface MentorshipProgramReviewView {
   program: MentorshipProgramReview | null;
 }
 
+/** The review card's step for a pending program: the Approve / Reject choice, or confirming a reject. */
+export type MentorshipProgramReviewStep = 'choosing' | 'rejecting';
+
+/**
+ * A note the review card shows after a decision did not go through: `conflict` when another
+ * reviewer decided first (409) and the page read the status they recorded, `stale` when another
+ * reviewer decided first but that status could not be read yet, and `failed` when the decision was
+ * not recorded and can be retried.
+ */
+export type MentorshipProgramReviewNotice = 'conflict' | 'failed' | 'stale';
+
+/** How a submitted decision settled: the view to show and the note to show with it. */
+export interface MentorshipProgramReviewOutcome {
+  view: MentorshipProgramReviewView;
+  notice: MentorshipProgramReviewNotice | null;
+}
+
 /** The program id and decision read from a program-review link. */
 export interface MentorshipProgramReviewLink {
   programId: string;
   decision: MentorshipProgramReviewDecision | null;
-}
-
-/** What the program-review confirm card renders: the loaded program and the decision to confirm. */
-export interface MentorshipProgramReviewConfirmation {
-  program: MentorshipProgramReview;
-  decision: MentorshipProgramReviewDecision;
 }
 
 /** How a failed mentor or mentee registration submit is shown. */

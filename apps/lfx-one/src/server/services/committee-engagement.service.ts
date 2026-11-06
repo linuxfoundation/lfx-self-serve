@@ -237,13 +237,13 @@ export class CommitteeEngagementService {
    * still classifies `Emeritus` regardless of `dataAvailable` (a seat-type fact, not a computed
    * metric). The roster `created_at` tenure-grace fallback, though, only fires when `dataAvailable`
    * is true AND at least one roster member matched a warehouse row for this committee
-   * (`anyRowMatched`) — a genuinely joined-within-window member gets `High` instead of `Inactive`
+   * (`anyRowMatched`) — a genuinely joined-within-window member gets `New` instead of `Inactive`
    * when their committee has real (if individually unmatched) data, but not when the whole
    * committee returned zero rows, nor when the committee has rows but none of them key to this
    * roster at all (a total join-key mismatch, e.g. `MEMBER_USER_ID` values that don't correspond to
    * any `CommitteeMember.uid`): in both cases there's zero real data to correlate against for
    * *any* member, so `created_at` isn't a trustworthy tenure signal for one unmatched member,
-   * let alone the whole roster — tenure-grace `High` on literal 0/0 counts across every member
+   * let alone the whole roster — tenure-grace `New` on literal 0/0 counts across every member
    * would contradict the honest "no usable join for this committee" state rather than degrade to
    * `Inactive`. For the same reason, the response's own `data_available` field reports
    * `usableData` (`dataAvailable && anyRowMatched && memberMapping.indeterminateUids.size === 0`),
@@ -373,10 +373,10 @@ export class CommitteeEngagementService {
       // added since the model's last refresh) from an otherwise-working join. When the data isn't
       // usable — the whole committee returned zero rows, or rows exist but none key to this roster
       // (a total join-key mismatch) — there is no trustworthy engagement data to correlate tenure
-      // against for *any* member; treating every recent roster joiner as tenure-graced `High` in
+      // against for *any* member; treating every recent roster joiner as tenure-graced `New` in
       // either state produces an internally inconsistent payload — `data_available:false` (which
       // this method now also reports for the broken-join case, see `usableData` above) alongside a
-      // nonzero `active_count` and `High` classifications on literal 0/0 counts. `effectiveRow?.` (not
+      // nonzero `active_count` and `New` classifications on literal 0/0 counts. `effectiveRow?.` (not
       // `row?.`) for the first term too: a matched row's own join date is real engagement data, and
       // must be zeroed out the same way its counts are whenever `usableData` is false.
       const joinedWithinWindow =

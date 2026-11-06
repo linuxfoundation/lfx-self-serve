@@ -10,6 +10,9 @@ import {
   CAMPAIGN_LABEL_ABSENT,
   CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS,
+  CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
+  CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS,
   CAMPAIGN_TACTIC_OPTIONS,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
@@ -211,6 +214,83 @@ export function describeCampaignDispatchFailure(error: string): CampaignDispatch
     nextStep: template.replace('{platform}', label),
     nothingCreated,
   };
+}
+
+/**
+ * A survey source document's length as campaign-service measures it: whitespace runs collapsed to
+ * one space, trimmed, counted in code points (Go runes), so the page's counter and refusal agree
+ * with the server's 400.
+ */
+export function campaignSurveySourceTextLength(sourceText: string): number {
+  // Counted by iterating, not by spreading into an array: one array slot per character is the
+  // cost a long paste should not have to pay just to be measured.
+  // Unicode White_Space, which is exactly Go's `unicode.IsSpace` behind `strings.Fields`; JS `\s`
+  // differs (it takes U+FEFF and misses U+0085). Only the spaces the collapse leaves are trimmed,
+  // since `trim()` would also strip a U+FEFF that upstream counts.
+  const collapsed = sourceText.replace(/\p{White_Space}+/gu, ' ').replace(/^ | $/g, '');
+  let count = 0;
+  for (const _codePoint of collapsed) {
+    count++;
+  }
+  return count;
+}
+
+/**
+ * Whether a survey source is over campaign-service's limit. The raw length is checked FIRST, so a
+ * body far past the limit is refused without being normalised or counted -- a request the server
+ * is about to refuse should cost nothing in proportion to its size.
+ */
+export function campaignSurveySourceTextTooLong(sourceText: string): boolean {
+  if (sourceText.length > CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS) {
+    return true;
+  }
+  return campaignSurveySourceTextLength(sourceText) > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS;
+}
+
+/** A value as a brief slug: lowercase ASCII words joined by hyphens, at most 100 characters. */
+function slugifyForBrief(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+}
+
+/**
+ * The slug a SURVEY brief is stored and looked up under -- ONE function for both, so a saved
+ * survey is found again after a reload.
+ *
+ * The promoted link's last path segment, so two assets promoted from one link collide rather than
+ * silently becoming separate briefs. Except where that segment names the PAGE rather than the
+ * asset (every Google Form ends in `viewform`), or there is no path: those take the source
+ * document's first non-empty line -- the asset's own title. '' when neither yields one.
+ */
+export function deriveSurveySlug(url: string, sourceText: string): string {
+  let lastSegment = '';
+  try {
+    lastSegment = decodeURIComponent(new URL(url.trim()).pathname.split('/').filter(Boolean).pop() ?? '');
+  } catch {
+    lastSegment = '';
+  }
+  const pageSegment = slugifyForBrief(lastSegment.replace(/\.[a-z0-9]+$/i, ''));
+  if (pageSegment !== '' && !CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS.has(pageSegment)) {
+    return pageSegment;
+  }
+  return slugifyForBrief(surveySourceTitle(sourceText));
+}
+
+/**
+ * A survey source document's title: its first non-empty line, at most 120 characters. ONE copy,
+ * shared by the slug above and the campaign name the BFF stores, so the two cannot drift.
+ */
+export function surveySourceTitle(sourceText: string): string {
+  const title =
+    sourceText
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line !== '') ?? '';
+  return title.slice(0, 120);
 }
 
 const CALENDAR_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;

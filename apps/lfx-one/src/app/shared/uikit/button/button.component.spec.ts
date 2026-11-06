@@ -113,7 +113,7 @@ describe('UiButtonComponent', () => {
 
   it.each([
     ['primary', 'border-transparent'],
-    ['secondary', 'border-ui-neutral-alpha-200'],
+    ['secondary', 'border-ui-neutral-alpha-300'],
     ['secondary-accent', 'border-ui-accent-300'],
     ['tertiary', 'border-transparent'],
     ['tertiary-accent', 'border-transparent'],
@@ -151,7 +151,8 @@ describe('UiButtonComponent', () => {
   });
 
   it.each([
-    ['small', 'h-ui-tiny', 'rounded-[10px]', 'px-[8px]', 'button-12', '[&>i]:text-[12px]'],
+    ['tiny', 'h-ui-tiny', 'rounded-[10px]', 'px-[8px]', 'button-12', '[&>i]:text-[12px]'],
+    ['small', 'h-ui-xsmall', 'rounded-[11px]', 'px-[8px]', 'text-[13px]/[18px]', '[&>i]:text-[13px]'],
     ['default', 'h-ui-small', 'rounded-ui-sm', 'px-[10px]', 'button-14', '[&>i]:text-[14px]'],
     ['large', 'h-ui-medium', 'rounded-[14px]', 'px-[16px]', 'button-14', '[&>i]:text-[18px]'],
   ])('sizes %s with height, radius, padding, type role and icon size', async (size, height, radius, padding, type, icon) => {
@@ -216,19 +217,21 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('aria-label')).toBe('Next');
   });
 
-  it('disables the native button and flattens it to the disabled look', async () => {
+  it('disables the native button and fades its own colours to 45% without hover or pressed steps', async () => {
     await set('disabled', true);
     expect((el() as HTMLButtonElement).disabled).toBe(true);
-    expect(el().classList).toContain('bg-ui-neutral-50');
-    expect(el().classList).toContain('text-ui-neutral-500');
-    expect(el().classList).not.toContain('bg-ui-accent-500');
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['opacity-45', 'bg-ui-accent-500', 'text-ui-white']));
+    expect(Array.from(el().classList).filter((name) => /^(hover|active):/.test(name))).toEqual([]);
   });
 
-  it('gives a disabled bordered button the neutral border', async () => {
-    await set('variant', 'secondary-accent');
+  it('keeps the border of a disabled bordered button', async () => {
+    await set('variant', 'secondary');
     await set('disabled', true);
-    expect(el().classList).toContain('border-ui-neutral-alpha-200');
-    expect(el().classList).not.toContain('border-ui-accent-500');
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['opacity-45', 'border-ui-neutral-alpha-300', 'bg-ui-background-100']));
+  });
+
+  it('does not fade an enabled button', () => {
+    expect(el().classList).not.toContain('opacity-45');
   });
 
   it('keeps a disabled tertiary button transparent without a border', async () => {
@@ -296,7 +299,7 @@ describe('UiButtonComponent', () => {
     await set('link', '/meetings');
     expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['!no-underline', '!text-ui-accent-500']));
     await set('disabled', true);
-    expect(el().classList).toContain('!text-ui-neutral-500');
+    expect(el().classList).toContain('!text-ui-accent-500');
   });
 
   it('adds no link pins to a button', () => {
@@ -327,7 +330,8 @@ describe('UiButtonComponent', () => {
     });
 
     it.each([
-      ['small', '12px'],
+      ['tiny', '12px'],
+      ['small', '13px'],
       ['large', '18px'],
     ])('sizes the spinner to the icon on a %s button: %s', async (size, width) => {
       await set('size', size);

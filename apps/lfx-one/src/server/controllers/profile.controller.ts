@@ -531,7 +531,8 @@ export class ProfileController {
 
     try {
       // Effective identity — during impersonation these resolve to the target user; auth-service
-      // resolves emails/identities from the raw sub string, so the target's emails are returned.
+      // resolves emails from the raw sub string and identities from the request's bearer token
+      // (the target's impersonation token), so the target's data is returned.
       const userSub = getEffectiveSub(req) ?? undefined;
       const sessionEmail = getEffectiveEmail(req) ?? undefined;
 
@@ -547,7 +548,7 @@ export class ProfileController {
 
       const [freshEmails, identities] = await Promise.all([
         this.emailVerificationService.getUserEmails(req, userSub),
-        this.emailVerificationService.listIdentitiesSafe(req, userSub),
+        this.emailVerificationService.listIdentitiesSafe(req),
       ]);
 
       // sessionEmail is the target's email or undefined under impersonation (never the
@@ -3010,7 +3011,7 @@ export class ProfileController {
 
     const [emails, identities] = await Promise.all([
       this.emailVerificationService.getUserEmails(req, userSub),
-      this.emailVerificationService.listIdentities(req, userSub),
+      this.emailVerificationService.listIdentities(req),
     ]);
     // Fail closed: without the caller's email list, ownership can't be established.
     if (emails === null) {

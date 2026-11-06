@@ -47,6 +47,7 @@ function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: strin
   return {
     can_write: canWrite,
     can_set_status: canSetStatus,
+    can_edit_record: canSetStatus,
     formation: buildFormation(lifecycle, lifecycleRaw),
     template: {
       uid: 'template:test',

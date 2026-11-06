@@ -21,7 +21,7 @@
   </div>
 }
 <!-- Exact px: 14px glyph, the default-size button icon. -->
-@if (showDismiss()) {
+@if (variant() === 'error') {
   <button type="button" [class]="dismissClasses()" aria-label="Dismiss" (click)="dismiss()" data-testid="ui-toast-dismiss">
     <i class="ui-icon fa-light fa-xmark text-[14px] leading-none" aria-hidden="true"></i>
   </button>

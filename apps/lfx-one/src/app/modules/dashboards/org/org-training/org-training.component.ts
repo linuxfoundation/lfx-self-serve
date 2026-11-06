@@ -4,53 +4,30 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
-import { FormControl, FormGroup } from '@angular/forms';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import {
-  DEFAULT_ORG_CERTIFICATIONS_SORT_FIELD,
-  DEFAULT_ORG_CERTIFICATIONS_SORT_ORDER,
-  DEFAULT_ORG_TRAININGS_SORT_FIELD,
-  DEFAULT_ORG_TRAININGS_SORT_ORDER,
-  DEFAULT_ORG_TRAINING_TAB_ID,
-  DESCENDING_DEFAULT_ORG_CERTIFICATION_SORT_FIELDS,
-  DESCENDING_DEFAULT_ORG_TRAINING_SORT_FIELDS,
-  EMPTY_ORG_CERTIFICATIONS_RESPONSE,
-  EMPTY_ORG_TRAININGS_RESPONSE,
-  ORG_CERTIFICATIONS_WINDOW_NOTE,
-  ORG_TRAINING_LEVEL_OPTIONS,
-  ORG_TRAINING_TABS,
-  VALID_ORG_TRAINING_TAB_IDS,
-} from '@lfx-one/shared/constants';
-import type {
-  OrgCertification,
-  OrgCertificationsResponse,
-  OrgTraining,
-  OrgTrainingsResponse,
-  OrgTrainingStats,
-  OrgTrainingTabId,
-  PageChangeEvent,
-  SortChangeEvent,
-} from '@lfx-one/shared/interfaces';
-import { catchError, debounceTime, finalize, of, switchMap } from 'rxjs';
+import { DEFAULT_ORG_TRAINING_TAB_ID, ORG_TRAINING_TABS, VALID_ORG_TRAINING_TAB_IDS } from '@lfx-one/shared/constants';
+import type { OrgTrainingStats, OrgTrainingStatsQuery, OrgTrainingTabId, OrgTrainingViewState } from '@lfx-one/shared/interfaces';
+import { orgTrainingFiltersSignature, orgTrainingStatsQuery, orgTrainingTableNote, parseOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
+import { catchError, debounceTime, distinctUntilChanged, finalize, of, skip, switchMap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { OrgTrainingFilterBarComponent } from '@components/org-training-filter-bar/org-training-filter-bar.component';
+import { OrgTrainingStatsComponent } from '@components/org-training-stats/org-training-stats.component';
+import { OrgTrainingStatsErrorComponent } from '@components/org-training-stats-error/org-training-stats-error.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
-import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 
-import { CertEmployeesDrawerComponent } from './components/cert-employees-drawer/cert-employees-drawer.component';
-import { OrgCertificationsTableComponent } from './components/org-certifications-table/org-certifications-table.component';
-import { OrgTrainingsTableComponent } from './components/org-trainings-table/org-trainings-table.component';
-import { TrainingEmployeesDrawerComponent } from './components/training-employees-drawer/training-employees-drawer.component';
+import { OrgTrainingGroupsTableComponent } from './components/org-training-groups-table/org-training-groups-table.component';
 
 @Component({
   selector: 'lfx-org-training',
@@ -60,12 +37,11 @@ import { TrainingEmployeesDrawerComponent } from './components/training-employee
     CardComponent,
     CardTabsBarComponent,
     InputTextComponent,
-    SelectComponent,
     OrgLensEmptyStateComponent,
-    OrgCertificationsTableComponent,
-    OrgTrainingsTableComponent,
-    CertEmployeesDrawerComponent,
-    TrainingEmployeesDrawerComponent,
+    OrgTrainingFilterBarComponent,
+    OrgTrainingStatsComponent,
+    OrgTrainingStatsErrorComponent,
+    OrgTrainingGroupsTableComponent,
     PersonDetailDrawerComponent,
   ],
   templateUrl: './org-training.component.html',
@@ -81,46 +57,20 @@ export class OrgTrainingComponent {
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // ─── Configuration ─────────────────────────────────────────────────────────
-  // Shared constants are readonly; copy into mutable arrays for the component inputs that expect them.
-  protected readonly certificationsWindowNote = ORG_CERTIFICATIONS_WINDOW_NOTE;
+  // Shared constants are readonly; copy into a mutable array for the component input that expects it.
   protected readonly tabs = [...ORG_TRAINING_TABS];
-  protected readonly levelOptions = [...ORG_TRAINING_LEVEL_OPTIONS];
 
   // ─── Forms ─────────────────────────────────────────────────────────────────
-  protected readonly filterForm = new FormGroup({
-    search: new FormControl(''),
-    level: new FormControl<string | null>(null),
-  });
+  // The name search sits in the filter row but is table-local: it narrows the group rows, never the stat tiles.
+  protected readonly searchForm = new FormGroup({ search: new FormControl('') });
 
   // ─── Writable Signals ──────────────────────────────────────────────────────
-  protected readonly statsLoading = signal(false);
+  // Starts true: the first org emission arrives after the first render, which must not state an as-of date it lacks.
+  protected readonly statsLoading = signal(true);
   protected readonly statsError = signal(false);
-
-  protected readonly certificationsLoading = signal(false);
-  protected readonly certificationsError = signal(false);
-  protected readonly certSortField = signal<string>(DEFAULT_ORG_CERTIFICATIONS_SORT_FIELD);
-  protected readonly certSortOrder = signal<'ASC' | 'DESC'>(DEFAULT_ORG_CERTIFICATIONS_SORT_ORDER);
-  protected readonly certOffset = signal(0);
-  protected readonly certPageSize = signal(EMPTY_ORG_CERTIFICATIONS_RESPONSE.pageSize);
-
-  protected readonly trainingsLoading = signal(false);
-  protected readonly trainingsError = signal(false);
-  protected readonly trainingSortField = signal<string>(DEFAULT_ORG_TRAININGS_SORT_FIELD);
-  protected readonly trainingSortOrder = signal<'ASC' | 'DESC'>(DEFAULT_ORG_TRAININGS_SORT_ORDER);
-  protected readonly trainingOffset = signal(0);
-  protected readonly trainingPageSize = signal(EMPTY_ORG_TRAININGS_RESPONSE.pageSize);
-
-  // Drawer state — separate visibility flags so the certified and in-progress rosters don't collide.
-  protected readonly certifiedDrawerVisible = signal(false);
-  protected readonly inProgressDrawerVisible = signal(false);
-  protected readonly activeCertification = signal<OrgCertification | null>(null);
-
-  protected readonly trainingCompletedDrawerVisible = signal(false);
-  protected readonly trainingInProgressDrawerVisible = signal(false);
-  protected readonly activeTraining = signal<OrgTraining | null>(null);
-
-  private readonly searchValue = signal('');
-  private readonly levelValue = signal<string | null>(null);
+  // Bumped by the stats error card's Retry: re-fetches the stats only, never the table.
+  private readonly statsRetryTrigger = signal(0);
+  protected readonly searchQuery = signal('');
 
   // ─── Computed / toSignal ───────────────────────────────────────────────────
   // Page-level state (e.g. `contractor-no-grant`, `could-not-load`) replacing the page, or null when it renders.
@@ -128,86 +78,42 @@ export class OrgTrainingComponent {
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly orgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
-  protected readonly activeTab: Signal<OrgTrainingTabId> = this.initActiveTab();
-  protected readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
-  protected readonly certifications: Signal<OrgCertificationsResponse> = this.initCertifications();
-  protected readonly trainings: Signal<OrgTrainingsResponse> = this.initTrainings();
-  protected readonly hasActiveFilters = computed(() => !!this.searchValue() || !!this.levelValue());
+  private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+  // The filter bar writes range, filters and group-by to the URL; the page and the bar read the same state from it.
+  protected readonly viewState: Signal<OrgTrainingViewState> = computed(() => parseOrgTrainingViewState((param) => this.queryParamMap().get(param)));
+  // Equal while range and filters are, so a tab or group-by change refetches neither the stats nor the table's pairs.
+  protected readonly statsQuery: Signal<OrgTrainingStatsQuery> = computed(() => orgTrainingStatsQuery(this.viewState()), {
+    equal: (a, b) => orgTrainingFiltersSignature(a) === orgTrainingFiltersSignature(b),
+  });
+  protected readonly groupBy = computed(() => this.viewState().groupBy);
+  protected readonly range = computed(() => this.viewState().range);
+  protected readonly tableNote = computed(() => orgTrainingTableNote(this.range()));
+  protected readonly activeTab: Signal<OrgTrainingTabId> = computed(() => {
+    const raw = this.queryParamMap().get('tab');
+    return raw && VALID_ORG_TRAINING_TAB_IDS.has(raw as OrgTrainingTabId) ? (raw as OrgTrainingTabId) : DEFAULT_ORG_TRAINING_TAB_ID;
+  });
+  private readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
+  // Null while loading or failed, so no tile states the previous organization's or filters' numbers or as-of dates.
+  protected readonly shownStats: Signal<OrgTrainingStats | null> = computed(() => (this.statsLoading() || this.statsError() ? null : this.trainingStats()));
 
-  // ─── Constructor ─────────────────────────────────────────────────────────--
   public constructor() {
-    // Filter changes feed the cert fetch and reset pagination to the first page.
-    this.filterForm.controls.search.valueChanges.pipe(debounceTime(300), takeUntilDestroyed()).subscribe((value) => {
-      this.searchValue.set(value ?? '');
-      this.certOffset.set(0);
-      this.trainingOffset.set(0);
-    });
-    this.filterForm.controls.level.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
-      this.levelValue.set(value ?? null);
-      this.certOffset.set(0);
-      this.trainingOffset.set(0);
-    });
+    this.searchForm.controls.search.valueChanges.pipe(debounceTime(300), takeUntilDestroyed()).subscribe((value) => this.searchQuery.set((value ?? '').trim()));
+
+    // The name search belongs to the organization it was typed for: clear it (and its applied term) on a switch.
+    toObservable(this.orgUid)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.searchForm.controls.search.setValue('');
+        this.searchQuery.set('');
+      });
   }
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
-  protected onCertPageChange(event: PageChangeEvent): void {
-    this.certOffset.set(event.offset);
-    this.certPageSize.set(event.pageSize);
-  }
-
-  protected onCertSortChange(event: SortChangeEvent): void {
-    if (event.field === this.certSortField()) {
-      this.certSortOrder.update((order) => (order === 'ASC' ? 'DESC' : 'ASC'));
-    } else {
-      this.certSortField.set(event.field);
-      this.certSortOrder.set(DESCENDING_DEFAULT_ORG_CERTIFICATION_SORT_FIELDS.has(event.field) ? 'DESC' : 'ASC');
-    }
-    this.certOffset.set(0);
-  }
-
-  protected onCertifiedClick(cert: OrgCertification): void {
-    this.inProgressDrawerVisible.set(false);
-    this.activeCertification.set(cert);
-    this.certifiedDrawerVisible.set(true);
-  }
-
-  protected onInProgressClick(cert: OrgCertification): void {
-    this.certifiedDrawerVisible.set(false);
-    this.activeCertification.set(cert);
-    this.inProgressDrawerVisible.set(true);
-  }
-
-  protected onTrainingPageChange(event: PageChangeEvent): void {
-    this.trainingOffset.set(event.offset);
-    this.trainingPageSize.set(event.pageSize);
-  }
-
-  protected onTrainingSortChange(event: SortChangeEvent): void {
-    if (event.field === this.trainingSortField()) {
-      this.trainingSortOrder.update((order) => (order === 'ASC' ? 'DESC' : 'ASC'));
-    } else {
-      this.trainingSortField.set(event.field);
-      this.trainingSortOrder.set(DESCENDING_DEFAULT_ORG_TRAINING_SORT_FIELDS.has(event.field) ? 'DESC' : 'ASC');
-    }
-    this.trainingOffset.set(0);
-  }
-
-  protected onTrainingCompletedClick(training: OrgTraining): void {
-    this.trainingInProgressDrawerVisible.set(false);
-    this.activeTraining.set(training);
-    this.trainingCompletedDrawerVisible.set(true);
-  }
-
-  protected onTrainingInProgressClick(training: OrgTraining): void {
-    this.trainingCompletedDrawerVisible.set(false);
-    this.activeTraining.set(training);
-    this.trainingInProgressDrawerVisible.set(true);
-  }
-
-  protected switchTab(tabId: OrgTrainingTabId): void {
-    if (tabId === this.activeTab()) {
+  protected onActiveTabChange(tabId: string): void {
+    if (!VALID_ORG_TRAINING_TAB_IDS.has(tabId as OrgTrainingTabId) || tabId === this.activeTab()) {
       return;
     }
+    // Merge keeps range, filters and group-by in the URL across tabs.
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { tab: tabId === DEFAULT_ORG_TRAINING_TAB_ID ? null : tabId },
@@ -216,35 +122,20 @@ export class OrgTrainingComponent {
     });
   }
 
-  protected onActiveTabChange(tabId: string): void {
-    if (!VALID_ORG_TRAINING_TAB_IDS.has(tabId as OrgTrainingTabId)) {
-      return;
-    }
-    this.switchTab(tabId as OrgTrainingTabId);
-  }
-
-  protected onStatCardClick(tabId: OrgTrainingTabId): void {
-    this.switchTab(tabId);
+  protected retryStats(): void {
+    this.statsRetryTrigger.update((value) => value + 1);
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
-  private initActiveTab(): Signal<OrgTrainingTabId> {
-    const queryParamMap = toSignal(this.route.queryParamMap, {
-      initialValue: this.route.snapshot.queryParamMap,
-    });
-    return computed(() => {
-      const raw = queryParamMap().get('tab');
-      return raw && VALID_ORG_TRAINING_TAB_IDS.has(raw as OrgTrainingTabId) ? (raw as OrgTrainingTabId) : DEFAULT_ORG_TRAINING_TAB_ID;
-    });
-  }
-
   private initTrainingStats(): Signal<OrgTrainingStats | null> {
-    const orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid ?? null));
+    const request$ = toObservable(
+      computed(() => ({ orgUid: this.accountContext.selectedAccount()?.uid ?? null, query: this.statsQuery(), retry: this.statsRetryTrigger() }))
+    );
     return toSignal(
-      orgUid$.pipe(
-        switchMap((id) => {
+      request$.pipe(
+        switchMap(({ orgUid, query }) => {
           // No org selected (or context cleared mid-flight): reset state instead of leaving loading stuck.
-          if (!id) {
+          if (!orgUid) {
             this.statsLoading.set(false);
             this.statsError.set(false);
             return of(null);
@@ -253,8 +144,9 @@ export class OrgTrainingComponent {
           this.statsLoading.set(true);
           this.statsError.set(false);
 
-          return this.trainingService.getTrainingStats(id).pipe(
-            catchError(() => {
+          return this.trainingService.getTrainingStats(orgUid, query).pipe(
+            catchError((error: unknown) => {
+              console.error('Failed to load training stats', error);
               this.statsError.set(true);
               return of(null);
             }),
@@ -264,107 +156,6 @@ export class OrgTrainingComponent {
         })
       ),
       { initialValue: null }
-    );
-  }
-
-  private initCertifications(): Signal<OrgCertificationsResponse> {
-    // Rebuild a query object whenever org, filters, sort, or pagination change; toObservable
-    // emits the new object and switchMap cancels any in-flight request for the prior query.
-    const query$ = toObservable(
-      computed(() => ({
-        activeTab: this.activeTab(),
-        orgUid: this.accountContext.selectedAccount()?.uid ?? null,
-        searchQuery: this.searchValue(),
-        level: this.levelValue(),
-        sortField: this.certSortField(),
-        sortOrder: this.certSortOrder(),
-        offset: this.certOffset(),
-        pageSize: this.certPageSize(),
-      }))
-    );
-
-    return toSignal(
-      query$.pipe(
-        switchMap((query) => {
-          // Only query Snowflake when the Certifications tab is active and an org is selected —
-          // avoids avoidable load when the Trainings tab is showing or no org is resolved yet.
-          if (query.activeTab !== 'certifications' || !query.orgUid) {
-            this.certificationsLoading.set(false);
-            this.certificationsError.set(false);
-            return of(EMPTY_ORG_CERTIFICATIONS_RESPONSE);
-          }
-
-          this.certificationsLoading.set(true);
-          this.certificationsError.set(false);
-
-          return this.trainingService
-            .getOrgCertifications(query.orgUid, {
-              searchQuery: query.searchQuery || undefined,
-              level: query.level,
-              sortField: query.sortField,
-              sortOrder: query.sortOrder,
-              offset: query.offset,
-              pageSize: query.pageSize,
-            })
-            .pipe(
-              // Distinguish a real failure from an empty result so the template can show an error state.
-              catchError(() => {
-                this.certificationsError.set(true);
-                return of(EMPTY_ORG_CERTIFICATIONS_RESPONSE);
-              }),
-              finalize(() => this.certificationsLoading.set(false))
-            );
-        })
-      ),
-      { initialValue: EMPTY_ORG_CERTIFICATIONS_RESPONSE }
-    );
-  }
-
-  private initTrainings(): Signal<OrgTrainingsResponse> {
-    const query$ = toObservable(
-      computed(() => ({
-        activeTab: this.activeTab(),
-        orgUid: this.accountContext.selectedAccount()?.uid ?? null,
-        searchQuery: this.searchValue(),
-        level: this.levelValue(),
-        sortField: this.trainingSortField(),
-        sortOrder: this.trainingSortOrder(),
-        offset: this.trainingOffset(),
-        pageSize: this.trainingPageSize(),
-      }))
-    );
-
-    return toSignal(
-      query$.pipe(
-        switchMap((query) => {
-          if (query.activeTab !== 'trainings' || !query.orgUid) {
-            this.trainingsLoading.set(false);
-            this.trainingsError.set(false);
-            return of(EMPTY_ORG_TRAININGS_RESPONSE);
-          }
-
-          this.trainingsLoading.set(true);
-          this.trainingsError.set(false);
-
-          return this.trainingService
-            .getOrgTrainings(query.orgUid, {
-              searchQuery: query.searchQuery || undefined,
-              level: query.level,
-              sortField: query.sortField,
-              sortOrder: query.sortOrder,
-              offset: query.offset,
-              pageSize: query.pageSize,
-            })
-            .pipe(
-              catchError(() => {
-                this.trainingsError.set(true);
-                return of(EMPTY_ORG_TRAININGS_RESPONSE);
-              }),
-              finalize(() => this.trainingsLoading.set(false))
-            );
-        })
-      ),
-      { initialValue: EMPTY_ORG_TRAININGS_RESPONSE }
     );
   }
 }

@@ -307,6 +307,18 @@ export function mockProjectAnnual(slug: string, efficiencyConstant = true, appor
   return { method: 'logit', projectSlug: slug, rows, apportioned, efficiencyConstant };
 }
 
+export const MOCK_VALUE_DRIVERS = {
+  method: 'logit',
+  nProjects: 12,
+  rows: [
+    { category: 'Revenue Boosters', pctDeviation: 14.2 },
+    { category: 'Strategic', pctDeviation: 6.8 },
+    { category: 'Prosocial', pctDeviation: 1.9 },
+    { category: 'Risk Mitigation', pctDeviation: -5.3 },
+    { category: 'Direct Cost Savings', pctDeviation: -9.7 },
+  ],
+};
+
 interface StubOptions {
   hasAccess?: boolean;
   summary?: unknown;
@@ -314,6 +326,9 @@ interface StubOptions {
   annual?: unknown;
   investmentBreakdown?: unknown;
   projects?: unknown;
+  valueDrivers?: unknown;
+  /** Status to answer the value drivers route with; 200 uses the payload above. */
+  valueDriversStatus?: number;
   /** Status to answer both project-detail routes with; 200 uses the payloads below. */
   projectDetailStatus?: number;
   projectDetail?: unknown;
@@ -341,6 +356,11 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
   await page.route('**/api/orgs/*/lens/roi/annual*', (route) => fulfillJson(route, options.annual ?? MOCK_ANNUAL));
   await page.route('**/api/orgs/*/lens/roi/investment-breakdown*', (route) => fulfillJson(route, options.investmentBreakdown ?? MOCK_INVESTMENT_BREAKDOWN));
   await page.route('**/api/orgs/*/lens/roi/projects*', (route) => fulfillJson(route, options.projects ?? MOCK_PROJECTS));
+  await page.route('**/api/orgs/*/lens/roi/value-drivers*', (route) => {
+    const status = options.valueDriversStatus ?? 200;
+    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(stubbedError(status)) });
+    return fulfillJson(route, options.valueDrivers ?? MOCK_VALUE_DRIVERS);
+  });
 
   // These three globs cannot overlap: `*` does not cross a `/`, so the collection route above
   // cannot capture `/projects/{slug}`, and neither can capture `/projects/{slug}/annual`. That

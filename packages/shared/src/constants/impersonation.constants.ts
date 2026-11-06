@@ -23,6 +23,35 @@ export const IMPERSONATION_EMPTY_TARGET_MESSAGE = 'Enter a name, email, or usern
 
 export const IMPERSONATION_SELF_MESSAGE = 'You cannot impersonate yourself. Enter a different username or email address.';
 
+/** Shortest typed text worth searching: the auth-service ignores shorter terms, so a query of only those is refused. */
+export const IMPERSONATION_SEARCH_MIN_LENGTH = 3;
+
+/** Longest search text accepted; the auth-service refuses anything longer. */
+export const IMPERSONATION_SEARCH_MAX_LENGTH = 200;
+
+/** How many people the picker asks the auth-service for. */
+export const IMPERSONATION_SEARCH_LIMIT = 10;
+
+/** Error codes for `GET /api/impersonate/users`; the response never carries upstream text. */
+export const IMPERSONATION_SEARCH_FORBIDDEN_CODE = 'IMPERSONATION_SEARCH_FORBIDDEN';
+export const IMPERSONATION_SEARCH_INVALID_CODE = 'IMPERSONATION_SEARCH_INVALID';
+export const IMPERSONATION_SEARCH_UNAVAILABLE_CODE = 'IMPERSONATION_SEARCH_UNAVAILABLE';
+export const IMPERSONATION_SEARCH_FAILED_CODE = 'IMPERSONATION_SEARCH_FAILED';
+/** The search request to auth-service itself failed (no reply), as opposed to auth-service answering with an error. */
+export const IMPERSONATION_SEARCH_NATS_ERROR_CODE = 'IMPERSONATION_SEARCH_NATS_ERROR';
+
+export const IMPERSONATION_SEARCH_FORBIDDEN_MESSAGE = 'You are not allowed to search for users to impersonate.';
+export const IMPERSONATION_SEARCH_INVALID_MESSAGE = `Enter at least ${IMPERSONATION_SEARCH_MIN_LENGTH} characters to search for a user.`;
+export const IMPERSONATION_SEARCH_UNAVAILABLE_MESSAGE = 'User search is unavailable right now. Please try again.';
+export const IMPERSONATION_SEARCH_FAILED_MESSAGE = 'We could not search for users. Please try again.';
+
+/**
+ * Per-admin budget for the picker's user search. Every call fans out to an Auth0 directory search whose rate limit
+ * is shared with login and profile flows, and a typeahead is far below this pace for a person typing.
+ */
+export const IMPERSONATION_SEARCH_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+export const IMPERSONATION_SEARCH_RATE_LIMIT_MAX = 60;
+
 /** Copy shown by the page-level overlay while an impersonation change is in flight, keyed by transition. */
 export const IMPERSONATION_TRANSITION_MESSAGES: Record<ImpersonationTransition, string> = {
   starting: 'Starting impersonation...',

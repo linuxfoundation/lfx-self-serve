@@ -431,6 +431,7 @@ describe('UiComboboxComponent', () => {
   it('sizes the field by the size input and keeps a forced-colors border', async () => {
     const trigger = host.querySelector('[data-testid="ui-combobox-trigger"]') as HTMLElement;
     expect(trigger.className).toContain('h-ui-medium');
+    expect(trigger.className).toContain('edge-control-hover');
     expect(trigger.className).toContain('forced-colors:border-[color:CanvasText]');
 
     await set('size', 'tiny');
@@ -448,6 +449,7 @@ describe('UiComboboxComponent', () => {
     (host.querySelector('[data-testid="ui-combobox-trigger"]') as HTMLElement).click();
     await fixture.whenStable();
     expect(listbox()).toBeNull();
+    expect((host.querySelector('[data-testid="ui-combobox-trigger"]') as HTMLElement).className).not.toContain('edge-control-hover');
   });
 
   it('gives each instance its own ids', () => {
