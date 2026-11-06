@@ -421,13 +421,15 @@ describe('validateBrandKitLogoFiles', () => {
     expect(validateBrandKitLogoFiles([{ name: 'logo.png', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1) }])).toEqual({ valid: true, errors: [] });
   });
 
-  it('reads the ZIP name as the rest of the check does — trimmed, any case — and caps a ZIP sent as text the same way', () => {
+  it('reads the ZIP name as the rest of the check does — trimmed, any case — and refuses a ZIP sent as text outright', () => {
     const sentence = 'a ZIP must stay under 150 KB (SVG files only); the full logo package linked on a brand page is usually too large to send';
     const over = 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1);
     expect(validateBrandKitLogoFiles([{ name: 'package.zip ', base64: over }])).toEqual({ valid: false, errors: [`logoFiles[0].base64: ${sentence}`] });
     expect(validateBrandKitLogoFiles([{ name: 'PACKAGE.ZIP', base64: over }])).toEqual({ valid: false, errors: [`logoFiles[0].base64: ${sentence}`] });
-    expect(validateBrandKitLogoFiles([{ name: 'package.zip', text: over }])).toEqual({ valid: false, errors: [`logoFiles[0].text: ${sentence}`] });
-    expect(validateBrandKitLogoFiles([{ name: 'package.zip', text: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS) }])).toEqual({ valid: true, errors: [] });
+    // A package is bytes: as text its length says nothing about the cap, so any length is refused.
+    for (const text of ['PK', 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS), over]) {
+      expect(validateBrandKitLogoFiles([{ name: 'package.zip', text }])).toEqual({ valid: false, errors: ['logoFiles[0].text: a ZIP goes as base64'] });
+    }
   });
 
   it('takes no files as valid', () => {
