@@ -4,7 +4,7 @@ description: View the crowdfunding donations made on behalf of an organization i
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, organization, lens]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Crowdfunding
 ---
 
@@ -19,6 +19,8 @@ Anyone who can view the selected organization in the **Organization** lens.
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Switch to the **Organization** lens and select the organization.
 3. Select **Crowdfunding Donations** from the left navigation sidebar.
+
+The page is about one organization, so it is not part of the **All Organizations Roll-Up**: while the combined view is selected, **Crowdfunding Donations** is not in the sidebar. Select a single organization to open it.
 
 ## What the page shows
 

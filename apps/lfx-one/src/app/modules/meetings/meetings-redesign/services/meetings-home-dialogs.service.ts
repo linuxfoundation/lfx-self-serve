@@ -37,7 +37,7 @@ export class MeetingsHomeDialogsService {
   /** Call it straight from the click: Safari only allows the copy during the user's gesture. */
   public copyRecordingLink(shareUrl: string): void {
     if (this.clipboard.copy(shareUrl)) {
-      this.toast.show({ variant: 'success', message: 'Recording link copied to clipboard' });
+      this.toast.show({ variant: 'dark', message: 'Recording link copied to clipboard' });
     } else {
       this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Failed to copy recording link' });
     }

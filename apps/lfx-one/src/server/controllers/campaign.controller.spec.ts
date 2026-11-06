@@ -1400,6 +1400,20 @@ describe('CampaignController.createCampaign cutover', () => {
       { demandGenVideoCreative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } },
     ],
     ['an oversized video ad scalar', { demandGenVideoCreative: { businessName: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
+    // The named Demand Gen ad groups (#5226): the list, a name, and each group's creatives.
+    [
+      'an ad group list above the entry cap',
+      { demandGenAdGroups: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ({ name: `g${i}` })) },
+    ],
+    ['an oversized ad group name', { demandGenAdGroups: [{ name: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) }] }],
+    [
+      "an oversized list in an ad group's image ad",
+      { demandGenAdGroups: [{ name: 'a', creative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } }] },
+    ],
+    [
+      "an oversized scalar in an ad group's video ad",
+      { demandGenAdGroups: [{ name: 'a', videoCreative: { businessName: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }] },
+    ],
     ['an oversized conversion-action list', { conversionActions: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `a-${i}`) }],
     ['an oversized callout list', { callouts: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `c-${i}`) }],
     ['an oversized callout, which would otherwise reach the trim', { callouts: [`x${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}x`] }],
@@ -3719,6 +3733,7 @@ describe('CampaignController.createCampaign cutover', () => {
       conversionActions: ['customers/1234567890/conversionActions/111'],
       demandGenCreative: { headlines: ['Build with open source'] },
       demandGenVideoCreative: { youtubeVideoIds: ['dQw4w9WgXcQ'] },
+      demandGenAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Build with open source'] } }],
       performanceMaxCreative: { businessName: 'Example Foundation' },
       displayCreative: { headlines: ['Join us this spring'] },
       path1: 'kubecon',
@@ -3767,6 +3782,24 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(legacyCreate).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenVideoCreative' });
+    });
+
+    it('refuses a Demand Gen create split into ad groups by name while the cutover is dark (#5226)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us'] } }] }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAdGroups' });
     });
 
     // Over-refusal is the failure mode to avoid: an empty or null list asks for nothing, and the
@@ -4115,11 +4148,24 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toHaveLength(1);
   });
 
-  it('refuses ad schedules on Demand Gen by name, the one channel upstream fences them off', async () => {
-    // Named, not silently withheld: an operator who day-parted a campaign and got one serving
-    // around the clock would have no way to know the schedule was dropped.
+  it('dispatches a Demand Gen window with no bid modifier, which campaign-service v1.0.31 takes (#474)', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000031', error: null });
+
     await controller.createCampaign(
       buildReq(googleBody({ campaignTypes: ['demand-gen'], adSchedules: [WEEKDAY] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toEqual([WEEKDAY]);
+  });
+
+  it('refuses a Demand Gen window carrying a bid modifier, even under Maximize Clicks, as validateCriteriaPlan does', async () => {
+    // Maximize Clicks is Demand Gen's default and takes a schedule adjustment on Search and Display,
+    // so only the channel rule refuses this.
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], adSchedules: [{ ...WEEKDAY, bidModifier: 1.2 }] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
@@ -4127,7 +4173,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.field).toBe('adSchedules');
-    expect(error.message).toContain('Demand Gen');
+    expect(error.message).toContain('Demand Gen campaigns take an ad schedule only without a bid adjustment');
   });
 
   it('refuses a 43rd ad schedule, matching the cap upstream checks against the submitted count', async () => {
@@ -4511,7 +4557,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('Performance Max');
   });
 
-  it('refuses device bid modifiers on Demand Gen, which refuses the whole criteria set', async () => {
+  it('refuses a non-zero device modifier on Demand Gen, which takes a device only as an exclusion', async () => {
     await controller.createCampaign(
       buildReq(googleBody({ campaignTypes: ['demand-gen'], deviceBidModifiers: [MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
@@ -4521,7 +4567,40 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.field).toBe('deviceBidModifiers');
-    expect(error.message).toContain('Demand Gen');
+    expect(error.message).toContain('Demand Gen campaigns take a device only as an exclusion');
+  });
+
+  it('dispatches a Demand Gen CONNECTED_TV exclusion, which only Demand Gen takes (#474)', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000031', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], deviceBidModifiers: [{ device: 'CONNECTED_TV', bidModifier: 0 }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers']).toEqual([
+      { device: 'CONNECTED_TV', bidModifier: 0 },
+    ]);
+  });
+
+  it('caps a Demand Gen device list at four, the size of its vocabulary', async () => {
+    const all = ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV'].map((device) => ({ device, bidModifier: 0 }));
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], deviceBidModifiers: [...all, { device: 'MOBILE', bidModifier: 0 }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('at most 4 device bid modifiers on one Demand Gen campaign');
   });
 
   it.each([['video'], ['display']])('dispatches a device exclusion on %s, which upstream leaves un-narrowed', async (channel) => {
@@ -4799,7 +4878,7 @@ describe('CampaignController.createCampaign cutover', () => {
   it.each([
     ['excludedAgeRanges', { excludedAgeRanges: ['18-24'] }],
     ['excludedGenders', { excludedGenders: ['MALE'] }],
-  ])('refuses %s on Demand Gen, which refuses the whole criteria set', async (field, overrides) => {
+  ])('refuses %s on Demand Gen, which refuses demographic exclusions on its audience-grouped ad group', async (field, overrides) => {
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(createCampaigns).not.toHaveBeenCalled();
@@ -5175,6 +5254,109 @@ describe('CampaignController.createCampaign cutover', () => {
     });
   });
 
+  describe('Demand Gen ad groups (#5226)', () => {
+    const VIDEO = {
+      youtubeVideoIds: ['dQw4w9WgXcQ'],
+      logoImages: ['https://cdn.example/logo.png'],
+      headlines: ['Join us'],
+      longHeadlines: ['Four days of cloud native talks'],
+      descriptions: ['Register today'],
+      businessName: 'Example Foundation',
+    };
+    const create = async (fields: Record<string, unknown>, campaignTypes = ['demand-gen']): Promise<void> => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes, ...fields }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    };
+
+    it('forwards the groups under demandGenAdGroups, normalized, with no campaign-level creative', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000522b', error: null });
+
+      await create({
+        demandGenAdGroups: [
+          { name: ' Retargeting ', creative: { headlines: [' Join us ', ' '], businessName: '' } },
+          { name: 'Prospecting', videoCreative: { ...VIDEO, descriptions: [' Register today '] }, creative: { headlines: ['  '] } },
+        ],
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config).not.toHaveProperty('demandGenCreative');
+      expect(config).not.toHaveProperty('demandGenVideoCreative');
+      expect(config['demandGenAdGroups']).toEqual([
+        { name: 'Retargeting', creative: { headlines: ['Join us'] } },
+        { name: 'Prospecting', videoCreative: VIDEO },
+      ]);
+    });
+
+    it('leaves the request byte-identical when no list, or an empty list, is sent', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000522c', error: null });
+      await create({ demandGenCreative: { headlines: ['Join us'] } });
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create({ demandGenCreative: { headlines: ['Join us'] }, demandGenAdGroups: [] });
+
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+      expect(without).not.toContain('demandGenAdGroups');
+    });
+
+    it.each([
+      ['a value that is not a list', { demandGenAdGroups: { name: 'Retargeting' } }, 'must be a list'],
+      ['a string in place of the list', { demandGenAdGroups: 'Retargeting' }, 'must be a list'],
+      [
+        'six groups',
+        { demandGenAdGroups: ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => ({ name, creative: { headlines: ['Join us'] } })) },
+        'at most 5 ad groups',
+      ],
+      ['a blank name', { demandGenAdGroups: [{ name: ' | ', creative: { headlines: ['Join us'] } }] }, 'ad group 1 needs a name'],
+      [
+        'a name repeated ignoring case',
+        {
+          demandGenAdGroups: [
+            { name: 'Retargeting', creative: { headlines: ['Join us'] } },
+            { name: 'RETARGETING', creative: { headlines: ['Join us'] } },
+          ],
+        },
+        'same name as ad group 1',
+      ],
+      [
+        'a full name over 255',
+        { eventName: 'E'.repeat(250), demandGenAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us'] } }] },
+        'over Google',
+      ],
+      [
+        'two creatives in one group',
+        { demandGenAdGroups: [{ name: 'a', creative: { headlines: ['Join us'] }, videoCreative: VIDEO }] },
+        'image ad and a video ad',
+      ],
+      ['a group with no ad', { demandGenAdGroups: [{ name: 'a', creative: { headlines: [' '] } }] }, 'has no ad'],
+      ["a group's video ad that fails its rules", { demandGenAdGroups: [{ name: 'a', videoCreative: { ...VIDEO, logoImages: [] } }] }, 'exactly one logo'],
+      [
+        'the list beside a campaign-level image ad',
+        { demandGenCreative: { headlines: ['Join us'] }, demandGenAdGroups: [{ name: 'a', creative: { headlines: ['Join us'] } }] },
+        'must be empty',
+      ],
+      [
+        'the list beside a campaign-level video ad',
+        { demandGenVideoCreative: VIDEO, demandGenAdGroups: [{ name: 'a', videoCreative: VIDEO }] },
+        'must be empty',
+      ],
+    ])('refuses %s by name before any upstream call', async (_label, fields, fragment) => {
+      await create(fields);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAdGroups', message: expect.stringContaining(fragment) });
+    });
+
+    it('neither sends nor judges groups left under another channel', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000522d', error: null });
+
+      await create({ demandGenAdGroups: [{ name: ' ' }] }, ['display']);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(envelopeFor(createCampaigns)['googleAdsConfig']).not.toHaveProperty('demandGenAdGroups');
+    });
+  });
+
   describe('Demand Gen video ad (#5226)', () => {
     const VIDEO = {
       youtubeVideoIds: [' dQw4w9WgXcQ '],
@@ -5399,24 +5581,17 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('41');
   });
 
-  it('refuses languages on Demand Gen by name, the one channel upstream refuses the whole criteria set on', async () => {
-    // `validateCriteriaPlan` refuses languages, device bid modifiers, demographics and ad schedules
-    // together on Demand Gen, and upstream's contract for the field is "refused, never silently
-    // dropped". Dropping the list here instead would create a campaign serving in every language
-    // and report success. The UI never sends this; a direct caller gets a named 400, nothing sent.
-    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['EN'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+  it('forwards languages on Demand Gen, which campaign-service v1.0.31 attaches to the ad group (#459)', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000031', error: null });
 
-    expect(createCampaigns).not.toHaveBeenCalled();
-    const error = refusalFrom();
-    expect(error.statusCode).toBe(400);
-    expect(error.field).toBe('languages');
-    expect(error.message).toContain('Demand Gen');
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['en'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['languages']).toEqual(['EN']);
   });
 
-  it('refuses a blank-only list on Demand Gen for the channel, because upstream counts blanks as asked', async () => {
-    // `validateCriteriaPlan` counts `len(in.Languages)`, so `['', '  ']` trips the Demand Gen fence
-    // before `resolveLanguageList` sees a blank. Dropping the blanks would dispatch an every-language
-    // campaign upstream refuses.
+  it('refuses a blank-only list on Demand Gen by its blank entry, as resolveLanguageList does', async () => {
+    // Blanks are counted as asked, not dropped: dropping them would dispatch an every-language campaign.
     await controller.createCampaign(
       buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['', '  '] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
@@ -5426,7 +5601,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.field).toBe('languages');
-    expect(error.message).toContain('Demand Gen');
+    expect(error.message).toContain('blank entry');
   });
 
   it('forwards languages on Performance Max, which upstream documents as taking campaign languages', async () => {
@@ -5502,7 +5677,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).not.toContain('ZU');
   });
 
-  it('refuses an over-cap Demand Gen list for the channel, which upstream judges before the cap', async () => {
+  it('refuses an over-cap Demand Gen list on the cap, as it does on every channel', async () => {
     const forty = Object.keys(GOOGLE_ADS_LANGUAGE_MAP).slice(0, 39);
     await controller.createCampaign(
       buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: [...forty, 'EN', 'DE'] }), { project: 'tlf', brief_id: 'b-1' }),
@@ -5510,7 +5685,7 @@ describe('CampaignController.createCampaign cutover', () => {
       next
     );
 
-    expect(refusalFrom().message).toContain('Demand Gen');
+    expect(refusalFrom().message).toContain('41');
   });
 
   it('accepts the largest canonical language constant id, int64 max, which upstream parses', async () => {
@@ -6195,20 +6370,132 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   it.each([
-    ['a sitelink', [link('Register')]],
-    ['an entry with every field blank, which upstream still counts as asked', [{ text: '', finalUrl: '' }]],
-  ])('refuses %s on a non-Search channel by name, because upstream refuses the whole create there', async (_label, sitelinks) => {
+    ['a sitelink on Display', 'display', 'Display', [link('Register')]],
+    ['a sitelink on Performance Max', 'performance-max', 'Performance Max', [link('Register')]],
+    ['an entry with every field blank, which upstream still counts as asked', 'display', 'Display', [{ text: '', finalUrl: '' }]],
+  ])('refuses %s by name, a channel sitelinks are not sent on', async (_label, channel, channelLabel, sitelinks) => {
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: [channel], sitelinks }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain(`only sent on Search and Demand Gen campaigns, not on ${channelLabel} campaigns`);
+  });
+
+  /**
+   * Demand Gen takes sitelinks alone (campaign-service v1.0.31, `validateAssetPlan`, #474): the
+   * same `validateSitelinks` as Search, linked by the same `createCampaignAssets`. Pinned whole, so a
+   * builder that leaked a Search-shaped field onto the Demand Gen envelope alongside them fails here.
+   */
+  it('dispatches sitelinks on a Demand Gen create, trimmed and untagged, beside nothing else new', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005a1', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          campaignTypes: ['demand-gen'],
+          budgetUsd: 500,
+          sitelinks: [link(' Register '), link('Agenda', { description1: 'Talks', description2: 'Workshops', finalUrl: 'https://events.example.org/agenda' })],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+      budget: 500,
+      channel: 'demand-gen',
+      startDate: '2026-04-01',
+      endDate: '2026-04-30',
+      sitelinks: [
+        { text: 'Register', finalUrl: 'https://events.example.org/register' },
+        { text: 'Agenda', description1: 'Talks', description2: 'Workshops', finalUrl: 'https://events.example.org/agenda' },
+      ],
+    });
+  });
+
+  /**
+   * The builder's own channel gate, behind the by-name refusal: unreachable through a create today,
+   * so pinned on the helper, which must never put sitelinks on a channel outside the list.
+   */
+  it.each([
+    ['search', true],
+    ['demand-gen', true],
+    ['display', false],
+    ['performance-max', false],
+    ['video', false],
+  ] as const)('builds sitelinks for %s only when the channel takes them', (channel, taken) => {
+    const build = (controller as unknown as { googleSitelinks: (body: unknown, channel: string) => Record<string, unknown> }).googleSitelinks.bind(controller);
+
+    expect(build({ sitelinks: [link('Register')] }, channel)).toEqual(
+      taken ? { sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] } : {}
+    );
+  });
+
+  it.each([
+    ['an absent sitelink list', {}],
+    ['an empty sitelink list', { sitelinks: [] }],
+    ['a null sitelink list', { sitelinks: null }],
+  ])('leaves a Demand Gen request byte-identical for %s', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005a2', error: null });
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+    createCampaigns.mockClear();
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], ...overrides } as never), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+    expect(without).not.toContain('sitelinks');
+  });
+
+  /** The same per-entry rules as Search, because upstream runs the same `validateSitelinks` on both. */
+  it.each([
+    ['no link text', [link('  ')], 'sitelink 1 has no link text'],
+    ['link text over 25 runes', [link('A'.repeat(26))], 'has 26'],
+    ['a repeat in a different case', [link('Register Now'), link('register now')], 'more than once'],
+    ['one description line', [link('Register', { description1: 'Talks' })], 'both description lines'],
+    ['a description line over 35 runes', [link('Register', { description1: 'A'.repeat(36), description2: 'B' })], 'description lines of at most 35'],
+    ['no destination', [link('Register', { finalUrl: '  ' })], 'has no destination URL'],
+    ['a non-web destination', [link('Register', { finalUrl: 'javascript:alert(1)' })], 'not a web address Google accepts'],
+    ['a destination with credentials', [link('Register', { finalUrl: 'https://user:pw@events.example.org/' })], 'not a web address Google accepts'],
+    ['21 sitelinks', [...SITELINKS_20, link('Extra')], 'at most 20 sitelinks'],
+  ])('refuses a Demand Gen sitelink with %s, as on Search', async (_label, sitelinks, expected) => {
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], sitelinks }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(createCampaigns).not.toHaveBeenCalled();
     expect(refusalFrom().field).toBe('sitelinks');
-    expect(refusalFrom().message).toContain('Demand Gen');
+    expect(refusalFrom().message).toContain(expected);
+  });
+
+  /**
+   * Sitelinks open the Demand Gen fence for sitelinks ONLY: upstream refuses every other extension
+   * list there ("ad extensions other than sitelinks ... are not supported on DEMAND_GEN"), so a
+   * callout or snippet beside a valid sitelink is still refused by name before any upstream call.
+   */
+  it.each([
+    ['callouts', { callouts: ['Free to attend'] }, 'callouts'],
+    ['structured snippets', { structuredSnippets: [{ header: 'Types', values: ['Talks', 'Labs', 'Demos'] }] }, 'structured snippets'],
+  ])('still refuses %s on Demand Gen beside a valid sitelink', async (_label, overrides, noun) => {
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], sitelinks: [link('Register')], ...overrides }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain(`only accepts ${noun} on Search campaigns, not on Demand Gen`);
   });
 
   it.each([
     ['the language guard before the sitelink guard', { languages: ['ZU'], sitelinks: [link('')] }, 'languages', 'ZU'],
     ['the sitelink guard before the callout guard', { sitelinks: [link('')], callouts: [''] }, 'sitelinks', 'no link text'],
-    ['the channel before the cap', { campaignTypes: ['demand-gen'], sitelinks: [...SITELINKS_20, link('Extra')] }, 'sitelinks', 'Demand Gen'],
+    ['the channel before the cap', { campaignTypes: ['display'], sitelinks: [...SITELINKS_20, link('Extra')] }, 'sitelinks', 'Display'],
     ['the cap before a bad entry', { sitelinks: [...SITELINKS_20, link('')] }, 'sitelinks', '21'],
     [
       'the first bad entry, a repeat before a bad URL',
@@ -10109,6 +10396,34 @@ describe('CampaignController.createCampaign Google stored images', () => {
         code: 'FIELD_VALIDATION_ERROR',
       },
     ]);
+  });
+
+  it.each([
+    ['creative', 'marketingImages'],
+    ['videoCreative', 'logoImages'],
+  ])("refuses a stored image in a Demand Gen ad group's %s when the Google-assets flag is off (#5226)", async (key, field) => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          ...body('demand-gen', 'demandGenCreative', {}),
+          demandGenAdGroups: [{ name: 'a' }, { name: 'b', [key]: { [field]: ['https://cdn.example/a.png', { imageAssetId: ASSET }] } }],
+        },
+        {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([expect.objectContaining({ field: `demandGenAdGroups[1].${key}.${field}[1].imageAssetId` })]);
   });
 
   it('refuses a stored image in the Demand Gen video logo when the Google-assets flag is off (#5226)', async () => {

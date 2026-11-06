@@ -17,6 +17,7 @@ import {
   buildFoundationMessagePrintView,
   foundationMessagePrintSections,
   mktgPrintBrand,
+  mktgPrintDocumentTitle,
 } from './mktg-print.utils';
 import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
 import faqEnvelope from './__fixtures__/faq-envelope.json';
@@ -238,5 +239,24 @@ describe('the framework’s print', () => {
       ['Adoption', 'Docs · Slack'],
       ['', ''],
     ]);
+  });
+});
+
+describe('the printed document’s title, the saved PDF’s file name', () => {
+  it('names the PDF like the deck: the project, the asset, the revision on the page and that revision’s own UTC date', () => {
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Brand kit', 3, '2026-11-05T23:30:00Z')).toBe('Synthetic Foundation · Brand kit · v3 · 2026-11-05');
+    // The revision's date, not the download's, and the UTC day (a local evening is the next UTC day).
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Messaging framework', 1, '2026-10-20T22:15:00-05:00')).toBe(
+      'Synthetic Foundation · Messaging framework · v1 · 2026-10-21'
+    );
+  });
+
+  it('leaves out what the document lacks: the version of the family PDF, a date the revision does not carry, a project it does not know', () => {
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Positioning & brand', null, '2026-10-28T09:00:00Z')).toBe(
+      'Synthetic Foundation · Positioning & brand · 2026-10-28'
+    );
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Brand kit', 2, null)).toBe('Synthetic Foundation · Brand kit · v2');
+    expect(mktgPrintDocumentTitle('Synthetic Foundation', 'Brand kit', 2, 'not-a-date')).toBe('Synthetic Foundation · Brand kit · v2');
+    expect(mktgPrintDocumentTitle('', 'AEO/GEO report', 2, '2026-10-13T12:02:00.000Z')).toBe('AEO/GEO report · v2 · 2026-10-13');
   });
 });

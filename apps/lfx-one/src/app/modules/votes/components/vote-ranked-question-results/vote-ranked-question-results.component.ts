@@ -13,6 +13,8 @@ import { RankedQuestionView } from '@lfx-one/shared/interfaces';
 export class VoteRankedQuestionResultsComponent {
   // === Inputs ===
   public readonly question = input.required<RankedQuestionView>();
+  /** One-based position in a multi-question Results view; omit for an unnumbered heading. */
+  public readonly questionNumber = input<number>();
   public readonly variant = input<'creator' | 'voter'>('creator');
   /** Turns each choice's Rank 1 count into a link to the voters who ranked it first — vote managers on named votes only (#3914). */
   public readonly showVoterLinks = input<boolean>(false);

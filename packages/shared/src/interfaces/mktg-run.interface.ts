@@ -376,6 +376,8 @@ export interface MktgIntakeLogoFilesConfig {
   maxFiles: number;
   /** Largest file, in characters once read (SVG text, or base64 bytes). */
   maxFileChars: number;
+  /** Largest ZIP, in bytes as picked: a package is refused before any read. */
+  maxZipBytes: number;
   /** All files together, in characters — one request body carries them. */
   maxPayloadChars: number;
   /** Accepted file extensions, lowercase with the dot. */

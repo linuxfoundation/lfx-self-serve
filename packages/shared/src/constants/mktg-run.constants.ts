@@ -13,6 +13,7 @@ import {
   BRAND_KIT_MAX_LOGO_FILE_CHARS,
   BRAND_KIT_MAX_LOGO_FILES,
   BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
+  BRAND_KIT_MAX_LOGO_ZIP_BYTES,
   BRAND_KIT_REQUIRED_HEADINGS,
 } from './brand-kit.constants';
 import {
@@ -144,6 +145,7 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
     footnote: `SVG, PNG or ZIP, up to ${BRAND_KIT_MAX_LOGO_FILES} files — read here and sent with the form. Keep a ZIP small: SVG files only, under 150 KB; the full logo package linked on a brand page is usually too large to send. With no file, the agent asks for them. The kit never draws or reconstructs a mark.`,
     maxFiles: BRAND_KIT_MAX_LOGO_FILES,
     maxFileChars: BRAND_KIT_MAX_LOGO_FILE_CHARS,
+    maxZipBytes: BRAND_KIT_MAX_LOGO_ZIP_BYTES,
     maxPayloadChars: BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
     fileExtensions: [...BRAND_KIT_LOGO_FILE_EXTENSIONS],
   },

@@ -144,17 +144,20 @@ describe('Family export client', () => {
       )
       .subscribe((value) => (view = value));
     const revision = http.expectOne((request) => request.url.includes('/documents/brand-kit/living/revisions/'));
-    revision.flush(approvedKit());
-    for (const [agentKey, envelope] of [
-      ['boilerplates', boilerplatesEnvelope],
-      ['faq', faqEnvelope],
+    const kitResponse = approvedKit();
+    revision.flush({ ...kitResponse, revision: { ...kitResponse.revision, createdAt: '2026-10-21T10:00:00Z' } });
+    for (const [agentKey, envelope, createdAt] of [
+      ['boilerplates', boilerplatesEnvelope, '2026-10-28T09:00:00Z'],
+      ['faq', faqEnvelope, null],
     ] as const) {
       const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === agentKey);
+      const response = approvedKit();
       http
         .expectOne((request) => request.url.includes(`/documents/${agentKey}/living/revisions/`))
         .flush({
-          ...approvedKit(),
+          ...response,
           type,
+          revision: { ...response.revision, createdAt },
           markdown: JSON.stringify(envelope.content),
           sidecar: envelope,
         });
@@ -167,6 +170,8 @@ describe('Family export client', () => {
     expect(view?.kit?.projectName).toBe('Project One');
     expect(view?.framework).toBeNull();
     expect(view?.fontFamily).toBe('Montserrat');
+    // The newest dated member revision names the family PDF; a member without a date is passed over.
+    expect(view?.newestRevisionAt).toBe('2026-10-28T09:00:00Z');
   });
 
   it.each(['boilerplates', 'faq'] as const)('rejects unreadable approved %s instead of silently omitting it', (agentKey) => {

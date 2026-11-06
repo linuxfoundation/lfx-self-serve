@@ -39,7 +39,7 @@ import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.s
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDateTileComponent } from '../meeting-date-tile/meeting-date-tile.component';
 import { MeetingHomeActionsComponent } from '../meeting-home-actions/meeting-home-actions.component';
-import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
+import { MeetingHomeAttendancePopupComponent } from '../meeting-home-attendance-popup/meeting-home-attendance-popup.component';
 import { MeetingHomeArtifactsComponent } from '../meeting-home-artifacts/meeting-home-artifacts.component';
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
@@ -54,7 +54,7 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
     MeetingDateTileComponent,
     MeetingHomeActionsComponent,
     MeetingHomeArtifactsComponent,
-    MeetingHomeAttendanceComponent,
+    MeetingHomeAttendancePopupComponent,
     MeetingProjectLogoComponent,
     MeetingRsvpControlsComponent,
     UiAvatarComponent,

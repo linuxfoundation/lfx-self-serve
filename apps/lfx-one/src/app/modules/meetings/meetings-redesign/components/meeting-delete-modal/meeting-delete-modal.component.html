@@ -3,40 +3,13 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <lfx-ui-modal [heading]="occurrence ? 'Cancel Occurrence' : 'Delete meeting'" data-testid="meetings-home-delete-modal">
-  <!-- Full-width band between two rules: -24px meets the modal's side padding. -->
-  <div
-    class="-mx-[24px] flex flex-col gap-[6px] border-y border-gray-200 px-[24px] py-[16px] text-[14px] leading-[20px]"
-    data-testid="meetings-home-delete-details">
-    <span class="font-semibold text-gray-900">{{ occurrence ? 'Occurrence Details' : 'Meeting Details' }}</span>
-    <dl class="flex flex-col gap-[6px]">
-      <div class="flex gap-[8px]">
-        <dt class="w-[64px] flex-none font-medium text-gray-600">Title:</dt>
-        <dd class="min-w-0 break-words text-gray-900">{{ title }}</dd>
-      </div>
-      <div class="flex gap-[8px]">
-        <dt class="w-[64px] flex-none font-medium text-gray-600">Date:</dt>
-        <dd class="text-gray-900">{{ date }}</dd>
-      </div>
-      <div class="flex gap-[8px]">
-        <dt class="w-[64px] flex-none font-medium text-gray-600">Time:</dt>
-        <dd class="text-gray-900">{{ time }}</dd>
-      </div>
-      @if (!occurrence) {
-        <div class="flex gap-[8px]">
-          <dt class="w-[64px] flex-none font-medium text-gray-600">Guests:</dt>
-          <dd class="text-gray-900" data-testid="meetings-home-delete-guests">{{ guestCount }} guest{{ guestCount !== 1 ? 's' : '' }}</dd>
-        </div>
-      }
-      @if (recurring) {
-        <div class="flex gap-[8px]">
-          <dt class="w-[64px] flex-none font-medium text-gray-600">{{ occurrence ? 'Series:' : 'Type:' }}</dt>
-          <dd class="inline-flex items-center gap-[6px] text-gray-900">
-            <i class="fa-light fa-repeat text-blue-500" aria-hidden="true"></i>{{ occurrence ? 'Part of Recurring Series' : 'Recurring Meeting' }}
-          </dd>
-        </div>
-      }
-    </dl>
-  </div>
+  <lfx-meeting-dialog-context [row]="contextRow" [origin]="origin" data-testid="meetings-home-delete-details" />
+
+  @if (!occurrence && guestCount !== null) {
+    <p class="text-[14px] leading-[20px] text-gray-700" data-testid="meetings-home-delete-guests">
+      <span class="font-medium text-gray-600">Guests:</span> {{ guestCount }} guest{{ guestCount !== 1 ? 's' : '' }}
+    </p>
+  }
 
   @if (occurrence) {
     <lfx-ui-textarea

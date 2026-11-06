@@ -618,7 +618,8 @@
             </div>
             <div class="flex flex-col items-start gap-2 rounded-lg border border-gray-200 bg-white p-5">
               <span class="font-sans" [class]="label">Buttons</span>
-              <span class="rounded-md px-4 py-2 text-sm font-medium text-white" [style.background]="v.accent">Primary button</span>
+              <!-- The renderer's Primary button: the kit's dark fill with white text, never text on the accent. -->
+              <span class="rounded-md px-4 py-2 text-sm font-medium text-white" [style.background]="v.dark">Primary button</span>
               <span class="rounded-md border px-4 py-2 text-sm font-medium" [style.border-color]="v.dark" [style.color]="v.dark">Secondary</span>
             </div>
             <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5">
