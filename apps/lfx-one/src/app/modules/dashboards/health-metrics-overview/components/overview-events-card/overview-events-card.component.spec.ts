@@ -227,21 +227,21 @@ describe('OverviewEventsCardComponent', () => {
     expect(open.mock.calls[1][1].data.tab).toBe('snapshot');
   });
 
-  it('opens the trend from the whole row, by click or Enter, only when the table is too narrow for the actions', async () => {
+  it('turns the event name into a button covering the row, opening the trend, only when the table is too narrow for the actions', async () => {
     await render();
-    const row = (): HTMLElement => query('overview-events-row-u2')!;
+    const nameButton = (): HTMLButtonElement | null => query('overview-events-row-u2-open') as HTMLButtonElement | null;
 
     setTableWidth(1200);
-    row().click();
+    expect(nameButton()).toBeNull();
+    query('overview-events-row-u2')?.click();
     expect(open).not.toHaveBeenCalled();
-    expect(row().getAttribute('tabindex')).toBeNull();
 
     setTableWidth(800);
-    expect(row().getAttribute('tabindex')).toBe('0');
-    row().click();
-    row().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(nameButton()?.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(nameButton()?.className).toContain('after:inset-0');
+    nameButton()?.click();
 
-    expect(open).toHaveBeenCalledTimes(2);
+    expect(open).toHaveBeenCalledTimes(1);
     expect(open.mock.calls[0][1].data).toMatchObject({ event: expect.objectContaining({ eventId: 'u2' }), tab: 'trend' });
   });
 

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, effect, ElementRef, inject, linkedSignal, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import {
   HEALTH_METRICS_OVERVIEW_CARDS,
@@ -39,7 +39,7 @@ import type {
 /** The period's events and sponsorship, and its event list: upcoming for YTD, the year's past events otherwise. */
 @Component({
   selector: 'lfx-overview-events-card',
-  imports: [OverviewCardComponent, OverviewExploreLinkComponent, OverviewInfoTipComponent, UiGaugeComponent, UiSplitButtonComponent],
+  imports: [NgTemplateOutlet, OverviewCardComponent, OverviewExploreLinkComponent, OverviewInfoTipComponent, UiGaugeComponent, UiSplitButtonComponent],
   providers: [DialogService],
   templateUrl: './overview-events-card.component.html',
   host: { class: 'flex min-w-0 flex-col' },
@@ -66,6 +66,8 @@ export class OverviewEventsCardComponent {
     { key: 'trend-short', label: 'Trend', class: 'inline-flex @[961px]/evtbl:hidden' },
     { key: 'trend', label: 'Registration trend', class: 'hidden @[961px]/evtbl:inline-flex' },
   ] as const;
+  private readonly tableWidth = signal<number | null>(null);
+  private readonly table = viewChild<ElementRef<HTMLElement>>('table');
   protected readonly read = injectOverviewCardRead((foundationSlug) =>
     forkJoin({
       glance: this.analyticsService.getEventsAtAGlance({ foundationSlug }),
@@ -85,16 +87,14 @@ export class OverviewEventsCardComponent {
     return this.showAll() ? rows : rows.slice(0, HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE);
   });
   protected readonly hiddenCount = computed(() => (this.view()?.rows.length ?? 0) - this.visibleRows().length);
-  private readonly table = viewChild<ElementRef<HTMLElement>>('table');
-  private readonly tableWidth = signal<number | null>(null);
-  /** The table hides its actions, so each row opens the trend itself, by click or Enter. */
+  /** The table hides its actions, so each row's event name becomes a button that opens the trend. */
   protected readonly narrow = computed(() => {
     const width = this.tableWidth();
     return width !== null && width < HEALTH_METRICS_OVERVIEW_EVENTS_ACTIONS_MIN_WIDTH_PX;
   });
 
   public constructor() {
-    // The table only renders once the card has read, so its width is watched from then on.
+    // The table only renders once the card has read, after the first render, so `afterNextRender` would miss it.
     effect((onCleanup) => {
       const element = this.table()?.nativeElement;
       if (!element || !isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
@@ -103,12 +103,6 @@ export class OverviewEventsCardComponent {
       observer.observe(element);
       onCleanup(() => observer.disconnect());
     });
-  }
-
-  /** A narrow table's row opens the trend; a click on one of its buttons is the button's own. */
-  protected onRowClick(row: HealthMetricsOverviewEventRowView, event: Event): void {
-    if (!this.narrow() || (event.target as HTMLElement | null)?.closest('button')) return;
-    this.openEvent(row, 'trend');
   }
 
   /** The design's event dialog on the given tab: no PrimeNG header, as the body draws its own; anchored to the top so switching tabs never moves it. */

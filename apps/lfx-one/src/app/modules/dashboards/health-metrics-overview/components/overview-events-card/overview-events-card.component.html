@@ -10,7 +10,7 @@
   [emptyCopy]="emptyCopy"
   testId="overview-events">
   @if (view(); as view) {
-    <!-- The design's viewport rules: the KPIs stack at 900px or narrower, the footer at 1100px, the trend label at 1200px. -->
+    <!-- The design's viewport rules: the KPIs stack at 900px or narrower, the footer at 1100px; the table follows its own width. -->
     <div class="flex min-w-0 flex-col gap-[24px]">
       <div class="grid grid-cols-1 border-y border-gray-200 min-[901px]:grid-cols-2" data-testid="overview-events-kpis">
         <div class="flex min-w-0 flex-col gap-[8px] py-[18px] min-[901px]:pr-[24px]" data-testid="overview-events-total">
@@ -98,16 +98,24 @@
             </div>
             @for (row of visibleRows(); track row.eventId) {
               <div
-                class="-mx-[12px] cursor-pointer items-center border-b border-gray-100 px-[12px] py-[12px] transition-colors hover:bg-[var(--ui-neutral-alpha-50)] @[912px]/evtbl:mx-0 @[912px]/evtbl:cursor-auto @[912px]/evtbl:px-0 @[912px]/evtbl:hover:bg-transparent"
+                class="relative -mx-[12px] cursor-pointer items-center border-b border-gray-100 px-[12px] py-[12px] transition-colors hover:bg-[var(--ui-neutral-alpha-50)] @[912px]/evtbl:mx-0 @[912px]/evtbl:cursor-auto @[912px]/evtbl:px-0 @[912px]/evtbl:hover:bg-transparent"
                 [class]="gridClasses"
                 role="row"
-                [attr.tabindex]="narrow() ? 0 : null"
-                [attr.aria-haspopup]="narrow() ? 'dialog' : null"
-                [attr.data-testid]="'overview-events-row-' + row.eventId"
-                (click)="onRowClick(row, $event)"
-                (keydown.enter)="onRowClick(row, $event)">
+                [attr.data-testid]="'overview-events-row-' + row.eventId">
                 <div class="flex min-w-0 flex-col gap-[2px]" role="cell">
-                  <span class="text-[13px] font-semibold leading-[1.35] text-gray-900">{{ row.name }}</span>
+                  <!-- A narrow table's whole row opens the trend: the name becomes a button whose hit area and focus ring cover the row. -->
+                  @if (narrow()) {
+                    <button
+                      type="button"
+                      class="m-0 border-0 bg-transparent p-0 text-left text-[13px] font-semibold leading-[1.35] text-gray-900 outline-none after:absolute after:inset-0 after:rounded-[4px] focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:outline-blue-500"
+                      aria-haspopup="dialog"
+                      [attr.data-testid]="'overview-events-row-' + row.eventId + '-open'"
+                      (click)="openEvent(row, 'trend')">
+                      {{ row.name }}
+                    </button>
+                  } @else {
+                    <span class="text-[13px] font-semibold leading-[1.35] text-gray-900">{{ row.name }}</span>
+                  }
                   <span class="text-[12px] text-gray-500">{{ row.meta }}</span>
                 </div>
 
@@ -125,18 +133,12 @@
                       [level]="row.registrations.gauge.level"
                       [empty]="row.registrations.gauge.empty" />
                     <div class="flex min-w-0 flex-col gap-[1px]">
-                      <span class="text-[16px] leading-[22px] text-gray-900">{{ row.registrations.countLabel }}</span>
-                      <span class="whitespace-nowrap text-[12px] leading-[16px]" [class]="row.registrations.neutral ? 'text-gray-400' : 'text-gray-600'"
-                        >{{ row.registrations.sideLabel }} {{ row.registrations.sideValue }}</span
-                      >
+                      <ng-container *ngTemplateOutlet="figure; context: { $implicit: row.registrations }" />
                     </div>
                   </div>
                   <div class="hidden w-full min-w-0 flex-col gap-[6px] @[1000px]/evtbl:flex">
                     <div class="flex items-baseline justify-between gap-[8px]">
-                      <span class="text-[16px] leading-[22px] text-gray-900">{{ row.registrations.countLabel }}</span>
-                      <span class="whitespace-nowrap text-[12px] leading-[16px]" [class]="row.registrations.neutral ? 'text-gray-400' : 'text-gray-600'"
-                        >{{ row.registrations.sideLabel }} {{ row.registrations.sideValue }}</span
-                      >
+                      <ng-container *ngTemplateOutlet="figure; context: { $implicit: row.registrations }" />
                     </div>
                     <!-- With no goal the bar is the design's neutral track: white, outlined, unfilled. -->
                     <span
@@ -169,14 +171,12 @@
                         [tone]="row.talks.gauge.tone"
                         [level]="row.talks.gauge.level" />
                       <div class="flex min-w-0 flex-col gap-[1px]">
-                        <span class="text-[16px] leading-[22px] text-gray-900">{{ row.talks.countLabel }}</span>
-                        <span class="whitespace-nowrap text-[12px] leading-[16px] text-gray-600">{{ row.talks.sideLabel }} {{ row.talks.sideValue }}</span>
+                        <ng-container *ngTemplateOutlet="figure; context: { $implicit: row.talks }" />
                       </div>
                     </div>
                     <div class="hidden w-full min-w-0 flex-col gap-[6px] @[1000px]/evtbl:flex">
                       <div class="flex items-baseline justify-between gap-[8px]">
-                        <span class="text-[16px] leading-[22px] text-gray-900">{{ row.talks.countLabel }}</span>
-                        <span class="whitespace-nowrap text-[12px] leading-[16px] text-gray-600">{{ row.talks.sideLabel }} {{ row.talks.sideValue }}</span>
+                        <ng-container *ngTemplateOutlet="figure; context: { $implicit: row.talks }" />
                       </div>
                       <span class="h-[8px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
                         ><span
@@ -193,7 +193,7 @@
 
                 <!-- Two pairs, so the first label shortens with the table's width, not a measured one. -->
                 <div class="hidden justify-end @[912px]/evtbl:flex" role="cell" [attr.data-testid]="'overview-events-row-' + row.eventId + '-actions'">
-                  @for (pair of actionPairs; track pair.label) {
+                  @for (pair of actionPairs; track pair.key) {
                     <lfx-ui-split-button
                       role="group"
                       variant="secondary"
@@ -247,3 +247,11 @@
     </div>
   }
 </lfx-overview-card>
+
+<!-- A cell's figure and its description, shared by the ring and the bar layouts: "Goal: 1,000", or "No goal set" in the quiet colour. -->
+<ng-template #figure let-bar>
+  <span class="text-[16px] leading-[22px] text-gray-900">{{ bar.countLabel }}</span>
+  <span class="whitespace-nowrap text-[12px] leading-[16px]" [class]="bar.neutral ? 'text-gray-400' : 'text-gray-600'"
+    >{{ bar.sideLabel }} {{ bar.sideValue }}</span
+  >
+</ng-template>
