@@ -134,10 +134,14 @@ export interface MktgPrintPageHead {
   right: string;
 }
 
-/** A content page's footer: the line left of the logo frame, the page number right (two digits). */
+/**
+ * A content page's footer: the line left of the logo frame, the page number right (two digits). `leftBox` moves the
+ * line (MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX when the page draws no lockup, so the line starts at the margin).
+ */
 export interface MktgPrintPageFooter {
   left: string;
   number: string;
+  leftBox?: MktgPrintPageBox;
 }
 
 /** One printed page: its layout, its title (and a cover's subtitle), the running head, the footer and its body. */

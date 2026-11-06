@@ -346,9 +346,15 @@ export function mktgPrintFooterLine(projectName: string): string {
  * clear of the layout's bottom-left logo, the page number right, in the
  * head's size and the muted ink, under the body.
  */
-export function mktgPrintFooterEls(look: MktgPrintPageLook, left: string, number: string, color = look.muted): MktgPrintPageShapeEl[] {
+export function mktgPrintFooterEls(
+  look: MktgPrintPageLook,
+  left: string,
+  number: string,
+  color = look.muted,
+  leftBox: MktgPrintPageBox = MKTG_PRINT_PAGE_FOOTER_LEFT_BOX
+): MktgPrintPageShapeEl[] {
   return [
-    mktgPrintTextEl(MKTG_PRINT_PAGE_FOOTER_LEFT_BOX, mktgPrintRich(look, [mktgPrintPara(left, MKTG_PRINT_PAGE_SIZE.head, { color })])),
+    mktgPrintTextEl(leftBox, mktgPrintRich(look, [mktgPrintPara(left, MKTG_PRINT_PAGE_SIZE.head, { color })])),
     mktgPrintTextEl(MKTG_PRINT_PAGE_FOOTER_RIGHT_BOX, mktgPrintRich(look, [mktgPrintPara(number, MKTG_PRINT_PAGE_SIZE.head, { color })], { align: 'END' })),
   ];
 }
@@ -358,9 +364,12 @@ export function mktgPrintPageNumber(number: number): string {
   return String(number).padStart(2, '0');
 }
 
-/** A content page with the footer: the line left, the page's number right (two digits, as the contents list it). */
-export function mktgPrintWithFooter(page: MktgPrintPage, left: string, number: number): MktgPrintPage {
-  return { ...page, footer: { left, number: mktgPrintPageNumber(number) } };
+/**
+ * A content page with the footer: the line left, the page's number right (two digits, as the contents list it);
+ * `leftBox` where the line starts when not left of the logo frame.
+ */
+export function mktgPrintWithFooter(page: MktgPrintPage, left: string, number: number, leftBox?: MktgPrintPageBox): MktgPrintPage {
+  return { ...page, footer: { left, number: mktgPrintPageNumber(number), ...(leftBox ? { leftBox } : {}) } };
 }
 
 /**

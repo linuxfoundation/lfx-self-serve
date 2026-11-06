@@ -29,7 +29,13 @@ import {
   MKTG_PRINT_BRAND_KIT_SOURCE_LINES,
 } from '../constants/mktg-print-brand-kit.constants';
 import { MKTG_PRINT_INK_ON_DARK } from '../constants/mktg-print.constants';
-import { MKTG_PRINT_PAGE_AREA, MKTG_PRINT_PAGE_INSET, MKTG_PRINT_PAGE_RIGHT, MKTG_PRINT_PAGE_SIZE } from '../constants/mktg-print-page.constants';
+import {
+  MKTG_PRINT_PAGE_AREA,
+  MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX,
+  MKTG_PRINT_PAGE_INSET,
+  MKTG_PRINT_PAGE_RIGHT,
+  MKTG_PRINT_PAGE_SIZE,
+} from '../constants/mktg-print-page.constants';
 import type { BrandKitBookView, BrandKitLogoImage, BrandKitVoiceAttribute } from '../interfaces/brand-kit.interface';
 import type {
   MktgPrintPage,
@@ -845,7 +851,9 @@ export function buildBrandKitPrintPages(
   }
   const out: MktgPrintPage[] = [contentsPage(ctx, rows), ...pages.flatMap((p) => p.pages)];
   const line = mktgPrintFooterLine(projectName);
-  return out.map((page, i) => mktgPrintWithFooter(page, line, first + 1 + i));
+  // A kit with no primary lockup draws nothing in the logo frame, so its footer line starts at the margin (the prototype's).
+  const leftBox = has(ctx, 'primary') ? undefined : MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX;
+  return out.map((page, i) => mktgPrintWithFooter(page, line, first + 1 + i, leftBox));
 }
 
 /** How many pages the kit book prints: the cover, its built content pages (buildBrandKitPrintPages) and, when included, the back cover. */
