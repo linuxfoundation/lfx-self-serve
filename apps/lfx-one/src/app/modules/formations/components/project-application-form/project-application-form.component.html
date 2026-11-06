@@ -22,12 +22,17 @@
           [maxlength]="textMax"
           [required]="true"
           [invalid]="invalid()['project_name']"
-          describedBy="pa-project-name-error"
+          describedBy="pa-project-name-error pa-project-name-duplicate"
           placeholder="e.g. Shared AI Findings Exchange"
           styleClass="w-full"
           dataTest="project-application-form-project-name" />
         @if (invalid()['project_name']) {
           <p id="pa-project-name-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-project-name-error">Project name is required.</p>
+        }
+        @if (duplicateProjectMessage(); as message) {
+          <p id="pa-project-name-duplicate" class="text-xs text-amber-700 m-0" role="status" data-testid="project-application-form-project-name-duplicate">
+            {{ message }}
+          </p>
         }
       </div>
 

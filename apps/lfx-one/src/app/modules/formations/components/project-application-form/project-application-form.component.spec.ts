@@ -9,7 +9,7 @@ import { UserSearchComponent } from '@components/user-search/user-search.compone
 import type { ProjectApplicationAnswers } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import type { AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectApplicationFormComponent } from './project-application-form.component';
 
@@ -412,5 +412,176 @@ describe('ProjectApplicationFormComponent organization prefill (#5251)', () => {
 
     http.expectNone(WORK_EXPERIENCES_URL);
     expect(organization()).toBe('');
+  });
+});
+
+const PROJECT_SEARCH_URL = '/api/projects/search';
+
+describe('ProjectApplicationFormComponent duplicate project name warning (#5251)', () => {
+  let fixture: ComponentFixture<ProjectApplicationFormComponent>;
+  let component: ProjectApplicationFormComponent;
+  let emitted: ProjectApplicationAnswers[];
+  let http: HttpTestingController;
+
+  const access = (): FormAccess => component as unknown as FormAccess;
+  const root = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const note = (): string | null =>
+    root().querySelector('[data-testid="project-application-form-project-name-duplicate"]')?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+
+  const render = async (initialAnswers: ProjectApplicationAnswers | null = null): Promise<void> => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ProjectApplicationFormComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), MessageService],
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(ProjectApplicationFormComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('initialAnswers', initialAnswers);
+    emitted = [];
+    component.submitted.subscribe((answers) => emitted.push(answers));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    vi.useFakeTimers();
+  };
+
+  const typeName = (value: string): void => {
+    const input = root().querySelector('input[data-test="project-application-form-project-name"]') as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+  };
+
+  const settle = (ms = 400): void => {
+    vi.advanceTimersByTime(ms);
+  };
+
+  const searches = (q: string) => http.match((req) => req.url === PROJECT_SEARCH_URL && req.params.get('q') === q);
+
+  const answer = (q: string, names: string[]): void => {
+    const [request] = searches(q);
+    request.flush(names.map((name, index) => ({ uid: `uid-${index}`, slug: `slug-${index}`, name })));
+    fixture.detectChanges();
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('warns on an exact name match', async () => {
+    await render();
+    typeName('Acme Widgets');
+    settle();
+
+    answer('Acme Widgets', ['Acme Widgets Toolkit', 'Acme Widgets']);
+
+    expect(note()).toBe('A project named Acme Widgets already exists.');
+  });
+
+  it('matches case-insensitively and ignoring surrounding spaces', async () => {
+    await render();
+    typeName('  acme widgets  ');
+    settle();
+
+    answer('acme widgets', ['Acme Widgets']);
+
+    expect(note()).toBe('A project named Acme Widgets already exists.');
+  });
+
+  it('does not warn on a near match', async () => {
+    await render();
+    typeName('Acme Widget');
+    settle();
+
+    answer('Acme Widget', ['Acme Widgets', 'Acme Widget Toolkit']);
+
+    expect(note()).toBeNull();
+  });
+
+  it('asks nothing for a name under three characters', async () => {
+    await render();
+    typeName('Ac');
+    settle();
+
+    http.expectNone((req) => req.url === PROJECT_SEARCH_URL);
+    expect(note()).toBeNull();
+  });
+
+  it('waits for the typing to settle, then asks once for the final name', async () => {
+    await render();
+    typeName('Acm');
+    settle(300);
+    typeName('Acme');
+    settle(300);
+    http.expectNone((req) => req.url === PROJECT_SEARCH_URL);
+
+    settle(100);
+
+    expect(searches('Acm')).toHaveLength(0);
+    expect(searches('Acme')).toHaveLength(1);
+  });
+
+  it('shows nothing when the search fails', async () => {
+    await render();
+    typeName('Acme Widgets');
+    settle();
+
+    searches('Acme Widgets')[0].error(new ProgressEvent('error'));
+    fixture.detectChanges();
+
+    expect(note()).toBeNull();
+  });
+
+  it('drops the note once the name no longer matches', async () => {
+    await render();
+    typeName('Acme Widgets');
+    settle();
+    answer('Acme Widgets', ['Acme Widgets']);
+    expect(note()).not.toBeNull();
+
+    typeName('Acme Gadgets');
+    settle();
+    answer('Acme Gadgets', ['Acme Widgets']);
+
+    expect(note()).toBeNull();
+  });
+
+  it('cancels the lookup for a name that has since changed, so a late answer cannot show', async () => {
+    await render();
+    typeName('Acme Widgets');
+    settle();
+    const [stale] = searches('Acme Widgets');
+
+    typeName('Acme Gadgets');
+    settle();
+    answer('Acme Gadgets', []);
+
+    expect(stale.cancelled).toBe(true);
+    expect(note()).toBeNull();
+  });
+
+  it('never blocks submit: the form still emits while the warning shows', async () => {
+    await render();
+    access().form.patchValue({ ...VALID });
+    typeName('Acme Widgets');
+    settle();
+    answer('Acme Widgets', ['Acme Widgets']);
+    expect(note()).not.toBeNull();
+    access().form.patchValue({ project_name: 'Acme Widgets' });
+
+    access().onSubmit();
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].project_name).toBe('Acme Widgets');
+    const submit = root().querySelector('[data-testid="project-application-form-submit"] button') as HTMLButtonElement | null;
+    expect(submit).not.toBeNull();
+    expect(submit?.disabled).toBe(false);
+  });
+
+  it('does not search for the stored name when a proposal is opened for revise', async () => {
+    await render({ ...VALID, project_name: 'Acme Widgets' });
+    settle();
+
+    http.expectNone((req) => req.url === PROJECT_SEARCH_URL);
+    expect(note()).toBeNull();
   });
 });

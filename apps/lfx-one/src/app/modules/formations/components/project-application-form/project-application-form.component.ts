@@ -17,7 +17,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -32,6 +32,7 @@ import {
   PROJECT_APPLICATION_CANONICAL_KEYS,
   PROJECT_APPLICATION_CHAT_OPTIONS,
   PROJECT_APPLICATION_DESCRIPTION_MAX,
+  PROJECT_APPLICATION_DUPLICATE_NAME_MESSAGE,
   PROJECT_APPLICATION_FIELD_LABELS,
   PROJECT_APPLICATION_FORMATION_LIST_MAX,
   PROJECT_APPLICATION_LEGAL_BACK_TO_SEARCH_LABEL,
@@ -40,6 +41,8 @@ import {
   PROJECT_APPLICATION_LEGAL_SEARCH_PLACEHOLDER,
   PROJECT_APPLICATION_LICENSE_OPTIONS,
   PROJECT_APPLICATION_MISSION_MAX,
+  PROJECT_APPLICATION_NAME_SEARCH_DEBOUNCE_MS,
+  PROJECT_APPLICATION_NAME_SEARCH_MIN_CHARS,
   PROJECT_APPLICATION_SPEC_OPTIONS,
   PROJECT_APPLICATION_TEXT_MAX,
   PROJECT_APPLICATION_TRADEMARK_OPTIONS,
@@ -47,7 +50,9 @@ import {
 import type { ProjectApplicationAnswers, ProjectApplicationLegalContactMode } from '@lfx-one/shared/interfaces';
 import { isEmailShape, parseEmailList } from '@lfx-one/shared/utils';
 import { projectApplicationEmailListValidator, projectApplicationLegalEmailValidator, projectApplicationUrlValidator } from '@lfx-one/shared/validators';
+import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { catchError, debounceTime, distinctUntilChanged, filter, map, Observable, of, switchMap } from 'rxjs';
 
 /**
  * The "Propose a project" intake form (#3037), shared by the propose page (create) and the
@@ -77,6 +82,7 @@ export class ProjectApplicationFormComponent {
   private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly userService = inject(UserService);
+  private readonly projectService = inject(ProjectService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly legalPicker = viewChild(UserSearchComponent);
 
@@ -155,6 +161,13 @@ export class ProjectApplicationFormComponent {
     this.layout() === 'page' ? 'flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-6' : 'flex flex-col gap-4 border-b border-gray-100 pb-6'
   );
 
+  /** The existing project whose name the user's entry matches, if any. Advisory only — never gates submit. */
+  protected readonly duplicateProjectName: Signal<string | null> = this.initDuplicateProjectName();
+  protected readonly duplicateProjectMessage = computed(() => {
+    const name = this.duplicateProjectName();
+    return name ? PROJECT_APPLICATION_DUPLICATE_NAME_MESSAGE.replace('{name}', name) : null;
+  });
+
   // === Constructor ===
   public constructor() {
     this.form.controls.formation_list.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.formationListValue.set(value ?? ''));
@@ -225,6 +238,34 @@ export class ProjectApplicationFormComponent {
   }
 
   // === Private Helpers ===
+  /**
+   * Best-effort duplicate check: once the user has stopped typing, look the name up among the projects
+   * they can see and match it exactly, ignoring case and surrounding spaces. Only a name the user edited
+   * is checked (a revise's stored name, loaded by a form reset, is left alone), and a failed search
+   * shows nothing. `switchMap` drops a late answer for a name that has since changed.
+   */
+  private initDuplicateProjectName(): Signal<string | null> {
+    const control = this.form.controls.project_name;
+    return toSignal(
+      control.valueChanges.pipe(
+        filter(() => control.dirty),
+        map((value) => (value ?? '').trim()),
+        debounceTime(PROJECT_APPLICATION_NAME_SEARCH_DEBOUNCE_MS),
+        distinctUntilChanged(),
+        switchMap((name): Observable<string | null> => {
+          if (name.length < PROJECT_APPLICATION_NAME_SEARCH_MIN_CHARS) {
+            return of(null);
+          }
+          return this.projectService.searchProjects(name).pipe(
+            map((projects) => projects.find((project) => project.name?.trim().toLowerCase() === name.toLowerCase())?.name ?? null),
+            catchError(() => of(null))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
   /**
    * Create mode only: fill the organization with the submitter's current employer. Once, browser-only,
    * and only if the field is still empty when the answer arrives — a name the user typed meanwhile

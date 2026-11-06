@@ -64,6 +64,15 @@ export const PROJECT_APPLICATION_TEXT_MAX = 255;
 /** Character limit on the mission statement. */
 export const PROJECT_APPLICATION_MISSION_MAX = 500;
 
+/** Quiet period after the last keystroke in the project name before it is checked against existing projects (#5251). */
+export const PROJECT_APPLICATION_NAME_SEARCH_DEBOUNCE_MS = 400;
+
+/** Shortest project name worth checking against existing projects (#5251). */
+export const PROJECT_APPLICATION_NAME_SEARCH_MIN_CHARS = 3;
+
+/** Inline note when the proposed name matches a project the submitter can see; `{name}` is the existing project's name (#5251). */
+export const PROJECT_APPLICATION_DUPLICATE_NAME_MESSAGE = 'A project named {name} already exists.';
+
 /** Placeholder for the legal contact's directory search (#5251). */
 export const PROJECT_APPLICATION_LEGAL_SEARCH_PLACEHOLDER = 'Search people by name or email';
 
