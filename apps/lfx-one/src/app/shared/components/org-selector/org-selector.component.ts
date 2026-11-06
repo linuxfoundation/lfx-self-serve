@@ -121,7 +121,12 @@ export class OrgSelectorComponent {
    * Not a grant: it carries no persona badge and no `(Original)` / `(Inherited)` suffix, and it
    * leaves the labelling on the real rows untouched.
    */
-  protected readonly showRollUpRow: Signal<boolean> = this.accountContextService.canSelectRollUp;
+  // `isRollUp()` as well as eligibility: the trigger already shows a cookie-restored roll-up while
+  // the grants load, and in the conglomerate case — one persona seed, siblings as inherited grants
+  // — the count sits at 1 through that window. Keying the row on eligibility alone hid it from the
+  // panel while the roll-up was the selection, so the only rows on offer were organizations and
+  // picking one silently left roll-up mode (#4415, Cursor).
+  protected readonly showRollUpRow: Signal<boolean> = computed(() => this.accountContextService.canSelectRollUp() || this.accountContextService.isRollUp());
   protected readonly isRollUpSelected: Signal<boolean> = this.accountContextService.isRollUp;
   protected readonly rollUpOrganizationCount: Signal<number> = this.accountContextService.rollUpOrganizationCount;
   /**

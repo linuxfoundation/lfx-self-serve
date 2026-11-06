@@ -308,7 +308,10 @@ export class AccountContextService {
     if (matchedSeed) {
       this.setAccount(matchedSeed);
     } else if (concreteStoredUid) {
-      const stub: Account = { ...PLACEHOLDER_ACCOUNT, uid: concreteStoredUid };
+      // `accountId` as well as `uid`: a grant uid IS the 18-char Salesforce account id, and the
+      // pages key on `accountId` — Events drops a null one before its `switchMap`, so a stub
+      // without it leaves the previous results on screen (#4415, Copilot).
+      const stub: Account = { ...PLACEHOLDER_ACCOUNT, uid: concreteStoredUid, accountId: concreteStoredUid };
       this.setAccount(stub);
       void this.refreshCanonicalRecord(stub);
     } else {
@@ -410,8 +413,12 @@ export class AccountContextService {
       this.orgClaOnlyAccess.claOnlyOrgUids(),
     ]) {
       for (const uid of set) {
-        // Same shape the cookie-restore path uses for an id with no seed behind it.
-        return { ...PLACEHOLDER_ACCOUNT, uid };
+        // Same shape the cookie-restore path uses for an id with no seed behind it, `accountId`
+        // included: demoting off the roll-up with Events open must actually re-fetch, and that
+        // pipeline filters out a null `accountId` before its `switchMap`, so an empty one would
+        // leave the combined results sitting under the concrete organization's address
+        // (#4415, Copilot).
+        return { ...PLACEHOLDER_ACCOUNT, uid, accountId: uid };
       }
     }
     return null;

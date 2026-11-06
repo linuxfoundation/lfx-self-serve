@@ -428,6 +428,17 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
     expect(rollUpAccount.accountName).toBe(ROLLUP_ACCOUNT_NAME);
   });
 
+  /**
+   * Cursor on PR #4415. The trigger shows a cookie-restored roll-up while the grants load, but the
+   * row keyed on eligibility alone — and in the conglomerate case the count sits at 1 through that
+   * window, so the panel offered only organizations and picking one silently left roll-up mode.
+   */
+  it('keeps the row while a restored roll-up is selected but not yet countable', async () => {
+    const view = await create({ canSelectRollUp: false, isRollUp: true, count: 1 });
+
+    expect(view.showRollUpRow()).toBe(true);
+  });
+
   it('offers the entry to a caller with several organizations and hides it from a single-org caller', async () => {
     expect((await create({ canSelectRollUp: true, count: 4 })).showRollUpRow()).toBe(true);
     expect((await create({ canSelectRollUp: false, items: [rowA] })).showRollUpRow()).toBe(false);
