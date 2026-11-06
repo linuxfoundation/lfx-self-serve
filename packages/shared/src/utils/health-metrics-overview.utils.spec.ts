@@ -1029,14 +1029,40 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     expect(fallback.kpis[2].range).toBeNull();
   });
 
-  it('rounds the scale up to at most 5 even steps, with ticks every 30 days', () => {
+  const whole = { start: 0, end: 180 };
+
+  it('fits the scale to the visible lines in at most 5 even steps, with the goal on it only when it sits near them', () => {
+    // The highest visible value is the range's 670; a 1,000 goal is more than 35% above it, so the scale leaves it off.
+    const far = buildHealthMetricsOverviewTrendView(row, headline, series, whole);
+    expect(far.yTicks.map((tick) => tick.label)).toEqual(['800', '600', '400', '200', '0']);
+    expect([far.goalY, far.goalLabel]).toEqual([null, null]);
+
+    // An 800 goal sits near the lines, so it joins the scale, which rounds 840 up to 5 steps of 200.
+    const near = buildHealthMetricsOverviewTrendView({ ...row, registrationsGoal: 800 }, { ...headline, goal: 800 }, series, whole);
+    expect(near.yTicks.map((tick) => tick.label)).toEqual(['1,000', '800', '600', '400', '200', '0']);
+    expect([near.goalY, near.goalPct, near.goalLabel]).toEqual(['44.0', '20.00', 'Registration goal: 800']);
+    expect(near.xTicks.map((tick) => tick.label)).toEqual(['0', '30', '60', '90', '120', '150', '180']);
+    expect(near.xTicks[0].pct).toBe('100.00');
+  });
+
+  it('opens on the best fit: from 2% of the final, padded and snapped, to the event day, with ticks to suit the span', () => {
     const view = buildHealthMetricsOverviewTrendView(row, headline, series);
 
-    // The goal of 1,000 plus 5% headroom rounds up to 5 steps of 250.
-    expect(view.yTicks.map((tick) => tick.label)).toEqual(['1,250', '1,000', '750', '500', '250', '0']);
-    expect(view.yTicks[1]).toMatchObject({ pct: '20.00', y: '44.0' });
-    expect(view.xTicks.map((tick) => tick.label)).toEqual(['180', '150', '120', '90', '60', '30', '0']);
-    expect(view.xTicks[6].pct).toBe('100.00');
+    // Registrations first count 90 days into the window; 12% of the remaining 90 days pads that to 79, snapped down to 70.
+    expect([view.window, view.fitWindow]).toEqual([
+      { start: 70, end: 180 },
+      { start: 70, end: 180 },
+    ]);
+    expect(view.xTicks.map((tick) => tick.label)).toEqual(['0', '20', '40', '60', '80', '100']);
+    expect(view.navigator).toMatchObject({ selectionLeftPct: '38.89', selectionWidthPct: '61.11', dimRightPct: '0.00' });
+  });
+
+  it('keeps a moved window on the chart and at least 7 days wide', () => {
+    const view = buildHealthMetricsOverviewTrendView(row, headline, series, { start: 175, end: 178 });
+
+    expect(view.window).toEqual({ start: 173, end: 180 });
+    expect(view.fitWindow).toEqual({ start: 70, end: 180 });
+    expect(view.xTicks.map((tick) => tick.label)).toEqual(['0', '5']);
   });
 
   it('keeps whole-number steps on a small scale', () => {
@@ -1046,16 +1072,39 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     expect(view.yTicks.map((tick) => tick.label)).toEqual(['4', '3', '2', '1', '0']);
   });
 
-  it('plots the last 180 days, joining the prediction to the last actual figure at today', () => {
-    const view = buildHealthMetricsOverviewTrendView(row, headline, series);
+  it('plots the window, joining the prediction and its band to the last actual figure at today', () => {
+    const view = buildHealthMetricsOverviewTrendView(row, headline, series, whole);
 
     expect(view.currentPath.startsWith('M300.0')).toBe(true);
     expect(view.currentPath.split('L')).toHaveLength(2);
     expect(view.predictedPath.startsWith('M446.7')).toBe(true);
-    expect(view.predictedPath.endsWith(`600.0 ${(220 - (620 / 1250) * 220).toFixed(1)}`)).toBe(true);
+    expect(view.predictedPath.endsWith(`600.0 ${(220 - (620 / 800) * 220).toFixed(1)}`)).toBe(true);
     expect(view.bandPath.endsWith(' Z')).toBe(true);
+    expect(view.bandHighPath.startsWith('M446.7')).toBe(true);
+    expect(view.bandLowPath.startsWith('M446.7')).toBe(true);
     expect([view.todayX, view.todayPct]).toEqual(['446.7', '74.44']);
-    expect(view.goalY).toBe('44.0');
+  });
+
+  it('fills the gap to last year up to today, green where this year is ahead and red where it is behind', () => {
+    const crossing = {
+      format: 'In Person',
+      points: [point(-120, 100, null, 80), point(-90, 200, null, 230), point(-46, 330, null, 300), point(0, null, 620, 600)],
+    };
+    const view = buildHealthMetricsOverviewTrendView(row, headline, crossing, whole);
+
+    expect(view.aheadPath).toMatch(/^M200\.0 .* Z$/);
+    expect(view.behindPath).toMatch(/^M200\.0 .* Z$/);
+    // Nothing past today is filled.
+    expect(view.aheadPath).not.toContain('600.0');
+  });
+
+  it("carries the predicted figure's tooltip, and the whole window on the navigator", () => {
+    const view = buildHealthMetricsOverviewTrendView(row, headline, series);
+
+    expect(view.kpis.map((kpi) => !!kpi.tip)).toEqual([false, false, true]);
+    expect(view.navigator.ticks.map((tick) => tick.label)).toEqual(['180', '150', '120', '90', '60', '30', '0']);
+    expect([view.navigator.currentPath, view.navigator.lastYearPath, view.navigator.predictedPath].every((path) => path.startsWith('M'))).toBe(true);
+    expect(view.navigator.currentAreaPath.endsWith(' Z')).toBe(true);
   });
 
   it('draws no goal line without a goal', () => {
@@ -1112,8 +1161,16 @@ describe('buildHealthMetricsOverviewPastTrendView', () => {
 
     expect(view.currentPath.split('L')).toHaveLength(3);
     expect(view.lastYearPath).not.toBe('');
-    expect([view.predictedPath, view.bandPath, view.todayX]).toEqual(['', '', null]);
+    expect([view.predictedPath, view.bandPath, view.bandHighPath, view.bandLowPath, view.todayX, view.navigator.predictedPath]).toEqual([
+      '',
+      '',
+      '',
+      '',
+      null,
+      '',
+    ]);
     expect(view.goalY).not.toBeNull();
+    expect(view.kpis.every((kpi) => kpi.tip === null)).toBe(true);
   });
 
   it('leaves last year out without a curve', () => {

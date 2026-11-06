@@ -364,6 +364,36 @@ export const HEALTH_METRICS_OVERVIEW_STROKES = {
   thisYear: HEALTH_METRICS_OVERVIEW_PURPLE,
 } as const;
 
+/**
+ * The registration trend chart's colours, as the design draws them: this year and the prediction in the accent blue,
+ * last year grey, the predicted range's band with green highs and red lows, and the gap to last year green ahead and
+ * red behind. Alpha suffixes are 8-digit hex: `1F` is 12%, `24` 14%, `B8` 72%, `0F` 6%.
+ */
+export const HEALTH_METRICS_OVERVIEW_TREND_COLORS = {
+  thisYear: lfxColors.blue[500],
+  lastYear: lfxColors.gray[400],
+  predicted: lfxColors.blue[500],
+  band: `${lfxColors.blue[500]}1F`,
+  bandHigh: lfxColors.emerald[500],
+  bandLow: lfxColors.red[500],
+  ahead: `${lfxColors.emerald[500]}24`,
+  behind: `${lfxColors.red[500]}1F`,
+  goal: lfxColors.emerald[500],
+  today: lfxColors.gray[500],
+  axis: lfxColors.gray[300],
+  gridline: lfxColors.gray[100],
+  navigatorArea: `${lfxColors.blue[500]}24`,
+  navigatorDim: `${lfxColors.gray[50]}B8`,
+  navigatorSelection: `${lfxColors.blue[900]}0F`,
+} as const;
+
+/** The predicted figure's tooltip on the trend tab. */
+export const HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP =
+  "Where registrations are expected to land by the event day, projected from the current pace and how last year's registrations built up. High and low are the likely range.";
+
+/** The narrowest span, in days, the trend's navigator lets the reader zoom to. */
+export const HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS = 7;
+
 /** The progress blue at 10%: the trend chart's forecast band and the fill under the newsletter card's open rate. */
 export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
 
