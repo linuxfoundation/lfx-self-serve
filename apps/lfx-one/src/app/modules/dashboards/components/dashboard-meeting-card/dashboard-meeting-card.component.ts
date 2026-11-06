@@ -3,7 +3,7 @@
 
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, PLATFORM_ID, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, PLATFORM_ID, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Params, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -64,8 +64,17 @@ export class DashboardMeetingCardComponent {
   public readonly recordingUrl = input<string | null>(null);
   /** When true, suppresses the join-url fetch and hides the Join button. Pass for past-meeting contexts (e.g. Last Meeting card) where joining is never appropriate. */
   public readonly pastMeeting = input<boolean>(false);
+  /** Zero-based position of this meeting in the set the header pager steps through. Only read when `pagerTotal` is above 1. */
+  public readonly pagerIndex = input<number>(0);
+  /** Size of the set the header pager steps through. The pager is opt-in: it shows only above 1, so cards that never set it are unchanged. */
+  public readonly pagerTotal = input<number>(0);
+  /** Emits when the user asks for the previous meeting in the pager's set. */
+  public readonly pagerPrevious = output<void>();
+  /** Emits when the user asks for the next meeting in the pager's set. */
+  public readonly pagerNext = output<void>();
 
   public readonly joinUrl: Signal<string | null>;
+  public readonly showPager: Signal<boolean> = computed(() => this.pagerTotal() > 1);
 
   // Computed values
   public readonly meetingTypeInfo: Signal<MeetingTypeBadge | null> = this.initMeetingTypeInfo();

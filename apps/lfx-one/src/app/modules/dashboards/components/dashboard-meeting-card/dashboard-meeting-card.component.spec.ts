@@ -308,4 +308,66 @@ describe('DashboardMeetingCardComponent', () => {
       expect(button.disabled).toBe(false);
     });
   });
+
+  describe('header pager', () => {
+    const pager = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="dashboard-meeting-card-pager"]');
+    const button = (kind: 'previous' | 'next'): HTMLButtonElement =>
+      fixture.nativeElement.querySelector(`[data-testid="dashboard-meeting-card-pager-${kind}"]`) as HTMLButtonElement;
+    const position = (): string => (fixture.nativeElement.querySelector('[data-testid="dashboard-meeting-card-pager-position"]')?.textContent ?? '').trim();
+    const configure = (inputs: { pagerIndex?: number; pagerTotal?: number; cardLabel?: string | null }): void => {
+      for (const [name, value] of Object.entries(inputs)) {
+        fixture.componentRef.setInput(name, value);
+      }
+      fixture.detectChanges();
+    };
+
+    it('shows no pager unless the host opts in, so other cards are unchanged', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'LAST MEETING' });
+
+      expect(pager()).toBeNull();
+    });
+
+    it('shows no pager for a set of one meeting', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 0, pagerTotal: 1 });
+
+      expect(pager()).toBeNull();
+    });
+
+    it('shows a one-based position out of the total', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 1, pagerTotal: 5 });
+
+      expect(position()).toBe('2 of 5');
+      expect(button('previous').getAttribute('aria-label')).toBe('Previous upcoming meeting');
+      expect(button('next').getAttribute('aria-label')).toBe('Next upcoming meeting');
+    });
+
+    it('disables previous on the first meeting and next on the last', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 0, pagerTotal: 3 });
+      expect(button('previous').disabled).toBe(true);
+      expect(button('next').disabled).toBe(false);
+
+      configure({ pagerIndex: 2 });
+      expect(button('previous').disabled).toBe(false);
+      expect(button('next').disabled).toBe(true);
+    });
+
+    it('emits when the buttons are used', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 1, pagerTotal: 3 });
+      const previous = vi.fn();
+      const next = vi.fn();
+      fixture.componentInstance.pagerPrevious.subscribe(previous);
+      fixture.componentInstance.pagerNext.subscribe(next);
+
+      button('previous').click();
+      button('next').click();
+
+      expect(previous).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledTimes(1);
+    });
+  });
 });
