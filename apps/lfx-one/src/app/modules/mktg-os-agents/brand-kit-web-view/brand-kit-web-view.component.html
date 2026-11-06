@@ -933,10 +933,11 @@
     Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.
   </p>
 
-  <!-- The deck's landscape pages, the body the family PDF mounts too; the screen view stays unchanged. -->
+  <!-- The deck's landscape pages, the body the family PDF mounts too; the screen view stays unchanged. The pages name the
+       printed kit's project, as the deck and the view's title do; the active project names the saved file. -->
   @if (printView(); as approvedPrint) {
     <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
-      <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="projectName()" />
+      <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="approvedPrint.projectName" />
     </div>
   }
 </section>
