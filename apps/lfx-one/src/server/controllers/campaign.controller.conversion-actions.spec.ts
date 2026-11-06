@@ -6,10 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CampaignServiceGoogleAdsConversionActions } from '@lfx-one/shared/interfaces';
 
-import {
-  GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE,
-  GOOGLE_CONVERSION_ACTIONS_RESTRICTED_CODE,
-} from '@lfx-one/shared/constants';
+import { GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE, GOOGLE_CONVERSION_ACTIONS_RESTRICTED_CODE } from '@lfx-one/shared/constants';
 
 import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';

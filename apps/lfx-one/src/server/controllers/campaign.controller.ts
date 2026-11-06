@@ -3716,7 +3716,9 @@ export class CampaignController {
    * project before it answers (linuxfoundation/lfx-v2-campaign-service#486). Not `campaign_manager`,
    * which also admits the project's `executive_director`, and not a ROOT writer without the relation,
    * whom campaign-service would refuse. A denied caller gets a 403 with a code and a check that cannot be
-   * made a 503, both before any upstream call. Answers 404, as if it were not mounted, while the
+   * made a 503, both before any upstream call. With marketing FGA on, this check is the route's whole gate:
+   * the route is registered ahead of the blanket `requireCampaignManager` (`requireGoogleConversionActionsAccess`),
+   * whose non-strict check would otherwise answer an outage with an uncoded 403 first (#5239). Answers 404, as if it were not mounted, while the
    * campaign-service Google create road (`canCreateWithGoogleCriteria`) is off — the only road that sends
    * `conversionActions` — which says nothing about the caller. Every refusal leaves the tab on its
    * free-text box.
@@ -5074,12 +5076,7 @@ export class CampaignController {
    * project's `executive_director`, and not a ROOT writer. `unverified` when the slug lookup or access
    * check fails: callers refuse on it, never admit. `subject` names the guarded input in the log.
    */
-  private async googleMarketingOpsAccess(
-    req: Request,
-    projectSlug: string,
-    operation: string,
-    subject: string
-  ): Promise<'granted' | 'denied' | 'unverified'> {
+  private async googleMarketingOpsAccess(req: Request, projectSlug: string, operation: string, subject: string): Promise<'granted' | 'denied' | 'unverified'> {
     try {
       return (await personaDetectionService.checkProjectGlobalMarketingOpsStrict(req, projectSlug)) ? 'granted' : 'denied';
     } catch (error) {

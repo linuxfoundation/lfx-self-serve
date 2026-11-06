@@ -9,7 +9,7 @@ import { CampaignController } from '../controllers/campaign.controller';
 import { CampaignOptimizeController } from '../controllers/campaign-optimize.controller';
 import { MicroserviceError } from '../errors';
 import { canonicalizeProjectQuery } from '../middleware/canonicalize-project-query.middleware';
-import { requireCampaignManager, requireGoogleMonitorAccess } from '../middleware/require-marketing-access.middleware';
+import { requireCampaignManager, requireGoogleConversionActionsAccess, requireGoogleMonitorAccess } from '../middleware/require-marketing-access.middleware';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -57,6 +57,16 @@ router.get('/monitor', requireGoogleMonitorAccess, (req, res, next) => campaignC
 // its slug BEFORE the guard runs: the guard and the brief index both key a project by slug, and the same
 // project must get the same authorization and the same briefs whichever identifier names it (#4507).
 router.get('/briefs', canonicalizeProjectQuery, requireCampaignManager, (req, res, next) => optimizeController.listAdoptableBriefs(req, res, next));
+
+// The enabled conversion actions on the Google Ads account a create uses, for the Implement tab's
+// picker (#4991). The account is shared, so the list names every foundation's actions: answered only
+// to `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#486).
+// 404 while the campaign-service Google create road is off. Registered ahead of
+// `router.use(requireCampaignManager)` so an access-check outage reaches the controller's coded 503
+// instead of that guard's uncoded 403; its own guard is narrower (#5239).
+router.get('/google/conversion-actions', requireGoogleConversionActionsAccess, (req, res, next) =>
+  campaignController.getGoogleAdsConversionActions(req, res, next)
+);
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
@@ -125,11 +135,6 @@ router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonito
 // campaign-service account discovery for the project's Google Ads connection, behind
 // LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only, as the Google Ads monitor is.
 router.get('/google/accounts', (req, res, next) => campaignController.getGoogleAdsAccounts(req, res, next));
-// The enabled conversion actions on the Google Ads account a create uses, for the Implement tab's
-// picker (#4991). The account is shared, so the list names every foundation's actions: answered only
-// to `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#486).
-// 404 while the campaign-service Google create road is off.
-router.get('/google/conversion-actions', (req, res, next) => campaignController.getGoogleAdsConversionActions(req, res, next));
 // Which X ad account an X create will use, and the accounts the credential reaches (LFXV2-3319),
 // behind LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE — 404 while it is off. Root-only, as the Google
 // Ads accounts route is.
