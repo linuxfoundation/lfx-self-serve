@@ -1394,6 +1394,12 @@ describe('CampaignController.createCampaign cutover', () => {
     ['a list above the entry cap', { displayCreative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } }],
     ['an oversized entry inside a list', { displayCreative: { headlines: ['x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1)] } }],
     ['an oversized scalar field', { displayCreative: { longHeadline: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
+    // Demand Gen's video ad rides under its own key (#5226), outside the per-channel creative keys.
+    [
+      'a video ad list above the entry cap',
+      { demandGenVideoCreative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } },
+    ],
+    ['an oversized video ad scalar', { demandGenVideoCreative: { businessName: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
     ['an oversized conversion-action list', { conversionActions: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `a-${i}`) }],
     ['an oversized callout list', { callouts: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `c-${i}`) }],
     ['an oversized callout, which would otherwise reach the trim', { callouts: [`x${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}x`] }],
@@ -3712,6 +3718,7 @@ describe('CampaignController.createCampaign cutover', () => {
       targetRoas: 3,
       conversionActions: ['customers/1234567890/conversionActions/111'],
       demandGenCreative: { headlines: ['Build with open source'] },
+      demandGenVideoCreative: { youtubeVideoIds: ['dQw4w9WgXcQ'] },
       performanceMaxCreative: { businessName: 'Example Foundation' },
       displayCreative: { headlines: ['Join us this spring'] },
       path1: 'kubecon',
@@ -3740,6 +3747,26 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(error.field).toBe(field);
       expect(error.message).toContain(`Google ${label} cannot be applied`);
       expect(error.message).toContain(`omit ${field}`);
+    });
+
+    // The table above sends each field on the default channel; this pins the request an operator actually
+    // makes with the video ad: Demand Gen alone, with the video ad and nothing else.
+    it('refuses a video-only Demand Gen create by name while the cutover is dark (#5226)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenVideoCreative: { youtubeVideoIds: ['dQw4w9WgXcQ'], headlines: ['Join us'] } }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenVideoCreative' });
     });
 
     // Over-refusal is the failure mode to avoid: an empty or null list asks for nothing, and the
@@ -5145,6 +5172,166 @@ describe('CampaignController.createCampaign cutover', () => {
 
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(refusalFrom().field).toBe('additionalSearchAds.headlines');
+    });
+  });
+
+  describe('Demand Gen video ad (#5226)', () => {
+    const VIDEO = {
+      youtubeVideoIds: [' dQw4w9WgXcQ '],
+      logoImages: [' https://cdn.example/logo.png '],
+      headlines: ['Join us in Salt Lake City'],
+      longHeadlines: ['Four days of cloud native talks, labs and hallway tracks'],
+      descriptions: ['Register today'],
+      businessName: 'Example Foundation',
+      callToAction: 'SIGN_UP',
+    };
+
+    it('forwards the video ad under demandGenVideoCreative on Demand Gen, trimmed, with no image creative', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005226', error: null });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenVideoCreative: VIDEO }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config['channel']).toBe('demand-gen');
+      expect(config).not.toHaveProperty('demandGenCreative');
+      expect(config['demandGenVideoCreative']).toEqual({
+        youtubeVideoIds: ['dQw4w9WgXcQ'],
+        logoImages: ['https://cdn.example/logo.png'],
+        headlines: ['Join us in Salt Lake City'],
+        longHeadlines: ['Four days of cloud native talks, labs and hallway tracks'],
+        descriptions: ['Register today'],
+        businessName: 'Example Foundation',
+        callToAction: 'SIGN_UP',
+      });
+    });
+
+    it('trims the lists it sends as campaign-service trims them, so a lone U+0085 is dropped, not sent', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000522a', error: null });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenVideoCreative: { ...VIDEO, descriptions: ['Register today', '\u0085'] } }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect((config['demandGenVideoCreative'] as Record<string, unknown>)['descriptions']).toEqual(['Register today']);
+    });
+
+    it('never puts a pasted link into the refusal it logs', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenVideoCreative: { ...VIDEO, youtubeVideoIds: ['https://u:secret@x.example/v'] } }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const refusal = refusalFrom();
+      expect(refusal.field).toBe('demandGenVideoCreative');
+      expect(refusal.message).not.toContain('secret');
+      expect(refusal.message).not.toContain('://');
+    });
+
+    it('refuses a logo URL that is not https, as campaign-service would before fetching it', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenVideoCreative: { ...VIDEO, logoImages: ['http://cdn.example/logo.png'] } }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining('https image URL') });
+    });
+
+    it('refuses a logo URL Go cannot parse (a port that is not digits), before dispatch', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenVideoCreative: { ...VIDEO, logoImages: ['https://cdn.example:abc/logo.png'] } }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining('well-formed https image URL') });
+    });
+
+    it('leaves the image ad request exactly as before when no video ad is sent', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005227', error: null });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenCreative: { headlines: [' Join us '] } }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config['demandGenCreative']).toEqual({ headlines: ['Join us'] });
+      expect(config).not.toHaveProperty('demandGenVideoCreative');
+    });
+
+    it('refuses an image ad and a video ad together by name, creating nothing', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenCreative: { headlines: ['Join us'] }, demandGenVideoCreative: VIDEO }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining('not both') });
+    });
+
+    it.each([
+      ['a watch URL in place of an id', { youtubeVideoIds: ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'] }, 'is a link'],
+      ['a second logo', { logoImages: ['https://cdn.example/a.png', 'https://cdn.example/b.png'] }, 'exactly one logo'],
+      ['a headline wider than 40', { headlines: ['日'.repeat(21)] }, 'longer than the 40 characters'],
+      ['no long headline', { longHeadlines: [] }, 'at least 1 long headline'],
+      ['a call to action Google refuses', { callToAction: 'REGISTER' }, 'call to action'],
+    ])('refuses %s by name, as campaign-service would before the budget', async (_label, overrides, fragment) => {
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenVideoCreative: { ...VIDEO, ...overrides } }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining(fragment) });
+    });
+
+    it('neither sends nor judges a video ad left under another channel', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005228', error: null });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], demandGenVideoCreative: { youtubeVideoIds: ['https://youtu.be/x'] } }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(envelopeFor(createCampaigns)['googleAdsConfig']).not.toHaveProperty('demandGenVideoCreative');
     });
   });
 
@@ -9923,6 +10110,25 @@ describe('CampaignController.createCampaign Google stored images', () => {
         code: 'FIELD_VALIDATION_ERROR',
       },
     ]);
+  });
+
+  it('refuses a stored image in the Demand Gen video logo when the Google-assets flag is off (#5226)', async () => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(body('demand-gen', 'demandGenVideoCreative', { youtubeVideoIds: ['dQw4w9WgXcQ'], logoImages: [{ imageAssetId: ASSET }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([expect.objectContaining({ field: 'demandGenVideoCreative.logoImages[0].imageAssetId' })]);
   });
 
   /**

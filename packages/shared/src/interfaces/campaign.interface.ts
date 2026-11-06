@@ -1441,6 +1441,12 @@ export interface CampaignImplementationDraft {
    */
   googleCreatives?: Record<string, Record<string, string>>;
   /**
+   * Which Demand Gen ad format was chosen — the image ad or the video ad. Both formats' text rides in
+   * {@link googleCreatives} either way, so switching back restores what was typed; this says which
+   * one the create would send. Absent restores the default, `image`.
+   */
+  demandGenAdFormat?: GoogleDemandGenAdFormat;
+  /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
    * {@link googleCreatives}. Each records the brief it was stored for, so a brief switch blocks
@@ -2653,7 +2659,7 @@ export interface HubSpotCampaignCreateRequest {
  * channel's group; they are deliberately the same string so neither side needs a mapping table.
  */
 export interface GoogleCreativeFieldSpec {
-  control: keyof GoogleDemandGenCreative | keyof GooglePerformanceMaxCreative | keyof GoogleDisplayCreative;
+  control: keyof GoogleDemandGenCreative | keyof GoogleDemandGenVideoCreative | keyof GooglePerformanceMaxCreative | keyof GoogleDisplayCreative;
   /** Field label as shown to an operator. */
   label: string;
   /**
@@ -2701,6 +2707,19 @@ export interface GoogleCreativeFieldSpec {
    * an asset ref there would be refused upstream.
    */
   image?: GoogleCreativeImageShape;
+  /**
+   * Set on a `text` field whose value is one of a closed list, and only there: the form offers the
+   * list as a select, and the empty value sends nothing. The Demand Gen video ad's call to action is
+   * the one such field — upstream takes a `CallToActionType` from a short list it has probed, not
+   * free text (`demandGenVideoCallToActions`).
+   */
+  options?: readonly GoogleCreativeFieldOption[];
+}
+
+/** One choice of a closed-list creative field ({@link GoogleCreativeFieldSpec.options}). */
+export interface GoogleCreativeFieldOption {
+  value: string;
+  label: string;
 }
 
 /**
@@ -2848,6 +2867,33 @@ export interface GoogleCreativeSharedCap {
 export type GoogleCreativeChannel = (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number];
 
 /**
+ * One creative catalogue reduced to what the BFF's normalizer needs: the `googleAdsConfig` key it is
+ * sent under, which of its fields are lists or scalars, and which lists are image slots that may carry
+ * a stored-asset ref. Derived from a field catalogue, never restated.
+ */
+export interface GoogleCreativeWireFields {
+  key: string;
+  lists: readonly string[];
+  images: readonly string[];
+  scalars: readonly string[];
+}
+
+/**
+ * One creative the Implement tab can collect: a nested form group, the request key it is sent under,
+ * and its field catalogue. Each Google channel with a creative has one, and Demand Gen has a second
+ * for its video ad (#5226), so a group is named by its {@link groupName}, never by its channel.
+ */
+export interface GoogleCreativeGroup {
+  channel: GoogleCreativeChannel;
+  format: GoogleDemandGenAdFormat;
+  /** The nested `campaignForm` group and the `googleAdsConfig` key, which are the same name. */
+  groupName: string;
+  /** The section heading. */
+  label: string;
+  fields: readonly GoogleCreativeFieldSpec[];
+}
+
+/**
  * One channel's creative section, resolved for rendering.
  *
  * Everything a template needs to draw the section and bind it to the right nested form group,
@@ -2858,6 +2904,12 @@ export type GoogleCreativeChannel = (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[numbe
  */
 export interface GoogleCreativeSection {
   channel: GoogleCreativeChannel;
+  /**
+   * Which of the channel's ad formats this section collects. Only Demand Gen has two — an image ad
+   * (`demandGenCreative`) or a video ad (`demandGenVideoCreative`), one per create — so every other
+   * section is `image`.
+   */
+  format: GoogleDemandGenAdFormat;
   /** The channel's own display label, as the channel checkboxes name it. */
   label: string;
   /** The nested `campaignForm` group holding this channel's controls. */
@@ -2880,6 +2932,12 @@ export interface GoogleCreativeSectionField extends GoogleCreativeFieldSpec {
    * the whole line an operator reads.
    */
   guidance: string;
+  /**
+   * A closed-list field's choices for `lfx-select`, with "None" first so an empty value sends nothing.
+   * Resolved with the section, like {@link guidance}, so the template binds a property instead of
+   * calling a method on every change-detection pass. Absent on a free-text or list field.
+   */
+  selectOptions?: GoogleCreativeFieldOption[];
 }
 
 /**
@@ -2926,6 +2984,35 @@ export interface GoogleDemandGenCreative {
   /** REQUIRED by Google when a creative is supplied. */
   businessName?: string;
   callToActionText?: string;
+}
+
+/**
+ * The two ad formats a Demand Gen ad can take: the image multi-asset ad ({@link GoogleDemandGenCreative})
+ * or the video responsive ad ({@link GoogleDemandGenVideoCreative}). One per create — campaign-service
+ * refuses a Demand Gen create carrying both (`errDemandGenTwoCreatives`).
+ */
+export type GoogleDemandGenAdFormat = 'image' | 'video';
+
+/**
+ * The Demand Gen VIDEO responsive ad, typed to `googleAdsConfig.demandGenVideoCreative`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenVideoCreativeConfig`, #460/#481).
+ *
+ * Set INSTEAD of {@link GoogleDemandGenCreative}, never beside it. The bounds are this ad type's own
+ * and differ from the image ad's: headlines are 40 wide, not 30, and the ad carries long headlines
+ * the image ad does not have. See `GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS`.
+ */
+export interface GoogleDemandGenVideoCreative {
+  /** REQUIRED: 1-5 bare YouTube video ids. A watch URL is refused upstream rather than parsed. */
+  youtubeVideoIds?: string[];
+  /** REQUIRED: exactly one square logo, a URL or a stored asset of the brief's. */
+  logoImages?: GoogleCreativeImageRef[];
+  headlines?: string[];
+  longHeadlines?: string[];
+  descriptions?: string[];
+  /** REQUIRED by Google once a creative is supplied. */
+  businessName?: string;
+  /** Optional; one of `GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION`. Absent sends none. */
+  callToAction?: string;
 }
 
 /**
@@ -3522,6 +3609,11 @@ export interface CampaignCreateRequest {
    * the next person to need display copy finds it, fills it in, and it goes nowhere.
    */
   demandGenCreative?: GoogleDemandGenCreative;
+  /**
+   * The Demand Gen VIDEO ad, sent INSTEAD of {@link demandGenCreative} when the operator picks the
+   * video format. The BFF refuses a Demand Gen create carrying both, as campaign-service would.
+   */
+  demandGenVideoCreative?: GoogleDemandGenVideoCreative;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
   /**
