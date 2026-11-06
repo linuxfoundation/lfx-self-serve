@@ -12,7 +12,7 @@ import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
-import { OverviewEventTrendDialogComponent } from '../overview-event-trend-dialog/overview-event-trend-dialog.component';
+import { OverviewEventDialogComponent } from '../overview-event-dialog/overview-event-dialog.component';
 
 import { OverviewEventsCardComponent } from './overview-events-card.component';
 
@@ -149,19 +149,37 @@ describe('OverviewEventsCardComponent', () => {
     expect(query('overview-events-view-all')).toBeNull();
   });
 
-  it('colors the registrations bar by status, with no badge, and a legend in the footer', async () => {
+  function squashed(testId: string): string {
+    return query(testId)?.textContent?.replace(/\s+/g, '') ?? '';
+  }
+
+  /** The row's two action pairs, the short "Trend" one first; container queries show one at a time. */
+  function actionPairs(eventId: string): HTMLElement[] {
+    return [...(query(`overview-events-row-${eventId}-actions`)?.querySelectorAll<HTMLElement>('lfx-ui-split-button') ?? [])];
+  }
+
+  function setTableWidth(width: number): void {
+    fixture.componentInstance['tableWidth'].set(width);
+    fixture.detectChanges();
+  }
+
+  it('shows registrations as a ring for a narrow table and a bar from 1000px, both coloured by status, with a legend in the footer', async () => {
     await render();
 
-    // The count and its goal sit apart in a flex row, so the text runs together.
-    expect(text('overview-events-row-u0-registrations')).toBe('328Goal: 1,000Status: At risk');
+    expect(squashed('overview-events-row-u0-registrations-ring')).toBe('328Goal:1,000');
+    const gauge = query('overview-events-row-u0-registrations-ring')?.querySelector('lfx-ui-gauge');
+    expect(gauge?.getAttribute('aria-valuenow')).toBe('33');
+    expect(gauge?.querySelector('[data-testid="ui-gauge-arc"]')?.getAttribute('class')).toContain('stroke-ui-warning-500');
+    expect(query('overview-events-row-u0-registrations-ring')?.className).toContain('@[1000px]/evtbl:hidden');
     expect(query('overview-events-row-u0-registrations-bar')?.className).toContain('bg-amber-400');
-    expect(text('overview-events-row-u0-talks')).toBe('0Received: 185');
+    expect(squashed('overview-events-row-u0-registrations')).toContain('Status:Atrisk');
+    expect(squashed('overview-events-row-u0-talks-ring')).toBe('0Received:185');
     expect(query('overview-events-footer')?.contains(query('overview-events-legend'))).toBe(true);
     expect(text('overview-events-legend')).toBe('On trackAt riskAction required');
     expect(text('overview-events-list-title')).toBe('Upcoming events');
   });
 
-  it('draws an unfilled outlined track with no status for an event without a goal', async () => {
+  it('draws an empty ring and an unfilled outlined track, in the quiet colour, for an event without a goal', async () => {
     EVENTS.upcoming[0] = event('u0', { registrationsGoal: null });
     try {
       await render();
@@ -169,31 +187,74 @@ describe('OverviewEventsCardComponent', () => {
       EVENTS.upcoming[0] = event('u0');
     }
 
-    expect(text('overview-events-row-u0-registrations')).toBe('328No goal set');
+    expect(squashed('overview-events-row-u0-registrations-ring')).toBe('328Nogoalset');
+    expect(query('overview-events-row-u0-registrations-ring')?.querySelector('lfx-ui-gauge')?.getAttribute('role')).toBe('img');
+    expect(query('overview-events-row-u0-registrations-ring')?.querySelector('.text-gray-400')?.textContent?.trim()).toBe('No goal set');
     expect(query('overview-events-row-u0-registrations-track')?.className).toContain('bg-white');
     expect(query('overview-events-row-u0-registrations-bar')?.style.width).toBe('0%');
   });
 
-  it('scrolls only the table sideways, and shortens the trend label on narrow screens', async () => {
-    await render();
+  it('keeps the ring of an unknown count out of the accessibility tree, so it never reads as a measured 0%', async () => {
+    EVENTS.upcoming[0] = event('u0', { registrations: null });
+    try {
+      await render();
+    } finally {
+      EVENTS.upcoming[0] = event('u0');
+    }
 
-    expect(query('overview-events-table-scroll')?.className).toContain('overflow-x-auto');
-    expect(text('overview-events-row-u0-trend')).toBe('Registration TrendTrend');
+    expect(query('overview-events-row-u0-registrations-ring')?.querySelector('lfx-ui-gauge')?.getAttribute('aria-hidden')).toBe('true');
+    expect(query('overview-events-row-u1-registrations-ring')?.querySelector('lfx-ui-gauge')?.hasAttribute('aria-hidden')).toBe(false);
   });
 
-  it("opens an upcoming event's registration trend from its button", async () => {
+  it('lays the table out by its own width with no sideways scroll, and shortens the first action below 961px', async () => {
     await render();
 
-    query('overview-events-row-u1-trend')?.click();
+    expect(query('overview-events-table')?.className).toContain('@container/evtbl');
+    expect(fixture.nativeElement.querySelector('.overflow-x-auto, [class*="min-w-[820px]"]')).toBeNull();
+    const [short, long] = actionPairs('u0');
+    expect(short.querySelector('[data-testid="ui-split-button-main"]')?.textContent?.trim()).toBe('Trend');
+    expect(short.className).toContain('@[961px]/evtbl:hidden');
+    expect(long.querySelector('[data-testid="ui-split-button-main"]')?.textContent?.trim()).toBe('Registration trend');
+    expect(long.querySelector('[data-testid="ui-split-button-secondary-label"]')?.textContent?.trim()).toBe('Snapshot');
+    expect(long.getAttribute('aria-label')).toBe('Event u0');
+    expect(query('overview-events-row-u0-actions')?.className).toContain('@[912px]/evtbl:flex');
+  });
 
-    expect(open).toHaveBeenCalledTimes(1);
-    expect(open.mock.calls[0][0]).toBe(OverviewEventTrendDialogComponent);
+  it("opens an upcoming event's dialog on the matching tab from either half, anchored to the top", async () => {
+    await render();
+    const [, long] = actionPairs('u1');
+
+    long.querySelector<HTMLButtonElement>('[data-testid="ui-split-button-main"] button')?.click();
+    long.querySelector<HTMLButtonElement>('[data-testid="ui-split-button-secondary"]')?.click();
+
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(open.mock.calls[0][0]).toBe(OverviewEventDialogComponent);
     expect(open.mock.calls[0][1]).toMatchObject({
       showHeader: false,
+      position: 'top',
       modal: true,
       dismissableMask: true,
-      data: { event: expect.objectContaining({ eventId: 'u1' }), isPast: false },
+      data: { event: expect.objectContaining({ eventId: 'u1' }), isPast: false, tab: 'trend' },
     });
+    expect(open.mock.calls[1][1].data.tab).toBe('snapshot');
+  });
+
+  it('turns the event name into a button covering the row, opening the trend, only when the table is too narrow for the actions', async () => {
+    await render();
+    const nameButton = (): HTMLButtonElement | null => query('overview-events-row-u2-open') as HTMLButtonElement | null;
+
+    setTableWidth(1200);
+    expect(nameButton()).toBeNull();
+    query('overview-events-row-u2')?.click();
+    expect(open).not.toHaveBeenCalled();
+
+    setTableWidth(800);
+    expect(nameButton()?.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(nameButton()?.className).toContain('after:inset-0');
+    nameButton()?.click();
+
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0][1].data).toMatchObject({ event: expect.objectContaining({ eventId: 'u2' }), tab: 'trend' });
   });
 
   it("lists a past year's events back on the first page, each opening its history", async () => {
@@ -208,9 +269,10 @@ describe('OverviewEventsCardComponent', () => {
     expect(rows()).toHaveLength(2);
     expect(query('overview-events-row-p1-registrations-bar')?.className).toContain('bg-emerald-500');
     expect(query('overview-events-row-p2-registrations-bar')?.className).toContain('bg-amber-400');
-    expect(text('overview-events-row-p1-talks')).toBe('38Received: 96');
+    expect(squashed('overview-events-row-p1-talks-ring')).toBe('38Received:96');
+    expect(query('overview-events-row-p1-talks-ring')?.querySelector('[data-testid="ui-gauge-arc"]')?.getAttribute('class')).toContain('stroke-ui-success-600');
 
-    query('overview-events-row-p2-trend')?.click();
+    actionPairs('p2')[1].querySelector<HTMLButtonElement>('[data-testid="ui-split-button-main"] button')?.click();
     expect(open.mock.calls[0][1].data).toMatchObject({ event: expect.objectContaining({ eventId: 'p2' }), isPast: true });
   });
 

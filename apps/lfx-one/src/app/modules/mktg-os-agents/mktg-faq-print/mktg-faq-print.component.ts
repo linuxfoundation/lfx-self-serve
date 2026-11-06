@@ -4,12 +4,13 @@
 import { Component, input } from '@angular/core';
 import { MKTG_FAQ_PRINT_UNANSWERED } from '@lfx-one/shared/constants';
 import { FaqPrintView } from '@lfx-one/shared/interfaces';
+import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapter-header/mktg-print-chapter-header.component';
 
 @Component({
   selector: 'lfx-mktg-faq-print',
-  imports: [MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent],
+  imports: [MarkdownRendererComponent, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent],
   templateUrl: './mktg-faq-print.component.html',
   styleUrl: '../mktg-framework-print/mktg-framework-print.component.scss',
 })

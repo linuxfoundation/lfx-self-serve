@@ -34,6 +34,7 @@ import {
   HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES,
   HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
@@ -259,6 +260,10 @@ export default {
     // Engagement attendance bar fills and the board hero colour, per attendance tone — applied via [class] / [ngClass].
     ...Object.values(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS),
     ...Object.values(HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS),
+    // Members breakdown table cells and rules (HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES)
+      .flatMap((value) => (typeof value === 'string' ? [value] : Object.values(value)))
+      .flatMap((classes) => classes.split(' ')),
     // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
   ],

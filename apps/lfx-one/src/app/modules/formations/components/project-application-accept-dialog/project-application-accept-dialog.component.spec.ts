@@ -22,7 +22,7 @@ interface DialogAccess {
 const PARENT = { uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project;
 
 describe('ProjectApplicationAcceptDialogComponent (#3037, #1995)', () => {
-  const setup = async (projectName = 'Example Project', projectSlug?: string) => {
+  const setup = async (projectName = 'Example Project', projectSlug?: string, suggestedParent?: Project) => {
     TestBed.resetTestingModule();
     const close = vi.fn();
     const searchProjects = vi.fn<(query: string) => Observable<Project[]>>(() => of([PARENT, { uid: '', name: 'No uid', slug: 'none' } as Project]));
@@ -30,7 +30,7 @@ describe('ProjectApplicationAcceptDialogComponent (#3037, #1995)', () => {
       imports: [ProjectApplicationAcceptDialogComponent],
       providers: [
         { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: { projectName, projectSlug } } },
+        { provide: DynamicDialogConfig, useValue: { data: { projectName, projectSlug, suggestedParent } } },
         { provide: ProjectService, useValue: { searchProjects } },
       ],
     }).compileComponents();
@@ -122,5 +122,40 @@ describe('ProjectApplicationAcceptDialogComponent (#3037, #1995)', () => {
     expect(close).not.toHaveBeenCalled();
     component.onCancel();
     expect(close).toHaveBeenCalledWith();
+  });
+
+  describe('suggested parent (#5187)', () => {
+    const STARTED_FROM = { uid: 'foundation-uid', name: 'Agentic AI Foundation', slug: 'aaif' } as Project;
+
+    it('prefills the parent with the foundation the applicant started from, so Confirm needs no search', async () => {
+      const { component, form, close } = await setup('Example Project', undefined, STARTED_FROM);
+      expect(form.controls.parent.value).toEqual(STARTED_FROM);
+
+      component.onConfirm();
+      expect(close).toHaveBeenCalledWith({ parent: STARTED_FROM, slug: 'example-project' });
+    });
+
+    it('lets the reviewer change the prefilled parent', async () => {
+      const { component, form, close } = await setup('Example Project', undefined, STARTED_FROM);
+      form.controls.parent.setValue(PARENT);
+      component.onSelected({ value: PARENT });
+
+      component.onConfirm();
+      expect(close).toHaveBeenCalledWith({ parent: PARENT, slug: 'example-project' });
+    });
+
+    it('lets the reviewer clear the prefill, which blocks Confirm again', async () => {
+      const { component, form, close } = await setup('Example Project', undefined, STARTED_FROM);
+      form.controls.parent.setValue(null);
+      component.onCleared();
+
+      component.onConfirm();
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('starts empty when nothing was resolved', async () => {
+      const { form } = await setup();
+      expect(form.controls.parent.value).toBeNull();
+    });
   });
 });

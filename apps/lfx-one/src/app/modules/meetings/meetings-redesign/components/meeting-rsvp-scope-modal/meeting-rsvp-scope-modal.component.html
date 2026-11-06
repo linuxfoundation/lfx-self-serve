@@ -3,17 +3,7 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <lfx-ui-modal heading="RSVP to recurring meeting" data-testid="meetings-home-rsvp-scope-modal">
-  <!-- Full-width band between two rules: -24px meets the modal's side padding. -->
-  <div class="-mx-[24px] flex flex-col gap-[4px] border-y border-gray-200 px-[24px] py-[16px]" data-testid="meetings-home-rsvp-scope-info">
-    @if (project) {
-      <span class="flex min-w-0 items-center gap-[6px] whitespace-nowrap text-[12px] text-gray-900">
-        <lfx-meeting-project-logo [src]="project.logo" />
-        <span class="min-w-0 truncate" [attr.title]="project.name">{{ project.name }}</span>
-      </span>
-    }
-    <span class="text-[14px] font-medium leading-[20px] text-gray-900">{{ row.title }}</span>
-    <span class="text-[12px] leading-[16px] text-gray-500" data-testid="meetings-home-rsvp-scope-when">{{ when }}</span>
-  </div>
+  <lfx-meeting-dialog-context [row]="row" [origin]="origin" data-testid="meetings-home-rsvp-scope-info" />
 
   <p class="text-[14px] leading-[20px] text-gray-700" data-testid="meetings-home-rsvp-scope-text">
     You are responding “{{ responseLabel }}” to a recurring meeting. Apply it to:

@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable, Signal, signal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type {
   AcceptProjectApplicationRequest,
   CreateProjectApplicationRequest,
+  Project,
   ProjectApplication,
   ProjectApplicationAccess,
   ProjectApplicationAnswers,
@@ -13,8 +15,10 @@ import type {
   ProjectApplicationViewMode,
 } from '@lfx-one/shared/interfaces';
 import { PROJECT_APPLICATION_API_BASE_PATH } from '@lfx-one/shared/constants';
-import { upsertProjectApplication } from '@lfx-one/shared/utils';
-import { catchError, map, Observable, of, take, throwError } from 'rxjs';
+import { computeIsFoundation, countOpenProjectApplications, isUuid, reconcileProjectApplications, upsertProjectApplication } from '@lfx-one/shared/utils';
+import { ProjectService } from '@services/project.service';
+import { UserService } from '@services/user.service';
+import { catchError, distinctUntilChanged, map, Observable, of, skip, Subscription, take, throwError } from 'rxjs';
 
 /**
  * Browser client for the project-application BFF (#3037). Answers are private: nothing here writes
@@ -24,6 +28,8 @@ import { catchError, map, Observable, of, take, throwError } from 'rxjs';
 @Injectable({ providedIn: 'root' })
 export class ProjectApplicationService {
   private readonly http = inject(HttpClient);
+  private readonly projectService = inject(ProjectService);
+  private readonly userService = inject(UserService);
 
   /**
    * Write results the index hasn't caught up with yet, per list mode. The list applies them to every read
@@ -40,7 +46,85 @@ export class ProjectApplicationService {
     staff: signal<ReadonlySet<string>>(new Set()),
   };
 
+  private readonly staffFetched = signal<ProjectApplication[] | null>(null);
+  private readonly staffLoadingState = signal(false);
+  private readonly staffErrorState = signal(false);
+  private staffRead: Subscription | null = null;
+
+  /** The formation team's queue as last read, or `null` before the first successful read (or after an identity change). Never cleared by a failed read. */
+  public readonly staffFetchedApplications: Signal<ProjectApplication[] | null> = this.staffFetched.asReadonly();
+  /** A staff read is in flight. */
+  public readonly staffLoading: Signal<boolean> = this.staffLoadingState.asReadonly();
+  /** The latest staff read failed and none has succeeded since; the next {@link refreshStaff} tries again. */
+  public readonly staffError: Signal<boolean> = this.staffErrorState.asReadonly();
+  /** The staff queue as the panel shows it: the last read plus the write overlay, minus deletions. `null` until a read has succeeded. */
+  public readonly staffApplications: Signal<ProjectApplication[] | null> = computed(() => {
+    const fetched = this.staffFetched();
+    return fetched === null ? null : reconcileProjectApplications(fetched, this.overlays.staff(), this.deletions.staff());
+  });
   /**
+   * Applications awaiting a decision over {@link staffApplications}, so the Formations tab and the panel agree and
+   * an accept, deny or withdraw (recorded in the overlay) drops it without a refetch. `null` — never 0 — until
+   * a read has succeeded, and from a failed read until the next one succeeds (a retry stays hidden). While a refresh
+   * after a successful read is pending, the last good count stays visible, so the badge doesn't flicker.
+   */
+  public readonly pendingStaffCount: Signal<number | null> = computed(() => {
+    const merged = this.staffApplications();
+    return merged === null || this.staffErrorState() ? null : countOpenProjectApplications(merged);
+  });
+
+  public constructor() {
+    // The queue, overlays and deletions belong to one signed-in identity: drop them when the user or the
+    // impersonated persona changes, so a formation-team member's queue never shows for the next identity.
+    toObservable(this.userService.meetingFeedIdentity)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe(() => this.resetForIdentityChange());
+  }
+
+  /**
+   * Reads the staff queue into {@link staffFetchedApplications}. A read already in flight is joined rather than
+   * duplicated, so the Formations page and the panel asking together make one request; pass `supersede` to
+   * cancel it and read again (after a 412). A failed read keeps the last good list and sets {@link staffError}.
+   */
+  public refreshStaff(options: { supersede?: boolean } = {}): void {
+    if (this.staffRead && !this.staffRead.closed) {
+      if (!options.supersede) {
+        return;
+      }
+      this.staffRead.unsubscribe();
+    }
+    // The error flag stays set until a read succeeds, so a retry never brings a hidden count back before it lands.
+    this.staffLoadingState.set(true);
+    // A response only counts for the identity the read started under; the identity-change reset also cancels the read.
+    const identity = this.userService.meetingFeedIdentity();
+    const current = (): boolean => identity === this.userService.meetingFeedIdentity();
+    const read: Subscription = this.getApplications('staff').subscribe({
+      next: (applications) => {
+        if (!current()) {
+          return;
+        }
+        this.reconcile('staff', applications);
+        this.staffFetched.set(applications);
+        this.staffErrorState.set(false);
+      },
+      error: () => {
+        if (!current()) {
+          return;
+        }
+        this.staffErrorState.set(true);
+        this.staffLoadingState.set(false);
+      },
+      complete: () => {
+        if (current()) {
+          this.staffLoadingState.set(false);
+        }
+      },
+    });
+    this.staffRead = read;
+  }
+
+  /**
+   * One raw read, uncached — the submitter list calls it directly; the staff queue goes through {@link refreshStaff}.
    * Rethrows rather than defaulting to `[]`: an empty list would read as "no proposals" when the read
    * actually failed; the list shows its error state instead.
    */
@@ -64,8 +148,25 @@ export class ProjectApplicationService {
     );
   }
 
-  public create(application: ProjectApplicationAnswers): Observable<ProjectApplicationWriteResult> {
-    const body: CreateProjectApplicationRequest = { application };
+  /**
+   * The project a proposal started from (#5187), for the formation team's "Started from" line and the accept
+   * form's parent prefill, and for the propose page's "Proposing under" line. One cached read per uid
+   * (`ProjectService.getProject`); resolves to `null` — never an error — for no hint, a value that is not a UUID, a
+   * project the reader cannot load, or a project that is not a foundation. The BFF only checks the hint is a UUID,
+   * so every consumer applies the same foundation rule the form applied when it sent it.
+   */
+  public getStartedFrom(targetParentUid: string | null | undefined): Observable<Project | null> {
+    if (!targetParentUid || !isUuid(targetParentUid)) {
+      return of(null);
+    }
+    return this.projectService
+      .getProject(targetParentUid, false)
+      .pipe(map((project) => (project && project.uid.toLowerCase() === targetParentUid.toLowerCase() && computeIsFoundation(project) ? project : null)));
+  }
+
+  /** `targetParentUid` is the foundation the applicant started from (#5187); omitted from the body when absent. */
+  public create(application: ProjectApplicationAnswers, targetParentUid?: string | null): Observable<ProjectApplicationWriteResult> {
+    const body: CreateProjectApplicationRequest = { application, ...(targetParentUid ? { target_parent_uid: targetParentUid } : {}) };
     return this.http.post<ProjectApplicationWriteResult>(PROJECT_APPLICATION_API_BASE_PATH, body).pipe(take(1));
   }
 
@@ -128,6 +229,23 @@ export class ProjectApplicationService {
     const byUid = new Map(fetched.map((application) => [application.uid, application]));
     this.overlays[mode].update((list) => list.filter((local) => (byUid.get(local.uid)?.revision ?? -1) < local.revision));
     this.deletions[mode].update((set) => new Set([...set].filter((uid) => byUid.has(uid))));
+  }
+
+  private resetForIdentityChange(): void {
+    const readWasInFlight = !!this.staffRead && !this.staffRead.closed;
+    this.staffRead?.unsubscribe();
+    this.staffRead = null;
+    this.staffFetched.set(null);
+    this.staffLoadingState.set(false);
+    this.staffErrorState.set(false);
+    this.overlays.submitter.set([]);
+    this.overlays.staff.set([]);
+    this.deletions.submitter.set(new Set());
+    this.deletions.staff.set(new Set());
+    // Someone was waiting on the old identity's read; the new identity's view needs its own.
+    if (readWasInFlight) {
+      this.refreshStaff();
+    }
   }
 
   private applicationPath(uid: string): string {

@@ -1,8 +1,36 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { GOOGLE_CREATIVE_IMAGE_MAX_BYTES, GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE } from '../constants/campaign.constants';
-import type { GoogleCreativeImageShape, StoredCreativeAsset } from '../interfaces/campaign.interface';
+import {
+  GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_IMAGE_MAX_BYTES,
+  GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE,
+  GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CREATIVE_RUNE_COUNTED_CONTROLS,
+  GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
+  GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+  googleAdsTrimSpace,
+} from '../constants/campaign.constants';
+import type { GoogleCreativeFieldSpec, GoogleCreativeImageShape, GoogleCreativeWireFields, StoredCreativeAsset } from '../interfaces/campaign.interface';
+import { googleAdsTextWeight } from './campaign-google-search-ads.utils';
+import { codePointLength } from './string.utils';
+
+/**
+ * A Google creative field value's length as campaign-service measures it for that field, to compare
+ * with the field's `width` in `GOOGLE_CREATIVE_FIELD_SPECS`.
+ *
+ * Headlines, long headlines, descriptions and business names are bounded by `textWeight`
+ * (`validateCreativeText` and the business-name checks in `pmax_creative.go`, `demandgen_creative.go`
+ * and `display_creative.go`), where a double-width character counts twice, so a 46-ideograph
+ * description that fits 90 code points is still refused upstream. The fields in
+ * {@link GOOGLE_CREATIVE_RUNE_COUNTED_CONTROLS} are bounded by rune count, which
+ * {@link codePointLength} is. The caller trims; this measures what it is given.
+ */
+export function googleCreativeFieldWidth(control: string, text: string): number {
+  return GOOGLE_CREATIVE_RUNE_COUNTED_CONTROLS.includes(control) ? codePointLength(text) : googleAdsTextWeight(text);
+}
 
 /**
  * How far an image's aspect ratio sits from a Google slot's target, as a fraction of the target.
@@ -61,3 +89,74 @@ export function storedCreativeAssetLabel(asset: Pick<StoredCreativeAsset, 'id' |
   const type = asset.mimeType === 'image/png' ? 'PNG' : 'JPEG';
   return `${size} ${type} · ${asset.id.slice(0, 8)}`;
 }
+
+/**
+ * Whether a Performance Max creative's descriptions lack the short one Google requires (#5219).
+ *
+ * campaign-service's `validatePerformanceMaxCreative` (`pmax_creative.go`) refuses a started
+ * Performance Max creative unless at least one description has a display width of
+ * {@link GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH} or less, measured by `textWeight` — the same
+ * double-width count {@link googleAdsTextWeight} mirrors — on the trimmed line. It refuses before the
+ * budget, but the job then reports only "platform campaign creation failed".
+ *
+ * Judged only once a non-blank description is present: a list with none is the minimum-count rule's
+ * business, and a creative with nothing in it is a create upstream accepts. A non-string entry and a
+ * blank line are skipped, as the request builders drop both before the wire.
+ */
+export function googlePerformanceMaxShortDescriptionMissing(descriptions: unknown): boolean {
+  if (!Array.isArray(descriptions)) return false;
+  const lines = descriptions
+    .filter((line): line is string => typeof line === 'string')
+    .map((line) => googleAdsTrimSpace(line))
+    .filter((line) => line !== '');
+  if (lines.length === 0) return false;
+  return !lines.some((line) => googleAdsTextWeight(line) <= GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH);
+}
+
+/** One creative catalogue, reduced to what the BFF's normalizer needs: its request key and each field's shape. */
+export function googleCreativeWireFields(key: string, fields: readonly GoogleCreativeFieldSpec[]): GoogleCreativeWireFields {
+  return {
+    key,
+    lists: fields.filter((f) => f.kind === 'list').map((f) => f.control),
+    images: fields.filter((f) => f.image !== undefined).map((f) => f.control),
+    scalars: fields.filter((f) => f.kind === 'text').map((f) => f.control),
+  };
+}
+
+/**
+ * Which `googleAdsConfig` creative key each Google channel uses, and which of its fields are lists
+ * rather than scalars — derived from the shared catalogue, never restated.
+ *
+ * The BFF's normalizer needs exactly two things per field: its name, and whether an array or a
+ * string is the valid shape. Both are already stated in `GOOGLE_CREATIVE_FIELD_SPECS`, which the
+ * Implementation tab reads to build the form that produces these bodies. Restating them — which the
+ * controller's table used to do — meant the form and the normalizer could disagree about a field's
+ * shape, and the disagreement would surface as a body Google rejects after the campaign already
+ * exists. `display.longHeadline` is the live example: a **scalar** where Performance Max's
+ * `longHeadlines` is a list.
+ *
+ * `images` is the subset of `lists` whose entries may also be a stored-asset ref
+ * (`{ imageAssetId }`) — the fields the catalogue gives an image shape. `youtubeVideoIds` is a list
+ * but not an image slot, so an object there is dropped as before.
+ *
+ * One entry per channel's image creative. Demand Gen's second creative, its video ad, is
+ * {@link GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS}. `video` has no entry on purpose — see
+ * `GOOGLE_VIDEO_CREATE_SUPPORTED`. `search` has none either: its copy rides as top-level
+ * `headlines`/`descriptions`/`keywords`, not under a creative key.
+ */
+export const GOOGLE_CREATIVE_WIRE_FIELDS: Readonly<Record<string, GoogleCreativeWireFields>> = Object.fromEntries(
+  GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => [
+    channel,
+    googleCreativeWireFields(GOOGLE_CREATIVE_REQUEST_KEYS[channel], GOOGLE_CREATIVE_FIELD_SPECS[channel]),
+  ])
+);
+
+/**
+ * The Demand Gen VIDEO ad's wire shape (#5226): the second creative Demand Gen can carry, under its own
+ * key, sent INSTEAD of `demandGenCreative`. Kept out of {@link GOOGLE_CREATIVE_WIRE_FIELDS} because that
+ * table is one image creative per channel.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS: GoogleCreativeWireFields = googleCreativeWireFields(
+  GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+  GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS
+);

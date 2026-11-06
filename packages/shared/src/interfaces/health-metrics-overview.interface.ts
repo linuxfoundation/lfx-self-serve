@@ -3,7 +3,9 @@
 
 import type { Signal } from '@angular/core';
 
+import type { HealthMetricsEventsForecast, HealthMetricsEventsForecastCurve } from './health-metrics-events.interface';
 import type { HealthMetricsL2Range } from './health-metrics-l2.interface';
+import type { UiBadgeTone, UiBadgeVariant } from './uikit.interface';
 
 /** Every Overview card read is foundation-wide and carries all four periods, so a period change never re-reads. */
 export interface HealthMetricsOverviewQuery {
@@ -397,9 +399,26 @@ export interface HealthMetricsOverviewBalanceView {
   rows: HealthMetricsOverviewBalanceRowView[];
 }
 
+/** An event's registration status: its name, the bar's fill and the ring's level. */
+export interface HealthMetricsOverviewEventStatus {
+  label: string;
+  fillClass: string;
+  level: 'high' | 'mid' | 'low';
+}
+
+/** The same progress as a ring, for a narrow table: the status as the ring's level, blue with none, an outline with no goal. */
+export interface HealthMetricsOverviewEventGaugeView {
+  tone: 'level' | 'accent';
+  level: 'high' | 'mid' | 'low' | null;
+  empty: boolean;
+  /** The count is unknown, so the ring, which would read as a measured 0%, stays out of the accessibility tree. */
+  unmeasured: boolean;
+}
+
 /**
  * A count over a bar: the figure, then "Goal: 1,000" or "Received: 185" at the right (`sideLabel`, `sideValue`), and the
- * bar's width and fill. `neutral` is the design's no-goal bar: a white, outlined track with no fill.
+ * bar's width and fill. `neutral` is the design's no-goal bar: a white, outlined track with no fill. `gauge` draws the
+ * same progress as a ring for a narrow table.
  */
 export interface HealthMetricsOverviewEventBarView {
   countLabel: string;
@@ -409,6 +428,7 @@ export interface HealthMetricsOverviewEventBarView {
   widthPct: number;
   barClass: string;
   neutral: boolean;
+  gauge: HealthMetricsOverviewEventGaugeView;
 }
 
 /** The bar's fill carries the status, with no badge; `statusLabel` names it for screen readers, `null` without one. */
@@ -580,7 +600,10 @@ export interface HealthMetricsOverviewTrendKpiView {
   key: string;
   label: string;
   value: string;
+  /** The predicted range beside the prediction, as "High:" and "Low:" lines. */
   range: { high: string; low: string } | null;
+  /** A question-mark tooltip after the label; `null` without one. */
+  tip: string | null;
 }
 
 /** An axis tick: its label and where it sits, as a percentage of the plot. */
@@ -594,26 +617,65 @@ export interface HealthMetricsOverviewTrendYTickView extends HealthMetricsOvervi
   y: string;
 }
 
-/** The registration trend dialog: its figures, axis ticks and chart paths on the 600×220 viewBox. */
+/** The chart's visible span, as day indexes from the window's first day (0, 180 days out) to the event day (180). */
+export interface HealthMetricsOverviewTrendWindow {
+  start: number;
+  end: number;
+}
+
+/** A drag on the trend's navigator: by a handle or the span itself, from which pointer x, and the span when it began. */
+export interface HealthMetricsOverviewTrendDrag {
+  kind: 'start' | 'end' | 'pan';
+  x: number;
+  /** The navigator's width in px, to turn the pointer's travel into days. */
+  width: number;
+  from: HealthMetricsOverviewTrendWindow;
+}
+
+/** The strip under the chart: the whole window's lines on their own scale, and the visible span picked out over them. */
+export interface HealthMetricsOverviewTrendNavigatorView {
+  currentAreaPath: string;
+  currentPath: string;
+  lastYearPath: string;
+  predictedPath: string;
+  /** Where the visible span starts and how wide it is, as percentages of the strip. */
+  selectionLeftPct: string;
+  selectionWidthPct: string;
+  /** The dimmed strip right of the span. */
+  dimRightPct: string;
+  ticks: HealthMetricsOverviewTrendTickView[];
+}
+
+/** The registration trend tab: its figures, axis ticks and chart paths on the 600×220 viewBox, over the visible span. */
 export interface HealthMetricsOverviewTrendView {
   /** Current, Same point last year, and Predicted (or Final for a past event). */
   kpis: HealthMetricsOverviewTrendKpiView[];
-  goalLabel: string;
-  /** "Days left", or "Event held" for a past event. */
-  daysTitle: string;
-  daysLabel: string;
   yTicks: HealthMetricsOverviewTrendYTickView[];
   xTicks: HealthMetricsOverviewTrendTickView[];
   currentPath: string;
   lastYearPath: string;
   predictedPath: string;
   bandPath: string;
-  /** `null` once the event is past the chart's window or has no actuals. */
+  /** The predicted range's top edge (the highs) and bottom edge (the lows). */
+  bandHighPath: string;
+  bandLowPath: string;
+  /** Up to today, the area where this year runs ahead of last year, and where it runs behind. */
+  aheadPath: string;
+  behindPath: string;
+  /** `null` when today is outside the visible span, for a past event, or with no actuals. */
   todayX: string | null;
   /** Where the "Today" label sits, as a percentage of the plot's width. */
   todayPct: string | null;
-  /** The registration goal's dashed line; `null` without a goal. */
+  /** The registration goal's dashed line; `null` without a goal, or when it sits far above the visible lines. */
   goalY: string | null;
+  /** Where the goal's inline label sits, as a percentage of the plot's height. */
+  goalPct: string | null;
+  /** e.g. "Registration goal: 10,000". */
+  goalLabel: string | null;
+  /** The span drawn, and the best fit the chart opens on; they differ once the reader moves the window. */
+  window: HealthMetricsOverviewTrendWindow;
+  fitWindow: HealthMetricsOverviewTrendWindow;
+  navigator: HealthMetricsOverviewTrendNavigatorView;
 }
 
 /** One Overview card's read: the response once it lands, and where the read stands. */
@@ -622,10 +684,67 @@ export interface HealthMetricsOverviewCardRead<T> {
   status: Signal<HealthMetricsOverviewCardStatus>;
 }
 
-/** What the events card hands the registration trend dialog; a past event shows its history, with no forecast. */
-export interface HealthMetricsOverviewTrendDialogData {
+/** The event dialog's tabs. */
+export type HealthMetricsOverviewEventDialogTab = 'trend' | 'snapshot';
+
+/** What the events card hands the event dialog: the event, whether it is past (no forecast), and the tab to open on. */
+export interface HealthMetricsOverviewEventDialogData {
   event: HealthMetricsOverviewEvent;
   isPast: boolean;
+  tab: HealthMetricsOverviewEventDialogTab;
+}
+
+/** The event dialog's trend read: an upcoming event's forecast headline and curve, or a past event's history alone. */
+export interface HealthMetricsOverviewEventTrendReads {
+  forecast: HealthMetricsEventsForecast | null;
+  curve: HealthMetricsEventsForecastCurve;
+}
+
+/** One badge in the event dialog's header. */
+export interface HealthMetricsOverviewEventDialogBadgeView {
+  label: string;
+  icon: string;
+  variant: UiBadgeVariant;
+  tone: UiBadgeTone;
+}
+
+/** The event dialog's header badges: the registration goal, and the days left (`null` until an upcoming event's are read). */
+export interface HealthMetricsOverviewEventDialogBadgesView {
+  goal: HealthMetricsOverviewEventDialogBadgeView;
+  days: HealthMetricsOverviewEventDialogBadgeView | null;
+}
+
+/** A Snapshot row's change badge, e.g. `+139 (74%)`, or `No change`. */
+export interface HealthMetricsOverviewSnapshotChangeView {
+  label: string;
+  tone: UiBadgeTone;
+  /** A solid circle arrow; `null` for no change. */
+  icon: string | null;
+}
+
+/** One Snapshot row: the level at the window's start and at its end, and the change between. */
+export interface HealthMetricsOverviewSnapshotRowView {
+  key: string;
+  label: string;
+  tip: string | null;
+  startLabel: string;
+  endLabel: string;
+  change: HealthMetricsOverviewSnapshotChangeView;
+  /** The Totals row, set off by a dark divider above it. */
+  totals: boolean;
+}
+
+/** One Snapshot table, with the dates its two columns stand for. */
+export interface HealthMetricsOverviewSnapshotSectionView {
+  key: 'registration' | 'sponsorship';
+  title: string;
+  /** e.g. `Oct 25, 2026`. */
+  startHeader: string;
+  /** e.g. `Nov 4, 2026 (today)`. */
+  endHeader: string;
+  rows: HealthMetricsOverviewSnapshotRowView[];
+  /** Shown below the rows when no package has sold. */
+  emptyCopy: string | null;
 }
 
 /** How a KPI strip lays out at its measured width: one row, one stacked column, or a 2 × 2 grid for four items. */

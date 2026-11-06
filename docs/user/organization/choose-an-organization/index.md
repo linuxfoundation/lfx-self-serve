@@ -4,7 +4,7 @@ description: Pick the organization you are viewing in the Organization lens, swi
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, switcher, switch-organization, all-organizations, combined-view, url, not-found, access]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
@@ -101,7 +101,6 @@ When a link names an organization that does not exist, that you do not have acce
 | **You do not have access to this organization**, with **This link points to an organization that is not on your list.**                                              | The organization in the link is not one you have access to, but you have access to others. Select one of the organizations listed under the message to open it. If your list has not loaded, no organizations are listed. To get access to the organization in the link, select **Ask for access to the organization in this link**.                                                                     |
 | **You do not have access to this organization**, with **Access is granted by the organization's own Organization Lens administrators, not by the Linux Foundation.** | You do not have access to any organization in the Organization lens. Ask your organization's Organization Lens administrators to grant you access. If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. For help, select **Contact support**. To see public open source activity without access, select **See public activity in LFX Insights**. |
 | **Some organizations could not be loaded**                                                                                                                           | A temporary problem loading your organizations. Nothing has been removed from your access. Select **Retry**.                                                                                                                                                                                                                                                                                             |
-| **We could not confirm your staff access**                                                                                                                           | LFX could not finish checking your access, and your permissions have not changed. Select **Retry**. If it keeps failing, select **Still failing? Send this reference to support** and include the reference shown on the page.                                                                                                                                                                           |
 
 ## Related sections
 

@@ -53,6 +53,12 @@ export interface MktgRevisionAuthor {
   name: string | null;
 }
 
+/** The server's memory of a display name the directory returned for a subject, and when that lookup succeeded. */
+export interface MktgLastKnownAuthorName {
+  name: string;
+  resolvedAt: number;
+}
+
 /**
  * What the report showed when the revision was approved, by stable key: the failed sources (their `source`, or the v1
  * `name`), the missing assets (`asset`), the warnings (`code|text`), the gaps (their exact text) and the colour conflicts

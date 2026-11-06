@@ -1441,6 +1441,12 @@ export interface CampaignImplementationDraft {
    */
   googleCreatives?: Record<string, Record<string, string>>;
   /**
+   * Which Demand Gen ad format was chosen — the image ad or the video ad. Both formats' text rides in
+   * {@link googleCreatives} either way, so switching back restores what was typed; this says which
+   * one the create would send. Absent restores the default, `image`.
+   */
+  demandGenAdFormat?: GoogleDemandGenAdFormat;
+  /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
    * {@link googleCreatives}. Each records the brief it was stored for, so a brief switch blocks
@@ -2482,12 +2488,53 @@ export interface GoogleAdsConversionActionsResult {
 
 /**
  * Where the Implement tab's conversion-action picker stands. `unavailable` is a list that could not
- * load — the caller is not root, the route is off or denied on this deployment, or Google failed —
+ * load — the caller lacks `global_marketing_ops` on the project, the route is off on this deployment,
+ * the access check could not be made, or Google failed —
  * and `reason` says which in one sentence; the free-text box is the way in then, as it always was.
  */
 export interface GoogleConversionActionPickerState {
   status: 'idle' | 'loading' | 'loaded' | 'unavailable';
   actions: GoogleConversionActionPickerOption[];
+  reason: string | null;
+}
+
+/**
+ * One user list on the Google Ads account a create uses, as the Implement tab's audience segment
+ * picker offers it (campaign-service `list-google-ads-user-lists`, camel-cased). `resourceName` is the
+ * `customers/{customerId}/userLists/{id}` form `audienceSegments` accepts and the one the picker adds;
+ * the rest are labels only. `eligibleForSearch` is `null` when Google reported nothing.
+ */
+export interface GoogleAdsUserListOption {
+  resourceName: string;
+  id: string;
+  name: string;
+  /** Google's UserListType, verbatim (CRM_BASED, RULE_BASED, LOGICAL, SIMILAR, ...). */
+  type: string;
+  eligibleForSearch: boolean | null;
+}
+
+/** One user list as the picker lists it: the list, and the label it is shown with, built once when the list is read. */
+export interface GoogleUserListPickerOption extends GoogleAdsUserListOption {
+  label: string;
+}
+
+/** The user list read: the account it came from, its lists sorted by name, and whether more exist than were returned. */
+export interface GoogleAdsUserListsResult {
+  accountId: string;
+  userLists: GoogleAdsUserListOption[];
+  truncated: boolean;
+}
+
+/**
+ * Where the Implement tab's audience segment picker stands. `unavailable` is a list that could not
+ * load — the route is off or refused, or Google failed — and `reason` says which in one sentence; the
+ * typed box is the way in then, as it always was. `truncated` is upstream's word that the account
+ * holds more lists than were returned.
+ */
+export interface GoogleUserListPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  lists: GoogleUserListPickerOption[];
+  truncated: boolean;
   reason: string | null;
 }
 
@@ -2653,7 +2700,7 @@ export interface HubSpotCampaignCreateRequest {
  * channel's group; they are deliberately the same string so neither side needs a mapping table.
  */
 export interface GoogleCreativeFieldSpec {
-  control: keyof GoogleDemandGenCreative | keyof GooglePerformanceMaxCreative | keyof GoogleDisplayCreative;
+  control: keyof GoogleDemandGenCreative | keyof GoogleDemandGenVideoCreative | keyof GooglePerformanceMaxCreative | keyof GoogleDisplayCreative;
   /** Field label as shown to an operator. */
   label: string;
   /**
@@ -2701,6 +2748,19 @@ export interface GoogleCreativeFieldSpec {
    * an asset ref there would be refused upstream.
    */
   image?: GoogleCreativeImageShape;
+  /**
+   * Set on a `text` field whose value is one of a closed list, and only there: the form offers the
+   * list as a select, and the empty value sends nothing. The Demand Gen video ad's call to action is
+   * the one such field — upstream takes a `CallToActionType` from a short list it has probed, not
+   * free text (`demandGenVideoCallToActions`).
+   */
+  options?: readonly GoogleCreativeFieldOption[];
+}
+
+/** One choice of a closed-list creative field ({@link GoogleCreativeFieldSpec.options}). */
+export interface GoogleCreativeFieldOption {
+  value: string;
+  label: string;
 }
 
 /**
@@ -2848,6 +2908,33 @@ export interface GoogleCreativeSharedCap {
 export type GoogleCreativeChannel = (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number];
 
 /**
+ * One creative catalogue reduced to what the BFF's normalizer needs: the `googleAdsConfig` key it is
+ * sent under, which of its fields are lists or scalars, and which lists are image slots that may carry
+ * a stored-asset ref. Derived from a field catalogue, never restated.
+ */
+export interface GoogleCreativeWireFields {
+  key: string;
+  lists: readonly string[];
+  images: readonly string[];
+  scalars: readonly string[];
+}
+
+/**
+ * One creative the Implement tab can collect: a nested form group, the request key it is sent under,
+ * and its field catalogue. Each Google channel with a creative has one, and Demand Gen has a second
+ * for its video ad (#5226), so a group is named by its {@link groupName}, never by its channel.
+ */
+export interface GoogleCreativeGroup {
+  channel: GoogleCreativeChannel;
+  format: GoogleDemandGenAdFormat;
+  /** The nested `campaignForm` group and the `googleAdsConfig` key, which are the same name. */
+  groupName: string;
+  /** The section heading. */
+  label: string;
+  fields: readonly GoogleCreativeFieldSpec[];
+}
+
+/**
  * One channel's creative section, resolved for rendering.
  *
  * Everything a template needs to draw the section and bind it to the right nested form group,
@@ -2858,6 +2945,12 @@ export type GoogleCreativeChannel = (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[numbe
  */
 export interface GoogleCreativeSection {
   channel: GoogleCreativeChannel;
+  /**
+   * Which of the channel's ad formats this section collects. Only Demand Gen has two — an image ad
+   * (`demandGenCreative`) or a video ad (`demandGenVideoCreative`), one per create — so every other
+   * section is `image`.
+   */
+  format: GoogleDemandGenAdFormat;
   /** The channel's own display label, as the channel checkboxes name it. */
   label: string;
   /** The nested `campaignForm` group holding this channel's controls. */
@@ -2880,6 +2973,12 @@ export interface GoogleCreativeSectionField extends GoogleCreativeFieldSpec {
    * the whole line an operator reads.
    */
   guidance: string;
+  /**
+   * A closed-list field's choices for `lfx-select`, with "None" first so an empty value sends nothing.
+   * Resolved with the section, like {@link guidance}, so the template binds a property instead of
+   * calling a method on every change-detection pass. Absent on a free-text or list field.
+   */
+  selectOptions?: GoogleCreativeFieldOption[];
 }
 
 /**
@@ -2926,6 +3025,35 @@ export interface GoogleDemandGenCreative {
   /** REQUIRED by Google when a creative is supplied. */
   businessName?: string;
   callToActionText?: string;
+}
+
+/**
+ * The two ad formats a Demand Gen ad can take: the image multi-asset ad ({@link GoogleDemandGenCreative})
+ * or the video responsive ad ({@link GoogleDemandGenVideoCreative}). One per create — campaign-service
+ * refuses a Demand Gen create carrying both (`errDemandGenTwoCreatives`).
+ */
+export type GoogleDemandGenAdFormat = 'image' | 'video';
+
+/**
+ * The Demand Gen VIDEO responsive ad, typed to `googleAdsConfig.demandGenVideoCreative`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenVideoCreativeConfig`, #460/#481).
+ *
+ * Set INSTEAD of {@link GoogleDemandGenCreative}, never beside it. The bounds are this ad type's own
+ * and differ from the image ad's: headlines are 40 wide, not 30, and the ad carries long headlines
+ * the image ad does not have. See `GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS`.
+ */
+export interface GoogleDemandGenVideoCreative {
+  /** REQUIRED: 1-5 bare YouTube video ids. A watch URL is refused upstream rather than parsed. */
+  youtubeVideoIds?: string[];
+  /** REQUIRED: exactly one square logo, a URL or a stored asset of the brief's. */
+  logoImages?: GoogleCreativeImageRef[];
+  headlines?: string[];
+  longHeadlines?: string[];
+  descriptions?: string[];
+  /** REQUIRED by Google once a creative is supplied. */
+  businessName?: string;
+  /** Optional; one of `GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION`. Absent sends none. */
+  callToAction?: string;
 }
 
 /**
@@ -3522,6 +3650,11 @@ export interface CampaignCreateRequest {
    * the next person to need display copy finds it, fills it in, and it goes nowhere.
    */
   demandGenCreative?: GoogleDemandGenCreative;
+  /**
+   * The Demand Gen VIDEO ad, sent INSTEAD of {@link demandGenCreative} when the operator picks the
+   * video format. The BFF refuses a Demand Gen create carrying both, as campaign-service would.
+   */
+  demandGenVideoCreative?: GoogleDemandGenVideoCreative;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
   /**
@@ -4507,11 +4640,32 @@ export interface CampaignServiceGoogleAdsConversionAction {
   primary_for_goal: boolean;
 }
 
-/** campaign-service `GET /projects/{project_id}/google-ads/conversion-actions` (root principals only). */
+/** campaign-service `GET /projects/{project_id}/google-ads/conversion-actions` (`global_marketing_ops` on the project only, lfx-v2-campaign-service#486). */
 export interface CampaignServiceGoogleAdsConversionActions {
   account_id: string;
   conversion_actions: CampaignServiceGoogleAdsConversionAction[];
   conversion_action_count: number;
+}
+
+/** One element of campaign-service's user list read (`google-ads-user-list`, linuxfoundation/lfx-v2-campaign-service#508). */
+export interface CampaignServiceGoogleAdsUserList {
+  resource_name: string;
+  id: string;
+  name: string;
+  type: string;
+  membership_status?: string;
+  account_status?: string;
+  size_for_search?: number;
+  size_range_for_search?: string;
+  eligible_for_search?: boolean;
+}
+
+/** campaign-service `GET /projects/{project_id}/google-ads/user-lists` (`global_marketing_ops` on the project; linuxfoundation/lfx-v2-campaign-service#508). */
+export interface CampaignServiceGoogleAdsUserLists {
+  account_id: string;
+  user_lists: CampaignServiceGoogleAdsUserList[];
+  user_list_count: number;
+  truncated: boolean;
 }
 
 /**
@@ -6115,23 +6269,27 @@ export interface CampaignListResult {
    * Whether THIS caller may send Google audience segments (`audienceSegments`) on a create.
    *
    * Per CALLER, unlike every capability above: true only when the campaign-service create path
-   * serves the create AND the caller is a ROOT writer or ROOT campaign manager. Every foundation's
-   * Google Ads connection points at one shared LF customer, and a user list cannot yet be mapped to
-   * a project, so a non-root operator could otherwise target another foundation's list — the same
-   * reason campaign-service refuses to list user lists on the shared account
-   * (linuxfoundation/lfx-v2-campaign-service#411). The create route refuses a non-root caller's
-   * segments with a 403 `GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE`. Modelled on the client like the
+   * serves the create AND the caller holds `global_marketing_ops` on the listed project (the LF
+   * marketing team; `campaign_manager` alone, which admits foundation EDs, is not enough). Every
+   * foundation's Google Ads connection points at one shared LF customer, so a foundation operator
+   * could otherwise target another foundation's list. campaign-service checks the same relation on
+   * the same project (linuxfoundation/lfx-v2-campaign-service#501, #505). `null` when that check
+   * cannot be made: unverified, not denied, so the Implement tab offers a Retry rather than the
+   * restricted block. The create route refuses such a caller's segments with a 403
+   * `GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE`, or a 503 when the check cannot be made. Modelled on the client like the
    * capabilities above (`boolean | null`, `null` for unanswered): only an explicit yes shows the section.
    */
-  googleAudienceSegmentsEnabled: boolean;
+  googleAudienceSegmentsEnabled: boolean | null;
   /**
    * Whether THIS caller may read the Implement tab's conversion-action picker list (#4991), through
    * `GET /api/campaigns/google/conversion-actions`. Per caller: true only when the campaign-service
-   * create path serves the create AND the caller is a ROOT writer or ROOT campaign manager — the two
-   * checks that route makes — because the shared LF Google Ads account lists every foundation's
-   * actions. Its own field rather than {@link googleAudienceSegmentsEnabled}, whose root-only meaning
-   * lasts only until a user list can be mapped to a project. Optional, so a BFF that predates it reads
-   * as unanswered (`null` on the client) and the tab keeps its free-text box without asking.
+   * create path serves the create AND the caller holds `global_marketing_ops` on the listed project —
+   * the two checks that route makes, and the relation campaign-service checks before it answers
+   * (linuxfoundation/lfx-v2-campaign-service#486) — because the shared LF Google Ads account lists
+   * every foundation's actions. Its own field rather than {@link googleAudienceSegmentsEnabled}: the
+   * relation is the same, but the deployment test differs (the create road here, the audience-segment
+   * gate there). Optional, so a BFF that predates it reads as unanswered (`null` on the client) and
+   * the tab keeps its free-text box without asking.
    */
   googleConversionActionsEnabled?: boolean;
   /**
@@ -6356,8 +6514,8 @@ export interface CampaignGoogleLocationsCapabilityBlock {
 
 /**
  * Why Create is blocked for Google audience segments the draft still holds but the request cannot
- * carry. `restricted`: the caller is not a root writer or root campaign manager, so the segments
- * would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
+ * carry. `restricted`: the caller does not hold `global_marketing_ops` on the project, so the
+ * segments would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
  * campaign-service create path does not serve this deployment. The other kinds mean what they do on
  * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
  */

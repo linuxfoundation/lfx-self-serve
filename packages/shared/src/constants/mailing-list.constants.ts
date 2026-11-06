@@ -19,6 +19,12 @@ export const MAILING_LIST_LABEL = {
 } as const;
 
 /**
+ * Shown when the user lacks the access needed to manage mailing lists for a project.
+ * Same wording as the access-denied toast the route guard raises, so an in-page denial reads the same.
+ */
+export const MAILING_LIST_ACCESS_DENIED_MESSAGE = "You don't have permission to manage mailing lists for this project.";
+
+/**
  * Allowed shape of the name a user types for a mailing list.
  * Groups.io only accepts letters, numbers and single hyphens, so consecutive, leading and
  * trailing hyphens are rejected. Uppercase is allowed: existing lists use it.

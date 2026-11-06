@@ -4,14 +4,8 @@
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, TemplateRef, viewChild } from '@angular/core';
-import { MeetingDashboardView, MeetingHomeRow, MeetingHomeRowProject } from '@lfx-one/shared/interfaces';
-import {
-  formatMeetingWhenFull,
-  getMeetingHomeRowProject,
-  getMeetingSelfRemovalNotes,
-  getMeetingSelfRemovalQuestion,
-  getPastMeetingResourceId,
-} from '@lfx-one/shared/utils';
+import { MeetingDashboardView, MeetingHomeRow } from '@lfx-one/shared/interfaces';
+import { getMeetingSelfRemovalNotes, getMeetingSelfRemovalQuestion, getPastMeetingResourceId } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
@@ -28,7 +22,7 @@ import { finalize, take } from 'rxjs';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
-import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
+import { MeetingDialogContextComponent } from '../meeting-dialog-context/meeting-dialog-context.component';
 
 /**
  * The ⋯ menu of a meetings home row: Copy Link, and for upcoming meetings Edit Meeting, Resend Invite, Remove Myself and Delete Meeting.
@@ -36,7 +30,7 @@ import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-pro
  */
 @Component({
   selector: 'lfx-meeting-home-actions',
-  imports: [MeetingProjectLogoComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent, UiModalComponent],
+  imports: [MeetingDialogContextComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent, UiModalComponent],
   templateUrl: './meeting-home-actions.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'inline-flex' },
@@ -74,8 +68,6 @@ export class MeetingHomeActionsComponent {
   protected readonly removalNotes: Signal<string[]> = computed(() =>
     getMeetingSelfRemovalNotes({ viaCommittee: this.row().meeting.invited_via_committee, organizer: this.row().meeting.organizer })
   );
-  protected readonly when: Signal<string> = computed(() => formatMeetingWhenFull(this.row()));
-  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => getMeetingHomeRowProject(this.row().meeting));
 
   private readonly invited: Signal<boolean> = computed(
     () => !!this.row().meeting.invited && !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
