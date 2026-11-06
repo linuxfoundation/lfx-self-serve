@@ -5233,6 +5233,10 @@ export const GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY = 'demandGenAudience' satisf
  */
 export const GOOGLE_DEMAND_GEN_AUDIENCE_RESOURCE_PATTERN = /^customers\/([0-9]+)\/audiences\/([0-9]+)$/;
 
+/** Why the single ad group's Audience is refused beside named ad groups, as campaign-service refuses it. */
+export const GOOGLE_DEMAND_GEN_AUDIENCE_BESIDE_AD_GROUPS =
+  'The Demand Gen audience for the single ad group cannot be sent with named ad groups. Pick an audience on each ad group instead.';
+
 /** The note under the split when the single ad group's Audience is kept but not sent because the campaign is split (#5244). */
 export const GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT =
   'The audience you picked for the single ad group is kept but not sent while the campaign is split into ad groups. Pick an audience on each ad group, or turn the split off to send it.';

@@ -401,6 +401,7 @@ import { CreativeLibraryUploadComponent } from '../creative-library-upload/creat
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
 import { DemandGenAdListContextDirective } from './demand-gen-ad-list-context.directive';
+import { DemandGenAudienceContextDirective } from './demand-gen-audience-context.directive';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -452,6 +453,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     LowerCasePipe,
     NgTemplateOutlet,
     DemandGenAdListContextDirective,
+    DemandGenAudienceContextDirective,
     SlicePipe,
     CampaignBiddingControlComponent,
     CampaignGoogleExclusionsPanelComponent,
@@ -5954,10 +5956,6 @@ export class ImplementationTabComponent implements OnInit {
     }
   }
 
-  /**
-   * The split checkbox changed (#5226). Turning it on with no group yet adds the first, so the operator
-   * has a group to fill in rather than an empty list; the groups are otherwise left as they were.
-   */
   /** The audience control of ad group `group`, or the single ad group's for `null` (#5244). */
   protected demandGenAudienceControl(group: number | null): FormControl<string> {
     return group === null ? this.campaignForm.controls.demandGenAudience : this.campaignForm.controls.demandGenAdGroups.at(group).controls.audience;
@@ -5980,6 +5978,10 @@ export class ImplementationTabComponent implements OnInit {
     this.focusDemandGenAudienceAfterRender(group, 'picker');
   }
 
+  /**
+   * The split checkbox changed (#5226). Turning it on with no group yet adds the first, so the operator
+   * has a group to fill in rather than an empty list; the groups are otherwise left as they were.
+   */
   protected onDemandGenAdGroupsSplitChange(): void {
     const groups = this.campaignForm.controls.demandGenAdGroups;
     if (this.campaignForm.controls.demandGenAdGroupsSplit.value && groups.length === 0) groups.push(this.buildDemandGenAdGroup());

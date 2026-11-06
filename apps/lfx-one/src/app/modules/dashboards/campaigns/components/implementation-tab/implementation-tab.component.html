@@ -2661,7 +2661,7 @@
                       demandGenAdListTemplate;
                       context: { $implicit: i, ads: group.controls.ads, prefix: 'demand-gen-ad-group-' + i + '-ad' }
                     " />
-                  <ng-container *ngTemplateOutlet="demandGenAudienceTemplate; context: { $implicit: i }" />
+                  <ng-container *ngTemplateOutlet="demandGenAudienceTemplate; context: { $implicit: i, audience: group.controls.audience }" />
                   <div>
                     <lfx-button
                       label="Remove ad group"
@@ -2810,7 +2810,7 @@
             @if (demandGenAdsError(); as error) {
               <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-ads-error">{{ error }}</p>
             }
-            <ng-container *ngTemplateOutlet="demandGenAudienceTemplate; context: { $implicit: null }" />
+            <ng-container *ngTemplateOutlet="demandGenAudienceTemplate; context: { $implicit: null, audience: campaignForm.controls.demandGenAudience }" />
           }
           @if (section.channel === 'demand-gen') {
             @if (demandGenAudienceError(); as error) {
@@ -2826,9 +2826,9 @@
         can be removed. A picked Audience is shown by name with Remove; with none, the picker lists the
         account's Audiences. A pick sets the resource name and replaces the picker, so it is never cleared.
       -->
-      <ng-template #demandGenAudienceTemplate let-group>
+      <ng-template #demandGenAudienceTemplate lfxDemandGenAudienceContext let-group let-audienceControl="audience">
         @let key = group === null ? 'single' : '' + group;
-        @let audience = demandGenAudienceControl(group).value;
+        @let audience = audienceControl.value;
         @if (demandGenAudienceAvailable() || audience !== '') {
           <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-audience-' + key">
             <span class="text-xs font-medium text-gray-700">Audience</span>

@@ -3,12 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  GOOGLE_DEMAND_GEN_AUDIENCE_BESIDE_AD_GROUPS,
-  googleDemandGenAudienceCarried,
-  googleDemandGenAudienceRefusal,
-  googleDemandGenAudiencesRefusal,
-} from './campaign-google-demand-gen-audience.utils';
+import { GOOGLE_DEMAND_GEN_AUDIENCE_BESIDE_AD_GROUPS } from '../constants/campaign.constants';
+import { googleDemandGenAudienceCarried, googleDemandGenAudienceRefusal, googleDemandGenAudiencesRefusal } from './campaign-google-demand-gen-audience.utils';
 
 const OWNER = 'The Demand Gen audience';
 const AUDIENCE = 'customers/1234567890/audiences/42';

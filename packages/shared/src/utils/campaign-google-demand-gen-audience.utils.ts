@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { GOOGLE_DEMAND_GEN_AUDIENCE_RESOURCE_PATTERN, googleAdsTrimSpace, isCanonicalGoogleAdsResourceId } from '../constants/campaign.constants';
+import {
+  GOOGLE_DEMAND_GEN_AUDIENCE_BESIDE_AD_GROUPS,
+  GOOGLE_DEMAND_GEN_AUDIENCE_RESOURCE_PATTERN,
+  googleAdsTrimSpace,
+  isCanonicalGoogleAdsResourceId,
+} from '../constants/campaign.constants';
 
 /**
  * The Demand Gen audience (#5244): one Google Ads Audience per ad group, `demandGenAudience` for the
@@ -12,10 +17,6 @@ import { GOOGLE_DEMAND_GEN_AUDIENCE_RESOURCE_PATTERN, googleAdsTrimSpace, isCano
  * One judge, shared by the Implement tab, which holds Create on it, and the BFF, which refuses the
  * create with the same sentence. No refusal echoes the value.
  */
-
-/** Why the single ad group's Audience is refused beside named ad groups, as campaign-service refuses it. */
-export const GOOGLE_DEMAND_GEN_AUDIENCE_BESIDE_AD_GROUPS =
-  'The Demand Gen audience for the single ad group cannot be sent with named ad groups. Pick an audience on each ad group instead.';
 
 /**
  * Why campaign-service would refuse one Demand Gen audience, or `null` when it would take it. `owner`
