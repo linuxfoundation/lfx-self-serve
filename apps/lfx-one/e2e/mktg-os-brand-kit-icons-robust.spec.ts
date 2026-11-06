@@ -1,0 +1,52 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { BRAND_KIT_ICON_HIGHLIGHT_INDEX, BRAND_KIT_ICON_SAMPLES } from '@lfx-one/shared/constants';
+import { expect, test } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { columnAssetRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
+
+const TAB_TIMEOUT = 10_000;
+
+test.describe('Brand kit iconography samples structure', () => {
+  test.use({ viewport: { width: 1440, height: 1000 } });
+  test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+
+  test('the data-testid contract: the card, eight tiles and eight strip icons by id, one highlight, four tiles to a row', async ({ page }, info) => {
+    await openAssetDocument(page, 'brand-kit', 200, true, false, columnAssetRevisionResponse('brand-kit'));
+    await page.getByTestId('brand-kit-web-view-tab-visual').click();
+    await expect(page.getByTestId('brand-kit-web-view-panel-visual')).toBeVisible({ timeout: TAB_TIMEOUT });
+
+    const samples = page.getByTestId('brand-kit-web-view-icons').getByTestId('brand-kit-icon-samples');
+    await expect(samples).toBeVisible();
+    await expect(samples.getByTestId('brand-kit-icon-tiles')).toBeVisible();
+    await expect(samples.getByTestId('brand-kit-icon-strip')).toBeVisible();
+    for (const icon of BRAND_KIT_ICON_SAMPLES) {
+      await expect(samples.getByTestId(`brand-kit-icon-tile-${icon.id}`)).toBeVisible();
+      await expect(samples.getByTestId(`brand-kit-icon-strip-${icon.id}`)).toBeVisible();
+    }
+    await expect(samples.locator('[data-highlight="true"]')).toHaveCount(1);
+    await expect(samples.locator('[data-highlight="true"]')).toHaveAttribute(
+      'data-testid',
+      `brand-kit-icon-strip-${BRAND_KIT_ICON_SAMPLES[BRAND_KIT_ICON_HIGHLIGHT_INDEX].id}`
+    );
+    // Four tiles to a row, as the board draws them: the first four share a top edge, the fifth starts the next row.
+    const tops = await samples.getByTestId(/^brand-kit-icon-tile-/).evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
+    expect(new Set(tops.slice(0, 4)).size).toBe(1);
+    expect(tops[4]).toBeGreaterThan(tops[0]);
+    expect(new Set(tops.slice(4)).size).toBe(1);
+    // The strip's icons sit in one row, inside the strip, and nothing overflows the card.
+    const strip = await samples.getByTestId('brand-kit-icon-strip').boundingBox();
+    const stripIconTops = await samples
+      .getByTestId(/^brand-kit-icon-strip-/)
+      .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
+    expect(new Set(stripIconTops).size).toBe(1);
+    const card = await page.getByTestId('brand-kit-web-view-icons').boundingBox();
+    if (!strip || !card) throw new Error('The card and the strip must be laid out');
+    expect(strip.x).toBeGreaterThanOrEqual(card.x - 1);
+    expect(strip.x + strip.width).toBeLessThanOrEqual(card.x + card.width + 1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await samples.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('iconography-structure.png'), fullPage: true });
+  });
+});

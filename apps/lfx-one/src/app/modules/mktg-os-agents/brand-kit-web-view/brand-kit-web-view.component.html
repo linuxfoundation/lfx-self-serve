@@ -575,6 +575,8 @@
         <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
           <div [class]="card" data-testid="brand-kit-web-view-icons">
             <h3 [class]="cardTitle">Iconography</h3>
+            <!-- The board's sample icons in the kit's colours; the rules and the recommended set stay under them. -->
+            <lfx-mktg-brand-kit-icon-samples [colours]="v.iconColours" />
             <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
               @for (rule of v.visual.icons.rules; track $index) {
                 <li class="group/commentfield" data-mktg-comment-group>

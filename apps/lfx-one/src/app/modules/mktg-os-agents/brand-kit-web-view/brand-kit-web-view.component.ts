@@ -64,6 +64,7 @@ import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgBrandKitPrintComponent } from '../mktg-brand-kit-print/mktg-brand-kit-print.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
+import { MktgBrandKitIconSamplesComponent } from '../components/mktg-brand-kit-icon-samples/mktg-brand-kit-icon-samples.component';
 
 // The Brand Kit on screen, as an app page in the Messaging Framework view's
 // look (hand test, 18 Oct: "more like a website — a proper app — not a
@@ -90,6 +91,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
     MktgBrandKitPrintComponent,
     MktgSlidesExportComponent,
     MktgFieldCommentsComponent,
+    MktgBrandKitIconSamplesComponent,
   ],
   templateUrl: './brand-kit-web-view.component.html',
 })

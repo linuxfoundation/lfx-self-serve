@@ -44,6 +44,7 @@ import {
   brandKitWebsiteHost,
   brandKitWeights,
 } from './brand-kit.utils';
+import { brandKitIconColours } from './brand-kit-icons.utils';
 
 /** A letter page is 11 in wide: 1056 px at 96 dpi, which is what the type scale's px sizes are drawn against. */
 const PAGE_WIDTH_PX = 1056;
@@ -322,6 +323,7 @@ export function buildBrandKitBookView(kit: BrandKitRevision, version?: number | 
     scale: brandKitTypeScaleRows(kit, kit.chapters.voice.line),
     specimen: BRAND_KIT_TYPE_SPECIMEN,
     visual: kit.chapters.visual,
+    iconColours: brandKitIconColours(kit),
     usage: kit.chapters.usage,
     usageTiles: brandKitUsageTiles(kit),
     voice: kit.chapters.voice,

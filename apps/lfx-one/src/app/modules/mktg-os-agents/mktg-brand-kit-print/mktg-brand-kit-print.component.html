@@ -269,6 +269,7 @@
   <tr class="kit-block">
     <td>
       <h3>Iconography · {{ v.visual.icons.recommended }}</h3>
+      <lfx-mktg-brand-kit-icon-samples class="kit-icon-samples" [colours]="v.iconColours" [compact]="true" />
       <ul>
         @for (rule of v.visual.icons.rules; track $index) {
           <li>{{ rule }}</li>

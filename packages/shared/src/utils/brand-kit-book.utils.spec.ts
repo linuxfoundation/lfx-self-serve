@@ -160,6 +160,12 @@ describe('the book’s view model', () => {
     expect(view.builtFrom).not.toContain('https://');
   });
 
+  it('carries the iconography samples’ colours, the same three roles the web card, the print and the export draw with', () => {
+    const kit = kitWith({});
+    const view = buildBrandKitBookView(kit);
+    expect(view.iconColours).toEqual({ tileInk: kit.kit.dark, stripGround: kit.kit.dark, highlight: kit.kit.spark });
+  });
+
   it('draws the supplied reversed artwork unfiltered on the reversed tile, and filters the primary lockup only without one', () => {
     const colorways = ['Full colour', 'Reversed', 'On the tint', 'One colour'].map((name) => ({ name, ground: 'x', logo: 'x' }));
     const withColorways = (kit: BrandKitRevision): BrandKitRevision => ({ ...kit, chapters: { ...kit.chapters, logo: { ...kit.chapters.logo, colorways } } });

@@ -325,3 +325,13 @@ figcaption {
     }
   }
 }
+
+/* The Iconography samples (one shared component, compact rows): one fragment with the block around them, the strip's
+   ground and the icons' inks printed as set (solid colours, no filter), room under them before the rules. */
+.kit-icon-samples {
+  margin: 6pt 0 8pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}

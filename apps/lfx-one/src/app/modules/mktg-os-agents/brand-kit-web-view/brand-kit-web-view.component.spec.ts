@@ -451,7 +451,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(scale?.textContent).toContain('Eyebrow');
     });
 
-    it('Visual: the iconography rules and the recommended set with no sample icon, the imagery rule and what to avoid, the graphic elements in the kit’s colours', async () => {
+    it('Visual: the board’s sample icons in the kit’s colours above the iconography rules and the recommended set, the imagery rule and what to avoid, the graphic elements in the kit’s colours', async () => {
       await open('visual');
 
       const icons = query('brand-kit-web-view-icons');
@@ -459,6 +459,23 @@ describe('BrandKitWebViewComponent', () => {
       expect(icons?.textContent).toContain('Label.');
       expect(icons?.querySelectorAll('i')).toHaveLength(0);
       expect(icons?.textContent).toContain('Recommended set: Lucide');
+      // The samples sit between the title and the rules; the rules and the caption keep their comment fields.
+      const samples = icons?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-samples"]');
+      expect(samples?.previousElementSibling?.tagName).toBe('H3');
+      expect(samples?.nextElementSibling?.tagName).toBe('UL');
+      expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
+      expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-strip-"]')).toHaveLength(8);
+      expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]')?.textContent?.trim()).toBe('Documents');
+      const inkProbe = document.createElement('span');
+      inkProbe.style.color = brandKitTestRevision().kit.dark;
+      expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]')?.style.color).toBe(inkProbe.style.color);
+      expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.style.backgroundColor).toBe(inkProbe.style.color);
+      const highlightProbe = document.createElement('span');
+      highlightProbe.style.color = brandKitTestRevision().kit.spark;
+      const highlighted = samples?.querySelector<HTMLElement>('[data-highlight="true"]');
+      expect(highlighted?.getAttribute('data-testid')).toBe('brand-kit-icon-strip-global');
+      expect(highlighted?.style.color).toBe(highlightProbe.style.color);
+      expect(icons?.querySelectorAll('[data-mktg-comment-group]').length).toBe(brandKitTestRevision().chapters.visual.icons.rules.length + 1);
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Structure.');
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Hackers');
       expect(query('brand-kit-web-view-elements')?.textContent).toContain('Primary button');

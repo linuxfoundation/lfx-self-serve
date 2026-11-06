@@ -88,6 +88,22 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(root.querySelector('[data-testid="kit-print-type"]')?.textContent).toContain('500 · 64/72 px');
   expect(root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print"]')?.style.getPropertyValue('--mfp-font')).toBe(brand.fontStack);
   expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(kit.chapters.visual.icons.recommended);
+  // The board's sample icons, compact, inside the Iconography block between its title and its rules, in the kit's colours.
+  const samples = root.querySelector<HTMLElement>('[data-testid="kit-print-visual"] .kit-icon-samples');
+  expect(samples?.getAttribute('data-testid')).toBe('brand-kit-icon-samples');
+  expect(samples?.previousElementSibling?.tagName).toBe('H3');
+  expect(samples?.nextElementSibling?.tagName).toBe('UL');
+  expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
+  expect(samples?.querySelector('[data-testid="brand-kit-icon-tile-documents"]')?.classList.contains('h-[88px]')).toBe(true);
+  expect(samples?.querySelector<HTMLElement>('[data-highlight="true"]')?.getAttribute('data-testid')).toBe('brand-kit-icon-strip-global');
+  const probe = document.createElement('span');
+  probe.style.color = kit.kit.dark;
+  expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.style.backgroundColor).toBe(probe.style.color);
+  if (!samples) throw new Error('Missing synthetic icon samples');
+  expect(getComputedStyle(samples).breakInside).toBe('avoid');
+  for (const rule of kit.chapters.visual.icons.rules) {
+    expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(rule);
+  }
   expect(root.querySelectorAll('[data-testid="kit-print-usage"]')).toHaveLength(kit.chapters.usage.examples.length);
   expect(root.querySelector('[data-testid="kit-print-voice"]')?.textContent).toContain(kit.chapters.voice.umbrella);
   kit.chapters.voice.attributes.forEach((attribute) => expect(root.textContent).toContain(attribute.line));

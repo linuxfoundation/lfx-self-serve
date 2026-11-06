@@ -20,6 +20,9 @@ import {
   MKTG_SLIDES_EXPORT_DRIVE_ID_REGEX,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_HEX_REGEX,
+  MKTG_SLIDES_EXPORT_ICON_FIELD_LABELS,
+  MKTG_SLIDES_EXPORT_ICON_FIELDS,
+  MKTG_SLIDES_EXPORT_ICON_URL_SEPARATOR,
   MKTG_SLIDES_EXPORT_INTAKE_HEADER,
   MKTG_SLIDES_EXPORT_KEY_PREFIX,
   MKTG_SLIDES_EXPORT_KEY_TIME_DIGITS,
@@ -120,6 +123,11 @@ export function renderMktgSlidesExportFormMessage(form: MktgSlidesExportForm, no
     `LOGO REVERSED URL: ${form.logo_reversed_url ?? 'none'}`,
     `LOGO ONE-COLOR URL: ${form.logo_one_color_url ?? 'none'}`,
     `LOGO SYMBOL REVERSED URL: ${form.logo_symbol_reversed_url ?? 'none'}`,
+    // The icon lines likewise: always rendered, `none` when the kit's samples were not published, each set's URLs on one
+    // line in the board's order. A slides-export that does not read them ignores them.
+    `${MKTG_SLIDES_EXPORT_ICON_FIELD_LABELS.dark}: ${form[MKTG_SLIDES_EXPORT_ICON_FIELDS.dark]?.join(MKTG_SLIDES_EXPORT_ICON_URL_SEPARATOR) ?? 'none'}`,
+    `${MKTG_SLIDES_EXPORT_ICON_FIELD_LABELS.light}: ${form[MKTG_SLIDES_EXPORT_ICON_FIELDS.light]?.join(MKTG_SLIDES_EXPORT_ICON_URL_SEPARATOR) ?? 'none'}`,
+    `${MKTG_SLIDES_EXPORT_ICON_FIELD_LABELS.highlight}: ${form[MKTG_SLIDES_EXPORT_ICON_FIELDS.highlight] ?? 'none'}`,
     `ASSETS: ${namedMktgSlidesExportAssets(form.assets).join(', ') || 'none'}`,
     MKTG_SLIDES_EXPORT_ASSETS_OPEN,
     guardMktgSlidesExportText(JSON.stringify(form.assets, null, 2)),

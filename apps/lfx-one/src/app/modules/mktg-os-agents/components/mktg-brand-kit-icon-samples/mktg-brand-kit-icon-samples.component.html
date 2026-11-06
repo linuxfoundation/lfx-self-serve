@@ -1,0 +1,61 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- One sample icon: the shared shapes on the 24-unit grid, one stroke in the current colour, no fill. Decorative: the label beside it is the text. -->
+<ng-template #iconTpl let-icon let-size="size">
+  <svg
+    [attr.width]="size"
+    [attr.height]="size"
+    [attr.viewBox]="viewBox"
+    fill="none"
+    stroke="currentColor"
+    [attr.stroke-width]="strokeWidth"
+    [attr.stroke-linecap]="linecap"
+    [attr.stroke-linejoin]="linejoin"
+    class="shrink-0"
+    aria-hidden="true"
+    focusable="false">
+    @for (shape of icon.shapes; track $index) {
+      @if (shape.kind === 'path') {
+        <svg:path [attr.d]="shape.d" />
+      } @else if (shape.kind === 'circle') {
+        <svg:circle [attr.cx]="shape.cx" [attr.cy]="shape.cy" [attr.r]="shape.r" />
+      } @else if (shape.kind === 'rect') {
+        <svg:rect [attr.x]="shape.x" [attr.y]="shape.y" [attr.width]="shape.width" [attr.height]="shape.height" [attr.rx]="shape.rx" />
+      }
+    }
+  </svg>
+</ng-template>
+
+<!-- The 4 × 2 tiles: each icon in the kit's dark, its label as text under it (the board's 10 px gap, 11 px label, 10 px radius). -->
+<ul class="grid grid-cols-4 gap-3" data-testid="brand-kit-icon-tiles">
+  @for (icon of icons; track icon.id) {
+    <li
+      class="flex flex-col items-center justify-center gap-[10px] rounded-[10px] border border-gray-200"
+      [class]="tileClass()"
+      [style.color]="colours().tileInk"
+      [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
+      <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: icon, size: tileIconSize }" />
+      <span class="text-[11px] leading-[1.4] text-gray-500">{{ icon.label }}</span>
+    </li>
+  }
+</ul>
+
+<!-- The strip: the eight icons on the kit's dark, white, the third in the highlight. Wraps on a narrow card instead of overflowing it. -->
+<div
+  class="flex flex-wrap items-center gap-x-[26px] gap-y-3 rounded-[10px] px-[30px] [print-color-adjust:exact]"
+  [class]="stripClass()"
+  [style.background-color]="colours().stripGround"
+  role="img"
+  [attr.aria-label]="stripLabel"
+  data-testid="brand-kit-icon-strip">
+  @for (item of strip(); track item.icon.id) {
+    <span
+      class="flex"
+      [style.color]="item.ink"
+      [attr.data-highlight]="item.highlight ? 'true' : null"
+      [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
+      <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: item.icon, size: stripIconSize }" />
+    </span>
+  }
+</div>
