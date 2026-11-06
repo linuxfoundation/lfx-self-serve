@@ -62,7 +62,7 @@ The 12-month enrollment window that earlier versions of this page applied no lon
 
 ### Numbers at the top of the page
 
-Every number states what it counts (people or person-course pairs), its window and the date of the data it reflects ("as of"), and its tooltip gives the full definition. They follow the time range and the filters, except the roster:
+Three numbers show first, **People with training activity**, **Courses taken** and **Certified people**; select **Show 7 more stats** for the rest and **Show fewer stats** to hide them again. Every number states what it counts (people or person-course pairs), its window and the date of the data it reflects ("as of"), and its tooltip gives the full definition. They follow the time range and the filters, except the roster:
 
 - **Training-program roster members** — everyone LF Education's training program lists for your organization today, including people who never enrolled in a course. It is live and **does not follow the time range or the filters**, and says so. Shows "—" and "No LF Education training program on record" when your organization has no training program.
 - **People with training activity** — distinct people on your organization's people list with at least one enrollment or certificate in the range. Learners who are not on the people list are not counted here, and it is not a subset of the roster members. With the default time range and no filters, it equals the **Trainees** card on People › All Employees for the same time range, which counts current employees, plus any former employees still on the people list with training in that range. The note under the Trainees cards gives how many former employees that is.
