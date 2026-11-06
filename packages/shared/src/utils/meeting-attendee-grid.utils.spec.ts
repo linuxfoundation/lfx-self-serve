@@ -91,6 +91,26 @@ describe('buildMeetingAttendeeGrid', () => {
     ]);
   });
 
+  it('falls back to the calendar invite answer when there is no RSVP, and lets an RSVP win over it', () => {
+    const { rsvp: _omitted, ...noRsvpKey } = { ...registrant('4', 'Di', 'D', null), invite_accepted: true };
+    const grid = buildMeetingAttendeeGrid(
+      [
+        noRsvpKey,
+        { ...registrant('1', 'Ada', 'A', null), invite_accepted: true },
+        { ...registrant('2', 'Bob', 'B', null), invite_accepted: false },
+        { ...registrant('3', 'Cy', 'C', 'maybe'), invite_accepted: true },
+      ],
+      false
+    );
+
+    expect(grid.people.map((person) => [person.name, person.status])).toEqual([
+      ['Ada A', 'yes'],
+      ['Di D', 'yes'],
+      ['Cy C', 'maybe'],
+      ['Bob B', 'no'],
+    ]);
+  });
+
   it('orders past people Attended then Absent and skips empty statuses in the stats', () => {
     const grid = buildMeetingAttendeeGrid([participant('1', 'Bea', false), participant('2', 'Al', true), participant('3', 'Cy', true)], true);
 
