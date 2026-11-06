@@ -138,6 +138,18 @@ export const BRAND_KIT_MAX_LOGO_FILES = 12;
 export const BRAND_KIT_MAX_LOGO_FILE_CHARS = 2_000_000;
 
 /**
+ * A ZIP of logo files, in bytes as picked: the form's footnote says "Keep a
+ * ZIP small: SVG files only, under 150 KB" (the agent's intake), and this is
+ * that number, so the form refuses a bigger package at pick time and the
+ * validator refuses it in the request. The full logo package linked on a
+ * brand page is usually far over it; it goes by link.
+ */
+export const BRAND_KIT_MAX_LOGO_ZIP_BYTES = 150 * 1024;
+
+/** The same cap on the wire: base64 is exactly four characters per three bytes. */
+export const BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS = Math.ceil(BRAND_KIT_MAX_LOGO_ZIP_BYTES / 3) * 4;
+
+/**
  * All logo files of one form together, in UTF-8 bytes: the generate request
  * is one JSON body, and the BFF's body parser takes 15 MB of bytes — the form
  * says so before the request is refused on the way out. The 3 MB left over
