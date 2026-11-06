@@ -9312,6 +9312,18 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(retried).toHaveBeenCalledTimes(1);
   });
 
+  /** The list answers `null` when the access check could not be made: unverified, not denied. */
+  it('offers a Retry, not the restricted block, when the read succeeded but access could not be verified', () => {
+    const retried = vi.fn();
+    fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+    const c = holdSegment(null, 'ready');
+
+    expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('failed');
+    expect(c['canSubmit']()).toBe(false);
+    (find('implementation-google-audience-segments-block-retry')?.querySelector('button') as HTMLButtonElement).click();
+    expect(retried).toHaveBeenCalledTimes(1);
+  });
+
   it('asks for the brief to be saved when there is no brief to check against', () => {
     const c = holdSegment(null, 'unknown', null);
 

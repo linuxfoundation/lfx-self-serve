@@ -8202,7 +8202,7 @@ describe('CampaignController.listBriefCampaigns', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: audiences, googleConversionActionsEnabled: conversions }));
   });
 
-  it('answers no for audience segments, rather than failing the list, when the global_marketing_ops check cannot be made', async () => {
+  it('answers null (unverified, not denied) for audience segments, rather than failing the list, when the global_marketing_ops check cannot be made', async () => {
     listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: true, googleAudienceSegmentsEnabled: false });
     isServerFeatureEnabled.mockReturnValue(true);
     vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockRejectedValueOnce(new Error('access check unavailable'));
@@ -8210,7 +8210,7 @@ describe('CampaignController.listBriefCampaigns', () => {
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: null }));
   });
 
   it('answers no without asking who the caller is when the create path does not serve', async () => {

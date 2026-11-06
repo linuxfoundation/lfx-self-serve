@@ -6119,12 +6119,13 @@ export interface CampaignListResult {
    * marketing team; `campaign_manager` alone, which admits foundation EDs, is not enough). Every
    * foundation's Google Ads connection points at one shared LF customer, so a foundation operator
    * could otherwise target another foundation's list. campaign-service checks the same relation on
-   * the same project (linuxfoundation/lfx-v2-campaign-service#501, #505). False, too, when that
-   * check cannot be made. The create route refuses such a caller's segments with a 403
+   * the same project (linuxfoundation/lfx-v2-campaign-service#501, #505). `null` when that check
+   * cannot be made: unverified, not denied, so the Implement tab offers a Retry rather than the
+   * restricted block. The create route refuses such a caller's segments with a 403
    * `GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE`, or a 503 when the check cannot be made. Modelled on the client like the
    * capabilities above (`boolean | null`, `null` for unanswered): only an explicit yes shows the section.
    */
-  googleAudienceSegmentsEnabled: boolean;
+  googleAudienceSegmentsEnabled: boolean | null;
   /**
    * Whether THIS caller may read the Implement tab's conversion-action picker list (#4991), through
    * `GET /api/campaigns/google/conversion-actions`. Per caller: true only when the campaign-service
