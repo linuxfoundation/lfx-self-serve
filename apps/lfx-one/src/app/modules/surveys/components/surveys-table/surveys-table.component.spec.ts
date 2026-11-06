@@ -213,6 +213,29 @@ describe('SurveysTableComponent — row-scoped draft edit access', () => {
     expect(action('edit', 'draft')?.querySelector('a')).not.toBeNull();
     expect(action('delete', 'draft')).toBeNull();
   });
+  describe('group link', () => {
+    const groupLink = (uid: string): HTMLAnchorElement | null => fixture.nativeElement.querySelector(`[data-testid="surveys-group-link-${uid}"]`);
+
+    it.each([
+      { is_foundation: true, path: '/foundation/groups/primary' },
+      { is_foundation: false, path: '/project/groups/primary' },
+      { is_foundation: undefined, path: '/groups/primary' },
+    ])('links the group name to the group details page for the survey owning tier ($is_foundation)', ({ is_foundation: isFoundation, path }) => {
+      render([survey('s1', ['primary', 'secondary'], { is_foundation: isFoundation })]);
+
+      const link = groupLink('s1');
+      expect(link?.getAttribute('href')).toBe(`${path}?project=synthetic-project`);
+      expect(link?.textContent?.trim()).toBe('Synthetic primary');
+    });
+
+    it('renders the group as plain text, without a link, when the survey has no committee', () => {
+      render([survey('s1', [])]);
+
+      expect(groupLink('s1')).toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('Unknown');
+    });
+  });
+
   describe('status tab counts', () => {
     const tabLabels = (): string[] =>
       Array.from(fixture.nativeElement.querySelectorAll('[data-testid="surveys-status-tabs"] [data-testid^="filter-pill-"]') as NodeListOf<HTMLElement>).map(
