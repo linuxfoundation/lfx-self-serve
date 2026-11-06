@@ -64,51 +64,55 @@
       </div>
 
       <!-- Sticky tabs bar; the fade moves here from the header once it is stuck, then below a stuck day heading -->
-      <div
-        #tabsBar
-        class="sticky z-[5] -mt-[4px] flex flex-wrap items-end justify-between gap-x-[16px] gap-y-[12px] bg-white pt-[4px] min-[1025px]:@[440px]:flex-nowrap"
-        [style.top.px]="stickyTop() + headerHeight()"
-        data-testid="meetings-redesign-tabs-bar">
+      <div #tabsBar class="sticky z-[5] -mt-[4px] bg-white pt-[4px]" [style.top.px]="stickyTop() + headerHeight()" data-testid="meetings-redesign-tabs-bar">
         <span
           class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-white via-white/85 to-white/0 transition-opacity duration-200 motion-reduce:transition-none"
           [class.opacity-0]="!tabsStuck()"
-          [class.mt-[24px]]="dayHeadingStuck()"
+          [class.mt-[44px]]="dayHeadingStuck()"
           aria-hidden="true"
           data-testid="meetings-redesign-tabs-fade"></span>
+        <!-- Search and Filters sit inside the tabs, on their rule. -->
         <lfx-ui-tabs
-          class="flex-1"
+          class="min-[1025px]:@[440px]:flex-nowrap"
+          size="small"
           ariaLabel="Meetings"
           [idPrefix]="idPrefix"
           [tabs]="tabs()"
           [value]="store.tab()"
           (valueChange)="onTabChange($event)"
-          data-testid="meetings-redesign-tabs" />
-        @if (!tabEmpty()) {
-          <!-- Above 1024px, in a centre of 440px or more, the bar stays on one line and search narrows from 300px. -->
-          <div class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto min-[1025px]:min-w-0 min-[1025px]:flex-nowrap">
-            <!-- A fixed min width at 641-1024px: the library's min(300px, 100%) sizes the row too narrow and wraps Filters. -->
-            <lfx-ui-search-input
-              class="w-full min-[641px]:w-auto min-[641px]:min-w-[300px] min-[1025px]:w-[300px] min-[1025px]:min-w-0"
-              placeholder="Search meetings"
-              ariaLabel="Search meetings"
-              [value]="store.search()"
-              (valueChange)="store.setSearch($event)"
-              data-testid="meetings-redesign-search" />
-            <lfx-meetings-filters
-              class="w-full min-[641px]:w-auto"
-              [tab]="store.tab()"
-              [rows]="store.tabRows()"
-              [filters]="store.filters()"
-              (filtersChange)="store.setFilters($event)" />
-          </div>
-        }
+          data-testid="meetings-redesign-tabs">
+          @if (!tabEmpty()) {
+            <!-- Above 1024px, in a centre of 440px or more, the bar stays on one line and search narrows from 280px. -->
+            <div class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto min-[1025px]:min-w-0 min-[1025px]:flex-nowrap">
+              <!-- A fixed min width at 641-1024px: the library's min(300px, 100%) sizes the row too narrow and wraps Filters. -->
+              <lfx-ui-search-input
+                class="w-full min-[641px]:w-auto min-[641px]:min-w-[280px] min-[1025px]:w-[280px] min-[1025px]:min-w-0"
+                placeholder="Search meetings"
+                ariaLabel="Search meetings"
+                [value]="store.search()"
+                (valueChange)="store.setSearch($event)"
+                data-testid="meetings-redesign-search" />
+              <lfx-meetings-filters
+                class="w-full min-[641px]:w-auto"
+                [tab]="store.tab()"
+                [rows]="store.tabRows()"
+                [filters]="store.filters()"
+                (filtersChange)="store.setFilters($event)" />
+            </div>
+          }
+        </lfx-ui-tabs>
       </div>
 
       @if (!tabEmpty() && store.filterChips().length) {
         <!-- -6px pulls the chips toward the tabs bar, per the design -->
         <lfx-ui-chip-group class="-mt-[6px]" ariaLabel="Applied filters" [fallbackFocus]="filtersControl() ?? null" data-testid="meetings-home-filters-chips">
           @for (chip of store.filterChips(); track chip.key) {
-            <lfx-ui-chip [prefix]="chip.prefix ?? ''" [label]="chip.label" (dismissed)="store.clearFilter(chip.key)" data-testid="meetings-home-filters-chip" />
+            <lfx-ui-chip
+              size="md"
+              [prefix]="chip.prefix ?? ''"
+              [label]="chip.label"
+              (dismissed)="store.clearFilter(chip.key)"
+              data-testid="meetings-home-filters-chip" />
           }
         </lfx-ui-chip-group>
       }

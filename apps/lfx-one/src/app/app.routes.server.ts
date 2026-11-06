@@ -21,13 +21,6 @@ export const serverRoutes: ServerRoute[] = [
   // so the server emits the skeleton and the browser fills the preview in on hydration. That is
   // what the agreement view already did, because the page fetches nothing off-browser.
   //
-  // A `RenderMode.Client` entry here is NOT a substitute. Declared that way, a direct visit to a
-  // group address lands on the addressed org's overview instead of the page (`orgLensClaM3EnabledGuard`'s
-  // fail-closed redirect) — this address needs the server render so pasted, shared and returned-to
-  // URLs resolve. The reserved-word segment
-  // this page replaced was client-rendered and did work, so the entry looks safe by analogy and
-  // then breaks exactly the pasted, shared and returned-to URLs the group address exists for.
-  //
   // Catch-all — the global 404 renders here in place (no /not-found redirect). The Express SSR
   // handler rewrites this to HTTP 404 when NotFoundComponent sets the render-context flag.
   {

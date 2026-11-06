@@ -1,18 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-  LENS_COOKIE_KEY,
-  MKTG_DOCUMENT_TYPES,
-  MKTG_OS_AGENTS_ENABLED_FLAG,
-  PERSONA_COOKIE_KEY,
-  SELECTED_PROJECT_COOKIE_KEY,
-} from '@lfx-one/shared/constants';
+import { LENS_COOKIE_KEY, MKTG_DOCUMENT_TYPES, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import type { AeoGeoAnswersBody, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page } from '@playwright/test';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
+import { pinMktgOsFlags } from './mktg-os-flags.helper';
 import { aeoGeoEnvelopeFixture, aeoGeoQuestionsFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { aeoGeoRunQuestions } from '@lfx-one/shared/utils/aeo-geo.utils';
 
@@ -216,10 +210,7 @@ export async function setupAudit(page: Page, options: { writer?: boolean; previo
     }
     return route.fulfill({ status: 404, json: { error: 'Synthetic document not stored' } });
   });
-  await page.addInitScript(([key, flag]) => localStorage.setItem(key, JSON.stringify({ [flag]: true })), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    MKTG_OS_AGENTS_ENABLED_FLAG,
-  ] as const);
+  await pinMktgOsFlags(page);
   const cookies = async () =>
     page.context().addCookies([
       {

@@ -4681,6 +4681,7 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'conversionActions', label: 'conversion actions', normalized: true },
   { field: 'demandGenCreative', label: 'Demand Gen creative', normalized: true },
   { field: 'demandGenVideoCreative', label: 'Demand Gen video ad', normalized: true },
+  { field: 'demandGenAds', label: 'Demand Gen ads', normalized: true },
   { field: 'demandGenAdGroups', label: 'Demand Gen ad groups', normalized: true },
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
@@ -5166,6 +5167,18 @@ export const GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY = 'demandGenAdGroups' satis
  * images are fetched before the budget, and every group adds its own mutates after the campaign exists.
  */
 export const GOOGLE_DEMAND_GEN_MAX_AD_GROUPS = 5;
+
+/**
+ * The `googleAdsConfig` key several named ads of the single Demand Gen ad group ride under (#5226),
+ * INSTEAD of both creative keys. A named group's ads ride under its own `ads`.
+ */
+export const GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY = 'demandGenAds' satisfies keyof CampaignCreateRequest;
+
+/**
+ * The most ads one Demand Gen ad group takes: campaign-service's `maxDemandGenAdsPerGroup`
+ * (`internal/platform/googleads/demandgen_ads.go`). A service bound, not Google's, as the ad group cap is.
+ */
+export const GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP = 5;
 
 /**
  * Why the Implement tab holds Create when Demand Gen is split into ad groups but none is left. Upstream

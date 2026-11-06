@@ -148,6 +148,7 @@ describe.each([
   ['/events-organizations', 'foundationSlug'],
   ['/events-sponsorship', 'foundationSlug'],
   ['/events-geography', 'foundationSlug'],
+  ['/members-growth', 'foundationSlug'],
   ['/members-tiers', 'foundationSlug'],
   ['/members-directory', 'foundationSlug'],
   ['/members-directory-tiers', 'foundationSlug'],

@@ -170,6 +170,10 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-held-live">
   {{ demandGenAdGroupsHeldMessage() }}
 </div>
+<!-- The single Demand Gen ad group's several ads' refusal (#5226); empty with one ad. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ads-error-live">
+  {{ demandGenAdsError() ?? '' }}
+</div>
 <!-- The first ad's display-width errors, announced on the same terms; empty off Search. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
   {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
@@ -2559,6 +2563,18 @@
                       [inputId]="'demand-gen-ad-group-' + i + '-name'"
                       [attr.data-testid]="'implementation-demand-gen-ad-group-name-' + i" />
                   </div>
+                  @if (group.controls.ads.length > 0) {
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium text-gray-700" [attr.for]="'demand-gen-ad-group-' + i + '-ad-1-name'">Ad 1 name</label>
+                      <lfx-input-text
+                        [form]="group"
+                        control="adName"
+                        type="text"
+                        size="small"
+                        [inputId]="'demand-gen-ad-group-' + i + '-ad-1-name'"
+                        [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-ad-1-name'" />
+                    </div>
+                  }
                   <div class="flex flex-wrap gap-4" [attr.data-testid]="'implementation-demand-gen-ad-group-format-' + i">
                     <lfx-radio-button
                       [form]="group"
@@ -2626,6 +2642,11 @@
                       }
                     </div>
                   }
+                  <ng-container
+                    *ngTemplateOutlet="
+                      demandGenAdListTemplate;
+                      context: { $implicit: i, ads: group.controls.ads, prefix: 'demand-gen-ad-group-' + i + '-ad' }
+                    " />
                   <div>
                     <lfx-button
                       label="Remove ad group"
@@ -2658,6 +2679,18 @@
             two creative groups this section renders and the create sends; the other keeps what was
             typed into it, and the note below says it will not be sent.
           -->
+          @if (section.channel === 'demand-gen' && !demandGenAdGroupsActive() && campaignForm.controls.demandGenAds.length > 0) {
+            <div class="mt-4 flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="demand-gen-ad-1-name">Ad 1 name</label>
+              <lfx-input-text
+                [form]="campaignForm"
+                control="demandGenAdName"
+                type="text"
+                size="small"
+                inputId="demand-gen-ad-1-name"
+                data-testid="implementation-demand-gen-ad-1-name" />
+            </div>
+          }
           @if (section.channel === 'demand-gen' && !demandGenAdGroupsActive()) {
             <fieldset
               class="mt-4 flex flex-col gap-2"
@@ -2756,8 +2789,130 @@
               }
             </div>
           }
+          @if (section.channel === 'demand-gen' && demandGenAdsShown()) {
+            <ng-container
+              *ngTemplateOutlet="demandGenAdListTemplate; context: { $implicit: null, ads: campaignForm.controls.demandGenAds, prefix: 'demand-gen-ad' }" />
+            @if (demandGenAdsError(); as error) {
+              <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-ads-error">{{ error }}</p>
+            }
+          }
         </div>
       }
+
+      <!--
+        The second and later ads of one Demand Gen ad group (#5226): the single one for a null context,
+        else named group i. With any, the group's own ad above becomes ad 1 and needs a name.
+      -->
+      <!-- The context carries the ad list and its id stem, typed by lfxDemandGenAdListContext, so the template reads them rather than calling methods. -->
+      <ng-template #demandGenAdListTemplate lfxDemandGenAdListContext let-group let-ads="ads" let-prefix="prefix">
+        <div class="mt-4 flex flex-col gap-3" [attr.data-testid]="'implementation-' + prefix + 's'">
+          @for (ad of ads.controls; track ad; let j = $index) {
+            @let adId = prefix + '-' + (j + 2);
+            @let errorPrefix = (group === null ? '' : group + '.') + 'ad-' + (j + 2) + '.';
+            <fieldset class="flex flex-col gap-3 rounded-md border border-gray-200 p-4" [attr.data-testid]="'implementation-' + adId">
+              <legend class="px-1 text-xs font-medium text-gray-700">Ad {{ j + 2 }}</legend>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" [attr.for]="adId + '-name'">Name</label>
+                <lfx-input-text
+                  [form]="ad"
+                  control="name"
+                  type="text"
+                  size="small"
+                  [inputId]="adId + '-name'"
+                  [attr.data-testid]="'implementation-' + adId + '-name'" />
+              </div>
+              <div class="flex flex-wrap gap-4">
+                <lfx-radio-button
+                  [form]="ad"
+                  control="format"
+                  [name]="adId + '-format'"
+                  value="image"
+                  label="Image ad"
+                  [inputId]="adId + '-format-image'"
+                  [attr.data-testid]="'implementation-' + adId + '-format-image'" />
+                <lfx-radio-button
+                  [form]="ad"
+                  control="format"
+                  [name]="adId + '-format'"
+                  value="video"
+                  label="Video ad (YouTube)"
+                  [inputId]="adId + '-format-video'"
+                  [attr.data-testid]="'implementation-' + adId + '-format-video'" />
+              </div>
+              @for (format of [ad.controls.format.value]; track format) {
+                @let creative = format === 'video' ? ad.controls.videoCreative : ad.controls.creative;
+                @for (field of demandGenAdGroupFields[format]; track field.control) {
+                  @let fieldId = adId + '-' + field.control;
+                  @let fieldError = demandGenAdGroupFieldErrors()[errorPrefix + format + '.' + field.control];
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-700" [attr.for]="fieldId">{{ field.label }}</label>
+                    @if (field.kind === 'list') {
+                      <lfx-textarea
+                        [form]="creative"
+                        [control]="field.control"
+                        [inputId]="fieldId"
+                        [rows]="3"
+                        [describedBy]="fieldError ? fieldId + '-error' : undefined"
+                        [invalid]="!!fieldError"
+                        [attr.data-testid]="'implementation-' + fieldId" />
+                    } @else if (field.options) {
+                      <lfx-select
+                        [form]="creative"
+                        [control]="field.control"
+                        [options]="field.selectOptions ?? []"
+                        [inputId]="fieldId"
+                        size="small"
+                        [attr.data-testid]="'implementation-' + fieldId" />
+                    } @else {
+                      <lfx-input-text
+                        [form]="creative"
+                        [control]="field.control"
+                        type="text"
+                        size="small"
+                        [inputId]="fieldId"
+                        [describedBy]="fieldError ? fieldId + '-error' : null"
+                        [invalid]="!!fieldError"
+                        [attr.data-testid]="'implementation-' + fieldId" />
+                    }
+                    <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                    @if (fieldError) {
+                      <span class="text-xs text-red-600" [id]="fieldId + '-error'" [attr.data-testid]="'implementation-' + fieldId + '-error'">{{
+                        fieldError
+                      }}</span>
+                    }
+                  </div>
+                }
+              }
+              <div>
+                <lfx-button
+                  label="Remove ad"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="removeDemandGenAd(group, j)"
+                  [attr.data-testid]="'implementation-' + adId + '-remove'" />
+              </div>
+            </fieldset>
+          }
+          @if (ads.length + 1 < demandGenMaxAds) {
+            <div class="flex flex-col gap-1">
+              <div>
+                <lfx-button
+                  label="Add another ad"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="addDemandGenAd(group)"
+                  [attr.data-testid]="'implementation-' + prefix + '-add'" />
+              </div>
+              <p class="text-xs text-gray-500">
+                Up to {{ demandGenMaxAds }} ads in this ad group, each with its own name. Google Ads names a video ad after the ad group, then " - " and its
+                name.
+              </p>
+            </div>
+          }
+        </div>
+      </ng-template>
 
       <!--
         The two creative messages, one blocking and one not, placed after every section because

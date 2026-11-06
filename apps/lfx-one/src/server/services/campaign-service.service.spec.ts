@@ -63,6 +63,7 @@ import {
   asResumeRefusal,
   CampaignServiceClient,
   deriveEventSlug,
+  briefDispatchEventName,
   fromBriefResponse,
   isCampaignServiceJobId,
   multiCampaignPlatforms,
@@ -1228,6 +1229,24 @@ function storedBrief(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+describe('briefDispatchEventName', () => {
+  it.each([
+    ['eventName before name', { event_details: { name: 'UI name', eventName: ' Stored ' } }, 'Stored'],
+    ['name when eventName is blank', { event_details: { eventName: ' ', name: ' UI name ' } }, 'UI name'],
+    ['event_details before copy', { event_details: { name: 'Details' }, copy: { eventName: 'Copy' } }, 'Details'],
+    ['copy when event_details has none', { event_details: { city: 'Paris' }, copy: { eventName: 'Copy' } }, 'Copy'],
+    ['a key in other capitals, the later one winning', { event_details: { eventName: 'First', EVENTNAME: 'Second' } }, 'Second'],
+    ['nothing from a blob Go cannot decode', { event_details: { name: 'Details', hsToken: 7 }, copy: { name: 'Copy' } }, 'Copy'],
+    ['nothing from a blob that is not an object', { event_details: ['Details'], copy: { name: 'Copy' } }, 'Copy'],
+    // Go's quirk: the raw whitespace name blocks copy's eventName, then copy's absent name replaces it.
+    ["a whitespace name, which keeps copy's eventName out", { event_details: { name: '  ' }, copy: { eventName: 'Copy' } }, ''],
+    ['a whitespace name raw when nothing follows', { event_details: { name: '  ' } }, '  '],
+    ['a whitespace name raw past a copy Go cannot decode', { event_details: { name: '  ' }, copy: ['Copy'] }, '  '],
+  ])('reads %s', (_label, found, expected) => {
+    expect(briefDispatchEventName(found)).toBe(expected);
+  });
+});
+
 describe('fromBriefResponse', () => {
   // The one property that matters most: what a save writes, a load must give back. Anything
   // this drops is work the user did in the Planning tab and would have to redo, without ever
@@ -1863,6 +1882,7 @@ describe('CampaignServiceClient.loadBrief', () => {
     await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email')).resolves.toMatchObject({
       status: 'loaded',
       briefId: 'b-1',
+      storedEventName: 'KubeCon EU 2026',
     });
   });
 
@@ -2014,6 +2034,7 @@ describe('CampaignServiceClient.loadBriefById', () => {
     expect(result.status).toBe('loaded');
     expect(result.briefId).toBe('b-1');
     expect(result.etag).toBe('"3"');
+    expect(result.storedEventName).toBe('KubeCon EU 2026');
     // No query at all: an id is exact identity upstream, so there is nothing to disambiguate.
     expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1', 'GET');
   });

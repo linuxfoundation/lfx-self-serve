@@ -11,6 +11,7 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
   HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_GROUPING_TIERS,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_LABEL,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE,
@@ -19,6 +20,14 @@ import {
   HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
+  HEALTH_METRICS_MEMBERS_GROWTH_BAND_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_GROWTH_BASELINE_YEAR,
+  HEALTH_METRICS_MEMBERS_GROWTH_COLORS,
+  HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_GROWTH_LABEL_BOX,
+  HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES,
+  HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS,
+  HEALTH_METRICS_MEMBERS_GROWTH_PLOT,
   HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
   HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
@@ -63,6 +72,14 @@ import type {
   HealthMetricsMembersDirectoryCellView,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersDirectoryRowView,
+  HealthMetricsMembersGrowth,
+  HealthMetricsMembersGrowthColumnView,
+  HealthMetricsMembersGrowthEndLabel,
+  HealthMetricsMembersGrowthLabelView,
+  HealthMetricsMembersGrowthLegendItemView,
+  HealthMetricsMembersGrowthPathView,
+  HealthMetricsMembersGrowthView,
+  HealthMetricsMembersGrowthViewMode,
   HealthMetricsMembersSectionKey,
   HealthMetricsMembersNpsAudience,
   HealthMetricsMembersNpsAudienceOption,
@@ -101,9 +118,9 @@ export function buildHealthMetricsMembersSections(year: number): HealthMetricsL2
 }
 
 /**
- * `#breakdown` — members per tier at each year's end, from the first year shown to the running one. Platinum, Gold
- * and Silver keep their own colours; with all three present the other tiers share one grey segment, otherwise every
- * tier is its own colour. Only the metrics row follows the selected period.
+ * `#breakdown` — members per tier at each year's end, from the first year shown to the running one. Diamond, Platinum,
+ * Gold and Silver keep their own colours and lead in that order; with Platinum, Gold and Silver all present the other
+ * tiers share one grey segment, otherwise every tier is its own colour. Only the metrics row follows the selected period.
  */
 export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembersTiers, range: HealthMetricsRange): HealthMetricsMembersBreakdownView {
   const currentYear = getYearForRange('YTD');
@@ -143,8 +160,8 @@ export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembe
     };
   });
 
-  // The table keeps tier order, even where the chart stacks Platinum, Gold and Silver first.
-  const tierRows = tierList.map(
+  // The table leads with the reserved tiers too, as the chart stacks them.
+  const tierRows = leadWithReservedTiers(tierList).map(
     (tier): HealthMetricsMembersBreakdownRowView => ({
       key: `tier-${tier.label}`,
       label: tier.label,
@@ -168,6 +185,177 @@ export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembe
       { key: 'revenue-change', label: 'Change vs. previous year', kind: 'change', icon: null, cells: breakdownChanges(revenue) },
     ],
     count: totals[years.indexOf(getYearForRange(range))] ?? null,
+  };
+}
+
+/**
+ * `#growth` — cumulative new members by month: this year to `today` with a run-rate projection to December, last
+ * year, and the earlier years as one grey range (Highlights) or a light line each (All years). The data is monthly,
+ * so "the same point" in an earlier year is the same month's total, even while this month is still in progress.
+ */
+export function buildHealthMetricsMembersGrowthView(
+  growth: HealthMetricsMembersGrowth,
+  mode: HealthMetricsMembersGrowthViewMode,
+  today: Date = new Date()
+): HealthMetricsMembersGrowthView {
+  const currentYear = today.getFullYear();
+  const now = today.getMonth();
+  const raw = new Map<number, (number | null)[]>();
+  for (const row of growth.months) {
+    if (row.year < HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR || row.year > currentYear || row.month < 1 || row.month > 12) continue;
+    const months = raw.get(row.year) ?? Array<number | null>(12).fill(null);
+    months[row.month - 1] = row.cumulative;
+    raw.set(row.year, months);
+  }
+  if (raw.size === 0) return emptyGrowthView();
+
+  // A year with no measured total is missing, never a year of zeros; this year missing leaves nothing to show.
+  const yearValues = (year: number, through = 11): number[] | null => {
+    const months = raw.get(year)?.slice(0, through + 1);
+    return months?.some((value) => value !== null) ? fillCumulative(months) : null;
+  };
+  const current = yearValues(currentYear, now);
+  if (current === null) return emptyGrowthView();
+  const prior = yearValues(currentYear - 1);
+  const baseline = currentYear > HEALTH_METRICS_MEMBERS_GROWTH_BASELINE_YEAR ? yearValues(HEALTH_METRICS_MEMBERS_GROWTH_BASELINE_YEAR) : null;
+  const earlier = new Map(
+    [...raw.keys()]
+      .filter((year) => year <= currentYear - 2)
+      .sort((a, b) => b - a)
+      .flatMap((year): [number, number[]][] => {
+        const values = yearValues(year);
+        return values ? [[year, values]] : [];
+      })
+  );
+  const earlierYears = [...earlier.keys()];
+  const bandYears = earlierYears.filter((year) => year >= HEALTH_METRICS_MEMBERS_GROWTH_BAND_FIRST_YEAR);
+
+  const sofar = current[now];
+  const projected = Math.round((sofar / (now + 1)) * 12);
+  const hasProjection = now < 11;
+  // One scale for both views, so switching never rescales the lines.
+  const step = breakdownScaleStep(Math.max(1, projected, ...current, ...(prior ?? []), ...[...earlier.values()].flat()));
+  const top = step * 4;
+  const x = (month: number): number => (month / 11) * HEALTH_METRICS_MEMBERS_GROWTH_PLOT.width;
+  const y = (value: number): number => HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height - (Math.min(value, top) / top) * HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height;
+  const leftPct = (month: number): number => (x(month) / HEALTH_METRICS_MEMBERS_GROWTH_PLOT.width) * 100;
+  const topPct = (value: number): number => (y(value) / HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height) * 100;
+  const path = (points: [number, number][]): string =>
+    points.map(([month, value], index) => `${index ? 'L' : 'M'}${round1(x(month))} ${round1(y(value))}`).join(' ');
+  const line = (values: number[]): string => path(values.map((value, month): [number, number] => [month, value]));
+  const colors = HEALTH_METRICS_MEMBERS_GROWTH_COLORS;
+  const all = mode === 'all';
+
+  const paths: HealthMetricsMembersGrowthPathView[] = [
+    ...(all
+      ? [...earlierYears].reverse().map((year) => ({ key: String(year), d: line(earlier.get(year) ?? []), color: colors.earlier, width: 1.5, dashed: false }))
+      : []),
+    ...(hasProjection
+      ? [
+          {
+            key: 'projected',
+            d: path([
+              [now, sofar],
+              [11, projected],
+            ]),
+            color: colors.current,
+            width: 2,
+            dashed: true,
+          },
+        ]
+      : []),
+    ...(prior ? [{ key: String(currentYear - 1), d: line(prior), color: colors.prior, width: 2, dashed: false }] : []),
+    { key: String(currentYear), d: line(current), color: colors.current, width: 2, dashed: false },
+  ];
+
+  let bandPath = '';
+  if (!all && bandYears.length > 0) {
+    const bandValues = bandYears.map((year) => earlier.get(year) ?? []);
+    const highs = HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS.map((_, month) => Math.max(...bandValues.map((values) => values[month])));
+    const lows = HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS.map((_, month) => Math.min(...bandValues.map((values) => values[month])));
+    bandPath = `${line(highs)} ${lows
+      .map((value, month): [number, number] => [month, value])
+      .reverse()
+      .map(([month, value]) => `L${round1(x(month))} ${round1(y(value))}`)
+      .join(' ')} Z`;
+  }
+
+  // The plot's width is unknown here, so from November, when this year's label can reach December's, it stacks with them.
+  const labels = separateGrowthEndLabels([
+    {
+      key: 'current',
+      text: `${currentYear}: ${formatCount(sofar)}`,
+      leftPct: leftPct(now),
+      topPct: topPct(sofar),
+      color: colors.current,
+      placement: 'below-right',
+      strong: true,
+      stacks: now >= 10,
+    },
+    ...(hasProjection
+      ? [
+          {
+            key: 'projected',
+            text: `~${formatCount(projected)} projected`,
+            leftPct: 100,
+            topPct: topPct(projected),
+            color: colors.current,
+            placement: 'right-below' as const,
+            strong: false,
+            stacks: true,
+          },
+        ]
+      : []),
+    ...(prior
+      ? [
+          {
+            key: 'prior',
+            text: `${currentYear - 1}: ${formatCount(prior[11])}`,
+            leftPct: 100,
+            topPct: topPct(prior[11]),
+            color: colors.prior,
+            placement: 'right' as const,
+            strong: true,
+            stacks: true,
+          },
+        ]
+      : []),
+  ]);
+
+  const columns = HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS.map((label, month): HealthMetricsMembersGrowthColumnView => {
+    const rows: HealthMetricsChartTipRowView[] = [];
+    if (month <= now) rows.push({ label: String(currentYear), value: formatCount(current[month]), color: colors.current, separated: false });
+    else if (month === 11 && hasProjection)
+      rows.push({ label: `${currentYear} projected`, value: `~${formatCount(projected)}`, color: colors.current, separated: false });
+    if (prior) rows.push({ label: String(currentYear - 1), value: formatCount(prior[month]), color: colors.prior, separated: false });
+    earlierYears.forEach((year, index) =>
+      rows.push({ label: String(year), value: formatCount(earlier.get(year)?.[month] ?? null), color: 'transparent', separated: index === 0 })
+    );
+    const tip = { title: `${label} · cumulative new members`, rows };
+    return { month: month + 1, label, leftPct: leftPct(month), tip, ariaLabel: `${tip.title}. ${rows.map((row) => `${row.label}: ${row.value}`).join(', ')}` };
+  });
+
+  const legend: HealthMetricsMembersGrowthLegendItemView[] = [{ label: String(currentYear), background: colors.current, band: false }];
+  if (hasProjection)
+    legend.push({ label: `${currentYear} projected`, background: `repeating-linear-gradient(90deg,${colors.current} 0 4px,transparent 4px 7px)`, band: false });
+  if (prior) legend.push({ label: String(currentYear - 1), background: colors.prior, band: false });
+  if (all && earlierYears.length > 0) legend.push({ label: yearSpan(earlierYears), background: colors.earlier, band: false });
+  if (!all && bandYears.length > 0) legend.push({ label: `${yearSpan(bandYears)} range`, background: colors.bandSwatch, band: true });
+
+  return {
+    measured: true,
+    kpis: buildGrowthKpis(currentYear, now, sofar, prior?.[now] ?? null, baseline?.[now] ?? null, projected),
+    yTicks: [4, 3, 2, 1, 0].map((tick) => formatCount(step * tick)),
+    monthLabels: [...HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS],
+    paths,
+    bandPath,
+    todayX: round1(x(now)),
+    todayPct: leftPct(now),
+    todayDot: { leftPct: leftPct(now), topPct: topPct(sofar) },
+    labels,
+    columns,
+    legend,
+    ariaLabel: growthAriaLabel(currentYear, prior !== null, all ? earlierYears : bandYears, all),
   };
 }
 
@@ -779,13 +967,13 @@ function collectBreakdownTiers(rows: HealthMetricsMembersTierYear[]): BreakdownT
 function buildBreakdownSeries(tiers: BreakdownTier[]): BreakdownSeries[] {
   const reserved = new Set(tiers.flatMap((tier) => (tier.reserved ? [tier.reserved] : [])));
   const single = (tier: BreakdownTier, color: string, grey = false): BreakdownSeries => ({ key: tier.label, label: tier.label, color, grey, tiers: [tier] });
+  const ordered = leadWithReservedTiers(tiers);
+  const rest = tiers.filter((tier) => !tier.reserved);
 
-  if (reserved.size === HEALTH_METRICS_MEMBERS_RESERVED_TIERS.length) {
-    const main = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.map((key) => {
-      const tier = tiers.find((candidate) => candidate.reserved === key) as BreakdownTier;
-      return single(tier, HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS[key]);
-    });
-    const rest = tiers.filter((tier) => !tier.reserved);
+  if (HEALTH_METRICS_MEMBERS_BREAKDOWN_GROUPING_TIERS.every((key) => reserved.has(key))) {
+    const main = ordered
+      .filter((tier) => tier.reserved)
+      .map((tier) => single(tier, HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS[tier.reserved as HealthMetricsMembersReservedTier]));
     if (rest.length === 0) return main;
     if (rest.length === 1) return [...main, single(rest[0], HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, true)];
 
@@ -795,9 +983,15 @@ function buildBreakdownSeries(tiers: BreakdownTier[]): BreakdownSeries[] {
 
   const palette = HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE.filter((entry) => !entry.resembles || !reserved.has(entry.resembles));
   let next = 0;
-  return tiers.map((tier) =>
+  return ordered.map((tier) =>
     single(tier, tier.reserved ? HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS[tier.reserved] : palette[next++ % palette.length].color)
   );
+}
+
+/** The reserved tiers present, as Diamond, Platinum, Gold, Silver, then the other tiers in rank order. */
+function leadWithReservedTiers(tiers: BreakdownTier[]): BreakdownTier[] {
+  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.flatMap((key) => tiers.filter((tier) => tier.reserved === key));
+  return [...reserved, ...tiers.filter((tier) => !tier.reserved)];
 }
 
 function seriesValue(series: BreakdownSeries, year: number): number | null {
@@ -896,4 +1090,149 @@ function breakdownScaleStep(top: number): number {
 function sumNullable(values: (number | null)[]): number | null {
   const measured = values.filter((value): value is number => value !== null);
   return measured.length === 0 ? null : measured.reduce((sum, value) => sum + value, 0);
+}
+
+function emptyGrowthView(): HealthMetricsMembersGrowthView {
+  return {
+    measured: false,
+    kpis: [],
+    yTicks: [],
+    monthLabels: [],
+    paths: [],
+    bandPath: '',
+    todayX: 0,
+    todayPct: 0,
+    todayDot: { leftPct: 0, topPct: 0 },
+    labels: [],
+    columns: [],
+    legend: [],
+    ariaLabel: '',
+  };
+}
+
+/**
+ * Lays out the labels, pushing those that stack apart so each stays readable however close their totals; only the
+ * labels move, never the points. The plot is drawn at its viewBox height, so its units are pixels.
+ */
+function separateGrowthEndLabels(labels: HealthMetricsMembersGrowthEndLabel[]): HealthMetricsMembersGrowthLabelView[] {
+  const box = HEALTH_METRICS_MEMBERS_GROWTH_LABEL_BOX;
+  const height = HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height;
+  const bottom = height - box.heightPx;
+  const placed = new Map(labels.map((label) => [label.key, (label.topPct / 100) * height + box.offsetPx[label.placement]]));
+  // Ordered before clamping, so two labels past the bottom keep the order of their points.
+  const stacked = labels.filter((label) => label.stacks).sort((a, b) => (placed.get(a.key) ?? 0) - (placed.get(b.key) ?? 0));
+  // Every label stays inside the plot, so one near zero never sits on the month labels.
+  const tops = new Map([...placed].map(([key, value]) => [key, Math.min(Math.max(value, 0), bottom)]));
+  const top = (label: HealthMetricsMembersGrowthEndLabel): number => tops.get(label.key) ?? 0;
+  // Down from the top to part them, then back up from the plot's bottom edge for any pushed past it.
+  stacked.forEach((label, index) => {
+    if (index) tops.set(label.key, Math.max(top(label), top(stacked[index - 1]) + box.heightPx + box.gapPx));
+  });
+  [...stacked].reverse().forEach((label, index, upward) => {
+    tops.set(label.key, Math.min(top(label), index ? top(upward[index - 1]) - box.heightPx - box.gapPx : bottom));
+  });
+
+  const classes = HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES;
+  return labels.map((label) => ({
+    key: label.key,
+    text: label.text,
+    leftPct: label.leftPct,
+    topPct: (((tops.get(label.key) ?? 0) - box.offsetPx[label.placement]) / height) * 100,
+    color: label.color,
+    classes: `${classes.placement[label.placement]} ${label.strong ? classes.strong : classes.regular}`,
+  }));
+}
+
+/** A year's running totals with gaps carried forward from the month before, starting from none. */
+function fillCumulative(months: (number | null)[]): number[] {
+  let last = 0;
+  return months.map((value) => (last = value ?? last));
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/** "2018–2024", or the one year. */
+function yearSpan(years: number[]): string {
+  const first = Math.min(...years);
+  const last = Math.max(...years);
+  return first === last ? String(first) : `${first}–${last}`;
+}
+
+/** The metrics row: this year so far, against last year and the baseline year at the same month, and the projection. */
+function buildGrowthKpis(
+  year: number,
+  now: number,
+  sofar: number,
+  prior: number | null,
+  baseline: number | null,
+  projected: number
+): HealthMetricsOverviewKpiView[] {
+  const months = now + 1;
+  const monthsLabel = growthMonthsLabel(months);
+  const rest = growthPaceSentence(now, projected);
+  const since = baseline ? Math.round(((sofar - baseline) / baseline) * 100) : null;
+
+  return [
+    { key: 'new', label: `New members in ${year} so far`, value: formatCount(sofar), delta: null, note: '' },
+    {
+      key: 'change',
+      label: `vs ${year - 1}`,
+      value: formatSignedDifference(prior === null ? null : sofar - prior),
+      delta: growthDelta(sofar, prior),
+      note: '',
+    },
+    {
+      key: 'since',
+      label: `Since ${HEALTH_METRICS_MEMBERS_GROWTH_BASELINE_YEAR}`,
+      value: since === null ? '—' : formatSignedPct(since),
+      delta: null,
+      note: '',
+    },
+    {
+      key: 'projected',
+      label: 'Projected year-end',
+      value: `~${formatCount(projected)}`,
+      delta: null,
+      note: '',
+      tip:
+        `An estimate based on this year’s pace. ${formatCount(sofar)} new members joined ${monthsLabel}, about ` +
+        `${formatCount(Math.round(sofar / months))} a month. ${rest}`,
+    },
+  ];
+}
+
+function growthMonthsLabel(months: number): string {
+  if (months === 1) return 'in January';
+  return months === 12 ? 'so far this year' : `in the first ${months} months`;
+}
+
+/** The projection's last sentence; in December there is no rest of the year left to follow the pace. */
+function growthPaceSentence(now: number, projected: number): string {
+  if (now === 11) return `December is the last month, so the year ends at about ${formatCount(projected)}.`;
+  const who = now === 10 ? 'December follows' : 'the rest of the year follows';
+  return `If ${who} the same pace, the year ends at about ${formatCount(projected)}.`;
+}
+
+/** The change on last year in whole percent; one that rounds to zero draws no arrow. */
+function growthDelta(value: number, prior: number | null): HealthMetricsOverviewDelta | null {
+  if (!prior) return null;
+
+  const pct = Math.round(((value - prior) / prior) * 100);
+  return pct === 0 ? null : { label: formatSignedPct(pct), direction: pct < 0 ? 'down' : 'up', good: pct > 0 };
+}
+
+function formatSignedPct(pct: number): string {
+  if (pct === 0) return '0%';
+  return `${pct < 0 ? '−' : '+'}${Math.abs(pct)}%`;
+}
+
+function growthAriaLabel(year: number, hasPrior: boolean, earlierYears: number[], all: boolean): string {
+  const prior = hasPrior ? ` versus ${year - 1}` : '';
+  if (earlierYears.length === 0) return `Cumulative new members by month, ${year}${prior}`;
+
+  const span = yearSpan(earlierYears).replace('–', ' to ');
+  const earlier = all ? `each year from ${span}` : `the ${span} range`;
+  return `Cumulative new members by month, ${year}${prior}${hasPrior ? ' and' : ' against'} ${earlier}`;
 }

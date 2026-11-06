@@ -46,7 +46,7 @@ Select the pencil button on your avatar to upload a new image. The upload happen
 
 ### Find your LFID (username)
 
-Your LFID (Linux Foundation ID) is the same as your **Username**. When a form or a Linux Foundation team asks for your LFID, give them this username, not your email address. It is shown in the **Username (read-only)** field of the **Edit Profile** drawer. You can't change it.
+Your LFID (Linux Foundation ID) is the same as your **Username**. When a form or a Linux Foundation team asks for your LFID, give them this username, not your email address. It is shown in the **Username (read-only)** field of the **Edit Profile** drawer, in the profile panel under your name, and in your account menu in the sidebar. You can't change it.
 
 ### Primary email address
 

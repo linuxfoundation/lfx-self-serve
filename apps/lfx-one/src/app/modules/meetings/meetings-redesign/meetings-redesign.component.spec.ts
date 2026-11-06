@@ -328,10 +328,20 @@ describe('MeetingsRedesignComponent', () => {
     await fixture.whenStable();
 
     const search = query(fixture, 'meetings-redesign-search');
-    expect(query(fixture, 'meetings-redesign-tabs-bar')?.className).toContain('flex-wrap');
-    expect(query(fixture, 'meetings-redesign-tabs-bar')?.className).toContain('min-[1025px]:@[440px]:flex-nowrap');
+    expect(query(fixture, 'meetings-redesign-tabs')?.className).toContain('flex-wrap');
+    expect(query(fixture, 'meetings-redesign-tabs')?.className).toContain('min-[1025px]:@[440px]:flex-nowrap');
     expect(search?.parentElement?.className).toContain('min-[1025px]:min-w-0 min-[1025px]:flex-nowrap');
-    expect(search?.className).toContain('min-[1025px]:w-[300px] min-[1025px]:min-w-0');
+    expect(search?.className).toContain('min-[1025px]:w-[280px] min-[1025px]:min-w-0');
+  });
+
+  it('puts search and Filters inside the tabs, on their rule', async () => {
+    const fixture = render();
+    await fixture.whenStable();
+
+    const tabs = query(fixture, 'meetings-redesign-tabs');
+    expect(tabs?.contains(query(fixture, 'meetings-redesign-search'))).toBe(true);
+    expect(tabs?.contains(query(fixture, 'meetings-home-filters-button'))).toBe(true);
+    expect(query(fixture, 'ui-tab-upcoming')?.className).toContain('text-[13px]');
   });
 
   it('folds the right column into a two-column grid and hides the description at 1024px and below', async () => {
@@ -415,20 +425,26 @@ describe('MeetingsRedesignComponent', () => {
       query(fixture, 'meetings-redesign-centre')?.dispatchEvent(new Event('scroll'));
       await fixture.whenStable();
     };
-    expect(fade()).not.toContain('mt-[24px]');
+    expect(fade()).not.toContain('mt-[44px]');
 
     await scrollListTo(HEADER_HEIGHT * 2 - 40);
-    expect(fade()).toContain('mt-[24px]');
+    expect(fade()).toContain('mt-[44px]');
 
     await scrollListTo(HEADER_HEIGHT * 2 + 40);
-    expect(fade()).not.toContain('mt-[24px]');
+    expect(fade()).not.toContain('mt-[44px]');
+
+    // The padded heading box starts 20px above the list, so it is stuck once the list is within 20px of the edge.
+    await scrollListTo(HEADER_HEIGHT * 2 + 20);
+    expect(fade()).toContain('mt-[44px]');
+    await scrollListTo(HEADER_HEIGHT * 2 + 21);
+    expect(fade()).not.toContain('mt-[44px]');
 
     // Swapping the list for an empty state, with no scroll, drops the offset too.
     await scrollListTo(HEADER_HEIGHT * 2 - 40);
     query(fixture, 'ui-tab-past')?.click();
     await fixture.whenStable();
     expect(query(fixture, 'meetings-home-empty-past')).toBeTruthy();
-    expect(fade()).not.toContain('mt-[24px]');
+    expect(fade()).not.toContain('mt-[44px]');
   });
 
   it("sizes the desktop column from its own top alone, the layout's bottom padding being cancelled by the host", async () => {

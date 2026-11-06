@@ -170,6 +170,9 @@ export type UiToggleSize = 'default' | 'medium' | 'large';
 /** Colour of a uikit toggle when on. `warning` and `danger` flag settings with consequences. */
 export type UiToggleTone = 'accent' | 'warning' | 'danger';
 
+/** Side of a uikit toggle its label sits on: `end` after the switch, or `start` before it with the switch at the row's end. */
+export type UiToggleLabelPosition = 'start' | 'end';
+
 /** Size of the uikit loading dots: 4, 5 or 7px dots. */
 export type UiLoadingDotsSize = 'sm' | 'md' | 'lg';
 
