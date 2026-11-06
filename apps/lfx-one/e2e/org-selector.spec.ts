@@ -846,7 +846,7 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
 
 // S16 — org-route hard refresh must resolve to a clean org-lens sidebar with no stale
 // Me-lens sections (LFXV2-2789). The org menu is still shaped by browser-only LaunchDarkly
-// flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one;
+// flags (Donations), so the server menu can differ from the client-resolved one;
 // hydrating one against the other used to leave "Engagement" / "Education" sections
 // interleaved with org items. The sidebar now withholds the concrete menu until
 // afterNextRender, so the resolved menu is built entirely from client state and must contain org items only.

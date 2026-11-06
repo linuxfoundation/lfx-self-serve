@@ -11,8 +11,7 @@ import { environment } from '@environments/environment';
  * Kebab item for Manage in CCLA Console (#1575).
  *
  * Returns `[]` when the caller is not a CLA manager, the row is ICLA/Revoked, or the CLA
- * group id is missing — safe to spread onto every row. Does not read LaunchDarkly.
- * Does not edit the Contact CLA Manager factory.
+ * group id is missing — safe to spread onto every row. Does not edit the Contact CLA Manager factory.
  *
  * Opens via `command` rather than `url` + `target`: PrimeNG's menu renders no `rel`
  * attribute, so an anchor here could not carry `noopener noreferrer`.

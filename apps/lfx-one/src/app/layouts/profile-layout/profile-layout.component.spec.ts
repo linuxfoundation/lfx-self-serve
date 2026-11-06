@@ -14,7 +14,6 @@ import {
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, User } from '@lfx-one/shared/interfaces';
 import { DataDogRumService } from '@services/datadog-rum.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -76,7 +75,6 @@ describe('ProfileLayoutComponent — Flow C cold-return read-your-writes (LFXV2-
         { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -173,7 +171,6 @@ describe('ProfileLayoutComponent — member-since wiring (#2837)', () => {
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -234,7 +231,6 @@ describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', ()
         { provide: ActivatedRoute, useValue: { queryParams: of({ error }) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add } },
       ],
     });
@@ -328,7 +324,6 @@ describe('ProfileLayoutComponent — clearAuthQueryParams preserves the fragment
         { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
         { provide: Router, useValue: { url, navigateByUrl } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -387,7 +382,6 @@ describe('ProfileLayoutComponent — profile help link click tracking (#2986)', 
             getIdentities: vi.fn(() => of([])),
           },
         },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: DataDogRumService, useValue: { addAction } },
       ],
@@ -435,7 +429,6 @@ describe('ProfileLayoutComponent — Intercom launcher re-scan on mount (#2986)'
             getIdentities: vi.fn(() => of([])),
           },
         },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: IntercomService, useValue: { update } },
       ],
@@ -494,7 +487,6 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -603,7 +595,6 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
         { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
         { provide: Router, useValue: { url, navigateByUrl } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add } },
       ],
     });
@@ -768,7 +759,6 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: userServiceMock },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });

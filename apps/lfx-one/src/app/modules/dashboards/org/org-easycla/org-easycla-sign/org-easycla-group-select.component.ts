@@ -25,7 +25,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
  *
  * **A deliberate second picker, not an oversight.** The Me-lens `ClaGroupSelectComponent` was
  * considered and rejected as a base. It reads its results from `MyClasService` — a route that is
- * neither dark-launch gated for this section nor organization-scoped — and where a contributor
+ * not organization-scoped — and where a contributor
  * already holds an agreement it annotates the row and leaves it choosable, because signing the
  * same CLA Group under a second identity is something a contributor legitimately does. Both
  * pickers are handed the already-held agreements; they disagree about what the overlap means.

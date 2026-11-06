@@ -5,8 +5,6 @@ import { inject } from '@angular/core';
 import { Router, Routes } from '@angular/router';
 import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_SETTINGS_PATH } from '@lfx-one/shared/constants';
 
-import { myClasEnabledGuard } from '@app/shared/guards/my-clas-enabled.guard';
-
 export const PROFILE_ROUTES: Routes = [
   {
     path: '',
@@ -36,11 +34,10 @@ export const PROFILE_ROUTES: Routes = [
         loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
       },
 
-      // CLAs tab — read-only EasyCLA agreements, dark-launched behind `my-clas-enabled` (CanMatch).
+      // CLAs tab — EasyCLA agreements.
       {
         path: 'clas',
         title: 'CLAs',
-        canMatch: [myClasEnabledGuard],
         loadComponent: () => import('./clas/profile-clas.component').then((m) => m.ProfileClasComponent),
       },
 

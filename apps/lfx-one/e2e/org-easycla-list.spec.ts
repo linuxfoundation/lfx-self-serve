@@ -74,6 +74,13 @@ test.describe('Org Lens EasyCLA list — content', () => {
     await expect(page.getByTestId('org-easycla-card-title').first()).toHaveText('Nimbus Foundation CLA');
   });
 
+  test('lists EasyCLA in the Organization lens sidebar', async ({ page }) => {
+    await gotoEasyclaList(page, stubList(nineClaGroups()));
+
+    await expect(page.getByTestId('org-easycla-title')).toContainText(MOCK_ACCOUNT_NAME, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('sidebar').getByRole('link', { name: 'EasyCLA', exact: true })).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  });
+
   test('states each agreement\u2019s status in the words the design uses', async ({ page }) => {
     await gotoEasyclaList(page, stubList(nineClaGroups()));
 
