@@ -29,11 +29,14 @@
         @if (invalid()['project_name']) {
           <p id="pa-project-name-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-project-name-error">Project name is required.</p>
         }
-        @if (duplicateProjectMessage(); as message) {
-          <p id="pa-project-name-duplicate" class="text-xs text-amber-700 m-0" role="status" data-testid="project-application-form-project-name-duplicate">
-            {{ message }}
-          </p>
-        }
+        <!-- Always in the DOM and only its text changes, so screen readers announce the note when it appears. -->
+        <p
+          id="pa-project-name-duplicate"
+          class="text-xs text-amber-700 m-0 empty:hidden"
+          role="status"
+          data-testid="project-application-form-project-name-duplicate">
+          {{ duplicateProjectMessage() }}
+        </p>
       </div>
 
       <div class="flex flex-col gap-1.5">

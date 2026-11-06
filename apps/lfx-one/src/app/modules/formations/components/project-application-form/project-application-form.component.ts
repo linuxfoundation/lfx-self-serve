@@ -165,7 +165,8 @@ export class ProjectApplicationFormComponent {
   protected readonly duplicateProjectName: Signal<string | null> = this.initDuplicateProjectName();
   protected readonly duplicateProjectMessage = computed(() => {
     const name = this.duplicateProjectName();
-    return name ? PROJECT_APPLICATION_DUPLICATE_NAME_MESSAGE.replace('{name}', name) : null;
+    // A function replacement, so `$&`-style sequences in a project name are inserted literally.
+    return name ? PROJECT_APPLICATION_DUPLICATE_NAME_MESSAGE.replace('{name}', () => name) : null;
   });
 
   // === Constructor ===

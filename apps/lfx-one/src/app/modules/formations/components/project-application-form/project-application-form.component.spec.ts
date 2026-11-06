@@ -361,11 +361,17 @@ describe('ProjectApplicationFormComponent organization prefill (#5251)', () => {
     http.expectNone('/api/organizations/resolve');
   });
 
-  it('asks once, not again when the form re-renders', async () => {
+  it('asks once, even if the form is bound to answers and back to create', async () => {
     await render();
     http.expectOne(WORK_EXPERIENCES_URL).flush(CURRENT);
     await fixture.whenStable();
+
+    fixture.componentRef.setInput('initialAnswers', { ...VALID });
     fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentRef.setInput('initialAnswers', null);
+    fixture.detectChanges();
+    await fixture.whenStable();
 
     http.expectNone(WORK_EXPERIENCES_URL);
   });
@@ -425,8 +431,10 @@ describe('ProjectApplicationFormComponent duplicate project name warning (#5251)
 
   const access = (): FormAccess => component as unknown as FormAccess;
   const root = (): HTMLElement => fixture.nativeElement as HTMLElement;
-  const note = (): string | null =>
-    root().querySelector('[data-testid="project-application-form-project-name-duplicate"]')?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+  const note = (): string | null => {
+    const text = root().querySelector('[data-testid="project-application-form-project-name-duplicate"]')?.textContent?.replace(/\s+/g, ' ').trim();
+    return text ? text : null;
+  };
 
   const render = async (initialAnswers: ProjectApplicationAnswers | null = null): Promise<void> => {
     TestBed.resetTestingModule();
@@ -435,14 +443,15 @@ describe('ProjectApplicationFormComponent duplicate project name warning (#5251)
       providers: [provideHttpClient(), provideHttpClientTesting(), MessageService],
     }).compileComponents();
     http = TestBed.inject(HttpTestingController);
+    // Fake timers before the first change detection, so every debounce this form starts (including one a
+    // form reset could start on revise) runs on the clock the specs advance.
+    vi.useFakeTimers();
     fixture = TestBed.createComponent(ProjectApplicationFormComponent);
     component = fixture.componentInstance;
     fixture.componentRef.setInput('initialAnswers', initialAnswers);
     emitted = [];
     component.submitted.subscribe((answers) => emitted.push(answers));
     fixture.detectChanges();
-    await fixture.whenStable();
-    vi.useFakeTimers();
   };
 
   const typeName = (value: string): void => {
@@ -579,7 +588,7 @@ describe('ProjectApplicationFormComponent duplicate project name warning (#5251)
 
   it('does not search for the stored name when a proposal is opened for revise', async () => {
     await render({ ...VALID, project_name: 'Acme Widgets' });
-    settle();
+    settle(1000);
 
     http.expectNone((req) => req.url === PROJECT_SEARCH_URL);
     expect(note()).toBeNull();
