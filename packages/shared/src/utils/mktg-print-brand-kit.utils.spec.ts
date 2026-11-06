@@ -144,6 +144,14 @@ describe('buildBrandKitPrintPages', () => {
         .filter((el) => el.box.y >= 256)
         .map((el) => el.box.w)
     ).toEqual([120, 100, 80]);
+    // A 48 px kit with a 16 px symbol fits too: the deck's sizes, unshrunk (the lockups 120, 100 and 120 wide, the symbol 12).
+    const parity = { ...logo, minimum_size: { ...logo.minimum_size, screen_px: 48, symbol_px: 16 } };
+    const deck = pagesOf({ ...kit, chapters: { ...kit.chapters, logo: parity } }).find((p) => p.title === 'Clear space & minimum size') as MktgPrintPage;
+    expect(
+      images(deck)
+        .filter((el) => el.box.y >= 256)
+        .map((el) => el.box.w)
+    ).toEqual([120, 100, 120, 12]);
   });
 
   it('draws the colorways in the contract’s order on their grounds, each captioned with the kit’s name', () => {
@@ -186,7 +194,7 @@ describe('buildBrandKitPrintPages', () => {
     // The pages after it move down one, and the contents say so.
     expect(pages.find((p) => p.title === 'Typography')?.footer?.number).toBe('12');
     expect(texts(pages[0])).toContain('12   Typography');
-    expect(mktgBrandKitBookPageCount(pages)).toBe(pages.length + 2);
+    expect(mktgBrandKitBookPageCount(pages)).toBe(17);
     // A kit with no pairs keeps its one Color contrast page, the rule alone, so the contents' row points at a page.
     const none = brandKitTestRevision();
     none.chapters.color.contrast = { ...none.chapters.color.contrast, pairs: [] };
