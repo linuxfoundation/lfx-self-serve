@@ -97,6 +97,23 @@ describe('OrganizationSearchComponent', () => {
     expect(searchInput().getAttribute('aria-required')).toBe('true');
   });
 
+  it('re-applies aria-required when the search box is rebuilt after a manual-mode round trip', async () => {
+    fixture.componentRef.setInput('required', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(searchInput().getAttribute('aria-required')).toBe('true');
+
+    fixture.componentInstance.switchToManualMode();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentInstance.switchToSearchMode();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(searchInput().getAttribute('aria-required')).toBe('true');
+  });
+
   it('still invalidates the stale resolved id once the user types past the selection', async () => {
     searchInput().value = 'acme corp updated';
     searchInput().dispatchEvent(new Event('input'));

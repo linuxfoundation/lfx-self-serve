@@ -219,6 +219,32 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
       expect(orgInput().getAttribute('aria-required')).toBe('true');
     });
 
+    it('keeps aria-required through typing, a clear, a retype, a pick and a form reset', async () => {
+      const search = fixture.debugElement.query(By.css('lfx-organization-search')).componentInstance;
+      const stillRequired = async (): Promise<void> => {
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(orgInput().getAttribute('aria-required')).toBe('true');
+      };
+
+      orgInput().value = 'Acme';
+      orgInput().dispatchEvent(new Event('input'));
+      await stillRequired();
+
+      search.onSearchClear();
+      await stillRequired();
+
+      orgInput().value = 'Acme Motors';
+      orgInput().dispatchEvent(new Event('input'));
+      await stillRequired();
+
+      search.onOrganizationSelected({ value: { name: 'Vendor Corp', domain: '', id: 'cdp-1' } } as AutoCompleteSelectEvent);
+      await stillRequired();
+
+      access().form.reset();
+      await stillRequired();
+    });
+
     it('still reports the organization as required when nothing was entered', () => {
       access().form.patchValue({ ...VALID, contributing_organization: '' });
       access().onSubmit();
@@ -228,6 +254,20 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
   });
 
   describe('contributing organization on revise', () => {
+    it('keeps aria-required on the hydrated input, and when a different proposal is bound', async () => {
+      await render({ ...VALID });
+      expect(orgInput().value).toBe('Example Organization');
+      expect(orgInput().getAttribute('aria-required')).toBe('true');
+
+      fixture.componentRef.setInput('initialAnswers', { ...VALID, contributing_organization: 'Other Org' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(orgInput().value).toBe('Other Org');
+      expect(orgInput().getAttribute('aria-required')).toBe('true');
+    });
+
     it('shows the stored value, makes no /resolve request, and an unchanged save sends the same strings', async () => {
       const stored: ProjectApplicationAnswers = { ...VALID, legal_contact_email: 'legal@example.org' };
       await render(stored);
