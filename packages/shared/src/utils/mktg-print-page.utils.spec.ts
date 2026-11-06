@@ -219,7 +219,7 @@ describe('the page grammar', () => {
     });
   });
 
-  it("derives the look from the print brand as the deck's look.ts does: tint, muted and rule mixed from the dark, the on-dark ink by contrast", () => {
+  it("derives the look from the print brand as the deck's look.ts does: tint and rule from the dark, muted from the body ink, the on-dark ink by contrast", () => {
     const brand = mktgPrintBrand(null);
     expect(look).toMatchObject({ dark: brand.dark, ink: brand.ink, accent: brand.accent, font: brand.fontStack });
     expect(look.ink).toBe(brand.dark);
