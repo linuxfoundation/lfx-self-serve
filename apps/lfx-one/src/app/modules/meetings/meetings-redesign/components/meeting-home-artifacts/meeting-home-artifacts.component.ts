@@ -47,12 +47,12 @@ export class MeetingHomeArtifactsComponent {
     const meeting: Meeting | PastMeeting = this.row().meeting;
     return 'has_ai_summary' in meeting && meeting.has_ai_summary === true;
   });
-  /** The organizer's summary awaits approval: false once approved this session, else the Last card's copy, else the feed. */
+  /** The organizer's summary awaits approval: the Last card's copy, else false once approved this session, else the feed. */
   protected readonly summaryPending: Signal<boolean> = computed(() => {
     const row = this.row();
-    if (this.store.approvedSummaryKeys().has(row.key)) return false;
     const lastSummary = this.store.lastMeeting()?.key === row.key ? this.store.lastMeetingSummary() : null;
     if (lastSummary) return isPastMeetingSummaryAwaitingApproval(lastSummary);
+    if (this.store.approvedSummaries().has(row.key)) return false;
     const meeting: Partial<PastMeeting> = row.meeting;
     return meeting.ai_summary_awaiting_approval === true;
   });
@@ -71,12 +71,7 @@ export class MeetingHomeArtifactsComponent {
       // The dialog leaves the visibility check to its caller.
       const visible = getPastMeetingSummaryContent(row.meeting, summary) !== null;
       // The Last meeting card shows this summary too when the row is the last meeting.
-      const isLast = row.key === this.store.lastMeeting()?.key;
-      const onChange = (change: PastMeetingSummary): void => {
-        if (isLast) this.store.setLastMeetingSummary(change);
-        else if (!isPastMeetingSummaryAwaitingApproval(change)) this.store.markSummaryApproved(row.key);
-      };
-      if (visible) this.dialogs.openSummary(row, summary, onChange);
+      if (visible) this.dialogs.openSummary(row, summary, (change) => this.store.applySummaryChange(row.key, change));
       return visible;
     });
   }

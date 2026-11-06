@@ -272,3 +272,10 @@ export interface MeetingAttendeeGridOverflow {
   /** More people than the visible rows hold: fade the last row and offer "View all". */
   more: boolean;
 }
+
+/** An organizer's edit or approval of a past meeting summary, for the row it was opened from. */
+export interface MeetingHomeSummaryChange {
+  /** Key of the row the summary dialog was opened from. */
+  key: string;
+  summary: PastMeetingSummary;
+}

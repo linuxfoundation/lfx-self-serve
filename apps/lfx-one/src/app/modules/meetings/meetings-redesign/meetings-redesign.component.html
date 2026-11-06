@@ -202,7 +202,7 @@
         [loading]="store.lastMeetingLoading()"
         [summary]="store.lastMeetingSummary()"
         [recordingUrl]="store.lastMeetingRecordingUrl()"
-        (summaryChange)="store.setLastMeetingSummary($event)">
+        (summaryChange)="store.applySummaryChange($event.key, $event.summary)">
         <!-- Keyed by row, so a new Last meeting gets a fresh menu. -->
         @for (lastRow of lastRows(); track lastRow.key) {
           <lfx-meeting-home-actions last-meeting-card-menu [row]="lastRow" view="past" />

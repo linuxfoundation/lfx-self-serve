@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
-import { MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import { MeetingHomeRow, MeetingHomeSummaryChange, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { formatMeetingWhen, toPastMeetingHomeRow } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -247,14 +247,14 @@ describe('LastMeetingCardComponent', () => {
 
     it('passes a summary saved in the dialog back out', async () => {
       const fixture = await render({ row: rowOf(buildMeeting({ organizer: true })), summary: buildSummary({ approved: false }) });
-      const changes: PastMeetingSummary[] = [];
+      const changes: MeetingHomeSummaryChange[] = [];
       fixture.componentInstance.summaryChange.subscribe((change) => changes.push(change));
 
       clickButton(fixture, 'meetings-home-last-card-summary');
       const approved = buildSummary({ approved: true });
       dialogs.openSummary.mock.calls[0][2](approved);
 
-      expect(changes).toEqual([approved]);
+      expect(changes).toEqual([{ key: 'm-1-occ', summary: approved }]);
     });
   });
 });
