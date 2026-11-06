@@ -5,8 +5,8 @@
  * Download PDF behind `mktg-os-pdf-download-enabled` (#5302): with the flag off every Download PDF entry point is
  * gone and the screen looks finished (no empty slot, the remaining action in the row's primary place); with it on the
  * screens are today's. One check per place, off and on: the AEO/GEO report row, the messaging framework view, the brand
- * kit web view (and its footer), and the family export card (and its PDF note). The print renderings themselves are
- * the print specs' business.
+ * kit web view (and its footer), and the family export card (its PDF note, its approval note and its PDF preparation).
+ * The print renderings themselves are the print specs' business.
  */
 
 import { MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
@@ -136,8 +136,21 @@ test.describe('family export card', () => {
     if (!slidesBox) throw new Error('The export card’s one button must be laid out');
     // Still the card's fluid button: it spans the card's content width on its own.
     expect(Math.abs(contentWidth - slidesBox.width)).toBeLessThanOrEqual(1);
-    await expect(card).not.toContainText('PDF:');
+    await expect(card).not.toContainText('PDF');
+    // No PDF is prepared while its button is hidden: the checking line is gone and the print document stays unprepared.
+    await expect(card.getByTestId('family-export-loading')).toHaveCount(0);
+    await expect(page.getByTestId('family-export-print-document')).toHaveAttribute('data-prepared', 'false');
     await page.screenshot({ path: info.outputPath('family-export-flag-off.png'), fullPage: true });
+  });
+
+  test('flag off, nothing approved yet: the approval note names Slides alone', async ({ page }, info) => {
+    await pdfFlagOff(page);
+    await openFamilyExports(page, { empty: true });
+    const card = page.getByTestId('family-export-actions');
+    await expect(card.getByTestId('family-export-empty')).toHaveText('Available once the framework is approved: Slides uses the approved current.');
+    await expect(card.getByTestId('family-export-slides').getByRole('button')).toBeDisabled();
+    await expect(card).not.toContainText('PDF');
+    await page.screenshot({ path: info.outputPath('family-export-empty-flag-off.png'), fullPage: true });
   });
 
   test('flag on: Download PDF above Export to Google Slides, both outlined, with the PDF note, as today', async ({ page }, info) => {
