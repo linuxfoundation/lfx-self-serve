@@ -160,7 +160,7 @@ describe('buildBrandKitPrintPages', () => {
     // The pages after it move down one, and the contents say so.
     expect(pages.find((p) => p.title === 'Typography')?.footer?.number).toBe('12');
     expect(texts(pages[0])).toContain('12   Typography');
-    expect(mktgBrandKitBookPageCount(buildBrandKitBookView(kit, 1), mktgPrintBrand(kit), kit.projectName)).toBe(pages.length + 2);
+    expect(mktgBrandKitBookPageCount(pages)).toBe(pages.length + 2);
     // A kit with no pairs keeps its one Color contrast page, the rule alone, so the contents' row points at a page.
     const none = brandKitTestRevision();
     none.chapters.color.contrast = { ...none.chapters.color.contrast, pairs: [] };
@@ -247,9 +247,8 @@ describe('buildBrandKitPrintPages', () => {
     expect(cover.topRight).toBe('V1.0');
     expect(cover.footerLeft).toBe('Project One · a Linux Foundation project');
     expect(cover.footerRight).toBe('one.example.org · V1.0 · October 2026');
-    const brand = mktgPrintBrand(kit);
-    expect(mktgBrandKitBookPageCount(view, brand, kit.projectName)).toBe(1 + 14 + 1);
-    expect(mktgBrandKitBookPageCount(view, brand, kit.projectName, { backCover: false })).toBe(15);
+    expect(mktgBrandKitBookPageCount(pagesOf(kit))).toBe(1 + 14 + 1);
+    expect(mktgBrandKitBookPageCount(pagesOf(kit), false)).toBe(15);
   });
 
   it('keeps the kit’s own text where it is drawn, minus the stacked-lockup sentence, and picks the symbol that reads on a ground', () => {
