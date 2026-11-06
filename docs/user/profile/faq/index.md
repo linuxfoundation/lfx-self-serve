@@ -3,14 +3,24 @@ title: Profile FAQ
 description: Frequently asked questions about your personal profile and public profile in LFX Self Serve.
 audience: [all]
 product_area: Profile
-tags: [profile, faq, about-me, photo, public-profile, visibility]
-last_updated: 2026-11-02
+tags: [profile, faq, about-me, photo, public-profile, visibility, lfid, username, linux foundation id]
+last_updated: 2026-11-06
 intercom_collection: Profile
 ---
 
 ## Where do I edit my profile details?
 
 Open [**Profile & Account**](/profile) and select **Edit profile** in the profile panel on the right. A drawer opens where you can update your About Me, name, photo, job title, organization, primary email, location, and t-shirt size. Select **Save Changes** when done. Two of these are exceptions that save immediately when you make them — uploading a **photo** and choosing a **primary email** — so **Cancel** will not revert those two. See [Edit your profile](../edit-profile/).
+
+## What is my LFID, and where do I find it?
+
+Your LFID (Linux Foundation ID) is your LFX **username**. It is not your email address. To find it:
+
+1. Sign in to [app.lfx.dev](https://app.lfx.dev) and open [**Profile & Account**](/profile).
+2. In the profile panel on the right, select **Edit profile**.
+3. Your LFID is the **Username (read-only)** field.
+
+You can't change your username. It is also the `<username>` in your public profile address, `app.lfx.dev/u/<username>`. See [Edit your profile](../edit-profile/#find-your-lfid-username).
 
 ## How do I update my profile photo?
 
