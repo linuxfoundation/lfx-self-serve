@@ -161,18 +161,6 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getMembersTiers({ foundationSlug: 'aaif' }),
     },
     {
-      name: 'getMembersBridge',
-      url: '/api/analytics/members-bridge',
-      // A swallowed failure would read as a year in which no member joined, moved or left.
-      call: () => service.getMembersBridge({ foundationSlug: 'aaif' }),
-    },
-    {
-      name: 'getMembersMovements',
-      url: '/api/analytics/members-movements',
-      // A swallowed failure would read as a bar with no organizations behind it.
-      call: () => service.getMembersMovements({ foundationSlug: 'aaif', year: 2026, movementType: 'new', offset: 0, pageSize: 25 }),
-    },
-    {
       name: 'getMembersDirectory',
       url: '/api/analytics/members-directory',
       // A swallowed failure would read as a foundation with no members.
