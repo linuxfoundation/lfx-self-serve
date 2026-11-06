@@ -1,0 +1,18 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+:host {
+  display: table-row;
+  break-inside: avoid;
+}
+
+/* Named by the caller for a block that may run longer than a page: its own break rules decide. */
+:host(.lfx-print-sheet-row-flows) {
+  break-inside: auto;
+}
+
+.lfx-print-sheet-cell {
+  display: table-cell;
+  padding: 0;
+  vertical-align: top;
+}

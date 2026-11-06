@@ -1,33 +1,36 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* The table, not the section, owns the page's top and bottom room: a header and a
-   footer group repeat on every page (CSS 2.1 §17.2), as the kit's chapter tables do.
-   The one content row flows across pages; the blocks inside keep their own breaks. */
-.lfx-print-sheet {
+/* A CSS table, so the head and foot groups repeat on every page (CSS 2.1 §17.2) as
+   the kit's chapter tables do, and the body's rows (lfx-mktg-print-sheet-row, one
+   per block) are the only places a page may break. */
+:host {
   display: table;
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
   break-inside: auto;
+}
 
-  > thead {
-    display: table-header-group;
-  }
-  > tfoot {
-    display: table-footer-group;
-  }
-  /* 0.55in each, the room the portrait page margin used to give; the kit's chapter
-     tables carry the same two values (mktg-brand-kit-print.component.scss). */
-  > thead > tr > td,
-  > tfoot > tr > td {
-    height: 0.55in;
-    padding: 0;
-  }
-  > tbody > tr,
-  > tbody > tr > td {
-    padding: 0;
-    vertical-align: top;
-    break-inside: auto;
-  }
+.lfx-print-sheet-head {
+  display: table-header-group;
+  break-inside: avoid;
+  break-after: avoid;
+}
+
+.lfx-print-sheet-body {
+  display: table-row-group;
+  break-inside: auto;
+}
+
+.lfx-print-sheet-foot {
+  display: table-footer-group;
+  break-inside: avoid;
+}
+
+/* 0.55in each, the room the portrait page margin used to give; the kit's chapter
+   tables carry the same two values (mktg-brand-kit-print.component.scss). */
+.lfx-print-sheet-room {
+  display: table-row;
+  height: 0.55in;
 }

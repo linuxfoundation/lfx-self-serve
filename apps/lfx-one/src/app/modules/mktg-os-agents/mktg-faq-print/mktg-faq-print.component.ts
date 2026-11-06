@@ -9,10 +9,18 @@ import { MarkdownRendererComponent } from '@components/markdown-renderer/markdow
 import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapter-header/mktg-print-chapter-header.component';
 import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
+import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/mktg-print-sheet-row.component';
 
 @Component({
   selector: 'lfx-mktg-faq-print',
-  imports: [NgTemplateOutlet, MarkdownRendererComponent, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent, MktgPrintSheetComponent],
+  imports: [
+    NgTemplateOutlet,
+    MarkdownRendererComponent,
+    MktgPrintRunningHeadComponent,
+    MktgPrintChapterHeaderComponent,
+    MktgPrintSheetComponent,
+    MktgPrintSheetRowComponent,
+  ],
   templateUrl: './mktg-faq-print.component.html',
   styleUrl: '../mktg-framework-print/mktg-framework-print.component.scss',
 })

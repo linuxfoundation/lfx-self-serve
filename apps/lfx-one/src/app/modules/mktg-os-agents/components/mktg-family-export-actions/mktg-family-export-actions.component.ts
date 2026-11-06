@@ -39,6 +39,7 @@ import { MktgBoilerplatesPrintComponent } from '../../mktg-boilerplates-print/mk
 import { MktgFaqPrintComponent } from '../../mktg-faq-print/mktg-faq-print.component';
 import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
 import { MktgPrintSheetComponent } from '../mktg-print-sheet/mktg-print-sheet.component';
+import { MktgPrintSheetRowComponent } from '../mktg-print-sheet-row/mktg-print-sheet-row.component';
 
 /** The Family page's named slot; document export controls are independent. */
 @Component({
@@ -52,6 +53,7 @@ import { MktgPrintSheetComponent } from '../mktg-print-sheet/mktg-print-sheet.co
     MktgBoilerplatesPrintComponent,
     MktgFaqPrintComponent,
     MktgPrintSheetComponent,
+    MktgPrintSheetRowComponent,
   ],
   templateUrl: './mktg-family-export-actions.component.html',
   styleUrl: './mktg-family-export-actions.component.scss',

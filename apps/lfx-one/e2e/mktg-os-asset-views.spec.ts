@@ -251,9 +251,12 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     } else {
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
       await expectMktgPrintCover(frame.getByTestId('mktg-framework-print-cover'));
-      // Each section prints in a sheet whose head and foot repeat the page room (the @page margin is 0: no browser header or footer).
-      await expect(print.locator('.lfx-print-sheet > tfoot')).toHaveCount(3);
-      await expect(print.locator('.lfx-print-sheet > tfoot').first()).toHaveCSS('display', 'table-footer-group');
+      // Each section prints in a sheet whose head and foot repeat the page room (the @page margin is 0: no browser header
+      // or footer), one row per block, so a page breaks only between blocks: 1 (cover) + 5 (framework) + 3 (key numbers).
+      await expect(print.getByTestId('mktg-print-sheet-foot')).toHaveCount(3);
+      await expect(print.getByTestId('mktg-print-sheet-foot').first()).toHaveCSS('display', 'table-footer-group');
+      await expect(print.locator('lfx-mktg-print-sheet-row')).toHaveCount(9);
+      await expect(print.locator('lfx-mktg-print-sheet-row').first()).toHaveCSS('display', 'table-row');
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
