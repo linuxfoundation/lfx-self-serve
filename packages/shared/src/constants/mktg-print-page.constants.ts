@@ -102,6 +102,19 @@ export const MKTG_PRINT_PAGE_FOOTER_RIGHT_BOX: MktgPrintPageBox = { x: 446, y: 3
 /** The cover's title and subtitle placeholders (the template's TITLE layout): the title large, the subtitle under it. */
 export const MKTG_PRINT_PAGE_COVER_TITLE_BOX: MktgPrintPageBox = { x: 38, y: 150, w: 560, h: 70 };
 export const MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX: MktgPrintPageBox = { x: 38, y: 224, w: 580, h: 80 };
+/**
+ * The cover's own lines, the deck's boxes (kit-book.ts and framework-print.ts coverSlide): the eyebrow top-left
+ * (capitals), a line top-right (a version, a month), the footer line bottom-left and a line bottom-right.
+ */
+export const MKTG_PRINT_PAGE_COVER_EYEBROW_BOX: MktgPrintPageBox = { x: 38, y: 12, w: 470, h: 26 };
+export const MKTG_PRINT_PAGE_COVER_TOP_RIGHT_BOX: MktgPrintPageBox = { x: 508, y: 12, w: 154, h: 26 };
+export const MKTG_PRINT_PAGE_COVER_FOOTER_LEFT_BOX: MktgPrintPageBox = { x: 38, y: 362, w: 330, h: 26 };
+export const MKTG_PRINT_PAGE_COVER_FOOTER_RIGHT_BOX: MktgPrintPageBox = { x: 368, y: 362, w: 294, h: 26 };
+/** The project lockup on the cover: above the title, left-aligned with it (the deck's cover layout carries the template's logo there). */
+export const MKTG_PRINT_PAGE_COVER_LOGO_BOX: MktgPrintPageBox = { x: 38, y: 96, w: 140, h: 44 };
+/** The back cover's lines (kit-book.ts backCoverSlide): the site's host under the title, the notice near the foot, both centred. */
+export const MKTG_PRINT_PAGE_BACK_HOST_BOX: MktgPrintPageBox = { x: 25, y: 238, w: 671, h: 26 };
+export const MKTG_PRINT_PAGE_BACK_NOTICE_BOX: MktgPrintPageBox = { x: 70, y: 312, w: 580, h: 40 };
 /** The back cover's title: the brand line, centred in the slide's upper half. */
 export const MKTG_PRINT_PAGE_BACK_TITLE_BOX: MktgPrintPageBox = { x: 60, y: 160, w: 600, h: 70 };
 
@@ -120,6 +133,6 @@ export const MKTG_PRINT_PAGE_CUT_SHARE = 0.85;
 /** The shortest paragraph the fit will cut (characters). */
 export const MKTG_PRINT_PAGE_CUT_MIN_CHARS = 12;
 
-/** The muted ink (eyebrows, footers) and the hairline rule on a white page: the app's grays. */
+/** The muted ink (eyebrows, footers) and the hairline rule when the brand's dark is no `#RRGGBB` colour to mix from: the app's grays. */
 export const MKTG_PRINT_PAGE_MUTED_INK = lfxColors.gray[500];
 export const MKTG_PRINT_PAGE_RULE_INK = lfxColors.gray[200];

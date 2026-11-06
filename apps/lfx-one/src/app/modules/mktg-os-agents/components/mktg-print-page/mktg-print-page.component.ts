@@ -59,7 +59,7 @@ import { MktgPrintPageSlotDirective } from './mktg-print-page-slot.directive';
   imports: [NgTemplateOutlet],
   templateUrl: './mktg-print-page.component.html',
   styleUrl: './mktg-print-page.component.scss',
-  host: { class: MKTG_PRINT_LANDSCAPE_CLASS, '[style.--mktg-page-scale]': 'scale' },
+  host: { class: `block ${MKTG_PRINT_LANDSCAPE_CLASS}`, '[style.--mktg-page-scale]': 'scale' },
 })
 export class MktgPrintPageComponent {
   /** A built page: its layout, title, head, footer and body boxes. Without one, the plain inputs make a content page. */

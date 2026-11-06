@@ -18,11 +18,14 @@ import {
   MKTG_PRINT_PAGE_LINE,
   MKTG_PRINT_PAGE_LOGO_FRAME,
   MKTG_PRINT_PAGE_MIN_SCALE,
+  MKTG_PRINT_PAGE_MUTED_INK,
   MKTG_PRINT_PAGE_RIGHT,
+  MKTG_PRINT_PAGE_RULE_INK,
   MKTG_PRINT_PAGE_SCALE,
   MKTG_PRINT_PAGE_SIZE,
   MKTG_PRINT_PAGE_SLIDE_TOP_PT,
 } from '../constants/mktg-print-page.constants';
+import { MKTG_PRINT_INK_ON_LIGHT } from '../constants/mktg-print.constants';
 import { MktgPrintRich } from '../interfaces/mktg-print-page.interface';
 import {
   mktgPrintCharsPerLine,
@@ -51,6 +54,7 @@ import {
   mktgPrintFooterLine,
   mktgPrintHeadEls,
   mktgPrintInWords,
+  mktgPrintMixHex,
   mktgPrintPageLook,
   mktgPrintPageNumber,
   mktgPrintProseColumn,
@@ -185,11 +189,21 @@ describe('the page grammar', () => {
     });
   });
 
-  it('derives the look from the print brand, the muted ink and the rule from the app', () => {
+  it("derives the look from the print brand as the deck's look.ts does: tint, muted and rule mixed from the dark, the on-dark ink by contrast", () => {
     const brand = mktgPrintBrand(null);
-    expect(look).toMatchObject({ dark: brand.dark, accent: brand.accent, tint: brand.tint, onDark: brand.onDark, font: brand.fontStack });
-    expect(look.muted).toMatch(/^#/);
-    expect(look.rule).toMatch(/^#/);
+    expect(look).toMatchObject({ dark: brand.dark, accent: brand.accent, font: brand.fontStack });
+    expect(look.tint).toBe(mktgPrintMixHex('#FFFFFF', brand.dark, 0.06));
+    expect(look.muted).toBe(mktgPrintMixHex(brand.dark, '#FFFFFF', 0.3));
+    expect(look.rule).toBe(mktgPrintMixHex('#FFFFFF', brand.dark, 0.16));
+    expect(look.onDark).toBe('#FFFFFF');
+    expect(mktgPrintMixHex('#000000', '#FFFFFF', 0.3)).toBe('#4D4D4D');
+    expect(mktgPrintMixHex('#FFFFFF', '#102040', 0.06)).toBe('#F1F2F4');
+    expect(mktgPrintMixHex('rgb(0,0,0)', '#FFFFFF', 0.3)).toBe('rgb(0,0,0)');
+    // A light "dark" (#F4F4F4) takes the darkest gray on its ground; a non-hex dark keeps the brand's inks and the app's grays.
+    const light = mktgPrintPageLook({ ...brand, dark: '#F4F4F4' });
+    expect(light.onDark).toBe(MKTG_PRINT_INK_ON_LIGHT);
+    const named = mktgPrintPageLook({ ...brand, dark: 'navy', tint: 'azure', onDark: 'white' });
+    expect(named).toMatchObject({ tint: 'azure', onDark: 'white', muted: MKTG_PRINT_PAGE_MUTED_INK, rule: MKTG_PRINT_PAGE_RULE_INK });
   });
 
   it('builds a content page with the title fitted to the band and the two eyebrow lines, and a footer with a two-digit number', () => {

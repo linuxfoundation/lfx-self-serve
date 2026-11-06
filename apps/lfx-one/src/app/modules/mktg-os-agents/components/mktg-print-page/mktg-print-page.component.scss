@@ -111,9 +111,10 @@
   white-space: pre-wrap;
 }
 
+/* Capitals letter-spaced as the upstream prototype's eyebrow labels are (.12em). */
 .pp-para--caps {
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
 }
 
 .pp-para--italic {

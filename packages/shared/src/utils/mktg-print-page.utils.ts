@@ -43,6 +43,8 @@ import type {
   MktgPrintRich,
 } from '../interfaces/mktg-print-page.interface';
 import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
+import { MKTG_PRINT_BODY_INK_MIN_CONTRAST, MKTG_PRINT_INK_ON_DARK, MKTG_PRINT_INK_ON_LIGHT } from '../constants/mktg-print.constants';
+import { brandKitContrastRatio, brandKitLuminance } from './brand-kit-book.utils';
 import { mktgPrintCutText, mktgPrintFitOrCut, mktgPrintRichHeight, mktgPrintScaleRich } from './mktg-print-fit.utils';
 
 /**
@@ -58,15 +60,49 @@ export function mktgPageBoxStyle(box: MktgPrintPageBox): Record<string, string> 
   return { left: mktgPagePt(box.x), top: mktgPagePt(box.y), width: mktgPagePt(box.w), height: mktgPagePt(box.h) };
 }
 
-/** The look a print's brand gives its pages: the kit's inks and typeface, the app's grays for the muted ink and the rules. */
+/** A `#RRGGBB` colour. */
+const HEX_RGB = /^#[0-9a-f]{6}$/i;
+
+/**
+ * Two colours mixed per channel, `share` of `b` in `a`, rounded (the deck's
+ * color.ts `mix`); a colour that is not `#RRGGBB` cannot be mixed and `a` is
+ * returned as it is.
+ */
+export function mktgPrintMixHex(a: string, b: string, share: number): string {
+  if (!HEX_RGB.test(a) || !HEX_RGB.test(b)) return a;
+  const channel = (offset: number) => {
+    const from = Number.parseInt(a.slice(offset, offset + 2), 16);
+    const to = Number.parseInt(b.slice(offset, offset + 2), 16);
+    return Math.round(from * (1 - share) + to * share)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(1)}${channel(3)}${channel(5)}`.toUpperCase();
+}
+
+/**
+ * The look a print's brand gives its pages, as the deck's look.ts computes it
+ * from the kit (7839d985): the dark and the accent; the tint 6% of the dark in
+ * white; the ink on the dark white when it reaches AA there, else the app's
+ * darkest gray; the muted ink 30% white in the dark (the book's 70% opacity);
+ * the rule 16% of the dark in white (the book's black/10); the typeface. A
+ * dark that is not `#RRGGBB` keeps the brand's own tint and on-dark ink and
+ * takes the app's grays for the muted ink and the rule.
+ */
 export function mktgPrintPageLook(brand: MktgPrintBrand): MktgPrintPageLook {
+  const hex = HEX_RGB.test(brand.dark);
+  const onDark = hex
+    ? brandKitContrastRatio(brandKitLuminance(brand.dark), brandKitLuminance(MKTG_PRINT_INK_ON_DARK)) >= MKTG_PRINT_BODY_INK_MIN_CONTRAST
+      ? MKTG_PRINT_INK_ON_DARK
+      : MKTG_PRINT_INK_ON_LIGHT
+    : brand.onDark;
   return {
     dark: brand.dark,
     accent: brand.accent,
-    tint: brand.tint,
-    muted: MKTG_PRINT_PAGE_MUTED_INK,
-    rule: MKTG_PRINT_PAGE_RULE_INK,
-    onDark: brand.onDark,
+    tint: hex ? mktgPrintMixHex(MKTG_PRINT_INK_ON_DARK, brand.dark, 0.06) : brand.tint,
+    muted: hex ? mktgPrintMixHex(brand.dark, MKTG_PRINT_INK_ON_DARK, 0.3) : MKTG_PRINT_PAGE_MUTED_INK,
+    rule: hex ? mktgPrintMixHex(MKTG_PRINT_INK_ON_DARK, brand.dark, 0.16) : MKTG_PRINT_PAGE_RULE_INK,
+    onDark,
     font: brand.fontStack,
   };
 }
@@ -276,9 +312,15 @@ export function mktgPrintWithFooter(page: MktgPrintPage, left: string, number: n
  * both fitted, on the dark ground; `els` the cover's own lines (its eyebrow
  * and footer, in the ink that reads on the ground).
  */
-export function mktgPrintCoverPage(look: MktgPrintPageLook, title: string, subtitle: string, els: MktgPrintPageEl[]): MktgPrintPage {
+export function mktgPrintCoverPage(
+  look: MktgPrintPageLook,
+  title: string,
+  subtitle: string,
+  els: MktgPrintPageEl[],
+  titleSize: number = MKTG_PRINT_PAGE_SIZE.coverTitle
+): MktgPrintPage {
   const titleRich = mktgPrintFitOrCut(
-    { paras: [mktgPrintPara(title, MKTG_PRINT_PAGE_SIZE.coverTitle, { weight: 600 })], color: look.onDark, font: look.font, anchor: 'BOTTOM' },
+    { paras: [mktgPrintPara(title, titleSize, { weight: 600 })], color: look.onDark, font: look.font, anchor: 'BOTTOM' },
     MKTG_PRINT_PAGE_COVER_TITLE_BOX.w,
     MKTG_PRINT_PAGE_COVER_TITLE_BOX.h
   ).rich;
