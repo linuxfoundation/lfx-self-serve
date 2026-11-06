@@ -38,6 +38,7 @@ import type {
   MktgPrintPageEl,
   MktgPrintPageElView,
   MktgPrintPageHead,
+  MktgPrintPageGround,
   MktgPrintPageLine,
   MktgPrintPageLook,
   MktgPrintPageShape,
@@ -165,12 +166,13 @@ export function mktgPrintRich(look: MktgPrintPageLook, paras: MktgPrintPara[], o
 export function mktgPrintTextEl(
   box: MktgPrintPageBox,
   r: MktgPrintRich,
-  opts: { shape?: MktgPrintPageShape; fill?: string | null; line?: MktgPrintPageLine | null; min?: number } = {}
+  opts: { shape?: MktgPrintPageShape; fill?: string | null; line?: MktgPrintPageLine | null; min?: number; ground?: MktgPrintPageGround } = {}
 ): MktgPrintPageShapeEl {
   const fitted = mktgPrintFitOrCut(r, box.w, box.h, opts.min ?? MKTG_PRINT_PAGE_MIN_SCALE).rich;
   const el: MktgPrintPageShapeEl = { t: 'shape', shape: opts.shape ?? 'TEXT_BOX', box, text: fitted };
   if (opts.fill !== undefined) el.fill = opts.fill;
   if (opts.line !== undefined) el.line = opts.line;
+  if (opts.ground) el.ground = opts.ground;
   return el;
 }
 

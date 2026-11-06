@@ -10,6 +10,7 @@
 // page's weights and their names come through the view, from the kit's
 // BRAND_KIT_WEIGHT_NAMES and BRAND_KIT_DEFAULT_WEIGHTS).
 
+import type { BrandKitContrastGrade } from '../interfaces/brand-kit.interface';
 import { BRAND_KIT_FOUND_IN_KINDS } from './brand-kit.constants';
 
 /** The swatch's source line under a palette card, in the BrandKit board's words (kit-book.ts SOURCE_LINES); null draws none. */
@@ -29,6 +30,20 @@ export const MKTG_PRINT_BRAND_KIT_CONTRAST_ROWS_PER_PAGE = 11;
 
 /** The Social card's URL pill: its height at the caption size, and its inset from the card's edge (kit-book.ts PILL). */
 export const MKTG_PRINT_BRAND_KIT_PILL = { h: 25, inset: 12 } as const;
+
+/**
+ * The contrast page's verdict pills, the prototype's colours by grade (book.js: emerald for AAA and AA, amber for
+ * large text only, red for a fail), each the pill's ground and its text; `w` the pill's width (pt): the grade's
+ * text at the pill's size and weight (9 pt, 600: 0.6 em a character) plus the prototype's 6 pt a side. The pill
+ * is MKTG_PRINT_BRAND_KIT_CONTRAST_PILL_H tall, in its 24 pt row.
+ */
+export const MKTG_PRINT_BRAND_KIT_CONTRAST_PILLS: Readonly<Record<BrandKitContrastGrade, { fill: string; ink: string; w: number }>> = {
+  AAA: { fill: '#ECFDF5', ink: '#047857', w: 30 },
+  AA: { fill: '#ECFDF5', ink: '#047857', w: 24 },
+  'Large text only': { fill: '#FFFBEB', ink: '#B45309', w: 94 },
+  Fails: { fill: '#FEF2F2', ink: '#DC2626', w: 40 },
+};
+export const MKTG_PRINT_BRAND_KIT_CONTRAST_PILL_H = 16;
 
 /** The grids the voice attributes are tried in under the voice, best first; when none fits they continue on a page of their own (kit-book.ts ATTRIBUTE_GRIDS). */
 export const MKTG_PRINT_BRAND_KIT_ATTRIBUTE_GRIDS: readonly { cols: number; size: number }[] = [

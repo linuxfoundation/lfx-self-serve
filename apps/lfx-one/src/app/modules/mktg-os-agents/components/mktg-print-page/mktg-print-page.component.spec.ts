@@ -256,6 +256,23 @@ describe('MktgPrintPageComponent', () => {
     expect(root.querySelector('[data-testid="mktg-print-page-logo"]')).toBeNull();
   });
 
+  it('draws a pill shape fully rounded and paints a marked grid ground with the covers’ CSS', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    const base = sampleContent();
+    const pill = mktgPrintShapeEl('PILL', { x: 400, y: 100, w: 40, h: 16 }, '#ECFDF5');
+    const hero = { ...mktgPrintShapeEl('ROUND_RECTANGLE', { x: 247, y: 91, w: 449, h: 150 }, look.dark), ground: 'grid' as const };
+    fixture.componentInstance.page = { ...base, els: [pill, hero] };
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const els = root.querySelectorAll<HTMLElement>('[data-testid="mktg-print-page-el"]');
+    expect(els).toHaveLength(2);
+    expect(els[0].classList.contains('pp-shape--pill')).toBe(true);
+    expect(els[0].classList.contains('pp-ground-grid')).toBe(false);
+    expect(els[1].classList.contains('pp-shape--round')).toBe(true);
+    expect(els[1].classList.contains('pp-ground-grid')).toBe(true);
+    expect(els[1].style.backgroundColor).toBe(cssColor(look.dark));
+  });
+
   it('makes a content page from the plain inputs alone: eyebrows, title, footer line and the number the builder gave', async () => {
     const fixture = TestBed.createComponent(MktgPrintPageComponent);
     fixture.componentRef.setInput('look', look);

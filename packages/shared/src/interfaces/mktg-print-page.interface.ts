@@ -53,7 +53,10 @@ export interface MktgPrintRich {
 }
 
 /** The shapes the page plan draws. */
-export type MktgPrintPageShape = 'TEXT_BOX' | 'RECTANGLE' | 'ROUND_RECTANGLE' | 'ELLIPSE';
+export type MktgPrintPageShape = 'TEXT_BOX' | 'RECTANGLE' | 'ROUND_RECTANGLE' | 'ELLIPSE' | 'PILL';
+
+/** A ground the renderer paints by its own CSS: the covers' grid of the accent on the dark (the prototype's gridGround). */
+export type MktgPrintPageGround = 'grid';
 
 /** A shape's outline: its colour and weight (pt); `dash` draws it dashed (the clear-space frame, a partner logo's slot). */
 export interface MktgPrintPageLine {
@@ -71,6 +74,8 @@ export interface MktgPrintPageShapeEl {
   /** A CSS colour, null for no fill. */
   fill?: string | null;
   line?: MktgPrintPageLine | null;
+  /** A painted ground over the fill (the renderer's CSS; one source with the covers'). */
+  ground?: MktgPrintPageGround;
 }
 
 /** An image in its box (the kit's own SVG as a data URL, or an app image), kept inside the box. */

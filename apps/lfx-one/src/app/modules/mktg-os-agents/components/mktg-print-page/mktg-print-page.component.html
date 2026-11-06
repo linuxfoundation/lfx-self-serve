@@ -64,6 +64,8 @@
         class="pp-box pp-shape"
         [class.pp-shape--round]="view.el.shape === 'ROUND_RECTANGLE'"
         [class.pp-shape--ellipse]="view.el.shape === 'ELLIPSE'"
+        [class.pp-shape--pill]="view.el.shape === 'PILL'"
+        [class.pp-ground-grid]="view.el.ground === 'grid'"
         [style]="view.style"
         [attr.data-testid]="testid">
         @if (view.text; as text) {
