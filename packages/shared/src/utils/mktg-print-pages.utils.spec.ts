@@ -512,6 +512,39 @@ describe('paginateFaqPairs', () => {
       .forEach((e) => expect(e.answerSize).toBe(scaledSize(layout.faqAnswerSize, first.scale)));
   });
 
+  it('sets an entry a little too tall for the area smaller as a whole, the question and the gaps with the answer, before anything is cut', () => {
+    const answer = Array.from({ length: 34 }, (_, i) => `Sentence number ${i + 1} of a long answer.`).join(' ');
+    const pages = paginateFaqPairs([
+      { name: 'Tall', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Why so tall?', answer, source: 'Docs', answered: true }], unanswered: 0 },
+    ]);
+    const [entry] = pages[0].rows[0].entries;
+    expect(entry.cut).toBe(false);
+    expect(entry.answer).toBe(answer);
+    expect(entry.answerSize).toBeLessThan(layout.faqAnswerSize);
+    expect(entry.answerSize).toBeGreaterThan(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    expect(entry.questionSize).toBeLessThan(layout.faqQuestionSize);
+    expect(entry.sourceSize).toBeLessThan(MKTG_PRINT_PAGE_SIZE.eyebrow);
+    expect(entry.answerGap).toBeLessThan(layout.faqAnswerGap);
+    expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h - lineOf(layout.faqAnswerSize) + 0.01);
+  });
+
+  it('fits a pair whose answer is longer than the area: set smaller to the floor, then the answer cut at a sentence, the question intact', () => {
+    const answer = Array.from({ length: 120 }, (_, i) => `Sentence number ${i + 1} of a very long answer.`).join(' ');
+    const pages = paginateFaqPairs([
+      { name: 'Long', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Why so long?', answer, source: 'Docs', answered: true }], unanswered: 0 },
+    ]);
+    expect(pages).toHaveLength(1);
+    const [entry] = pages[0].rows[0].entries;
+    expect(entry.cut).toBe(true);
+    expect(entry.question).toBe('Why so long?');
+    expect(entry.answerSize).toBe(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    expect(entry.questionSize).toBe(scaledSize(layout.faqQuestionSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    expect(entry.answer.length).toBeLessThan(answer.length);
+    expect(entry.answer.endsWith('.')).toBe(true);
+    expect(answer.startsWith(entry.answer)).toBe(true);
+    expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h - lineOf(layout.faqAnswerSize) + 0.01);
+  });
+
   it('fits a pair of many short list items as the deck does: the question whole, the answer at the floor, the items too short to cut, the trailing ones dropped and the last kept marked', () => {
     const items = Array.from({ length: 80 }, (_, i) => `- Step ${i + 1}`);
     const answer = ['Steps:', ...items].join('\n');
