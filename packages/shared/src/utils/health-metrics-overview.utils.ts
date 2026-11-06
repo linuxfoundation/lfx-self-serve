@@ -56,6 +56,8 @@ import type {
   HealthMetricsOverviewEvent,
   HealthMetricsOverviewEventDialogBadgeView,
   HealthMetricsOverviewEventDialogBadgesView,
+  HealthMetricsOverviewEventGaugeView,
+  HealthMetricsOverviewEventStatus,
   HealthMetricsOverviewEventRegistrationsView,
   HealthMetricsOverviewEventRowView,
   HealthMetricsOverviewEvents,
@@ -86,6 +88,9 @@ import type {
 import type { HealthMetricsTrainingEnrollment } from '../interfaces/health-metrics-training.interface';
 
 const NOT_AVAILABLE = '—';
+
+/** A ring with no status draws blue, as the bar does. */
+const ACCENT_GAUGE: HealthMetricsOverviewEventGaugeView = { tone: 'accent', level: null, empty: false };
 
 /** The page header's year-to-date span, e.g. "Jan 1 – Oct 22, 2026", shown beside the YTD period. */
 export function buildHealthMetricsYtdRangeLabel(today: Date): string {
@@ -984,6 +989,7 @@ function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
       // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
       barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
       neutral: false,
+      gauge: isPast ? { tone: 'level', level: 'high', empty: false } : ACCENT_GAUGE,
       note: event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A',
     },
   };
@@ -996,25 +1002,40 @@ function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
 function buildRegistrationsBar(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventRegistrationsView {
   const goal = event.registrationsGoal;
   const countLabel = formatCount(event.registrations);
-  if (goal === null || goal <= 0) return { countLabel, sideLabel: 'No goal set', sideValue: '', widthPct: 0, barClass: '', neutral: true, statusLabel: null };
+  if (goal === null || goal <= 0) {
+    return {
+      countLabel,
+      sideLabel: 'No goal set',
+      sideValue: '',
+      widthPct: 0,
+      barClass: '',
+      neutral: true,
+      statusLabel: null,
+      gauge: { ...ACCENT_GAUGE, empty: true },
+    };
+  }
   const side = { countLabel, sideLabel: 'Goal:', sideValue: formatCount(goal), neutral: false };
-  if (event.registrations === null) return { ...side, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null };
+  if (event.registrations === null)
+    return { ...side, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null, gauge: ACCENT_GAUGE };
 
   const share = event.registrations / goal;
   return { ...side, widthPct: clampPct(share * 100), ...statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore)) };
 }
 
-function statusFields(status: { label: string; fillClass: string } | null): Pick<HealthMetricsOverviewEventRegistrationsView, 'barClass' | 'statusLabel'> {
-  return status ? { barClass: status.fillClass, statusLabel: status.label } : { barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue, statusLabel: null };
+function statusFields(
+  status: HealthMetricsOverviewEventStatus | null
+): Pick<HealthMetricsOverviewEventRegistrationsView, 'barClass' | 'statusLabel' | 'gauge'> {
+  if (!status) return { barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue, statusLabel: null, gauge: ACCENT_GAUGE };
+  return { barClass: status.fillClass, statusLabel: status.label, gauge: { tone: 'level', level: status.level, empty: false } };
 }
 
-function paceStatus(compScore: string | null): { label: string; fillClass: string } | null {
+function paceStatus(compScore: string | null): HealthMetricsOverviewEventStatus | null {
   return compScore && compScore in HEALTH_METRICS_OVERVIEW_EVENT_PACE
     ? HEALTH_METRICS_OVERVIEW_EVENT_PACE[compScore as keyof typeof HEALTH_METRICS_OVERVIEW_EVENT_PACE]
     : null;
 }
 
-function goalShareStatus(share: number): { label: string; fillClass: string } {
+function goalShareStatus(share: number): HealthMetricsOverviewEventStatus {
   if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.onTrack) return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack;
   if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.atRisk) return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.atRisk;
   return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.action;

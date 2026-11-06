@@ -403,6 +403,20 @@ export interface HealthMetricsOverviewBalanceView {
  * A count over a bar: the figure, then "Goal: 1,000" or "Received: 185" at the right (`sideLabel`, `sideValue`), and the
  * bar's width and fill. `neutral` is the design's no-goal bar: a white, outlined track with no fill.
  */
+/** An event's registration status: its name, the bar's fill and the ring's level. */
+export interface HealthMetricsOverviewEventStatus {
+  label: string;
+  fillClass: string;
+  level: 'high' | 'mid' | 'low';
+}
+
+/** The same progress as a ring, for a narrow table: the status as the ring's level, blue with none, an outline with no goal. */
+export interface HealthMetricsOverviewEventGaugeView {
+  tone: 'level' | 'accent';
+  level: 'high' | 'mid' | 'low' | null;
+  empty: boolean;
+}
+
 export interface HealthMetricsOverviewEventBarView {
   countLabel: string;
   sideLabel: string;
@@ -411,6 +425,7 @@ export interface HealthMetricsOverviewEventBarView {
   widthPct: number;
   barClass: string;
   neutral: boolean;
+  gauge: HealthMetricsOverviewEventGaugeView;
 }
 
 /** The bar's fill carries the status, with no badge; `statusLabel` names it for screen readers, `null` without one. */
