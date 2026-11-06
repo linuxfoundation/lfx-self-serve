@@ -5,8 +5,8 @@
 // on a 24-unit grid with a 2-unit stroke, round caps and joins and no fill
 // (the Lucide / Material Symbols convention the kit's "Recommended set"
 // names), as typed primitives converted shape for shape from the board's
-// markup. The ONE source for every renderer: the web card and the print
-// sheet draw them inline, the Slides export rasterises them as PNGs. No
+// markup. The ONE source for every renderer: the web card and the PDF's
+// Iconography page draw them inline, the Slides export rasterises them as PNGs. No
 // renderer holds a copy or an SVG string of its own.
 
 import type { BrandKitIconSample } from '../interfaces/brand-kit-icons.interface';

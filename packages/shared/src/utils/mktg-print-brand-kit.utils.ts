@@ -29,13 +29,7 @@ import {
   MKTG_PRINT_BRAND_KIT_SOURCE_LINES,
 } from '../constants/mktg-print-brand-kit.constants';
 import { MKTG_PRINT_INK_ON_DARK } from '../constants/mktg-print.constants';
-import {
-  MKTG_PRINT_PAGE_AREA,
-  MKTG_PRINT_PAGE_INSET,
-  MKTG_PRINT_PAGE_LEFT,
-  MKTG_PRINT_PAGE_RIGHT,
-  MKTG_PRINT_PAGE_SIZE,
-} from '../constants/mktg-print-page.constants';
+import { MKTG_PRINT_PAGE_AREA, MKTG_PRINT_PAGE_INSET, MKTG_PRINT_PAGE_RIGHT, MKTG_PRINT_PAGE_SIZE } from '../constants/mktg-print-page.constants';
 import type { BrandKitBookView, BrandKitLogoImage, BrandKitVoiceAttribute } from '../interfaces/brand-kit.interface';
 import type {
   MktgPrintPage,
@@ -569,7 +563,7 @@ function iconographyPage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
   // bordered rounded rectangle on white holding the icon over its label in the muted caption ink; then the strip on the
   // kit's dark with the eight icons in white, the third in the highlight; then the recommended set in the caption size.
   // Each icon is a slot the print fills with the shared icon sample (`lfx-mktg-brand-kit-icon`), in the kit's colours
-  // (`view.iconColours`, the same three roles the web card and the portrait sheet take).
+  // (`view.iconColours`, the same three roles the web card and the PDF's Iconography page take).
   const g = MKTG_PRINT_BRAND_KIT_ICON_GRID;
   const colours = view.iconColours;
   const w = (RIGHT.w - (g.cols - 1) * g.gap) / g.cols;
@@ -849,9 +843,9 @@ export function buildBrandKitPrintPages(
   return out.map((page, i) => mktgPrintWithFooter(page, line, first + 1 + i));
 }
 
-/** How many pages the kit book prints: the cover, the content pages (buildBrandKitPrintPages) and, when included, the back cover. */
-export function mktgBrandKitBookPageCount(view: BrandKitBookView, brand: MktgPrintBrand, projectName: string, options: MktgPrintBrandKitOptions = {}): number {
-  return 1 + buildBrandKitPrintPages(view, brand, projectName, options).length + (options.backCover === false ? 0 : 1);
+/** How many pages the kit book prints: the cover, its built content pages (buildBrandKitPrintPages) and, when included, the back cover. */
+export function mktgBrandKitBookPageCount(pages: readonly MktgPrintPage[], backCover = true): number {
+  return 1 + pages.length + (backCover ? 1 : 0);
 }
 
 /** The kit cover's lines, as the deck's cover sets them (kit-book.ts coverSlide): the subtitle, the eyebrow, the version and the footer's two lines. */

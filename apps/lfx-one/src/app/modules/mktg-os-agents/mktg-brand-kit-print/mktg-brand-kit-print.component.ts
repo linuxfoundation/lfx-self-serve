@@ -52,7 +52,7 @@ export class MktgBrandKitPrintComponent {
   /** The builder's options: the cover's number and whether the back cover is in (the contents list its row). */
   private readonly options = computed<MktgPrintBrandKitOptions>(() => ({ firstPage: this.firstPage(), backCover: this.backCover() }));
   protected readonly pages = computed<MktgPrintPage[]>(() => buildBrandKitPrintPages(this.view(), this.brand(), this.projectName(), this.options()));
-  protected readonly pageCount = computed(() => mktgBrandKitBookPageCount(this.view(), this.brand(), this.projectName(), this.options()));
+  protected readonly pageCount = computed(() => mktgBrandKitBookPageCount(this.pages(), this.options().backCover));
   /** The back cover's title: the brand line, else the project name (the deck's back cover). */
   protected readonly backTitle = computed(() => this.view().voice.line || this.projectName());
   protected readonly icons = BRAND_KIT_ICON_SAMPLES;
