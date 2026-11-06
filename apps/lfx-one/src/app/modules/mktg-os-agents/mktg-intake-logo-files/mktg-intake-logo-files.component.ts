@@ -217,6 +217,10 @@ export class MktgIntakeLogoFilesComponent {
     if (this.atLimit()) {
       return `At most ${this.config().maxFiles} files.`;
     }
+    // A package is capped at pick time, before any read, in the footnote's words: the full logo package is far over it.
+    if (brandKitLogoFileKind(file.name) === 'zip' && file.size > this.config().maxZipBytes) {
+      return `${file.name} is ${formatFileSize(file.size)} — keep a ZIP under ${formatFileSize(this.config().maxZipBytes)}: SVG files only; the full logo package is usually too large to send. Add it as a link instead.`;
+    }
     // Refused from its size before any read, so a large package is never
     // inflated into memory only to be refused; the read re-checks the exact length.
     if (this.sentCharsAtLeast(file) > this.config().maxFileChars) {

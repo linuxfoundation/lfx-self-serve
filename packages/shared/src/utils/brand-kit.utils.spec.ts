@@ -19,6 +19,7 @@ import {
   BRAND_KIT_CONTRACT_ID,
   BRAND_KIT_DRAFT_HEADER,
   BRAND_KIT_MAX_LOGO_FILE_CHARS,
+  BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS,
   BRAND_KIT_QUESTIONS_CONTRACT_ID,
   BRAND_KIT_QUESTIONS_HEADER,
   BRAND_KIT_REQUIRED_HEADINGS,
@@ -407,6 +408,17 @@ describe('validateBrandKitLogoFiles', () => {
     const result = validateBrandKitLogoFiles([{ name: 'big.png', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_FILE_CHARS + 1) }]);
     expect(result.valid).toBe(false);
     expect(result.errors.join(' ')).toContain('link');
+  });
+
+  it('refuses a ZIP over 150 KB of bytes where the request is trusted, and only a ZIP', () => {
+    expect(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS).toBe(204_800);
+    const over = validateBrandKitLogoFiles([{ name: 'package.zip', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1) }]);
+    expect(over).toEqual({
+      valid: false,
+      errors: ['logoFiles[0].base64: a ZIP must stay under 150 KB (SVG files only) — give the package as a link instead'],
+    });
+    expect(validateBrandKitLogoFiles([{ name: 'package.zip', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS) }])).toEqual({ valid: true, errors: [] });
+    expect(validateBrandKitLogoFiles([{ name: 'logo.png', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1) }])).toEqual({ valid: true, errors: [] });
   });
 
   it('takes no files as valid', () => {
