@@ -35,7 +35,7 @@
     @if (statsError()) {
       <lfx-org-training-stats-error testIdPrefix="org-people-trainees-stats" (retry)="retryStats()" />
     } @else {
-      <lfx-org-training-stats [stats]="trainingStats()" [range]="range()" data-testid="org-people-trainees-stats" />
+      <lfx-org-training-stats [stats]="trainingStats()" [range]="range()" [collapsible]="true" data-testid="org-people-trainees-stats" />
     }
 
     <!-- Former employees on the people list count in the cards but are not rows of the table -->
@@ -317,48 +317,66 @@
       }
     </div>
 
-    <!-- Learners outside the people list (lfx-self-serve#4287): name and one overall status for the range only, no detail. -->
+    <!-- Learners outside the people list (lfx-self-serve#4287): name and one overall status for the range only, no detail. Collapsed until opened, with the count in the header (lfx-self-serve#5304). -->
     @if (!isLoading() && response().outsideLearners.length > 0) {
       @if (courseFilterPicked()) {
         <p class="text-xs text-gray-500" data-testid="org-people-trainees-outside-filtered-note">{{ outsideLearnersFilteredNote }}</p>
       } @else {
         <section class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="org-people-trainees-outside">
-          <h3 class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-            {{ outsideLearnersHeading }} ({{ outsideTotal() | number }})
+          <h3 class="m-0 text-xs font-medium uppercase tracking-wide text-gray-500">
+            <button
+              type="button"
+              class="flex w-full items-center justify-between gap-3 bg-gray-50 px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              [attr.aria-expanded]="outsideExpanded()"
+              data-testid="org-people-trainees-outside-toggle"
+              (click)="toggleOutside()">
+              <span>{{ outsideLearnersHeading }} ({{ outsideTotal() | number }})</span>
+              <span class="inline-flex items-center gap-1.5 normal-case tracking-normal text-blue-600">
+                {{ outsideExpanded() ? 'Hide' : 'Show' }}
+                <i class="fa-light text-xs" [class.fa-chevron-down]="!outsideExpanded()" [class.fa-chevron-up]="outsideExpanded()" aria-hidden="true"></i>
+              </span>
+            </button>
           </h3>
-          @if (outsideTotal() === 0) {
-            <p class="px-4 py-3 text-xs text-gray-500" data-testid="org-people-trainees-outside-empty">No one in this list matches the search.</p>
-          } @else {
-            <ul class="divide-y divide-gray-100">
-              @for (learner of visibleOutsideLearners(); track learner.personKey) {
-                <li class="flex items-center justify-between gap-4 px-4 py-2" [attr.data-testid]="'org-people-trainees-outside-' + learner.personKey">
-                  <span class="truncate text-sm text-gray-900">{{ learner.name || 'Name not available' }}</span>
-                  @if (learner.status === 'Certified') {
-                    <span
-                      class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
-                      Certified
-                    </span>
-                  } @else {
-                    <span
-                      class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 whitespace-nowrap">
-                      Enrolled
-                    </span>
-                  }
-                </li>
-              }
-            </ul>
-            <p-paginator
-              [first]="outsidePageFirst()"
-              [rows]="outsidePageSize()"
-              [totalRecords]="outsideTotal()"
-              [rowsPerPageOptions]="outsideRowsPerPageOptions()"
-              dropdownAppendTo="body"
-              [showCurrentPageReport]="true"
-              [showFirstLastIcon]="false"
-              currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-              [styleClass]="outsidePaginatorStyleClass()"
-              (onPageChange)="onOutsidePageChange($event)"
-              data-testid="org-people-trainees-outside-paginator" />
+          @if (outsideExpanded()) {
+            <p class="border-t border-gray-200 px-4 py-3 text-xs text-gray-600" data-testid="org-people-trainees-outside-note">
+              {{ outsideLearnersReviewNote }}
+            </p>
+            @if (outsideTotal() === 0) {
+              <p class="border-t border-gray-100 px-4 py-3 text-xs text-gray-500" data-testid="org-people-trainees-outside-empty">
+                No one in this list matches the search.
+              </p>
+            } @else {
+              <ul class="divide-y divide-gray-100 border-t border-gray-100">
+                @for (learner of visibleOutsideLearners(); track learner.personKey) {
+                  <li class="flex items-center justify-between gap-4 px-4 py-2" [attr.data-testid]="'org-people-trainees-outside-' + learner.personKey">
+                    <span class="truncate text-sm text-gray-900">{{ learner.name || 'Name not available' }}</span>
+                    @if (learner.status === 'Certified') {
+                      <span
+                        class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
+                        Certified
+                      </span>
+                    } @else {
+                      <span
+                        class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 whitespace-nowrap">
+                        Enrolled
+                      </span>
+                    }
+                  </li>
+                }
+              </ul>
+              <p-paginator
+                [first]="outsidePageFirst()"
+                [rows]="outsidePageSize()"
+                [totalRecords]="outsideTotal()"
+                [rowsPerPageOptions]="outsideRowsPerPageOptions()"
+                dropdownAppendTo="body"
+                [showCurrentPageReport]="true"
+                [showFirstLastIcon]="false"
+                currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+                [styleClass]="outsidePaginatorStyleClass()"
+                (onPageChange)="onOutsidePageChange($event)"
+                data-testid="org-people-trainees-outside-paginator" />
+            }
           }
         </section>
       }
