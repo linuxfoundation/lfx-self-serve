@@ -1487,6 +1487,22 @@ export const GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_CONVERS
 export const GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_MESSAGE =
   'Your access to the conversion action list could not be verified. Try again in a few minutes, or enter the conversion action ids instead.';
 
+/**
+ * The error `code` (HTTP 403) of a user list read refused because the caller does not hold
+ * `global_marketing_ops` on the project. The list names every foundation's audiences on the shared LF
+ * Google Ads account, so campaign-service answers it on that relation of the path project
+ * (linuxfoundation/lfx-v2-campaign-service#486, #508), as it does the audience segments a create sends.
+ */
+export const GOOGLE_USER_LISTS_RESTRICTED_CODE = 'GOOGLE_USER_LISTS_RESTRICTED';
+/** The user-facing message of that refusal. */
+export const GOOGLE_USER_LISTS_RESTRICTED_MESSAGE =
+  "This Google Ads account's user lists can only be listed by the LF marketing team, because every foundation shares one Google Ads account.";
+/** The error `code` (HTTP 503) of a user list read refused because the caller's access could not be verified. */
+export const GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. Nothing was read. */
+export const GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_MESSAGE =
+  'Your access to the Google Ads user lists could not be verified. Try again in a few minutes, or enter user list resource names instead.';
+
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 
@@ -5493,6 +5509,25 @@ export const GOOGLE_CONVERSION_ACTION_PICKER_LOADING = "Loading this account's c
  */
 export const GOOGLE_CONVERSION_ACTION_PICKER_EMPTY =
   "This Google Ads account has no enabled conversion actions. Enter ids below or leave the box blank to use the account's own goals.";
+
+/**
+ * Why the Implement tab's audience segment picker has no list, one sentence each; the typed box below
+ * it still adds a resource name. The section only shows for a caller the route admits, so a 403 or 404
+ * after that is the deployment or the gateway, not the caller.
+ */
+export const GOOGLE_USER_LIST_PICKER_REASONS = {
+  unavailable: "The user list picker isn't available here. Enter a user list resource name below instead.",
+  failed: "The user lists couldn't be read for this project's Google Ads account. Enter a user list resource name below instead.",
+} as const;
+
+/** What the audience segment picker says while its list is being read. */
+export const GOOGLE_USER_LIST_PICKER_LOADING = "Loading this account's user lists…";
+
+/** What the audience segment picker says when the account has no user list to offer. */
+export const GOOGLE_USER_LIST_PICKER_EMPTY = 'This Google Ads account has no user lists to pick from. Enter a resource name below instead.';
+
+/** What the audience segment picker says when upstream returned only part of the account's lists. */
+export const GOOGLE_USER_LIST_PICKER_TRUNCATED = "This account has more user lists than the picker shows. If one isn't listed, enter its resource name below.";
 
 /**
  * The numeric bounds campaign-service applies to the three money/ratio fields, in whole units of

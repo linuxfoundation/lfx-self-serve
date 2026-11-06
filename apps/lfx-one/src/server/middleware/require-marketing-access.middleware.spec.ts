@@ -43,8 +43,14 @@ vi.mock('../services/project.service', () => ({
   }),
 }));
 
-const { requireMarketingAuditor, requireCampaignManager, requireMarketingAuditorOrLfStaff, requireNorthStarAccess, requireGoogleConversionActionsAccess } =
-  await import('./require-marketing-access.middleware');
+const {
+  requireMarketingAuditor,
+  requireCampaignManager,
+  requireMarketingAuditorOrLfStaff,
+  requireNorthStarAccess,
+  requireGoogleConversionActionsAccess,
+  requireGoogleUserListsAccess,
+} = await import('./require-marketing-access.middleware');
 
 interface PersonaResult {
   personas: string[];
@@ -494,10 +500,14 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
   });
 });
 
-// The conversion-action list's route guard (#5239): with marketing FGA on the controller's strict
-// `global_marketing_ops` check is the whole gate, so this must not run the campaign_manager middleware,
-// whose non-strict project check would turn an access-check outage into an uncoded 403.
-describe('requireGoogleConversionActionsAccess', () => {
+// The conversion-action list's (#5239) and the user-list read's (#5244) route guards: with marketing FGA on
+// the controller's strict `global_marketing_ops` check is the whole gate, so neither may run the
+// campaign_manager middleware, whose non-strict project check would turn an access-check outage into an
+// uncoded 403.
+describe.each([
+  ['requireGoogleConversionActionsAccess', requireGoogleConversionActionsAccess],
+  ['requireGoogleUserListsAccess', requireGoogleUserListsAccess],
+])('%s', (_name, guard) => {
   beforeEach(() => {
     getPersonas.mockReset();
     checkSingleAccess.mockReset();
@@ -512,7 +522,7 @@ describe('requireGoogleConversionActionsAccess', () => {
     setFlag(true);
     const next = vi.fn();
 
-    await requireGoogleConversionActionsAccess(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
+    await guard(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
 
     expect(verdict(next)).toBe('allow');
     expect(getPersonas).not.toHaveBeenCalled();
@@ -524,7 +534,7 @@ describe('requireGoogleConversionActionsAccess', () => {
     getPersonas.mockResolvedValue({ personas: ['contributor'], personaProjects: {} });
     const next = vi.fn();
 
-    await requireGoogleConversionActionsAccess(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
+    await guard(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
 
     expect(verdict(next)).toBe('deny');
   });
@@ -539,7 +549,7 @@ describe('requireGoogleConversionActionsAccess', () => {
     });
     const next = vi.fn();
 
-    await requireGoogleConversionActionsAccess(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
+    await guard(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
 
     expect(verdict(next)).toBe('allow');
   });

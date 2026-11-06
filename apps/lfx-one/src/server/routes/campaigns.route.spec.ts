@@ -30,6 +30,7 @@ vi.mock('../middleware/require-marketing-access.middleware', () => ({
   requireCampaignManager: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   requireGoogleMonitorAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   requireGoogleConversionActionsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireGoogleUserListsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
 }));
 vi.mock('../services/logger.service', () => ({
   logger: {

@@ -77,6 +77,7 @@ import type {
   FlushableResponse,
   GoogleAdsAccountOption,
   GoogleAdsConversionActionsResult,
+  GoogleAdsUserListsResult,
   TwitterAdsAccountOption,
   TwitterAdsAccountsResult,
   TwitterCreateCapability,
@@ -175,6 +176,10 @@ import {
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_SEARCH_AD_GROUP_NAME,
+  GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_MESSAGE,
+  GOOGLE_USER_LISTS_RESTRICTED_CODE,
+  GOOGLE_USER_LISTS_RESTRICTED_MESSAGE,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
@@ -3717,8 +3722,9 @@ export class CampaignController {
    * which also admits the project's `executive_director`, and not a ROOT writer without the relation,
    * whom campaign-service would refuse. A denied caller gets a 403 with a code and a check that cannot be
    * made a 503, both before any upstream call. With marketing FGA on, this check is the route's whole gate:
-   * the route is registered ahead of the blanket `requireCampaignManager` (`requireGoogleConversionActionsAccess`),
-   * whose non-strict check would otherwise answer an outage with an uncoded 403 first (#5239). Answers 404, as if it were not mounted, while the
+   * the route is registered ahead of the blanket `requireCampaignManager`, behind its own
+   * `requireGoogleConversionActionsAccess`, because the blanket guard's non-strict check would otherwise
+   * answer an outage with an uncoded 403 first (#5239). Answers 404, as if it were not mounted, while the
    * campaign-service Google create road (`canCreateWithGoogleCriteria`) is off — the only road that sends
    * `conversionActions` — which says nothing about the caller. Every refusal leaves the tab on its
    * free-text box.
@@ -3788,6 +3794,88 @@ export class CampaignController {
           })),
       };
       logger.success(req, operation, startTime, { count: result.actions.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The user lists on the Google Ads account a create for this project uses, for the Implement tab's
+   * audience segment picker (#5244), camel-cased. The list names every foundation's audiences on the
+   * shared LF account, so it is answered on the relation campaign-service checks before it serves it
+   * and before it sends the segments a create carries: `global_marketing_ops` on the project the request
+   * names (linuxfoundation/lfx-v2-campaign-service#486, #508). A refusal is a coded 403; a check that
+   * cannot be made is a coded 503, never an admission; both come before any upstream call. With marketing
+   * FGA on, this check is the route's whole gate: the route is registered ahead of the blanket
+   * `requireCampaignManager`, behind its own `requireGoogleUserListsAccess`, for the same reason as the
+   * conversion-action list's (#5239). Answers 404, as if it were not mounted, while the create road that
+   * sends `audienceSegments` (`canCreateWithAudienceSegments`) is off. Every refusal leaves the tab on its
+   * typed box.
+   */
+  public async getGoogleAdsUserLists(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'google_ads_user_lists';
+    if (!canCreateWithAudienceSegments()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the user list read');
+    if (access !== 'granted') {
+      next(
+        access === 'denied'
+          ? new AuthorizationError(GOOGLE_USER_LISTS_RESTRICTED_MESSAGE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              code: GOOGLE_USER_LISTS_RESTRICTED_CODE,
+            })
+          : new MicroserviceError(GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_MESSAGE, 503, GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              clientMessage: GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_MESSAGE,
+            })
+      );
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const payload = await this.campaignServiceClient.listGoogleAdsUserLists(req, projectSlug);
+      // `user_lists` is required upstream; reading its absence as an empty list would say the account
+      // has none, so an unreadable body fails the read and the tab falls back to typing.
+      if (!Array.isArray(payload?.user_lists)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Google Ads user list read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const result: GoogleAdsUserListsResult = {
+        accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
+        // A row whose resource name is not the `customers/<id>/userLists/<id>` form `audienceSegments`
+        // accepts cannot be trusted to send, so it is dropped rather than offered; a repeated resource
+        // name is offered once, since the picker keys its rows by it.
+        userLists: payload.user_lists
+          .filter(
+            (l, i, all) =>
+              typeof l?.resource_name === 'string' &&
+              GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(l.resource_name) &&
+              all.findIndex((other) => other?.resource_name === l.resource_name) === i
+          )
+          .map((l) => ({
+            resourceName: l.resource_name,
+            id: typeof l.id === 'string' ? l.id : '',
+            name: typeof l.name === 'string' && l.name.trim() !== '' ? l.name : l.resource_name,
+            type: typeof l.type === 'string' ? l.type : '',
+            eligibleForSearch: typeof l.eligible_for_search === 'boolean' ? l.eligible_for_search : null,
+          })),
+        truncated: payload.truncated === true,
+      };
+      logger.success(req, operation, startTime, { count: result.userLists.length, truncated: result.truncated });
       res.json(result);
     } catch (error) {
       next(error);
