@@ -61,7 +61,7 @@ test.describe('Brand kit PDF structure', () => {
       await expect(content.getByTestId('mktg-print-page-logo')).toHaveCount(1);
     }
     // The Iconography page's icons, each in its own slot box of the plan.
-    const iconography = pages.filter({ has: print.locator('[data-title="Iconography"]') });
+    const iconography = print.locator('[data-testid="kit-print-page"]:has([data-title="Iconography"])');
     await expect(iconography.getByTestId('kit-print-icon')).toHaveCount(2 * BRAND_KIT_ICON_SAMPLES.length);
     const indexes = await iconography.getByTestId('kit-print-icon').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-index')));
     expect(indexes).toEqual([...BRAND_KIT_ICON_SAMPLES.keys(), ...BRAND_KIT_ICON_SAMPLES.keys()].map(String));

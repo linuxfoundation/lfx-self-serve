@@ -35,6 +35,12 @@ async function openTrainees(page: Page, url: string = TRAINEES_URL): Promise<voi
   await expect(page.getByTestId('org-people-trainees-rows')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }
 
+/** The list of learners not on the people list starts collapsed; open it before using its paginator. */
+async function openOutside(page: Page): Promise<void> {
+  await page.getByTestId('org-people-trainees-outside-toggle').click();
+  await expect(page.getByTestId('org-people-trainees-outside-toggle')).toHaveAttribute('aria-expanded', 'true');
+}
+
 const tablePaginator = (page: Page): Locator => page.getByTestId('org-people-trainees-paginator');
 const outsidePaginator = (page: Page): Locator => page.getByTestId('org-people-trainees-outside-paginator');
 const showing = (paginator: Locator, first: number, last: number, total: number): Promise<void> =>
@@ -90,6 +96,7 @@ test.describe('People › Trainees — paging and people-list tiles', () => {
 
   test('the outside list pages on its own paginator, independently of the table', async ({ page }) => {
     await openTrainees(page);
+    await openOutside(page);
     const table = tablePaginator(page);
     const outside = outsidePaginator(page);
 
@@ -108,6 +115,7 @@ test.describe('People › Trainees — paging and people-list tiles', () => {
 
   test('rows per page 25 and 50 through the real dropdown, on each paginator on its own', async ({ page }) => {
     await openTrainees(page);
+    await openOutside(page);
     const table = tablePaginator(page);
     const outside = outsidePaginator(page);
 
@@ -128,6 +136,7 @@ test.describe('People › Trainees — paging and people-list tiles', () => {
 
   test('the table returns to page 1 on search, a filter pick, a range change and a sort; the outside list on search and range', async ({ page }) => {
     await openTrainees(page);
+    await openOutside(page);
     const table = tablePaginator(page);
     const outside = outsidePaginator(page);
     const search = page.getByPlaceholder('Search trainees...');

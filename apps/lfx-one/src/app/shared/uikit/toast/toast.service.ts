@@ -86,6 +86,7 @@ export class UiToastService {
     // shortcut: 1001 sits above the 1000 of every other CDK overlay, so a toast shows over an open modal. revisit: when the overlay container moves to --ui-z-* tokens, give toasts their own layer above CDK panes.
     overlayRef.hostElement.style.zIndex = '1001';
     const region = overlayRef.attach(new ComponentPortal(UiToastRegionComponent));
+    region.setInput('position', position);
     region.setInput(
       'source',
       computed(() => this.items().filter((item) => item.position === position))

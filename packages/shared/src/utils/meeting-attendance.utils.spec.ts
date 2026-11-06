@@ -104,7 +104,7 @@ describe('getMeetingHomeAttendance', () => {
     expect(attendance).toEqual({
       label,
       ariaLabel: label,
-      segments: [{ kind: 'attended', percent: (attended / invited) * 100 }],
+      segments: [{ kind: poor ? 'attendedPoor' : 'attended', percent: (attended / invited) * 100 }],
       answers: [],
       noResponse: null,
       poor,

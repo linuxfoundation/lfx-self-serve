@@ -4,12 +4,10 @@
 import { TestBed } from '@angular/core/testing';
 import {
   BRAND_KIT_ICON_HIGHLIGHT_INDEX,
-  BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX,
   BRAND_KIT_ICON_SAMPLES,
   BRAND_KIT_ICON_STRIP_INK,
   BRAND_KIT_ICON_STRIP_ONE_ROW_MIN_PX,
   BRAND_KIT_ICON_STRIP_SIZE_PX,
-  BRAND_KIT_ICON_TILE_COLUMNS,
   BRAND_KIT_ICON_TILE_SIZE_PX,
 } from '@lfx-one/shared/constants';
 import { BrandKitIconColours } from '@lfx-one/shared/interfaces';
@@ -18,10 +16,9 @@ import { MktgBrandKitIconSamplesComponent } from './mktg-brand-kit-icon-samples.
 
 const COLOURS: BrandKitIconColours = { tileInk: '#003B5C', stripGround: '#003B5C', highlight: '#FF702D' };
 
-async function setup(colours: BrandKitIconColours = COLOURS, print = false) {
+async function setup(colours: BrandKitIconColours = COLOURS) {
   const fixture = TestBed.createComponent(MktgBrandKitIconSamplesComponent);
   fixture.componentRef.setInput('colours', colours);
-  fixture.componentRef.setInput('print', print);
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
   return { fixture, root };
@@ -38,7 +35,7 @@ describe('MktgBrandKitIconSamplesComponent', () => {
   it('draws the eight tiles in the board’s order, each icon inline as stroked shapes in the kit’s dark, its label as text', async () => {
     const { root } = await setup();
     expect(root.getAttribute('data-testid')).toBe('brand-kit-icon-samples');
-    // A block host: the print sheet's `break-inside: avoid` holds it whole (an inline or flex host would not).
+    // A block host, never inline or flex.
     expect(root.classList.contains('block')).toBe(true);
     expect(root.classList.contains('flex')).toBe(false);
     // The board's 4 × 2 grid with its 12 px gap (book.js L91); two to a row below the sm breakpoint so no label breaks mid-word.
@@ -108,61 +105,5 @@ describe('MktgBrandKitIconSamplesComponent', () => {
     expect(root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.style.backgroundColor).toBe(cssColour('#171717'));
     expect(root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip-global"]')?.style.color).toBe(cssColour('#00AEEF'));
     expect(root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip-code"]')?.style.color).toBe(cssColour('#FFFFFF'));
-  });
-
-  it('draws the print sheet’s variant at the board’s proportions in table boxes: a 2 × 4 table of 110 px tiles with 32 px icons and 11 px labels, then a 110 px strip of eight equal cells with 30 px icons, no grid or flex', async () => {
-    const { root } = await setup(COLOURS, true);
-    expect(root.classList.contains('block')).toBe(true);
-    // No grid or flex box anywhere: inside the sheet's paginated table Chromium fragments their contents away from their boxes.
-    for (const node of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
-      expect(Array.from(node.classList).filter((cls) => /^(grid|flex|inline-flex|flex-wrap|grid-cols-.*)$/.test(cls))).toEqual([]);
-    }
-    const tiles = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tiles"]');
-    for (const cls of ['table', 'table-fixed', 'w-[calc(100%+12px)]', '-mx-[6px]']) {
-      expect(tiles?.classList.contains(cls)).toBe(true);
-    }
-    const rows = Array.from(tiles?.querySelectorAll<HTMLElement>(':scope > .table-row') ?? []);
-    expect(rows).toHaveLength(BRAND_KIT_ICON_SAMPLES.length / BRAND_KIT_ICON_TILE_COLUMNS);
-    const tileList = Array.from(root.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-tile-"]'));
-    expect(tileList).toHaveLength(8);
-    expect(tileList.map((tile) => tile.querySelector('span')?.textContent)).toEqual(BRAND_KIT_ICON_SAMPLES.map((icon) => icon.label));
-    rows.forEach((row, rowIndex) => {
-      const cells = Array.from(row.querySelectorAll<HTMLElement>(':scope > .table-cell'));
-      expect(cells).toHaveLength(BRAND_KIT_ICON_TILE_COLUMNS);
-      cells.forEach((cell, column) => {
-        // The board's 12 px gaps: half on each side of every equal column (the table bleeds 6 px past the edges to stay flush), under every row but the last.
-        expect(cell.classList.contains('px-[6px]')).toBe(true);
-        expect(cell.classList.contains('pb-[12px]')).toBe(rowIndex < rows.length - 1);
-        const tile = cell.firstElementChild as HTMLElement;
-        expect(tile.getAttribute('data-testid')).toBe('brand-kit-icon-tile-' + BRAND_KIT_ICON_SAMPLES[rowIndex * BRAND_KIT_ICON_TILE_COLUMNS + column].id);
-        for (const cls of ['table', 'h-[110px]', 'w-full', 'rounded-[10px]', 'border', 'border-gray-200']) {
-          expect(tile.classList.contains(cls)).toBe(true);
-        }
-        expect(tile.style.color).toBe(cssColour(COLOURS.tileInk));
-        expect(tile.firstElementChild?.classList.contains('table-cell')).toBe(true);
-        expect(tile.firstElementChild?.classList.contains('align-middle')).toBe(true);
-        expect(tile.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_TILE_SIZE_PX));
-        expect(tile.querySelector('span')?.classList.contains('text-[11px]')).toBe(true);
-      });
-    });
-    const strip = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]');
-    for (const cls of ['table', 'table-fixed', 'w-full', 'h-[110px]', 'mt-[14px]', 'px-[30px]', 'rounded-[10px]']) {
-      expect(strip?.classList.contains(cls)).toBe(true);
-    }
-    expect(strip?.style.backgroundColor).toBe(cssColour(COLOURS.stripGround));
-    expect(strip?.getAttribute('role')).toBe('img');
-    const icons = Array.from(strip?.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-strip-"]') ?? []);
-    expect(icons).toHaveLength(8);
-    expect(strip?.querySelector(':scope > .table-row')?.children).toHaveLength(8);
-    icons.forEach((icon, index) => {
-      expect(icon.classList.contains('table-cell')).toBe(true);
-      expect(icon.classList.contains('text-center')).toBe(true);
-      expect(icon.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX));
-      const highlighted = index === BRAND_KIT_ICON_HIGHLIGHT_INDEX;
-      expect(icon.getAttribute('data-highlight')).toBe(highlighted ? 'true' : null);
-      expect(icon.style.color).toBe(cssColour(highlighted ? COLOURS.highlight : BRAND_KIT_ICON_STRIP_INK));
-    });
-    // Print-safe: no filter, gradient or shadow anywhere in the markup.
-    expect(root.innerHTML).not.toMatch(/filter|gradient|shadow/i);
   });
 });
