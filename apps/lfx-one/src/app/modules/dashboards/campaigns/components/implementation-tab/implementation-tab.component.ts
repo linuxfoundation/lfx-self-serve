@@ -3,7 +3,24 @@
 
 import { DecimalPipe, isPlatformBrowser, LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, PLATFORM_ID, signal, untracked, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  effect,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  OnInit,
+  output,
+  PLATFORM_ID,
+  signal,
+  untracked,
+  viewChild,
+  viewChildren,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -431,6 +448,7 @@ export class ImplementationTabComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
   private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
   /**
@@ -3781,9 +3799,13 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The picker's combobox, cleared after each pick. Its `value` is a model the combobox sets itself when a
    * row is picked, so clearing a parent signal bound to it would never reach it, and a list removed and
-   * picked again would read as no change and add nothing.
+   * picked again would read as no change and add nothing. Found by its template reference, not its type, so
+   * a second combobox on the tab can never be the one cleared.
    */
-  private readonly googleUserListCombobox = viewChild(UiComboboxComponent);
+  private readonly googleUserListCombobox = viewChild<UiComboboxComponent>('googleUserListCombobox');
+  /** Where focus goes when a pick hides the picker: the typed box below the cap, else the newest chip's Remove button. */
+  private readonly googleAudienceSegmentAddInput = viewChild<ElementRef<HTMLInputElement>>('googleAudienceSegmentAddInput');
+  private readonly googleAudienceSegmentRemoveButtons = viewChildren<ElementRef<HTMLButtonElement>>('googleAudienceSegmentRemove');
   protected readonly userListPickerEmpty = GOOGLE_USER_LIST_PICKER_EMPTY;
   protected readonly userListPickerLoading = GOOGLE_USER_LIST_PICKER_LOADING;
   protected readonly userListPickerTruncated = GOOGLE_USER_LIST_PICKER_TRUNCATED;
@@ -5139,12 +5161,19 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * A list picked from the audience segment picker: its resource name is added exactly as typing it
    * would add it, then the combobox itself is cleared for the next pick. A `null` (the field cleared)
-   * adds nothing.
+   * adds nothing. When the pick takes the last list on offer or reaches the cap, the picker leaves the
+   * template while it holds focus, so focus moves to the typed box, or at the cap to the newest chip's
+   * Remove button, once that has rendered.
    */
   protected onGoogleUserListPicked(resourceName: string | null): void {
     if (resourceName === null) return;
     this.addGoogleAudienceSegment(resourceName);
     this.googleUserListCombobox()?.writeValue(null);
+    if (this.googleUserListPickerOptions().length === 0 || this.googleAudienceSegmentsFull()) {
+      afterNextRender(() => (this.googleAudienceSegmentAddInput() ?? this.googleAudienceSegmentRemoveButtons().at(-1))?.nativeElement.focus(), {
+        injector: this.injector,
+      });
+    }
   }
 
   /**

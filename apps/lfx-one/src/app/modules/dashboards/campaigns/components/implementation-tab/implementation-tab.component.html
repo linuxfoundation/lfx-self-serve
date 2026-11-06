@@ -1183,6 +1183,7 @@
               @if (googleUserListPickerOptions().length > 0 && !googleAudienceSegmentsFull()) {
                 <div class="mb-3">
                   <lfx-ui-combobox
+                    #googleUserListCombobox
                     label="Pick a user list"
                     placeholder="Search this account's user lists"
                     emptyText="No user list matches"
@@ -1215,6 +1216,7 @@
               <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
                 {{ segment }}
                 <button
+                  #googleAudienceSegmentRemove
                   type="button"
                   (click)="removeGoogleAudienceSegment(i)"
                   class="ml-0.5 text-blue-600 hover:text-blue-800"
@@ -1228,6 +1230,7 @@
               <!-- Free text, as the callout box is: the resource name is the input, and its shape is
                    judged on add so a refusal arrives while the text is still in the box. -->
               <input
+                #googleAudienceSegmentAddInput
                 id="google-audience-segment-add"
                 type="text"
                 placeholder="+ Add user list resource name"

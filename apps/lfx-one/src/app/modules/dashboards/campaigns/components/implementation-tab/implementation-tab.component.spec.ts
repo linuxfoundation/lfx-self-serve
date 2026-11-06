@@ -9585,6 +9585,46 @@ describe('ImplementationTabComponent google user list picker', () => {
     expect(c['googleAudienceSegments']()).toEqual([LIST_B]);
   });
 
+  describe('focus when a pick hides the picker', () => {
+    let focused: HTMLElement[];
+
+    beforeEach(() => {
+      focused = [];
+      vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+        focused.push(this);
+      });
+    });
+
+    const pickAndRender = async (c: Record<string, unknown>, resourceName: string): Promise<void> => {
+      (c['onGoogleUserListPicked'] as (value: string) => void).call(c, resourceName);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+
+    it('moves focus to the typed box when the pick takes the last list on offer', async () => {
+      await setup(() => of(LISTS));
+      const c = seedSearch();
+
+      await pickAndRender(c, LIST_A);
+      expect(focused).toEqual([]);
+
+      await pickAndRender(c, LIST_B);
+      expect(query('implementation-google-user-list-picker')).toBeNull();
+      expect(focused).toEqual([query('implementation-google-audience-segment-add')]);
+    });
+
+    it("moves focus to the newest chip's Remove button when the pick reaches the cap", async () => {
+      await setup(() => of(LISTS));
+      const c = seedSearch();
+      c['googleAudienceSegments'].set(Array.from({ length: GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS - 1 }, (_, i) => `customers/1/userLists/${i + 1}`));
+      fixture.detectChanges();
+
+      await pickAndRender(c, LIST_A);
+      expect(query('implementation-google-audience-segment-add')).toBeNull();
+      expect(focused).toEqual([query(`implementation-google-audience-segment-remove-${GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS - 1}`)]);
+    });
+  });
+
   it('sends the same audienceSegments for a picked list as for the same list typed', async () => {
     await setup(() => of(LISTS));
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
