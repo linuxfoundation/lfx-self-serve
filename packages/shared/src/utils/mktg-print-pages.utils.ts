@@ -422,17 +422,18 @@ export function mktgPrintFaqQuestionCount(groups: FaqGroupView[]): number {
 // ---------------------------------------------------------------------------
 
 /**
- * The family print's page plan from the parts present and the framework's and the kit's page counts (0 while a part
- * prints in its own flow): the cover is 1, then the framework, the kit (its cover at `kitFirstPage`), each appendix
- * part's divider and pages, and the back cover. The assembly passes the kit and each appendix part its `firstPage`
- * from it.
+ * The family print's page plan from the parts present and the framework's and the kit's page counts: the cover is 1,
+ * then the framework (its cover at `frameworkFirstPage`), the kit (its cover at `kitFirstPage`), each appendix part's
+ * divider and pages, and the back cover. The assembly passes the framework, the kit and each appendix part its
+ * `firstPage` from it.
  */
 export function mktgPrintFamilyPlan(view: MktgFamilyPrintView, frameworkPages = 0, kitPages = 0): MktgPrintFamilyPlan {
   const lengths = view.boilerplates?.lengths ?? [];
   const groups = view.faq?.groups ?? [];
   const boilerplatePages = view.boilerplates ? mktgBoilerplatesPageCount(lengths) : 0;
   const faqPages = view.faq ? mktgFaqPageCount(groups) : 0;
-  const kitFirstPage = 2 + (view.framework ? frameworkPages : 0);
+  const frameworkFirstPage = 2;
+  const kitFirstPage = frameworkFirstPage + (view.framework ? frameworkPages : 0);
   let next = kitFirstPage + (view.kit ? kitPages : 0);
   const boilerplatesFirstPage = view.boilerplates ? next + 1 : next;
   if (view.boilerplates) next = boilerplatesFirstPage + boilerplatePages;
@@ -440,6 +441,7 @@ export function mktgPrintFamilyPlan(view: MktgFamilyPrintView, frameworkPages = 
   if (view.faq) next = faqFirstPage + faqPages;
   return {
     numbers: mktgPrintFamilyPartNumbers(view),
+    frameworkFirstPage,
     kitFirstPage,
     boilerplatesFirstPage,
     faqFirstPage,
