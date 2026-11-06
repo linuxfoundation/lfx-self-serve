@@ -392,6 +392,7 @@ import { CampaignGoogleTargetingPanelComponent } from '../campaign-google-target
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
+import { DemandGenAdListContextDirective } from './demand-gen-ad-list-context.directive';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -442,6 +443,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     DecimalPipe,
     LowerCasePipe,
     NgTemplateOutlet,
+    DemandGenAdListContextDirective,
     SlicePipe,
     CampaignBiddingControlComponent,
     CampaignGoogleExclusionsPanelComponent,

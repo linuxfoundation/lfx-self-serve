@@ -2642,7 +2642,11 @@
                       }
                     </div>
                   }
-                  <ng-container *ngTemplateOutlet="demandGenAdListTemplate; context: { $implicit: i }" />
+                  <ng-container
+                    *ngTemplateOutlet="
+                      demandGenAdListTemplate;
+                      context: { $implicit: i, ads: group.controls.ads, prefix: 'demand-gen-ad-group-' + i + '-ad' }
+                    " />
                   <div>
                     <lfx-button
                       label="Remove ad group"
@@ -2786,7 +2790,8 @@
             </div>
           }
           @if (section.channel === 'demand-gen' && demandGenAdsShown()) {
-            <ng-container *ngTemplateOutlet="demandGenAdListTemplate; context: { $implicit: null }" />
+            <ng-container
+              *ngTemplateOutlet="demandGenAdListTemplate; context: { $implicit: null, ads: campaignForm.controls.demandGenAds, prefix: 'demand-gen-ad' }" />
             @if (demandGenAdsError(); as error) {
               <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-ads-error">{{ error }}</p>
             }
@@ -2798,9 +2803,8 @@
         The second and later ads of one Demand Gen ad group (#5226): the single one for a null context,
         else named group i. With any, the group's own ad above becomes ad 1 and needs a name.
       -->
-      <ng-template #demandGenAdListTemplate let-group>
-        @let prefix = demandGenAdIdPrefix(group);
-        @let ads = demandGenAdList(group);
+      <!-- The context carries the ad list and its id stem, typed by lfxDemandGenAdListContext, so the template reads them rather than calling methods. -->
+      <ng-template #demandGenAdListTemplate lfxDemandGenAdListContext let-group let-ads="ads" let-prefix="prefix">
         <div class="mt-4 flex flex-col gap-3" [attr.data-testid]="'implementation-' + prefix + 's'">
           @for (ad of ads.controls; track ad; let j = $index) {
             @let adId = prefix + '-' + (j + 2);
