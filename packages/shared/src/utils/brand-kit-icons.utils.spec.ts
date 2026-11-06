@@ -86,8 +86,22 @@ describe('brandKitIconColours', () => {
     // The last named entry in palette order wins, whatever order the rule names them in; a name inside a longer word does not match.
     kit.chapters.visual.icons.rules = ['Mid gray or Charcoal for a single active state; never Oranges.'];
     expect(brandKitIconColours(kit).highlight).toBe('#767576');
+    // Matching is case-insensitive, but the kit's dark is never the highlight (it would vanish on the strip): the spark.
     kit.chapters.visual.icons.rules = ['charcoal only, in lower case'];
-    expect(brandKitIconColours(kit).highlight).toBe('#4D4E4E');
+    expect(brandKitIconColours(kit).highlight).toBe('#00AEEF');
+  });
+
+  it('never picks the kit’s dark or the strip’s white ink as the highlight, even when the rules name them last', () => {
+    const kit = brandKitTestRevision();
+    kit.kit.spark = '#00AEEF';
+    // Orange and the dark named, the dark last in palette order: Orange wins.
+    kit.chapters.color.palette = [...kit.chapters.color.palette.filter((entry) => entry.name !== 'Charcoal'), kit.chapters.color.palette[0]];
+    kit.chapters.visual.icons.rules = ['Orange for a single active state; Charcoal on light, White on dark.'];
+    expect(brandKitIconColours(kit).highlight).toBe('#F37625');
+    // The dark compared case-insensitively; only the dark and white named: the spark.
+    kit.kit.dark = '#4d4e4e';
+    kit.chapters.visual.icons.rules = ['Charcoal on light, White on dark.'];
+    expect(brandKitIconColours(kit)).toEqual({ tileInk: '#4d4e4e', stripGround: '#4d4e4e', highlight: '#00AEEF' });
   });
 
   it('falls back to the spark when the rules name no palette colour, and to the accent when the spark is not a colour either', () => {
