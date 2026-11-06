@@ -14,6 +14,11 @@ import {
   MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX,
   MKTG_PRINT_PAGE_COVER_TITLE_BOX,
   MKTG_PRINT_PAGE_FRAME_PT,
+  MKTG_PRINT_PAGE_GRID_PT,
+  MKTG_PRINT_PAGE_HAIRLINE_PT,
+  MKTG_PRINT_PAGE_HEAD_LEFT_BOX,
+  MKTG_PRINT_PAGE_HEAD_RIGHT_BOX,
+  MKTG_PRINT_PAGE_HEAD_RULE_Y,
   MKTG_PRINT_PAGE_INSET,
   MKTG_PRINT_PAGE_LINE,
   MKTG_PRINT_PAGE_LOGO_FRAME,
@@ -119,6 +124,11 @@ export class MktgPrintPageComponent {
     '--pp-bullet-indent': mktgPagePt(MKTG_PRINT_PAGE_BULLET_INDENT),
     '--pp-bullet-x': mktgPagePt(MKTG_PRINT_PAGE_BULLET_GLYPH_X),
     '--pp-caps-tracking': `${MKTG_PRINT_PAGE_CAPS_TRACKING_EM}em`,
+    '--pp-hairline': framePt(MKTG_PRINT_PAGE_HAIRLINE_PT),
+    '--pp-grid': framePt(MKTG_PRINT_PAGE_GRID_PT),
+    '--pp-head-rule-top': mktgPagePt(MKTG_PRINT_PAGE_HEAD_RULE_Y),
+    '--pp-head-rule-left': mktgPagePt(MKTG_PRINT_PAGE_HEAD_LEFT_BOX.x),
+    '--pp-head-rule-right': mktgPagePt(MKTG_PRINT_PAGE_CANVAS.w - MKTG_PRINT_PAGE_HEAD_RIGHT_BOX.x - MKTG_PRINT_PAGE_HEAD_RIGHT_BOX.w),
   };
   /** The fixed boxes' CSS, built once. */
   protected readonly titleStyle = mktgPageBoxStyle(MKTG_PRINT_PAGE_TITLE_BOX);
@@ -182,7 +192,7 @@ export class MktgPrintPageComponent {
       const page = this.page();
       const number = this.number() ?? page?.footer?.number ?? '';
       const line = this.footerLine() ?? page?.footer?.left ?? '';
-      const els: MktgPrintPageEl[] = number || line ? mktgPrintFooterEls(this.look(), line, number) : [];
+      const els: MktgPrintPageEl[] = number || line ? mktgPrintFooterEls(this.look(), line, number, undefined, page?.footer?.leftBox) : [];
       return els.map(mktgPrintElView);
     });
   }

@@ -21,6 +21,8 @@ import { BRAND_KIT_ICON_HIGHLIGHT_INDEX, BRAND_KIT_ICON_SAMPLES, BRAND_KIT_ICON_
 import { BRAND_KIT_BOOK_PAGES, BRAND_KIT_CHAPTERS, BRAND_KIT_TYPE_SPECIMEN } from '../constants/brand-kit.constants';
 import {
   MKTG_PRINT_BRAND_KIT_ATTRIBUTE_GRIDS,
+  MKTG_PRINT_BRAND_KIT_CONTRAST_PILLS,
+  MKTG_PRINT_BRAND_KIT_CONTRAST_PILL_H,
   MKTG_PRINT_BRAND_KIT_CONTRAST_ROWS_PER_PAGE,
   MKTG_PRINT_BRAND_KIT_ICON_GRID,
   MKTG_PRINT_BRAND_KIT_ICON_SLOT,
@@ -29,7 +31,13 @@ import {
   MKTG_PRINT_BRAND_KIT_SOURCE_LINES,
 } from '../constants/mktg-print-brand-kit.constants';
 import { MKTG_PRINT_INK_ON_DARK } from '../constants/mktg-print.constants';
-import { MKTG_PRINT_PAGE_AREA, MKTG_PRINT_PAGE_INSET, MKTG_PRINT_PAGE_RIGHT, MKTG_PRINT_PAGE_SIZE } from '../constants/mktg-print-page.constants';
+import {
+  MKTG_PRINT_PAGE_AREA,
+  MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX,
+  MKTG_PRINT_PAGE_INSET,
+  MKTG_PRINT_PAGE_RIGHT,
+  MKTG_PRINT_PAGE_SIZE,
+} from '../constants/mktg-print-page.constants';
 import type { BrandKitBookView, BrandKitLogoImage, BrandKitVoiceAttribute } from '../interfaces/brand-kit.interface';
 import type {
   MktgPrintPage,
@@ -466,7 +474,6 @@ function contrastPages(ctx: MktgPrintBrandKitContext): MktgPrintPage[] {
     rows.forEach((r, j) => {
       const y = 91 + j * 24;
       const mid = y + 12;
-      const passes = r.grade === 'AAA' || r.grade === 'AA';
       const fg = hexOf.get(r.foreground) ?? look.dark;
       const bg = hexOf.get(r.background) ?? WHITE;
       els.push(mktgPrintShapeEl('ROUND_RECTANGLE', { x: RIGHT.x, y: y + 3, w: 36, h: 18 }, bg, { color: look.rule, weight: 0.75 }));
@@ -488,13 +495,17 @@ function contrastPages(ctx: MktgPrintBrandKitContext): MktgPrintPage[] {
           mktgPrintRich(look, [mktgPrintPara(`${r.ratio.toFixed(1)}:1`, 10)], { anchor: 'MIDDLE', align: 'END' })
         )
       );
+      // The verdict as the prototype's pill: its ground in the grade's colour, sized to the grade's text, at the row's right
+      // end; the text in its own box, as wide as the pill plus the insets so the fit leaves it whole.
+      const pill = MKTG_PRINT_BRAND_KIT_CONTRAST_PILLS[r.grade];
+      const px = RIGHT.x + RIGHT.w - pill.w;
+      els.push(
+        mktgPrintShapeEl('PILL', { x: px, y: mid - MKTG_PRINT_BRAND_KIT_CONTRAST_PILL_H / 2, w: pill.w, h: MKTG_PRINT_BRAND_KIT_CONTRAST_PILL_H }, pill.fill)
+      );
       els.push(
         mktgPrintTextEl(
-          { x: RIGHT.x + 344, y: mid - 15, w: 105, h: 30 },
-          mktgPrintRich(look, [mktgPrintPara(r.grade, 9, { weight: passes ? 600 : 400, color: passes ? look.ink : look.muted })], {
-            anchor: 'MIDDLE',
-            align: 'END',
-          })
+          { x: px - MKTG_PRINT_PAGE_INSET, y: mid - 15, w: pill.w + 2 * MKTG_PRINT_PAGE_INSET, h: 30 },
+          mktgPrintRich(look, [mktgPrintPara(r.grade, 9, { weight: 600, color: pill.ink })], { anchor: 'MIDDLE', align: 'CENTER' })
         )
       );
       els.push(mktgPrintHairline(look, RIGHT.x, y + 24, RIGHT.w));
@@ -615,7 +626,7 @@ function imageryPage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
         [mktgPrintEyebrowPara(look, '— Eyebrow', { color: look.onDark }), mktgPrintPara(line, 18, { weight: 500, color: look.onDark, above: 4 })],
         { anchor: 'BOTTOM' }
       ),
-      { shape: 'ROUND_RECTANGLE', fill: look.dark, line: null }
+      { shape: 'ROUND_RECTANGLE', fill: look.dark, line: null, ground: 'grid' }
     ),
     eyebrowEl(ctx, { x: RIGHT.x, y: 247, w: 216, h: 24 }, 'Buttons'),
     mktgPrintTextEl(
@@ -637,11 +648,11 @@ function imageryPage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
       }
     ),
     eyebrowEl(ctx, { x: x2, y: 247, w: 216, h: 24 }, 'Call-out card'),
-    mktgPrintShapeEl('ROUND_RECTANGLE', { x: x2, y: 272, w: 216, h: 64 }, look.tint),
-    mktgPrintShapeEl('RECTANGLE', { x: x2, y: 272, w: 4, h: 64 }, look.accent),
+    // The prototype's call-out: solid accent, the text in the dark, no rule.
     mktgPrintTextEl(
-      { x: x2 + 8, y: 272, w: 206, h: 64 },
-      mktgPrintRich(look, [mktgPrintPara('One per view, for the main call to action.', 10)], { anchor: 'MIDDLE' })
+      { x: x2, y: 272, w: 216, h: 64 },
+      mktgPrintRich(look, [mktgPrintPara('One per view, for the main call to action.', 10, { weight: 500, color: look.dark })], { anchor: 'MIDDLE' }),
+      { shape: 'ROUND_RECTANGLE', fill: look.accent, line: null }
     ),
   ];
   return mktgPrintContentPage(look, 'Imagery & graphic elements', head(ctx, 'visual'), els);
@@ -723,7 +734,9 @@ function usagePage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
         )
       );
     } else {
-      els.push(mktgPrintTextEl({ x, y, w, h }, mktgPrintRich(look, paras, { anchor: 'BOTTOM' }), { shape: 'ROUND_RECTANGLE', fill, line: outline }));
+      // The keynote's dark ground is the prototype's grid ground (the covers'); a keynote on white or the accent keeps its fill.
+      const ground = layouts[i] === 'keynote' && fill === look.dark ? ({ ground: 'grid' } as const) : {};
+      els.push(mktgPrintTextEl({ x, y, w, h }, mktgPrintRich(look, paras, { anchor: 'BOTTOM' }), { shape: 'ROUND_RECTANGLE', fill, line: outline, ...ground }));
     }
     if (bar) els.push(mktgPrintShapeEl('RECTANGLE', { x: x + 12, y: y + 14, w: 30, h: 3 }, onAccent ? inkOnAccent : look.accent));
     els.push(caption(ctx, { x, y: y + h + 2, w, h: 26 }, `${ex.name} · ${ex.format}`));
@@ -845,7 +858,9 @@ export function buildBrandKitPrintPages(
   }
   const out: MktgPrintPage[] = [contentsPage(ctx, rows), ...pages.flatMap((p) => p.pages)];
   const line = mktgPrintFooterLine(projectName);
-  return out.map((page, i) => mktgPrintWithFooter(page, line, first + 1 + i));
+  // A kit with no primary lockup draws nothing in the logo frame, so its footer line starts at the margin (the prototype's).
+  const leftBox = has(ctx, 'primary') ? undefined : MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX;
+  return out.map((page, i) => mktgPrintWithFooter(page, line, first + 1 + i, leftBox));
 }
 
 /** How many pages the kit book prints: the cover, its built content pages (buildBrandKitPrintPages) and, when included, the back cover. */

@@ -13,7 +13,9 @@ import {
   MKTG_PRINT_PAGE_CANVAS,
   MKTG_PRINT_PAGE_CAPS_TRACKING_EM,
   MKTG_PRINT_PAGE_FOOTER_LEFT_X,
+  MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX,
   MKTG_PRINT_PAGE_FRAME_PT,
+  MKTG_PRINT_PAGE_HEAD_LEFT_BOX,
   MKTG_PRINT_PAGE_INSET,
   MKTG_PRINT_PAGE_LEFT,
   MKTG_PRINT_PAGE_LINE,
@@ -272,6 +274,15 @@ describe('the page grammar', () => {
     expect(footer[0].box.x).toBe(MKTG_PRINT_PAGE_FOOTER_LEFT_X);
     expect(footer[1].text?.paras[0].text).toBe('03');
     expect(mktgPrintPageNumber(12)).toBe('12');
+    // A page that draws no lockup starts its footer line at the margin, under the running head's left.
+    const margin = mktgPrintFooterEls(look, 'line', '03', undefined, MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX);
+    expect(margin[0].box.x).toBe(MKTG_PRINT_PAGE_HEAD_LEFT_BOX.x);
+    expect(margin[0].box.x + margin[0].box.w).toBe(footer[0].box.x + footer[0].box.w);
+    expect(mktgPrintWithFooter(page, 'line', 4, MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX).footer).toEqual({
+      left: 'line',
+      number: '04',
+      leftBox: MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX,
+    });
   });
 
   it('builds the cover and the back cover on the dark ground, their titles in the ink on the dark', () => {

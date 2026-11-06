@@ -121,6 +121,13 @@ export const MKTG_PRINT_PAGE_FOOTER_LEFT_X = 92;
 /** The footer's boxes: the line left of the logo frame, the page number right. */
 export const MKTG_PRINT_PAGE_FOOTER_LEFT_BOX: MktgPrintPageBox = { x: MKTG_PRINT_PAGE_FOOTER_LEFT_X, y: 362, w: 445 - MKTG_PRINT_PAGE_FOOTER_LEFT_X, h: 26 };
 export const MKTG_PRINT_PAGE_FOOTER_RIGHT_BOX: MktgPrintPageBox = { x: 446, y: 362, w: 250, h: 26 };
+/** The footer line's box when the page draws no lockup: from the margin, under the running head's left (the prototype's footer). */
+export const MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX: MktgPrintPageBox = {
+  x: MKTG_PRINT_PAGE_HEAD_LEFT_BOX.x,
+  y: 362,
+  w: 445 - MKTG_PRINT_PAGE_HEAD_LEFT_BOX.x,
+  h: 26,
+};
 
 /** The cover's title and subtitle placeholders (the template's TITLE layout): the title large, the subtitle under it. */
 export const MKTG_PRINT_PAGE_COVER_TITLE_BOX: MktgPrintPageBox = { x: 38, y: 150, w: 560, h: 70 };
@@ -168,6 +175,16 @@ export const MKTG_PRINT_PAGE_CUT_SHARE = 0.85;
 
 /** The shortest paragraph the fit will cut (characters). */
 export const MKTG_PRINT_PAGE_CUT_MIN_CHARS = 12;
+
+/**
+ * The look the prototype's book gives the pages (book.js, the maintainer's call): a hairline (its 1 px on a
+ * 1056 px page, paper pt) under the running head, from the head's left to its right; the dark covers' ground, a
+ * quiet grid of the accent (its 32 px pitch, paper pt) over a glow of the accent on the dark.
+ */
+export const MKTG_PRINT_PAGE_HAIRLINE_PT = 0.75;
+export const MKTG_PRINT_PAGE_GRID_PT = 24;
+/** The hairline's top (deck pt): the running head's boxes' bottom, above the title band. */
+export const MKTG_PRINT_PAGE_HEAD_RULE_Y = MKTG_PRINT_PAGE_HEAD_LEFT_BOX.y + MKTG_PRINT_PAGE_HEAD_LEFT_BOX.h;
 
 /** The muted ink (eyebrows, footers) and the hairline rule when the brand's dark is no `#RRGGBB` colour to mix from: the app's grays. */
 export const MKTG_PRINT_PAGE_MUTED_INK = lfxColors.gray[500];
