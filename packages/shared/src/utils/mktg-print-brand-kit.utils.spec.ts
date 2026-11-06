@@ -120,6 +120,32 @@ describe('buildBrandKitPrintPages', () => {
     expect(texts(system)).not.toContain('Symbol');
   });
 
+  it('keeps the Scaling row inside its column at a large screen or symbol size, the labels still naming the pixel value', () => {
+    const kit = brandKitTestRevision();
+    const logo = { ...kit.chapters.logo, symbol_viewbox: '0 0 3 3', minimum_size: { ...kit.chapters.logo.minimum_size, screen_px: 96, symbol_px: 64 } };
+    const page = pagesOf({ ...kit, chapters: { ...kit.chapters, logo } }).find((p) => p.title === 'Clear space & minimum size') as MktgPrintPage;
+    const right = MKTG_PRINT_PAGE_RIGHT.x + MKTG_PRINT_PAGE_RIGHT.w;
+    const row = page.els.filter((el) => el.box.y >= 256 && el.box.x >= MKTG_PRINT_PAGE_RIGHT.x - 4);
+    expect(row.filter((el) => el.t === 'image')).toHaveLength(4);
+    for (const el of row) expect(el.box.x + el.box.w).toBeLessThanOrEqual(right + 1e-9);
+    const captions = row.filter((el) => el.t === 'shape' && el.text);
+    for (const el of captions) expect(el.box.w).toBeGreaterThan(0);
+    expect(captions.flatMap((el) => (el.t === 'shape' && el.text ? el.text.paras.map((p) => p.text) : []))).toEqual([
+      'Scaling',
+      '48 px',
+      '40 px',
+      '96 px',
+      'Symbol 64 px',
+    ]);
+    // At the fixture's sizes (32 / 16 px) the row fits as the deck draws it: no box shrinks.
+    const plain = pagesOf(kit).find((p) => p.title === 'Clear space & minimum size') as MktgPrintPage;
+    expect(
+      images(plain)
+        .filter((el) => el.box.y >= 256)
+        .map((el) => el.box.w)
+    ).toEqual([120, 100, 80]);
+  });
+
   it('draws the colorways in the contract’s order on their grounds, each captioned with the kit’s name', () => {
     const kit = brandKitTestRevision();
     const look = mktgPrintPageLook(mktgPrintBrand(kit));

@@ -244,6 +244,10 @@ describe('the page grammar', () => {
     expect(white.onDark).toBe(MKTG_PRINT_INK_ON_LIGHT);
     expect(mktgPrintProseColumn(white, [{ text: 'Body text.', size: 11 }]).text?.color).toBe(MKTG_PRINT_INK_ON_LIGHT);
     expect(mktgPrintTitleRich(white, 'Title').color).toBe(MKTG_PRINT_INK_ON_LIGHT);
+    // Its muted ink is a gray mixed from that body ink, not white on white (the deck mixes the dark; same colour for every dark that reads on white).
+    expect(white.muted).toBe(mktgPrintMixHex(MKTG_PRINT_INK_ON_LIGHT, '#FFFFFF', 0.3));
+    expect(white.muted).not.toBe('#FFFFFF');
+    expect(white.muted).not.toBe(white.ink);
   });
 
   it('builds a content page with the title fitted to the band and the two eyebrow lines, and a footer with a two-digit number', () => {
