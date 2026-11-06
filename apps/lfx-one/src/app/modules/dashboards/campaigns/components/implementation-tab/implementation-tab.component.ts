@@ -1181,6 +1181,15 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   /**
+   * Every creative's nested form group by name, the Demand Gen video ad's included (#5226), resolved
+   * once: the groups are created with the form and never replaced, so the template binds
+   * `creativeGroups[name]` rather than calling {@link creativeGroup} on every change-detection pass.
+   */
+  protected readonly creativeGroups: Readonly<Record<string, FormGroup<Record<string, FormControl<string>>>>> = Object.fromEntries(
+    GOOGLE_CREATIVE_GROUPS.map(({ groupName }) => [groupName, this.campaignForm.get(groupName) as FormGroup<Record<string, FormControl<string>>>])
+  );
+
+  /**
    * The call, promotion and price sub-forms, on the LFX form-control API the `lfx-input-text` and
    * `lfx-select` wrappers bind to. TRANSIENT, as the sitelink and snippet boxes are: what is typed
    * here reaches the saved draft only when an entry is ADDED, so none of these is listed in
@@ -6931,8 +6940,11 @@ export class ImplementationTabComponent implements OnInit {
       this.restoreGoogleCreatives(draft.googleCreatives);
     }
     // Present-only too: a draft saved before Demand Gen had two formats leaves the default, `image`.
+    // Emitting, not silent: the format decides which creative group `googleCreativeSections` renders,
+    // and that memo re-reads the control only when `campaignFormRevision` moves. A silent write was
+    // correct only while nothing read the sections between the patch above and this line.
     if (draft.demandGenAdFormat === 'image' || draft.demandGenAdFormat === 'video') {
-      this.campaignForm.controls.demandGenAdFormat.setValue(draft.demandGenAdFormat, { emitEvent: false });
+      this.campaignForm.controls.demandGenAdFormat.setValue(draft.demandGenAdFormat);
     }
     // The stored images held in the Google image slots, on the Meta image's terms.
     if (draft.googleImageAssets !== undefined) {
@@ -8360,7 +8372,11 @@ export class ImplementationTabComponent implements OnInit {
           groupName: group.groupName,
           // The guidance line is folded in here rather than left to a template method, so it is
           // assembled when the section resolves instead of on every change-detection pass.
-          fields: group.fields.map((field) => ({ ...field, guidance: this.creativeFieldGuidance(field) })),
+          fields: group.fields.map((field) => ({
+            ...field,
+            guidance: this.creativeFieldGuidance(field),
+            ...(field.options ? { selectOptions: this.creativeFieldSelectOptions(field) } : {}),
+          })),
         };
       });
     });

@@ -6813,16 +6813,26 @@ export class CampaignController {
     for (const field of spec.scalars) {
       const value = raw[field];
       if (typeof value !== 'string') continue;
-      const clean = value.trim();
+      const clean = googleAdsTrimSpace(value);
       if (clean !== '') creative[field] = clean;
     }
 
     return Object.keys(creative).length > 0 ? { [spec.key]: creative } : {};
   }
 
-  /** A creative list's non-blank strings, trimmed, in order. */
+  /**
+   * A creative list's non-blank strings, trimmed, in order.
+   *
+   * Trimmed as Go's `strings.TrimSpace` trims (`googleAdsTrimSpace`), not `String.prototype.trim`:
+   * the shared creative judges trim that way, and campaign-service does too, so an entry such as a
+   * lone U+0085 is dropped here exactly as it is dropped when judged, instead of reaching the wire
+   * and being refused upstream as blank.
+   */
   private googleStringList(value: unknown[]): string[] {
-    return value.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+    return value
+      .filter((v): v is string => typeof v === 'string')
+      .map((v) => googleAdsTrimSpace(v))
+      .filter((v) => v !== '');
   }
 
   /**
@@ -6841,11 +6851,13 @@ export class CampaignController {
     const clean: GoogleCreativeImageRef[] = [];
     for (const entry of value) {
       if (typeof entry === 'string') {
-        if (entry.trim() !== '') clean.push(entry.trim());
+        const url = googleAdsTrimSpace(entry);
+        if (url !== '') clean.push(url);
         continue;
       }
       const id = this.imageAssetIdOf(entry);
-      if (id !== null && id.trim() !== '') clean.push({ imageAssetId: id.trim() });
+      const trimmedId = id === null ? '' : googleAdsTrimSpace(id);
+      if (trimmedId !== '') clean.push({ imageAssetId: trimmedId });
     }
     return clean;
   }

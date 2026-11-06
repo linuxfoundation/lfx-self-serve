@@ -5,7 +5,6 @@ import {
   GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION,
   GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
   GOOGLE_DEMAND_GEN_VIDEO_MAX_VIDEOS,
-  googleAdsEchoed,
   googleAdsToLower,
   googleAdsTrimSpace,
 } from '../constants/campaign.constants';
@@ -31,20 +30,26 @@ const YOUTUBE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
  * `/`, `:` or `?` is a URL, which upstream refuses rather than guess which part is the id. Repeats
  * are refused as written (upstream keys them exactly, not case-folded), and there are 1 to
  * {@link GOOGLE_DEMAND_GEN_VIDEO_MAX_VIDEOS}.
+ *
+ * A refusal names the entry by its position, never by its text: the value is whatever was pasted,
+ * and a pasted link can carry credentials (`https://user:secret@host/…`) that the BFF's refusal would
+ * otherwise put into the logged validation error.
  */
 export function googleDemandGenVideoIdsRefusal(ids: readonly string[]): string | null {
   const seen = new Set<string>();
+  let position = 0;
   for (const raw of ids) {
     const id = googleAdsTrimSpace(raw);
     if (id === '') continue;
+    position++;
     if (id.includes('/') || id.includes(':') || id.includes('?')) {
-      return `YouTube video ${googleAdsEchoed(id)} is a link, not a video ID. Enter the bare ID — the part after "v=" in a watch link — and create again.`;
+      return `YouTube video ${position} is a link, not a video ID. Enter the bare ID — the part after "v=" in a watch link — and create again.`;
     }
     if (!YOUTUBE_ID_PATTERN.test(id)) {
-      return `YouTube video ${googleAdsEchoed(id)} is not a YouTube video ID: an ID has only letters, digits, "-" and "_". Correct it and create again.`;
+      return `YouTube video ${position} is not a YouTube video ID: an ID has only letters, digits, "-" and "_". Correct it and create again.`;
     }
     if (seen.has(id)) {
-      return `YouTube video ${googleAdsEchoed(id)} is listed more than once. Remove the repeat and create again.`;
+      return `YouTube video ${position} repeats an earlier one. Remove the repeat and create again.`;
     }
     seen.add(id);
   }
@@ -72,9 +77,13 @@ export function googleDemandGenVideoCreativeRefusal(creative: unknown): string |
   const videos = googleDemandGenVideoIdsRefusal(stringList(ad['youtubeVideoIds']));
   if (videos !== null) return videos;
 
-  const logos = Array.isArray(ad['logoImages']) ? ad['logoImages'].length : 0;
+  const logoImages: unknown[] = Array.isArray(ad['logoImages']) ? ad['logoImages'] : [];
+  const logos = logoImages.length;
   if (logos !== 1) {
     return `The Demand Gen video ad needs exactly one logo image, and ${logos} ${logos === 1 ? 'is' : 'are'} set. ${logos > 1 ? 'Remove the extra ones' : 'Add a square logo'} and create again.`;
+  }
+  if (!googleDemandGenVideoLogoUsable(logoImages[0])) {
+    return "The Demand Gen video ad's logo must be an https image URL with a host, or an image from the brief's library. Correct it and create again.";
   }
 
   // Widened to the interface: the `as const` catalogue gives each entry only the keys it sets.
@@ -90,15 +99,40 @@ export function googleDemandGenVideoCreativeRefusal(creative: unknown): string |
   const nameField = fields.find((entry) => entry.control === 'businessName');
   if (name === '') return 'The Demand Gen video ad needs a business name.';
   if (nameField?.width !== undefined && googleAdsTextWeight(name) > nameField.width) {
-    return `The Demand Gen video ad's business name (${googleAdsEchoed(name)}) is longer than the ${nameField.width} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
+    return `The Demand Gen video ad's business name is longer than the ${nameField.width} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
   }
 
   const cta = typeof ad['callToAction'] === 'string' ? googleAdsTrimSpace(ad['callToAction']) : '';
   if (cta !== '' && !GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION.some((option) => option.value === cta)) {
     const allowed = GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION.map((option) => option.label).join(', ');
-    return `The Demand Gen video ad's call to action (${googleAdsEchoed(cta)}) is not one Google Ads takes for this ad. Choose ${allowed}, or none.`;
+    return `The Demand Gen video ad's call to action is not one Google Ads takes for this ad. Choose ${allowed}, or none.`;
   }
   return null;
+}
+
+/** `https://` followed by an authority: the scheme case-insensitively, then everything up to the path, query or fragment. */
+const HTTPS_AUTHORITY_PATTERN = /^https:\/\/([^/?#]*)/i;
+
+/**
+ * Whether campaign-service would accept this logo entry before fetching it (`validateImageEntries`):
+ * a stored library image (`{ imageAssetId }`, resolved upstream) or an `https` URL with a host.
+ *
+ * Upstream parses with Go's `net/url` and requires `Scheme` to be https and `Host` non-empty. The
+ * pattern reads the same two things: the scheme, and the authority with any `user@` part removed
+ * (Go's `Host` excludes the userinfo). A scheme-relative, opaque (`https:host`) or host-less
+ * (`https:///x`, `https://user@/x`) entry is refused, as upstream refuses it.
+ */
+function googleDemandGenVideoLogoUsable(entry: unknown): boolean {
+  if (entry !== null && typeof entry === 'object' && !Array.isArray(entry)) {
+    const id = (entry as Record<string, unknown>)['imageAssetId'];
+    return typeof id === 'string' && googleAdsTrimSpace(id) !== '';
+  }
+  if (typeof entry !== 'string') return false;
+  const match = HTTPS_AUTHORITY_PATTERN.exec(googleAdsTrimSpace(entry));
+  if (match === null) return false;
+  const authority = match[1];
+  const host = authority.slice(authority.lastIndexOf('@') + 1);
+  return host !== '';
 }
 
 /** A list field's non-blank strings, trimmed as upstream trims them; anything else is empty. */
@@ -117,13 +151,16 @@ function copyListRefusal(field: GoogleCreativeFieldSpec, lines: readonly string[
     return `The Demand Gen video ad takes at most ${field.max} ${label}, and ${lines.length} are set. Remove ${lines.length - field.max} and create again.`;
   }
   const seen = new Set<string>();
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
+    // Named by position, not echoed: copy is free text and can hold a pasted link (see
+    // googleDemandGenVideoIdsRefusal).
+    const which = `${singular(label)} ${index + 1}`;
     if (field.width !== undefined && googleAdsTextWeight(line) > field.width) {
-      return `A ${singular(label)} on the Demand Gen video ad (${googleAdsEchoed(line)}) is longer than the ${field.width} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
+      return `The Demand Gen video ad's ${which} is longer than the ${field.width} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
     }
     const key = googleAdsToLower(line);
     if (seen.has(key)) {
-      return `A ${singular(label)} on the Demand Gen video ad (${googleAdsEchoed(line)}) is listed more than once; Google Ads compares them ignoring case. Remove the repeat and create again.`;
+      return `The Demand Gen video ad's ${which} repeats an earlier one; Google Ads compares them ignoring case. Remove the repeat and create again.`;
     }
     seen.add(key);
   }

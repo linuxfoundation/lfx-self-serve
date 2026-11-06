@@ -2932,6 +2932,12 @@ export interface GoogleCreativeSectionField extends GoogleCreativeFieldSpec {
    * the whole line an operator reads.
    */
   guidance: string;
+  /**
+   * A closed-list field's choices for `lfx-select`, with "None" first so an empty value sends nothing.
+   * Resolved with the section, like {@link guidance}, so the template binds a property instead of
+   * calling a method on every change-detection pass. Absent on a free-text or list field.
+   */
+  selectOptions?: GoogleCreativeFieldOption[];
 }
 
 /**

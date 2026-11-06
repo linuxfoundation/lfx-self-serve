@@ -2468,9 +2468,11 @@
         whenever Search is ticked alongside it. See its docblock for why each one is withheld rather
         than shown and ignored.
       -->
-      <!-- Tracked by the group, not the channel: Demand Gen's two formats share a channel, and a
-           `formGroupName` does not re-register when its name changes in place. -->
-      @for (section of googleCreativeSections(); track section.groupName) {
+      <!-- Tracked by the channel, so the Demand Gen "Ad format" choice below stays mounted (and keeps
+           keyboard focus) when the format changes. Only the fields container re-mounts on a format
+           change, through the one-item loop tracked by the group further down: a `formGroupName`
+           does not re-register when its name changes in place. -->
+      @for (section of googleCreativeSections(); track section.channel) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" [attr.data-testid]="'implementation-creative-section-' + section.channel">
           <h3 class="text-sm font-semibold text-gray-900">{{ section.label }} Creative</h3>
           <!--
@@ -2520,71 +2522,73 @@
               }
             </fieldset>
           }
-          <div class="mt-4 flex flex-col gap-4" [formGroupName]="section.groupName">
-            @for (field of section.fields; track field.control) {
-              <div class="flex flex-col gap-1">
-                <label class="text-xs font-medium text-gray-700" [attr.for]="section.channel + '-' + field.control">{{ field.label }}</label>
-                @if (field.kind === 'list') {
-                  <textarea
-                    [id]="section.channel + '-' + field.control"
-                    [formControlName]="field.control"
-                    (blur)="onGoogleImageFieldBlur(section.groupName, field)"
-                    [attr.aria-describedby]="
-                      creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
-                    "
-                    rows="3"
-                    class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
-                } @else if (field.options) {
-                  <!-- A closed list upstream accepts, so a select rather than free text; "None" sends none. -->
-                  <lfx-select
-                    [form]="creativeGroup(section.groupName)"
-                    [control]="field.control"
-                    [options]="creativeFieldSelectOptions(field)"
-                    [inputId]="section.channel + '-' + field.control"
-                    size="small"
-                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
-                } @else {
-                  <input
-                    type="text"
-                    [id]="section.channel + '-' + field.control"
-                    [formControlName]="field.control"
-                    [attr.aria-describedby]="
-                      creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
-                    "
-                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
-                }
-                <span class="text-xs text-gray-400">{{ field.guidance }}</span>
-                @if (creativeFieldErrors()[section.groupName + '.' + field.control]; as error) {
-                  <span
-                    class="text-xs text-red-600"
-                    [id]="section.channel + '-' + field.control + '-error'"
-                    [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control"
-                    >{{ error }}</span
-                  >
-                }
-                @if (googleTypedImageWarnings()[section.groupName + '.' + field.control]; as warning) {
-                  <span
-                    class="text-xs break-all text-amber-700"
-                    [attr.data-testid]="'implementation-creative-url-check-' + section.channel + '-' + field.control"
-                    >{{ warning }}</span
-                  >
-                }
-                <!-- The slot's stored images, beside its pasted URLs. Present only on an image slot,
+          @for (groupName of [section.groupName]; track groupName) {
+            <div class="mt-4 flex flex-col gap-4" [formGroupName]="groupName">
+              @for (field of section.fields; track field.control) {
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-medium text-gray-700" [attr.for]="section.channel + '-' + field.control">{{ field.label }}</label>
+                  @if (field.kind === 'list') {
+                    <textarea
+                      [id]="section.channel + '-' + field.control"
+                      [formControlName]="field.control"
+                      (blur)="onGoogleImageFieldBlur(section.groupName, field)"
+                      [attr.aria-describedby]="
+                        creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
+                      "
+                      rows="3"
+                      class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
+                  } @else if (field.options) {
+                    <!-- A closed list upstream accepts, so a select rather than free text; "None" sends none. -->
+                    <lfx-select
+                      [form]="creativeGroups[section.groupName]"
+                      [control]="field.control"
+                      [options]="field.selectOptions ?? []"
+                      [inputId]="section.channel + '-' + field.control"
+                      size="small"
+                      [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
+                  } @else {
+                    <input
+                      type="text"
+                      [id]="section.channel + '-' + field.control"
+                      [formControlName]="field.control"
+                      [attr.aria-describedby]="
+                        creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
+                      "
+                      class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
+                  }
+                  <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                  @if (creativeFieldErrors()[section.groupName + '.' + field.control]; as error) {
+                    <span
+                      class="text-xs text-red-600"
+                      [id]="section.channel + '-' + field.control + '-error'"
+                      [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control"
+                      >{{ error }}</span
+                    >
+                  }
+                  @if (googleTypedImageWarnings()[section.groupName + '.' + field.control]; as warning) {
+                    <span
+                      class="text-xs break-all text-amber-700"
+                      [attr.data-testid]="'implementation-creative-url-check-' + section.channel + '-' + field.control"
+                      >{{ warning }}</span
+                    >
+                  }
+                  <!-- The slot's stored images, beside its pasted URLs. Present only on an image slot,
                      and only on an explicit yes from `googleAssetUploadAvailable()`; see `googleImageSlots`. -->
-                @if (googleImageSlots()[section.groupName + '.' + field.control]; as slot) {
-                  <lfx-google-creative-image-library
-                    [slot]="slot"
-                    [accept]="creativeAssetAccept"
-                    (pick)="onGoogleImagePick(slot.key, $event)"
-                    (remove)="onGoogleImageRemove(slot.key, $event)"
-                    (upload)="onGoogleImageUpload(slot.key, $event)"
-                    (cancelUpload)="onGoogleImageUploadCancel()" />
-                }
-              </div>
-            }
-          </div>
+                  @if (googleImageSlots()[section.groupName + '.' + field.control]; as slot) {
+                    <lfx-google-creative-image-library
+                      [slot]="slot"
+                      [accept]="creativeAssetAccept"
+                      (pick)="onGoogleImagePick(slot.key, $event)"
+                      (remove)="onGoogleImageRemove(slot.key, $event)"
+                      (upload)="onGoogleImageUpload(slot.key, $event)"
+                      (cancelUpload)="onGoogleImageUploadCancel()" />
+                  }
+                </div>
+              }
+            </div>
+          }
         </div>
       }
 

@@ -4876,7 +4876,7 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       label: 'YouTube video IDs',
       kind: 'list',
       max: 5,
-      hint: 'Bare video IDs, one per line — a watch URL is refused upstream rather than parsed.',
+      hint: 'Bare video IDs, one per line, such as dQw4w9WgXcQ. Paste the ID, not a YouTube link.',
     },
   ],
   display: [
@@ -4971,7 +4971,7 @@ export const GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS = [
     kind: 'list',
     min: 1,
     max: GOOGLE_DEMAND_GEN_VIDEO_MAX_VIDEOS,
-    hint: 'Bare video IDs, one per line, such as dQw4w9WgXcQ. A watch URL is refused upstream rather than parsed.',
+    hint: 'Bare video IDs, one per line, such as dQw4w9WgXcQ. Paste the ID, not a YouTube link.',
   },
   { control: 'headlines', label: 'Headlines', kind: 'list', min: 1, max: 5, width: 40 },
   { control: 'longHeadlines', label: 'Long headlines', kind: 'list', min: 1, max: 5, width: 90 },
@@ -4997,9 +4997,6 @@ export const GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS = [
 
 /** The `googleAdsConfig` key the Demand Gen video ad rides under, beside {@link GOOGLE_CREATIVE_REQUEST_KEYS}. */
 export const GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY = 'demandGenVideoCreative' satisfies keyof CampaignCreateRequest;
-
-/** The Demand Gen video section's heading, beside {@link GOOGLE_CREATIVE_SECTION_TITLES}. */
-export const GOOGLE_DEMAND_GEN_VIDEO_SECTION_TITLE = 'Demand Gen video';
 
 /**
  * How far a stored image's aspect ratio may sit from its Google slot's target, as a fraction of the
@@ -5121,7 +5118,9 @@ export const GOOGLE_CREATIVE_GROUPS: readonly GoogleCreativeGroup[] = [
     channel: 'demand-gen',
     format: 'video',
     groupName: GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
-    label: GOOGLE_DEMAND_GEN_VIDEO_SECTION_TITLE,
+    // The same heading as the image ad: the section is "Demand Gen" whichever format is chosen, and the
+    // "Ad format" choice inside it says which.
+    label: GOOGLE_CREATIVE_SECTION_TITLES['demand-gen'],
     fields: GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
   },
 ];

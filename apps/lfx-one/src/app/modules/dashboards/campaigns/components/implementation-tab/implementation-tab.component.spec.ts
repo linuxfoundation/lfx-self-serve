@@ -6328,6 +6328,25 @@ describe('ImplementationTabComponent demand gen video ad', () => {
     expect(select.form()).toBe(c['campaignForm'].controls.demandGenVideoCreative);
   });
 
+  it('keeps the format choice mounted, and its focus, when the format changes', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    fixture.detectChanges();
+    const before = find('implementation-creative-demand-gen-format-video');
+    const input = before?.querySelector('input') as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    input?.focus();
+    expect(document.activeElement).toBe(input);
+
+    c['campaignForm'].controls.demandGenAdFormat.setValue('video');
+    fixture.detectChanges();
+
+    // The same element, not a rebuilt one, so keyboard focus and arrow-key movement survive.
+    expect(find('implementation-creative-demand-gen-format-video')).toBe(before);
+    expect(document.activeElement).toBe(input);
+    // The fields below did re-mount on the new group.
+    expect(find('implementation-creative-demand-gen-youtubeVideoIds')).not.toBeNull();
+  });
+
   it('offers the two ad formats as lfx-radio-buttons on the demandGenAdFormat control', () => {
     seedChannel(fixture, { includeDemandGen: true });
     fixture.detectChanges();
@@ -6407,6 +6426,8 @@ describe('ImplementationTabComponent demand gen video ad', () => {
     expect(draft.googleCreatives?.['demandGenVideoCreative']?.['youtubeVideoIds']).toBe('dQw4w9WgXcQ');
 
     c['campaignForm'].controls.demandGenAdFormat.setValue('image');
+    // Read once on the image format, so the section memo is warm before the restore lands.
+    expect(c['googleCreativeSections']().map((s: { groupName: string }) => s.groupName)).toEqual(['demandGenCreative']);
     restoreGoogleDraft(fixture, c, {
       includeDemandGen: true,
       demandGenAdFormat: 'video',
@@ -6414,6 +6435,10 @@ describe('ImplementationTabComponent demand gen video ad', () => {
     });
     expect(c['campaignForm'].controls.demandGenAdFormat.value).toBe('video');
     expect(c['campaignForm'].controls.demandGenVideoCreative.controls.youtubeVideoIds.value).toBe('abc123');
+    // The restored format must reach the rendered section straight away, not on the next edit.
+    expect(c['googleCreativeSections']().map((s: { groupName: string }) => s.groupName)).toEqual(['demandGenVideoCreative']);
+    fixture.detectChanges();
+    expect(find('implementation-creative-demand-gen-youtubeVideoIds')).not.toBeNull();
   });
 
   it('withdraws both Demand Gen formats and the held note when the channel moves away', () => {
