@@ -51,6 +51,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   SHARE_CHANNELS: ['x', 'linkedin', 'reddit', 'email', 'copy_link'],
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(() => 'me@example.com') }));
 vi.mock('@lfx-one/shared/utils', () => ({ isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)) }));
 
 vi.mock('../services/newsletter.service', () => ({
@@ -418,6 +419,17 @@ describe('NewsletterController.testSend — validateTestSendPayload', () => {
     testSend.mockResolvedValue({ ok: true });
     const next = await run({ ...base, body_html: '<p>hi</p>' });
     expect(next).not.toHaveBeenCalled();
+    expect(testSend).toHaveBeenCalled();
+  });
+
+  it("only sends to the caller's own email address, ignoring case", async () => {
+    const other = await run({ ...base, body_html: '<p>hi</p>', to_email: 'someone-else@example.com' });
+    expect(other.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(testSend).not.toHaveBeenCalled();
+
+    testSend.mockResolvedValue({ ok: true });
+    const own = await run({ ...base, body_html: '<p>hi</p>', to_email: ' Me@Example.com ' });
+    expect(own).not.toHaveBeenCalled();
     expect(testSend).toHaveBeenCalled();
   });
 

@@ -31,6 +31,7 @@ import { AiService } from '../services/ai.service';
 import { logger } from '../services/logger.service';
 import { NewsletterMemberBenefitService } from '../services/newsletter-member-benefit.service';
 import { NewsletterService } from '../services/newsletter.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 
 const COMMITTEE_LIMIT = 50;
 const CONTEXT_NAME_MAX_LENGTH = 200;
@@ -104,6 +105,16 @@ export class NewsletterController {
     try {
       const payload = req.body as NewsletterTestSendPayload;
       this.validateTestSendPayload(payload, req.path, 'newsletter_test_send');
+      // A test send goes from the LF sending domain, so it may only go to the
+      // caller's own verified address (#4358 F1).
+      const ownEmail = getEffectiveEmail(req);
+      if (!ownEmail || payload.to_email.trim().toLowerCase() !== ownEmail) {
+        throw ServiceValidationError.forField('to_email', 'Test emails can only be sent to your own email address', {
+          operation: 'newsletter_test_send',
+          service: 'newsletter_controller',
+          path: req.path,
+        });
+      }
       const result = await this.newsletterService.testSend(req, projectUid, payload);
       // PII (recipient email) intentionally omitted from log metadata.
       logger.success(req, 'newsletter_test_send', startTime, {});

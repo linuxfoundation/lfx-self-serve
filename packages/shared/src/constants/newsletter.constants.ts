@@ -17,6 +17,11 @@ export const NEWSLETTER_RAW_CONTENT_MAX_LENGTH = 50_000;
 // so any other caller building a CreateNewsletterRequest (e.g. the weekly-brief
 // share action) can validate up front instead of relying on an opaque upstream 400.
 export const NEWSLETTER_SUBJECT_MAX_LENGTH = 200;
+
+// Test sends per user per window (#4358 F1). A test send goes from the LF sending
+// domain, so the cap and the own-address check are the guard against misuse.
+export const NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX = 20;
+export const NEWSLETTER_TEST_SEND_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 export const NEWSLETTER_BODY_MAX_LENGTH = 100_000;
 // Structured layout is JSON, so it runs larger than the rendered HTML. Bound its
 // serialized size in bytes so a save or test send, with the echoed body_html
