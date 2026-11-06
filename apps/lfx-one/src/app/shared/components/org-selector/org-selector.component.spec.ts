@@ -392,6 +392,8 @@ describe('OrgSelectorComponent family roll-ups', () => {
     selected?: Account;
     /** The families answer landed as a lower bound or unknown. */
     familiesIncomplete?: boolean;
+    /** The families answer for the current grants has not landed (or was incomplete). */
+    familiesUnsettled?: boolean;
   }): Promise<RollUpView> => {
     selectRollUpSpy.mockReset().mockReturnValue(opts.accepted ?? true);
     navigateSpy.mockReset();
@@ -419,6 +421,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
             canSelectRollUp: signal(opts.families.length > 0),
             rollUpFamiliesLoading: signal(false),
             rollUpFamiliesIncomplete: signal(opts.familiesIncomplete ?? false),
+            rollUpFamiliesUnsettled: signal(opts.familiesUnsettled ?? false),
             eligibleRollUpFamilies: signal(opts.families),
             selectedRollUpRootUid: signal(selectedRootUid),
             selectedRollUpFamily: signal(opts.families.find((family) => family.rootUid === selectedRootUid) ?? null),
@@ -432,6 +435,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
           useValue: {
             items: signal(opts.items ?? [rowA, rowB]),
             loading: signal(false),
+            loaded: signal(true),
             hasMore: signal(false),
             upstreamFailed: signal(false),
             searchTerm: () => signal(''),
@@ -607,6 +611,50 @@ describe('OrgSelectorComponent family roll-ups', () => {
       const view = await create({ families: [acmeFamily], selectedRootUid: UID_A, count: 4, selected: acmeRollUp });
       expect(view.activateOption(optionEl({ optionKind: 'org', orgUid: 'nope' }))).toBe(false);
       expect(setAccountSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Copilot on PR #5167. A restored roll-up's row comes from the families answer, which can land
+   * after the organization list. Opening the panel in between focused the first organization and
+   * ended the retry, so the selected roll-up row never received initial focus once it rendered.
+   */
+  describe('initial focus on a restored roll-up', () => {
+    interface FocusView {
+      pendingInitialFocus: boolean;
+      listboxOptions: () => HTMLElement[];
+      focusInitialOption(): void;
+    }
+
+    const orgOption = (): HTMLElement => {
+      const el = document.createElement('button');
+      el.setAttribute('role', 'option');
+      el.setAttribute('aria-selected', 'false');
+      return el;
+    };
+
+    const runInitialFocus = async (view: RollUpView): Promise<boolean> => {
+      const focus = view as unknown as FocusView;
+      focus.listboxOptions = () => [orgOption(), orgOption()];
+      focus.pendingInitialFocus = true;
+      focus.focusInitialOption();
+      await Promise.resolve();
+      return focus.pendingInitialFocus;
+    };
+
+    it('keeps the retry armed while the selected roll-up row is still owed', async () => {
+      const view = await create({ families: [], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null), familiesUnsettled: true });
+      expect(await runInitialFocus(view)).toBe(true);
+    });
+
+    it('ends the retry once the families have settled', async () => {
+      const view = await create({ families: [], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null) });
+      expect(await runInitialFocus(view)).toBe(false);
+    });
+
+    it('ends the retry for an organization selection once the list has loaded', async () => {
+      const view = await create({ families: [], familiesUnsettled: true });
+      expect(await runInitialFocus(view)).toBe(false);
     });
   });
 });

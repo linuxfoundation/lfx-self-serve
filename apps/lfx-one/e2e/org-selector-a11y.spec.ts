@@ -256,24 +256,11 @@ test.describe('Org Selector — accessibility contract', () => {
   });
 
   test('A6: initial focus survives a delayed first-batch response', async ({ page }) => {
-    // Rebuild the routes with a deliberate delay on /api/nav/org-items so the panel can open
-    // before rows exist — this is the async-bootstrap race the initial-focus retry addresses.
-    await page.unrouteAll({ behavior: 'ignoreErrors' });
-    await page.route('**/api/orgs/me/role-grants', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          writers: [ORG_A_UID, ORG_B_UID],
-          auditors: [],
-          cascadingWriters: [],
-          cascadingAuditors: [],
-          isStaff: false,
-          username: 'e2e-a11y-delayed',
-          loaded_at: new Date().toISOString(),
-        }),
-      })
-    );
+    // Re-route /api/nav/org-items with a deliberate delay so the panel can open before rows exist —
+    // this is the async-bootstrap race the initial-focus retry addresses. Only that route is
+    // replaced: the grants and families stubs from `beforeEach` stay, so the one pinned roll-up
+    // below comes from the fixture rather than the live identity.
+    await page.unroute('**/api/nav/org-items*');
     await page.route('**/api/nav/org-items*', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1_200));
       await route.fulfill({

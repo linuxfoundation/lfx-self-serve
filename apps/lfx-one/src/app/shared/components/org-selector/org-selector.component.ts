@@ -44,7 +44,7 @@ import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { TooltipModule } from 'primeng/tooltip';
-import { distinctUntilChanged, filter, map } from 'rxjs';
+import { distinctUntilChanged, filter, map, merge } from 'rxjs';
 
 @Component({
   selector: 'lfx-org-selector',
@@ -345,8 +345,9 @@ export class OrgSelectorComponent {
 
       // Deferred initial-focus: `onPopoverShow` calls `focusInitialOption` synchronously, but a
       // panel opened during the async bootstrap sees an empty listbox and the microtask no-ops.
-      // Re-run once when the first batch of rows renders while the panel is still open.
-      toObservable(this.items, { injector: this.injector })
+      // Re-run when organization rows or family roll-up rows render while the panel is still open:
+      // the two arrive from separate requests, and either can hold the selected row.
+      merge(toObservable(this.items, { injector: this.injector }), toObservable(this.rollUpRows, { injector: this.injector }))
         .pipe(
           filter((rows) => rows.length > 0 && this.pendingInitialFocus && this.isPanelOpen()),
           takeUntilDestroyed(this.destroyRef)
@@ -666,8 +667,11 @@ export class OrgSelectorComponent {
       // here would land initial focus on the roll-up for good and leave the selected organization
       // unfocused when its row finally renders — the exact deferral this flag exists for. Focus it
       // provisionally and keep the retry armed until the selected row is here, or the list has
-      // settled and there is nothing further to wait for (#4415, Copilot).
-      if (selectedIdx >= 0 || this.orgNavigationService.loaded()) {
+      // settled and there is nothing further to wait for (#4415, Copilot). A selected roll-up's row
+      // comes from the families answer, not the organization list, so while that answer is owed the
+      // list being loaded does not settle anything.
+      const selectedRowOwed = this.accountContextService.isRollUp() && this.accountContextService.rollUpFamiliesUnsettled();
+      if (selectedIdx >= 0 || (this.orgNavigationService.loaded() && !selectedRowOwed)) {
         this.pendingInitialFocus = false;
       }
     });

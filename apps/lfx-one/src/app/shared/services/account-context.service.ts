@@ -123,12 +123,13 @@ export class AccountContextService {
 
   /**
    * The families a roll-up is offered for: those where the caller holds at least
-   * `ROLLUP_MIN_ORGANIZATIONS` organizations (#4132), from a complete answer only. A partial answer
-   * can name a provisional top account, and a pick made on it would demote once Retry finds the real
-   * one. A selection made before the outage stays admitted: `grantsUnsettled` holds it meanwhile.
+   * `ROLLUP_MIN_ORGANIZATIONS` organizations (#4132), from a settled answer only. A partial answer
+   * can name a provisional top account, and an answer to an earlier grants load can name a family
+   * the reload shrank or removed; a pick made on either would demote once the current answer lands.
+   * A selection made before stays admitted: `grantsUnsettled` holds it meanwhile.
    */
   public readonly eligibleRollUpFamilies: Signal<OrgRollUpFamily[]> = computed(() =>
-    this.rollUpFamiliesService.complete() ? this.rollUpFamilies().filter((family) => family.orgUids.length >= ROLLUP_MIN_ORGANIZATIONS) : []
+    this.rollUpFamiliesService.unsettled() ? [] : this.rollUpFamilies().filter((family) => family.orgUids.length >= ROLLUP_MIN_ORGANIZATIONS)
   );
 
   /** The family behind the selected roll-up, or null when no roll-up is selected or its family is not known (yet). */

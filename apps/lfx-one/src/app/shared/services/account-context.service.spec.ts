@@ -67,7 +67,7 @@ describe('AccountContextService — address-adopted selection', () => {
         { provide: OrgRoleGrantsService, useValue: grants },
         {
           provide: OrgRollUpFamiliesService,
-          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false), complete: signal(false) },
+          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false) },
         },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => claM3Flag } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
@@ -420,7 +420,7 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
         { provide: OrgRoleGrantsService, useValue: { writerSet: signal(new Set()), auditorSet: signal(new Set()), isStaff: signal(false) } },
         {
           provide: OrgRollUpFamiliesService,
-          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false), complete: signal(false) },
+          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false) },
         },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
@@ -568,7 +568,6 @@ describe('AccountContextService — family roll-up', () => {
     hasServerFamilies: WritableSignal<boolean>;
     families: Signal<OrgRollUpFamily[]>;
     unsettled: WritableSignal<boolean>;
-    complete: WritableSignal<boolean>;
     incomplete: Signal<boolean>;
   };
 
@@ -619,7 +618,6 @@ describe('AccountContextService — family roll-up', () => {
       hasServerFamilies: signal(true),
       families: computed(() => serverAnswer() ?? groupLikeServer()),
       unsettled: signal(false),
-      complete: signal(true),
       incomplete: signal(false),
     };
     TestBed.configureTestingModule({
@@ -727,7 +725,6 @@ describe('AccountContextService — family roll-up', () => {
     // Retry finds the real one. A selection made before the outage is held, not demoted.
     it('offers no new pick from a partial answer, but keeps a restored roll-up', () => {
       cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-      serverFamilies.complete.set(false);
       serverFamilies.unsettled.set(true);
       service.initializeUserOrganizations([seedA, seedB]);
       TestBed.tick();
@@ -736,6 +733,20 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.canSelectRollUpFor(ROOT)).toBe(false);
       expect(service.isRollUp()).toBe(true);
       expect(service.selectedAccount().accountName).toBe('All Alpha Organizations');
+    });
+
+    // Retry reloads the grants; until the families answer that reload, the previous answer describes
+    // grants that were replaced. A family it names may have shrunk or gone, so it admits no new pick.
+    it('offers no new pick from an answer to an earlier grants load', () => {
+      service.initializeUserOrganizations([seedA, seedB]);
+      TestBed.tick();
+      expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+
+      serverFamilies.unsettled.set(true);
+
+      expect(service.rollUpFamilies()).not.toEqual([]);
+      expect(service.eligibleRollUpFamilies()).toEqual([]);
+      expect(service.selectRollUp(ROOT)).toBe(false);
     });
 
     // The families land after the grants. Judging a family's size in between would demote a

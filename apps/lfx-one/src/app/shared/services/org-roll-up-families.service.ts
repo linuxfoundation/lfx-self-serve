@@ -59,9 +59,6 @@ export class OrgRollUpFamiliesService {
     () => this.sourceInternal() === 'pending' || this.lookupOutcomeInternal() !== 'ok' || this.answeredForInternal() !== this.roleGrants.loadedAtMs()
   );
 
-  /** True when the answer is complete (`ok`), so its families may be offered as new picks. A partial answer can name a provisional top account the next answer replaces. */
-  public readonly complete: Signal<boolean> = computed(() => this.sourceInternal() === 'server' && this.lookupOutcomeInternal() === 'ok');
-
   /** True once an answer has landed that is a lower bound or unknown — the switcher's incomplete-list notice and its Retry cover it. */
   public readonly incomplete: Signal<boolean> = computed(() => this.sourceInternal() === 'server' && this.lookupOutcomeInternal() !== 'ok');
 

@@ -104,14 +104,14 @@ describe('OrgRollUpFamiliesService', () => {
     expect(service.unsettled()).toBe(false);
   });
 
-  it('offers new picks only from a complete answer', () => {
+  it('stays unsettled on a partial answer until a complete one lands', () => {
     grantsLoad(1);
     http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response({ degraded: true, lookupOutcome: 'partial' }));
-    expect(service.complete()).toBe(false);
+    expect(service.unsettled()).toBe(true);
 
     grantsLoad(2);
     http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response());
-    expect(service.complete()).toBe(true);
+    expect(service.unsettled()).toBe(false);
   });
 
   it('re-fetches when the grants reload', () => {
