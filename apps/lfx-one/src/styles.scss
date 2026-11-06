@@ -170,7 +170,10 @@
 
     /* The framework's deck pages (lfx-mktg-print-page frames, named page `mktg-deck`: MKTG_PRINT_DECK_PAGE_NAME) print
        under this body too, outside `.lfx-framework-print` and its side padding; each frame names its own page, so the
-       portrait framework page below never takes them. */
+       portrait framework page below never takes them. Their root (.lfx-framework-pages, a plain block that draws nothing
+       of its own) and the frame hosts are shown with them, so the document reads as visible from its root down. */
+    .lfx-framework-pages,
+    .lfx-framework-pages *,
     .lfx-print-page,
     .lfx-print-page * {
       visibility: visible;
