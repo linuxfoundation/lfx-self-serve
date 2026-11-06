@@ -40,6 +40,7 @@ describe('MeetingHomeArtifactsComponent', () => {
   let lastMeeting: WritableSignal<MeetingHomeRow | null>;
   let setLastMeetingSummary: ReturnType<typeof vi.fn>;
   let lastMeetingSummary: WritableSignal<PastMeetingSummary | null | undefined>;
+  let summaryPending: WritableSignal<ReadonlyMap<string, boolean>>;
 
   const render = async (value: MeetingHomeRow): Promise<void> => {
     fixture = TestBed.createComponent(MeetingHomeArtifactsComponent);
@@ -61,13 +62,23 @@ describe('MeetingHomeArtifactsComponent', () => {
     lastMeeting = signal(null);
     setLastMeetingSummary = vi.fn();
     lastMeetingSummary = signal(undefined);
+    summaryPending = signal(new Map());
 
     TestBed.configureTestingModule({
       providers: [
         { provide: MeetingService, useValue: { getPastMeetingSummary } },
         { provide: MeetingsHomeDialogsService, useValue: { openRecording, copyRecordingLink, openSummary } },
         { provide: UiToastService, useValue: { show: toastShow } },
-        { provide: MeetingsHomeStore, useValue: { lastMeeting, lastMeetingSummary, setLastMeetingSummary } },
+        {
+          provide: MeetingsHomeStore,
+          useValue: {
+            lastMeeting,
+            lastMeetingSummary,
+            setLastMeetingSummary,
+            summaryPending,
+            setSummaryPending: (key: string, pending: boolean) => summaryPending.update((states) => new Map(states).set(key, pending)),
+          },
+        },
       ],
     });
   });
@@ -147,9 +158,9 @@ describe('MeetingHomeArtifactsComponent', () => {
     expect(button()?.textContent?.trim()).toBe('AI Summary');
     expect(button()?.querySelector('i.fa-sparkles')).not.toBeNull();
 
-    // A refresh rebuilds the row from the same, not yet re-indexed feed.
-    fixture.componentRef.setInput('row', row({ has_ai_summary: true, ai_summary_awaiting_approval: true }));
-    await fixture.whenStable();
+    // A row hidden and shown again is a new component over the same, not yet re-indexed feed.
+    fixture.destroy();
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true }));
     expect(button()?.textContent?.trim()).toBe('AI Summary');
   });
 

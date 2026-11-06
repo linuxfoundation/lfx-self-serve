@@ -780,6 +780,15 @@ describe('MeetingsHomeStore', () => {
       expect(store.lastMeetingSummary()?.approved).toBe(false);
     });
 
+    it('remembers a summary approved from a row by its key', () => {
+      const store = create();
+
+      store.setSummaryPending('row-a', true);
+      store.setSummaryPending('row-a', false);
+
+      expect(store.summaryPending()).toEqual(new Map([['row-a', false]]));
+    });
+
     it('reads a missing or failed artifact lookup as none, logging only the failure', () => {
       const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       logged.mockClear();

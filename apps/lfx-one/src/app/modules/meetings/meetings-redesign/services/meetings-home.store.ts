@@ -170,6 +170,9 @@ export class MeetingsHomeStore {
     this.meetingService.getPastMeetingSummary(id)
   );
   private readonly lastMeetingSummaryState: WritableSignal<PastMeetingSummary | null | undefined> = linkedSignal(() => this.fetchedLastMeetingSummary());
+  private readonly summaryPendingState: WritableSignal<ReadonlyMap<string, boolean>> = signal(new Map());
+  /** Summary approval state an organizer set from a row's dialog, by row key; the feed lags until re-indexed. */
+  public readonly summaryPending: Signal<ReadonlyMap<string, boolean>> = this.summaryPendingState.asReadonly();
   /** Last meeting's AI summary: undefined while loading, null when there is none or the lookup failed. */
   public readonly lastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = this.lastMeetingSummaryState.asReadonly();
   /** Share URL of the last meeting's recording: undefined while loading, null when there is none or the lookup failed. */
@@ -231,6 +234,11 @@ export class MeetingsHomeStore {
   /** Keeps the Last meeting card in step after an organizer edits or approves the summary. */
   public setLastMeetingSummary(summary: PastMeetingSummary): void {
     this.lastMeetingSummaryState.set(summary);
+  }
+
+  /** Records whether a row's summary still awaits approval after an organizer edits or approves it. */
+  public setSummaryPending(key: string, pending: boolean): void {
+    this.summaryPendingState.update((states) => new Map(states).set(key, pending));
   }
 
   /** Shows the previous (-1) or the next (1) concurrent date on the Next meeting card. */
