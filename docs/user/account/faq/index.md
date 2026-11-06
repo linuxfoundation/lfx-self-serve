@@ -14,7 +14,7 @@ intercom_collection: Account
 
 ## Is my LFID on the Identities tab?
 
-No. The **Identities** tab lists the accounts and email addresses linked to your profile. Your LFID (Linux Foundation ID) is your LFX username, shown as **Username (read-only)** when you select **Edit profile** on [**Profile & Account**](/profile). See [What is my LFID, and where do I find it?](../../profile/faq/#what-is-my-lfid-and-where-do-i-find-it).
+No. The **Identities** tab lists the accounts and email addresses linked to your profile. Your LFID (Linux Foundation ID) is your LFX username, shown under your name in your account menu and in the profile panel on [**Profile & Account**](/profile). See [What is my LFID, and where do I find it?](../../profile/faq/#what-is-my-lfid-and-where-do-i-find-it).
 
 ## How do I change my email address?
 
