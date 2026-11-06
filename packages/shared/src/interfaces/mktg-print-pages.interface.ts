@@ -155,9 +155,10 @@ export interface MktgPrintPageChrome {
   footerLine: string;
 }
 
-/** The family print's page plan: each present part's two-digit number, the deck-wide number of the first card page and of the first grid page (the cover is 1; every page counts, numbered or not), the dividers' counts, and the file's page count (the back cover included when the kit is present). */
+/** The family print's page plan: each present part's two-digit number, the deck-wide number of the kit's cover, of the first card page and of the first grid page (the family cover is 1; every page counts, numbered or not), the dividers' counts, and the file's page count (the back cover included when the kit is present). */
 export interface MktgPrintFamilyPlan {
   numbers: Partial<Record<MktgSlidesExportAssetKind, string>>;
+  kitFirstPage: number;
   boilerplatesFirstPage: number;
   faqFirstPage: number;
   boilerplateCount: number;
