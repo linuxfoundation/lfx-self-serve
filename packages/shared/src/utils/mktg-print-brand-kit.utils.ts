@@ -626,7 +626,7 @@ function imageryPage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
         [mktgPrintEyebrowPara(look, '— Eyebrow', { color: look.onDark }), mktgPrintPara(line, 18, { weight: 500, color: look.onDark, above: 4 })],
         { anchor: 'BOTTOM' }
       ),
-      { shape: 'ROUND_RECTANGLE', fill: look.dark, line: null, ground: 'grid' }
+      { shape: 'ROUND_RECTANGLE', fill: look.dark, line: null }
     ),
     eyebrowEl(ctx, { x: RIGHT.x, y: 247, w: 216, h: 24 }, 'Buttons'),
     mktgPrintTextEl(
@@ -648,10 +648,15 @@ function imageryPage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
       }
     ),
     eyebrowEl(ctx, { x: x2, y: 247, w: 216, h: 24 }, 'Call-out card'),
-    // The prototype's call-out: solid accent, the text in the dark, no rule.
+    // The prototype's call-out: solid accent, no rule, the text in the ink every sample on the accent takes (the dark when
+    // white does not read on the accent, as the prototype; white when the dark would not).
     mktgPrintTextEl(
       { x: x2, y: 272, w: 216, h: 64 },
-      mktgPrintRich(look, [mktgPrintPara('One per view, for the main call to action.', 10, { weight: 500, color: look.dark })], { anchor: 'MIDDLE' }),
+      mktgPrintRich(
+        look,
+        [mktgPrintPara('One per view, for the main call to action.', 10, { weight: 500, color: brandKitInkOnAccent(look.accent, look.dark) })],
+        { anchor: 'MIDDLE' }
+      ),
       { shape: 'ROUND_RECTANGLE', fill: look.accent, line: null }
     ),
   ];
@@ -734,9 +739,9 @@ function usagePage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
         )
       );
     } else {
-      // The keynote's dark ground is the prototype's grid ground (the covers'); a keynote on white or the accent keeps its fill.
-      const ground = layouts[i] === 'keynote' && fill === look.dark ? ({ ground: 'grid' } as const) : {};
-      els.push(mktgPrintTextEl({ x, y, w, h }, mktgPrintRich(look, paras, { anchor: 'BOTTOM' }), { shape: 'ROUND_RECTANGLE', fill, line: outline, ...ground }));
+      // Flat grounds: the prototype's grid ground on the keynote card (and the imagery hero band) printed coarse, Chromium
+      // rasterising the gradient of these elements, so the cards keep the deck's plain fill; the covers keep the ground.
+      els.push(mktgPrintTextEl({ x, y, w, h }, mktgPrintRich(look, paras, { anchor: 'BOTTOM' }), { shape: 'ROUND_RECTANGLE', fill, line: outline }));
     }
     if (bar) els.push(mktgPrintShapeEl('RECTANGLE', { x: x + 12, y: y + 14, w: 30, h: 3 }, onAccent ? inkOnAccent : look.accent));
     els.push(caption(ctx, { x, y: y + h + 2, w, h: 26 }, `${ex.name} · ${ex.format}`));
