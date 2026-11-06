@@ -12,6 +12,13 @@ export const MKTG_FAMILY_EXPORT_KINDS = {
   boilerplates: 'boilerplates',
   faq: 'faq',
 } as const;
+/** The parts' names on the family cover's versions line (the appendix spec §4: `Messaging Framework v3 · Brand Kit V1.0 · …`), by agent key. */
+export const MKTG_FAMILY_EXPORT_VERSION_LABELS: Record<keyof typeof MKTG_FAMILY_EXPORT_KINDS, string> = {
+  'foundation-message': 'Messaging Framework',
+  'brand-kit': 'Brand Kit',
+  boilerplates: 'Boilerplates',
+  faq: 'FAQ',
+};
 export const MKTG_FAMILY_PRINT_BODY_CLASS = 'lfx-print-family';
 export const MKTG_FAMILY_PRINT_ONLY_CLASS = 'lfx-family-print-only';
 export const MKTG_FAMILY_EXPORT_HIGHLIGHT_MS = 1200;

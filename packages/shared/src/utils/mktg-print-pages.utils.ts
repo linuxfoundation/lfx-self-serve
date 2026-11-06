@@ -7,13 +7,14 @@
 // paper gives the same pages), and the strings and page models of the cover,
 // the dividers and the running heads. Pure: the templates bind the results.
 
-import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
-import { MKTG_FAMILY_EXPORT_KINDS } from '../constants/mktg-family-export.constants';
+import { MKTG_FAMILY_EXPORT_KINDS, MKTG_FAMILY_EXPORT_VERSION_LABELS } from '../constants/mktg-family-export.constants';
 import { MKTG_FAQ_PRINT_UNANSWERED } from '../constants/mktg-print.constants';
 import {
   MKTG_PRINT_PAGE_AREA,
   MKTG_PRINT_PAGE_INSET,
+  MKTG_PRINT_PAGE_LINE,
   MKTG_PRINT_PAGE_LOGO_FRAME,
+  MKTG_PRINT_PAGE_MIN_SCALE,
   MKTG_PRINT_PAGE_SCALE_STEP,
   MKTG_PRINT_PAGE_SIZE,
 } from '../constants/mktg-print-page.constants';
@@ -22,10 +23,10 @@ import {
   MKTG_PRINT_DIVIDER_EYEBROW_MIN_CONTRAST,
   MKTG_PRINT_DIVIDER_LAYOUT,
   MKTG_PRINT_DIVIDER_NOUNS,
-  MKTG_PRINT_FAMILY_PARTS,
   MKTG_PRINT_SECTION_TITLES,
   MKTG_PRINT_SOURCE_LEAD,
 } from '../constants/mktg-print-pages.constants';
+import { MKTG_SLIDES_EXPORT_ASSET_KINDS } from '../constants/mktg-slides-export.constants';
 import type { BoilerplatesLengthRow } from '../interfaces/boilerplates.interface';
 import type { FaqGroupView } from '../interfaces/faq.interface';
 import type { MktgFamilyExportAgentKey, MktgFamilyPrintView } from '../interfaces/mktg-family-export.interface';
@@ -45,17 +46,20 @@ import type {
   MktgPrintCardRow,
   MktgPrintDividerView,
   MktgPrintFamilyCoverView,
-  MktgPrintFamilyPart,
   MktgPrintFamilyPlan,
   MktgPrintFaqEntry,
+  MktgPrintFaqLine,
   MktgPrintFaqPage,
   MktgPrintFaqRow,
   MktgPrintPageChrome,
 } from '../interfaces/mktg-print-pages.interface';
+import type { MktgSlidesExportAssetKind } from '../interfaces/mktg-slides-export.interface';
 import { brandKitContrastRatio, brandKitLuminance } from './brand-kit-book.utils';
 import { brandKitMonthYear } from './brand-kit.utils';
-import { mktgPrintFitOrCut, mktgPrintPaginate, mktgPrintRichHeight, mktgPrintScaleRich } from './mktg-print-fit.utils';
+import { isMktgFamilyExportAgentKey } from './mktg-family-export.utils';
+import { mktgPrintCharEm, mktgPrintFitOrCut, mktgPrintPaginate, mktgPrintRichHeight, mktgPrintScaleRich } from './mktg-print-fit.utils';
 import {
+  mktgPrintBulletParas,
   mktgPrintContinued,
   mktgPrintEyebrowPara,
   mktgPrintFooterLine,
@@ -70,13 +74,13 @@ import {
 // The family's grammar: numbers, running heads, cover and dividers
 // ---------------------------------------------------------------------------
 
-/** The parts the family print holds, in the deck's order. */
-export function mktgPrintFamilyParts(view: MktgFamilyPrintView): MktgPrintFamilyPart[] {
-  return MKTG_PRINT_FAMILY_PARTS.filter((part) => view[part] !== null);
+/** The parts the family print holds, in the exporter's (the deck's) order. */
+export function mktgPrintFamilyParts(view: MktgFamilyPrintView): MktgSlidesExportAssetKind[] {
+  return MKTG_SLIDES_EXPORT_ASSET_KINDS.filter((part) => view[part] !== null);
 }
 
 /** Each present part's two-digit number in the family order (`01` framework, `02` kit, …); a missing part renumbers the rest. */
-export function mktgPrintFamilyPartNumbers(view: MktgFamilyPrintView): Partial<Record<MktgPrintFamilyPart, string>> {
+export function mktgPrintFamilyPartNumbers(view: MktgFamilyPrintView): Partial<Record<MktgSlidesExportAssetKind, string>> {
   return Object.fromEntries(mktgPrintFamilyParts(view).map((part, index) => [part, mktgPrintPageNumber(index + 1)]));
 }
 
@@ -117,25 +121,26 @@ export function mktgPrintDividerPage(look: MktgPrintPageLook, divider: MktgPrint
   return { layout: 'cover', title: '', titleRich: mktgPrintRich(look, [], { color: look.onDark }), els };
 }
 
-const PART_AGENT_KEYS = Object.fromEntries(Object.entries(MKTG_FAMILY_EXPORT_KINDS).map(([agentKey, part]) => [part, agentKey])) as Record<
-  MktgPrintFamilyPart,
-  MktgFamilyExportAgentKey
->;
+/** The agent whose document a part prints. */
+function partAgentKey(part: MktgSlidesExportAssetKind): MktgFamilyExportAgentKey | undefined {
+  return Object.keys(MKTG_FAMILY_EXPORT_KINDS)
+    .filter(isMktgFamilyExportAgentKey)
+    .find((agentKey) => MKTG_FAMILY_EXPORT_KINDS[agentKey] === part);
+}
 
 /**
  * The family cover's strings (the spec's §4): the footer line in capitals as the eyebrow, the newest printed
  * revision's month, the family's name, the brand line (else the tagline, else the parts in words), the footer line,
- * and the versions of the parts present whose revision the data carries (the kit's in its `V1.0` form).
+ * and the versions line of the parts present whose revision the data carries (the kit's in its `V1.0` form).
  */
 export function mktgPrintFamilyCover(view: MktgFamilyPrintView, familyName: string): MktgPrintFamilyCoverView {
   const parts = mktgPrintFamilyParts(view);
   const line = view.framework?.mh.line.trim() || view.framework?.mf.tagline.trim() || '';
   const versions = parts.flatMap((part) => {
-    const agentKey = PART_AGENT_KEYS[part];
-    const number = view.revisionNumbers[agentKey];
-    if (number === undefined) return [];
-    const label = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === agentKey)?.label ?? MKTG_PRINT_SECTION_TITLES[part];
-    return [`${label} ${part === 'kit' ? `V${number}.0` : `v${number}`}`];
+    const agentKey = partAgentKey(part);
+    const number = agentKey === undefined ? undefined : view.revisionNumbers[agentKey];
+    if (agentKey === undefined || number === undefined) return [];
+    return [`${MKTG_FAMILY_EXPORT_VERSION_LABELS[agentKey]} ${part === 'kit' ? `V${number}.0` : `v${number}`}`];
   });
   const footerLeft = mktgPrintFooterLine(view.projectName.trim());
   return {
@@ -157,12 +162,7 @@ function measured(paras: MktgPrintPara[]): MktgPrintRich {
   return { paras, color: '', font: null };
 }
 
-/** The shell's measure takes a text box's insets off the width and adds them to the height: the box a column `w` × `h` of text needs. */
-function textBox(w: number, h: number): MktgPrintPageBox {
-  return { x: 0, y: 0, w: w + 2 * MKTG_PRINT_PAGE_INSET, h: h + 2 * MKTG_PRINT_PAGE_INSET };
-}
-
-/** The height a block of text takes in a column `w` wide, no insets. */
+/** The height a block of text takes in a column `w` wide, no insets (the shell's measure takes a text box's insets off the width and adds them to the height). */
 function textHeight(paras: MktgPrintPara[], w: number): number {
   return mktgPrintRichHeight(measured(paras), w + 2 * MKTG_PRINT_PAGE_INSET) - 2 * MKTG_PRINT_PAGE_INSET;
 }
@@ -170,6 +170,11 @@ function textHeight(paras: MktgPrintPara[], w: number): number {
 /** A type size at a share of itself, rounded as the shell rounds (down to the half point). */
 function scaledSize(size: number, scale: number): number {
   return mktgPrintScaleRich(measured([mktgPrintPara('', size)]), scale).paras[0].size;
+}
+
+/** One line of text at `size`: the room a page keeps free under its rows, so a line the estimate missed never leaves the area. */
+function lineOf(size: number): number {
+  return size * MKTG_PRINT_PAGE_LINE;
 }
 
 /** The items in pairs, in order: `[1, 2], [3, 4], [5]`. */
@@ -186,44 +191,47 @@ export function mktgPrintCardHead(row: BoilerplatesLengthRow): string {
 
 /**
  * The boilerplates as pages of cards (the spec's §1): two to a row in contract order, as many rows to a page as the
- * area holds by the estimated heights. A row taller than the area is set smaller, both cards together, down to the
- * row floor, then the card still over is cut at a sentence. A lone last card closes the part alone only when it is
- * taller than the threshold; otherwise the row before comes down to join it. No lengths give one page with no rows.
+ * area holds by the estimated heights, one body line kept free. A row taller than the budget is set smaller, both
+ * cards together, down to the row floor, then the card still over is cut at a sentence. A lone last card closes the
+ * part alone only when it is taller than the threshold; otherwise the row before comes down to join it. No lengths
+ * give one page with no rows.
  */
 export function paginateBoilerplateCards(
   lengths: BoilerplatesLengthRow[],
   layout: MktgPrintAppendixLayout = MKTG_PRINT_APPENDIX_LAYOUT,
   area: MktgPrintPageBox = MKTG_PRINT_PAGE_AREA
 ): MktgPrintCardPage[] {
-  const textWidth = (area.w - layout.cardColumnGap) / 2 - 2 * layout.cardPaddingX;
+  const budget = area.h - lineOf(MKTG_PRINT_PAGE_SIZE.card);
+  const textWidth = (area.w - layout.cardColumnGap) / 2 - 2 * layout.cardPaddingX - 2 * layout.cardBorder;
+  // The label's tracking widens each character: the head wraps as if the column were narrower by that share.
+  const capsEm = mktgPrintCharEm({ caps: true });
+  const headWidth = (textWidth * capsEm) / (capsEm + layout.cardLabelTracking);
   const frame = 2 * layout.cardPaddingY + 2 * layout.cardBorder;
   const head = (row: BoilerplatesLengthRow) => mktgPrintPara(mktgPrintCardHead(row), MKTG_PRINT_PAGE_SIZE.eyebrow, { weight: 600, caps: true });
   const body = (text: string, size: number) => mktgPrintPara(text, size, { above: layout.cardBodyGap });
-  const cardHeight = (card: { head: string; text: string; size: number }) =>
-    Math.max(
-      layout.cardMinHeight,
-      frame + textHeight([mktgPrintPara(card.head, MKTG_PRINT_PAGE_SIZE.eyebrow, { weight: 600, caps: true }), body(card.text, card.size)], textWidth)
-    );
+  const headHeight = (row: BoilerplatesLengthRow) => textHeight([head(row)], headWidth);
+  const cardHeight = (row: BoilerplatesLengthRow, text: string, size: number) =>
+    Math.max(layout.cardMinHeight, frame + headHeight(row) + textHeight([body(text, size)], textWidth));
   const rows = pairs(lengths).map((pair): MktgPrintCardRow => {
     let scale = 1;
     for (let s = 1; s >= layout.cardRowMinScale - 1e-9; s -= MKTG_PRINT_PAGE_SCALE_STEP) {
       scale = Math.round(s * 100) / 100;
-      if (
-        Math.max(...pair.map((row) => cardHeight({ head: head(row).text, text: row.text, size: scaledSize(MKTG_PRINT_PAGE_SIZE.card, scale) }))) <=
-        area.h + 0.01
-      )
-        break;
+      if (Math.max(...pair.map((row) => cardHeight(row, row.text, scaledSize(MKTG_PRINT_PAGE_SIZE.card, scale)))) <= budget + 0.01) break;
     }
     const cards = pair.map((row): MktgPrintCard => {
-      const room = area.h - frame - textHeight([head(row)], textWidth);
-      const box = textBox(textWidth, room);
-      const fitted = mktgPrintFitOrCut(measured([body(row.text, scaledSize(MKTG_PRINT_PAGE_SIZE.card, scale))]), box.w, box.h, 1);
+      const room = budget - frame - headHeight(row);
+      const fitted = mktgPrintFitOrCut(
+        measured([body(row.text, scaledSize(MKTG_PRINT_PAGE_SIZE.card, scale))]),
+        textWidth + 2 * MKTG_PRINT_PAGE_INSET,
+        room + 2 * MKTG_PRINT_PAGE_INSET,
+        1
+      );
       const text = fitted.rich.paras[0];
       return { index: row.index, head: head(row).text, text: text.text, size: text.size, cut: fitted.cut };
     });
-    return { cards, height: Math.max(...cards.map(cardHeight)), scale };
+    return { cards, height: Math.max(...pair.map((row, i) => cardHeight(row, cards[i].text, cards[i].size))), scale };
   });
-  const fitsPage = (page: MktgPrintCardRow[]) => page.reduce((h, row) => h + row.height, 0) + (page.length - 1) * layout.cardRowGap <= area.h + 0.01;
+  const fitsPage = (page: MktgPrintCardRow[]) => page.reduce((h, row) => h + row.height, 0) + (page.length - 1) * layout.cardRowGap <= budget + 0.01;
   const pages = mktgPrintPaginate(rows, fitsPage);
   const last = pages[pages.length - 1];
   const before = pages[pages.length - 2];
@@ -244,33 +252,82 @@ export function mktgBoilerplatesPageCount(lengths: BoilerplatesLengthRow[]): num
   return paginateBoilerplateCards(lengths).length;
 }
 
-const LIST_LINE = /^\s*(?:[-*]|\d+\.)\s+/;
+/** A line that opens as a list item, as the deck reads one: `- `, `* `, `+ `, `• `, `1. ` or `1) `. */
+const LIST_LINE = /^\s*(?:([-*+•])|(\d+)[.)])\s+/;
 
-/** An answer's restricted Markdown as paragraphs: a line that opens as a list item (`- `, `* `, `1. `) is a bullet paragraph with the list's gap over it. */
-function faqAnswerParas(answer: string, size: number, layout: MktgPrintAppendixLayout): MktgPrintPara[] {
-  const lines = answer
+/** An answer's lines, blank ones dropped, each with its marker by kind. */
+function faqLines(answer: string): MktgPrintFaqLine[] {
+  return answer
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line !== '');
-  return lines.map((line, i) => {
-    const bullet = LIST_LINE.test(line);
-    let above = layout.faqAnswerGap;
-    if (i > 0 && bullet) above = layout.faqListItemGap;
-    return mktgPrintPara(line.replace(LIST_LINE, ''), size, { bullet, above });
-  });
+    .filter((line) => line !== '')
+    .map((line): MktgPrintFaqLine => {
+      const match = LIST_LINE.exec(line);
+      if (!match) return { text: line, marker: '' };
+      return { text: line.slice(match[0].length), marker: match[2] === undefined ? '-' : `${match[2]}.` };
+    });
 }
 
-/** The restricted Markdown an answer's paragraphs read as (after a cut): list items as `- ` lines, paragraphs a blank line apart. */
-function faqAnswerMarkdown(paras: MktgPrintPara[]): string {
-  return paras.map((p, i) => (p.bullet ? `- ${p.text}` : `${i > 0 ? '\n' : ''}${p.text}`)).join('\n');
+/** The lines back as restricted Markdown for the renderer: a list item by its kind, a run of items on consecutive lines, everything else a blank line apart. */
+function faqMarkdown(lines: MktgPrintFaqLine[]): string {
+  return lines
+    .map((line, i) => {
+      const text = line.marker === '' ? line.text : `${line.marker} ${line.text}`;
+      if (i === 0) return text;
+      const inRun = line.marker !== '' && lines[i - 1].marker !== '';
+      return `${inRun ? '\n' : '\n\n'}${text}`;
+    })
+    .join('');
 }
 
 /**
- * The FAQ as pages of a two-column grid (the spec's §2): the pairs in group order flowing row by row, a row as tall
- * as the taller pair; as many rows to a page as fit at 100 %, then 95 %, then 90 % of the sizes, the whole page
- * together; the rest continues on a numbered page. A pair taller than the area alone is set smaller, then its
- * longest text cut at a sentence. An unanswered question prints its label; a source prints its line. No questions
- * give one page with no rows.
+ * The lines as paragraphs at `size` with the deck's gaps: the answer's gap under the question, a run of items through
+ * the shell's bullet paragraphs, a paragraph after a paragraph none, a paragraph after an item and an item after a
+ * paragraph their shares of the size.
+ */
+function faqAnswerParas(lines: MktgPrintFaqLine[], size: number, layout: MktgPrintAppendixLayout): MktgPrintPara[] {
+  const paras: MktgPrintPara[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const afterItem = i > 0 && lines[i - 1].marker !== '';
+    if (lines[i].marker === '') {
+      let above = 0;
+      if (i === 0) above = layout.faqAnswerGap;
+      else if (afterItem) above = size * layout.faqPlainAfterBulletEm;
+      paras.push(mktgPrintPara(lines[i].text, size, { above }));
+      i++;
+      continue;
+    }
+    let end = i;
+    while (end < lines.length && lines[end].marker !== '') end++;
+    const firstAbove = i === 0 ? layout.faqAnswerGap : size * layout.faqBulletAfterPlainEm;
+    paras.push(
+      ...mktgPrintBulletParas(
+        lines.slice(i, end).map((line) => line.text),
+        size,
+        firstAbove
+      )
+    );
+    i = end;
+  }
+  return paras;
+}
+
+/** The lines with the last one marked `…` (the deck's mark of a dropped tail). */
+function withEllipsis(lines: MktgPrintFaqLine[]): MktgPrintFaqLine[] {
+  const last = lines[lines.length - 1];
+  if (!last || last.text.endsWith('…')) return lines;
+  return [...lines.slice(0, -1), { ...last, text: `${last.text.replace(/[\s,;:.—-]+$/, '')}…` }];
+}
+
+/**
+ * The FAQ as pages of a two-column grid (the spec's §2): the pairs in group order flowing row by row, each column
+ * a text box of the deck's (its insets inside), a row as tall as the taller pair; as many rows to a page as fit at
+ * 100 %, then 95 %, then 90 % of the sizes, the whole page together, one answer line kept free; the rest continues
+ * on a numbered page. A pair taller than the budget alone is fitted as the deck fits it: the question whole, the
+ * answer set smaller to the floor, then its trailing paragraphs dropped and the last kept marked `…`, a lone
+ * paragraph still over cut at a sentence. An unanswered question prints its label; a source prints its line. No
+ * questions give one page with no rows.
  */
 export function paginateFaqPairs(
   groups: FaqGroupView[],
@@ -279,38 +336,56 @@ export function paginateFaqPairs(
 ): MktgPrintFaqPage[] {
   const columnWidth = (area.w - layout.faqColumnGap) / 2;
   const sourceSize: number = MKTG_PRINT_PAGE_SIZE.eyebrow;
-  const paras = (entry: MktgPrintFaqEntry, source = sourceSize): MktgPrintPara[] => [
-    mktgPrintPara(entry.question, entry.questionSize, { weight: layout.faqQuestionWeight }),
-    ...(entry.answered
-      ? faqAnswerParas(entry.answer, entry.answerSize, layout)
-      : [mktgPrintPara(MKTG_FAQ_PRINT_UNANSWERED, entry.answerSize, { above: layout.faqAnswerGap })]),
-    ...(entry.source ? [mktgPrintPara(`${MKTG_PRINT_SOURCE_LEAD} · ${entry.source}`, source, { above: layout.faqSourceGap })] : []),
+  const budgetAt = (s: number) => area.h - lineOf(scaledSize(layout.faqAnswerSize, s));
+  const height = (paras: MktgPrintPara[]) => mktgPrintRichHeight(measured(paras), columnWidth);
+  const question = (entry: MktgPrintFaqEntry) => mktgPrintPara(entry.question, entry.questionSize, { weight: layout.faqQuestionWeight });
+  const source = (entry: MktgPrintFaqEntry, size: number): MktgPrintPara[] =>
+    entry.source ? [mktgPrintPara(`${MKTG_PRINT_SOURCE_LEAD} · ${entry.source}`, size, { above: layout.faqSourceGap })] : [];
+  const answer = (entry: MktgPrintFaqEntry, lines: MktgPrintFaqLine[], size: number): MktgPrintPara[] =>
+    entry.answered ? faqAnswerParas(lines, size, layout) : [mktgPrintPara(MKTG_FAQ_PRINT_UNANSWERED, size, { above: layout.faqAnswerGap })];
+  const paras = (entry: MktgPrintFaqEntry, sourceAt = sourceSize): MktgPrintPara[] => [
+    question(entry),
+    ...answer(entry, faqLines(entry.answer), entry.answerSize),
+    ...source(entry, sourceAt),
   ];
+  const fitEntry = (base: MktgPrintFaqEntry, lines: MktgPrintFaqLine[]): MktgPrintFaqEntry => {
+    const budget = budgetAt(1);
+    const fits = (kept: MktgPrintFaqLine[], size: number) =>
+      height([question(base), ...answer(base, kept, size), ...source(base, sourceSize)]) <= budget + 0.01;
+    for (let s = 1; s >= MKTG_PRINT_PAGE_MIN_SCALE - 1e-9; s -= MKTG_PRINT_PAGE_SCALE_STEP) {
+      const size = scaledSize(base.answerSize, s);
+      if (fits(lines, size)) return { ...base, answerSize: size };
+    }
+    const size = scaledSize(base.answerSize, MKTG_PRINT_PAGE_MIN_SCALE);
+    for (let kept = lines.length - 1; kept >= 1; kept--) {
+      const cut = withEllipsis(lines.slice(0, kept));
+      if (fits(cut, size)) return { ...base, answer: faqMarkdown(cut), answerSize: size, cut: true };
+    }
+    if (lines.length === 0) {
+      // Nothing to drop: the question itself is over the budget, so it is cut as any block is.
+      const fitted = mktgPrintFitOrCut(measured(paras(base)), columnWidth, budget);
+      return { ...base, question: fitted.rich.paras[0].text, questionSize: fitted.rich.paras[0].size, cut: fitted.cut };
+    }
+    // One paragraph left and still over: cut its text at a sentence to the room under the question and the source.
+    const room = budget - height([question(base), ...source(base, sourceSize)]);
+    const [para] = answer(base, lines.slice(0, 1), size);
+    const fitted = mktgPrintFitOrCut(measured([para]), columnWidth, room + 2 * MKTG_PRINT_PAGE_INSET, 1);
+    return { ...base, answer: faqMarkdown([{ ...lines[0], text: fitted.rich.paras[0].text }]), answerSize: size, cut: true };
+  };
   const entries = groups.flatMap((group) =>
     group.questions.map((row): MktgPrintFaqEntry => {
+      const lines = row.answered ? faqLines(row.answer) : [];
       const base: MktgPrintFaqEntry = {
         path: row.path,
         question: row.question,
-        answer: row.answered ? row.answer : '',
+        answer: faqMarkdown(lines),
         answered: row.answered,
         source: row.source,
         questionSize: layout.faqQuestionSize,
         answerSize: layout.faqAnswerSize,
         cut: false,
       };
-      if (textHeight(paras(base), columnWidth) <= area.h + 0.01) return base;
-      const box = textBox(columnWidth, area.h);
-      const fitted = mktgPrintFitOrCut(measured(paras(base)), box.w, box.h);
-      const [question, answer, ...rest] = fitted.rich.paras;
-      const answerParas = [answer, ...rest].slice(0, row.source ? -1 : undefined);
-      return {
-        ...base,
-        question: question.text,
-        answer: row.answered ? faqAnswerMarkdown(answerParas) : '',
-        questionSize: question.size,
-        answerSize: answer.size,
-        cut: fitted.cut,
-      };
+      return height(paras(base)) <= budgetAt(1) + 0.01 ? base : fitEntry(base, lines);
     })
   );
   const sized = (entry: MktgPrintFaqEntry, s: number): MktgPrintFaqEntry => ({
@@ -318,10 +393,9 @@ export function paginateFaqPairs(
     questionSize: scaledSize(entry.questionSize, s),
     answerSize: scaledSize(entry.answerSize, s),
   });
-  const rowHeight = (row: MktgPrintFaqEntry[], s: number) =>
-    Math.max(...row.map((entry) => textHeight(paras(sized(entry, s), scaledSize(sourceSize, s)), columnWidth)));
+  const rowHeight = (row: MktgPrintFaqEntry[], s: number) => Math.max(...row.map((entry) => height(paras(sized(entry, s), scaledSize(sourceSize, s)))));
   const fitsAt = (page: MktgPrintFaqEntry[][], s: number) =>
-    page.reduce((h, row) => h + rowHeight(row, s), 0) + (page.length - 1) * layout.faqRowGap <= area.h + 0.01;
+    page.reduce((h, row) => h + rowHeight(row, s), 0) + (page.length - 1) * layout.faqRowGap <= budgetAt(s) + 0.01;
   const smallest = layout.faqPageScales[layout.faqPageScales.length - 1] ?? 1;
   const pages = mktgPrintPaginate(pairs(entries), (page) => fitsAt(page, smallest));
   if (pages.length === 0) return [{ title: MKTG_PRINT_SECTION_TITLES.faq, scale: 1, sourceSize, rows: [] }];
