@@ -9439,6 +9439,126 @@ describe('ImplementationTabComponent google exclusions', () => {
   });
 });
 
+/** Display placement exclusions (campaign-service v1.0.31, #462). */
+describe('ImplementationTabComponent display placement exclusions', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  function seedPlacements(text: string, patch: Record<string, unknown> = { includeDisplay: true }): Record<string, any> {
+    const c = seedChannel(fixture, patch);
+    c['campaignForm'].controls.googleExcludedPlacements.setValue(text);
+    fixture.detectChanges();
+    return c;
+  }
+
+  it('shows the box on Display alone and sends each non-blank line, trimmed', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedPlacements(' spam.example \n\nnews.example.org\n');
+    expect(query('implementation-google-excluded-placements-section')).not.toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['excludedPlacements']).toEqual(['spam.example', 'news.example.org']);
+  });
+
+  it.each([
+    ['search', { includeSearch: true }],
+    ['demand-gen', { includeDemandGen: true }],
+    ['performance-max', { includePerformanceMax: true }],
+  ])('hides the box on %s, holds what was typed and says so', (_channel, patch) => {
+    const c = seedPlacements('spam.example\nhttps://bad.example', { includeDisplay: true });
+    c['campaignForm'].patchValue({ includeDisplay: false, ...patch });
+    fixture.detectChanges();
+
+    expect(query('implementation-google-excluded-placements-section')).toBeNull();
+    expect(c['googleTargetingPayload']()).not.toHaveProperty('excludedPlacements');
+    // Held, not judged: the scheme would be refused on Display, but nothing is sent.
+    expect(c['googleExcludedPlacementsError']()).toBeNull();
+    const held = 'do not take placement exclusions, so the 2 you entered will not be sent. Switch the channel back to Display to send them.';
+    expect(query('implementation-google-excluded-placements-held')?.textContent).toContain(held);
+    expect(query('implementation-google-excluded-placements-held-live')?.textContent).toContain(held);
+    expect(c['campaignForm'].controls.googleExcludedPlacements.value).toContain('spam.example');
+  });
+
+  it('says nothing held when the box is empty off Display', () => {
+    seedPlacements('  \n', { includeSearch: true });
+    expect(query('implementation-google-excluded-placements-held')).toBeNull();
+    expect(query('implementation-google-excluded-placements-held-live')?.textContent.trim()).toBe('');
+  });
+
+  it.each([
+    ['a scheme', 'https://spam.example', 'starts with a scheme'],
+    ['a path', 'spam.example/news', 'must be a bare domain'],
+    ['a port', 'spam.example:8080', 'must be a bare domain'],
+    ['a non-ASCII name', 'bücher.example', 'is not plain ASCII'],
+    ['a single label', 'localhost', 'is not a domain name'],
+    ['an IPv4 literal', '192.168.0.1', 'is not a domain name'],
+    ['501 entries', Array.from({ length: 501 }, (_v, i) => `site${i}.example`).join('\n'), 'at most 500 placement exclusions'],
+  ])('holds Create on %s, with the reason under the box and in the live region', (_label, text, fragment) => {
+    const c = seedPlacements(`ok.example\n${text}`);
+
+    expect(c['googleExcludedPlacementsError']()).toContain(fragment);
+    expect(c['canSubmit']()).toBe(false);
+    expect(query('implementation-google-excluded-placements-error')?.textContent).toContain(fragment);
+    expect(query('implementation-google-excluded-placements-error-live')?.textContent).toContain(fragment);
+  });
+
+  it('accepts exactly 500 entries', () => {
+    const c = seedPlacements(Array.from({ length: 500 }, (_v, i) => `site${i}.example`).join('\n'));
+    expect(c['googleExcludedPlacementsError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('sends the same request with the box empty as with text held off Display', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const requestFrom = async (f: ComponentFixture<ImplementationTabComponent>, patch: Record<string, unknown>, text: string | null): Promise<string> => {
+      const c = seedChannel(f, patch);
+      if (text !== null) c['campaignForm'].controls.googleExcludedPlacements.setValue(text);
+      f.detectChanges();
+      createCampaign.mockClear();
+      c['submit']();
+      await f.whenStable();
+      return JSON.stringify(createCampaign.mock.calls[0][0]);
+    };
+    for (const [patch, text] of [
+      [{ includeDisplay: true }, '  \n '],
+      [{ includeSearch: true }, 'spam.example'],
+    ] as const) {
+      const before = await requestFrom(fixture, patch, null);
+      const other = TestBed.createComponent(ImplementationTabComponent);
+      other.detectChanges();
+      await other.whenStable();
+      const after = await requestFrom(other, patch, text);
+      expect(after).toBe(before);
+      expect(after).not.toContain('excludedPlacements');
+    }
+  });
+
+  it('round-trips the box through a draft, restores only a string, and empties it for a new brief', () => {
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const c = seedPlacements('spam.example\n');
+    c['emitDraft']();
+    expect(emitted?.googleExcludedPlacements).toBe('spam.example\n');
+
+    c['resetGoogleFields']();
+    expect(c['campaignForm'].controls.googleExcludedPlacements.value).toBe('');
+    restoreGoogleDraft(fixture, c, { googleExcludedPlacements: 'news.example.org' });
+    expect(c['campaignForm'].controls.googleExcludedPlacements.value).toBe('news.example.org');
+    restoreGoogleDraft(fixture, c, { googleExcludedPlacements: ['bad'] as unknown as string });
+    expect(c['campaignForm'].controls.googleExcludedPlacements.value).toBe('news.example.org');
+  });
+});
+
 /**
  * The Search campaign's display paths, second and third ads, and create-time negative keywords (#4991).
  */

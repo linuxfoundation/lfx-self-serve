@@ -1440,6 +1440,9 @@ describe('CampaignController.createCampaign cutover', () => {
         ],
       },
     ],
+    // Display placement exclusions (#462), bounded at upstream's own cap of 500, not the creative lists' 100.
+    ['a placement exclusion list above 500', { excludedPlacements: Array.from({ length: 501 }, (_v, i) => `site${i}.example`) }],
+    ['an oversized placement exclusion', { excludedPlacements: [`${'a'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}.example`] }],
     ['an oversized conversion-action list', { conversionActions: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `a-${i}`) }],
     ['an oversized callout list', { callouts: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `c-${i}`) }],
     ['an oversized callout, which would otherwise reach the trim', { callouts: [`x${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}x`] }],
@@ -3817,6 +3820,7 @@ describe('CampaignController.createCampaign cutover', () => {
       additionalSearchAds: [{ headlines: ['Register today'], descriptions: ['Join the community in Salt Lake City.'] }],
       negativeKeywords: [{ text: 'free tickets', matchType: 'Exact' }],
       searchPartners: true,
+      excludedPlacements: ['spam.example'],
     };
     const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
 
@@ -3858,6 +3862,21 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(legacyCreate).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenVideoCreative' });
+    });
+
+    it('refuses a Display create with placement exclusions by name while the cutover is dark (#462)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], excludedPlacements: ['spam.example'] }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'excludedPlacements' });
     });
 
     it('refuses a Demand Gen create split into ad groups by name while the cutover is dark (#5226)', async () => {
@@ -5345,6 +5364,71 @@ describe('CampaignController.createCampaign cutover', () => {
 
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(refusalFrom().field).toBe('additionalSearchAds.headlines');
+    });
+  });
+
+  describe('Display placement exclusions (#462)', () => {
+    const create = async (fields: Record<string, unknown>, campaignTypes = ['display']): Promise<void> => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes, ...fields }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    };
+
+    it('forwards the list on Display, each entry trimmed, repeats kept for upstream to fold', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000462a', error: null });
+
+      await create({ excludedPlacements: [' spam.example ', 'news.example.org', 'SPAM.example'] });
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config['excludedPlacements']).toEqual(['spam.example', 'news.example.org', 'SPAM.example']);
+    });
+
+    it('accepts exactly 500 entries', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000462b', error: null });
+
+      await create({ excludedPlacements: Array.from({ length: 500 }, (_v, i) => `site${i}.example`) });
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown[]>)['excludedPlacements']).toHaveLength(500);
+    });
+
+    it('leaves the request byte-identical when no list, a null or an empty list is sent', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000462c', error: null });
+      await create({ displayCreative: { headlines: ['Join us'] } });
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      for (const excludedPlacements of [[], null]) {
+        createCampaigns.mockClear();
+        await create({ displayCreative: { headlines: ['Join us'] }, excludedPlacements });
+        expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+      }
+      expect(without).not.toContain('excludedPlacements');
+    });
+
+    it.each([
+      ['a value that is not a list', { excludedPlacements: 'spam.example' }, ['display'], 'must be a list of website domains'],
+      ['a non-string entry', { excludedPlacements: ['spam.example', 7] }, ['display'], 'must be a list of website domains'],
+      ['a malformed list on another channel', { excludedPlacements: { a: 1 } }, ['search'], 'must be a list of website domains'],
+      ['a blank entry', { excludedPlacements: ['spam.example', '  '] }, ['display'], 'Placement exclusion 2 is blank'],
+      ['a scheme', { excludedPlacements: ['https://spam.example'] }, ['display'], 'starts with a scheme'],
+      ['a path', { excludedPlacements: ['spam.example/news'] }, ['display'], 'must be a bare domain'],
+      ['a non-ASCII name', { excludedPlacements: ['bücher.example'] }, ['display'], 'is not plain ASCII'],
+      ['a single label', { excludedPlacements: ['localhost'] }, ['display'], 'is not a domain name'],
+      ['a list on Search', { excludedPlacements: ['spam.example'] }, ['search'], 'only on Display campaigns, not on Search campaigns'],
+      ['a list on Demand Gen', { excludedPlacements: ['spam.example'] }, ['demand-gen'], 'only on Display campaigns, not on Demand Gen campaigns'],
+      ['a list on Performance Max', { excludedPlacements: ['spam.example'] }, ['performance-max'], 'only on Display campaigns'],
+    ])('refuses %s by name before any upstream call', async (_label, fields, campaignTypes, fragment) => {
+      await create(fields, campaignTypes);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'excludedPlacements', message: expect.stringContaining(fragment) });
+    });
+
+    it('builds the key on Display alone, whatever the body carries', () => {
+      const build = (controller as unknown as { googleExcludedPlacements: (body: unknown, channel: string) => unknown }).googleExcludedPlacements.bind(
+        controller
+      );
+      const body = { excludedPlacements: [' spam.example ', 7] };
+      expect(build(body, 'display')).toEqual({ excludedPlacements: ['spam.example'] });
+      for (const channel of ['search', 'demand-gen', 'performance-max', 'video']) expect(build(body, channel)).toEqual({});
     });
   });
 

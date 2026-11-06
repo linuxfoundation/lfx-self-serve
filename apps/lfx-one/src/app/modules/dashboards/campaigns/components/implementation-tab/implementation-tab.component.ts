@@ -109,6 +109,7 @@ import {
   GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN,
   GOOGLE_ADS_LANGUAGE_LABELS,
   GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
+  GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS,
   GOOGLE_ADS_MAX_CALL_EXTENSIONS,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
@@ -151,6 +152,7 @@ import {
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
+  GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
@@ -364,6 +366,7 @@ import {
   googleDemandGenAudiencesRefusal,
   googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
+  googleExcludedPlacementsRefusal,
   googleCreativeImageRequirement,
   googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
@@ -1238,6 +1241,9 @@ export class ImplementationTabComponent implements OnInit {
     googleTargetRoas: [''],
     googleCpcBid: [''],
     googleConversionActions: [''],
+    // Display placement exclusions (#462), one domain per line, kept whichever channel is picked and
+    // sent only on Display (`googleExcludedPlacementsAvailable`).
+    googleExcludedPlacements: [''],
     // The LinkedIn ad account, geo targets and targeting profile, on the FORM rather than in
     // signals (LFXV2-3230). All three are user-editable — a select, an add/remove chip list and a
     // two-button toggle — and all three used to be destroyed by a tab switch, then silently
@@ -3484,6 +3490,8 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && (this.googleAdSchedulesError() !== null || this.googleDeviceBidModifiersError() !== null)) return false;
     // A demographic exclusion or excluded location the BFF would refuse; the message is under the exclusions panel.
     if (googleSelected && (this.googleDemographicExclusionsError() !== null || this.googleExcludedGeoTargetsError() !== null)) return false;
+    // A placement exclusion campaign-service would refuse (#462); the message is under the box.
+    if (googleSelected && this.googleExcludedPlacementsError() !== null) return false;
     // A display path, further ad or negative keyword the BFF would refuse; the message is under the Search ads panel.
     if (
       googleSelected &&
@@ -3823,6 +3831,13 @@ export class ImplementationTabComponent implements OnInit {
    * compares for the clash. `canSubmit` blocks on it.
    */
   protected readonly googleExcludedGeoTargetsError: Signal<string | null> = this.initGoogleExcludedGeoTargetsError();
+  /** Whether the placement exclusions box shows and is sent: Display on the campaign-service road (#462). */
+  protected readonly googleMaxExcludedPlacements = GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS;
+  protected readonly googleExcludedPlacementsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS));
+  /** The shared placement refusal over the lines the request sends, or `null`; `canSubmit` blocks on it. */
+  protected readonly googleExcludedPlacementsError: Signal<string | null> = this.initGoogleExcludedPlacementsError();
+  /** The placement exclusions a channel other than Display holds back, said out loud; `''` when none are held. */
+  protected readonly googleExcludedPlacementsHeldMessage: Signal<string> = this.initGoogleExcludedPlacementsHeldMessage();
   /**
    * Whether the Search ads panel shows, and so whether the request carries its Search partners
    * opt-in, paths, further ads and negatives: Search on the campaign-service road, the one channel
@@ -7309,6 +7324,10 @@ export class ImplementationTabComponent implements OnInit {
     // Emitting, not silent: the format decides which creative group `googleCreativeSections` renders,
     // and that memo re-reads the control only when `campaignFormRevision` moves. A silent write was
     // correct only while nothing read the sections between the patch above and this line.
+    // The placement exclusions box (#462), restored only as a string, as the bidding text is.
+    if (typeof draft.googleExcludedPlacements === 'string') {
+      this.campaignForm.controls.googleExcludedPlacements.setValue(draft.googleExcludedPlacements, { emitEvent: false });
+    }
     if (draft.demandGenAdFormat === 'image' || draft.demandGenAdFormat === 'video') {
       this.campaignForm.controls.demandGenAdFormat.setValue(draft.demandGenAdFormat);
     }
@@ -7791,6 +7810,7 @@ export class ImplementationTabComponent implements OnInit {
       googleTargetRoas: form.googleTargetRoas,
       googleCpcBid: form.googleCpcBid,
       googleConversionActions: form.googleConversionActions,
+      googleExcludedPlacements: form.googleExcludedPlacements,
       // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
       // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
       // the parent holds a value, not a live view of a signal this component is about to destroy.
@@ -8214,6 +8234,7 @@ export class ImplementationTabComponent implements OnInit {
       googleTargetRoas: '',
       googleCpcBid: '',
       googleConversionActions: '',
+      googleExcludedPlacements: '',
     });
     for (const { groupName } of GOOGLE_CREATIVE_GROUPS) {
       this.creativeGroup(groupName).reset();
@@ -10092,6 +10113,31 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /** {@link googleExcludedPlacementsError}: the shared judge over exactly what `googleTargetingPayload` sends, on Display alone. */
+  private initGoogleExcludedPlacementsError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.googleExcludedPlacementsAvailable()) return null;
+      const placements = this.splitCreativeLines(this.campaignForm.controls.googleExcludedPlacements.value);
+      return placements.length === 0 ? null : googleExcludedPlacementsRefusal(placements);
+    });
+  }
+
+  /**
+   * Placement exclusions entered under Display and held after a switch to another channel (#462), which
+   * `googleTargetingPayload` does not send. Counted as the request would count them.
+   */
+  private initGoogleExcludedPlacementsHeldMessage(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel || this.googleExcludedPlacementsAvailable()) return '';
+      void this.campaignFormRevision();
+      const count = this.splitCreativeLines(this.campaignForm.controls.googleExcludedPlacements.value).length;
+      if (count === 0) return '';
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take placement exclusions, so the ${count} you entered will not be sent. Switch the channel back to Display to send them.`;
+    });
+  }
+
   /**
    * Ids entered under a channel that takes conversion actions, held when the dispatched channel is one
    * LFX One sends none on (Performance Max, see {@link GOOGLE_CONVERSION_ACTION_CHANNELS}):
@@ -10491,6 +10537,9 @@ export class ImplementationTabComponent implements OnInit {
     }
     const excluded = this.googleExcludedGeoTargets();
     if (this.googleExcludedGeoTargetsAvailable() && excluded.length > 0) payload.excludedGeoTargets = [...excluded];
+    // Display placement exclusions (#462), one per non-blank line, trimmed; repeats are left for upstream to fold.
+    const placements = this.splitCreativeLines(this.campaignForm.controls.googleExcludedPlacements.value);
+    if (this.googleExcludedPlacementsAvailable() && placements.length > 0) payload.excludedPlacements = placements;
     return payload;
   }
 

@@ -193,6 +193,13 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
   {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
 </div>
+<!-- Display placement exclusions (#462): the refusal, and the list held after a switch off Display. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-excluded-placements-error-live">
+  {{ googleExcludedPlacementsError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-excluded-placements-held-live">
+  {{ googleExcludedPlacementsHeldMessage() }}
+</div>
 <!-- Conversion actions held by a channel that takes none, announced on the same terms. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-actions-withheld-live">
   {{ googleConversionActionsWithheldMessage() }}
@@ -1160,6 +1167,42 @@
       }
       @if (googleTargetingWithheldMessage(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-targeting-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+
+      <!--
+        Google Ads: Display placement exclusions (#462). DISPLAY ONLY, as campaign-service attaches them
+        only on the Display cascade; on another channel the box is hidden and what it holds is kept but
+        not sent, and the note below says so. Empty sends no key.
+      -->
+      @if (googleExcludedPlacementsAvailable()) {
+        <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-excluded-placements-section">
+          <label class="text-xs font-medium text-gray-700" for="google-excluded-placements">Placement exclusions (one website per line)</label>
+          <lfx-textarea
+            [form]="campaignForm"
+            control="googleExcludedPlacements"
+            inputId="google-excluded-placements"
+            [rows]="4"
+            placeholder="example.com"
+            [describedBy]="
+              googleExcludedPlacementsError() ? 'google-excluded-placements-hint google-excluded-placements-error' : 'google-excluded-placements-hint'
+            "
+            [invalid]="!!googleExcludedPlacementsError()"
+            data-testid="implementation-google-excluded-placements" />
+          <span id="google-excluded-placements-hint" class="text-xs text-gray-500">
+            Websites this campaign's ads must never appear on, as bare domains such as example.com, up to {{ googleMaxExcludedPlacements }}. Leave out https://
+            and any path.
+          </span>
+          @if (googleExcludedPlacementsError(); as error) {
+            <span id="google-excluded-placements-error" class="text-xs text-red-600" data-testid="implementation-google-excluded-placements-error">{{
+              error
+            }}</span>
+          }
+        </div>
+      }
+      @if (googleExcludedPlacementsHeldMessage(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-excluded-placements-held">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }

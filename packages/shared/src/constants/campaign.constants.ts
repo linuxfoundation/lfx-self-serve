@@ -4722,6 +4722,8 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'negativeKeywords', label: 'negative keywords' },
   // `false` asks for nothing (Google Search only), like an empty list: see `unservedGoogleCriteriaField`.
   { field: 'searchPartners', label: 'Search partners' },
+  // Display placement exclusions (#462), judged in `validateDisplayTargeting`.
+  { field: 'excludedPlacements', label: 'placement exclusions' },
   // The bidding plan and the per-channel creative (#3568), judged by what the cutover's own
   // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
   // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
@@ -4895,6 +4897,23 @@ export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
  * there too (linuxfoundation/lfx-v2-campaign-service#461): this application has not opened extensions on that channel.
  */
 export const GOOGLE_CHANNELS_WITH_SITELINKS = ['search', 'demand-gen'] as const;
+
+/**
+ * The Google channels this application sends placement exclusions on: Display alone. campaign-service
+ * v1.0.31 attaches `excludedPlacements` only on the Display cascade and refuses a non-empty list on
+ * every other channel (`validateDisplayTargeting`, `internal/platform/googleads/display_targeting.go`).
+ */
+export const GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS = ['display'] as const;
+
+/**
+ * The most placement exclusions one Display campaign takes: campaign-service's `maxExcludedPlacements`
+ * (`display_targeting.go`), a service sanity cap on the one `campaignCriteria:mutate`, not Google's.
+ * Counted on the list as sent, before upstream folds repeats.
+ */
+export const GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS = 500;
+
+/** The longest domain a placement exclusion may name, in bytes: campaign-service's `maxPlacementDomainBytes`, the DNS limit. */
+export const GOOGLE_ADS_MAX_PLACEMENT_DOMAIN_BYTES = 253;
 
 /**
  * The Google channels that accept audience segments — Search and nothing else.

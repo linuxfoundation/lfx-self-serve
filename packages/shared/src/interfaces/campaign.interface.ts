@@ -1641,6 +1641,11 @@ export interface CampaignImplementationDraft {
   googleTargetRoas?: string;
   googleCpcBid?: string;
   googleConversionActions?: string;
+  /**
+   * The Display placement exclusions box verbatim, one domain per line, unsplit and untrimmed, kept
+   * whichever channel is picked. Absent leaves the form alone.
+   */
+  googleExcludedPlacements?: string;
 }
 
 /**
@@ -3844,6 +3849,15 @@ export interface CampaignCreateRequest {
    * says. The two are compared by RESOLVED id, so `US` in one list and `2840` in the other clash.
    */
   excludedGeoTargets?: string[];
+  /**
+   * Websites a Display campaign must never appear on, as bare domains (`example.com`), attached
+   * upstream as campaign-level negative placement criteria (campaign-service v1.0.31,
+   * `googleAdsConfig.excludedPlacements`, #462). DISPLAY ONLY: campaign-service refuses the list on
+   * every other channel (`validateDisplayTargeting`). Optional and OMITTED when empty. At most
+   * `GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS`; a scheme, path or port is refused rather than stripped
+   * (`validateExcludedPlacements`).
+   */
+  excludedPlacements?: string[];
   /**
    * Radius targeting around points — "everyone within N miles of the venue" — which is the one
    * location shape that is not a place in Google's geo table.

@@ -35,6 +35,7 @@ import {
   googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
 } from '@lfx-one/shared/utils/campaign-google-demand-gen-ad-groups.utils';
+import { googleExcludedPlacementsRefusal } from '@lfx-one/shared/utils/campaign-google-placements.utils';
 import { googleDemandGenVideoCreativeRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-video.utils';
 import { googleCampaignAudienceSegmentFault, googleCampaignAudienceSegmentsRefusal } from '@lfx-one/shared/utils/campaign-google-user-lists.utils';
 import {
@@ -143,6 +144,7 @@ import {
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_AD_SCHEDULES,
   GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
+  GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CAMPAIGN_AUDIENCE_SEGMENT_ENTRIES,
@@ -187,6 +189,7 @@ import {
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
+  GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
@@ -1572,6 +1575,14 @@ export class CampaignController {
           next(
             ServiceValidationError.forField(searchAdsRefusal.field, searchAdsRefusal.message, { operation: 'campaign_create', service: 'campaign_controller' })
           );
+          return;
+        }
+
+        // Display placement exclusions (#462): refused by name off Display, as `validateDisplayTargeting`
+        // refuses them, and on Display through the same shared judge the Implement tab holds Create on.
+        const placementsRefusal = this.googleExcludedPlacementsRefusal(body, googleChannel);
+        if (placementsRefusal) {
+          next(ServiceValidationError.forField('excludedPlacements', placementsRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
           return;
         }
 
@@ -6402,6 +6413,9 @@ export class CampaignController {
         // helper withholds them on every other channel. Normalized only — `createCampaign` names every
         // sitelink refusal first.
         ...this.googleSitelinks(body, selectedChannels[0]),
+        // Display alone takes placement exclusions (#462); the gate inside the helper withholds them
+        // elsewhere. Normalized only — `createCampaign` names every refusal first.
+        ...this.googleExcludedPlacements(body, selectedChannels[0]),
         ...creative,
       };
     }
@@ -6544,6 +6558,38 @@ export class CampaignController {
     const negativesRefusal = googleCreateNegativeKeywordsRefusal(raw['negativeKeywords']);
     if (negativesRefusal) return { field: 'negativeKeywords', message: negativesRefusal };
     return null;
+  }
+
+  /**
+   * Why campaign-service would refuse this create's Display placement exclusions (#462), or `null`.
+   * An absent, `null` or empty list asks for nothing on any channel. Anything else that is not a list
+   * of strings is refused on every channel, as Go's decode into `[]string` refuses it. Off Display a
+   * non-empty list is refused by name (`validateDisplayTargeting`); on Display every entry goes through
+   * `googleExcludedPlacementsRefusal`, which mirrors `validateExcludedPlacements`.
+   */
+  private googleExcludedPlacementsRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
+    const raw: unknown = (body as unknown as Record<string, unknown>)['excludedPlacements'];
+    if (raw === undefined || raw === null || (Array.isArray(raw) && raw.length === 0)) return null;
+    if (!Array.isArray(raw) || raw.some((entry) => typeof entry !== 'string')) return googleExcludedPlacementsRefusal(raw);
+    if (typeof googleChannel === 'string' && !(GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS as readonly string[]).includes(googleChannel)) {
+      const channelLabel = GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel;
+      return `Google Ads takes placement exclusions only on Display campaigns, not on ${channelLabel} campaigns. Clear them or pick Display, then create again.`;
+    }
+    return googleExcludedPlacementsRefusal(raw);
+  }
+
+  /**
+   * `excludedPlacements` as dispatched (#462), spread-ready, on Display alone: strings only, each
+   * trimmed as Go trims it. Blanks are KEPT so they are refused by name, and repeats are kept for
+   * upstream to fold. `{}` when empty, so a create without the list is byte-identical to one made
+   * before it existed.
+   */
+  private googleExcludedPlacements(body: CampaignCreateRequest, channel: GoogleCampaignChannel): { excludedPlacements?: string[] } {
+    if (!(GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS as readonly string[]).includes(channel)) return {};
+    const raw: unknown = body?.excludedPlacements;
+    if (!Array.isArray(raw)) return {};
+    const placements = raw.filter((entry): entry is string => typeof entry === 'string').map((entry) => googleAdsTrimSpace(entry));
+    return placements.length > 0 ? { excludedPlacements: placements } : {};
   }
 
   /**
@@ -7233,6 +7279,18 @@ export class CampaignController {
     for (const [key, source, listMax] of candidates) {
       const found = this.oversizedBoundableField(key, source, listMax);
       if (found !== null) return found;
+    }
+
+    // Display placement exclusions (#462), bounded at upstream's own cap of 500 rather than the creative
+    // lists' 100, which would refuse a list campaign-service accepts; each entry like any other string.
+    const placements = raw['excludedPlacements'];
+    if (Array.isArray(placements)) {
+      if (placements.length > GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS) {
+        return { field: 'excludedPlacements', message: `the list exceeds the maximum of ${GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS} entries` };
+      }
+      if (placements.some((entry) => typeof entry === 'string' && this.boundedLength(entry) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH)) {
+        return { field: 'excludedPlacements', message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
+      }
     }
 
     // The named Demand Gen ad groups and the single group's several ads (#5226): each list, each name,
