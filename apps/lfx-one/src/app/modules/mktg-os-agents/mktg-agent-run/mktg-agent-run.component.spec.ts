@@ -3152,6 +3152,9 @@ describe('MktgAgentRunComponent', () => {
     it('reads the intake intro while Download PDF is on, and its Slides-only intro, naming no PDF, while the flag is off (#5302)', async () => {
       const intake = MKTG_AGENT_INTAKES['brand-kit'];
       if (!intake?.introSlidesOnly) throw new Error('The Brand Kit intake carries a Slides-only intro');
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
       const intro = () => query('mktg-agent-run-form-intro')?.textContent?.trim();
       expect(intro()).toBe(intake.intro);
       expect(intro()).toContain('downloads as a 16-page PDF');
