@@ -585,3 +585,24 @@ describe('ProjectApplicationFormComponent duplicate project name warning (#5251)
     expect(note()).toBeNull();
   });
 });
+
+describe('ProjectApplicationFormComponent browser autofill hints (#5251)', () => {
+  it('marks the website and repository URL fields for URL autofill and the legal email for email autofill', async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ProjectApplicationFormComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), MessageService],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ProjectApplicationFormComponent);
+    fixture.componentRef.setInput('initialAnswers', { ...VALID, legal_contact_email: 'legal@example.org' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+    const hint = (dataTest: string): string | null => root.querySelector(`input[data-test="${dataTest}"]`)?.getAttribute('autocomplete') ?? null;
+
+    expect(hint('project-application-form-website')).toBe('url');
+    expect(hint('project-application-form-repository')).toBe('url');
+    expect(hint('project-application-form-legal')).toBe('email');
+  });
+});
