@@ -27,8 +27,7 @@ export class MktgBrandKitPrintComponent {
   public readonly projectName = input.required<string>();
   /** Only the family exporter supplies the document prefix. */
   public readonly number = input('');
-  /** The running head: the project, the asset and the revision the page shows (the deck cover's `V3.0`). */
-  protected readonly head = computed(() => `${this.projectName()} Brand kit · ${this.view().versionLabel}`);
+  protected readonly head = computed(() => `${this.projectName()} Brand kit`);
   protected readonly typeNote = computed(() => {
     const { summary, note } = this.view().type;
     const normalize = (text: string) =>

@@ -37,10 +37,11 @@ it('prints five native portrait chapters with branded heads, real SVG logo asset
   const heads = root.querySelectorAll('[data-testid="mktg-print-running-head"]');
   expect(heads).toHaveLength(5);
   heads.forEach((head) => {
-    expect(head.textContent).toContain('Synthetic project Brand kit · V3.0');
+    expect(head.textContent).toContain('Synthetic project Brand kit');
     expect(head.textContent).not.toContain('Project One');
     expect(head.textContent).not.toContain('02');
   });
+  expect(root.textContent).not.toContain('V3.0');
   expect(root.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V3.0');
   expect(root.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
   expect(root.querySelectorAll('lfx-mktg-print-chapter-header')).toHaveLength(5);

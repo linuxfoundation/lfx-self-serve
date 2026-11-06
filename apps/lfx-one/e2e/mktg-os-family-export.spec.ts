@@ -246,8 +246,7 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   expect(usageBox.height).toBeCloseTo((36 * 96) / 25.4, 0);
   await expect(printDocument.getByTestId('kit-print-usage-pair')).toHaveCount(2);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).not.toContainText('SVG supplied');
-  // The kit's running head carries the printed version (the deck cover's form); the book's own plates do not reach the print.
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print').getByTestId('mktg-print-running-head').first()).toContainText('Brand kit · V1.0');
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print')).not.toContainText('V1.0');
   await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).toContainText('02.5 Voice in brief');
   await page.screenshot({ path: info.outputPath('four-assets-print-document.png'), fullPage: true });
