@@ -164,7 +164,7 @@ describe('OrganizationSearchComponent with resolveOnSelect=false', () => {
 
   function type(text: string): void {
     searchInput().value = text;
-    searchInput().dispatchEvent(new Event('input'));
+    searchInput().dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   function completeSearch(query: string): void {
@@ -235,6 +235,24 @@ describe('OrganizationSearchComponent with resolveOnSelect=false', () => {
     expect(searchInput().value).toBe('Acme Motors');
     expect(fixture.componentInstance.manualMode()).toBe(false);
     http.expectNone(RESOLVE_URL);
+  });
+
+  it('mirrors each keystroke immediately, so a submit inside the search debounce sends the full text', async () => {
+    type('Ac');
+    type('Acme');
+    await fixture.whenStable();
+
+    expect(form.get('organization')?.value).toBe('Acme');
+  });
+
+  it('marks the parent control touched on blur so an empty required field shows its error', async () => {
+    expect(form.get('organization')?.touched).toBe(false);
+
+    searchInput().dispatchEvent(new Event('blur'));
+    await fixture.whenStable();
+
+    expect(form.get('organization')?.touched).toBe(true);
+    expect(form.get('organization')?.hasError('required')).toBe(true);
   });
 
   it('does not trim the visible input while typing a trailing space', async () => {

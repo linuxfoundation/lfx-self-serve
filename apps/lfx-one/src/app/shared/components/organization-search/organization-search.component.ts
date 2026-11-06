@@ -236,6 +236,22 @@ export class OrganizationSearchComponent {
     if (this.resolveOnSelect()) {
       return;
     }
+    const nameControlName = this.nameControl();
+    // The inner box binds a private control, so the parent never learns it was visited; without this
+    // an empty required field stays silent until submit.
+    if (nameControlName) {
+      this.form().get(nameControlName)?.markAsTouched();
+    }
+    this.onSearchInput();
+  }
+
+  /** Mirrors the live box text into the parent control on every native input event. The debounced
+   *  completeMethod lags ~300 ms behind a keystroke, so a submit (Enter) inside that window would
+   *  otherwise send a truncated name. Only wired for resolveOnSelect=false; a no-op otherwise. */
+  public onSearchInput(): void {
+    if (this.resolveOnSelect()) {
+      return;
+    }
     const liveValue = this.host.nativeElement.querySelector('input')?.value;
     if (liveValue === undefined) {
       return;
