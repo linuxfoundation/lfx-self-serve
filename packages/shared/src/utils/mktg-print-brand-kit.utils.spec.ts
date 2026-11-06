@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { BRAND_KIT_ICON_SAMPLES } from '../constants/brand-kit-icons.constants';
 import { BRAND_KIT_BOOK_PAGES } from '../constants/brand-kit.constants';
 import { MKTG_PRINT_BRAND_KIT_CONTRAST_ROWS_PER_PAGE, MKTG_PRINT_BRAND_KIT_ICON_SLOT } from '../constants/mktg-print-brand-kit.constants';
-import { MKTG_PRINT_PAGE_RIGHT } from '../constants/mktg-print-page.constants';
+import { MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX, MKTG_PRINT_PAGE_RIGHT } from '../constants/mktg-print-page.constants';
 import { MKTG_PRINT_INK_ON_DARK } from '../constants/mktg-print.constants';
 import type { BrandKitContrastRow, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import type { MktgPrintPage, MktgPrintPageEl, MktgPrintPageSlotEl } from '../interfaces/mktg-print-page.interface';
@@ -118,6 +118,12 @@ describe('buildBrandKitPrintPages', () => {
     expect(images(system)).toHaveLength(1);
     expect(texts(system)).toContain('Primary · horizontal lockup');
     expect(texts(system)).not.toContain('Symbol');
+    // With a primary lockup the footer line sits left of the logo frame; with none, it starts at the margin (the prototype's footer).
+    expect(pages.every((p) => p.footer?.leftBox === undefined)).toBe(true);
+    const noLogo = { ...kit.chapters.logo, files: { ...kit.chapters.logo.files, primary: null } };
+    const bare = pagesOf({ ...kit, chapters: { ...kit.chapters, logo: noLogo } });
+    expect(bare.length).toBe(pages.length);
+    expect(bare.every((p) => p.footer?.leftBox === MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX)).toBe(true);
   });
 
   it('keeps the Scaling row inside its column at a large screen or symbol size, the labels still naming the pixel value', () => {
