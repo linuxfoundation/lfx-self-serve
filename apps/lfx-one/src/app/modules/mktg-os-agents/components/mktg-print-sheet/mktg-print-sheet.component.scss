@@ -34,6 +34,20 @@
   height: 0.55in;
 }
 
+/* The caller's running head, when it gives one: a row of the head group under the room, so Chromium repeats it on
+   every page (CSS 2.1 §17.2; WebKit prints it once). Its cell's 10pt bottom room is the kit chapters' head cell's
+   (mktg-brand-kit-print.component.scss). */
+.lfx-print-sheet-head-row {
+  display: table-row;
+  break-inside: avoid;
+}
+
+.lfx-print-sheet-head-cell {
+  display: table-cell;
+  padding: 0 0 10pt;
+  vertical-align: top;
+}
+
 /* The sheet and its rows paint white under print, as the section chain they replaced did:
    the screen's canvas must never show through the unused part of a page. */
 @media print {

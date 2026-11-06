@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import { Component, input, TemplateRef } from '@angular/core';
 
 /**
  * One sheet of a Marketing OS print: a CSS table whose head group repeats the
@@ -17,11 +18,18 @@ import { Component } from '@angular/core';
  * keep their margins and this room collapses (`MKTG_PRINT_PAGE_MARGINS_CLASS`).
  * The sides are the print root's padding (`.lfx-framework-print`); the kit's
  * chapter tables carry their own head, with the same room in their stylesheet.
+ * A caller whose print runs over several pages in one flowing row (the AEO/GEO
+ * report) gives `head` a template, and the head group repeats it under the
+ * room on every page Chromium prints (a running head), once in WebKit.
  */
 @Component({
   selector: 'lfx-mktg-print-sheet',
+  imports: [NgTemplateOutlet],
   templateUrl: './mktg-print-sheet.component.html',
   styleUrl: './mktg-print-sheet.component.scss',
   host: { class: 'lfx-print-sheet' },
 })
-export class MktgPrintSheetComponent {}
+export class MktgPrintSheetComponent {
+  /** An optional row of the head group, under the room: the print's running head, repeated per page by Chromium. */
+  public readonly head = input<TemplateRef<unknown> | null>(null);
+}

@@ -62,13 +62,20 @@ export function auditDocument(documentId: string, keyPagesNamed = 2, typed = fal
     response.sidecar = { ...recorded };
     revision.contentSha256 = recorded.content_sha256;
     revision.id = `000001-${recorded.content_sha256}`;
+    // The recorded typed report quotes with ', the live agent with Markdown backticks: the print and web specs read a code span.
+    const report = recorded.report && {
+      ...recorded.report,
+      findings: recorded.report.findings.map((finding, index) =>
+        index === 0 ? { ...finding, detail: finding.detail.replace("'User-agent: *'", '`User-agent: *`') } : finding
+      ),
+    };
     response.aeoGeoReport = {
       domain: recorded.domain,
       report_filename: recorded.report_filename,
       overall_score: recorded.overall_score,
       verdict: recorded.verdict,
       scores: recorded.scores,
-      report: recorded.report,
+      report,
       auditCounts: { keyPagesNamed: recorded.inputs.key_pages_count ?? 0, pagesAudited: recorded.inputs.pages_audited.length },
     };
   }
