@@ -118,7 +118,10 @@ test.describe('AEO/GEO audit content', () => {
     ).toHaveCount(1);
     await expect(printArticle.getByTestId('mktg-print-sheet-head')).toHaveCount(1);
     await expect(printArticle.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
-    await expect(printArticle.locator('lfx-mktg-print-sheet-row lfx-aeo-geo-report')).toHaveCount(1);
+    // The row holds the print hero and the report: this fixture's earlier report is Markdown (no typed report), so the
+    // document view's @else renders it through lfx-markdown-renderer; a typed one would render lfx-aeo-geo-report.
+    await expect(printArticle.locator('lfx-mktg-print-sheet-row [data-testid="mktg-document-view-print-overall"]')).toHaveCount(1);
+    await expect(printArticle.locator('lfx-mktg-print-sheet-row :is(lfx-aeo-geo-report, lfx-markdown-renderer)')).toHaveCount(1);
     expect(downloads).toHaveLength(0);
     await finishMktgPrintFrame(page);
     await expect(page.getByTestId('mktg-document-view-run-again')).toBeVisible();

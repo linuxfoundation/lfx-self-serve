@@ -167,11 +167,13 @@ export class MktgPrintService {
     // chooses the named page: the brand kit's legacy book is landscape, every portrait document
     // (the kit's portrait print included) is on the framework's setup. Last in the head, after
     // the cloned sheets; in Chrome the matched named rule still outranks it with the same values.
-    // On the page margins (WebKit) the named rule is restated with them too, after the cloned
-    // sheets, so an engine that did honour named pages could not print the margin-less setup.
+    // On the page margins (WebKit) the portrait setup also restates the named framework page, after
+    // the cloned sheets, so an engine that did honour named pages could not print the margin-less
+    // setup; the book's landscape setup is never written into the framework's page.
     const setup = doc.createElement('style');
     const pageSetup = this.pageSetup(bodyClass, roots, pageMargins);
-    setup.textContent = pageMargins ? `@page { ${pageSetup} }\n@page mktg-framework { ${pageSetup} }` : `@page { ${pageSetup} }`;
+    const restatesFramework = pageSetup === MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'];
+    setup.textContent = restatesFramework ? `@page { ${pageSetup} }\n@page mktg-framework { ${pageSetup} }` : `@page { ${pageSetup} }`;
     doc.head.appendChild(setup);
     // Only the three existing print-only wrappers, selected by their shared constants.
     // Keep Angular's scoping attributes; never clone the interactive app shell or its scripts/streams.

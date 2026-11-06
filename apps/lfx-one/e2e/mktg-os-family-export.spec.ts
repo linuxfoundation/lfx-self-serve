@@ -229,7 +229,9 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(6);
-  await expect(printDocument.getByTestId('mktg-print-sheet-head').locator('visible=true')).toHaveCount(5);
+  // Visible sheets, not heads: on the page margins (WebKit) the head room is 0px high, so no head counts as visible.
+  await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(6);
+  await expect(printDocument.locator('lfx-mktg-print-sheet').locator('visible=true')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(1 + 9 + 4 + 5);
   // The engine's page setup: Chromium margin 0 with the room in the document; WebKit the margins, the room collapsed.
   await expectMktgPrintPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'), browserName);

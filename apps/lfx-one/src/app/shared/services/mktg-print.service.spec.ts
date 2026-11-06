@@ -163,11 +163,12 @@ describe('MktgPrintService isolated frame', () => {
     expect(document.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
   });
 
-  it("in WebKit keeps the kit's legacy book on its own landscape setup", () => {
+  it("in WebKit keeps the kit's legacy book on its own landscape setup, never restated into the framework's page", () => {
     printAs(SAFARI_UA);
     root.className = BRAND_KIT_PRINT_ONLY_CLASS;
     configure().printNow(BRAND_KIT_PRINT_BODY_CLASS);
     expect(framePageRule()).toBe(`@page { ${MKTG_PRINT_PAGE_SETUPS['brand-kit']} }`);
+    expect(framePageRule()).not.toContain('@page mktg-framework');
     expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(true);
   });
 

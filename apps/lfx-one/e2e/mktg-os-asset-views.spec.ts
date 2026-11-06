@@ -264,7 +264,15 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
       await expect(print.getByTestId('mktg-print-sheet-head').first()).toHaveCSS('display', 'table-header-group');
       await expect(print.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
-      await expect(print.locator('.lfx-print-sheet-room').first()).toHaveCSS('height', browserName === 'webkit' ? '0px' : '52.8px');
+      // 0.55in = 52.8px; Chromium reports a table row's laid-out height snapped to 1/64 px (52.7969px), so to a tenth.
+      expect(
+        parseFloat(
+          await print
+            .locator('.lfx-print-sheet-room')
+            .first()
+            .evaluate((row) => getComputedStyle(row).height)
+        )
+      ).toBeCloseTo(browserName === 'webkit' ? 0 : 52.8, 1);
       await expect(print.locator('lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').first()).toHaveCSS(
         'padding-bottom',
         browserName === 'webkit' ? '0px' : '52.8px'
