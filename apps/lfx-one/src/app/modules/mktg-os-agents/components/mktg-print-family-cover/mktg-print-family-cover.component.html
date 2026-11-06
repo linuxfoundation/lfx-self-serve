@@ -1,0 +1,15 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let c = cover();
+<lfx-mktg-print-cover
+  [look]="look()"
+  [logo]="view().brand.logoOnDark"
+  [eyebrow]="c.eyebrow"
+  [topRight]="c.date"
+  [title]="c.title"
+  [titleSize]="titleSize"
+  [subtitle]="c.subtitle"
+  [footerLeft]="c.footerLeft"
+  [footerRight]="c.footerRight"
+  data-testid="family-export-print-cover" />

@@ -1,0 +1,11 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The landscape print pages' unit: a length in the deck's points (on its
+   720 × 405 pt slide) as the page sets it, scaled once by the page shell's
+   --mktg-page-scale — the stylesheet twin of the shared mktgPagePt() helper,
+   so every page reads the spec's numbers as written. */
+
+@function pt($n) {
+  @return calc(#{$n}pt * var(--mktg-page-scale, 1));
+}

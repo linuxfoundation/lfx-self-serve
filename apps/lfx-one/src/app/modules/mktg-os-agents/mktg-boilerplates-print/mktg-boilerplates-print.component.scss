@@ -1,0 +1,60 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The deck's boilerplate cards (its appendix spec §1), in deck points inside
+   the shell's body AREA: two columns 9 pt apart, rows 9 pt apart at the
+   heights the pagination measured; a white card with a 0.75 pt rule border
+   (a border, so it prints with Background graphics off), 9 / 7.5 pt padding,
+   the "LABEL · N WORDS" line in the muted ink (7.5 pt, capitals, weight 600,
+   tracked +0.08em: the spec's §1 v1.3; the deck draws it plain, as the Slides
+   API has no letter-spacing) and the body in the dark, 4 pt under it, at the
+   shell's line height. */
+
+@use '../../../../styles/mktg-print-pt' as *;
+
+.mbp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: pt(9);
+  row-gap: pt(9);
+  align-items: stretch;
+  width: 100%;
+  color: var(--mbp-ink);
+}
+
+.mbp-card {
+  box-sizing: border-box;
+  min-height: pt(60);
+  padding: pt(7.5) pt(9);
+  border: pt(0.75) solid var(--mbp-rule);
+  border-radius: pt(4);
+  background-color: white;
+  overflow: hidden;
+  break-inside: avoid;
+}
+
+.mbp-head {
+  margin: 0;
+  font-size: pt(7.5);
+  font-weight: 600;
+  line-height: var(--pp-line);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mbp-muted);
+}
+
+.mbp-body {
+  margin: pt(4) 0 0;
+  line-height: var(--pp-line);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: var(--mbp-ink);
+}
+
+/* styles.scss sets Inter on paragraphs in the base layer, which beats inheritance: the cards take the
+   brand's typeface from the page. */
+@layer tailwind-base {
+  .mbp-grid p {
+    font-family: inherit;
+  }
+}

@@ -2,36 +2,93 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { boilerplatesAssetOfRevision, buildBoilerplatesPrintView, mktgPrintBrand } from '@lfx-one/shared/utils';
+import { MKTG_PRINT_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { BoilerplatesLengthRow } from '@lfx-one/shared/interfaces';
+import { boilerplatesAssetOfRevision, buildBoilerplatesPrintView, mktgPagePt, mktgBoilerplatesPageCount, mktgPrintBrand } from '@lfx-one/shared/utils';
 import envelope from '@lfx-one/shared/utils/__fixtures__/boilerplates.envelope.json';
 import { expect, it } from 'vitest';
 import { MktgBoilerplatesPrintComponent } from './mktg-boilerplates-print.component';
 
-it('prints all four labelled lengths intact, with the title kept beside the first length', async () => {
+async function mount(lengths?: BoilerplatesLengthRow[], firstPage = 1) {
   const asset = boilerplatesAssetOfRevision(JSON.stringify(envelope.content), envelope);
   if (!asset) throw new Error('Invalid synthetic boilerplates');
-  const fixture = TestBed.createComponent(MktgBoilerplatesPrintComponent);
   const brand = mktgPrintBrand(null);
-  fixture.componentRef.setInput('view', buildBoilerplatesPrintView(asset, brand));
-  fixture.componentRef.setInput('number', '07');
+  const view = buildBoilerplatesPrintView(asset, brand);
+  if (lengths) view.lengths = lengths;
+  const fixture = TestBed.createComponent(MktgBoilerplatesPrintComponent);
+  fixture.componentRef.setInput('view', view);
+  fixture.componentRef.setInput('number', '03');
   fixture.componentRef.setInput('projectName', 'Synthetic project');
+  fixture.componentRef.setInput('familyName', 'Positioning & brand');
+  fixture.componentRef.setInput('firstPage', firstPage);
   await fixture.whenStable();
-  const root: HTMLElement = fixture.nativeElement;
-  expect(root.querySelector('section')?.classList.contains('break-before-page')).toBe(true);
-  const blocks = root.querySelectorAll('article');
-  expect(blocks).toHaveLength(4);
-  // One sheet, whose head repeats the page's top room on every page; one row per length, so a page breaks only between lengths.
-  expect(root.querySelectorAll('section > lfx-mktg-print-sheet [data-testid="mktg-print-sheet-body"] > lfx-mktg-print-sheet-row')).toHaveLength(4);
-  expect(root.querySelectorAll('lfx-mktg-print-sheet-row > * > article')).toHaveLength(4);
-  blocks.forEach((block, index) => {
-    expect(block.classList.contains('break-inside-avoid')).toBe(true);
-    expect(block.querySelector('h3')?.classList.contains('break-after-avoid')).toBe(true);
-    expect(block.textContent).toContain(envelope.content.bp[index].l);
-    expect(block.textContent).toContain(envelope.content.bp[index].t);
+  return { root: fixture.nativeElement as HTMLElement, view, brand };
+}
+
+it('prints the four lengths as two rows of bordered cards on one landscape page, each headed by its label and word count', async () => {
+  const { root, view, brand } = await mount(undefined, 15);
+  const pages = root.querySelectorAll('[data-testid="mktg-boilerplates-print-page"]');
+  expect(pages).toHaveLength(mktgBoilerplatesPageCount(view.lengths));
+  expect(pages).toHaveLength(1);
+  // The page is one fixed landscape frame with the deck's chrome: the running head, the title band, the number, the footer line and the lockup.
+  const frame = pages[0].querySelector('[data-testid="mktg-print-page"]');
+  expect(frame?.getAttribute('data-layout')).toBe('content');
+  expect(frame?.getAttribute('data-title')).toBe('Boilerplates');
+  expect(Array.from(pages[0].querySelectorAll('[data-testid="mktg-print-page-head"]'), (el) => el.textContent?.trim())).toEqual([
+    '03 Boilerplates',
+    'Synthetic project Positioning & brand',
+  ]);
+  expect(pages[0].querySelector('[data-testid="mktg-print-page-title"]')?.textContent?.trim()).toBe('Boilerplates');
+  expect(Array.from(pages[0].querySelectorAll('[data-testid="mktg-print-page-footer"]'), (el) => el.textContent?.trim())).toEqual([
+    'Synthetic project · a Linux Foundation project',
+    '15',
+  ]);
+  expect(pages[0].querySelector('[data-testid="mktg-print-page-logo"] img')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
+  // Two columns, the rows at the heights the pagination measured.
+  const grid = pages[0].querySelector<HTMLElement>('[data-testid="mktg-boilerplates-print-grid"]');
+  expect(grid?.style.gridTemplateRows.split(' minmax(')).toHaveLength(2);
+  expect(grid?.style.getPropertyValue('--mbp-ink')).toBe(brand.dark);
+  const cards = pages[0].querySelectorAll('[data-testid="mktg-boilerplates-print-card"]');
+  expect(cards).toHaveLength(4);
+  cards.forEach((card, index) => {
+    const row = view.lengths[index];
+    expect(card.querySelector('[data-testid="mktg-boilerplates-print-card-head"]')?.textContent).toBe(`${row.label.toUpperCase()} · ${row.words} WORDS`);
+    expect(card.querySelector('[data-testid="mktg-boilerplates-print-card-body"]')?.textContent?.trim()).toBe(row.text);
+    expect(card.querySelector<HTMLElement>('[data-testid="mktg-boilerplates-print-card-body"]')?.style.fontSize).toBe(mktgPagePt(MKTG_PRINT_PAGE_SIZE.card));
   });
-  expect(blocks[0].querySelector('h2')?.textContent).toContain('07');
-  expect(blocks[0].querySelector('lfx-mktg-print-chapter-header h2')?.className).toBe('lfx-print-chapter-title');
-  const head = blocks[0].querySelector('[data-testid="mktg-print-running-head"]');
-  expect(head?.textContent).toContain('Synthetic project Boilerplates');
-  expect(head?.querySelector('img')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
+  expect(root.textContent).not.toContain('Source');
+});
+
+it('continues long sets on numbered pages, every card on the page the pagination gave it, and prints a title band with no lengths', async () => {
+  const text = Array.from({ length: 90 }, (_, i) => (i % 9 === 8 ? 'project.' : 'Synthetic')).join(' ');
+  const lengths = Array.from(
+    { length: 12 },
+    (_, index): BoilerplatesLengthRow => ({
+      index,
+      label: `Length ${index + 1}`,
+      hint: '',
+      text,
+      words: 90,
+      max: 100,
+      over: false,
+      countLabel: '90 / 100 words',
+    })
+  );
+  const { root, view } = await mount(lengths, 3);
+  const pages = Array.from(root.querySelectorAll('[data-testid="mktg-boilerplates-print-page"]'));
+  expect(pages).toHaveLength(mktgBoilerplatesPageCount(view.lengths));
+  expect(pages.length).toBeGreaterThanOrEqual(2);
+  expect(pages.map((page) => page.querySelector('[data-testid="mktg-print-page-title"]')?.textContent?.trim())).toEqual(
+    pages.map((_, i) => (i === 0 ? 'Boilerplates' : `Boilerplates (${i + 1})`))
+  );
+  expect(pages.map((page) => page.querySelectorAll('[data-testid="mktg-print-page-footer"]')[1]?.textContent?.trim())).toEqual(
+    pages.map((_, i) => String(3 + i).padStart(2, '0'))
+  );
+  expect(pages.flatMap((page) => Array.from(page.querySelectorAll('[data-testid="mktg-boilerplates-print-card-head"]'), (head) => head.textContent))).toEqual(
+    lengths.map((row) => `${row.label.toUpperCase()} · 90 WORDS`)
+  );
+  const empty = await mount([]);
+  expect(empty.root.querySelectorAll('[data-testid="mktg-boilerplates-print-page"]')).toHaveLength(1);
+  expect(empty.root.querySelector('[data-testid="mktg-print-page-title"]')?.textContent?.trim()).toBe('Boilerplates');
+  expect(empty.root.querySelectorAll('[data-testid="mktg-boilerplates-print-card"]')).toHaveLength(0);
 });

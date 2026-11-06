@@ -1,0 +1,95 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The deck's FAQ grid (its appendix spec §2), in deck points inside the
+   shell's body AREA: two open columns 16.5 pt apart, rows 7.5 pt apart at
+   the heights the pagination measured, no boxes or rules; the question bold
+   in the dark, the answer 3 pt under it at the shell's line height, a list's items
+   indented 18 pt with real bullet glyphs in the ink and 2 pt between them,
+   the source line in the muted ink 3 pt under the answer. */
+
+@use '../../../../styles/mktg-print-pt' as *;
+
+.mfq-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: pt(16.5);
+  row-gap: pt(7.5);
+  align-items: start;
+  width: 100%;
+  color: var(--mfq-ink);
+}
+
+.mfq-pair {
+  min-width: 0;
+  overflow: hidden;
+  break-inside: avoid;
+  overflow-wrap: anywhere;
+}
+
+.mfq-question {
+  margin: 0;
+  font-weight: 700;
+  line-height: var(--pp-line);
+  color: var(--mfq-ink);
+}
+
+.mfq-answer {
+  display: block;
+  margin: pt(3) 0 0;
+  line-height: var(--pp-line);
+  color: var(--mfq-ink);
+}
+
+.mfq-source {
+  margin: pt(3) 0 0;
+  font-size: var(--mfq-source-size);
+  line-height: var(--pp-line);
+  color: var(--mfq-muted);
+}
+
+/* The renderer's screen utilities are rem and the app's base rule sizes every bare `p`: inside the grid
+   its paragraphs and items take the entry's typeface, size, leading and ink, and the list its indent, gap
+   and a disc marker in the ink. */
+:host ::ng-deep .mfq-answer .prose {
+  max-width: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+
+  p {
+    margin: 0;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  ul,
+  ol {
+    margin: pt(2) 0 0;
+    padding-left: pt(18);
+  }
+
+  ul {
+    list-style: disc;
+  }
+
+  li {
+    margin: pt(2) 0 0;
+    padding-left: 0;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  li::marker {
+    color: var(--mfq-ink);
+  }
+}
+
+@layer tailwind-base {
+  .mfq-grid :is(h3, p) {
+    font-family: inherit;
+  }
+}

@@ -6,7 +6,6 @@ import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../..
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import {
-  expectMktgPrintCover,
   expectMktgPrintFrame,
   expectMktgPrintPageSetup,
   finishMktgPrintFrame,
@@ -180,24 +179,120 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // The geometry proof measures the frame's document: the one the dialog prints.
   const printFrame = await layoutMktgPrintFrame(page);
   const printDocument = printFrame.getByTestId('family-export-print-document');
-  for (const selector of ['lfx-mktg-framework-print', 'lfx-mktg-brand-kit-print', 'lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
-    await expect(printDocument.locator(selector)).toHaveCount(1);
-  }
-  await expect(printFrame.getByTestId('family-export-print-contents').locator('dd')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
-  await expect(printFrame.getByTestId('mktg-boilerplates-print-length')).toHaveCount(4);
-  await expect(printFrame.getByTestId('mktg-faq-print')).toContainText('Needs an answer');
+  // The family deck's order: the cover, the framework, the kit, a divider and the pages of each appendix part, the back cover last.
+  await expect(printDocument.locator(':scope > *')).toHaveCount(8);
+  expect(await printDocument.locator(':scope > *').evaluateAll((nodes) => nodes.map((node) => node.tagName.toLowerCase()))).toEqual([
+    'lfx-mktg-print-family-cover',
+    'lfx-mktg-framework-print',
+    'lfx-mktg-brand-kit-print',
+    'lfx-mktg-print-divider',
+    'lfx-mktg-boilerplates-print',
+    'lfx-mktg-print-divider',
+    'lfx-mktg-faq-print',
+    'lfx-mktg-print-back-cover',
+  ]);
   // Only the wrapper travels: the card's controls are not in the frame.
   await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
+  // The cover is the deck's: one landscape frame on the dark ground, the eyebrow in capitals, the newest revision's month,
+  // the family's name, the brand line, the versions of the parts present and the reversed lockup; no page number.
   const cover = printFrame.getByTestId('family-export-print-cover');
-  await expectMktgPrintCover(cover);
-  // The cover's 0.6in at the sides is its own where the page has no margin, and the margin's in WebKit.
-  await expect(cover).toHaveCSS('margin-left', browserName === 'webkit' ? '0px' : '57.6px');
-  await expect(printFrame.getByTestId('family-export-print-title')).toHaveText('Positioning & brand');
-  await expect(printFrame.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
-  await expect(printFrame.getByTestId('family-export-print-logo')).toBeVisible();
-  const coverColors = await cover.evaluate((element) => ({ ink: getComputedStyle(element).color, ground: getComputedStyle(element).backgroundColor }));
-  expect(coverColors.ground).toBe('rgb(255, 255, 255)');
+  const coverFrame = cover.getByTestId('mktg-print-page');
+  await expect(coverFrame).toBeVisible();
+  await expect(coverFrame).toHaveAttribute('data-layout', 'cover');
+  await expect(cover.getByTestId('mktg-print-page-title')).toHaveText('Positioning & brand');
+  const coverEls = cover.getByTestId('mktg-print-page-el');
+  await expect(coverEls).toHaveCount(5);
+  await expect(coverEls.nth(0)).toHaveText(/^[A-Z0-9 .&'-]+ · A LINUX FOUNDATION PROJECT$/);
+  await expect(coverEls.nth(1)).toHaveText(/^[A-Z][a-z]+ \d{4}$/);
+  await expect(coverEls.nth(2)).toHaveText(/ · a Linux Foundation project$/);
+  await expect(coverEls.nth(3)).toHaveText('Messaging framework v1 · Brand Kit V1.0 · Boilerplates v1 · FAQ v1');
+  await expect(coverEls.nth(4).locator('img')).toBeVisible();
+  await expect(cover.getByTestId('mktg-print-page-footer')).toHaveCount(0);
+  const coverColors = await cover
+    .getByTestId('mktg-print-page-slide')
+    .evaluate((element) => ({ ink: getComputedStyle(element).color, ground: getComputedStyle(element).backgroundColor }));
+  expect(coverColors.ground).not.toBe('rgb(255, 255, 255)');
   expect(coverColors.ink).not.toBe(coverColors.ground);
+  // The dividers: dark section pages with the part's number and the family in capitals, the title, the count line and the
+  // lockup; counted but unnumbered.
+  const dividers = printDocument.locator('lfx-mktg-print-divider');
+  await expect(dividers.getByTestId('mktg-print-page')).toHaveAttribute('data-layout', 'cover');
+  await expect(dividers.getByTestId('mktg-print-page-el')).toHaveText([
+    '03 · POSITIONING & BRAND',
+    'Boilerplates',
+    '4 boilerplates',
+    '',
+    '04 · POSITIONING & BRAND',
+    'Questions and answers',
+    '4 questions and answers',
+    '',
+  ]);
+  await expect(dividers.locator('img')).toHaveCount(2);
+  await expect(dividers.getByTestId('mktg-print-page-footer')).toHaveCount(0);
+  // The boilerplates: one page of two-column bordered cards, each headed "LABEL · N WORDS", the body in the dark.
+  const cards = printDocument.locator('lfx-mktg-boilerplates-print');
+  await expect(cards.getByTestId('mktg-boilerplates-print-page')).toHaveCount(1);
+  await expect(cards.getByTestId('mktg-print-page-head')).toHaveText(['03 Boilerplates', / Positioning & brand$/]);
+  await expect(cards.getByTestId('mktg-print-page-title')).toHaveText('Boilerplates');
+  await expect(cards.getByTestId('mktg-boilerplates-print-card')).toHaveCount(4);
+  await expect(cards.getByTestId('mktg-boilerplates-print-card-head')).toHaveText([
+    /^ONE-LINER · \d+ WORDS$/,
+    /^25 WORDS · \d+ WORDS$/,
+    /^50 WORDS · \d+ WORDS$/,
+    /^100 WORDS · \d+ WORDS$/,
+  ]);
+  await expect(cards.getByTestId('mktg-boilerplates-print-card').first()).toHaveCSS('border-top-style', 'solid');
+  await expect(cards.getByTestId('mktg-boilerplates-print-grid')).toHaveCSS('grid-template-columns', /^\d+(\.\d+)?px \d+(\.\d+)?px$/);
+  await expect(cards).not.toContainText('Source');
+  // The FAQ: one page of a two-column grid, the question bold over its answer, the unanswered one labelled, a real list for a lead-in with items.
+  const faq = printDocument.locator('lfx-mktg-faq-print');
+  await expect(faq.getByTestId('mktg-faq-print-page')).toHaveCount(1);
+  await expect(faq.getByTestId('mktg-print-page-title')).toHaveText('Questions and answers');
+  await expect(faq.getByTestId('mktg-faq-print-pair')).toHaveCount(4);
+  await expect(faq.getByTestId('mktg-faq-print-pair').first().locator('h3')).toHaveCSS('font-weight', '700');
+  await expect(faq).toContainText('Needs an answer');
+  await expect(faq.getByTestId('mktg-faq-print-source').first()).toHaveText('Source · Website');
+  await expect(faq).not.toContainText('- ');
+  await expect(faq.getByTestId('mktg-faq-print-grid')).toHaveCSS('grid-template-columns', /^\d+(\.\d+)?px \d+(\.\d+)?px$/);
+  // The back cover closes the file: the kit's brand line in capitals on the dark ground, the host and the trademark notice.
+  const back = printDocument.getByTestId('family-export-print-back-cover');
+  await expect(back.getByTestId('mktg-print-page')).toHaveAttribute('data-layout', 'back');
+  await expect(back.getByTestId('mktg-print-page-title')).not.toBeEmpty();
+  await expect(back).toContainText('trademarks of the Linux Foundation');
+  // Every landscape page is one fixed frame holding one 16:9 slide that breaks after itself, numbered deck-wide on the
+  // content pages only (the cover 1, the dividers 2 and 4, the back cover last; the framework and the kit print in their own flow for now).
+  const landscapePages = printDocument.getByTestId('mktg-print-page');
+  await expect(landscapePages).toHaveCount(6);
+  for (const frame of await landscapePages.all()) {
+    await expect(frame).toHaveCSS('position', 'relative');
+    await expect(frame).toHaveCSS('overflow', 'hidden');
+    await expect(frame).toHaveCSS('break-after', 'page');
+    const box = await frame.getByTestId('mktg-print-page-slide').boundingBox();
+    if (!box) throw new Error('Missing synthetic landscape slide');
+    expect(box.width / box.height).toBeCloseTo(16 / 9, 1);
+  }
+  await expect(printDocument.getByTestId('mktg-print-page-footer')).toHaveText([
+    / · a Linux Foundation project$/,
+    '03',
+    / · a Linux Foundation project$/,
+    '05',
+  ]);
+  // Nothing leaves its page: every card and every pair sits inside its page's body area.
+  for (const pageTestId of ['mktg-boilerplates-print-page', 'mktg-faq-print-page']) {
+    const contained = await printDocument
+      .getByTestId(pageTestId)
+      .first()
+      .evaluate((element) => {
+        const body = element.querySelector('[data-testid="mktg-print-page-area"]');
+        if (!body) return false;
+        const area = body.getBoundingClientRect();
+        return Array.from(body.querySelectorAll('article')).every((item) => {
+          const box = item.getBoundingClientRect();
+          return box.left >= area.left - 0.5 && box.top >= area.top - 0.5 && box.right <= area.right + 0.5 && box.bottom <= area.bottom + 0.5;
+        });
+      });
+    expect(contained, `${pageTestId}: every item must remain inside the page's body area`).toBe(true);
+  }
   // No screen canvas may bleed through below a short print section.
   await expect(printFrame.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   const ancestorBackgrounds = await printDocument.evaluate((element) => {
@@ -206,16 +301,13 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
     return backgrounds;
   });
   expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
-  await expect(printFrame.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
   await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2']);
   await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
   await expect(printDocument.getByTestId('mktg-framework-print-pillars')).toHaveCount(0);
   await expect(printDocument.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(0);
-  await expect(printDocument.locator('lfx-mktg-boilerplates-print h2 > span')).toHaveText('03');
-  await expect(printDocument.locator('lfx-mktg-faq-print h2 > span')).toHaveText('04');
   for (const selector of ['lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
-    await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head')).toBeVisible();
-    await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head').locator('img')).toBeVisible();
+    await expect(printDocument.locator(selector).getByTestId('mktg-print-page-head').first()).toBeVisible();
+    await expect(printDocument.locator(selector).getByTestId('mktg-print-page-logo')).toBeVisible();
   }
   await expect(printFrame.getByTestId('mktg-framework-print-cover')).toBeHidden();
   // The cover's whole sheet goes with it: its head and foot room alone would print as a blank page.
@@ -229,11 +321,11 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // the boilerplates 4 lengths; the FAQ its header + 4 pairs. toHaveCount counts hidden elements: 6 sheets, 5 shown.
   await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
-  await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(6);
+  await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
   // Visible sheets, not heads: on the page margins (WebKit) the head room is 0px high, so no head counts as visible.
-  await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(6);
-  await expect(printDocument.locator('lfx-mktg-print-sheet').locator('visible=true')).toHaveCount(5);
-  await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(1 + 9 + 4 + 5);
+  await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(3);
+  await expect(printDocument.locator('lfx-mktg-print-sheet').locator('visible=true')).toHaveCount(2);
+  await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(9);
   // The engine's page setup: Chromium margin 0 with the room in the document; WebKit the margins, the room collapsed.
   await expectMktgPrintPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'), browserName);
   // The last rows' bottom room, to a tenth (mktgPrintComputedPx): the kit's calc(10pt + 0.55in) = 66.13px or its 10pt
@@ -242,7 +334,10 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
     await mktgPrintComputedPx(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tbody > tr:last-child > td').first(), 'padding-bottom')
   ).toBeCloseTo(browserName === 'webkit' ? 13.333 : 66.133, 1);
   expect(
-    await mktgPrintComputedPx(printDocument.locator('lfx-mktg-faq-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell'), 'padding-bottom')
+    await mktgPrintComputedPx(
+      printDocument.locator('lfx-mktg-framework-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').last(),
+      'padding-bottom'
+    )
   ).toBeCloseTo(browserName === 'webkit' ? 0 : 52.8, 1);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');

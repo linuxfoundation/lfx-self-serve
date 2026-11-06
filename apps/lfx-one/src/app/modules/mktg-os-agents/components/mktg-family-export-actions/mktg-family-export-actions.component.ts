@@ -29,7 +29,7 @@ import {
   MktgSlidesExportMode,
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
-import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
+import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle, mktgPrintFamilyPlan, mktgPrintPageLook } from '@lfx-one/shared/utils';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -38,8 +38,9 @@ import { MktgBrandKitPrintComponent } from '../../mktg-brand-kit-print/mktg-bran
 import { MktgBoilerplatesPrintComponent } from '../../mktg-boilerplates-print/mktg-boilerplates-print.component';
 import { MktgFaqPrintComponent } from '../../mktg-faq-print/mktg-faq-print.component';
 import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
-import { MktgPrintSheetComponent } from '../mktg-print-sheet/mktg-print-sheet.component';
-import { MktgPrintSheetRowComponent } from '../mktg-print-sheet-row/mktg-print-sheet-row.component';
+import { MktgPrintBackCoverComponent } from '../mktg-print-back-cover/mktg-print-back-cover.component';
+import { MktgPrintDividerComponent } from '../mktg-print-divider/mktg-print-divider.component';
+import { MktgPrintFamilyCoverComponent } from '../mktg-print-family-cover/mktg-print-family-cover.component';
 
 /** The Family page's named slot; document export controls are independent. */
 @Component({
@@ -52,8 +53,9 @@ import { MktgPrintSheetRowComponent } from '../mktg-print-sheet-row/mktg-print-s
     MktgFrameworkPrintComponent,
     MktgBoilerplatesPrintComponent,
     MktgFaqPrintComponent,
-    MktgPrintSheetComponent,
-    MktgPrintSheetRowComponent,
+    MktgPrintFamilyCoverComponent,
+    MktgPrintDividerComponent,
+    MktgPrintBackCoverComponent,
   ],
   templateUrl: './mktg-family-export-actions.component.html',
   styleUrl: './mktg-family-export-actions.component.scss',
@@ -88,7 +90,18 @@ export class MktgFamilyExportActionsComponent {
   protected readonly completed = signal<MktgFamilyExportRecord | null>(null);
   protected readonly printing = signal(false);
   protected readonly printView = signal<MktgFamilyPrintView | null>(null);
+  /** The print's page plan: the parts' numbers and where each appendix part starts in the deck-wide count. */
+  protected readonly printPlan = computed(() => {
+    const view = this.printView();
+    return view ? mktgPrintFamilyPlan(view, this.frameworkPageCount(), this.kitPageCount()) : null;
+  });
+  /** The look of the print's dark pages (the back cover), from the family's brand. */
+  protected readonly printLook = computed(() => {
+    const view = this.printView();
+    return view ? mktgPrintPageLook(view.brand) : null;
+  });
   private readonly retry = new Subject<boolean>();
+
   private run: Subscription | null = null;
   private readonly pdfRetry = new Subject<void>();
   protected readonly pdfReady = signal(false);
@@ -388,5 +401,15 @@ export class MktgFamilyExportActionsComponent {
         this.phase.set('failed');
       },
     });
+  }
+
+  /** How many deck pages the framework prints: none while it prints in its own portrait flow (its landscape pages bring their own count helper; this is the one place to switch). */
+  private frameworkPageCount(): number {
+    return 0;
+  }
+
+  /** How many deck pages the kit prints, its back cover not counted: none while it prints in its own portrait flow (the one place to switch to the kit's count helper). */
+  private kitPageCount(): number {
+    return 0;
   }
 }

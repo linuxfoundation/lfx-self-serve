@@ -65,6 +65,7 @@ describe('Family export slot', () => {
         projectName: 'Synthetic project',
         printedAt: '2026-10-28T00:00:00Z',
         newestRevisionAt: '2026-10-21T10:00:00Z',
+        revisionNumbers: {},
         fontFamily: null,
         weights: [400],
       })
@@ -415,16 +416,18 @@ describe('Family export slot', () => {
       1,
       kit
     );
+    const kitView = buildBrandKitBookView(kit, 1);
     api.printView.mockReturnValue(
       of({
         framework,
-        kit: buildBrandKitBookView(kit, 1),
+        kit: kitView,
         boilerplates: buildBoilerplatesPrintView(boilerplates, brand),
         faq: buildFaqPrintView(faq, brand),
         brand,
         projectName: 'Synthetic project',
         printedAt: '2026-10-28T00:00:00Z',
         newestRevisionAt: '2026-10-21T10:00:00Z',
+        revisionNumbers: { 'foundation-message': 3, 'brand-kit': 1, boilerplates: 2, faq: 1 },
         fontFamily: brand.fontFamily,
         weights: [400],
       })
@@ -433,34 +436,52 @@ describe('Family export slot', () => {
     button('pdf')?.click();
     await fixture.whenStable();
     const document = root.querySelector('[data-testid="family-export-print-document"]');
+    // The family deck's order: the cover, the framework, the kit, a divider and the pages of each appendix part, the back cover last.
     expect(Array.from(document?.children ?? []).map((child) => child.tagName.toLowerCase())).toEqual([
-      'lfx-mktg-print-sheet',
+      'lfx-mktg-print-family-cover',
       'lfx-mktg-framework-print',
       'lfx-mktg-brand-kit-print',
+      'lfx-mktg-print-divider',
       'lfx-mktg-boilerplates-print',
+      'lfx-mktg-print-divider',
       'lfx-mktg-faq-print',
+      'lfx-mktg-print-back-cover',
     ]);
     const cover = document?.querySelector<HTMLElement>('[data-testid="family-export-print-cover"]');
-    // The cover prints in a sheet whose head gives the page's top room, as its one row (the bottom room is that row's); its sides are its own margin.
-    expect(cover?.closest('lfx-mktg-print-sheet')?.classList.contains('break-after-page')).toBe(true);
-    expect(cover?.closest('lfx-mktg-print-sheet')?.querySelectorAll('lfx-mktg-print-sheet-row')).toHaveLength(1);
-    expect(cover?.parentElement?.getAttribute('data-testid')).toBe('mktg-print-sheet-cell');
-    expect(cover?.classList.contains('mx-[0.6in]')).toBe(true);
-    expect(cover?.textContent).toContain('Synthetic project');
-    expect(cover?.textContent).toContain('28 Oct 2026');
-    expect(Array.from(cover?.querySelectorAll('dd') ?? []).map((entry) => entry.textContent?.trim())).toEqual([
-      'Messaging framework',
-      'Brand kit',
-      'Boilerplates',
-      'FAQ',
+    // The cover is the deck's: the project's eyebrow line in capitals, the newest revision's month, the family's name, and
+    // the versions line of the parts present, on the dark ground with the reversed lockup; no number.
+    expect(cover?.querySelector('[data-testid="mktg-print-page"]')?.getAttribute('data-layout')).toBe('cover');
+    expect(cover?.querySelector('[data-testid="mktg-print-page-title"]')?.textContent?.trim()).toBe('Positioning & brand');
+    const coverEls = Array.from(cover?.querySelectorAll<HTMLElement>('[data-testid="mktg-print-page-el"]') ?? []);
+    expect(coverEls.map((el) => el.textContent?.trim())).toEqual([
+      'SYNTHETIC PROJECT · A LINUX FOUNDATION PROJECT',
+      'October 2026',
+      'Synthetic project · a Linux Foundation project',
+      'Messaging framework v3 · Brand Kit V1.0 · Boilerplates v2 · FAQ v1',
+      '',
     ]);
-    expect(cover?.querySelector('h1')?.textContent).toBe('Positioning & brand');
-    expect(cover?.querySelector('h1')?.classList.contains('text-balance')).toBe(true);
-    expect(cover?.classList.contains('grid')).toBe(true);
-    expect(cover?.classList.contains('h-screen')).toBe(false);
-    expect(cover?.querySelector('.flex-1')).toBeNull();
-    expect(cover?.querySelector('[data-testid="family-export-print-logo"]')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
-    expect(cover?.style.getPropertyValue('--mfp-ink')).toBe(brand.ink);
+    expect(coverEls[4].querySelector('img')?.getAttribute('src')).toBe(brand.logoOnDark?.src);
+    expect(cover?.querySelector('[data-testid="mktg-print-page-footer"]')).toBeNull();
+    // The parts are numbered in the family order; the dividers count each part; the appendix pages are numbered deck-wide
+    // after the cover and the dividers (the framework and the kit print in their own flow for now: none of their pages are counted).
+    const dividers = Array.from(document?.querySelectorAll('lfx-mktg-print-divider') ?? []);
+    const dividerEls = (divider: Element) => Array.from(divider.querySelectorAll('[data-testid="mktg-print-page-el"]'), (el) => el.textContent?.trim());
+    expect(dividers.map(dividerEls)).toEqual([
+      ['03 · POSITIONING & BRAND', 'Boilerplates', '4 boilerplates', ''],
+      ['04 · POSITIONING & BRAND', 'Questions and answers', '4 questions and answers', ''],
+    ]);
+    expect(dividers.every((divider) => divider.querySelector('[data-testid="mktg-print-page-footer"]') === null)).toBe(true);
+    const footers = Array.from(document?.querySelectorAll('[data-testid="mktg-print-page-footer"]') ?? []).map((el) => el.textContent?.trim());
+    expect(footers).toEqual(['Synthetic project · a Linux Foundation project', '03', 'Synthetic project · a Linux Foundation project', '05']);
+    expect(
+      Array.from(document?.querySelectorAll('lfx-mktg-boilerplates-print [data-testid="mktg-print-page-head"]') ?? []).map((el) => el.textContent?.trim())
+    ).toEqual(['03 Boilerplates', 'Synthetic project Positioning & brand']);
+    // The back cover closes the file: the kit's brand line in capitals, its host and the trademark notice, on the dark ground.
+    const back = document?.querySelector<HTMLElement>('[data-testid="family-export-print-back-cover"]');
+    expect(back?.querySelector('[data-testid="mktg-print-page"]')?.getAttribute('data-layout')).toBe('back');
+    expect(back?.querySelector('[data-testid="mktg-print-page-title"]')?.textContent?.trim()).toBe(kitView.voice.line || 'Synthetic project');
+    expect(kitView.voice.line).not.toBe('');
+    expect(back?.textContent).toContain('trademarks of the Linux Foundation');
     if (!document) throw new Error('Missing synthetic family print composition');
     expect(Array.from(document.querySelectorAll('lfx-mktg-framework-print h2 > span')).map((span) => span.textContent?.trim())).toEqual(['01.1', '01.2']);
     const frameworkRoot = document.querySelector('[data-testid="mktg-framework-print"]');
@@ -515,17 +536,14 @@ describe('Family export slot', () => {
       '02.4',
       '02.5',
     ]);
-    const numbers = Array.from(cover?.querySelectorAll('dt') ?? []).map((entry) => entry.textContent?.trim());
-    expect(numbers).toEqual(['01', '02', '03', '04']);
-    const sectionNumbers = Array.from(document?.querySelectorAll('lfx-mktg-framework-print h2 > span') ?? []).map((span) => span.textContent?.trim());
-    expect(sectionNumbers).toEqual([`${numbers[0]}.1`, `${numbers[0]}.2`]);
+    // The framework and the kit take their part numbers from the same plan as the appendix.
+    expect(Array.from(document?.querySelectorAll('lfx-mktg-framework-print h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual([
+      '01.1',
+      '01.2',
+    ]);
     expect(document?.querySelector('[data-testid="mktg-framework-print-goals"]')).not.toBeNull();
     expect(document?.querySelector('[data-testid="mktg-framework-print-icps"]')).toBeNull();
     expect(document?.querySelector('[data-testid="mktg-framework-print-message-house"]')).toBeNull();
-    expect(document?.querySelector('lfx-mktg-boilerplates-print h2 > span')?.textContent?.trim()).toBe(numbers[2]);
-    expect(document?.querySelector('lfx-mktg-faq-print h2 > span')?.textContent?.trim()).toBe(numbers[3]);
-    expect(document?.querySelector('lfx-mktg-boilerplates-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project');
-    expect(document?.querySelector('lfx-mktg-faq-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project');
     expect(print.ensureFontStylesheet).toHaveBeenCalledWith(brand.fontUrl);
   });
 
@@ -560,6 +578,7 @@ describe('Family export slot', () => {
       projectName: 'Synthetic project',
       printedAt: '2026-10-28T00:00:00Z',
       newestRevisionAt: '2026-10-21T10:00:00Z',
+      revisionNumbers: {},
       fontFamily: null,
       weights: [400],
     });
