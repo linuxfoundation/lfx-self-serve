@@ -11,6 +11,9 @@
   [blank]="blank"
   navLabel="Members sections"
   testIdPrefix="members">
+  <ng-template lfxHealthMetricsL2Section="growth">
+    <lfx-members-growth (reading)="shell.sectionReading('growth')" (settled)="shell.sectionSettled('growth', $event)" />
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="breakdown">
     <lfx-members-breakdown
       (countChange)="breakdownCount.set($event)"

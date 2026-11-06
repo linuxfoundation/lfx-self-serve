@@ -276,6 +276,9 @@ router.get('/events-organizations', requireDashboardAccess, (req, res, next) => 
 router.get('/events-sponsorship', requireDashboardAccess, (req, res, next) => analyticsController.getEventsSponsorship(req, res, next));
 router.get('/events-geography', requireDashboardAccess, (req, res, next) => analyticsController.getEventsGeography(req, res, next));
 
+// Health Metrics Members "Member growth by year" section (#5197)
+router.get('/members-growth', requireDashboardAccess, (req, res, next) => analyticsController.getMembersGrowth(req, res, next));
+
 // Health Metrics Members "Membership breakdown by tier" section (#3100, #5196)
 router.get('/members-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersTiers(req, res, next));
 
