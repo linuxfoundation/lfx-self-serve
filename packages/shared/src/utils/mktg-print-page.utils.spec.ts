@@ -289,6 +289,13 @@ describe('the page grammar', () => {
     expect(own.titleBox).toEqual(boxes.title);
     expect(own.subtitleBox).toEqual(boxes.subtitle);
     expect(own.titleRich.paras[0].size).toBe(40);
+    // The title is fitted to its own box too: thirty characters at 40 pt stay whole in the family's box, where the deck's 560×70 box sets them smaller or cuts.
+    const thirty = 'Positioning and brand platform';
+    const family = mktgPrintCoverPage(look, thirty, long, [], 40, boxes);
+    expect(family.titleRich.paras[0]).toMatchObject({ text: thirty, size: 40 });
+    expect(family.titleRich).toEqual(mktgPrintCoverTitleRich(look, thirty, 40, boxes.title));
+    const deck = mktgPrintCoverPage(look, thirty, long, [], 40).titleRich.paras[0];
+    expect(deck.size < 40 || deck.text !== thirty).toBe(true);
     expect(mktgPrintCoverPage(look, 'Positioning & brand', long, [], 40).subtitle?.paras[0].size).toBe(15);
     expect(own.subtitle?.paras[0].size).toBeLessThan(15);
     const back = mktgPrintBackPage(look, 'Open tooling for everyone', []);

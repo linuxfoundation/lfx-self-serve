@@ -306,13 +306,14 @@ export function mktgPrintTitleRich(
   return mktgPrintFitOrCut({ paras: [mktgPrintPara(title, size, { weight: 600 })], color: look.ink, font: look.font, anchor: 'BOTTOM' }, box.w, box.h).rich;
 }
 
-/** The title as set in the cover layout's placeholder: large, on the dark ground in the on-dark ink, fitted to the box. */
-export function mktgPrintCoverTitleRich(look: MktgPrintPageLook, title: string, size: number = MKTG_PRINT_PAGE_SIZE.coverTitle): MktgPrintRich {
-  return mktgPrintFitOrCut(
-    { paras: [mktgPrintPara(title, size, { weight: 600 })], color: look.onDark, font: look.font, anchor: 'BOTTOM' },
-    MKTG_PRINT_PAGE_COVER_TITLE_BOX.w,
-    MKTG_PRINT_PAGE_COVER_TITLE_BOX.h
-  ).rich;
+/** The title as set in the cover layout's placeholder: large, on the dark ground in the on-dark ink, fitted to its box (the deck's cover title box unless given). */
+export function mktgPrintCoverTitleRich(
+  look: MktgPrintPageLook,
+  title: string,
+  size: number = MKTG_PRINT_PAGE_SIZE.coverTitle,
+  box: MktgPrintPageBox = MKTG_PRINT_PAGE_COVER_TITLE_BOX
+): MktgPrintRich {
+  return mktgPrintFitOrCut({ paras: [mktgPrintPara(title, size, { weight: 600 })], color: look.onDark, font: look.font, anchor: 'BOTTOM' }, box.w, box.h).rich;
 }
 
 /** The back cover's title: a brand line in capitals, centred on the dark ground in the on-dark ink, fitted to its box. */
@@ -364,8 +365,9 @@ export function mktgPrintWithFooter(page: MktgPrintPage, left: string, number: n
 
 /**
  * A cover: the title and the subtitle in the cover layout's placeholders,
- * both fitted, on the dark ground; `els` the cover's own lines (its eyebrow
- * and footer, in the ink that reads on the ground).
+ * each fitted to its own box (absent, the deck's cover boxes), on the dark
+ * ground; `els` the cover's own lines (its eyebrow and footer, in the ink
+ * that reads on the ground).
  */
 export function mktgPrintCoverPage(
   look: MktgPrintPageLook,
@@ -375,7 +377,7 @@ export function mktgPrintCoverPage(
   titleSize: number = MKTG_PRINT_PAGE_SIZE.coverTitle,
   boxes: { title?: MktgPrintPageBox; subtitle?: MktgPrintPageBox } = {}
 ): MktgPrintPage {
-  const titleRich = mktgPrintCoverTitleRich(look, title, titleSize);
+  const titleRich = mktgPrintCoverTitleRich(look, title, titleSize, boxes.title ?? MKTG_PRINT_PAGE_COVER_TITLE_BOX);
   const subtitleBox = boxes.subtitle ?? MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX;
   const subtitleRich = mktgPrintFitOrCut(
     { paras: [mktgPrintPara(subtitle, MKTG_PRINT_PAGE_SIZE.coverSubtitle)], color: look.onDark, font: look.font },
