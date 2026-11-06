@@ -25,7 +25,7 @@
       ariaLabel="Copy summary"
       lfxUiTooltip="Copy summary"
       lfxUiTooltipSide="bottom"
-      [disabled]="!content()"
+      [disabled]="!content() || editing()"
       (click)="copy()"
       data-testid="meetings-home-dialog-summary-copy" />
     <span class="mx-[4px] h-[20px] w-px bg-gray-200" aria-hidden="true"></span>
