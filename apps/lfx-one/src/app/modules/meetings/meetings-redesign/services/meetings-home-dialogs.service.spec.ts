@@ -56,11 +56,11 @@ describe('MeetingsHomeDialogsService', () => {
     expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: 'Failed to open recording' }));
   });
 
-  it('copies the recording link and confirms with a success toast', () => {
+  it('copies the recording link and confirms with a dark toast like the other home toasts', () => {
     service.copyRecordingLink(SHARE_URL);
 
     expect(copy).toHaveBeenCalledWith(SHARE_URL);
-    expect(toastShow).toHaveBeenCalledWith({ variant: 'success', message: 'Recording link copied to clipboard' });
+    expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Recording link copied to clipboard' });
   });
 
   it('shows an error toast when the copy fails', () => {
