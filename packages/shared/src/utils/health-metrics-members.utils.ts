@@ -23,6 +23,7 @@ import {
   HEALTH_METRICS_MEMBERS_GROWTH_BASELINE_YEAR,
   HEALTH_METRICS_MEMBERS_GROWTH_COLORS,
   HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES,
   HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS,
   HEALTH_METRICS_MEMBERS_GROWTH_PLOT,
   HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
@@ -71,6 +72,7 @@ import type {
   HealthMetricsMembersDirectoryRowView,
   HealthMetricsMembersGrowth,
   HealthMetricsMembersGrowthColumnView,
+  HealthMetricsMembersGrowthLabelPlacement,
   HealthMetricsMembersGrowthLabelView,
   HealthMetricsMembersGrowthLegendItemView,
   HealthMetricsMembersGrowthPathView,
@@ -273,8 +275,7 @@ export function buildHealthMetricsMembersGrowthView(
       leftPct: leftPct(now),
       topPct: topPct(sofar),
       color: colors.current,
-      emphasis: true,
-      placement: 'below-right',
+      classes: growthLabelClasses('below-right', true),
     },
   ];
   if (hasProjection) {
@@ -284,8 +285,7 @@ export function buildHealthMetricsMembersGrowthView(
       leftPct: 100,
       topPct: topPct(projected),
       color: colors.current,
-      emphasis: false,
-      placement: 'right-below',
+      classes: growthLabelClasses('right-below', false),
     });
   }
   if (prior) {
@@ -295,8 +295,7 @@ export function buildHealthMetricsMembersGrowthView(
       leftPct: 100,
       topPct: topPct(prior[11]),
       color: colors.prior,
-      emphasis: true,
-      placement: 'right',
+      classes: growthLabelClasses('right', true),
     });
   }
 
@@ -1080,6 +1079,11 @@ function emptyGrowthView(): HealthMetricsMembersGrowthView {
     legend: [],
     ariaLabel: '',
   };
+}
+
+function growthLabelClasses(placement: HealthMetricsMembersGrowthLabelPlacement, strong: boolean): string {
+  const classes = HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES;
+  return `${classes.placement[placement]} ${strong ? classes.strong : classes.regular}`;
 }
 
 /** A year's running totals with gaps carried forward from the month before, starting from none. */

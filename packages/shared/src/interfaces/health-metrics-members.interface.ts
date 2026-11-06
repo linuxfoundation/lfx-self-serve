@@ -192,15 +192,21 @@ export interface HealthMetricsMembersGrowthPathView {
 /** Where an end label sits beside its point: below and right, right and just below, or right and centred. */
 export type HealthMetricsMembersGrowthLabelPlacement = 'below-right' | 'right-below' | 'right';
 
-/** A label on the plot, positioned in percent of the plot box. */
+/** The end labels' offsets by placement, and their weights; applied via [class], so Tailwind's safelist carries them. */
+export interface HealthMetricsMembersGrowthLabelClasses {
+  placement: Record<HealthMetricsMembersGrowthLabelPlacement, string>;
+  strong: string;
+  regular: string;
+}
+
+/** A label on the plot, positioned in percent of the plot box, with its offset and weight classes. */
 export interface HealthMetricsMembersGrowthLabelView {
   key: string;
   text: string;
   leftPct: number;
   topPct: number;
   color: string;
-  emphasis: boolean;
-  placement: HealthMetricsMembersGrowthLabelPlacement;
+  classes: string;
 }
 
 /** A month's hover and focus target, with its popup. */
@@ -229,7 +235,7 @@ export interface HealthMetricsMembersGrowthView {
   monthLabels: string[];
   /** Earlier years first, so this year draws on top. */
   paths: HealthMetricsMembersGrowthPathView[];
-  /** The earlier years' range; empty in All years, or with no earlier year. */
+  /** The earlier years' range; empty in All years, or with no year from the band's first year on. */
   bandPath: string;
   /** This month's x in the viewBox, for the Today line. */
   todayX: number;

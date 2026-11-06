@@ -25,18 +25,10 @@ import { OverviewKpiStripComponent } from '../../../health-metrics-overview/comp
 
 import type {
   HealthMetricsMembersGrowth,
-  HealthMetricsMembersGrowthLabelPlacement,
   HealthMetricsMembersGrowthQuery,
   HealthMetricsMembersGrowthView,
   HealthMetricsMembersGrowthViewMode,
 } from '@lfx-one/shared/interfaces';
-
-/** How each end label sits off its point, as the design offsets them. */
-const LABEL_PLACEMENT_CLASSES: Record<HealthMetricsMembersGrowthLabelPlacement, string> = {
-  'below-right': 'translate-x-[8px] translate-y-[4px]',
-  'right-below': 'translate-x-[10px] -translate-y-[2px]',
-  right: 'translate-x-[10px] -translate-y-1/2',
-};
 
 /**
  * `#growth` — new members this year, cumulative by month, against last year and the earlier years. The section
@@ -65,7 +57,6 @@ export class MembersGrowthComponent {
   protected readonly viewBox = `0 0 ${HEALTH_METRICS_MEMBERS_GROWTH_PLOT.width} ${HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height}`;
   /** Gridlines at each quarter of the plot, top down; the base is the axis. */
   protected readonly gridlines = [0, 0.25, 0.5, 0.75].map((fraction) => fraction * HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height);
-  protected readonly labelClasses = LABEL_PLACEMENT_CLASSES;
   protected readonly mode = signal<HealthMetricsMembersGrowthViewMode>(HEALTH_METRICS_MEMBERS_GROWTH_VIEW_OPTIONS[0].value);
   /** The month whose popup shows, and whether it opens to the month's left for want of room. */
   protected readonly tip = signal<{ index: number; flip: boolean } | null>(null);

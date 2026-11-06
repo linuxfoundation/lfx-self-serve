@@ -12,7 +12,7 @@ import {
 } from './health-metrics-members.constants';
 
 describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
-  it('keys the seven sections uniquely, in the design order', () => {
+  it('keys the eight sections uniquely, in the design order', () => {
     expect(HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => section.key)).toEqual(['growth', 'breakdown', 'list', 'risk', 'renewals', 'board', 'nps', 'churn']);
   });
 

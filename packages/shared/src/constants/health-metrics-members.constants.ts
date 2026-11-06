@@ -31,6 +31,7 @@ import type {
   HealthMetricsMembersDirectoryTierOption,
   HealthMetricsMembersEngagementLevel,
   HealthMetricsMembersGrowth,
+  HealthMetricsMembersGrowthLabelClasses,
   HealthMetricsMembersGrowthViewOption,
   HealthMetricsMembersNps,
   HealthMetricsMembersNpsCategory,
@@ -202,6 +203,17 @@ export const HEALTH_METRICS_MEMBERS_GROWTH_COLORS = {
   gridline: lfxColors.gray[100],
   axis: lfxColors.gray[200],
 } as const;
+
+/** How each end label sits off its point, as the design offsets them, and its weight. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES: HealthMetricsMembersGrowthLabelClasses = {
+  placement: {
+    'below-right': 'translate-x-[8px] translate-y-[4px]',
+    'right-below': 'translate-x-[10px] -translate-y-[2px]',
+    right: 'translate-x-[10px] -translate-y-1/2',
+  },
+  strong: 'font-semibold',
+  regular: 'font-medium',
+};
 
 /** The view switch over the growth chart; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_GROWTH_VIEW_OPTIONS: readonly HealthMetricsMembersGrowthViewOption[] = [
