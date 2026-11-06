@@ -174,6 +174,8 @@ import {
   GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY,
   GOOGLE_DEMAND_GEN_MAX_AD_GROUPS,
   GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP,
+  GOOGLE_DISPLAY_AD_GROUPS_EMPTY,
+  GOOGLE_DISPLAY_MAX_AD_GROUPS,
   GOOGLE_CREATIVE_SHARED_CAPS,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
@@ -308,6 +310,9 @@ import type {
   GoogleDemandGenAdGroup,
   GoogleDemandGenAdGroupControls,
   GoogleDemandGenAdGroupDraft,
+  GoogleDisplayAdGroup,
+  GoogleDisplayAdGroupControls,
+  GoogleDisplayAdGroupDraft,
   GoogleCreativeSectionField,
   GoogleCreativeHeldImage,
   GoogleCreativeImageRef,
@@ -367,6 +372,7 @@ import {
   googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
   googleExcludedPlacementsRefusal,
+  googleDisplayAdGroupsRefusal,
   googleCreativeImageRequirement,
   googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
@@ -1225,6 +1231,10 @@ export class ImplementationTabComponent implements OnInit {
     // Empty by default, which sends no `demandGenAudience`; held, not sent, while the campaign is split.
     demandGenAudience: this.fb.nonNullable.control(''),
     demandGenAds: new FormArray<FormGroup<GoogleDemandGenAdControls>>([]),
+    // The Display campaign split into named ad groups (#475), on the Demand Gen split's terms: off by
+    // default, the groups kept whichever way it sits, and only an active split renders and sends them.
+    displayAdGroupsSplit: this.fb.nonNullable.control(false),
+    displayAdGroups: new FormArray<FormGroup<GoogleDisplayAdGroupControls>>([]),
     // The Google bidding plan. All five are STRINGS, including the three money/ratio fields, so
     // that "" can mean "not supplied" — which is a different answer from a typed 0, and the one
     // the wire needs, since upstream reads 0 as absent on all three.
@@ -3477,6 +3487,8 @@ export class ImplementationTabComponent implements OnInit {
     // A retained Demand Gen audience the request cannot carry (#5244), on the audience segments' terms:
     // held, never dropped, whatever the cutover.
     if (this.demandGenAudienceBlock() !== null) return false;
+    // The named Display ad groups campaign-service would refuse (#475).
+    if (googleSelected && this.displayAdGroupsError() !== null) return false;
     // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
     // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
@@ -3994,6 +4006,14 @@ export class ImplementationTabComponent implements OnInit {
     video: this.resolveCreativeFields(GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS),
   };
   protected readonly demandGenMaxAdGroups = GOOGLE_DEMAND_GEN_MAX_AD_GROUPS;
+  /** The Display split's counterparts of the four Demand Gen signals above (#475). */
+  protected readonly displayAdGroupsActive: Signal<boolean> = this.initDisplayAdGroupsActive();
+  protected readonly displayAdGroupsError: Signal<string | null> = this.initDisplayAdGroupsError();
+  protected readonly displayAdGroupsHeldMessage: Signal<string> = this.initDisplayAdGroupsHeldMessage();
+  /** Each Display ad group field's error, keyed `<group index>.<control>`. */
+  protected readonly displayAdGroupFieldErrors: Signal<Record<string, string>> = this.initDisplayAdGroupFieldErrors();
+  protected readonly displayAdGroupFields: readonly GoogleCreativeSectionField[] = this.resolveCreativeFields(GOOGLE_CREATIVE_FIELD_SPECS['display']);
+  protected readonly displayMaxAdGroups = GOOGLE_DISPLAY_MAX_AD_GROUPS;
   protected readonly googleCreativeEmptyWarning: Signal<string | null> = this.initGoogleCreativeEmptyWarning();
   protected readonly redditNoAdWarning: Signal<string | null> = this.initRedditNoAdWarning();
   protected readonly campaignName: Signal<string> = this.initCampaignName();
@@ -4228,6 +4248,16 @@ export class ImplementationTabComponent implements OnInit {
           if (shouldBeEnabled) creative.enable({ emitEvent: false });
           else creative.disable({ emitEvent: false });
         }
+      }
+    });
+    // The same for each named Display ad group (#475): its ad is enabled only while the split is active.
+    effect(() => {
+      const active = this.displayAdGroupsActive();
+      void this.campaignFormRevision();
+      for (const { controls } of this.campaignForm.controls.displayAdGroups.controls) {
+        if (active === controls.creative.enabled) continue;
+        if (active) controls.creative.enable({ emitEvent: false });
+        else controls.creative.disable({ emitEvent: false });
       }
     });
 
@@ -5765,6 +5795,8 @@ export class ImplementationTabComponent implements OnInit {
       // The single ad group's Audience (#5244), on the same gate; absent unless one was picked and the
       // campaign is not split.
       ...(platforms.includes('google-ads') ? this.googleDemandGenAudiencePayload() : {}),
+      // The named Display ad groups (#475), on the same terms.
+      ...(platforms.includes('google-ads') ? this.googleDisplayAdGroupsPayload() : {}),
       // The bidding plan, Google-gated for the same reason the creative is, and already narrowed
       // to the fields the effective strategy and channel actually take.
       ...(platforms.includes('google-ads') ? this.googleBiddingPayload() : {}),
@@ -6068,7 +6100,7 @@ export class ImplementationTabComponent implements OnInit {
     const groups = this.campaignForm.controls.demandGenAdGroups;
     if (groups.length >= GOOGLE_DEMAND_GEN_MAX_AD_GROUPS) return;
     groups.push(this.buildDemandGenAdGroup());
-    this.focusDemandGenAdGroupAfterRender(groups.length - 1);
+    this.focusAdGroupAfterRender('demand-gen', groups.length - 1);
   }
 
   /**
@@ -6078,7 +6110,28 @@ export class ImplementationTabComponent implements OnInit {
   protected removeDemandGenAdGroup(index: number): void {
     const groups = this.campaignForm.controls.demandGenAdGroups;
     groups.removeAt(index);
-    this.focusDemandGenAdGroupAfterRender(Math.min(index, groups.length - 1));
+    this.focusAdGroupAfterRender('demand-gen', Math.min(index, groups.length - 1));
+  }
+
+  /** {@link onDemandGenAdGroupsSplitChange} for the Display split (#475). */
+  protected onDisplayAdGroupsSplitChange(): void {
+    const groups = this.campaignForm.controls.displayAdGroups;
+    if (this.campaignForm.controls.displayAdGroupsSplit.value && groups.length === 0) groups.push(this.buildDisplayAdGroup());
+  }
+
+  /** {@link addDemandGenAdGroup} for Display (#475): up to {@link GOOGLE_DISPLAY_MAX_AD_GROUPS}, focus to the new name. */
+  protected addDisplayAdGroup(): void {
+    const groups = this.campaignForm.controls.displayAdGroups;
+    if (groups.length >= GOOGLE_DISPLAY_MAX_AD_GROUPS) return;
+    groups.push(this.buildDisplayAdGroup());
+    this.focusAdGroupAfterRender('display', groups.length - 1);
+  }
+
+  /** {@link removeDemandGenAdGroup} for Display (#475): focus to the group now in its place, the last, or Add. */
+  protected removeDisplayAdGroup(index: number): void {
+    const groups = this.campaignForm.controls.displayAdGroups;
+    groups.removeAt(index);
+    this.focusAdGroupAfterRender('display', Math.min(index, groups.length - 1));
   }
 
   /** The second and later ads of ad group `group`, or of the single ad group for `null` (#5226). */
@@ -7351,6 +7404,18 @@ export class ImplementationTabComponent implements OnInit {
     if (typeof draft.demandGenAdGroupsSplit === 'boolean') {
       this.campaignForm.controls.demandGenAdGroupsSplit.setValue(draft.demandGenAdGroupsSplit);
     }
+    // The named Display ad groups (#475), on the same terms.
+    if (Array.isArray(draft.displayAdGroups)) {
+      const groups = this.campaignForm.controls.displayAdGroups;
+      groups.clear({ emitEvent: false });
+      for (const saved of draft.displayAdGroups.slice(0, GOOGLE_DISPLAY_MAX_AD_GROUPS)) {
+        if (saved !== null && typeof saved === 'object') groups.push(this.buildDisplayAdGroup(saved), { emitEvent: false });
+      }
+      groups.updateValueAndValidity();
+    }
+    if (typeof draft.displayAdGroupsSplit === 'boolean') {
+      this.campaignForm.controls.displayAdGroupsSplit.setValue(draft.displayAdGroupsSplit);
+    }
     // The stored images held in the Google image slots, on the Meta image's terms.
     if (draft.googleImageAssets !== undefined) {
       this.googleHeldImages.set(this.restoreGoogleHeldImages(draft.googleImageAssets));
@@ -7763,6 +7828,11 @@ export class ImplementationTabComponent implements OnInit {
       demandGenAds: this.campaignForm.controls.demandGenAds.controls.map((ad) => this.demandGenAdDraft(ad)),
       // The single ad group's Audience (#5244), split or not, so turning the split off restores it.
       demandGenAudience: this.campaignForm.controls.demandGenAudience.value,
+      displayAdGroupsSplit: this.campaignForm.controls.displayAdGroupsSplit.value,
+      displayAdGroups: this.campaignForm.controls.displayAdGroups.controls.map((group) => ({
+        name: group.controls.name.value,
+        creative: { ...group.controls.creative.getRawValue() },
+      })),
       // Copied per slot, so the parent holds a snapshot rather than this component's arrays.
       googleImageAssets: Object.fromEntries(
         Object.entries(this.googleHeldImages()).map(([slotKey, images]) => [slotKey, images.map((image) => ({ ...image }))])
@@ -8245,6 +8315,8 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.demandGenAdName.reset();
     this.campaignForm.controls.demandGenAds.clear();
     this.campaignForm.controls.demandGenAudience.reset();
+    this.campaignForm.controls.displayAdGroupsSplit.reset();
+    this.campaignForm.controls.displayAdGroups.clear();
     this.googleGeoTargets.set([]);
     this.googlePostalGeoTargets.set([]);
     this.googlePostalGeoLabels.set({});
@@ -8789,6 +8861,7 @@ export class ImplementationTabComponent implements OnInit {
       // without changing which channels are in reach.
       void this.campaignFormRevision();
       const split = this.campaignForm.controls.demandGenAdGroupsSplit.value;
+      const displaySplit = this.campaignForm.controls.displayAdGroupsSplit.value;
       return this.googleCreativeChannelsInReach().map((channel) => {
         const group = this.googleCreativeGroupFor(channel);
         return {
@@ -8799,7 +8872,8 @@ export class ImplementationTabComponent implements OnInit {
           // Demand Gen split into named ad groups (#5226) keeps its section, which holds the split and
           // the groups, but none of the single ad's fields: every reader of the fields (the payload,
           // the errors, the image slots) then leaves the single ad alone.
-          fields: split && channel === 'demand-gen' ? [] : this.resolveCreativeFields(group.fields),
+          // Display split into named ad groups (#475) does the same.
+          fields: (split && channel === 'demand-gen') || (displaySplit && channel === 'display') ? [] : this.resolveCreativeFields(group.fields),
         };
       });
     });
@@ -11116,13 +11190,15 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * The groups the request could carry: each in-reach channel's {@link googleCreativeGroupFor}, except
-   * Demand Gen's while it is split into named ad groups (#5226), which sends neither of its two.
+   * Demand Gen's while it is split into named ad groups (#5226), which sends neither of its two, and
+   * Display's while it is split (#475).
    */
   private googleCreativeGroupsInReach(): Set<string> {
     const split = this.campaignForm.controls.demandGenAdGroupsSplit.value;
+    const displaySplit = this.campaignForm.controls.displayAdGroupsSplit.value;
     return new Set(
       this.googleCreativeChannelsInReach()
-        .filter((channel) => !(split && channel === 'demand-gen'))
+        .filter((channel) => !(split && channel === 'demand-gen') && !(displaySplit && channel === 'display'))
         .map((channel) => this.googleCreativeGroupFor(channel).groupName)
     );
   }
@@ -11496,7 +11572,7 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Focus the audience Remove button or picker input of ad group `group` (the single one for `null`) once
    * rendered. With no picker rendered, the group's name, or the single ad group's split checkbox, takes it,
-   * as {@link focusDemandGenAdGroupAfterRender} addresses them.
+   * as {@link focusAdGroupAfterRender} addresses them.
    */
   private focusDemandGenAudienceAfterRender(group: number | null, target: 'remove' | 'picker'): void {
     const key = group === null ? 'single' : `${group}`;
@@ -11533,19 +11609,115 @@ export class ImplementationTabComponent implements OnInit {
     );
   }
 
-  /** Focus ad group `index`'s name once it has rendered, or Add ad group for `-1`. */
-  private focusDemandGenAdGroupAfterRender(index: number): void {
+  /** Focus `channel`'s ad group `index` name once it has rendered, or its Add ad group button for `-1`. */
+  private focusAdGroupAfterRender(channel: 'demand-gen' | 'display', index: number): void {
     afterNextRender(
       () => {
         const host = this.host.nativeElement;
         const target =
           index < 0
-            ? host.querySelector<HTMLElement>('[data-testid="implementation-demand-gen-ad-group-add"] button')
-            : host.querySelector<HTMLElement>(`#demand-gen-ad-group-${index}-name`);
+            ? host.querySelector<HTMLElement>(`[data-testid="implementation-${channel}-ad-group-add"] button`)
+            : host.querySelector<HTMLElement>(`#${channel}-ad-group-${index}-name`);
         target?.focus();
       },
       { injector: this.injector }
     );
+  }
+
+  /** {@link demandGenAdGroupsActive} for Display (#475). */
+  private initDisplayAdGroupsActive(): Signal<boolean> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      return this.campaignForm.controls.displayAdGroupsSplit.value && this.googleCreativeSections().some((section) => section.channel === 'display');
+    });
+  }
+
+  /**
+   * The named Display ad groups as the create sends them (#475), or `{}` while the split is not active,
+   * so a create without it is byte-identical. Each group sends its name and its ad, built as the sections'
+   * creatives are, with pasted URLs only; an ad that empties out is omitted, which the judge refuses.
+   */
+  private googleDisplayAdGroupsPayload(): { displayAdGroups?: GoogleDisplayAdGroup[] } {
+    if (!this.displayAdGroupsActive()) return {};
+    const groups = this.campaignForm.controls.displayAdGroups.controls.map((group): GoogleDisplayAdGroup => {
+      const name = group.controls.name.value.trim();
+      const creative = this.creativeFrom(this.displayAdGroupFields, group.controls.creative.getRawValue(), null);
+      return creative === null ? { name } : { name, creative: creative as GoogleDisplayAdGroup['creative'] };
+    });
+    return { displayAdGroups: groups };
+  }
+
+  /**
+   * {@link displayAdGroupsError}: the shared judge the BFF refuses the create on, over exactly what
+   * {@link googleDisplayAdGroupsPayload} sends, with each ad held to the single Display ad's minimums.
+   */
+  private initDisplayAdGroupsError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const groups = this.googleDisplayAdGroupsPayload().displayAdGroups;
+      if (groups === undefined) return null;
+      // Upstream reads an empty list as no split and would create the campaign with no ad at all.
+      if (groups.length === 0) return GOOGLE_DISPLAY_AD_GROUPS_EMPTY;
+      return googleDisplayAdGroupsRefusal(this.campaignForm.controls.eventName.value, groups, (creative) => {
+        const missing = this.googleCreativeShortfall('display', creative as Record<string, string | GoogleCreativeImageRef[]>);
+        return missing === null ? null : `the ad ${missing}`;
+      });
+    });
+  }
+
+  /**
+   * {@link initDemandGenAdGroupsHeldMessage} for Display (#475): with the split on, the single Display ad
+   * when it holds typed text or a stored image; with it off, the named groups when any holds anything.
+   */
+  private initDisplayAdGroupsHeldMessage(): Signal<string> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.googleCreativeSections().some((section) => section.channel === 'display')) return '';
+      const typed = (raw: Record<string, unknown>): boolean => Object.values(raw).some((value) => typeof value === 'string' && value.trim() !== '');
+      if (this.campaignForm.controls.displayAdGroupsSplit.value) {
+        const held = Object.entries(this.googleHeldImages()).some(([key, images]) => key.split('.')[0] === 'displayCreative' && images.length > 0);
+        if (!held && !typed(this.creativeGroup('displayCreative').getRawValue())) return '';
+        return 'The single Display ad you entered is kept but not sent while the campaign is split into ad groups. Turn the split off to send it instead.';
+      }
+      const groups = this.campaignForm.controls.displayAdGroups.controls.filter(
+        (group) => group.controls.name.value.trim() !== '' || typed(group.controls.creative.getRawValue())
+      );
+      if (groups.length === 0) return '';
+      const subject = groups.length === 1 ? 'ad group you entered is' : 'ad groups you entered are';
+      return `The Display ${subject} kept but not sent while the campaign is not split. Turn the split on to send ${groups.length === 1 ? 'it' : 'them'} instead.`;
+    });
+  }
+
+  /** {@link displayAdGroupFieldErrors}: each touched Display ad group field's error, as {@link creativeFieldError} words it. */
+  private initDisplayAdGroupFieldErrors(): Signal<Record<string, string>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      void this.campaignFormTouchRevision();
+      const errors: Record<string, string> = {};
+      if (!this.displayAdGroupsActive()) return errors;
+      for (const [index, group] of this.campaignForm.controls.displayAdGroups.controls.entries()) {
+        for (const field of this.displayAdGroupFields) {
+          const message = this.creativeControlError(group.controls.creative.get(field.control));
+          if (message !== null) errors[`${index}.${field.control}`] = message;
+        }
+      }
+      return errors;
+    });
+  }
+
+  /** One named Display ad group's controls, filled from a saved draft entry field by field when one is given. */
+  private buildDisplayAdGroup(saved?: GoogleDisplayAdGroupDraft): FormGroup<GoogleDisplayAdGroupControls> {
+    const group = new FormGroup<GoogleDisplayAdGroupControls>({
+      name: this.fb.nonNullable.control(typeof saved?.name === 'string' ? saved.name : ''),
+      creative: this.buildCreativeGroup('display'),
+    });
+    const values = saved?.creative;
+    if (values !== null && typeof values === 'object') {
+      for (const [control, value] of Object.entries(values)) {
+        if (typeof value === 'string') group.controls.creative.get(control)?.setValue(value);
+      }
+    }
+    return group;
   }
 
   /** Focus ad `index + 2`'s name in ad group `group` (the single one for `null`) once rendered, or its Add another ad for `-1` (#5226). */

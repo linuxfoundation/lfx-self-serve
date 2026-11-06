@@ -189,6 +189,13 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ads-error-live">
   {{ demandGenAdsError() ?? '' }}
 </div>
+<!-- The named Display ad groups' refusal and what the split leaves unsent (#475); empty off Display. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-ad-groups-error-live">
+  {{ displayAdGroupsError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-ad-groups-held-live">
+  {{ displayAdGroupsHeldMessage() }}
+</div>
 <!-- The first ad's display-width errors, announced on the same terms; empty off Search. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
   {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
@@ -2797,6 +2804,117 @@
               }
               @if (demandGenAdGroupsError(); as error) {
                 <p class="text-xs text-red-600" data-testid="implementation-demand-gen-ad-groups-error">{{ error }}</p>
+              }
+            </div>
+          }
+          <!--
+            Display split into named ad groups (#475), each with its own responsive display ad, on the
+            Demand Gen split's terms: on, the groups replace the single ad, which is kept but not sent;
+            off, the groups are kept but not sent. The note under the checkbox says which.
+          -->
+          @if (section.channel === 'display') {
+            <lfx-checkbox
+              [form]="campaignForm"
+              control="displayAdGroupsSplit"
+              inputId="implementation-display-ad-groups-split-input"
+              label="Split into named ad groups"
+              [ariaDescribedBy]="displayAdGroupsHeldMessage() ? 'implementation-display-ad-groups-held' : ''"
+              (change)="onDisplayAdGroupsSplitChange()"
+              class="mt-4 block"
+              data-testid="implementation-display-ad-groups-split" />
+            @if (displayAdGroupsHeldMessage()) {
+              <p id="implementation-display-ad-groups-held" class="mt-1 text-xs text-gray-500" data-testid="implementation-display-ad-groups-held">
+                {{ displayAdGroupsHeldMessage() }}
+              </p>
+            }
+          }
+          @if (section.channel === 'display' && displayAdGroupsActive()) {
+            <div class="mt-4 flex flex-col gap-4" formArrayName="displayAdGroups" data-testid="implementation-display-ad-groups">
+              <p class="text-xs text-gray-500">
+                Up to {{ displayMaxAdGroups }} ad groups, such as Retargeting and Prospecting, each with its own ad. Google Ads names each one after the event,
+                then " - Display Network | " and its name.
+              </p>
+              @for (group of campaignForm.controls.displayAdGroups.controls; track group; let i = $index) {
+                <fieldset
+                  class="flex flex-col gap-3 rounded-md border border-gray-200 p-4"
+                  [formGroupName]="i"
+                  [attr.data-testid]="'implementation-display-ad-group-' + i">
+                  <legend class="px-1 text-xs font-medium text-gray-700">Ad group {{ i + 1 }}</legend>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-700" [attr.for]="'display-ad-group-' + i + '-name'">Name</label>
+                    <lfx-input-text
+                      [form]="group"
+                      control="name"
+                      type="text"
+                      size="small"
+                      [inputId]="'display-ad-group-' + i + '-name'"
+                      [attr.data-testid]="'implementation-display-ad-group-name-' + i" />
+                  </div>
+                  <div class="flex flex-col gap-4" formGroupName="creative">
+                    @for (field of displayAdGroupFields; track field.control) {
+                      @let fieldId = 'display-ad-group-' + i + '-' + field.control;
+                      @let fieldError = displayAdGroupFieldErrors()[i + '.' + field.control];
+                      <div class="flex flex-col gap-1">
+                        <label class="text-xs font-medium text-gray-700" [attr.for]="fieldId">{{ field.label }}</label>
+                        @if (field.kind === 'list') {
+                          <lfx-textarea
+                            [form]="group.controls.creative"
+                            [control]="field.control"
+                            [inputId]="fieldId"
+                            [rows]="3"
+                            [describedBy]="fieldError ? fieldId + '-error' : undefined"
+                            [invalid]="!!fieldError"
+                            [attr.data-testid]="'implementation-display-ad-group-' + i + '-' + field.control" />
+                        } @else if (field.options) {
+                          <lfx-select
+                            [form]="group.controls.creative"
+                            [control]="field.control"
+                            [options]="field.selectOptions ?? []"
+                            [inputId]="fieldId"
+                            size="small"
+                            [attr.data-testid]="'implementation-display-ad-group-' + i + '-' + field.control" />
+                        } @else {
+                          <lfx-input-text
+                            [form]="group.controls.creative"
+                            [control]="field.control"
+                            type="text"
+                            size="small"
+                            [inputId]="fieldId"
+                            [describedBy]="fieldError ? fieldId + '-error' : null"
+                            [invalid]="!!fieldError"
+                            [attr.data-testid]="'implementation-display-ad-group-' + i + '-' + field.control" />
+                        }
+                        <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                        @if (fieldError) {
+                          <span class="text-xs text-red-600" [id]="fieldId + '-error'">{{ fieldError }}</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                  <div>
+                    <lfx-button
+                      label="Remove ad group"
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="removeDisplayAdGroup(i)"
+                      [attr.data-testid]="'implementation-display-ad-group-remove-' + i" />
+                  </div>
+                </fieldset>
+              }
+              @if (campaignForm.controls.displayAdGroups.length < displayMaxAdGroups) {
+                <div>
+                  <lfx-button
+                    label="Add ad group"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="addDisplayAdGroup()"
+                    data-testid="implementation-display-ad-group-add" />
+                </div>
+              }
+              @if (displayAdGroupsError(); as error) {
+                <p class="text-xs text-red-600" data-testid="implementation-display-ad-groups-error">{{ error }}</p>
               }
             </div>
           }

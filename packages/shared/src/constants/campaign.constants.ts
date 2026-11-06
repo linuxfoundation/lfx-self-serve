@@ -4741,6 +4741,7 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'demandGenAudience', label: 'Demand Gen audience', normalized: true },
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
+  { field: 'displayAdGroups', label: 'Display ad groups', normalized: true },
 ] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
 
 /**
@@ -5307,6 +5308,27 @@ export const GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES = 255;
  * in `demandgen.go`). A named group's full name is `<event name> - Display | <its name>`.
  */
 export const GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX = ' - Display';
+
+/** The `googleAdsConfig` key the named Display ad groups ride under (#475), INSTEAD of `displayCreative`. */
+export const GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY = 'displayAdGroups' satisfies keyof CampaignCreateRequest;
+
+/**
+ * The most named ad groups one Display campaign takes: campaign-service's `maxDisplayAdGroups`
+ * (`internal/platform/googleads/display_adgroups.go`), a service bound for the reasons the Demand Gen one has.
+ */
+export const GOOGLE_DISPLAY_MAX_AD_GROUPS = 5;
+
+/**
+ * Why the Implement tab holds Create when Display is split into ad groups but none is left. Upstream reads
+ * an empty `displayAdGroups` as no split (`validateDisplayAdGroups`), so the campaign would get no ad at all.
+ */
+export const GOOGLE_DISPLAY_AD_GROUPS_EMPTY = 'Add at least one ad group, or turn the split off to send the single Display ad instead.';
+
+/**
+ * What campaign-service appends to the event name to name a Display ad group (`displayAdGroupName` in
+ * `display_creative.go`). A named group's full name is `<event name> - Display Network | <its name>`.
+ */
+export const GOOGLE_DISPLAY_AD_GROUP_NAME_SUFFIX = ' - Display Network';
 
 /**
  * What campaign-service appends to a named Demand Gen ad group's full name to name its video ad

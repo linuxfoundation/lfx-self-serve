@@ -1463,6 +1463,10 @@ export interface CampaignImplementationDraft {
   demandGenAds?: GoogleDemandGenAdDraft[];
   /** The single Demand Gen ad group's picked Audience resource name (#5244). Absent leaves it alone. */
   demandGenAudience?: string;
+  /** Whether the Display campaign is split into named ad groups (#475). Absent restores the default, off. */
+  displayAdGroupsSplit?: boolean;
+  /** The named Display ad groups as typed, kept whether or not the split is on. Absent leaves the form's groups alone. */
+  displayAdGroups?: GoogleDisplayAdGroupDraft[];
   /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
@@ -3203,6 +3207,33 @@ export interface GoogleDemandGenAdGroupControls extends GoogleDemandGenAdControl
 }
 
 /**
+ * One named Display ad group (#475), typed to an entry of `googleAdsConfig.displayAdGroups`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDisplayAdGroupConfig`). campaign-service names the group
+ * `<event name> - Display Network | <name>` and requires its responsive display ad.
+ *
+ * Upstream also takes the group's audience lists and user-list exclusions, all but `userInterests`
+ * behind `GOOGLE_ADS_DISPLAY_AUDIENCES_ENABLED` (`googleAdsDisplayAudienceFieldsSet`). None is sent:
+ * this application offers no audience input on a Display ad group.
+ */
+export interface GoogleDisplayAdGroup {
+  name: string;
+  /** The group's responsive display ad, the same shape as {@link CampaignCreateRequest.displayCreative}. */
+  creative?: GoogleDisplayCreative;
+}
+
+/** One Display ad group as the Implement tab's draft keeps it: the name and the ad's raw text. */
+export interface GoogleDisplayAdGroupDraft {
+  name: string;
+  creative: Record<string, string>;
+}
+
+/** The form controls of one Display ad group on the Implement tab: {@link GoogleDisplayAdGroupDraft}, live. */
+export interface GoogleDisplayAdGroupControls {
+  name: import('@angular/forms').FormControl<string>;
+  creative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+}
+
+/**
  * The Performance Max ASSET GROUP, typed to `googleAdsConfig.performanceMaxCreative`.
  *
  * A Performance Max campaign has no ad groups and no ads — its creative lives in a named asset
@@ -3823,6 +3854,11 @@ export interface CampaignCreateRequest {
   demandGenAudience?: string;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
+  /**
+   * The Display campaign split into named ad groups (#475), sent INSTEAD of {@link displayCreative}:
+   * campaign-service refuses the list beside it. At most `GOOGLE_DISPLAY_MAX_AD_GROUPS`.
+   */
+  displayAdGroups?: GoogleDisplayAdGroup[];
   /**
    * The places the Google campaign serves in, as ISO 3166-1 alpha-2 country codes or raw numeric
    * Google geo target constant ids — the two spellings upstream's `resolveGeoList` tells apart by
