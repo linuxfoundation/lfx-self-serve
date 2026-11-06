@@ -113,7 +113,7 @@ describe('CampaignController.getGoogleAdsUserLists', () => {
     });
   });
 
-  it('drops a row whose resource name audienceSegments would refuse, and offers a repeated one once', async () => {
+  it('drops a row whose resource name campaignAudienceSegments would refuse, and offers a repeated one once', async () => {
     const row = LISTS.user_lists[0];
     svcList.mockResolvedValueOnce({
       ...LISTS,
@@ -123,6 +123,7 @@ describe('CampaignController.getGoogleAdsUserLists', () => {
         { ...row, resource_name: 'customers/8666746580/customAudiences/333' },
         { ...row, resource_name: '333' },
         { ...row, resource_name: 'customers/866-674-6580/userLists/444' },
+        { ...row, resource_name: 'customers/8666746580/userLists/0555' },
         { ...row, resource_name: undefined as unknown as string },
       ],
     });

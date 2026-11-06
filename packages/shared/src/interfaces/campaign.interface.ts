@@ -1601,7 +1601,10 @@ export interface CampaignImplementationDraft {
   googleStructuredSnippets?: CampaignStructuredSnippet[];
   /**
    * Google's audience segments, as the user-list resource names the operator entered — already
-   * trimmed, because an entry only becomes a chip once it has passed the add guards.
+   * trimmed, because an entry only becomes a chip once it has passed the add guards. A create sends
+   * them as `campaignAudienceSegments`, observed on the whole Search campaign (#5244); a draft saved
+   * while they went out as `audienceSegments` holds the same names under this same key, so it
+   * restores unchanged and sends them at the campaign level too.
    *
    * Held and restored on the same rule as {@link googleCallouts}: absent and empty agree, and a list
    * saved under a non-Search channel is kept rather than discarded. Typed by hand like
@@ -2523,7 +2526,7 @@ export interface GoogleConversionActionPickerState {
 /**
  * One user list on the Google Ads account a create uses, as the Implement tab's audience segment
  * picker offers it (campaign-service `list-google-ads-user-lists`, camel-cased). `resourceName` is the
- * `customers/{customerId}/userLists/{id}` form `audienceSegments` accepts and the one the picker adds;
+ * `customers/{customerId}/userLists/{id}` form `campaignAudienceSegments` accepts and the one the picker adds;
  * the rest are labels only. `eligibleForSearch` is `null` when Google reported nothing.
  */
 export interface GoogleAdsUserListOption {
@@ -3955,10 +3958,25 @@ export interface CampaignCreateRequest {
    * Upstream attaches them to the ad group under an observation-only (bid-only) audience targeting
    * setting, by design reporting on an audience rather than narrowing reach. Omitted when empty, on
    * the same rule as {@link callouts}, and SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS`):
-   * upstream refuses the create on any other channel, so the UI withholds the list there and the BFF
-   * refuses it by name.
+   * upstream refuses the create on any other channel, and the BFF refuses it by name.
+   *
+   * The Implement tab no longer sends this key: its lists go out as {@link campaignAudienceSegments}.
+   * The BFF still accepts it, and refuses it beside that field.
    */
   audienceSegments?: string[];
+  /**
+   * The existing Google Ads user lists the Search CAMPAIGN observes, as full resource names
+   * (`customers/{customerId}/userLists/{id}`), dispatched as `googleAdsConfig.campaignAudienceSegments`
+   * (linuxfoundation/lfx-v2-campaign-service#525). Upstream adds one campaign criterion per list under
+   * the campaign's targeting setting AUDIENCE bid-only, so the lists report without narrowing reach and
+   * cover every ad group, including one added later.
+   *
+   * Omitted when empty. SEARCH ONLY, never beside {@link audienceSegments}, each entry a user list on
+   * the campaign's own account with a canonical id, at most `GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS` distinct
+   * lists; repeats are collapsed upstream. The BFF refuses each of those by name, except the account
+   * match, which it cannot see. Needs `global_marketing_ops` on the project, as `audienceSegments` does.
+   */
+  campaignAudienceSegments?: string[];
   /**
    * The Google campaign's call extensions — a phone number shown with the text ad.
    *
@@ -6384,7 +6402,8 @@ export interface CampaignListResult {
    */
   metaInstagramDsaEnabled: boolean;
   /**
-   * Whether THIS caller may send Google audience segments (`audienceSegments`) on a create.
+   * Whether THIS caller may send Google audience segments (`audienceSegments` or
+   * `campaignAudienceSegments`) on a create.
    *
    * Per CALLER, unlike every capability above: true only when the campaign-service create path
    * serves the create AND the caller holds `global_marketing_ops` on the listed project (the LF
@@ -6637,6 +6656,27 @@ export interface CampaignGoogleLocationsCapabilityBlock {
  * campaign-service create path does not serve this deployment. The other kinds mean what they do on
  * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
  */
+/**
+ * Why upstream refuses one trimmed `campaignAudienceSegments` entry, in the order
+ * `validateCampaignAudienceSegments` checks it (`search_campaign_audiences.go`): `blank`, then `shape`
+ * (not `customers/{digits}/{kind}/{digits}`), then `notUserList` (a well-formed name of another kind,
+ * such as a custom audience), then `id` (a list id that is not the canonical base-10 spelling of a
+ * positive int64). The account match comes between the last two upstream; this client cannot see the
+ * campaign's account, so it is not judged here.
+ */
+export type GoogleCampaignAudienceSegmentFault = 'blank' | 'shape' | 'notUserList' | 'id';
+
+/**
+ * Why upstream refuses a trimmed `campaignAudienceSegments` list after its channel and level checks:
+ * `entries`, more than `GOOGLE_ADS_MAX_CAMPAIGN_AUDIENCE_SEGMENT_ENTRIES` raw entries; `entry`, the
+ * first bad entry (1-based `position`); `lists`, more than `GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS` distinct
+ * lists. `count` is the raw or distinct count the rule judged.
+ */
+export type GoogleCampaignAudienceSegmentsRefusal =
+  | { rule: 'entries'; count: number }
+  | { rule: 'entry'; position: number; fault: GoogleCampaignAudienceSegmentFault }
+  | { rule: 'lists'; count: number };
+
 export interface CampaignGoogleAudienceSegmentsBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
   message: string;

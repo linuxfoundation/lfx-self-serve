@@ -1440,6 +1440,10 @@ describe('CampaignController.createCampaign cutover', () => {
       { audienceSegments: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `customers/1/userLists/${i}`) },
     ],
     [
+      'an oversized campaign audience list',
+      { campaignAudienceSegments: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `customers/1/userLists/${i}`) },
+    ],
+    [
       'an oversized sitelink list',
       { sitelinks: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ({ text: `s-${i}`, finalUrl: 'https://x.example' })) },
     ],
@@ -6420,6 +6424,158 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>).not.toHaveProperty('audienceSegments');
+  });
+
+  /**
+   * The Search campaign-level lists (lfx-v2-campaign-service#525), one test per branch of upstream's
+   * `validateCampaignAudienceSegments` (`search_campaign_audiences.go:63-115` at v1.0.33) the BFF can
+   * judge, plus the marketing-ops gate on the new field and the accept-cases.
+   */
+  describe('campaignAudienceSegments (#5244)', () => {
+    const LIST_A = 'customers/1234567890/userLists/111';
+    const LIST_B = 'customers/1234567890/userLists/222';
+    const lists = (n: number): string[] => Array.from({ length: n }, (_, i) => `customers/1234567890/userLists/${i + 1}`);
+    const sentConfig = (): Record<string, unknown> => envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    const create = (overrides: Record<string, unknown>) =>
+      controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    beforeEach(() => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000c1', error: null });
+    });
+
+    it("dispatches two lists as campaignAudienceSegments, trimmed with Go's rules, and no audienceSegments", async () => {
+      await create({ campaignAudienceSegments: [`\u00a0${LIST_A}\u0085`, LIST_B] });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(sentConfig()['campaignAudienceSegments']).toEqual([LIST_A, LIST_B]);
+      expect(sentConfig()).not.toHaveProperty('audienceSegments');
+      expect(envelopeFor(createCampaigns)).not.toHaveProperty('campaignAudienceSegments');
+    });
+
+    it('sends the Search config byte-identical to a create without the field when the list is empty', async () => {
+      await create({});
+      const without = JSON.stringify(envelopeFor(createCampaigns));
+      createCampaigns.mockClear();
+      await create({ campaignAudienceSegments: [] });
+
+      expect(JSON.stringify(envelopeFor(createCampaigns))).toBe(without);
+      expect(marketingOps).not.toHaveBeenCalled();
+    });
+
+    it('dispatches 80 entries that collapse to 20 lists, leaving the repeats for upstream to collapse', async () => {
+      const twenty = lists(20);
+      await create({ campaignAudienceSegments: [...twenty, ...twenty, ...twenty, ...twenty] });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(sentConfig()['campaignAudienceSegments']).toHaveLength(80);
+    });
+
+    it('refuses a caller without global_marketing_ops with the 403 before anything is built', async () => {
+      asWithoutMarketingOps();
+      await create({ campaignAudienceSegments: [LIST_A] });
+
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as AuthorizationError;
+      expect(error).toBeInstanceOf(AuthorizationError);
+      expect(error.code).toBe(GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE);
+      expect(createCampaigns).not.toHaveBeenCalled();
+    });
+
+    it('refuses with a 503 when the global_marketing_ops check cannot be made', async () => {
+      marketingOps.mockRejectedValueOnce(new Error('access check unavailable'));
+      await create({ campaignAudienceSegments: [LIST_A] });
+
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
+      expect(error.statusCode).toBe(503);
+      expect(error.code).toBe(GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_CODE);
+      expect(createCampaigns).not.toHaveBeenCalled();
+    });
+
+    it('refuses a malformed value from a caller without global_marketing_ops on the 403, not the shape', async () => {
+      asWithoutMarketingOps();
+      await create({ campaignAudienceSegments: LIST_A });
+
+      expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+    });
+
+    it('refuses the field by name when the cutover is off, rather than letting legacy drop it', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      await create({ campaignAudienceSegments: [LIST_A] });
+
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error.validationErrors[0].field).toBe('campaignAudienceSegments');
+      expect(legacyCreate).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a bare string', LIST_A],
+      ['a list holding a number', [LIST_A, 7]],
+    ])('refuses %s, which the Go decode refuses', async (_label, value) => {
+      await create({ campaignAudienceSegments: value });
+
+      const error = refusalFrom();
+      expect(error.field).toBe('campaignAudienceSegments');
+      expect(error.message).toContain('must be a list');
+      expect(createCampaigns).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['demand-gen', 'Demand Gen'],
+      ['performance-max', 'Performance Max'],
+      ['display', 'Display'],
+    ])('refuses the lists on %s (`:68`)', async (channel, label) => {
+      await create({ campaignTypes: [channel], campaignAudienceSegments: [LIST_A] });
+
+      const error = refusalFrom();
+      expect(error.field).toBe('campaignAudienceSegments');
+      expect(error.message).toContain(label);
+      expect(createCampaigns).not.toHaveBeenCalled();
+    });
+
+    it('refuses the lists beside audienceSegments (`:71`)', async () => {
+      await create({ audienceSegments: [LIST_A], campaignAudienceSegments: [LIST_B] });
+
+      const error = refusalFrom();
+      expect(error.field).toBe('campaignAudienceSegments');
+      expect(error.message).toContain('one level only');
+      expect(createCampaigns).not.toHaveBeenCalled();
+    });
+
+    it('refuses more than 80 raw entries before judging any entry (`:82`)', async () => {
+      await create({ campaignAudienceSegments: [...Array.from({ length: 81 }, () => LIST_A), 'nope'] });
+
+      const error = refusalFrom();
+      expect(error.message).toContain('at most 80');
+      expect(error.message).toContain('82');
+    });
+
+    it.each([
+      ['a blank entry (`:89`)', [LIST_A, '  '], 'blank entry (campaign audience list 2)'],
+      ['a name that is not a resource name (`:93`)', ['customers/123-456-7890/userLists/1'], 'not a user list resource name'],
+      ['a custom audience (`:96`)', ['customers/1234567890/customAudiences/2'], 'is not a user list.'],
+      ['a list id with a leading zero (`:102`)', ['customers/1234567890/userLists/0111'], 'no leading zeros'],
+    ])('refuses %s, naming the entry by position and never echoing it', async (_label, value, expected) => {
+      await create({ campaignAudienceSegments: value });
+
+      const error = refusalFrom();
+      expect(error.field).toBe('campaignAudienceSegments');
+      expect(error.message).toContain(expected);
+      for (const entry of value) if (entry.trim() !== '') expect(error.message).not.toContain(entry);
+      expect(createCampaigns).not.toHaveBeenCalled();
+    });
+
+    it('refuses 21 distinct lists (`:111`)', async () => {
+      await create({ campaignAudienceSegments: lists(21) });
+
+      const error = refusalFrom();
+      expect(error.message).toContain('at most 20 different user lists');
+      expect(error.message).toContain('21');
+    });
+
+    it('refuses a bad audienceSegments entry first, as upstream judges that list before this one', async () => {
+      await create({ audienceSegments: ['nope'], campaignAudienceSegments: [LIST_B] });
+
+      expect(refusalFrom().field).toBe('audienceSegments');
+    });
   });
 
   it.each([

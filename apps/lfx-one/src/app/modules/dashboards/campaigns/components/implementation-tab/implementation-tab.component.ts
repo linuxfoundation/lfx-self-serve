@@ -371,6 +371,7 @@ import {
   googleSearchAdPathsRefusal,
   googleStrategyTakesScheduleAdjustments,
   googleSuggestedNegativeKeywordsText,
+  googleCampaignAudienceSegmentFault,
   googleUnpickedUserLists,
   googleUpperCodeList,
   googleUserListLabel,
@@ -1850,12 +1851,14 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleLanguageChips = computed(() => this.googleLanguages().map((code) => ({ code, name: this.googleLanguageNames.get(code) ?? code })));
   /**
-   * Google's audience segments — existing Customer Match or remarketing user lists the Search ad
-   * group targets, as full resource names (`customers/{customerId}/userLists/{id}`).
+   * Google's audience segments — existing Customer Match or remarketing user lists the Search
+   * campaign observes, as full resource names (`customers/{customerId}/userLists/{id}`). A create
+   * sends them as `campaignAudienceSegments`, so they cover every ad group of the campaign
+   * (linuxfoundation/lfx-v2-campaign-service#525).
    *
    * The resource name is what upstream takes, so it is the input: picked from the account's user lists
    * (`googleUserListPicker`, #5244) or typed, for a list the picker does not show. Both go through
-   * `addGoogleAudienceSegment`, where upstream's judgement of its SHAPE is mirrored.
+   * `addGoogleAudienceSegment`, where upstream's judgement of each entry is mirrored.
    */
   protected readonly googleAudienceSegments = signal<string[]>([]);
   protected readonly googleMaxAudienceSegments = GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS;
@@ -2590,15 +2593,31 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Why the text in the segment box would be refused, or `null` when it is blank or well formed.
    *
-   * `validateAudienceSegments`' per-entry branches, after Go's trim: a custom audience is named for
-   * what it is — upstream parses it and refuses it on Search — and anything else that is not a
-   * `.../userLists/{id}` resource name is refused as unrecognized. A repeat is not here: upstream
-   * collapses it rather than refusing, so the add simply declines to chip it twice.
+   * `validateCampaignAudienceSegments`' per-entry branches, after Go's trim
+   * (`googleCampaignAudienceSegmentFault`): a custom audience is named for what it is — upstream
+   * refuses it on a Search campaign — a user list whose id is not written as Google returns it is
+   * `id`, and anything else that is not a `.../userLists/{id}` resource name is refused as
+   * unrecognized. A repeat is not here: upstream collapses it rather than refusing, so the add simply
+   * declines to chip it twice.
    */
-  protected readonly googleAudienceSegmentDraftError = computed<'custom' | 'shape' | null>(() => {
+  protected readonly googleAudienceSegmentDraftError = computed<'custom' | 'shape' | 'id' | null>(() => {
     const trimmed = googleAdsTrimSpace(this.googleAudienceSegmentDraft());
-    if (trimmed === '' || GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(trimmed)) return null;
+    if (trimmed === '') return null;
+    if (GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(trimmed)) return googleCampaignAudienceSegmentFault(trimmed) === 'id' ? 'id' : null;
     return GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN.test(trimmed) ? 'custom' : 'shape';
+  });
+
+  /**
+   * The 1-based position of the first held segment the create could not send, or `null`. The add
+   * refuses every such entry, so only a RESTORED draft can hold one: one saved while the lists went
+   * out as `audienceSegments`, which took a list id with a leading zero that the campaign-level
+   * field refuses (`googleCampaignAudienceSegmentFault`). Counted only while the section is open,
+   * the one state in which the list is sent; Create waits rather than sending a refused list.
+   */
+  protected readonly googleAudienceSegmentsInvalidPosition = computed<number | null>(() => {
+    if (!this.googleAudienceSegmentsAvailable()) return null;
+    const index = this.googleAudienceSegments().findIndex((segment) => googleCampaignAudienceSegmentFault(segment) !== null);
+    return index === -1 ? null : index + 1;
   });
 
   /** The id of the message line describing the segment box, for `aria-describedby`, or `null`. */
@@ -3552,6 +3571,8 @@ export class ImplementationTabComponent implements OnInit {
     // Retained audience segments this caller may not (or may not yet be known to) send: held, never
     // dropped. Unlike the extensions they change who the campaign is aimed at, so the create waits.
     if (this.googleAudienceSegmentsBlock() !== null) return false;
+    // A restored segment the campaign-level field refuses: named in the section, never sent.
+    if (this.googleAudienceSegmentsInvalidPosition() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
     // written before these caps existed carries whatever list it had, and `applyDraft` replays it
     // verbatim by design (an emptied list must stay emptied). Without this the form would look
@@ -5166,12 +5187,15 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Add one audience segment, reporting whether it was actually added.
    *
-   * Each refusal mirrors upstream's `validateAudienceSegments` (`internal/platform/googleads/
-   * targeting.go`), so a segment that becomes a chip is one the create will accept:
-   *   - CAP: upstream compares the RAW list length first, so the cap is the door here too.
+   * Each refusal mirrors upstream's `validateCampaignAudienceSegments` (`internal/platform/googleads/
+   * search_campaign_audiences.go`), the field the lists are sent as, so a segment that becomes a chip
+   * is one the create will accept, the account match excepted (this tab does not judge it):
+   *   - CAP: upstream caps the DISTINCT lists at the same 20; the chips are distinct, so the cap is
+   *     the door here too.
    *   - BLANK: never chipped. Upstream refuses an empty entry, which would cost the whole create.
-   *   - SHAPE: only `customers/{id}/userLists/{id}` is attached; a custom audience or any other
-   *     resource name is refused upstream, so it stays in the box with its warning beside it.
+   *   - SHAPE: only `customers/{id}/userLists/{id}` with a canonical list id (no leading zero) is
+   *     attached; a custom audience or any other resource name is refused upstream, so it stays in
+   *     the box with its warning beside it ({@link googleCampaignAudienceSegmentFault}).
    *   - REPEAT: declined quietly. Upstream collapses a repeat rather than refusing it, so a second
    *     chip would show the operator a segment the request does not carry twice.
    *
@@ -5181,7 +5205,7 @@ export class ImplementationTabComponent implements OnInit {
   protected addGoogleAudienceSegment(text: string): boolean {
     if (this.googleAudienceSegments().length >= GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS) return false;
     const trimmed = googleAdsTrimSpace(text);
-    if (!GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(trimmed)) return false;
+    if (googleCampaignAudienceSegmentFault(trimmed) !== null) return false;
     if (this.googleAudienceSegments().includes(trimmed)) return false;
     this.googleAudienceSegments.update((segments) => [...segments, trimmed]);
     this.emitDraft();
@@ -10465,6 +10489,11 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The audience segments as the request carries them, or `{}` when there is nothing to send.
    *
+   * Sent as `campaignAudienceSegments`, observed on the whole Search campaign
+   * (linuxfoundation/lfx-v2-campaign-service#525), and never as `audienceSegments`: upstream refuses
+   * the two together. The Search ad group this tab builds carries no segments of its own, so nothing
+   * else on the request can clash with them.
+   *
    * Gated by `googleAudienceSegmentsAvailable`, the SAME computed the section opens on, so a list
    * entered under Search and then left behind by a channel switch is withheld rather than forwarded
    * into a refusal. Omitted rather than sent empty, by the absent-key route every caller predating
@@ -10473,7 +10502,7 @@ export class ImplementationTabComponent implements OnInit {
   private googleAudienceSegmentsPayload(): Partial<CampaignCreateRequest> {
     if (!this.googleAudienceSegmentsAvailable()) return {};
     const segments = this.googleAudienceSegments();
-    return segments.length > 0 ? { audienceSegments: [...segments] } : {};
+    return segments.length > 0 ? { campaignAudienceSegments: [...segments] } : {};
   }
 
   /**

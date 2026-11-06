@@ -10042,7 +10042,7 @@ describe('ImplementationTabComponent google user list picker', () => {
     });
   });
 
-  it('sends the same audienceSegments for a picked list as for the same list typed', async () => {
+  it('sends the same campaignAudienceSegments for a picked list as for the same list typed, and no audienceSegments', async () => {
     await setup(() => of(LISTS));
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedSearch();
@@ -10054,7 +10054,8 @@ describe('ImplementationTabComponent google user list picker', () => {
     await fixture.whenStable();
 
     const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
-    expect(request['audienceSegments']).toEqual([LIST_A, LIST_B]);
+    expect(request['campaignAudienceSegments']).toEqual([LIST_A, LIST_B]);
+    expect(request).not.toHaveProperty('audienceSegments');
   });
 
   it('adds nothing for a cleared field', async () => {
@@ -10163,6 +10164,8 @@ describe('ImplementationTabComponent google audience segments', () => {
     ['a bare user list id', '111', 'shape'],
     ['a trailing path segment', `${LIST_A}/extra`, 'shape'],
     ['an interest category', 'customers/1234567890/userInterests/80', 'shape'],
+    ['a list id with a leading zero, which the campaign-level field refuses', 'customers/1234567890/userLists/0111', 'id'],
+    ['a zero list id', 'customers/1234567890/userLists/0', 'id'],
   ])('refuses %s and says why while the text is still in the box', (_label, text, kind) => {
     const c = seedAudience({ includeSearch: true });
 
@@ -10221,12 +10224,59 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(c['googleAudienceSegments']()).toEqual([LIST_B]);
   });
 
-  it('sends the entered segments as audienceSegments on Search', () => {
+  it('sends the entered segments as campaignAudienceSegments on Search', () => {
     const c = seedAudience({ includeSearch: true });
     c['addGoogleAudienceSegment'](LIST_A);
     c['addGoogleAudienceSegment'](LIST_B);
 
-    expect(c['googleAudienceSegmentsPayload']()).toEqual({ audienceSegments: [LIST_A, LIST_B] });
+    expect(c['googleAudienceSegmentsPayload']()).toEqual({ campaignAudienceSegments: [LIST_A, LIST_B] });
+  });
+
+  it('says the lists apply to the whole campaign', () => {
+    seedAudience({ includeSearch: true });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-audience-segments-scope"]')?.textContent).toContain(
+      'These lists apply to the whole campaign, including any ad group added later.'
+    );
+  });
+
+  /**
+   * A draft saved while the lists went out as `audienceSegments` restores under the same key and is
+   * sent at the campaign level; one holding a list id the campaign-level field refuses holds Create
+   * with a visible reason rather than sending a refused request.
+   */
+  it('sends a draft saved before the change as campaignAudienceSegments', () => {
+    const c = seedAudience({ includeSearch: true });
+    restoreGoogleDraft(fixture, c, { includeSearch: true, googleAudienceSegments: [LIST_A, LIST_B] });
+    fixture.detectChanges();
+
+    expect(c['googleAudienceSegmentsPayload']()).toEqual({ campaignAudienceSegments: [LIST_A, LIST_B] });
+    expect(c['googleAudienceSegmentsInvalidPosition']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-audience-segments-invalid"]')).toBeNull();
+  });
+
+  it('holds Create for a restored list id the campaign-level field refuses, and releases it on Remove', () => {
+    const c = seedAudience({ includeSearch: true });
+    restoreGoogleDraft(fixture, c, { includeSearch: true, googleAudienceSegments: [LIST_A, 'customers/1234567890/userLists/0222'] });
+    fixture.detectChanges();
+    const notice = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-audience-segments-invalid"]');
+
+    expect(c['googleAudienceSegmentsInvalidPosition']()).toBe(2);
+    expect(notice()?.textContent).toContain('Audience segment 2 cannot be sent');
+    expect(c['canSubmit']()).toBe(false);
+
+    c['removeGoogleAudienceSegment'](1);
+    fixture.detectChanges();
+    expect(notice()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('does not hold Create for a refused restored list the request does not carry', () => {
+    const c = seedAudience({ includeDemandGen: true });
+    restoreGoogleDraft(fixture, c, { includeDemandGen: true, googleAudienceSegments: ['customers/1234567890/userLists/0222'] });
+    fixture.detectChanges();
+
+    expect(c['googleAudienceSegmentsInvalidPosition']()).toBeNull();
   });
 
   /** An absent key, not `[]`: the absent-key route every caller predating the field takes. */
@@ -10276,7 +10326,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     fixture.detectChanges();
     expect(notice()).toBeNull();
     expect(live().textContent?.trim()).toBe('');
-    expect(c['googleAudienceSegmentsPayload']()).toEqual({ audienceSegments: [LIST_A] });
+    expect(c['googleAudienceSegmentsPayload']()).toEqual({ campaignAudienceSegments: [LIST_A] });
   });
 
   /** The legacy road reads nothing on `googleAdsConfig`, so a segment there would be dropped. */
@@ -10407,7 +10457,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     fixture.detectChanges();
 
     expect(c['googleAudienceSegmentsBlock']()).toBeNull();
-    expect(c['googleAudienceSegmentsPayload']()).toEqual({ audienceSegments: [LIST_A] });
+    expect(c['googleAudienceSegmentsPayload']()).toEqual({ campaignAudienceSegments: [LIST_A] });
     expect(find('implementation-google-audience-segments-block-live')?.textContent?.trim()).toBe('');
   });
 
