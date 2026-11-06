@@ -5527,8 +5527,7 @@ export const GOOGLE_USER_LIST_PICKER_LOADING = "Loading this account's user list
 export const GOOGLE_USER_LIST_PICKER_EMPTY = 'This Google Ads account has no user lists to pick from. Enter a resource name below instead.';
 
 /** What the audience segment picker says when upstream returned only part of the account's lists. */
-export const GOOGLE_USER_LIST_PICKER_TRUNCATED =
-  "This account has more user lists than the picker shows. If one isn't listed, enter its resource name below.";
+export const GOOGLE_USER_LIST_PICKER_TRUNCATED = "This account has more user lists than the picker shows. If one isn't listed, enter its resource name below.";
 
 /**
  * The numeric bounds campaign-service applies to the three money/ratio fields, in whole units of

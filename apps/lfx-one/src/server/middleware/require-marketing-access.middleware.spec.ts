@@ -43,8 +43,14 @@ vi.mock('../services/project.service', () => ({
   }),
 }));
 
-const { requireMarketingAuditor, requireCampaignManager, requireMarketingAuditorOrLfStaff, requireNorthStarAccess, requireGoogleConversionActionsAccess, requireGoogleUserListsAccess } =
-  await import('./require-marketing-access.middleware');
+const {
+  requireMarketingAuditor,
+  requireCampaignManager,
+  requireMarketingAuditorOrLfStaff,
+  requireNorthStarAccess,
+  requireGoogleConversionActionsAccess,
+  requireGoogleUserListsAccess,
+} = await import('./require-marketing-access.middleware');
 
 interface PersonaResult {
   personas: string[];

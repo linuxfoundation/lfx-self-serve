@@ -37,7 +37,11 @@ describe('googleUserListLabel', () => {
 
 describe('googleUnpickedUserLists', () => {
   it('drops the lists already picked, keeping list order', () => {
-    const lists = [list(), list({ resourceName: 'customers/8666746580/userLists/2', id: '2', name: 'B' }), list({ resourceName: 'customers/8666746580/userLists/3', id: '3', name: 'C' })];
+    const lists = [
+      list(),
+      list({ resourceName: 'customers/8666746580/userLists/2', id: '2', name: 'B' }),
+      list({ resourceName: 'customers/8666746580/userLists/3', id: '3', name: 'C' }),
+    ];
     expect(googleUnpickedUserLists(lists, ['customers/8666746580/userLists/2']).map((l) => l.id)).toEqual(['1', '3']);
   });
 

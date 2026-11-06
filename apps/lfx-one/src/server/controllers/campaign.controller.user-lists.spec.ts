@@ -101,7 +101,13 @@ describe('CampaignController.getGoogleAdsUserLists', () => {
       accountId: '8666746580',
       userLists: [
         { resourceName: 'customers/8666746580/userLists/111', id: '111', name: 'KubeCon NA 2025 registrants', type: 'CRM_BASED', eligibleForSearch: true },
-        { resourceName: 'customers/8666746580/userLists/222', id: '222', name: 'customers/8666746580/userLists/222', type: 'RULE_BASED', eligibleForSearch: null },
+        {
+          resourceName: 'customers/8666746580/userLists/222',
+          id: '222',
+          name: 'customers/8666746580/userLists/222',
+          type: 'RULE_BASED',
+          eligibleForSearch: null,
+        },
       ],
       truncated: true,
     });
