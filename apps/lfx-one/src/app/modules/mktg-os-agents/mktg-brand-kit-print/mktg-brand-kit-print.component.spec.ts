@@ -116,17 +116,19 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(getComputedStyle(samples).breakInside).toBe('avoid');
   expect(samples.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
   // The board's sizes in table boxes: a 2 × 4 table of 110 px tiles (32 px icons, 11 px labels), a 110 px strip of eight cells (30 px icons).
+  // These boxes are Tailwind utilities, which the unit environment does not load (only the component's scss), so they are
+  // asserted by class; the e2e spec measures them in the browser.
   const tiles = samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tiles"]');
-  expect(getComputedStyle(tiles as HTMLElement).display).toBe('table');
+  expect(tiles?.classList.contains('table')).toBe(true);
   expect(tiles?.querySelectorAll(':scope > .table-row')).toHaveLength(2);
   expect(tiles?.querySelectorAll(':scope > .table-row > .table-cell')).toHaveLength(8);
   const tile = samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]');
-  expect(getComputedStyle(tile as HTMLElement).display).toBe('table');
+  expect(tile?.classList.contains('table')).toBe(true);
   expect(tile?.classList.contains('h-[110px]')).toBe(true);
   expect(tile?.querySelector('svg')?.getAttribute('width')).toBe('32');
   expect(tile?.querySelector('span')?.classList.contains('text-[11px]')).toBe(true);
   const strip = samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]');
-  expect(getComputedStyle(strip as HTMLElement).display).toBe('table');
+  expect(strip?.classList.contains('table')).toBe(true);
   expect(strip?.classList.contains('h-[110px]')).toBe(true);
   expect(strip?.classList.contains('px-[30px]')).toBe(true);
   expect(strip?.querySelectorAll(':scope > .table-row > .table-cell')).toHaveLength(8);
