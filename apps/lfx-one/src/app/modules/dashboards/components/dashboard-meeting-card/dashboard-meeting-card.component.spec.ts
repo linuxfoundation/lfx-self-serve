@@ -347,12 +347,34 @@ describe('DashboardMeetingCardComponent', () => {
     it('disables previous on the first meeting and next on the last', async () => {
       await render(buildMeeting());
       configure({ cardLabel: 'NEXT MEETING', pagerIndex: 0, pagerTotal: 3 });
-      expect(button('previous').disabled).toBe(true);
-      expect(button('next').disabled).toBe(false);
+      expect(button('previous').getAttribute('aria-disabled')).toBe('true');
+      expect(button('next').getAttribute('aria-disabled')).toBe('false');
 
       configure({ pagerIndex: 2 });
-      expect(button('previous').disabled).toBe(false);
-      expect(button('next').disabled).toBe(true);
+      expect(button('previous').getAttribute('aria-disabled')).toBe('false');
+      expect(button('next').getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('ignores a press on a button that is dimmed at the end of the range', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 0, pagerTotal: 3 });
+      const previous = vi.fn();
+      fixture.componentInstance.pagerPrevious.subscribe(previous);
+
+      button('previous').click();
+
+      expect(previous).not.toHaveBeenCalled();
+    });
+
+    it('keeps keyboard focus on the button when the end of the range is reached', async () => {
+      await render(buildMeeting());
+      configure({ cardLabel: 'NEXT MEETING', pagerIndex: 1, pagerTotal: 3 });
+      button('next').focus();
+
+      configure({ pagerIndex: 2 });
+
+      expect(button('next').getAttribute('aria-disabled')).toBe('true');
+      expect(document.activeElement).toBe(button('next'));
     });
 
     it('emits when the buttons are used', async () => {

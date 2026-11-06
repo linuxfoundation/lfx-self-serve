@@ -194,11 +194,11 @@ describe('MyMeetingsComponent', () => {
 
     it('stops at both ends instead of wrapping', async () => {
       await open([meetingIn('m1', 2), meetingIn('m2', 3)]);
-      expect((testId('dashboard-meeting-card-pager-previous') as HTMLButtonElement).disabled).toBe(true);
+      expect(testId('dashboard-meeting-card-pager-previous')?.getAttribute('aria-disabled')).toBe('true');
 
       await click('next');
 
-      expect((testId('dashboard-meeting-card-pager-next') as HTMLButtonElement).disabled).toBe(true);
+      expect(testId('dashboard-meeting-card-pager-next')?.getAttribute('aria-disabled')).toBe('true');
       await click('next');
       expect(position()).toBe('2 of 2');
     });

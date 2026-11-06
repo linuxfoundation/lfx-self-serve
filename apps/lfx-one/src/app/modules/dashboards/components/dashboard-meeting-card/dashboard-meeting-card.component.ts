@@ -132,6 +132,22 @@ export class DashboardMeetingCardComponent {
     this.joinUrl = toSignal(joinUrl$, { initialValue: null });
   }
 
+  /**
+   * The pager buttons use `aria-disabled` instead of the native `disabled`, which would drop keyboard focus when the
+   * user reaches an end of the range. The guard keeps a press on a dimmed button from doing anything.
+   */
+  public onPagerPrevious(): void {
+    if (this.pagerIndex() > 0) {
+      this.pagerPrevious.emit();
+    }
+  }
+
+  public onPagerNext(): void {
+    if (this.pagerIndex() < this.pagerTotal() - 1) {
+      this.pagerNext.emit();
+    }
+  }
+
   public resendInvite(): void {
     // The date this card shows: the occurrence input when given, else the next occurrence it resolves from the meeting
     // itself (Groups Overview passes only the meeting), so the registration that fits what is on screen is chosen.

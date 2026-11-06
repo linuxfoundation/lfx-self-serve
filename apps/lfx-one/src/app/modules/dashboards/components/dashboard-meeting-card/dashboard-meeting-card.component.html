@@ -24,10 +24,10 @@
             <div class="flex items-center gap-1" role="group" aria-label="Upcoming meetings" data-testid="dashboard-meeting-card-pager">
               <button
                 type="button"
-                class="flex h-5 w-5 items-center justify-center rounded text-gray-600 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                class="flex h-5 w-5 items-center justify-center rounded text-gray-600 hover:bg-blue-100 aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
                 aria-label="Previous upcoming meeting"
-                [disabled]="pagerIndex() <= 0"
-                (click)="pagerPrevious.emit()"
+                [attr.aria-disabled]="pagerIndex() <= 0"
+                (click)="onPagerPrevious()"
                 data-testid="dashboard-meeting-card-pager-previous">
                 <i class="fa-light fa-chevron-left text-[10px]" aria-hidden="true"></i>
               </button>
@@ -36,10 +36,10 @@
               </span>
               <button
                 type="button"
-                class="flex h-5 w-5 items-center justify-center rounded text-gray-600 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                class="flex h-5 w-5 items-center justify-center rounded text-gray-600 hover:bg-blue-100 aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
                 aria-label="Next upcoming meeting"
-                [disabled]="pagerIndex() >= pagerTotal() - 1"
-                (click)="pagerNext.emit()"
+                [attr.aria-disabled]="pagerIndex() >= pagerTotal() - 1"
+                (click)="onPagerNext()"
                 data-testid="dashboard-meeting-card-pager-next">
                 <i class="fa-light fa-chevron-right text-[10px]" aria-hidden="true"></i>
               </button>
