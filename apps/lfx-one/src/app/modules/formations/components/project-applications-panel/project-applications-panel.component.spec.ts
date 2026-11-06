@@ -279,7 +279,7 @@ describe('ProjectApplicationsPanelComponent — deep link (#5229)', () => {
         { provide: PLATFORM_ID, useValue: platform },
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(param ? { tab: 'proposals', application: param } : {})) } },
+        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(param !== null ? { tab: 'proposals', application: param } : {})) } },
         { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])), getProject: vi.fn(() => of(null)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
@@ -319,6 +319,12 @@ describe('ProjectApplicationsPanelComponent — deep link (#5229)', () => {
 
   it('opens nothing for a malformed uid, but still strips the param', async () => {
     const panel = await mount('staff', 'not-a-uuid', [buildApplication({ uid: 'not-a-uuid' })]);
+    expect(panel.selectedUid()).toBeNull();
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('strips an empty param too, opening nothing', async () => {
+    const panel = await mount('staff', '', [buildApplication({ uid: KNOWN })]);
     expect(panel.selectedUid()).toBeNull();
     expect(navigate).toHaveBeenCalledTimes(1);
   });

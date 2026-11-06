@@ -229,12 +229,12 @@ export class ProjectApplicationsPanelComponent implements OnInit {
     );
     combineLatest([requested$, readLanded$])
       .pipe(
-        filter(([uid, landed]) => !!uid && landed),
+        filter(([uid, landed]) => uid !== null && landed),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(([uid]) => {
-        const application = uid && isUuid(uid) ? this.applications().find((row) => row.uid.toLowerCase() === uid.toLowerCase()) : undefined;
+        const application = uid !== null && isUuid(uid) ? this.applications().find((row) => row.uid.toLowerCase() === uid.toLowerCase()) : undefined;
         if (application) {
           this.open(application);
         }
