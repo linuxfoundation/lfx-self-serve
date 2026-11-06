@@ -364,9 +364,19 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
     return backgrounds;
   });
   expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
-  for (const selector of ['lfx-mktg-framework-print', 'lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
-    await expect(printDocument.locator(selector).getByTestId('mktg-print-page-head').first()).toBeVisible();
-    await expect(printDocument.locator(selector).getByTestId('mktg-print-page-logo')).toBeVisible();
+  // Each content page of the three chrome-bearing parts shows its head and its lockup: the framework's content pages
+  // (its cover has none), the cards' pages (between the divider and the FAQ's) and the grid's (to the back cover).
+  const contentPagesOf = {
+    'lfx-mktg-framework-print': PLAN.frameworkPages - 1,
+    'lfx-mktg-boilerplates-print': PLAN.faqFirstPage - 1 - PLAN.boilerplatesFirstPage,
+    'lfx-mktg-faq-print': PLAN.pageCount - PLAN.faqFirstPage,
+  };
+  for (const [selector, pages] of Object.entries(contentPagesOf)) {
+    const part = printDocument.locator(selector);
+    await expect(part.getByTestId('mktg-print-page-head')).toHaveCount(2 * pages);
+    await expect(part.getByTestId('mktg-print-page-logo')).toHaveCount(pages);
+    for (const head of await part.getByTestId('mktg-print-page-head').all()) await expect(head).toBeVisible();
+    for (const logo of await part.getByTestId('mktg-print-page-logo').all()) await expect(logo).toBeVisible();
   }
   // None of the portrait prints' chrome prints: the framework and the kit are their landscape pages (above).
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter, lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveCount(0);
