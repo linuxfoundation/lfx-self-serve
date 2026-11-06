@@ -41,7 +41,7 @@
     @if (statsError()) {
       <lfx-org-training-stats-error testIdPrefix="org-training-stats" (retry)="retryStats()" />
     } @else {
-      <lfx-org-training-stats [stats]="shownStats()" [range]="range()" />
+      <lfx-org-training-stats [stats]="shownStats()" [range]="range()" [collapsible]="true" />
     }
 
     <!-- Content Card: product-type tabs over one group table (search is local to the table) -->
