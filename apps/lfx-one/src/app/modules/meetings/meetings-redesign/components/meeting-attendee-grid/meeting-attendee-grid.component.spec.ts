@@ -36,7 +36,7 @@ describe('MeetingAttendeeGridComponent', () => {
 
     const stats = Array.from(queryAll(fixture, 'meeting-attendee-grid-stats')[0].children).map((stat) => stat.textContent?.replace(/\s+/g, ' ').trim());
     expect(stats).toEqual(['Yes 1', 'Maybe 1', 'No 1', 'No response 1']);
-    expect(queryAll(fixture, 'meeting-attendee-grid-label').map((cell) => cell.textContent?.trim())).toEqual([
+    expect(queryAll(fixture, 'meeting-attendee-grid-label').map((cell) => cell.getAttribute('aria-label'))).toEqual([
       'Person03 Doe · Yes',
       'Person02 Doe · Maybe',
       'Person04 Doe · No',
@@ -88,6 +88,6 @@ describe('MeetingAttendeeGridComponent', () => {
     ] as PastMeetingParticipant[];
     const fixture = await render(people, { past: true });
 
-    expect(queryAll(fixture, 'meeting-attendee-grid-label').map((cell) => cell.textContent?.trim())).toEqual(['Ben C · Attended', 'Ana B · Absent']);
+    expect(queryAll(fixture, 'meeting-attendee-grid-label').map((cell) => cell.getAttribute('aria-label'))).toEqual(['Ben C · Attended', 'Ana B · Absent']);
   });
 });

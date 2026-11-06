@@ -102,14 +102,16 @@ describe('buildMeetingAttendeeGrid', () => {
     expect(buildMeetingAttendeeGrid([participant('1', 'Bea', true)], true).stats).toEqual([{ status: 'attended', label: 'Attended', count: 1 }]);
   });
 
-  it('builds the tooltip label, the photo and an email fallback for a blank name', () => {
-    const [named, blank] = buildMeetingAttendeeGrid(
-      [registrant('1', 'Ada', 'Lovelace', 'accepted', 'https://img/1.png'), registrant('2', ' ', '', null)],
+  it('builds the tooltip label and the photo, and never falls back to the email for a blank name', () => {
+    const withUsername = { ...registrant('3', '', '', null), username: 'jdoe' };
+    const [named, blank, handle] = buildMeetingAttendeeGrid(
+      [registrant('1', 'Ada', 'Lovelace', 'accepted', 'https://img/1.png'), registrant('2', ' ', '', null), withUsername],
       false
     ).people;
 
     expect(named).toEqual({ id: '1', name: 'Ada Lovelace', avatarUrl: 'https://img/1.png', status: 'yes', label: 'Ada Lovelace · Yes' });
-    expect(blank).toMatchObject({ name: '2@example.org', avatarUrl: '', label: '2@example.org · No response' });
+    expect(blank).toMatchObject({ name: 'Guest', avatarUrl: '', label: 'Guest · No response' });
+    expect(handle).toMatchObject({ name: 'jdoe', label: 'jdoe · No response' });
   });
 
   it('returns an empty grid for no people', () => {

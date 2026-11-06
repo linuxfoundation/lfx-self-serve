@@ -25,17 +25,24 @@
       data-testid="meeting-attendee-grid-list">
       @for (person of visiblePeople(); track person.id) {
         <li
-          class="relative inline-flex"
+          class="inline-flex"
           [class]="fluid() ? 'aspect-square w-full max-w-[28px] justify-self-center' : 'h-[28px] w-[28px]'"
-          [lfxUiTooltip]="person.label"
           data-testid="meeting-attendee-grid-person">
-          <lfx-ui-avatar class="!h-full !w-full" [name]="person.name" [src]="person.avatarUrl" [size]="28" decorative />
+          <!-- Outline, not ring: the avatar's background ring would paint over a focus ring. -->
           <span
-            class="absolute -right-px -top-px h-[7px] w-[7px] rounded-full ring-2 ring-white"
-            [class]="statusInfo[person.status].dotClass"
-            aria-hidden="true"
-            data-testid="meeting-attendee-grid-dot"></span>
-          <span class="sr-only" data-testid="meeting-attendee-grid-label">{{ person.label }}</span>
+            role="img"
+            tabindex="0"
+            class="relative inline-flex h-full w-full cursor-default rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+            [attr.aria-label]="person.label"
+            [lfxUiTooltip]="person.label"
+            data-testid="meeting-attendee-grid-label">
+            <lfx-ui-avatar class="!h-full !w-full" [name]="person.name" [src]="person.avatarUrl" [size]="28" decorative />
+            <span
+              class="absolute -right-px -top-px h-[7px] w-[7px] rounded-full ring-2 ring-white"
+              [class]="statusInfo[person.status].dotClass"
+              aria-hidden="true"
+              data-testid="meeting-attendee-grid-dot"></span>
+          </span>
         </li>
       }
     </ul>

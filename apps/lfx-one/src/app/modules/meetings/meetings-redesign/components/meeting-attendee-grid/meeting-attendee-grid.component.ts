@@ -46,8 +46,12 @@ export class MeetingAttendeeGridComponent {
   public readonly viewAll = output<void>();
 
   protected readonly statusInfo = MEETING_ATTENDEE_STATUS_INFO;
+  // A whole count of at least 1, so the CSS grid and the overflow math agree.
+  protected readonly columnCount: Signal<number> = computed(() => Math.max(1, Math.floor(this.columns())));
   protected readonly grid: Signal<MeetingAttendeeGrid> = computed(() => buildMeetingAttendeeGrid(this.people(), this.past()));
-  protected readonly overflow: Signal<MeetingAttendeeGridOverflow> = computed(() => getMeetingAttendeeGridOverflow(this.grid().people.length, this.columns()));
+  protected readonly overflow: Signal<MeetingAttendeeGridOverflow> = computed(() =>
+    getMeetingAttendeeGridOverflow(this.grid().people.length, this.columnCount())
+  );
   protected readonly visiblePeople: Signal<MeetingAttendeeGridPerson[]> = computed(() => this.grid().people.slice(0, this.overflow().visible));
-  protected readonly templateColumns: Signal<string> = computed(() => `repeat(${this.columns()}, ${this.fluid() ? 'minmax(0, 1fr)' : '28px'})`);
+  protected readonly templateColumns: Signal<string> = computed(() => `repeat(${this.columnCount()}, ${this.fluid() ? 'minmax(0, 1fr)' : '28px'})`);
 }

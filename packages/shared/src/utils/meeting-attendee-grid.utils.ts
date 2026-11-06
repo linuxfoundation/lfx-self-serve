@@ -20,11 +20,11 @@ export function buildMeetingAttendeeGrid(people: readonly (MeetingRegistrant | P
   const rank = (status: MeetingAttendeeStatus): number => MEETING_ATTENDEE_STATUS_ORDER.indexOf(status);
   const list = people
     .map((person): MeetingAttendeeGridPerson => {
-      const name = `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.email;
+      const name = `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.username || 'Guest';
       const status = getMeetingAttendeeStatus(person, past);
       return { id: person.uid, name, avatarUrl: person.avatar_url ?? '', status, label: `${name} · ${MEETING_ATTENDEE_STATUS_INFO[status].label}` };
     })
-    .sort((a, b) => rank(a.status) - rank(b.status) || a.name.localeCompare(b.name));
+    .sort((a, b) => rank(a.status) - rank(b.status) || a.name.localeCompare(b.name, 'en'));
   const stats = MEETING_ATTENDEE_STATUS_ORDER.map((status) => ({
     status,
     label: MEETING_ATTENDEE_STATUS_INFO[status].label,
@@ -33,9 +33,9 @@ export function buildMeetingAttendeeGrid(people: readonly (MeetingRegistrant | P
   return { people: list, stats };
 }
 
-/** How many of `total` people a grid of `columns` shows within its row cap, and whether more are hidden. */
+/** How many of `total` people a grid of `columns` (a whole count of at least 1) shows within its row cap, and whether more are hidden. */
 export function getMeetingAttendeeGridOverflow(total: number, columns: number): MeetingAttendeeGridOverflow {
-  const capacity = Math.max(1, Math.floor(columns)) * MEETING_ATTENDEE_GRID_MAX_ROWS;
+  const capacity = columns * MEETING_ATTENDEE_GRID_MAX_ROWS;
   return { visible: Math.min(total, capacity), more: total > capacity };
 }
 
