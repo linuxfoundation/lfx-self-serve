@@ -146,6 +146,7 @@ export * from './foundation-message.constants';
 export * from './mktg-print.constants';
 export * from './mktg-print-page.constants';
 export * from './mktg-print-brand-kit.constants';
+export * from './mktg-print-framework.constants';
 export * from './mktg-print-pages.constants';
 export * from './mktg-slides-export.constants';
 export * from './icp.constants';

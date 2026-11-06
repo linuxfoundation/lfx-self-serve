@@ -112,6 +112,7 @@ export * from './mktg-print.utils';
 export * from './mktg-print-fit.utils';
 export * from './mktg-print-page.utils';
 export * from './mktg-print-brand-kit.utils';
+export * from './mktg-print-framework.utils';
 export * from './mktg-print-pages.utils';
 export * from './mktg-slides-export.utils';
 export * from './mktg-session-event.utils';

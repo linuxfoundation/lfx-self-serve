@@ -123,7 +123,8 @@ function mktgPrintOnDarkInk(brand: MktgPrintBrand, hex: boolean): string {
  * The look a print's brand gives its pages, as the deck's look.ts computes it
  * from the kit (7839d985): the dark and the accent; the tint 6% of the dark in
  * white; the ink on the dark white when it reaches AA there, else the app's
- * darkest gray; the muted ink 30% white in the dark (the book's 70% opacity);
+ * darkest gray; the muted ink 30% white in the body ink (the deck mixes the
+ * dark: the same colour where the dark reads on white, a gray where it does not);
  * the rule 16% of the dark in white (the book's black/10); the typeface. The
  * body ink is the brand's (`ink`: the dark where it reads on white, else the
  * app's darkest gray), so a kit whose dark is white keeps its text legible
@@ -139,7 +140,7 @@ export function mktgPrintPageLook(brand: MktgPrintBrand): MktgPrintPageLook {
     ink: brand.ink,
     accent: brand.accent,
     tint: hex ? mktgPrintMixHex(MKTG_PRINT_INK_ON_DARK, brand.dark, 0.06) : brand.tint,
-    muted: hex ? mktgPrintMixHex(brand.dark, MKTG_PRINT_INK_ON_DARK, 0.3) : MKTG_PRINT_PAGE_MUTED_INK,
+    muted: hex ? mktgPrintMixHex(brand.ink, MKTG_PRINT_INK_ON_DARK, 0.3) : MKTG_PRINT_PAGE_MUTED_INK,
     rule: hex ? mktgPrintMixHex(MKTG_PRINT_INK_ON_DARK, brand.dark, 0.16) : MKTG_PRINT_PAGE_RULE_INK,
     onDark,
     font: brand.fontStack,

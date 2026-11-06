@@ -471,19 +471,28 @@ describe('MktgFrameworkViewComponent', () => {
     expect(wrapper?.className).toContain('lfx-framework-print-only');
     const print = query('mktg-framework-print');
     expect(print?.getAttribute('data-brand')).toBe('lf');
-    expect(query('mktg-framework-print-title')?.textContent).toContain('Messaging Framework');
-    expect(query('mktg-framework-print-tagline')?.textContent).toContain('Release, open.');
-    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 3');
-    expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toBe('/images/logo_lf_white.svg');
-    expect(query('mktg-framework-print-contents')?.textContent).toContain('Key numbers');
-    expect(query('mktg-framework-print-contents')?.textContent).not.toContain('Sources and gaps');
-    expect(query('mktg-framework-print-goals')?.querySelectorAll('thead th').length).toBe(3);
-    expect(query('mktg-framework-print-goals')?.textContent).toContain('Built together');
-    expect(query('mktg-framework-print-contents')?.textContent).not.toContain('ICPs');
-    expect(query('mktg-framework-print-icp-contributors')).toBeNull();
-    expect(query('mktg-framework-print-pillars')).toBeNull();
-    expect(print?.textContent).not.toContain('Open releases for everyone.');
-    expect(query('mktg-framework-print-numbers')?.textContent).toContain('releases a year');
+    // The deck's pages (lfx-mktg-framework-print): the cover with the title, the tagline, the version and the sections, then
+    // the four sections' pages, the ICPs and the message house among them, the run's report and note left out.
+    const cover = query('framework-print-cover');
+    expect(cover?.querySelector('[data-testid="mktg-print-page-title"]')?.textContent).toContain('Messaging Framework');
+    expect(cover?.querySelector('[data-testid="mktg-print-page-subtitle"]')?.textContent).toContain('Release, open.');
+    expect(cover?.textContent).toContain('Version 3');
+    expect(cover?.textContent?.replace(/\s+/g, ' ')).toContain('01 Framework 02 ICPs 03 Message house 04 Key numbers');
+    expect(cover?.textContent).not.toContain('Sources and gaps');
+    const pageTitles = Array.from(print?.querySelectorAll('[data-testid="framework-print-page"] [data-testid="mktg-print-page"]') ?? []).map((page) =>
+      page.getAttribute('data-title')
+    );
+    expect(pageTitles).toContain('Goal columns');
+    expect(pageTitles).toContain('ICPs');
+    expect(pageTitles).toContain('Message house');
+    expect(pageTitles).toContain('Key numbers');
+    expect(print?.textContent).toContain('Built together');
+    expect(print?.textContent).toContain('Open releases for everyone.');
+    expect(print?.textContent).toContain('releases a year');
+    // The LF lockup in every content page's logo frame.
+    expect(print?.querySelector('[data-testid="framework-print-page"] [data-testid="mktg-print-page-logo"] img')?.getAttribute('src')).toBe(
+      '/images/logo_lf_horizontal_color.png'
+    );
     expect(print?.textContent).not.toContain('No member count.');
     expect(print?.textContent).not.toContain('Check the member count.');
     expect(print?.textContent).not.toContain('Check the dates.');
@@ -507,8 +516,8 @@ describe('MktgFrameworkViewComponent', () => {
     host.approvedVersion.set(1);
     await fixture.whenStable();
     expect(query('mktg-framework-view-version')?.textContent).toContain('v3');
-    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 1');
-    expect(query('mktg-framework-print-tagline')?.textContent).toContain('Release, open.');
+    expect(query('framework-print-cover')?.textContent).toContain('Version 1');
+    expect(query('framework-print-cover')?.querySelector('[data-testid="mktg-print-page-subtitle"]')?.textContent).toContain('Release, open.');
     expect(query('mktg-framework-print')?.textContent).not.toContain('New draft only');
   });
 
@@ -575,12 +584,15 @@ describe('MktgFrameworkViewComponent', () => {
 
     const print = query('mktg-framework-print') as HTMLElement;
     expect(print.getAttribute('data-brand')).toBe('kit');
-    expect(print.style.getPropertyValue('--mfp-dark')).toBe(kit.kit.dark);
-    expect(print.style.getPropertyValue('--mfp-accent')).toBe(kit.kit.accent);
-    expect(print.style.getPropertyValue('--mfp-font')).toContain('Montserrat');
-    // No reversed artwork in the kit: the cover draws the primary lockup white.
-    expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
-    expect(query('mktg-framework-print-cover-logo')?.style.filter).toContain('invert');
+    // Every page frame carries the kit's look: its dark and its typeface (the cover draws no logo, as the deck's).
+    const page = print.querySelector<HTMLElement>('[data-testid="mktg-print-page"]');
+    expect(page?.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
+    expect(page?.style.getPropertyValue('--pp-font')).toContain('Montserrat');
+    expect(query('framework-print-cover')?.querySelector('img')).toBeNull();
+    // The kit's lockup in the content pages' logo frame.
+    expect(print.querySelector('[data-testid="framework-print-page"] [data-testid="mktg-print-page-logo"] img')?.getAttribute('src')).toMatch(
+      /^data:image\/svg\+xml/
+    );
 
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
     expect(printer.prepare).toHaveBeenCalledWith('Montserrat');
