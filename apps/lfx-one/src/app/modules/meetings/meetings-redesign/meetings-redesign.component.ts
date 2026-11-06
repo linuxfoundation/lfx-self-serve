@@ -24,6 +24,8 @@ import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/m
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
 import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
+import { AppFooterComponent } from '@components/app-footer/app-footer.component';
+import { AppService } from '@services/app.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
@@ -53,10 +55,11 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
  * above the tabs, and the window scrolls instead of the columns. Rendered by `MeetingsEntryComponent`
  * behind `MEETINGS_REDESIGN_FLAG`.
  *
- * The host cancels `main-layout`'s content padding (`-mx-5 md:-mx-8 -mt-6` are the exact negatives of its
- * `px-5 md:px-8 py-6`, same rem scale) so the design's gutters start at the page edge. On desktop the
- * page height is measured (viewport minus its own top, the layout's bottom padding and the footer) so the
- * columns scroll on their own without the window scrolling too.
+ * The host cancels `main-layout`'s content padding (`-mx-5 md:-mx-8 -my-6` are the exact negatives of its
+ * `px-5 md:px-8 py-6`, same rem scale) so the design's gutters start at the page edge. The page renders the
+ * app footer at the end of the centre column in place of the layout's. On desktop the page height is measured
+ * (viewport minus its own top) so the columns scroll on their own without the window scrolling too; below that
+ * the same value is the page's minimum height, so the footer reaches the bottom of a short page.
  */
 @Component({
   selector: 'lfx-meetings-redesign',
@@ -75,12 +78,13 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     LastMeetingCardComponent,
     NextMeetingCardComponent,
     PendingRsvpsComponent,
+    AppFooterComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
   providers: [MeetingsHomeStore, MeetingsHomeEditService, MeetingsHomeDeleteService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    class: 'block -mx-5 -mt-6 md:-mx-8',
+    class: 'block -mx-5 -my-6 md:-mx-8',
     '(window:resize)': 'measure()',
     '(window:scroll)': 'updateScroll()',
   },
@@ -95,6 +99,7 @@ export class MeetingsRedesignComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly createArtifactDialog = inject(CreateArtifactDialogService);
   private readonly composer = inject(MeetingComposerService);
+  private readonly appService = inject(AppService);
   protected readonly store = inject(MeetingsHomeStore);
 
   private readonly centre = viewChild<ElementRef<HTMLElement>>('centre');
@@ -119,6 +124,8 @@ export class MeetingsRedesignComponent {
   protected readonly tabsBarHeight: WritableSignal<number> = signal(0);
   /** Page height on desktop, where the columns scroll on their own; `null` when the window scrolls (1024px and below). */
   protected readonly columnHeight: WritableSignal<number | null> = signal(null);
+  /** Page minimum height at 1024px and below, so the footer sits at the bottom of a short page; `null` on desktop. */
+  protected readonly pageMinHeight: WritableSignal<number | null> = signal(null);
   /** Where the sticky header stops: 0 inside the centre column, below the mobile menu bar and impersonation banner otherwise. */
   protected readonly stickyTop: WritableSignal<number> = signal(0);
   /** True once the page has scrolled past the top. */
@@ -155,6 +162,7 @@ export class MeetingsRedesignComponent {
   );
 
   public constructor() {
+    this.destroyRef.onDestroy(this.appService.claimFooter());
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => this.store.setTab(params.get('time') === 'past' ? 'past' : 'upcoming'));
     this.initLoadMore();
     // The list comes and goes with the tab's state without a scroll, so re-check the stuck day heading then.
@@ -181,10 +189,8 @@ export class MeetingsRedesignComponent {
       const observer = new ResizeObserver(() => this.measure());
       const header = this.header()?.nativeElement;
       const tabsBar = this.tabsBar()?.nativeElement;
-      const footer = this.footer();
       if (header) observer.observe(header);
       if (tabsBar) observer.observe(tabsBar);
-      if (footer) observer.observe(footer);
       this.destroyRef.onDestroy(() => observer.disconnect());
       this.measure();
     });
@@ -212,15 +218,17 @@ export class MeetingsRedesignComponent {
     if (header) this.headerHeight.set(header.offsetHeight);
     if (tabsBar) this.tabsBarHeight.set(tabsBar.offsetHeight);
 
+    const top = this.host.nativeElement.getBoundingClientRect().top + window.scrollY;
+    const available = Math.max(Math.floor(window.innerHeight - top), 0);
     if (window.matchMedia('(min-width: 1025px)').matches) {
-      const host = this.host.nativeElement;
-      const top = host.getBoundingClientRect().top + window.scrollY;
-      this.columnHeight.set(Math.max(Math.floor(window.innerHeight - top - this.ancestorPaddingBottom() - (this.footer()?.offsetHeight ?? 0)), 0));
+      this.columnHeight.set(available);
+      this.pageMinHeight.set(null);
       this.stickyTop.set(0);
     } else {
       // The layout's mobile menu bar is `sticky top-0` (below the banner while impersonating) and is absent on non-touch devices.
       const menuBar = document.querySelector<HTMLElement>('[data-testid="mobile-menu-button"]')?.parentElement;
       this.columnHeight.set(null);
+      this.pageMinHeight.set(available);
       this.stickyTop.set((this.userService.impersonating() ? IMPERSONATION_BANNER_HEIGHT_PX : 0) + (menuBar?.offsetHeight ?? 0));
     }
 
@@ -286,18 +294,5 @@ export class MeetingsRedesignComponent {
     if (offset >= 0) return;
     if (desktop) centre.scrollBy({ top: offset });
     else window.scrollBy({ top: offset });
-  }
-
-  /** Bottom padding of every ancestor up to `main` — the layout's content wrapper sits above the route-entry host, not directly over this one. */
-  private ancestorPaddingBottom(): number {
-    let total = 0;
-    for (let el = this.host.nativeElement.parentElement; el && el.tagName !== 'MAIN'; el = el.parentElement) {
-      total += parseFloat(getComputedStyle(el).paddingBottom) || 0;
-    }
-    return total;
-  }
-
-  private footer(): HTMLElement | null {
-    return this.host.nativeElement.closest('main')?.querySelector<HTMLElement>('lfx-app-footer') ?? null;
   }
 }
