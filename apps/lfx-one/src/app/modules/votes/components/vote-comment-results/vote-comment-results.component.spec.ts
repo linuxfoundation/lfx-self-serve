@@ -47,8 +47,6 @@ describe('VoteCommentResultsComponent', () => {
   const squash = (text: string | null | undefined): string => (text ?? '').replace(/\s+/g, '');
   const byTestId = (el: HTMLElement, testId: string): HTMLElement | null => el.querySelector(`[data-testid="${testId}"]`);
   const toggle = (el: HTMLElement, promptId: string): HTMLButtonElement => byTestId(el, `vote-results-comments-toggle-${promptId}`) as HTMLButtonElement;
-  const control = (el: HTMLElement, action: 'expand' | 'collapse'): HTMLButtonElement =>
-    byTestId(el, `vote-results-comments-${action}-all`)!.querySelector('button')!;
 
   it('renders each prompt with its responses, author, date and abstained marker', async () => {
     const [first] = responses('p1', 1);
@@ -90,7 +88,7 @@ describe('VoteCommentResultsComponent', () => {
     expect(el.querySelectorAll('lfx-vote-comment-item')).toHaveLength(1);
   });
 
-  it('starts multiple questions collapsed with full text and counts visible', async () => {
+  it('starts multiple questions collapsed with full text and counts visible, without bulk controls', async () => {
     const el = await render([result('p1', responses('p1', 2)), result('p2', [])]);
     expect(toggle(el, 'p1').getAttribute('aria-expanded')).toBe('false');
     expect(toggle(el, 'p2').getAttribute('aria-expanded')).toBe('false');
@@ -98,8 +96,9 @@ describe('VoteCommentResultsComponent', () => {
     expect(toggle(el, 'p1').textContent).toContain('2 comments');
     expect(toggle(el, 'p2').textContent).toContain('0 comments');
     expect(el.querySelectorAll('lfx-vote-comment-item')).toHaveLength(0);
-    expect(control(el, 'expand').disabled).toBe(false);
-    expect(control(el, 'collapse').disabled).toBe(true);
+    expect(byTestId(el, 'vote-results-comments-controls')).toBeNull();
+    expect(byTestId(el, 'vote-results-comments-expand-all')).toBeNull();
+    expect(byTestId(el, 'vote-results-comments-collapse-all')).toBeNull();
   });
 
   it('opens and closes each panel independently through its native button', async () => {
@@ -144,21 +143,6 @@ describe('VoteCommentResultsComponent', () => {
     }
   });
 
-  it('expands and collapses all panels including empty questions', async () => {
-    const el = await render([result('p1', responses('p1', 2)), result('p2', [])]);
-    control(el, 'expand').click();
-    await fixture.whenStable();
-    expect(toggle(el, 'p1').getAttribute('aria-expanded')).toBe('true');
-    expect(toggle(el, 'p2').getAttribute('aria-expanded')).toBe('true');
-    expect(control(el, 'expand').disabled).toBe(true);
-    expect(control(el, 'collapse').disabled).toBe(false);
-    control(el, 'collapse').click();
-    await fixture.whenStable();
-    expect(el.querySelectorAll('lfx-vote-comment-item')).toHaveLength(0);
-    expect(control(el, 'collapse').disabled).toBe(true);
-    expect(control(el, 'expand').disabled).toBe(false);
-  });
-
   it('renders all returned comments in server order without pagination', async () => {
     const el = await render([result('p1', responses('p1', 200))]);
     expect(el.querySelectorAll('lfx-vote-comment-item')).toHaveLength(200);
@@ -193,7 +177,7 @@ describe('VoteCommentResultsComponent', () => {
     await render([result('p1', responses('p1', 1)), result('p2', [])]);
     expect(toggle(el, 'p1').getAttribute('aria-expanded')).toBe('false');
     expect(toggle(el, 'p2').getAttribute('aria-expanded')).toBe('false');
-    expect(byTestId(el, 'vote-results-comments-controls')).toBeTruthy();
+    expect(byTestId(el, 'vote-results-comments-controls')).toBeNull();
     expect(el.querySelectorAll('lfx-vote-comment-item')).toHaveLength(0);
     await render([result('p1', responses('p1', 1))]);
     expect(toggle(el, 'p1')).toBeNull();
@@ -211,7 +195,8 @@ describe('VoteCommentResultsComponent', () => {
   it('discloses truncation and uses the full response count in the question header', async () => {
     const el = await render([result('p1', responses('p1', 3), 7), result('p2', responses('p2', 3), 3)]);
     expect(toggle(el, 'p1').textContent).toContain('7 comments');
-    control(el, 'expand').click();
+    toggle(el, 'p1').click();
+    toggle(el, 'p2').click();
     await fixture.whenStable();
     expect(byTestId(el, 'vote-results-comments-truncated-p1')?.textContent?.trim()).toBe('Showing the 3 most recent of 7 responses.');
     expect(byTestId(el, 'vote-results-comments-truncated-p2')).toBeNull();
