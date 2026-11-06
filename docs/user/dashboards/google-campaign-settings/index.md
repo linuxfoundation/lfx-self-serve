@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad and named Demand Gen ad groups for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads and named Demand Gen ad groups for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -173,7 +173,7 @@ The descriptions filled in from the brief are often longer than that. If none of
 
 ## Demand Gen video ads
 
-A Demand Gen campaign builds one ad: an image ad or a YouTube video ad. Choose one under **Ad format** in the **Demand Gen Creative** section. **Image ad** is the default.
+Each Demand Gen ad is an image ad or a YouTube video ad. Choose one under **Ad format** in the **Demand Gen Creative** section. **Image ad** is the default.
 
 When you choose **Video ad (YouTube)**, the section shows the video ad's fields:
 
@@ -200,10 +200,23 @@ For each ad group:
 
 Every ad group needs a complete ad. Until every ad group has a name and a complete ad, a message under the ad groups explains what to fix and **Create Campaign** stays unavailable. The same happens if you remove every ad group while the checkbox is ticked: add one, or untick the checkbox.
 
-While the campaign is split, the single image ad or video ad you entered is kept but not sent, and a note under the checkbox says so. Untick the checkbox to send the single ad instead. Your ad groups are then kept but not sent, and the note says that too.
+While the campaign is split, the single image ad or video ad you entered, and any further ads, are kept but not sent, and a note under the checkbox says so. Untick the checkbox to send the single ad instead. Your ad groups are then kept but not sent, and the note says that too.
+
+## Several Demand Gen ads
+
+A Demand Gen ad group can run up to 5 ads. Select **Add another ad** under the ad, in the **Demand Gen Creative** section or inside a named ad group. The ad above becomes ad 1 and gets an **Ad 1 name** box, and **Ad 2** appears below it. **Remove ad** removes one of the added ads; when none is left, the ad group goes back to its one ad.
+
+For each ad:
+
+- **Name**: required. Each ad in an ad group needs a different name, and names that differ only in capitals count as the same. Google Ads names a video ad after its ad group, then " - " and this name, such as "KubeCon NA - Display - Teaser". That name can be up to 255 characters. An image ad's name labels it here and is not sent to Google Ads.
+- **Image ad** or **Video ad (YouTube)**: choose one. The ad shows that format's fields, with the same rules as the single ad above. For ad 2 and later, paste image links; the brief's image library is offered for ad 1 of the campaign's own ad group only.
+
+Every ad needs a complete creative. Until every ad has a name and a complete creative, a message under the ads (or, in named ad groups, under the ad groups) explains what to fix and **Create Campaign** stays unavailable.
+
+Several video ads in one ad group is the arrangement Google Ads has been checked to accept. Several image ads, or image and video ads mixed, in one ad group are sent the same way but have not been checked against Google Ads. If Google Ads refuses one of them, the campaign and its ad group may already exist when that ad fails.
 
 ## If something is wrong
 
-If a window, adjustment, exclusion, excluded place, display path, ad, video ad, ad group, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
+If a window, adjustment, exclusion, excluded place, display path, ad, video ad, Demand Gen ad, ad group, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
 If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Sitelinks are sent on Search and Demand Gen, and the other ad extensions on Search only; each is kept the same way on the other campaign types, with a notice.
