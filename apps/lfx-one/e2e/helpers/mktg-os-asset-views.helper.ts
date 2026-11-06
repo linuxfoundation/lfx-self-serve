@@ -4,7 +4,6 @@
 import { BRAND_KIT_CONTRACT_ID } from '@lfx-one/shared/constants/brand-kit.constants';
 import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
 import { FOUNDATION_MESSAGE_WEBSITE_KEY } from '@lfx-one/shared/constants/foundation-message.constants';
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MKTG_OS_AGENTS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { LENS_COOKIE_KEY } from '@lfx-one/shared/constants/lens.constants';
 import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
 import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slides-export.constants';
@@ -26,6 +25,7 @@ import { expect, Page } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { ApiMockHelper } from './api-mock.helper';
+import { pinMktgOsFlags } from './mktg-os-flags.helper';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 
 const PAGE_LOAD_TIMEOUT = 20_000;
@@ -573,10 +573,7 @@ export async function openAssetDocument(
   await suppressCookieBanner(page);
   mockProjects[ASSET_PROJECT.slug] = ASSET_PROJECT;
   await ApiMockHelper.setupProjectSlugMock(page, { writer });
-  await page.addInitScript(([storageKey, flag]) => localStorage.setItem(storageKey, JSON.stringify({ [flag]: true })), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    MKTG_OS_AGENTS_ENABLED_FLAG,
-  ] as const);
+  await pinMktgOsFlags(page);
   const cookies = [
     { name: PERSONA_COOKIE_KEY, value: { primary: 'executive-director', all: ['executive-director'] } },
     { name: LENS_COOKIE_KEY, value: 'project' },

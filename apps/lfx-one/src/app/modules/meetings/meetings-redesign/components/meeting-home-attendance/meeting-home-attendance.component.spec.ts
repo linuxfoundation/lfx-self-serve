@@ -26,7 +26,7 @@ const UPCOMING: MeetingHomeAttendance = {
 const PAST: MeetingHomeAttendance = {
   label: '9 of 20 attended · 45%',
   ariaLabel: '9 of 20 attended · 45%',
-  segments: [{ kind: 'attended', percent: 45 }],
+  segments: [{ kind: 'attendedPoor', percent: 45 }],
   answers: [],
   noResponse: null,
   poor: true,
@@ -52,9 +52,9 @@ describe('MeetingHomeAttendanceComponent', () => {
     expect(bar?.getAttribute('aria-label')).toBe('Yes 12, Maybe 2, No 0, No response 2');
     const segments = [...(bar?.querySelectorAll<HTMLElement>(':scope > span') ?? [])];
     expect(segments.map((segment) => segment.style.width)).toEqual(['75%', '12.5%']);
-    expect(segments[0].classList).toContain('bg-blue-500');
+    expect(segments[0].classList).toContain('bg-emerald-500');
     expect(segments[1].classList).toContain('bg-amber-500');
-    expect(query(fixture, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 12 Maybe 2 No 0');
+    expect(query(fixture, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 12 Maybe 2 No 0 No response 2');
     expect(query(fixture, 'meetings-home-attendance-poor')).toBeNull();
   });
 
@@ -71,6 +71,7 @@ describe('MeetingHomeAttendanceComponent', () => {
 
     expect(query(fixture, 'meetings-home-attendance-label')?.textContent?.trim()).toBe('9 of 20 attended · 45%');
     expect(query(fixture, 'meetings-home-attendance-poor')?.textContent?.trim()).toBe('This meeting was poorly attended');
+    expect(query(fixture, 'meetings-home-attendance-bar')?.querySelector(':scope > span')?.classList).toContain('bg-amber-500');
     expect(query(fixture, 'meetings-home-attendance-legend')).toBeNull();
   });
 });

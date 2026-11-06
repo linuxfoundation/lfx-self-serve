@@ -11,6 +11,7 @@
         type="button"
         class="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:cursor-wait"
         [cdkMenuTriggerFor]="busy() ? null : rsvpMenu"
+        [cdkMenuPosition]="menuPositions"
         [disabled]="busy()"
         [attr.aria-label]="'Your RSVP: ' + answer.label + '. Change'"
         data-testid="meetings-home-rsvp-status">

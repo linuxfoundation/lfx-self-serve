@@ -15,13 +15,14 @@ export function getMeetingHomeAttendance(row: MeetingHomeRow, past: boolean): Me
     if (!summary || summary.invited <= 0) return null;
     const percent = Math.round((summary.attended / summary.invited) * 100);
     const label = `${summary.attended} of ${summary.invited} attended · ${percent}%`;
+    const poor = percent < 50;
     return {
       label,
       ariaLabel: label,
-      segments: summary.attended > 0 ? [{ kind: 'attended', percent: (summary.attended / summary.invited) * 100 }] : [],
+      segments: summary.attended > 0 ? [{ kind: poor ? 'attendedPoor' : 'attended', percent: (summary.attended / summary.invited) * 100 }] : [],
       answers: [],
       noResponse: null,
-      poor: percent < 50,
+      poor,
     };
   }
 

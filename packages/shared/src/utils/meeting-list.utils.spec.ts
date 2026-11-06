@@ -626,7 +626,7 @@ describe('getMeetingVisibilityBadges', () => {
     [null, null, [MeetingVisibilityKind.PUBLIC]],
     [MeetingVisibility.PRIVATE, null, [MeetingVisibilityKind.PRIVATE]],
     [MeetingVisibility.PUBLIC, true, [MeetingVisibilityKind.RESTRICTED]],
-    [MeetingVisibility.PRIVATE, true, [MeetingVisibilityKind.PRIVATE, MeetingVisibilityKind.RESTRICTED]],
+    [MeetingVisibility.PRIVATE, true, [MeetingVisibilityKind.RESTRICTED, MeetingVisibilityKind.PRIVATE]],
   ])('%s, restricted %s → %j', (visibility, restricted, kinds) => {
     expect(getMeetingVisibilityBadges({ visibility, restricted })).toEqual(kinds.map((kind) => MEETING_VISIBILITY_INFO[kind]));
   });
