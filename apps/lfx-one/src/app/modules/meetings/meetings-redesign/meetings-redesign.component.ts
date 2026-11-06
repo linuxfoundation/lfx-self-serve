@@ -21,7 +21,7 @@ import {
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { IMPERSONATION_BANNER_HEIGHT_PX } from '@lfx-one/shared/constants';
+import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DAY_HEADING_GAP_PX } from '@lfx-one/shared/constants';
 import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
 import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
@@ -243,7 +243,8 @@ export class MeetingsRedesignComponent {
     this.tabsStuck.set(scrolled && tabsBar.getBoundingClientRect().top - stickyEdge <= this.headerHeight() + 1);
     const list = this.list()?.nativeElement.getBoundingClientRect();
     const headingTop = stickyEdge + this.headerHeight() + this.tabsBarHeight();
-    this.dayHeadingStuck.set(!!list && list.top <= headingTop && list.bottom > headingTop);
+    // The heading's padded box starts above the list by the gap, so it sticks that much sooner.
+    this.dayHeadingStuck.set(!!list && list.top - MEETINGS_HOME_DAY_HEADING_GAP_PX <= headingTop && list.bottom > headingTop);
   }
 
   private initTabs(): Signal<UiTabItem[]> {

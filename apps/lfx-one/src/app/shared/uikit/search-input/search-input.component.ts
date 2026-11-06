@@ -6,7 +6,7 @@ import { booleanAttribute, ChangeDetectionStrategy, Component, ElementRef, injec
 import { UiInputComponent } from '../input/input.component';
 
 /**
- * Pill-shaped search field, 32px tall, built on `lfx-ui-input`: a search icon prefix, `type="search"` and a clear button
+ * Search field, 32px tall with the small input's 10px corners, built on `lfx-ui-input`: a search icon prefix, `type="search"` and a clear button
  * that shows while there is text. Use `[(value)]` for two-way binding.
  */
 @Component({
