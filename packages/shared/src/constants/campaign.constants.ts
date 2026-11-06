@@ -2022,11 +2022,12 @@ export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
 /**
  * The Google channels whose campaign-level criteria accept a device bid modifier.
  *
- * Four channels: Search, Video, Display, and Demand Gen, which `validateCriteriaPlan`
- * (campaign-service v1.0.31) takes only as an exclusion — see
- * {@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}. Performance Max is left out here: upstream now
- * takes a Performance Max device exclusion too (#500), but this client does not offer it yet, so the
- * channel stays fenced and a list set elsewhere is held rather than sent.
+ * Every Google channel: Search, Video, Display, and Demand Gen and Performance Max, which
+ * `validateCriteriaPlan` (campaign-service v1.0.33) takes only as an exclusion — see
+ * {@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}. Performance Max joined with #500: upstream
+ * sends its exclusion as a bid modifier of 0 on the device row Google creates on every Performance
+ * Max campaign. Kept as a list rather than dropped, so a channel added to
+ * {@link GOOGLE_CAMPAIGN_CHANNELS} starts outside it until someone confirms upstream takes devices there.
  *
  * Kept separate from {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS} because upstream fences the
  * two in separate branches, for separate reasons, and they already differ on Demand Gen, which takes
@@ -2042,14 +2043,16 @@ export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
  * Video is listed because upstream accepts it there, not because this client can reach it — the
  * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
  */
-export const GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS = ['search', 'demand-gen', 'video', 'display'] as const;
+export const GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS = ['search', 'demand-gen', 'performance-max', 'video', 'display'] as const;
 
 /**
- * The channels that take a device only as an EXCLUSION (a bid modifier of 0): Demand Gen.
- * `validateCriteriaPlan` (campaign-service v1.0.31) refuses any other modifier there, under every
- * bidding strategy, because the validateOnly probe that opened Demand Gen devices (#474) sent only 0.
+ * The channels that take a device only as an EXCLUSION (a bid modifier of 0): Demand Gen and
+ * Performance Max. `validateCriteriaPlan` (campaign-service v1.0.33) refuses any other modifier on
+ * both, under every bidding strategy, for two different reasons: the validateOnly probe that opened
+ * Demand Gen devices (#474) sent only 0, and on Performance Max Google itself refuses an adjustment
+ * (OPERATION_NOT_PERMITTED_FOR_CAMPAIGN_TYPE, #500).
  */
-export const GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY = ['demand-gen'] as const;
+export const GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY = ['demand-gen', 'performance-max'] as const;
 
 /**
  * The Google channels whose campaign-level criteria accept a demographic exclusion.
@@ -2063,16 +2066,16 @@ export const GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY = ['demand-gen'] as con
 export const GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS = ['search', 'video', 'display'] as const;
 
 /**
- * The `Device` enum this client accepts on a bid modifier on every channel but Demand Gen
- * (`campaign_criteria.go`'s `deviceTypes`).
+ * The `Device` enum this client accepts on a bid modifier on every channel but Demand Gen and
+ * Performance Max (`campaign_criteria.go`'s `deviceTypes`).
  *
  * Compared after trimming and upper-casing, so `" mobile "` is MOBILE.
  *
  * Two of Google's values are deliberately absent. `OTHER` is a reporting bucket rather than
  * something a campaign bids on. `CONNECTED_TV` is a NAMED GAP on these channels: Google accepts TV
  * screens on Display and Video campaigns, so there the omission is campaign-service's limitation
- * rather than Google's, and upstream states it as one. Demand Gen takes it: see
- * {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}.
+ * rather than Google's, and upstream states it as one. Demand Gen and Performance Max take it: see
+ * {@link GOOGLE_ADS_DEMAND_GEN_DEVICES} and {@link GOOGLE_ADS_PERFORMANCE_MAX_DEVICES}.
  *
  * Its length is also upstream's cap on the list (`validateDeviceBidModifiers` caps at the size of
  * the channel's vocabulary): a longer list must repeat a device.
@@ -2087,6 +2090,16 @@ export const GOOGLE_ADS_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET'] as const;
  * and keeps entries in, since it is the widest vocabulary.
  */
 export const GOOGLE_ADS_DEMAND_GEN_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV'] as const;
+
+/**
+ * Performance Max's device vocabulary (`campaign_criteria.go`'s `performanceMaxDeviceCriterionIDs`,
+ * #500): the same four devices as {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}, each the row Google creates
+ * on every Performance Max campaign. Its own list, as upstream keeps its own map, because the two
+ * channels reached the same four by different probes. Every entry is an exclusion
+ * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and excluding all four is refused, since the
+ * campaign could then serve nowhere.
+ */
+export const GOOGLE_ADS_PERFORMANCE_MAX_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV'] as const;
 
 /** What the Implementation tab's device control calls each {@link GOOGLE_ADS_DEMAND_GEN_DEVICES} value, in Google's own words. */
 export const GOOGLE_ADS_DEVICE_LABELS = {

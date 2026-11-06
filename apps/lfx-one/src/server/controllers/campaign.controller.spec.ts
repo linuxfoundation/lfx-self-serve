@@ -4702,19 +4702,81 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent[1]['bidModifier']).toBe(0.8);
   });
 
-  it('refuses device bid modifiers on Performance Max, whose automated bidding sets no device adjustment', async () => {
-    // Half of `validateCriteriaPlan`'s Performance Max SPLIT, and the half that makes this list
-    // narrower than ad schedules: the same channel that keeps schedules refuses these.
-    await controller.createCampaign(
-      buildReq(googleBody({ campaignTypes: ['performance-max'], deviceBidModifiers: [MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
-      res,
-      next
-    );
+  /**
+   * Performance Max device exclusions (#5262). campaign-service v1.0.33's `validateCriteriaPlan` takes
+   * a device there only as an exclusion (#500), sent as a bid modifier of 0 on the row Google creates
+   * on every Performance Max campaign; refuses any other modifier, 1 included; refuses a list excluding
+   * all four devices; and caps the list at its four-device vocabulary, CONNECTED_TV included.
+   */
+  describe('device exclusions on performance max', () => {
+    const pmaxBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+      googleBody({ campaignTypes: ['performance-max'], budgetUsd: 500, performanceMaxCreative: { businessName: 'Example Foundation' }, ...overrides });
+    const create = (body: Record<string, unknown>): Promise<void> =>
+      controller.createCampaign(buildReq(body as never, { project: 'tlf', brief_id: 'b-1' }), res, next);
+    const excluded = (...devices: string[]) => devices.map((device) => ({ device, bidModifier: 0 }));
 
-    expect(createCampaigns).not.toHaveBeenCalled();
-    const error = refusalFrom();
-    expect(error.field).toBe('deviceBidModifiers');
-    expect(error.message).toContain('Performance Max');
+    it('dispatches three exclusions, TV screens among them, verbatim for upstream to normalize', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005d1', error: null });
+
+      await create(pmaxBody({ deviceBidModifiers: [...excluded('MOBILE', 'TABLET'), { device: ' connected_tv ', bidModifier: 0 }] }));
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers']).toEqual([
+        ...excluded('MOBILE', 'TABLET'),
+        { device: ' connected_tv ', bidModifier: 0 },
+      ]);
+    });
+
+    it.each([
+      ['absent', {}],
+      ['empty', { deviceBidModifiers: [] }],
+      ['null', { deviceBidModifiers: null }],
+    ])('leaves a Performance Max request byte-identical when the list is %s', async (_label, overrides) => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005d2', error: null });
+      await create(pmaxBody());
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create(pmaxBody(overrides));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+      expect(without).not.toContain('deviceBidModifiers');
+    });
+
+    it.each([
+      ['an adjustment', MOBILE_BID, 'a bid modifier of 1.2'],
+      ['a modifier of 1, which adjusts nothing', { device: 'MOBILE', bidModifier: 1 }, 'a bid modifier of 1.'],
+    ])('refuses %s by name, as Performance Max takes a device only as an exclusion', async (_label, entry, expected) => {
+      await create(pmaxBody({ deviceBidModifiers: [entry] }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('deviceBidModifiers');
+      expect(refusalFrom().message).toContain(expected);
+      expect(refusalFrom().message).toContain('Performance Max campaigns take a device only as an exclusion');
+    });
+
+    it('refuses excluding all four devices, however they are spelled, as the campaign could serve nowhere', async () => {
+      await create(pmaxBody({ deviceBidModifiers: excluded('mobile', ' DESKTOP', 'Tablet', 'CONNECTED_TV') }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('deviceBidModifiers');
+      expect(refusalFrom().message).toContain('exclude every device (Mobile phones, Computers, Tablets and TV screens) on a Performance Max campaign');
+    });
+
+    it('caps the list at four, the size of its vocabulary', async () => {
+      await create(pmaxBody({ deviceBidModifiers: excluded('MOBILE', 'DESKTOP', 'TABLET', 'MOBILE', 'DESKTOP') }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().message).toContain('at most 4 device bid modifiers on one Performance Max campaign');
+    });
+
+    it('refuses a device outside its four by name', async () => {
+      await create(pmaxBody({ deviceBidModifiers: excluded('OTHER') }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().message).toContain('names OTHER, which is not one of MOBILE, DESKTOP, TABLET, CONNECTED_TV on Performance Max campaigns');
+    });
   });
 
   it('refuses a non-zero device modifier on Demand Gen, which takes a device only as an exclusion', async () => {
@@ -4730,7 +4792,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('Demand Gen campaigns take a device only as an exclusion');
   });
 
-  it('dispatches a Demand Gen CONNECTED_TV exclusion, which only Demand Gen takes (#474)', async () => {
+  it('dispatches a Demand Gen CONNECTED_TV exclusion, which Demand Gen takes (#474)', async () => {
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000031', error: null });
 
     await controller.createCampaign(
@@ -4764,8 +4826,8 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   it.each([['video'], ['display']])('dispatches a device exclusion on %s, which upstream leaves un-narrowed', async (channel) => {
-    // The over-refusal guard for the channel fence: only Demand Gen and Performance Max are fenced
-    // off, so fencing the list to Search alone would refuse two creates Google takes. An EXCLUSION,
+    // The over-refusal guard for the channel fence: only Demand Gen and Performance Max are narrowed
+    // to exclusions, so fencing the list to Search alone would refuse two creates Google takes. An EXCLUSION,
     // because both channels default to an automated strategy, under which only 0 is accepted.
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000021', error: null });
 

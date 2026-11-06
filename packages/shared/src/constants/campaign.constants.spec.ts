@@ -1380,13 +1380,11 @@ describe('Google Ads campaign criteria vocabularies', () => {
     expect(GOOGLE_ADS_GENDERS).toContain('UNDETERMINED');
   });
 
-  it('fences devices and demographics from two separate lists, which differ on demand gen', () => {
+  it('fences devices and demographics from two separate lists, which differ on demand gen and performance max', () => {
     // Separate constants because `validateCriteriaPlan` fences them in separate branches. Demand
-    // Gen takes device exclusions (#474) and refuses demographic exclusions; Performance Max devices
-    // are not offered by this client.
-    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).toContain('demand-gen');
-    expect([...GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY]).toEqual(['demand-gen']);
-    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('performance-max');
+    // Gen (#474) and Performance Max (#500) take device exclusions and refuse demographic exclusions.
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS]).toEqual([...GOOGLE_CAMPAIGN_CHANNELS]);
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY]).toEqual(['demand-gen', 'performance-max']);
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('demand-gen');
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');
   });

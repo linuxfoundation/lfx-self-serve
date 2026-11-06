@@ -1508,10 +1508,10 @@ export class CampaignController {
           }
 
           if (devices.length > 0 && typeof googleChannel === 'string') {
-            // REFUSED by name, not withheld, on Performance Max: campaign-service v1.0.31 takes a
-            // Performance Max device exclusion (#500), but this client does not offer one yet. Demand
-            // Gen is inside the fence, and `googleDeviceBidModifierRefusal` below refuses any modifier
-            // but 0 there, as `validateCriteriaPlan` does.
+            // REFUSED by name, not withheld, on a channel outside the fence. Every Google channel is
+            // inside it today; Demand Gen and Performance Max take a device only as an exclusion, and
+            // `googleDeviceBidModifierRefusal` below refuses any modifier but 0 there, and on
+            // Performance Max a list excluding every device, as `validateCriteriaPlan` does.
             if (!(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS as readonly string[]).includes(googleChannel)) {
               refuseDevices(
                 `Google Ads does not accept device bid modifiers on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove them or pick a different channel, then create again.`
@@ -1521,9 +1521,13 @@ export class CampaignController {
 
             // Upstream's cap, checked against the SUBMITTED count exactly where
             // `validateDeviceBidModifiers` checks its own: the size of the channel's device
-            // vocabulary (`deviceTypesFor`), four on Demand Gen and three elsewhere. A longer list
-            // necessarily repeats a device — the per-entry pass would refuse it anyway, but upstream
-            // names the cap first and so does this.
+            // vocabulary (`deviceTypesFor`), four on Demand Gen and Performance Max and three
+            // elsewhere. A longer list necessarily repeats a device — the per-entry pass would refuse
+            // it anyway, but `validateDeviceBidModifiers` names the cap first and so does this. One
+            // order difference: on those two channels `validateCriteriaPlan` refuses a non-zero
+            // modifier, and on Performance Max an every-device exclusion, BEFORE the cap, so an
+            // over-long list carrying one is refused here for the cap and upstream for the other.
+            // Either way it is refused before any upstream call.
             const maxDevices = googleAdsDevicesOn(criteriaChannel as GoogleCampaignChannel).length;
             if (devices.length > maxDevices) {
               refuseDevices(
@@ -8072,12 +8076,11 @@ export class CampaignController {
    * The campaign's device bid modifiers, spread-ready, or `{}` when the request names none or the
    * channel cannot take them.
    *
-   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which is one channel fewer
-   * than the ad-schedule and language gates: Performance Max, where campaign-service v1.0.31 takes a
-   * device exclusion (#500) that this client does not offer yet. Demand Gen is inside it, exclusions
-   * only. The `{}` returned on Performance Max is never dispatched either —
-   * `createCampaign` reads the request's own list and refuses such a create by name first, on
-   * upstream's "refused, never silently dropped" rule.
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which holds every Google
+   * channel: Demand Gen and Performance Max (campaign-service v1.0.33, #474 and #500) take exclusions
+   * only. A `{}` for a channel outside it would never be dispatched either — `createCampaign` reads the
+   * request's own list and refuses such a create by name first, on upstream's "refused, never
+   * silently dropped" rule.
    *
    * NORMALIZES ONLY, and does not collapse a repeated device: upstream refuses a repeat rather than
    * collapsing it, and `createCampaign` names that refusal before this is dispatched.

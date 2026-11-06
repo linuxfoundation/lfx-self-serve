@@ -3598,7 +3598,7 @@ export interface CampaignAdSchedule {
  *
  * Derived from {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}, the widest channel vocabulary, rather than
  * written out again, so a device added to it cannot leave this type behind. Which of these a channel
- * takes is `googleAdsDevicesOn`'s answer: `CONNECTED_TV` is Demand Gen's alone.
+ * takes is `googleAdsDevicesOn`'s answer: `CONNECTED_TV` is Demand Gen's and Performance Max's alone.
  */
 export type GoogleAdsDevice = (typeof GOOGLE_ADS_DEMAND_GEN_DEVICES)[number];
 
@@ -3968,11 +3968,11 @@ export interface CampaignCreateRequest {
    * everywhere, which is Google's own default — so this list is an adjustment and an absent key
    * means the same as an empty one, exactly as {@link adSchedules} does.
    *
-   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which leaves out
-   * Performance Max, where this client does not offer devices yet; the BFF refuses a list there by
-   * name. Demand Gen takes a device only as an exclusion, a modifier of `0`
-   * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and is the one channel that takes
-   * `CONNECTED_TV`.
+   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, every Google
+   * channel. Demand Gen and Performance Max take a device only as an exclusion, a modifier of `0`
+   * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and are the two channels that take
+   * `CONNECTED_TV`. Performance Max also refuses a list that excludes all four devices, since the
+   * campaign could then serve nowhere.
    *
    * A NON-ZERO modifier also needs the effective bidding strategy to be `manual-cpc`: Google would
    * ignore it under any other, so campaign-service refuses it (see `googleDeviceBidModifierRefusal`).

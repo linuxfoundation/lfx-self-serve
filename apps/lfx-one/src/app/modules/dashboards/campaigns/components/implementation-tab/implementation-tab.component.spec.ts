@@ -9093,11 +9093,12 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
 
   // Display and Performance Max default to Maximize Conversions, under which the window's -20% is
   // refused (Google would not bid it), so their payload is built but Create waits on it. Demand Gen
-  // refuses it on the channel (`validateCriteriaPlan`), whatever the strategy.
+  // refuses it on the channel (`validateCriteriaPlan`), whatever the strategy. Every channel takes the
+  // tablet exclusion, Performance Max since campaign-service v1.0.33 (#500).
   it.each([
     ['search', { includeSearch: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, false],
     ['display', { includeDisplay: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
-    ['performance-max', { includePerformanceMax: true }, { adSchedules: [MONDAY_EVENINGS] }, true],
+    ['performance-max', { includePerformanceMax: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
     ['demand-gen', { includeDemandGen: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
   ])(
     'builds the payload %s accepts, holds the rest, and holds Create on an adjustment its default strategy ignores',
@@ -9353,11 +9354,13 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
       expect(c['googleDeviceBidModifiersError']()).not.toContain('bid with Manual CPC');
     });
 
-    it('gives no Adjust bid reason while the device section is not shown', () => {
+    it('gives the channel as the Adjust bid reason on Performance Max, whatever the strategy', () => {
       const c = seedChannel(fixture, { includePerformanceMax: true });
       fixture.detectChanges();
       expect(c['googleBiddingStrategy']()).toBe('maximize-conversions');
-      expect(c['googleDeviceAdjustBlockedReason']()).toBeNull();
+      expect(c['googleDeviceAdjustBlockedReason']()).toBe(
+        "Performance Max campaigns take a device only as an exclusion, so LFX One doesn't send a device bid adjustment there. You can keep the default bid or exclude a device."
+      );
     });
 
     it('still sends an Exclude under an automated strategy, on Search and on Display', () => {
@@ -19409,3 +19412,141 @@ describe('ImplementationTabComponent google extensions on performance max', () =
   });
 });
 
+/**
+ * Device exclusions on Performance Max (#5262). campaign-service v1.0.33's `validateCriteriaPlan`
+ * takes a device there only as an exclusion (#500), TV screens included, and refuses a list that
+ * excludes all four devices. The tab offers the same four rows, holds an adjustment, and waits on
+ * the shared refusal the BFF answers with.
+ */
+describe('ImplementationTabComponent google device exclusions on performance max', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const PMAX_COMPLETE = {
+    headlines: 'One headline\nTwo headline\nThree headline',
+    longHeadlines: 'A long headline',
+    descriptions: 'A short description\nAnother short description',
+    businessName: 'Acme',
+    marketingImages: 'https://example.com/a.png',
+    squareMarketingImages: 'https://example.com/square.png',
+    logoImages: 'https://example.com/logo.png',
+  };
+  const excluded = (...devices: string[]): CampaignDeviceBidModifier[] => devices.map((device) => ({ device, bidModifier: 0 }) as CampaignDeviceBidModifier);
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  const pmax = (): Record<string, any> => {
+    const c = seedChannel(fixture, { includePerformanceMax: true });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+    fixture.detectChanges();
+    return c;
+  };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('shows the device control on Performance Max with a row per device, TV screens included, and no Adjust bid', () => {
+    const c = pmax();
+
+    expect(c['googleDeviceBidModifiersAvailable']()).toBe(true);
+    for (const device of ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV']) {
+      expect(find(`implementation-google-device-${device}`)).not.toBeNull();
+    }
+    expect(find('implementation-google-devices-hint')?.textContent).toContain('Performance Max campaigns take a device only as an exclusion');
+  });
+
+  it('sends three exclusions, TV screens among them, and a request without them is byte-identical to one built before', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = pmax();
+    c['submit']();
+    await fixture.whenStable();
+    const before = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(JSON.stringify(before)).not.toContain('deviceBidModifiers');
+
+    c['onGoogleDeviceBidModifiersChange'](excluded('MOBILE', 'TABLET', 'CONNECTED_TV'));
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+    c['submit']();
+    await fixture.whenStable();
+    const after = createCampaign.mock.calls[1][0] as unknown as Record<string, unknown>;
+    expect(after['deviceBidModifiers']).toEqual(excluded('MOBILE', 'TABLET', 'CONNECTED_TV'));
+    const rest = { ...after };
+    delete rest['deviceBidModifiers'];
+    expect(JSON.stringify(rest)).toBe(JSON.stringify(before));
+  });
+
+  it('holds Create with a visible, announced reason when every device is excluded', () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = pmax();
+    c['onGoogleDeviceBidModifiersChange'](excluded('MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV'));
+    fixture.detectChanges();
+
+    const reason = 'exclude every device (Mobile phones, Computers, Tablets and TV screens) on a Performance Max campaign';
+    expect(c['googleDeviceBidModifiersError']()).toContain(reason);
+    expect(find('implementation-google-devices-error')?.textContent).toContain(reason);
+    expect(find('implementation-google-targeting-live')?.textContent).toContain(reason);
+    expect(c['canSubmit']()).toBe(false);
+    c['submit']();
+    expect(createCampaign).not.toHaveBeenCalled();
+
+    c['onGoogleDeviceBidModifiersChange'](excluded('MOBILE', 'DESKTOP', 'TABLET'));
+    fixture.detectChanges();
+    expect(c['googleDeviceBidModifiersError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('holds a Search adjustment after a switch to Performance Max, says so, and waits until it is cleared', () => {
+    const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'manual-cpc' });
+    c['onGoogleDeviceBidModifiersChange']([{ device: 'MOBILE', bidModifier: 1.2 }, ...excluded('TABLET')]);
+    fixture.detectChanges();
+    expect(c['googleDeviceBidModifiersError']()).toBeNull();
+
+    c['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true, googleBiddingStrategy: '' });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+    fixture.detectChanges();
+
+    const held = c['googleDeviceAdjustmentsHeldMessage']();
+    expect(held).toContain('Performance Max campaigns take a device only as an exclusion');
+    expect(held).toContain('The adjustment on Mobile phones is kept for a switch back');
+    expect(find('implementation-google-device-adjustments-held')?.textContent).toContain('The adjustment on Mobile phones is kept');
+    expect(c['googleDeviceBidModifiersError']()).toContain('Performance Max campaigns take a device only as an exclusion');
+    expect(c['canSubmit']()).toBe(false);
+    // Held, not discarded.
+    expect(c['googleDeviceBidModifiers']()).toEqual([{ device: 'MOBILE', bidModifier: 1.2 }, ...excluded('TABLET')]);
+  });
+
+  it('holds a TV screens exclusion after a switch to Search, says so, and sends it again on a switch back', () => {
+    const c = pmax();
+    c['onGoogleDeviceBidModifiersChange'](excluded('TABLET', 'CONNECTED_TV'));
+    fixture.detectChanges();
+
+    c['campaignForm'].patchValue({ includePerformanceMax: false, includeSearch: true });
+    fixture.detectChanges();
+    expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: excluded('TABLET') });
+    const notice = c['googleTargetingWithheldMessage']();
+    expect(notice).toContain('Search campaigns do not take TV screens');
+    expect(find('implementation-google-targeting-withheld')?.textContent).toContain('Search campaigns do not take TV screens');
+    expect(find('implementation-google-targeting-withheld-live')?.textContent?.trim()).toBe(notice);
+
+    c['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
+    fixture.detectChanges();
+    expect(c['googleTargetingWithheldMessage']()).toBe('');
+    expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: excluded('TABLET', 'CONNECTED_TV') });
+  });
+
+  it('round-trips the exclusions through emitDraft and restore', () => {
+    const c = pmax();
+    let draft: Record<string, any> | undefined;
+    c['draftChange'].subscribe((d: Record<string, any>) => (draft = d));
+    c['onGoogleDeviceBidModifiersChange'](excluded('DESKTOP', 'CONNECTED_TV'));
+    c['emitDraft']();
+    const saved = draft?.['googleDeviceBidModifiers'];
+    expect(saved).toEqual(excluded('DESKTOP', 'CONNECTED_TV'));
+
+    // Clearing emits a fresh draft, so restore the one saved above.
+    c['onGoogleDeviceBidModifiersChange']([]);
+    expect(c['googleDeviceBidModifiers']()).toEqual([]);
+    restoreGoogleDraft(fixture, c, { googleDeviceBidModifiers: saved });
+    expect(c['googleDeviceBidModifiers']()).toEqual(excluded('DESKTOP', 'CONNECTED_TV'));
+  });
+});

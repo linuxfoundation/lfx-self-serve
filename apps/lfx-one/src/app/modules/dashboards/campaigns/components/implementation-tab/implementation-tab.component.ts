@@ -3847,7 +3847,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleDeviceBidModifiersAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS));
   /**
    * The devices the dispatched channel takes (`googleAdsDevicesOn`): the device control's rows. Demand
-   * Gen adds TV screens; every other channel gets the three. Empty while no channel is dispatched.
+   * Gen and Performance Max add TV screens; every other channel gets the three. Empty while no channel
+   * is dispatched.
    */
   protected readonly googleDeviceVocabulary = computed(() => {
     const channel = this.googleBiddingChannel();
@@ -3855,7 +3856,7 @@ export class ImplementationTabComponent implements OnInit {
   });
   /**
    * The device entries the request carries: those in {@link googleDeviceVocabulary}. A TV screens
-   * exclusion set on Demand Gen is held, not sent, after a switch to a channel without it, and
+   * exclusion set on Demand Gen or Performance Max is held, not sent, after a switch to a channel without it, and
    * `googleTargetingWithheldMessage` says so; the judge, the payload and the held notice all read this list.
    */
   protected readonly googleDeviceBidModifiersSent = computed(() => {
@@ -9493,7 +9494,7 @@ export class ImplementationTabComponent implements OnInit {
    * Maximize Clicks and Target CPA it would, so the shared
    * `googleDeviceAdjustmentNotSentSentence` gives whichever reason is true. The way back differs by channel — Search can switch to Manual CPC,
    * Display and Video offer no Manual CPC here — so the sentence says which. `null` while the device
-   * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}. On Demand Gen the reason
+   * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}. On Demand Gen and Performance Max the reason
    * is the channel, which takes a device only as an exclusion whatever the strategy
    * (`googleChannelTakesDeviceExclusionsOnly`).
    */
@@ -9550,7 +9551,7 @@ export class ImplementationTabComponent implements OnInit {
       const schedules = this.googleAdSchedulesAvailable() ? 0 : this.googleAdSchedules().length;
       const devices = this.googleDeviceBidModifiersAvailable() ? 0 : this.googleDeviceBidModifiers().length;
       // On a channel that takes devices, an entry outside its vocabulary — TV screens, set on Demand
-      // Gen — is held rather than sent; `googleDeviceBidModifiersSent` leaves it out.
+      // Gen or Performance Max — is held rather than sent; `googleDeviceBidModifiersSent` leaves it out.
       const sentDevices: readonly string[] = this.googleDeviceVocabulary();
       const unsentDevices = this.googleDeviceBidModifiersAvailable() ? this.googleDeviceBidModifiers().filter((d) => !sentDevices.includes(d.device)) : [];
       const demographics = this.googleDemographicExclusionsAvailable() ? 0 : this.googleExcludedAgeRanges().length + this.googleExcludedGenders().length;
