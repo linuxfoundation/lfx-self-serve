@@ -5254,6 +5254,8 @@ describe('CampaignController.createCampaign cutover', () => {
     });
 
     it.each([
+      ['a value that is not a list', { demandGenAdGroups: { name: 'Retargeting' } }, 'must be a list'],
+      ['a string in place of the list', { demandGenAdGroups: 'Retargeting' }, 'must be a list'],
       [
         'six groups',
         { demandGenAdGroups: ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => ({ name, creative: { headlines: ['Join us'] } })) },

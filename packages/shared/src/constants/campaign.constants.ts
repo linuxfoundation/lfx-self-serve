@@ -5153,6 +5153,14 @@ export const GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES = 255;
 export const GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX = ' - Display';
 
 /**
+ * What campaign-service appends to a named Demand Gen ad group's full name to name its video ad
+ * (`demandGenVideoAdNameSuffix`, `internal/platform/googleads/demandgen_video_creative.go`). The ad's
+ * name is held to Google's 255 characters too (`validateDemandGenVideoAdName`), so a video group's
+ * full name has 11 fewer to spare than an image group's.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_AD_NAME_SUFFIX = ' - Video ad';
+
+/**
  * How far a stored image's aspect ratio may sit from its Google slot's target, as a fraction of the
  * target — campaign-service's `demandGenAspectTolerance`, which every Google slot is held to (Google
  * documents ±1%). Measured as `ShapeRule.ratioDrift` measures it: `|got - want| / want`.

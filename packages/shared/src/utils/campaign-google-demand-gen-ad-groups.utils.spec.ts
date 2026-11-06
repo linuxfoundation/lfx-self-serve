@@ -92,6 +92,15 @@ describe('googleDemandGenAdGroupsRefusal', () => {
     expect(googleDemandGenAdGroupsRefusal(event, [{ name: 'xy', creative: IMAGE }])).toContain('is 256 characters');
   });
 
+  it("holds a video group's full name to 244, so its video ad's name fits 255, and an image group's to 255", () => {
+    const event = 'E'.repeat(255 - ' - Display | x'.length - ' - Video ad'.length);
+    expect(googleDemandGenAdGroupsRefusal(event, [{ name: 'x', videoCreative: VIDEO }])).toBeNull();
+    expect(googleDemandGenAdGroupsRefusal(event, [{ name: 'xy', videoCreative: VIDEO }])).toBe(
+      'Demand Gen ad group 1\'s video ad is named after the ad group, then " - Video ad", which makes 256 characters, over Google\'s limit of 255. Shorten its name or the event name.'
+    );
+    expect(googleDemandGenAdGroupsRefusal(event, [{ name: 'xy', creative: IMAGE }])).toBeNull();
+  });
+
   it('judges an image ad only through the caller-supplied judge', () => {
     const groups = [{ name: 'a', creative: IMAGE }];
     expect(googleDemandGenAdGroupsRefusal('KubeCon', groups)).toBeNull();

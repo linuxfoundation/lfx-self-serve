@@ -4,6 +4,7 @@
 import {
   GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES,
   GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX,
+  GOOGLE_DEMAND_GEN_VIDEO_AD_NAME_SUFFIX,
   GOOGLE_DEMAND_GEN_MAX_AD_GROUPS,
   googleAdsTrimSpace,
   googleAdsWellFormed,
@@ -82,7 +83,8 @@ function present(creative: unknown): boolean {
 /**
  * Why campaign-service would refuse this `demandGenAdGroups` list, or `null`, in its order: the count,
  * then each group's name (blank, a full name over Google's 255 characters, a repeat ignoring case), then
- * its ad (both formats, neither, or one that fails its own rules).
+ * its ad (both formats, neither, or one that fails its own rules), then a video ad's own name
+ * (`validateDemandGenVideoAdName`: the full name plus " - Video ad", also held to 255).
  *
  * `eventName` is the event name the request carries, which campaign-service composes each full name
  * from. The video ad is judged by `googleDemandGenVideoCreativeRefusal`. The image ad is judged by
@@ -129,6 +131,12 @@ export function googleDemandGenAdGroupsRefusal(
     }
     const refusal = video ? googleDemandGenVideoCreativeRefusal(group['videoCreative']) : imageCreativeRefusal(group['creative']);
     if (refusal !== null) return `Demand Gen ad group ${position}: ${refusal}`;
+    if (video) {
+      const adLength = [...`${name}${GOOGLE_DEMAND_GEN_VIDEO_AD_NAME_SUFFIX}`].length;
+      if (adLength > GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES) {
+        return `Demand Gen ad group ${position}'s video ad is named after the ad group, then "${GOOGLE_DEMAND_GEN_VIDEO_AD_NAME_SUFFIX}", which makes ${adLength} characters, over Google's limit of ${GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES}. Shorten its name or the event name.`;
+      }
+    }
   }
   return null;
 }

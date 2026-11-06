@@ -6760,6 +6760,51 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
     fixture.detectChanges();
     expect(find(fixture, 'implementation-demand-gen-ad-group-1')).not.toBeNull();
   });
+
+  it('restores a saved name that is not a string as a blank name the judge then names', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    restoreGoogleDraft(fixture, c, {
+      includeDemandGen: true,
+      demandGenAdGroupsSplit: true,
+      demandGenAdGroups: [{ name: 7, format: 'image', creative: { headlines: 'Join us' }, videoCreative: {} }] as never,
+    });
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.demandGenAdGroups.at(0).controls.name.value).toBe('');
+    expect(c['demandGenAdGroupsError']()).toContain('ad group 1 needs a name');
+  });
+
+  describe('focus after adding or removing an ad group', () => {
+    const focused = (): string | null => {
+      const active = document.activeElement as HTMLElement | null;
+      return active?.id || active?.closest('[data-testid]')?.getAttribute('data-testid') || null;
+    };
+    const settle = async (): Promise<void> => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+
+    beforeEach(() => document.body.appendChild(fixture.nativeElement));
+    afterEach(() => fixture.nativeElement.remove());
+
+    it("moves focus to a new group's name, and on removal to the group in its place, the last, or Add", async () => {
+      const c = seedChannel(fixture, { includeDemandGen: true });
+      split(c, [{ name: 'Retargeting' }]);
+      await settle();
+
+      c['addDemandGenAdGroup']();
+      await settle();
+      expect(focused()).toBe('demand-gen-ad-group-1-name');
+
+      c['removeDemandGenAdGroup'](0);
+      await settle();
+      expect(focused()).toBe('demand-gen-ad-group-0-name');
+
+      c['removeDemandGenAdGroup'](0);
+      await settle();
+      expect(focused()).toBe('implementation-demand-gen-ad-group-add');
+    });
+  });
 });
 
 /**

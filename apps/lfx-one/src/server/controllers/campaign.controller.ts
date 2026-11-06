@@ -6288,13 +6288,18 @@ export class CampaignController {
    */
   private googleDemandGenAdGroupsRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
     if (googleChannel !== 'demand-gen') return null;
+    const eventName = typeof body?.eventName === 'string' ? body.eventName : '';
+    // Judged on the RAW value first: normalization drops anything that is not a list, which would read
+    // a malformed `demandGenAdGroups` as no split rather than refusing it as campaign-service does.
+    const raw: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
+    if (raw !== undefined && raw !== null && !Array.isArray(raw)) return googleDemandGenAdGroupsRefusal(eventName, raw);
     const sent = this.googleCreative(body, 'demand-gen');
     const groups = sent[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
     if (groups === undefined) return null;
     if (sent[GOOGLE_CREATIVE_REQUEST_KEYS['demand-gen']] !== undefined || sent[GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY] !== undefined) {
       return 'Demand Gen ad groups replace the single Demand Gen ad, so the campaign-level image ad and video ad must be empty. Set the ad on each ad group instead.';
     }
-    return googleDemandGenAdGroupsRefusal(typeof body?.eventName === 'string' ? body.eventName : '', groups);
+    return googleDemandGenAdGroupsRefusal(eventName, groups);
   }
 
   /**

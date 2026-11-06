@@ -452,6 +452,7 @@ export class ImplementationTabComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
   /**
@@ -5867,15 +5868,25 @@ export class ImplementationTabComponent implements OnInit {
     if (this.campaignForm.controls.demandGenAdGroupsSplit.value && groups.length === 0) groups.push(this.buildDemandGenAdGroup());
   }
 
-  /** Add an empty named Demand Gen ad group, up to {@link GOOGLE_DEMAND_GEN_MAX_AD_GROUPS} (#5226). */
+  /**
+   * Add an empty named Demand Gen ad group, up to {@link GOOGLE_DEMAND_GEN_MAX_AD_GROUPS} (#5226), and
+   * move focus to its name: the fifth add removes the focused Add button.
+   */
   protected addDemandGenAdGroup(): void {
     const groups = this.campaignForm.controls.demandGenAdGroups;
-    if (groups.length < GOOGLE_DEMAND_GEN_MAX_AD_GROUPS) groups.push(this.buildDemandGenAdGroup());
+    if (groups.length >= GOOGLE_DEMAND_GEN_MAX_AD_GROUPS) return;
+    groups.push(this.buildDemandGenAdGroup());
+    this.focusDemandGenAdGroupAfterRender(groups.length - 1);
   }
 
-  /** Remove the named Demand Gen ad group at `index` (#5226). */
+  /**
+   * Remove the named Demand Gen ad group at `index` (#5226). Its Remove button goes with it, so focus
+   * moves to the name of the group now in its place, or the last one, or Add ad group when none is left.
+   */
   protected removeDemandGenAdGroup(index: number): void {
-    this.campaignForm.controls.demandGenAdGroups.removeAt(index);
+    const groups = this.campaignForm.controls.demandGenAdGroups;
+    groups.removeAt(index);
+    this.focusDemandGenAdGroupAfterRender(Math.min(index, groups.length - 1));
   }
 
   /** A creative's nested form group by its name, the Demand Gen video ad's included (#5226). */
@@ -10913,10 +10924,25 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /** Focus ad group `index`'s name once it has rendered, or Add ad group for `-1`. */
+  private focusDemandGenAdGroupAfterRender(index: number): void {
+    afterNextRender(
+      () => {
+        const host = this.host.nativeElement;
+        const target =
+          index < 0
+            ? host.querySelector<HTMLElement>('[data-testid="implementation-demand-gen-ad-group-add"] button')
+            : host.querySelector<HTMLElement>(`#demand-gen-ad-group-${index}-name`);
+        target?.focus();
+      },
+      { injector: this.injector }
+    );
+  }
+
   /** One named Demand Gen ad group's controls, filled from a saved draft entry when one is given. */
   private buildDemandGenAdGroup(saved?: GoogleDemandGenAdGroupDraft): FormGroup<GoogleDemandGenAdGroupControls> {
     const group = new FormGroup<GoogleDemandGenAdGroupControls>({
-      name: this.fb.nonNullable.control(saved?.name ?? ''),
+      name: this.fb.nonNullable.control(typeof saved?.name === 'string' ? saved.name : ''),
       format: this.fb.nonNullable.control<GoogleDemandGenAdFormat>(saved?.format === 'video' ? 'video' : 'image'),
       creative: this.buildCreativeGroup('demand-gen'),
       videoCreative: this.buildCreativeGroupFrom(GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS),
