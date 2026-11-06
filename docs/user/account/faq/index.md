@@ -66,7 +66,7 @@ The Linux.com email alias is a one-time add-on for Individual Supporters that gi
 
 ## How do I enroll as an Individual Supporter?
 
-Go to [**Profile & Account**](/profile) and open the **Individual Enrollment** tab (`/profile/individual-enrollment`). Review the membership and its benefits, then select **Enroll**. See [Individual Enrollment](../individual-enrollment/).
+Go to [**Profile & Account**](/profile) and open the **Individual Enrollment** tab (`/profile/individual-enrollment`). Review the membership and its benefits, then select **Enroll as an Individual Supporter**. See [Individual Enrollment](../individual-enrollment/).
 
 ## How do I turn off auto-renew or stop my membership?
 
@@ -78,7 +78,7 @@ Go to [**Profile & Account**](/profile) and open the **CLAs** tab (`/profile/cla
 
 ## What is the difference between an ICLA and a CCLA?
 
-An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab when EasyCLA has the file and the agreement has not been invalidated. A **CCLA** (Corporate CLA) is your employer's agreement; you're covered under it once approved via the company's **Approved List**. The CLAs tab lists your CCLA coverage with the company name and no individual PDF, and keeps listing it with a status that says so if that coverage later ends. See [CLAs](../my-clas/).
+An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab unless the agreement has been invalidated. A **CCLA** (Corporate CLA) is your employer's agreement; you're covered under it once approved via the company's **Approved List**. The CLAs tab lists your CCLA coverage with the company name and no individual PDF, and keeps listing it with a status that says so if that coverage later ends. See [CLAs](../my-clas/).
 
 ## Why don't my signed CLAs show up on the CLAs tab?
 
@@ -86,7 +86,7 @@ The CLAs tab matches agreements to your LF username, verified emails, and linked
 
 ## Can I sign a CLA from the CLAs tab?
 
-You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which linked GitHub account to sign under. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
+You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which identity to sign under — a linked GitHub account, your LF identity for Gerrit, or either, depending on where the CLA group's repositories live. Signing for a GitLab-only CLA group isn't supported from Self Serve. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
 
 ## Why does a search result say "Already signed as" when I search for a CLA to sign?
 
@@ -102,7 +102,7 @@ When EasyCLA recorded the account used to sign, the **Signed** column adds a sec
 
 ## Can I download my signed CLA PDF?
 
-You can download a signed **ICLA** (Individual CLA) when EasyCLA has the file — open the **⋮** menu on that row and choose **Download PDF**. If EasyCLA does not have the file, the row offers no download. An **Invalidated** ICLA carries no **⋮** menu at all, so there is nothing to download from it even when the signed file still exists. There is no PDF for coverage under a **CCLA** (Corporate CLA), because that coverage sits under your employer's agreement rather than an agreement of your own; where such a row has a **⋮** menu, **Download PDF** appears greyed out and annotated _Covered by Corporate CLA (CCLA)_, and a **Revoked** row has no menu at all. See [Can I download my signed CLA PDF?](../my-clas/#can-i-download-my-signed-cla-pdf).
+You can download a signed **ICLA** (Individual CLA) — open the **⋮** menu on that row and choose **Download PDF**. If EasyCLA can't find the file, the download fails with **Download failed**. An **Invalidated** ICLA carries no **⋮** menu at all, so there is nothing to download from it even when the signed file still exists. There is no PDF for coverage under a **CCLA** (Corporate CLA), because that coverage sits under your employer's agreement rather than an agreement of your own; where such a row has a **⋮** menu, **Download PDF** appears greyed out and annotated _Covered by Corporate CLA (CCLA)_, and a **Revoked** row has no menu at all. See [Can I download my signed CLA PDF?](../my-clas/#can-i-download-my-signed-cla-pdf).
 
 ## How do I ask my employer's CLA manager to approve or remove my CCLA coverage?
 
