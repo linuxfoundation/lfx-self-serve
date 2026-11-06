@@ -2,12 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
   LENS_COOKIE_KEY,
   MKTG_DOCUMENT_TYPES,
   MKTG_FAMILY_EXPORT_KINDS,
   MKTG_LAST_INTAKE_API,
-  MKTG_OS_AGENTS_ENABLED_FLAG,
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
   SELECTED_FOUNDATION_COOKIE_KEY,
@@ -27,6 +25,7 @@ import type {
 import { expect, Page, Route, test as baseTest } from '@playwright/test';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { ApiMockHelper } from './api-mock.helper';
+import { pinMktgOsFlags } from './mktg-os-flags.helper';
 import { waitForHydration } from './meeting-composer-guests.helper';
 import { skipWhenAuthMissing } from './auth.helper';
 import { columnAssetRevisionResponse } from './mktg-os-asset-views.helper';
@@ -212,10 +211,7 @@ export async function setupKit(
   const isProjectRead = (route: Route): boolean =>
     route.request().method() === 'GET' && new URL(route.request().url()).searchParams.get('project') === KIT_PROJECT.uid;
   await suppressCookieBanner(page);
-  await page.addInitScript(
-    ([key, value]) => localStorage.setItem(key, value),
-    [FEATURE_FLAG_OVERRIDE_STORAGE_KEY, JSON.stringify({ [MKTG_OS_AGENTS_ENABLED_FLAG]: true })]
-  );
+  await pinMktgOsFlags(page);
   await seedKitContext(page);
   await ApiMockHelper.setupProjectSlugMock(page, { writer });
   // This synthetic project intentionally overrides the helper's stock projects.

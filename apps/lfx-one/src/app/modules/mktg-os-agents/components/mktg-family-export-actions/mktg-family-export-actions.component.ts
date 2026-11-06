@@ -17,6 +17,7 @@ import {
   MKTG_FAMILY_PRINT_ONLY_CLASS,
   MKTG_FAMILY_SLIDES_NOTE,
   MKTG_KIT_FAMILIES,
+  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
 } from '@lfx-one/shared/constants';
@@ -30,6 +31,7 @@ import {
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
 import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -70,6 +72,8 @@ export class MktgFamilyExportActionsComponent {
   public readonly familyId = input.required<string>();
   protected readonly slidesNote = MKTG_FAMILY_SLIDES_NOTE;
   protected readonly pdfNote = MKTG_FAMILY_PDF_NOTE;
+  /** Download PDF and its note render only while the flag is on (#5302); the PDF preparation and the print rendering stay. */
+  protected readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
   protected readonly approvalNote = MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE;
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly focusRequested = signal(false);

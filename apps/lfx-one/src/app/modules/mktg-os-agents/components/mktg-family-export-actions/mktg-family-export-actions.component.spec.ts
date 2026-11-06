@@ -14,6 +14,7 @@ import {
   MKTG_FAMILY_EXPORT_FORMAT_HINT,
 } from '@lfx-one/shared/constants';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { familyExportMember, familyExportRecord } from '@shared/testing/mktg-family-export-test-data';
@@ -45,11 +46,14 @@ describe('Family export slot', () => {
   });
   const api = { last: vi.fn(), running: vi.fn(), run: vi.fn(), printView: vi.fn() };
   const print = { prepare: vi.fn(), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+  /** The Download PDF flag (#5302), pinned on so the PDF tests see today's card; one test turns it off. */
+  const pdfFlag = signal(true);
   /** The frame's title names the saved PDF like the deck: the project, the family, the newest member revision's date; no version, as the family binds several revisions. */
   const pdfTitle = 'Synthetic project · Positioning & brand · 2026-10-21';
   beforeEach(() => {
     vi.clearAllMocks();
     writer.set(true);
+    pdfFlag.set(true);
     activeContext.set({ uid: 'synthetic-project', name: 'Synthetic project' });
     run = new Subject();
     api.last.mockReturnValue(of(lookup()));
@@ -77,6 +81,7 @@ describe('Family export slot', () => {
         { provide: ProjectContextService, useValue: { activeContext, canWrite: writer } },
         { provide: MktgFamilyExportService, useValue: api },
         { provide: MktgPrintService, useValue: print },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => pdfFlag } },
       ],
     });
   });
@@ -602,6 +607,30 @@ describe('Family export slot', () => {
     await setup();
     expect(api.last).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, true);
     expect(api.run).not.toHaveBeenCalled();
+  });
+
+  it('hides Download PDF and its note while its flag is off, Export to Google Slides keeping the card’s outlined style, and restores both when it turns on (#5302)', async () => {
+    pdfFlag.set(false);
+    const { fixture, root, button } = await setup();
+    expect(button('pdf')).toBeNull();
+    expect(root.querySelector('[data-testid="family-export-pdf-note"]')).toBeNull();
+    expect(root.textContent).not.toContain('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
+    expect(Array.from(root.querySelectorAll('section > lfx-button'), (element) => element.textContent?.trim())).toEqual(['Export to Google Slides']);
+    expect(button('slides')?.classList.contains('p-button-outlined')).toBe(true);
+    expect(button('slides')?.disabled).toBe(false);
+    expect(root.textContent).toContain('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
+    // The print rendering keeps its slot: only the entry button and its note are gated.
+    expect(root.querySelector('[data-testid="family-export-print-document"]')).not.toBeNull();
+    pdfFlag.set(true);
+    await fixture.whenStable();
+    expect(Array.from(root.querySelectorAll('section > lfx-button'), (element) => element.textContent?.trim())).toEqual([
+      'Download PDF',
+      'Export to Google Slides',
+    ]);
+    expect(root.querySelector('[data-testid="family-export-pdf-note"]')?.textContent).toBe(
+      'PDF: framework, brand kit, boilerplates and FAQ (approved current).'
+    );
+    for (const action of ['pdf', 'slides']) expect(button(action)?.classList.contains('p-button-outlined')).toBe(true);
   });
 
   it('unsupported families show the title and one line, without buttons, PDF or Drive notes', async () => {

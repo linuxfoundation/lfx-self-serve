@@ -23,6 +23,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { MktgRebuildService } from '@services/mktg-rebuild.service';
 import { UserService } from '@services/user.service';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -92,6 +93,8 @@ describe('Marketing family page', () => {
           useValue: { activeContext: computed(() => ({ uid: 'synthetic', name: 'Synthetic project', slug: projectSlug() })), canWrite: writer },
         },
         { provide: MktgFamilyExportService, useValue: { last: lastExport, running: () => null } },
+        // The Download PDF flag (#5302) pinned on: this page's export card is asserted with both actions.
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
         { provide: MktgDocumentStoreService, useValue: { getRevision: () => of(null) } },
         provideRouter([
           { path: 'project/mktg-os-agents/families/:familyId', component: MktgFamilyComponent },

@@ -11,7 +11,9 @@
     <p class="text-xs text-gray-500" data-testid="family-export-unsupported">This family has no assets supported by the exporter yet.</p>
   } @else {
     <p class="text-sm text-gray-500">{{ slidesNote }}</p>
-    <lfx-button label="Download PDF" [disabled]="!canPrint()" [outlined]="true" [fluid]="true" data-testid="family-export-pdf" (onClick)="downloadPdf()" />
+    @if (pdfEnabled()) {
+      <lfx-button label="Download PDF" [disabled]="!canPrint()" [outlined]="true" [fluid]="true" data-testid="family-export-pdf" (onClick)="downloadPdf()" />
+    }
     <lfx-button
       label="Export to Google Slides"
       [disabled]="!canExport()"
@@ -85,7 +87,9 @@
     @if (skipped()) {
       <p class="text-xs text-gray-500" data-testid="family-export-skipped">Not included (no approved current): {{ skipped() }}.</p>
     }
-    <p class="text-xs text-gray-500" data-testid="family-export-pdf-note">{{ pdfNote }}</p>
+    @if (pdfEnabled()) {
+      <p class="text-xs text-gray-500" data-testid="family-export-pdf-note">{{ pdfNote }}</p>
+    }
     <p class="text-xs text-gray-500">
       Slides builds a native deck on the LF template in the Marketing OS folder on Drive. Drive access follows that folder's sharing; exporting does not grant
       access.

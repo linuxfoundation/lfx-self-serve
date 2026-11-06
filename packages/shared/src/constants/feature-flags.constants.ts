@@ -3,6 +3,20 @@
 
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
+/**
+ * Dark-launch gate for the Marketing OS "Download PDF" entry points (#5302): the AEO/GEO report row of the
+ * document view, the messaging framework view, the brand kit web view (and its footer's PDF sentence), and the
+ * family export card (and its PDF note). Default false: the in-app PDFs are being rebuilt as landscape book
+ * pages, and until that lands the PDF comes from the exported Google Slides deck (File → Download → PDF).
+ * LaunchDarkly targeting is the rollout switch, never the code default: the buttons come back by flipping the
+ * flag, with no deploy.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag` under the route
+ * `mktgOsAgentsEnabledGuard` already gates, so in the browser the value is resolved before the first render
+ * and on SSR (no provider) it reads the default, which is the off state. It gates no endpoint: the print
+ * components, the print service and the print-only DOM stay; only the entry buttons hide.
+ */
+export const MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG = 'mktg-os-pdf-download-enabled';
 export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
 /**
  * Dark-launch gate for the M2 My CLAs overlay (#1738) — Sign CLA, Status column,
