@@ -681,9 +681,9 @@ export class CampaignService {
 
   /**
    * The enabled conversion actions on the Google Ads account a create uses, for the Implement tab's
-   * picker (#4991). A 403 for a non-root caller (and for everyone until the deployment opens the
-   * upstream route), a 404 while the campaign-service create road is off; the tab falls back to its
-   * free-text box on any failure.
+   * picker (#4991). A coded 403 for a caller without `global_marketing_ops` on the project, a coded
+   * 503 when that access check could not be made, and a 404 while the campaign-service create road is
+   * off; the tab falls back to its free-text box on any failure.
    */
   public getGoogleAdsConversionActions(projectSlug: string): Observable<GoogleAdsConversionActionsResult> {
     return this.http.get<GoogleAdsConversionActionsResult>('/api/campaigns/google/conversion-actions', { params: { project: projectSlug } });

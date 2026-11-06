@@ -2488,7 +2488,8 @@ export interface GoogleAdsConversionActionsResult {
 
 /**
  * Where the Implement tab's conversion-action picker stands. `unavailable` is a list that could not
- * load — the caller is not root, the route is off or denied on this deployment, or Google failed —
+ * load — the caller lacks `global_marketing_ops` on the project, the route is off on this deployment,
+ * the access check could not be made, or Google failed —
  * and `reason` says which in one sentence; the free-text box is the way in then, as it always was.
  */
 export interface GoogleConversionActionPickerState {
@@ -4599,7 +4600,7 @@ export interface CampaignServiceGoogleAdsConversionAction {
   primary_for_goal: boolean;
 }
 
-/** campaign-service `GET /projects/{project_id}/google-ads/conversion-actions` (root principals only). */
+/** campaign-service `GET /projects/{project_id}/google-ads/conversion-actions` (`global_marketing_ops` on the project only, lfx-v2-campaign-service#486). */
 export interface CampaignServiceGoogleAdsConversionActions {
   account_id: string;
   conversion_actions: CampaignServiceGoogleAdsConversionAction[];

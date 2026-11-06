@@ -5474,8 +5474,9 @@ export const GOOGLE_ADS_CONVERSION_ACTION_RESOURCE_PATTERN = /^customers\/\d+\/c
  * - `unavailable`: the read was made and answered 403 or 404. The BFF had already said the caller may
  *   read it, so a 403 means the relation changed between the two checks or campaign-service's gateway
  *   refused it; a 404 is the BFF route off, or campaign-service's NotFound for the project.
- * - `failed`: anything else — campaign-service's 400, 500 or 503 (including an account holding more
- *   than 500 enabled actions, which does not clear on retry), or no answer at all.
+ * - `failed`: anything else — the BFF's own coded 503 when the access check could not be made
+ *   (`GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE`), campaign-service's 400, 500 or 503 (including an
+ *   account holding more than 500 enabled actions, which does not clear on retry), or no answer at all.
  */
 export const GOOGLE_CONVERSION_ACTION_PICKER_REASONS = {
   forbidden: "Your account can't list this Google Ads account's conversion actions. Enter their ids below instead.",
