@@ -1,15 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, output, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
+import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { UserSearchComponent } from '@components/user-search/user-search.component';
 import {
   PROJECT_APPLICATION_AGREEMENT_OPTIONS,
   PROJECT_APPLICATION_CANONICAL_KEYS,
@@ -17,14 +19,18 @@ import {
   PROJECT_APPLICATION_DESCRIPTION_MAX,
   PROJECT_APPLICATION_FIELD_LABELS,
   PROJECT_APPLICATION_FORMATION_LIST_MAX,
+  PROJECT_APPLICATION_LEGAL_BACK_TO_SEARCH_LABEL,
+  PROJECT_APPLICATION_LEGAL_MANUAL_ENTRY_LABEL,
+  PROJECT_APPLICATION_LEGAL_SEARCH_HINT,
+  PROJECT_APPLICATION_LEGAL_SEARCH_PLACEHOLDER,
   PROJECT_APPLICATION_LICENSE_OPTIONS,
   PROJECT_APPLICATION_MISSION_MAX,
   PROJECT_APPLICATION_SPEC_OPTIONS,
   PROJECT_APPLICATION_TEXT_MAX,
   PROJECT_APPLICATION_TRADEMARK_OPTIONS,
 } from '@lfx-one/shared/constants';
-import type { ProjectApplicationAnswers } from '@lfx-one/shared/interfaces';
-import { parseEmailList } from '@lfx-one/shared/utils';
+import type { ProjectApplicationAnswers, ProjectApplicationLegalContactMode } from '@lfx-one/shared/interfaces';
+import { isEmailShape, parseEmailList } from '@lfx-one/shared/utils';
 import { projectApplicationEmailListValidator, projectApplicationLegalEmailValidator, projectApplicationUrlValidator } from '@lfx-one/shared/validators';
 
 /**
@@ -36,12 +42,25 @@ import { projectApplicationEmailListValidator, projectApplicationLegalEmailValid
  */
 @Component({
   selector: 'lfx-project-application-form',
-  imports: [ButtonComponent, InputTextComponent, MessageComponent, ReactiveFormsModule, SelectButtonComponent, SelectComponent, TextareaComponent],
+  imports: [
+    ButtonComponent,
+    InputTextComponent,
+    MessageComponent,
+    OrganizationSearchComponent,
+    ReactiveFormsModule,
+    SelectButtonComponent,
+    SelectComponent,
+    TextareaComponent,
+    UserSearchComponent,
+  ],
   templateUrl: './project-application-form.component.html',
 })
 export class ProjectApplicationFormComponent {
   // === Services ===
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly legalPicker = viewChild(UserSearchComponent);
 
   // === Inputs ===
   public readonly initialAnswers = input<ProjectApplicationAnswers | null>(null);
@@ -67,6 +86,10 @@ export class ProjectApplicationFormComponent {
   protected readonly missionMax = PROJECT_APPLICATION_MISSION_MAX;
   protected readonly textMax = PROJECT_APPLICATION_TEXT_MAX;
   protected readonly formationListMax = PROJECT_APPLICATION_FORMATION_LIST_MAX;
+  protected readonly legalSearchPlaceholder = PROJECT_APPLICATION_LEGAL_SEARCH_PLACEHOLDER;
+  protected readonly legalSearchHint = PROJECT_APPLICATION_LEGAL_SEARCH_HINT;
+  protected readonly legalManualEntryLabel = PROJECT_APPLICATION_LEGAL_MANUAL_ENTRY_LABEL;
+  protected readonly legalBackToSearchLabel = PROJECT_APPLICATION_LEGAL_BACK_TO_SEARCH_LABEL;
 
   // === Forms ===
   public readonly form = new FormGroup({
@@ -97,6 +120,10 @@ export class ProjectApplicationFormComponent {
   // === Writable Signals ===
   private readonly formationListValue = signal('');
   private readonly descriptionValue = signal('');
+  /** The legal contact's current address, which is also the label the directory search shows once one is picked. */
+  protected readonly legalEmailValue = signal('');
+  /** Directory search (create) or a plain email input (manual entry, and revise with a stored address). */
+  protected readonly legalMode = signal<ProjectApplicationLegalContactMode>('search');
   /** Per-control "show the error" state, refreshed on every form event so the template reads a signal. */
   protected readonly invalid = signal<Record<string, boolean>>({});
 
@@ -112,6 +139,7 @@ export class ProjectApplicationFormComponent {
   public constructor() {
     this.form.controls.formation_list.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.formationListValue.set(value ?? ''));
     this.form.controls.description.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.descriptionValue.set(value ?? ''));
+    this.form.controls.legal_contact_email.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.legalEmailValue.set(value ?? ''));
 
     this.form.events.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.refreshInvalid());
 
@@ -139,7 +167,44 @@ export class ProjectApplicationFormComponent {
     this.cancelled.emit();
   }
 
+  /** A directory pick: the picker has written the address; touch it so a malformed directory address shows its error. */
+  protected onLegalPicked(): void {
+    this.form.controls.legal_contact_email.markAsTouched();
+  }
+
+  /** The picker's clear button nulls the control it binds; the control is non-nullable, so put the empty string back. */
+  protected onLegalCleared(): void {
+    this.form.controls.legal_contact_email.setValue('');
+  }
+
+  /**
+   * "Enter an email address": swap the directory search for a plain input on the same control. A
+   * picked address stays so it can be edited; text typed into the search that found nobody is
+   * carried over when it looks like an address.
+   */
+  protected switchToManualLegal(): void {
+    const typed = this.legalPicker()?.consumeDiscardedText() ?? null;
+    this.legalMode.set('manual');
+    if (typed && (isEmailShape(typed) || typed.includes('@'))) {
+      this.form.controls.legal_contact_email.setValue(typed);
+    }
+    this.focusLegalInput();
+  }
+
+  /** Back to the directory. A hand-typed address names nobody the directory vouched for, so it is dropped. */
+  protected backToLegalSearch(): void {
+    this.form.controls.legal_contact_email.setValue('');
+    this.form.controls.legal_contact_email.markAsUntouched();
+    this.legalMode.set('search');
+    this.focusLegalInput();
+  }
+
   // === Private Helpers ===
+  /** Keyboard users activate a link that removes itself; land them on the field that replaced it. */
+  private focusLegalInput(): void {
+    afterNextRender(() => this.host.nativeElement.querySelector<HTMLInputElement>('#pa-legal')?.focus(), { injector: this.injector });
+  }
+
   private refreshInvalid(): void {
     const next: Record<string, boolean> = {};
     for (const [key, control] of Object.entries(this.form.controls)) {
@@ -169,6 +234,10 @@ export class ProjectApplicationFormComponent {
       description: text('description'),
     });
     this.formationListValue.set(this.form.controls.formation_list.value);
+    this.legalEmailValue.set(this.form.controls.legal_contact_email.value);
+    // A stored address is shown as plain text, which is always editable; the search box would seed it
+    // only from its own inputs and drop the user into a picker with nothing to pick.
+    this.legalMode.set(this.form.controls.legal_contact_email.value ? 'manual' : 'search');
     this.descriptionValue.set(this.form.controls.description.value);
   }
 

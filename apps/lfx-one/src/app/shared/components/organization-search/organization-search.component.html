@@ -19,6 +19,10 @@
           [inputStyleClass]="inputStyleClass()"
           [panelStyleClass]="panelStyleClass()"
           [dataTestId]="dataTestId()"
+          [inputId]="inputId()"
+          [describedBy]="describedBy()"
+          [invalid]="invalid()"
+          [maxLength]="maxLength()"
           optionLabel="name"
           optionValue="name"
           appendTo="body"
@@ -44,7 +48,8 @@
           </ng-template>
 
           <!-- Footer template: "I want to create" button -->
-          @if (searchTerm()) {
+          <!-- resolveOnSelect=false takes typed text as-is, so there is no "create" step to offer. -->
+          @if (searchTerm() && resolveOnSelect()) {
             <ng-template #footer>
               <div class="border-t border-slate-100 p-2">
                 <button

@@ -30,6 +30,14 @@ export class OrganizationSearchComponent {
   public inputStyleClass = input<string>();
   public panelStyleClass = input<string>();
   public dataTestId = input<string>('organization-search');
+  /** Forwarded to the search box so a parent `<label for>` can name it. */
+  public inputId = input<string>();
+  /** Forwarded to the search box as `aria-describedby` (the id of the field's current error message). */
+  public describedBy = input<string | undefined>();
+  /** Forwarded to the search box: styles it invalid and sets `aria-invalid`. */
+  public invalid = input<boolean>(false);
+  /** Forwarded to the search box as its native `maxlength`. */
+  public maxLength = input<number | null>(null);
   public disabled = input<boolean>(false);
   /** When false, the field keeps the user-selected name instead of being overwritten with the
    *  CDP canonical name returned by /api/organizations/resolve. Defaults to true for backward

@@ -237,3 +237,6 @@ export interface ProjectApplicationValidationIssue {
   field: string;
   message: string;
 }
+
+/** How the legal contact field is entered on the proposal form: the directory search, or a plain email input (#5251). */
+export type ProjectApplicationLegalContactMode = 'search' | 'manual';

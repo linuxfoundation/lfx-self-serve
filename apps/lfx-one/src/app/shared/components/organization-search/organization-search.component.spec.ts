@@ -71,6 +71,19 @@ describe('OrganizationSearchComponent', () => {
     expect(searchInput().value).toBe('acme corp updated');
   });
 
+  it('forwards the id, error description and invalid state to the search box so a parent label can name it', async () => {
+    fixture.componentRef.setInput('inputId', 'pa-organization');
+    fixture.componentRef.setInput('describedBy', 'pa-organization-error');
+    fixture.componentRef.setInput('invalid', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(searchInput().id).toBe('pa-organization');
+    expect(searchInput().getAttribute('aria-describedby')).toBe('pa-organization-error');
+    expect(searchInput().getAttribute('aria-invalid')).toBe('true');
+  });
+
   it('still invalidates the stale resolved id once the user types past the selection', async () => {
     searchInput().value = 'acme corp updated';
     searchInput().dispatchEvent(new Event('input'));
