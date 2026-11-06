@@ -3,13 +3,14 @@
 // SPDX-License-Identifier: MIT
 
 /*
- * Runs ESLint once per TypeScript project, each in its own process, and exits with the
- * worst status.
+ * Runs ESLint in three processes (app, app specs, server specs) and exits with the worst
+ * status.
  *
  * Typed linting builds a full TypeScript program for every `parserOptions.project` it meets
- * and keeps it alive until the process exits. The app, app specs and server specs are three
- * programs (see eslint.config.js), and holding all three in one process needs ~7 GB of heap.
- * Run separately, each one fits in Node's default heap.
+ * and keeps it alive until the process exits (see eslint.config.js). The app run also lints the
+ * stories, so it holds the app and Storybook programs; the two spec runs hold one program each.
+ * Holding them all in one process needs ~7 GB of heap. Split this way, each run fits in Node's
+ * default heap.
  *
  * Arguments starting with `-` are forwarded to every run (e.g. `--fix`). Any other argument
  * is a file path, as lint-staged passes them. It goes to the run that owns its project: app
@@ -19,9 +20,16 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { relative, resolve, sep } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, relative, resolve, sep } from 'node:path';
 
 const appRoot = resolve(import.meta.dirname, '..');
+
+// Run ESLint's bin with the current Node rather than through `yarn`, whose Windows shim
+// (`yarn.cmd`) spawnSync can't start without a shell. The package doesn't export `bin/`, so
+// the path comes from its package.json.
+const require = createRequire(import.meta.url);
+const eslintBin = resolve(dirname(require.resolve('eslint/package.json')), require('eslint/package.json').bin.eslint);
 
 const runs = [
   { name: 'app', args: ['src/**/*.{ts,html}', '--ignore-pattern', '**/*.spec.ts'], owns: () => true },
@@ -43,7 +51,7 @@ let worst = 0;
 for (const run of runs) {
   const owned = files.filter((file) => ownerOf(file) === run);
   console.log(`\n> eslint (${run.name})`);
-  const { status, signal, error } = spawnSync('yarn', ['eslint', ...run.args, ...flags, ...owned], { cwd: appRoot, stdio: 'inherit', shell: false });
+  const { status, signal, error } = spawnSync(process.execPath, [eslintBin, ...run.args, ...flags, ...owned], { cwd: appRoot, stdio: 'inherit', shell: false });
   if (error) {
     console.error(`\neslint (${run.name}) failed to start: ${error.message}`);
   }

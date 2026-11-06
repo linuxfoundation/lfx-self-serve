@@ -239,8 +239,9 @@ type-checked against `tsconfig.server-spec.json` instead. `yarn check-types` run
 the app, and leaving them in the build program pushed `ng build`, `ng serve` and typed linting past
 Node's default heap. Keep specs out of it. A new spec location needs to be covered by one of the
 two spec configs and by the matching `parserOptions.project` override in `eslint.config.js`.
-`yarn lint` / `lint:check` go through `scripts/run-eslint.mjs`, which lints each of the three
-projects in its own process. One process holding all three programs outgrows Node's default heap.
+`yarn lint` / `lint:check` go through `scripts/run-eslint.mjs`, which lints in three processes:
+the app (plus the stories, through the Storybook project), app specs, and server specs. One process
+holding every program outgrows Node's default heap.
 `scripts/release-build-inputs.spec.mjs` guards this.
 
 The shared package's specs (`packages/shared/src/**/*.spec.ts`) get the same treatment through a

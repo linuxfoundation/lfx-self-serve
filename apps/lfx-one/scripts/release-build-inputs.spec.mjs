@@ -55,7 +55,7 @@ describe('release build inputs (#4736)', () => {
     expect(appSpec.languageOptions.parserOptions.project).toBe('./tsconfig.spec.json');
     expect(serverSpec.languageOptions.parserOptions.project).toBe('./tsconfig.server-spec.json');
     const { scripts } = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'));
-    // One ESLint process per project; a single process holding all three programs outgrows the default heap.
+    // Three ESLint processes (app + stories, app specs, server specs); one holding every program outgrows the default heap.
     expect(scripts['lint']).toBe('node scripts/run-eslint.mjs --fix');
     expect(scripts['lint:check']).toBe('node scripts/run-eslint.mjs');
   });

@@ -182,7 +182,7 @@ See [E2E Testing](../../docs/architecture/testing/e2e-testing.md) for the dual-a
 # From the root directory
 yarn lint
 
-# Or from this directory (one ESLint process per TypeScript project; see scripts/run-eslint.mjs)
+# Or from this directory (three ESLint processes: app + stories, app specs, server specs; see scripts/run-eslint.mjs)
 yarn lint
 ```
 
