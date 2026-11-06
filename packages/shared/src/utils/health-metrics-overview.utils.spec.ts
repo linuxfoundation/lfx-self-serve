@@ -1079,6 +1079,16 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     expect(view.todayX).toBeNull();
   });
 
+  it('draws every line to the edges of a span that falls between two reads, and scales to them there', () => {
+    // 35 to 5 days out holds no read: the prediction runs from 330 at 46 days out to 620 at the event day.
+    const view = buildHealthMetricsOverviewTrendView({ ...row, registrationsGoal: null }, null, series, { start: 145, end: 175 });
+
+    expect(view.predictedPath.startsWith('M0.0 ')).toBe(true);
+    expect(view.predictedPath).toMatch(/L600\.0 [\d.]+$/);
+    expect(view.lastYearPath.startsWith('M0.0 ')).toBe(true);
+    expect(view.yTicks[0].label).toBe('800');
+  });
+
   it('keeps a moved window on the chart and at least 7 days wide', () => {
     const view = buildHealthMetricsOverviewTrendView(row, headline, series, { start: 175, end: 178 });
 
@@ -1098,7 +1108,8 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     const view = buildHealthMetricsOverviewTrendView(row, headline, series, whole);
 
     expect(view.currentPath.startsWith('M300.0')).toBe(true);
-    expect(view.currentPath.split('L')).toHaveLength(2);
+    // The reads at 90 and 46 days out are joined a day at a time.
+    expect(view.currentPath.split('L')).toHaveLength(45);
     expect(view.predictedPath.startsWith('M446.7')).toBe(true);
     expect(view.predictedPath.endsWith(`600.0 ${(220 - (620 / 800) * 220).toFixed(1)}`)).toBe(true);
     expect(view.bandPath.endsWith(' Z')).toBe(true);
@@ -1110,12 +1121,16 @@ describe('buildHealthMetricsOverviewTrendView', () => {
   it('fills the gap to last year up to today, green where this year is ahead and red where it is behind', () => {
     const crossing = {
       format: 'In Person',
-      points: [point(-120, 100, null, 80), point(-90, 200, null, 230), point(-46, 330, null, 300), point(0, null, 620, 600)],
+      points: [point(-120, 100, null, 80), point(-90, 200, null, 235), point(-46, 330, null, 300), point(0, null, 620, 600)],
     };
     const view = buildHealthMetricsOverviewTrendView(row, headline, crossing, whole);
 
     expect(view.aheadPath).toMatch(/^M200\.0 .* Z$/);
     expect(view.behindPath).toMatch(/^M200\.0 .* Z$/);
+    // The lines cross 10.9 days after 120 days out, between two days; both fills close there, not a day either side.
+    const crossingAt = (path: string): string[] => path.split(/[MLZ]/).filter((coord) => coord.startsWith('236.4 '));
+    expect(crossingAt(view.aheadPath)).toHaveLength(2);
+    expect(crossingAt(view.behindPath)).toHaveLength(2);
     // Nothing past today is filled.
     expect(view.aheadPath).not.toContain('600.0');
   });
@@ -1181,7 +1196,8 @@ describe('buildHealthMetricsOverviewPastTrendView', () => {
   it('draws the history and last year with no forecast or today line', () => {
     const view = buildHealthMetricsOverviewPastTrendView(row, curve, inPerson);
 
-    expect(view.currentPath.split('L')).toHaveLength(3);
+    // Three reads, joined a day at a time from 120 days out to the event day.
+    expect(view.currentPath.split('L')).toHaveLength(121);
     expect(view.lastYearPath).not.toBe('');
     expect([view.predictedPath, view.bandPath, view.bandHighPath, view.bandLowPath, view.todayX, view.navigator.predictedPath]).toEqual([
       '',

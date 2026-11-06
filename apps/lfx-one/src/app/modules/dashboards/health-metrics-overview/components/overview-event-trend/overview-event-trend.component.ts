@@ -44,6 +44,7 @@ export class OverviewEventTrendComponent {
 
   protected readonly colors = HEALTH_METRICS_OVERVIEW_TREND_COLORS;
   protected readonly windowDays = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
+  protected readonly minSpan = HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS;
   protected readonly format = linkedSignal<string | null>(() => pickHealthMetricsEventsForecastFormat(this.reads()?.curve.formats ?? []));
   protected readonly formatOptions = computed<FilterPillOption[]>(() => {
     const formats = this.reads()?.curve.formats ?? [];
@@ -119,5 +120,16 @@ export class OverviewEventTrendComponent {
     const { start, end } = this.view().window;
     const moved = Math.max(0, Math.min(start + days, HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS - (end - start)));
     this.zoom.set({ start: moved, end: moved + (end - start) });
+  }
+
+  /** On a focused handle they move that side, keeping the span on the chart and at least the minimum wide. */
+  protected resizeBy(side: 'start' | 'end', days: number, event: Event): void {
+    event.preventDefault();
+    const { start, end } = this.view().window;
+    if (side === 'start') {
+      this.zoom.set({ start: Math.max(0, Math.min(start + days, end - this.minSpan)), end });
+    } else {
+      this.zoom.set({ start, end: Math.min(this.windowDays, Math.max(end + days, start + this.minSpan)) });
+    }
   }
 }

@@ -125,8 +125,19 @@ describe('OverviewEventTrendComponent', () => {
 
     query('overview-trend-navigator-selection')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
     fixture.detectChanges();
-    // This span holds no points of the sparse curve, but the navigator stays to move back.
+    // This span holds no read of the sparse curve, but its lines still cross it.
     expect(query('overview-trend-navigator-selection')?.getAttribute('aria-valuetext')).toBe('35 to 5 days before the event');
+    expect(query('overview-trend-band-high')?.getAttribute('d')).toMatch(/^M0\.0 /);
+
+    // A focused handle resizes from its side, never below 7 days.
+    const end = query('overview-trend-navigator-end')!;
+    end.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    fixture.detectChanges();
+    expect(end.getAttribute('aria-valuetext')).toBe('0 days before the event');
+    for (let press = 0; press < 6; press++) end.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+    fixture.detectChanges();
+    expect(query('overview-trend-navigator-selection')?.getAttribute('aria-valuetext')).toBe('35 to 28 days before the event');
+    expect(end.getAttribute('aria-valuemin')).toBe('152');
 
     query('overview-trend-reset')?.querySelector('button')?.click();
     fixture.detectChanges();

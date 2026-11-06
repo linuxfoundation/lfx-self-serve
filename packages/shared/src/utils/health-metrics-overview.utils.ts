@@ -700,12 +700,27 @@ function buildTrendChart(
   const highs = showForecast ? plot(line.high, forecastFrom, days) : [];
   const lows = showForecast ? plot(line.low, forecastFrom, days) : [];
   const gapEnd = line.now === null ? -1 : Math.min(line.now, end);
+  // Each fill keeps to its side by adding the point where the lines cross between two days.
   const gap = (top: (current: number, prior: number) => number, bottom: (current: number, prior: number) => number): string => {
     const indexes = range(start, gapEnd).filter((index) => line.actual[index] !== null && line.prior[index] !== null);
     if (indexes.length < 2) return '';
-    const value = (index: number, pick: typeof top): number => pick(line.actual[index] as number, line.prior[index] as number);
-    const upper = indexes.map((index): [number, number] => [x(index), y(value(index, top))]);
-    const lower = [...indexes].reverse().map((index): [number, number] => [x(index), y(value(index, bottom))]);
+    const samples = indexes.flatMap((index, at): [number, number, number][] => {
+      const current = line.actual[index] as number;
+      const prior = line.prior[index] as number;
+      const next = indexes[at + 1];
+      if (next === undefined) return [[index, current, prior]];
+      const ahead = current - prior;
+      const nextAhead = (line.actual[next] as number) - (line.prior[next] as number);
+      if (ahead * nextAhead >= 0) return [[index, current, prior]];
+      const share = ahead / (ahead - nextAhead);
+      const crossing = current + share * ((line.actual[next] as number) - current);
+      return [
+        [index, current, prior],
+        [index + share * (next - index), crossing, crossing],
+      ];
+    });
+    const upper = samples.map(([day, current, prior]): [number, number] => [x(day), y(top(current, prior))]);
+    const lower = [...samples].reverse().map(([day, current, prior]): [number, number] => [x(day), y(bottom(current, prior))]);
     return `${svgPath([...upper, ...lower])} Z`;
   };
   const todayShown = !isPast && line.now !== null && line.now >= start && line.now <= end;
@@ -742,7 +757,7 @@ function buildTrendChart(
   };
 }
 
-/** One series' days as arrays indexed 0 (180 days out) to 180 (the event day), with the last measured day as `now`. */
+/** One series' days as arrays indexed 0 (180 days out) to 180 (the event day), joined across the days between reads, with the last measured day as `now`. */
 interface TrendLines {
   actual: (number | null)[];
   prior: (number | null)[];
@@ -763,8 +778,9 @@ function trendLines(series: HealthMetricsEventsForecastCurveSeries | null, isPas
     for (const point of points) values[days + point.daysToEvent] = pick(point);
     return values;
   };
-  const actual = byDay((point) => point.actual);
-  const measured = actual.map((value, index) => (value === null ? -1 : index)).filter((index) => index >= 0);
+  const measuredDays = byDay((point) => point.actual);
+  const actual = fillTrendGaps(measuredDays);
+  const measured = measuredDays.map((value, index) => (value === null ? -1 : index)).filter((index) => index >= 0);
   const now = measured.length ? measured[measured.length - 1] : null;
   const fromNow = (pick: (point: HealthMetricsEventsForecastCurvePoint) => number | null): (number | null)[] =>
     byDay(pick).map((value, index) => {
@@ -773,10 +789,10 @@ function trendLines(series: HealthMetricsEventsForecastCurveSeries | null, isPas
       if (index < now) return null;
       return index === now ? actual[now] : value;
     });
-  const prior = byDay((point) => point.priorYear);
-  const predicted = fromNow((point) => point.forecastAvg);
-  const high = fromNow((point) => point.forecastHigh);
-  const low = fromNow((point) => point.forecastLow);
+  const prior = fillTrendGaps(byDay((point) => point.priorYear));
+  const predicted = fillTrendGaps(fromNow((point) => point.forecastAvg));
+  const high = fillTrendGaps(fromNow((point) => point.forecastHigh));
+  const low = fillTrendGaps(fromNow((point) => point.forecastLow));
 
   return {
     actual,
@@ -787,6 +803,22 @@ function trendLines(series: HealthMetricsEventsForecastCurveSeries | null, isPas
     now,
     peak: (index) => Math.max(actual[index] ?? 0, prior[index] ?? 0, predicted[index] ?? 0, high[index] ?? 0),
   };
+}
+
+/**
+ * A line's read days joined by straight segments, so every day between two of them has its value: a span that falls
+ * between read days still draws the line to its edges and scales to it. Nothing is added before the first or after the last.
+ */
+function fillTrendGaps(values: (number | null)[]): (number | null)[] {
+  const read = values.map((value, index) => (value === null ? -1 : index)).filter((index) => index >= 0);
+  const filled = [...values];
+  read.slice(1).forEach((to, at) => {
+    const from = read[at];
+    const first = values[from] as number;
+    const last = values[to] as number;
+    for (let index = from + 1; index < to; index++) filled[index] = first + ((last - first) * (index - from)) / (to - from);
+  });
+  return filled;
 }
 
 /**
