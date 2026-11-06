@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, demographic exclusions, excluded locations, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad and named Demand Gen ad groups for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad and named Demand Gen ad groups for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -22,6 +22,8 @@ tags:
     demand gen,
     bidding,
     languages,
+    sitelinks,
+    ad extensions,
     youtube,
     video ads,
     ad groups,
@@ -93,6 +95,27 @@ The campaign does not serve in the places listed here.
 A Demand Gen campaign can bid with **Maximize Clicks**, the default, or with **Maximize Conversions**, **Target CPA** or **Maximize Conversion Value**. Target CPA needs a **Target CPA** in the account currency, and Maximize Conversions takes one optionally. Target ROAS is not offered on Demand Gen, and neither is the **Target ROAS** box under Maximize Conversion Value: LFX One's campaign service does not send a target ROAS on Demand Gen. A target ROAS you entered on another campaign type is kept but not sent.
 
 You can also pick the languages a Demand Gen campaign serves in, as on the other campaign types. With none picked, it serves in every language.
+
+## Sitelinks and other ad extensions
+
+Ad extensions add links and details to your ads. Which ones a campaign takes depends on its type:
+
+| Campaign type            | Sitelinks | Callouts, structured snippets, call extensions, promotions and prices |
+| ------------------------ | --------- | --------------------------------------------------------------------- |
+| Search                   | Yes       | Yes                                                                   |
+| Demand Gen               | Yes       | No                                                                    |
+| Display, Performance Max | No        | No                                                                    |
+
+**Google Sitelinks** add extra links to the ad. For each sitelink, enter the **Link text** and the **Destination URL**, and optionally two description lines, then select **+ Add sitelink**.
+
+- You can add up to 20 sitelinks.
+- Link text can be up to 25 characters. Two sitelinks cannot have the same link text, even in different capitals.
+- Fill in both description lines or neither. Each can be up to 35 characters.
+- The destination must be a full `http://` or `https://` address with no embedded user name or password, up to 2,084 bytes.
+
+When it creates the campaign, LFX One's campaign service adds the campaign's tracking parameters to each sitelink destination, as it does to the ad's own link, so you don't need to add them yourself.
+
+On a Demand Gen campaign, **Google Sitelinks** is the only ad extension section that appears. If you entered callouts, structured snippets, call extensions, promotions or prices on a Search campaign and then switch to Demand Gen, they are kept but not sent, and a notice says so. On Display and Performance Max, sitelinks are kept but not sent too, and a notice says to switch to Search or Demand Gen to keep them.
 
 ## Conversion actions
 
@@ -179,4 +202,4 @@ While the campaign is split, the single image ad or video ad you entered is kept
 
 If a window, adjustment, exclusion, excluded place, display path, ad, video ad, ad group, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
-If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to a campaign type that does not take them, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type.
+If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to a campaign type that does not take them, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Sitelinks are sent on Search and Demand Gen, and the other ad extensions on Search only; each is kept the same way on the other campaign types, with a notice.
